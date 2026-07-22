@@ -1,6 +1,6 @@
 # Compiler and runtime — contract
 
-Status: Rev 4, 2026-07-22 (Rev 0: same day; Rev 1 moves the mobile link
+Status: Rev 5, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract). Contract for the plan's P0.5–P5 phases
@@ -248,6 +248,12 @@ Per §1's rules, made testable:
 - **Stale coroutines**: a coroutine suspended in a function whose body
   was replaced is invalidated; resuming it traps with a
   `stale coroutine after reload` report carrying the resume position.
+  A trap does not end the dev session: the host clears the trap record
+  at the boundary and calls script again; Context state (globals, live
+  allocations) is unaffected by the clear, and a stale coroutine stays
+  stale (resuming it traps again). A trapped session that cannot be
+  resumed would make the contract's own stale-coroutine rule kill the
+  program the reload was required to keep running.
 - **Frame boundary**: swaps are applied only between host calls into
   script (no swap while script code is on the stack). The demo drives
   this explicitly.
