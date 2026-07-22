@@ -1,6 +1,6 @@
 # subscript — project plan
 
-**Rev 1 (2026-07-22; Rev 0: same day).** This document records the design that founds the
+**Rev 2 (2026-07-23; Rev 1: 2026-07-22; Rev 0: same day as Rev 1).** This document records the design that founds the
 project and the phase plan. It is a working draft, not a contract.
 Corrections and revisions land in §8 with evidence; read §8 before
 reasoning from anything asserted here.
@@ -161,3 +161,37 @@ memory.
   any compiler investment.
 - Consequence: compiler block Rev 1 (§3 criterion unchanged, §4 gains the
   P0.5 row); §7's ship-tier-link risk resolves at P0.5 instead of P3.
+
+**Rev 2 (2026-07-23) — the ship tier is C emission (LLVM), not
+`cranelift-object`.**
+
+- What changed: §1's ship tier moves from Cranelift AOT
+  (`cranelift-object`) to HIR→C→platform C compiler (`clang -O2`, i.e.
+  LLVM). The dev tier stays Cranelift JIT with hot reload, unchanged.
+- Evidence: P4 measured Cranelift ship-AOT at 34.4× a hand-written C
+  baseline against a 1.5× limit; P4.1 optimized the lowering
+  (proof-based bounds-check elimination, copy elision) to 23.2× and a
+  profile attributed ≈73% of the residual to Cranelift's scalar,
+  unvectorized output from clean branch-free CLIF; P4.2 emitted C from
+  the same HIR carrying the same semantics (C2 value copies, checked
+  growable arrays) and measured it at **1.05×** — the identical
+  computation costs ≈5% through LLVM and ≈23× through Cranelift
+  `opt_level=speed`. Full record: `specs/tracking/p4-performance.md`.
+- This is not the P0.5 fallback trigger firing. The mobile link spike
+  *passed*; C emission was pre-registered (§3) as the fallback for a
+  link *failure*, which did not occur. C emission is adopted here for
+  *performance*, a separate owner decision (2026-07-23) with the
+  measurement as evidence. The pre-registration means the architecture
+  (two lowerings, ship = C) was already sanctioned; only the trigger
+  differs.
+- Consequence: the "one HIR→CLIF lowering serves both tiers; semantics
+  coincide by construction" property (§1) holds only for the dev tier;
+  the ship tier is a second lowering (HIR→C) whose agreement with the
+  dev tier is established **by verification** — the standing gate
+  becomes dev-JIT ≡ ship-C-AOT ≡ golden, byte-exact. Implemented as
+  P4.3 (compiler block §11): extend the a22-only P4.2 emitter to the
+  full run set, rewire the standing gate, and re-verify the device
+  triples via `clang` cross-compilation (replacing the `cranelift-object`
+  device link; the P0.5/P3 `cranelift-object` path is retained only as
+  an optional cross-check, its ship role ended). Invariant 3 (two tiers)
+  is unaffected: dev = Cranelift JIT, ship = C/LLVM AOT.

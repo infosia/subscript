@@ -1,11 +1,12 @@
 # Compiler and runtime — contract
 
-Status: Rev 7, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 8, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
-measurement methodology; Rev 7 adds the §10 P4.1 optimization contract).
-Contract for the plan's P0.5–P5 phases
+measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
+Rev 8 makes the ship tier C emission — §11, plan §8 Rev 2). Contract for
+the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
 
@@ -24,7 +25,11 @@ SWC parse (TS-subset front end, Rust)
 ```
 
 - One HIR→CLIF lowering serves both tiers; dev/ship semantics coincide by
-  construction.
+  construction. *(Superseded for the ship tier by Rev 8 / §11: the ship
+  tier is HIR→C→`clang` (LLVM), a second lowering, after P4 measured
+  Cranelift AOT at 23× a C baseline. dev/ship agreement is then
+  established by verification — the standing gate — not by construction.
+  The dev tier is unchanged: Cranelift JIT with hot reload.)*
 - **Coroutines**: CPS transform in codegen (iOS-safe; no fibers, no stack
   switching). Suspended state lives in the runtime as Context data.
 - **Traps** (OOB, null narrowing, checked `as`, literal-range, failed
@@ -351,3 +356,47 @@ judged.
   re-measurement that still misses by a wide margin is itself the
   evidence for changing backend; one that lands near the thresholds
   is evidence for keeping Cranelift.
+
+## 11. P4.3 ship tier — C emission (LLVM)
+
+Owner decision 2026-07-23 (plan §8 Rev 2): the ship tier is
+HIR→C→platform C compiler (`clang -O2 -ffp-contract=off`, i.e. LLVM).
+Evidence: P4/P4.1/P4.2 (`specs/tracking/p4-performance.md`) — Cranelift
+ship-AOT 23× a C baseline, ≈73% attributable to its scalar output;
+emitted C carrying the same semantics measured 1.05×. The dev tier is
+unchanged (Cranelift JIT, hot reload). The P4.2 emitter
+(`codegen/src/cemit.rs`) is the a22-only spike; this phase makes it the
+ship tier.
+
+- **Coverage**: the C emitter handles the full run set a01–a24
+  (reference classes, `Nullable`, lambdas/function pointers,
+  generators/CPS, methods, `while`/`switch`/ternary, computed strings —
+  everything the run set uses), not just a22's subset. Constructs
+  outside the run set may return a clean `Err` until a corpus entry
+  needs them.
+- **Semantic faithfulness**: the emitted C carries the language's
+  semantics exactly as the CLIF path does — C2 value copies, checked
+  growable-array indexing and push growth, f32 kept in `float`, the
+  P4.1 proof-based FixedArray bounds-check elimination and copy
+  elision, Q14 formatting, and the trap model (a trap reports and
+  returns without aborting the host, matching the runtime). It is not a
+  hand-optimized rewrite; where semantics and CLIF differ the emitter
+  is wrong.
+- **Standing gate (replaces §8.3's Cranelift-AOT column)**: the default
+  `cargo test` path becomes **dev-JIT ≡ ship-C-AOT ≡ golden**,
+  byte-exact, all 24 entries. This is where dev/ship agreement is now
+  established — by verification, since the two tiers are separate
+  lowerings (plan §8 Rev 2). The `cranelift-object` AOT path is retained
+  only as an optional extra cross-check column; its ship role has ended.
+- **Device triples**: the C is cross-compiled with `clang`
+  (`--target=aarch64-apple-ios` / `aarch64-linux-android` via the NDK)
+  and linked, replacing the `cranelift-object` device link. Compile+link
+  only, as §3 — no device execution. The P0.5 kill criterion is
+  unaffected: it already passed, and C emission was its pre-registered
+  fallback architecture.
+- **Reuse or replicate the runtime**: the emitted C may link the
+  existing runtime staticlib or emit self-contained equivalents; either
+  way behaviour must match the runtime (the standing gate enforces it).
+- **Gate**: run set a01–a24 matches goldens under the C ship tier;
+  dev-JIT ≡ ship-C-AOT ≡ golden is the default `cargo test`; device
+  triples compile and link.
