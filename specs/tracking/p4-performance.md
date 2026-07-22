@@ -90,6 +90,23 @@ decision of what to do next is the owner's; the evidence above is the
 input. Recorded without adjustment, per §9's requirement that both
 outcomes be recorded.
 
+## C-emission spike (P4.2, owner decision 2026-07-23)
+
+The re-measurement placed ~73% of the residual AOT gap in Cranelift's
+scalar, unvectorized output (§ above). The C-emission ship fallback was
+pre-registered at P0.5 (§3); clang is LLVM, so the frozen 3.96 ms C
+baseline already measures what LLVM's vectorizer does with this
+computation. Open question: how much of that win survives the language's
+own semantics (C2 value-class copies, checked growable-array indexing)
+when the C is emitted from the lowering rather than hand-written.
+
+The spike answers it with a number: emit C for a22 from the typed HIR,
+carrying the language's semantics faithfully, compile with the platform
+C compiler at `-O2`, verify it prints the frozen golden byte-exactly,
+and measure it in the P4 harness alongside the existing subjects.
+Bounded to a22 — it is a measurement, not the C backend. Its result
+informs the §3 backend decision; it does not by itself decide it.
+
 ## Owner decision (2026-07-23)
 
 The lowering is optimized and the gate re-measured before the backend
