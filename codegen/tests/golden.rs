@@ -17,12 +17,13 @@ use subscript_codegen::{run_aot, run_jit};
 fn jit_aot_and_golden_agree_byte_for_byte() {
     let accept = corpus::corpus_accept();
     let golden_ids = corpus::golden_ids(&accept);
-    // The set is derived, never pinned. The floor guards against
-    // silently comparing an empty set; goldens are never deleted
-    // (compiler.md §2).
+    // The set is derived, never pinned: new entries are compared with
+    // no edit here. The floor is the committed count, so deleting a
+    // golden fails this test instead of silently shrinking the gate
+    // (compiler.md §2 — goldens are never deleted).
     assert!(
-        golden_ids.len() >= 21,
-        "expected at least the 21 authored goldens, found {}",
+        golden_ids.len() >= 24,
+        "expected at least the 24 committed goldens, found {}",
         golden_ids.len()
     );
 

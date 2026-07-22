@@ -10,16 +10,21 @@
 # an arbitrary machine does not have (headless-first, CLAUDE.md core
 # principle 4 — device-dependent runs are gated, never required).
 #
+# The Android half runs on any host with an NDK (contract §3); the iOS
+# half requires a Mac and is skipped elsewhere.
+#
 # Environment variables:
 #   ANDROID_NDK_HOME  (required) Android NDK installation root. Its
-#                     darwin-x86_64 prebuilt LLVM toolchain is used:
-#                     $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin
+#                     prebuilt LLVM toolchain for this host is used:
+#                     $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/<host-tag>/bin
+#   NDK_HOST_TAG      (optional) overrides the derived <host-tag>.
 #   ENTRY_ID          (optional) accept-corpus entry to compile;
 #                     defaults to a22-matrix-propagation.
 #
-# Requirements: rustup targets aarch64-apple-ios and
-# aarch64-linux-android, Xcode command line tools (xcrun, iphoneos SDK),
-# and a populated cargo cache (every cargo invocation is --offline).
+# Requirements: rustup target aarch64-linux-android (plus
+# aarch64-apple-ios on a Mac), Xcode command line tools for the iOS
+# half, and a populated cargo cache (every cargo invocation is
+# --offline).
 #
 # All paths are resolved relative to this script's directory.
 
@@ -36,22 +41,46 @@ ENTRY_ID=${ENTRY_ID:-a22-matrix-propagation}
 cargo run --offline --release -p subscript-codegen --bin emit-object -- \
     "$OUT_DIR" "$ENTRY_ID"
 
+LINKED=""
+
 # 2. iOS: cross-build the runtime static library and link with Xcode clang.
 #    -miphoneos-version-min=10.0 matches the Rust static library's minimum
 #    OS and the build version stamped on the emitted object.
-cargo build --offline --release -p subscript-runtime --target aarch64-apple-ios
-xcrun --sdk iphoneos clang -target arm64-apple-ios -miphoneos-version-min=10.0 \
-    "$OUT_DIR/entry.c" \
-    "$OUT_DIR/$ENTRY_ID-aarch64-apple-ios.o" \
-    "$TARGET_DIR/aarch64-apple-ios/release/$RUNTIME_LIB" \
-    -o "$OUT_DIR/$ENTRY_ID-ios"
+HOST_OS=$(uname -s)
+if [ "$HOST_OS" = "Darwin" ]; then
+    cargo build --offline --release -p subscript-runtime --target aarch64-apple-ios
+    xcrun --sdk iphoneos clang -target arm64-apple-ios -miphoneos-version-min=10.0 \
+        "$OUT_DIR/entry.c" \
+        "$OUT_DIR/$ENTRY_ID-aarch64-apple-ios.o" \
+        "$TARGET_DIR/aarch64-apple-ios/release/$RUNTIME_LIB" \
+        -o "$OUT_DIR/$ENTRY_ID-ios"
+    LINKED="$LINKED $OUT_DIR/$ENTRY_ID-ios"
+else
+    echo "note: host is $HOST_OS; the iOS half requires a Mac and is skipped" >&2
+fi
 
 # 3. Android: cross-build the runtime static library and link with NDK clang.
 if [ -z "${ANDROID_NDK_HOME:-}" ]; then
     echo "error: ANDROID_NDK_HOME is not set; it must point to an Android NDK installation" >&2
     exit 1
 fi
-NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+# The NDK names its prebuilt toolchains after the host it runs on. The
+# macOS toolchain is published as darwin-x86_64 on both Intel and Apple
+# silicon; NDK_HOST_TAG overrides the derivation.
+if [ -n "${NDK_HOST_TAG:-}" ]; then
+    HOST_TAG="$NDK_HOST_TAG"
+else
+    case "$HOST_OS" in
+        Darwin) HOST_TAG=darwin-x86_64 ;;
+        Linux) HOST_TAG=linux-x86_64 ;;
+        MINGW* | MSYS* | CYGWIN* | Windows_NT) HOST_TAG=windows-x86_64 ;;
+        *)
+            echo "error: unknown host $HOST_OS; set NDK_HOST_TAG to the NDK prebuilt directory name" >&2
+            exit 1
+            ;;
+    esac
+fi
+NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 ANDROID_CC="$NDK_BIN/aarch64-linux-android24-clang"
 if [ ! -x "$ANDROID_CC" ]; then
     echo "error: NDK clang not found at $ANDROID_CC" >&2
@@ -66,6 +95,8 @@ cargo build --offline --release -p subscript-runtime --target aarch64-linux-andr
     "$OUT_DIR/$ENTRY_ID-aarch64-linux-android.o" \
     "$TARGET_DIR/aarch64-linux-android/release/$RUNTIME_LIB" \
     -o "$OUT_DIR/$ENTRY_ID-android"
+LINKED="$LINKED $OUT_DIR/$ENTRY_ID-android"
 
 # 4. Report. The binaries are never executed (compile+link is the criterion).
-file "$OUT_DIR/$ENTRY_ID-ios" "$OUT_DIR/$ENTRY_ID-android"
+# shellcheck disable=SC2086
+file $LINKED

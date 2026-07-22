@@ -438,7 +438,9 @@ pub(crate) fn lower_module_with<M: Module>(
     opts: LowerOptions,
 ) -> Result<Lowered, String> {
     if module.isa().pointer_type() != types::I64 {
-        return Err(internal("only 64-bit hosts are supported in the dev tier"));
+        return Err(internal(
+            "only 64-bit targets are supported: the runtime ABI assumes 8-byte handles",
+        ));
     }
     let call_conv = module.isa().default_call_conv();
     let rt = declare_rt(module, call_conv)?;

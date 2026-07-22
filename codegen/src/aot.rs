@@ -8,8 +8,9 @@
 //! Two entry points:
 //! - [`emit_object`] produces a relocatable object for any supported
 //!   target triple. The device triples (`aarch64-apple-ios`,
-//!   `aarch64-linux-android`) go through this and are linked by the
-//!   platform toolchains from `spike/mobile-link/link.sh`.
+//!   `aarch64-linux-android`) go through this; `codegen/device-link.sh`
+//!   drives it through the `emit-object` binary and links the results
+//!   with the platform toolchains.
 //! - [`run_aot`] does the whole host-target cycle in a temporary
 //!   directory: emit the object, write the C entry program, link both
 //!   against the runtime static library with the host `cc`, run the
@@ -47,9 +48,16 @@ use crate::lower::{aot_flags, internal, lower_module_with, LowerOptions};
 /// (`specs/tracking/p0.5-mobile-link.md`).
 const MACHO_VERSION_10_0_0: u32 = 10 << 16;
 
-/// Environment variable naming a prebuilt runtime static library. When
-/// unset, [`run_aot`] builds `subscript-runtime` with the workspace's
-/// own cargo and looks for the archive next to the current executable.
+/// Environment variable naming a prebuilt runtime static library for
+/// [`run_aot`] to link against. When unset (the normal case, including
+/// the differential gate), `run_aot` looks for the archive next to the
+/// current executable and builds `subscript-runtime` with the
+/// workspace's own cargo if it is missing or stale.
+///
+/// It exists for a host-target link that must use an archive cargo did
+/// not just build. The device-triple links do not use it: they never
+/// call `run_aot`, and `codegen/device-link.sh` passes each
+/// cross-compiled archive to the platform linker directly.
 pub const RUNTIME_STATICLIB_ENV: &str = "SUBSCRIPT_RUNTIME_STATICLIB";
 
 /// A relocatable object emitted for one target triple, with the trap
@@ -232,13 +240,84 @@ fn build_dir() -> Result<PathBuf, RunError> {
     Ok(dir.to_path_buf())
 }
 
+/// Newest modification time under `dir`, recursively. `None` when the
+/// tree cannot be read; the caller then treats the archive as stale.
+fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
+    let mut newest: Option<std::time::SystemTime> = None;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(p) = stack.pop() {
+        let meta = std::fs::metadata(&p).ok()?;
+        if meta.is_dir() {
+            for e in std::fs::read_dir(&p).ok()? {
+                stack.push(e.ok()?.path());
+            }
+        } else if let Ok(t) = meta.modified() {
+            newest = Some(newest.map_or(t, |n| n.max(t)));
+        }
+    }
+    newest
+}
+
+/// True when `archive` exists and is newer than every runtime source.
+fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path) -> bool {
+    let Ok(built) = std::fs::metadata(archive).and_then(|m| m.modified()) else {
+        return false;
+    };
+    match newest_mtime(runtime_dir) {
+        Some(source) => built >= source,
+        None => false,
+    }
+}
+
+/// Builds the runtime static library for the running profile and
+/// returns its path.
+fn build_runtime_staticlib() -> Result<PathBuf, String> {
+    let dir = build_dir().map_err(|e| e.to_string())?;
+    let archive = dir.join("libsubscript_runtime.a");
+    let runtime_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime");
+    if staticlib_is_fresh(&archive, &runtime_dir) {
+        return Ok(archive);
+    }
+    let profile = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.arg("build")
+        .arg("--offline")
+        .arg("--manifest-path")
+        .arg(runtime_dir.join("Cargo.toml"));
+    if profile == "release" {
+        cmd.arg("--release");
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| internal(format!("build runtime staticlib: {e}")))?;
+    if !out.status.success() {
+        return Err(internal(format!(
+            "building the runtime static library failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        )));
+    }
+    if !archive.is_file() {
+        return Err(internal(format!(
+            "runtime static library not found at {}; set {RUNTIME_STATICLIB_ENV}",
+            archive.display()
+        )));
+    }
+    Ok(archive)
+}
+
 /// Locates the runtime static library, building it if necessary.
 ///
 /// The runtime crate declares both `rlib` and `staticlib`; `cargo test`
 /// builds only the `rlib` it links against, so the archive is produced
-/// on demand with the same cargo and the same profile. Set
-/// [`RUNTIME_STATICLIB_ENV`] to use a prebuilt archive instead (the
-/// cross-compiled device-triple links do).
+/// on demand with the same cargo and the same profile. Resolution is
+/// cached per process and the archive is reused when it is newer than
+/// every runtime source, so a test binary that links many programs
+/// spawns cargo at most once, and not at all when the archive is
+/// already current. Set [`RUNTIME_STATICLIB_ENV`] to bypass all of it.
 fn runtime_staticlib() -> Result<PathBuf, RunError> {
     if let Some(p) = std::env::var_os(RUNTIME_STATICLIB_ENV) {
         let path = PathBuf::from(p);
@@ -250,39 +329,11 @@ fn runtime_staticlib() -> Result<PathBuf, RunError> {
         }
         return Ok(path);
     }
-    let dir = build_dir()?;
-    let archive = dir.join("libsubscript_runtime.a");
-    let profile = dir
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime/Cargo.toml");
-    let mut cmd = Command::new(cargo);
-    cmd.arg("build")
-        .arg("--offline")
-        .arg("--manifest-path")
-        .arg(&manifest);
-    if profile == "release" {
-        cmd.arg("--release");
-    }
-    let out = cmd
-        .output()
-        .map_err(|e| RunError::Internal(internal(format!("build runtime staticlib: {e}"))))?;
-    if !out.status.success() {
-        return Err(RunError::Internal(internal(format!(
-            "building the runtime static library failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        ))));
-    }
-    if !archive.is_file() {
-        return Err(RunError::Internal(internal(format!(
-            "runtime static library not found at {}; set {RUNTIME_STATICLIB_ENV}",
-            archive.display()
-        ))));
-    }
-    Ok(archive)
+    static RESOLVED: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
+    RESOLVED
+        .get_or_init(build_runtime_staticlib)
+        .clone()
+        .map_err(RunError::Internal)
 }
 
 /// The host C compiler driver used for linking.
@@ -416,6 +467,22 @@ mod tests {
         assert!(print.is_undefined(), "the runtime is resolved at link time");
     }
 
+    /// The object format the host target must produce.
+    const HOST_FORMAT: BinaryFormat = if cfg!(target_os = "macos") {
+        BinaryFormat::MachO
+    } else if cfg!(target_os = "windows") {
+        BinaryFormat::Coff
+    } else {
+        BinaryFormat::Elf
+    };
+
+    /// The architecture the host target must produce.
+    const HOST_ARCH: Architecture = if cfg!(target_arch = "aarch64") {
+        Architecture::Aarch64
+    } else {
+        Architecture::X86_64
+    };
+
     #[test]
     fn host_object_defines_the_exported_entries_and_imports_the_runtime() {
         let obj = emit_object(
@@ -424,8 +491,9 @@ mod tests {
         )
         .expect("emit host object");
         assert!(!obj.triple.is_empty());
-        let file = object::File::parse(obj.bytes.as_slice()).expect("parse");
-        assert_object_shape(&obj.bytes, file.format(), file.architecture());
+        // Expected format and architecture are stated, not read back
+        // out of the object under test.
+        assert_object_shape(&obj.bytes, HOST_FORMAT, HOST_ARCH);
     }
 
     #[test]

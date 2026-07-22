@@ -218,6 +218,28 @@ impl Context {
         self.trap.as_ref()
     }
 
+    /// Clears the trap record and lowers the trap flag, so the next
+    /// host call into script starts from a clean state
+    /// (`specs/blocks/compiler.md` §8.2: a trap does not end the dev
+    /// session).
+    ///
+    /// Only trap *reporting* state is touched. Allocations, globals,
+    /// roots, the stdout sink, and the reload epoch are all untouched,
+    /// so nothing a trap protected against becomes reachable again: a
+    /// deleted allocation stays poisoned and a stale coroutine stays
+    /// stale (its frame epoch still differs, so resuming it traps
+    /// again).
+    ///
+    /// The caller must be at a host↔script boundary — no generated
+    /// code on the stack. Generated code reads the flag after every
+    /// fault-capable call and unwinds on it; clearing while a script
+    /// frame is live would resume a run that has already given up.
+    /// [`Context::script_depth`] is the check.
+    pub fn clear_trap(&mut self) {
+        self.trap = None;
+        self.trap_flag = 0;
+    }
+
     /// True when a trap is pending.
     #[must_use]
     pub fn trapped(&self) -> bool {
@@ -713,6 +735,46 @@ mod tests {
         let mut ctx = Context::new();
         ctx.delete(0x1000, 1);
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::InvalidDelete));
+    }
+
+    #[test]
+    fn clear_trap_resets_reporting_state_and_nothing_else() {
+        let mut ctx = Context::new();
+        let kept = ctx.alloc(8, 1, 0);
+        let deleted = ctx.alloc(8, 1, 0);
+        ctx.delete(deleted as usize, 0);
+        ctx.print_line(b"before");
+        ctx.bump_reload_epoch();
+
+        ctx.trap(TrapKind::EmptyPop, "pop() on an empty array", 3);
+        assert!(ctx.trapped());
+        ctx.clear_trap();
+
+        // Reporting state is gone...
+        assert!(!ctx.trapped());
+        assert!(ctx.trap_record().is_none());
+        assert_eq!(ctx.trap_flag, 0, "the offset-0 flag is the cleared bit");
+        // ...and nothing else moved.
+        assert!(ctx.is_live(kept as usize));
+        assert!(!ctx.is_live(deleted as usize), "a deleted allocation stays dead");
+        assert_eq!(ctx.reload_epoch(), 1, "staleness survives the clear");
+        assert_eq!(ctx.stdout_bytes(), b"before\n");
+
+        // A later fault records normally (the first-trap-wins rule is
+        // per uncleared run, not per Context).
+        ctx.trap(TrapKind::DivisionByZero, "integer division by zero", 9);
+        assert_eq!(
+            ctx.trap_record().map(|r| (r.kind, r.pos_id)),
+            Some((TrapKind::DivisionByZero, 9))
+        );
+    }
+
+    #[test]
+    fn clear_trap_on_an_untrapped_context_is_a_no_op() {
+        let mut ctx = Context::new();
+        ctx.clear_trap();
+        assert!(!ctx.trapped());
+        assert!(ctx.trap_record().is_none());
     }
 
     #[test]

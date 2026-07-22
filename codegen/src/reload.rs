@@ -353,6 +353,20 @@ struct Generation {
     globals_align: u32,
 }
 
+impl Generation {
+    /// Releases a generation that never became part of a session.
+    ///
+    /// Only for generations no code address escaped from: a generation
+    /// the session accepted is retained for the session's lifetime,
+    /// because pre-swap function values point into it.
+    fn discard(self) {
+        // SAFETY: this generation was never installed — no Context saw
+        // its table, nothing ran from it, and no pointer into its code
+        // or data escaped this function's caller.
+        unsafe { self.module.free_memory() };
+    }
+}
+
 /// Compiles `hir` in reload mode into a fresh JIT module and resolves
 /// every slot to a finalized code address.
 fn compile(hirm: &hir::Module) -> Result<Generation, String> {
@@ -367,10 +381,25 @@ fn compile(hirm: &hir::Module) -> Result<Generation, String> {
     register_runtime(&mut builder);
     let mut module = JITModule::new(builder);
 
-    let lowered = lower_module_with(&mut module, hirm, LowerOptions { reload: true })?;
-    module
-        .finalize_definitions()
-        .map_err(|e| internal(format!("finalize: {e}")))?;
+    // A failure past this point must release the module's code pages:
+    // a dropped `JITModule` frees nothing by itself.
+    let built = lower_module_with(&mut module, hirm, LowerOptions { reload: true }).and_then(
+        |lowered| {
+            module
+                .finalize_definitions()
+                .map_err(|e| internal(format!("finalize: {e}")))?;
+            Ok(lowered)
+        },
+    );
+    let lowered = match built {
+        Ok(l) => l,
+        Err(e) => {
+            // SAFETY: nothing ran and no pointer into this module
+            // escaped; the partially built module is unreachable.
+            unsafe { module.free_memory() };
+            return Err(e);
+        }
+    };
 
     let slot_index = |id: FuncId, slots: &[Option<FuncId>]| {
         slots.iter().position(|s| *s == Some(id))
@@ -411,6 +440,12 @@ fn call_slot(ctx: &mut Context, table: &[*const u8], slot: usize) -> Result<(), 
         return Err(internal("entry slot holds no code"));
     }
     type Entry = unsafe extern "C" fn(*mut Context);
+    // The host boundary clears the trap record (§8.2): a trap ends the
+    // call, not the session. Context state is untouched by the clear,
+    // so a stale coroutine stays stale and a deleted allocation stays
+    // deleted. Cleared here, with no generated code on the stack, so
+    // the offset-0 flag can only be raised again by this call.
+    ctx.clear_trap();
     ctx.enter_script();
     // SAFETY: `code` is finalized JIT code for a function the lowering
     // built with exactly this signature (`(ctx) -> void`, host C
@@ -439,8 +474,13 @@ impl ReloadSession {
         let hirm = check_program(files).map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
         let gen = compile(&hirm).map_err(RunError::Internal)?;
-        let globals = GlobalBlock::new(gen.globals_size, gen.globals_align)
-            .map_err(RunError::Internal)?;
+        let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
+            Ok(g) => g,
+            Err(e) => {
+                gen.discard();
+                return Err(RunError::Internal(e));
+            }
+        };
 
         let mut session = ReloadSession {
             ctx: Context::new(),
@@ -481,11 +521,17 @@ impl ReloadSession {
     /// is a host call into script: it is the only place script code
     /// runs, and a reload may only happen between two such calls.
     ///
+    /// The trap record is cleared on entry, so a trap ends the call,
+    /// not the session (§8.2): the next call runs normally, over the
+    /// same Context state. Clearing is reporting-only — a stale
+    /// coroutine stays stale and traps again on the next resume, and a
+    /// deleted allocation stays deleted.
+    ///
     /// # Errors
     ///
-    /// [`RunError::Trap`] when the call trapped (the Context keeps the
-    /// record; the host process is never killed),
-    /// [`RunError::Internal`] when no such entry exists.
+    /// [`RunError::Trap`] when *this* call trapped (the host process is
+    /// never killed), [`RunError::Internal`] when no such entry
+    /// exists.
     pub fn call_export(&mut self, name: &str) -> Result<(), RunError> {
         let slot = *self.entries.get(name).ok_or_else(|| {
             RunError::Internal(internal(format!(
@@ -508,7 +554,16 @@ impl ReloadSession {
     /// indirection table is repointed at the newly compiled bodies,
     /// Context state (globals, live allocations, sink) survives, and
     /// execution continues at the next host call. Coroutines suspended
-    /// across the swap are invalidated and trap on resume.
+    /// across the swap are invalidated and trap on resume; a trap does
+    /// not end the session, so a swap after one is applied normally.
+    ///
+    /// A module-level variable's **initializer** is a body-position
+    /// expression and is outside the declaration hash, so editing one
+    /// is *accepted and has no effect*: initializers run in `ss_init`,
+    /// which executes once when the session starts and is never re-run
+    /// by a swap — re-running it would overwrite exactly the state the
+    /// swap is required to preserve. Changing a variable's name or
+    /// type does change the hash and is refused.
     ///
     /// # Errors
     ///
@@ -536,11 +591,13 @@ impl ReloadSession {
         // rather than assumed, because getting either wrong would
         // corrupt a live Context instead of failing loudly.
         if gen.table.len() != self.table.len() {
+            gen.discard();
             return Err(ReloadError::Internal(internal(
                 "recompiled module has a different slot count",
             )));
         }
         if gen.globals_size != self.globals.size || gen.globals_align != self.globals.align {
+            gen.discard();
             return Err(ReloadError::Internal(internal(
                 "recompiled module has a different module-global layout",
             )));

@@ -1,6 +1,6 @@
 # P3 — AOT, hot reload, standing gate: evidence
 
-Status: in progress, 2026-07-22. Contract: `specs/blocks/compiler.md` §8.
+Status: COMPLETE, 2026-07-23. Contract: `specs/blocks/compiler.md` §8.
 
 ## Gate evidence (orchestrator-verified, independent run)
 
@@ -82,7 +82,61 @@ Status: in progress, 2026-07-22. Contract: `specs/blocks/compiler.md` §8.
 - `ReloadSession::call_export` accepts zero-argument `void` exports;
   the general Q12 host-entry surface is P5 work.
 
-## Pending for P3 exit
+## Phase Review (2026-07-22/23)
 
-- Phase Review; findings fixed in severity order.
-- Golden freeze for a22–a24 (§2) once the review closes.
+Fresh no-context review with adversarial probes run in a scratch export:
+1 CRITICAL, 2 MAJOR, 11 MINOR. Fixed (suite 177 → 183):
+
+- CRITICAL: a debug probe file was committed at the repository root
+  carrying an absolute developer path — deleted. It was also the only
+  panic site outside a test module. Sweep procedure corrected: the
+  reference sweep now runs over all tracked files (`git grep`) with no
+  path or extension filter; the earlier filtered sweep is what let it
+  through.
+- MAJOR: a trap was permanent, so after a stale-coroutine trap an
+  unrelated export returned the stale record with no output and even an
+  accepted reload did not recover — the contract's own stale rule
+  bricked the session reload exists to keep alive. Contract amended
+  (§8.2, Rev 5: a trap does not end the dev session) and implemented:
+  `Context::clear_trap()` runs at the top of every host→script call,
+  before `enter_script()`, so a record always belongs to its own call.
+  The offset-0 flag invariant is intact — layout unchanged, the clear
+  happens at `script_depth == 0` where no emitted check can observe the
+  transition, and it is reporting-only: allocations, poisoned headers,
+  globals, roots, sink and `reload_epoch` are untouched, so a stale
+  coroutine stays stale.
+- MINOR fixed: golden floors raised 21 → 24 (a deleted golden can no
+  longer pass silently); a self-comparing object-shape assertion
+  replaced with explicit host format/arch; nested `cargo build` per
+  `run_aot` (26 per suite) reduced to a freshness-checked `OnceLock`
+  (cold, warm and stale-source paths all verified); `device-link.sh`
+  derives the NDK prebuilt tag from `uname` so the Android half runs on
+  any host (§3); failed reload generations free their code pages;
+  initializer-outside-the-hash behaviour documented where a caller
+  looks; three stale docs corrected.
+
+Verified by the review, unchanged: the standing gate is not theatre
+(perturbing a golden fails both tiers independently; adding output to
+the AOT entry fails JIT≡AOT on every entry; a missing staticlib fails
+rather than skips), one lowering with no tier branch (`opts.reload` is
+a dev-tier mode the ship path cannot reach), and the declaration hash
+caught all 16 adversarial declaration pairs, comparing per-declaration
+entries rather than a single 64-bit value.
+
+## Golden freeze (§2)
+
+a22–a24, captured from the dev JIT at P2, are **frozen** as of
+2026-07-23: the AOT tier reproduces all 24 goldens byte-exactly through
+the shared lowering, and `git diff` over `corpus/` across the P3 commits
+is empty — the goldens were confirmed, never adjusted. Later changes
+follow the golden-change procedure (§2). The test floors now pin 24
+entries.
+
+## P3 exit
+
+Gate (§8.4) met: run set matches goldens under AOT; JIT≡AOT≡golden is
+the default `cargo test` (24/24); reload demonstrated on run-set
+programs (accepted body edit, rejected layout edit, stale-coroutine
+trap, plus trap-recovery cases); device-triple link green with the real
+lowering. Zero open CRITICAL/MAJOR. Next: P4 — performance gate against
+a hand-written C baseline (§3).

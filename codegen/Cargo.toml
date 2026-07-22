@@ -3,7 +3,7 @@ name = "subscript-codegen"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "HIR-to-CLIF lowering and the dev-tier JIT driver for subscript (plan phase P2). The lowering is tier-neutral: it targets any cranelift-module backend so P3 AOT reuses it unchanged."
+description = "HIR-to-CLIF lowering and both execution tiers of subscript. The lowering is tier-neutral: it targets any cranelift-module backend, so the dev-tier JIT and the ship-tier AOT object emitter share it unchanged."
 
 [dependencies]
 subscript-compiler = { path = "../compiler" }
