@@ -1,6 +1,6 @@
 # P0 — seeding evidence
 
-Status: in progress, 2026-07-22.
+Status: COMPLETE, 2026-07-22.
 
 ## Landed
 
@@ -37,7 +37,9 @@ Review verdict: cross-reference web (Q-ids, C-rules, phases, entry
 lists, prelude declarations) fully resolves; forbidden-reference sweep
 clean.
 
-## Pending for P0 exit (plan §6)
+## Exit (plan §6)
 
-- `tsc -p tsconfig.json` zero errors (requires `npm install`, run by the
-  owner).
+- `tsc -p tsconfig.json` (typescript 5.9.2): exit 0, zero errors, over
+  `prelude/lang.d.ts` + all 25 accept files (2026-07-22).
+- Reference sweep: zero matches. Phase Review: no open findings.
+- Next: P1 — semantic checker + typed HIR (`specs/blocks/compiler.md` §4).
