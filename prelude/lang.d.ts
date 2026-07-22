@@ -1,0 +1,24 @@
+// Ambient declarations make the accept corpus tsc-clean; semantic enforcement lives in the language compiler.
+
+declare type i32 = number;
+declare type u32 = number;
+declare type i64 = number;
+declare type u64 = number;
+declare type f32 = number;
+declare type f64 = number;
+
+declare function print(message: string): void;
+declare function collect(): void;
+declare function unsafeDelete(value: object): void;
+
+declare function value<T extends abstract new (...args: never[]) => object>(
+  target: T,
+  context: ClassDecoratorContext,
+): T;
+
+declare interface FixedArray<T, N extends number> {
+  [index: number]: T;
+  readonly length: i32;
+}
+
+// N is deliberately unused structurally so plain array literals remain assignable.
