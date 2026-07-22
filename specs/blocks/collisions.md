@@ -17,8 +17,8 @@ identically-shaped classes are not interchangeable; object literals do not
 satisfy class types. `tsc` cannot enforce this (TS classes without private
 members are structural); this compiler rejects structural substitution.
 Accept: `a05`. Reject: `r06-structural-substitution` (passes a same-shaped
-class instance where the other nominal type is expected — `tsc`-clean, and
-that is the point).
+class instance where the other nominal type is expected — `tsc`-clean by
+design).
 
 ### C2. Value types (Q2) — `@value class`
 
@@ -161,9 +161,11 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   host-side. Never runs unbidden (invariant 2).
 - **Q12 (entry and host API)** — every `export function` is a
   host-callable entry point. The corpus runner calls `main(): void`;
-  `a23`'s lifecycle trio is called by the host harness. Prelude host API
-  for the corpus: `print(message: string): void`. (Q16, host-created
-  handles, is deferred to P5 — corpus.md §5.)
+  `a23` exports a lifecycle trio (`init`/`update`/`shutdown`) for
+  host-driven use, and for the corpus run its own `main` drives them so
+  the run set stays headless. Prelude host API for the corpus:
+  `print(message: string): void`. (Q16, host-created handles, is deferred
+  to P5 — corpus.md §5.)
 - **Q13 (host C-header mirror)** — deferred to P5 (corpus.md §5). Boundary
   typing rules already decided here and binding on the P5 generator:
   opaque handles are branded empty interfaces (nominal enough that handles

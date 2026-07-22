@@ -1,7 +1,7 @@
 // corpus: accept/a23-game-loop
 // purpose: Simulates a host-owned fixed-step loop for sixty deterministic frames.
 // exercises: exported-lifecycle, fixed-dt, value-struct-array, state-checksum
-// questions: Q1, Q2, Q4, Q12
+// questions: Q1, Q2, Q4, Q12, Q14, Q15, Q17
 
 const ENTITY_COUNT: i32 = 128;
 const FRAME_COUNT: i32 = 60;

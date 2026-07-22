@@ -1,7 +1,7 @@
 // corpus: accept/a12-generics-mono
 // purpose: Instantiates one generic function and one generic value struct at two types each.
 // exercises: generic-function, generic-value-struct, monomorphization
-// questions: Q1, Q2, Q12
+// questions: Q1, Q2, Q12, Q14
 
 function identity<T>(value: T): T {
   return value;
@@ -18,6 +18,6 @@ class Box<T> {
 
 export function main(): void {
   const integerBox: Box<i32> = new Box<i32>(identity<i32>(42));
-  const stringBox: Box<string> = new Box<string>(identity<string>("mono"));
-  print(`${integerBox.value}:${stringBox.value}`);
+  const floatBox: Box<f64> = new Box<f64>(identity<f64>(2.5));
+  print(`${integerBox.value}:${floatBox.value}`);
 }

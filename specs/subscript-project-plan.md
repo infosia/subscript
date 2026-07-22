@@ -5,13 +5,13 @@ project and the phase plan. It is a working draft, not a contract.
 Corrections and revisions land in §8 with evidence; read §8 before
 reasoning from anything asserted here.
 
-Provenance: the design was validated by a pre-founding proof-of-concept
-phase: the accept corpus ran under two execution tiers with 24/24
-byte-identical outputs, and the a22 matrix benchmark ran within 1.0× of a
-hand-written reference implementation. The PoC is retired; nothing in this
-repository depends on it (CLAUDE.md: no external oracle, no sibling
-references). Claims below about Perry and Mystral Native are from reading
-their sources.
+Provenance: the design decisions recorded here are owner-approved
+(2026-07-22). A retired pre-founding proof of concept preceded them;
+this repository does not depend on it and does not cite it as evidence —
+every claim here stands on evidence produced in this repository
+(CLAUDE.md: no external oracle, no sibling references). Claims below
+about Perry and Mystral Native are from reading their sources and are
+marked *(docs)* where they appear.
 
 ## 1. What is being built
 
@@ -41,12 +41,12 @@ host header is privileged by the language.
 |---|---|---|
 | [AssemblyScript](https://www.assemblyscript.org) | A sound TS-syntax language is buildable and maintainable by a small team; the valid-TS-subset + ambient-types approach gives free editor tooling | Targets WASM only; own tracing GC; host interop crosses linear memory with marshaling — the back half this project replaces |
 | [Static TypeScript](https://www.microsoft.com/en-us/research/publication/static-typescript/) (MakeCode) | A TS subset AOT-compiled for ARM microcontrollers — second independent proof of the front-end corner | Education-targeted; nominal classes, restricted dynamism |
-| [Perry](https://github.com/PerryTS/perry) | The cautionary bound: AOT over *full* JS/TS semantics spends its budget on runtime guards and ecosystem parity (~40 reimplemented npm packages), and AOT performance is a function of static-proof hit-rate, not a property of AOT (published benchmarks are bimodal, e.g. matrix multiply 66× slower than Node where proofs miss) | Keeps full semantics; NaN-boxed default ABI with guarded typed clones |
-| [Mystral Native](https://github.com/mystralengine/mystralnative) | The adjacent non-solution: "compile to native" as runtime-exe + appended JS bundle, JS engine in the frame loop | No AOT; inverse ownership (JS owns the loop) |
+| [Perry](https://github.com/PerryTS/perry) | The cautionary bound: AOT over *full* JS/TS semantics spends its budget on runtime guards and ecosystem parity (~40 reimplemented npm packages), and AOT performance is a function of static-proof hit-rate, not a property of AOT (published benchmarks are bimodal, e.g. matrix multiply 66× slower than Node where proofs miss) *(docs)* | Keeps full semantics; NaN-boxed default ABI with guarded typed clones |
+| [Mystral Native](https://github.com/mystralengine/mystralnative) | "Compile to native" as runtime-exe + appended JS bundle keeps a JS engine in the frame loop *(docs)* | No AOT; inverse ownership (JS owns the loop) |
 
-The execution/memory-model corner and the seam between it and the TS
-surface were proven by the PoC phase (provenance note above); the phases
-below build the production compiler and runtime on that verdict.
+The execution/memory-model corner has no row above: it is validated
+inside this repository by the standing differential gate (P3) and the
+performance gate (P4), not by citation.
 
 ## 3. Design invariants
 

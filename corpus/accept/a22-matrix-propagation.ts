@@ -1,7 +1,7 @@
 // corpus: accept/a22-matrix-propagation
 // purpose: Runs the fixed matrix-propagation benchmark and prints one f32 checksum.
 // exercises: value-struct, fixed-array, slices, lcg, matrix-propagation, benchmark
-// questions: Q1, Q2, Q3, Q4, Q12
+// questions: Q1, Q2, Q3, Q4, Q12, Q14, Q15, Q17
 
 const NODE_COUNT: i32 = 10000;
 const ITERATION_COUNT: i32 = 100;
@@ -17,7 +17,7 @@ class Matrix4 {
 }
 
 function nextU32(): u32 {
-  lcgState = ((lcgState * 1664525 + 1013904223) >>> 0) as u32;
+  lcgState = (lcgState * 1664525 + 1013904223) as u32;
   return lcgState;
 }
 

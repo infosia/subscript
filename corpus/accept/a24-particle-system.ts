@@ -1,7 +1,7 @@
 // corpus: accept/a24-particle-system
 // purpose: Updates equivalent array-of-structs and struct-of-arrays particle layouts.
 // exercises: value-struct, array-of-structs, struct-of-arrays, tight-loop, checksum
-// questions: Q1, Q2, Q4, Q12
+// questions: Q1, Q2, Q4, Q12, Q14, Q15, Q17
 
 const PARTICLE_COUNT: i32 = 2048;
 const STEP_COUNT: i32 = 50;

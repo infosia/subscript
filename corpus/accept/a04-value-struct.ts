@@ -1,7 +1,7 @@
 // corpus: accept/a04-value-struct
 // purpose: Makes value-struct copy-on-assign semantics observable.
 // exercises: value-struct, field-access, copy-on-assign
-// questions: Q1, Q2, Q12
+// questions: Q1, Q2, Q12, Q14, Q17
 
 @value
 class Vec3 {

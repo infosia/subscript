@@ -102,10 +102,12 @@ they appear.
    executable definition. A syntax or semantics decision without a corpus
    entry is not decided. A sound language is defined as much by what it
    rejects as by what it accepts.
-3. **Differential testing from day one.** The same corpus program runs
-   under both execution forms (the fast-iteration development tier and the
-   AOT tier — invariant 3) with byte-identical output, checked against the
-   committed golden outputs, on every test run.
+3. **Differential testing.** From the moment the second execution form
+   exists (plan P3), the same corpus program runs under both execution
+   forms (the fast-iteration development tier and the AOT tier —
+   invariant 3) with byte-identical output, checked against the committed
+   golden outputs, on every test run. Before that point goldens are
+   provisional (`specs/blocks/compiler.md` §2).
 4. **Headless-first.** Every gate passes with no GPU, no window, and no
    external device. Device-dependent runs are gated, never required for
    CI.
