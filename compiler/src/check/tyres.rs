@@ -1,0 +1,321 @@
+//! Resolution of TypeScript type annotations to language [`Type`]s,
+//! including the banned-type rules (S001 `any`, S007 bare `number`,
+//! S011 general unions, S012 `undefined`, S013 `Promise`).
+
+use swc_common::Spanned;
+use swc_ecma_ast as ast;
+
+use crate::diag::RuleCode;
+use crate::types::{FuncType, Type};
+
+use super::{Checker, ScopeItem};
+
+impl<'p> Checker<'p> {
+    /// Resolves an annotation to a language type, emitting rule
+    /// diagnostics for banned spellings. Errors resolve to
+    /// [`Type::Error`] so one bad annotation does not cascade.
+    pub(crate) fn resolve_type(&mut self, ty: &ast::TsType) -> Type {
+        match ty {
+            ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),
+            ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
+            ast::TsType::TsArrayType(arr) => {
+                let elem = self.resolve_type(&arr.elem_type);
+                Type::Array(Box::new(elem))
+            }
+            ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u),
+            ast::TsType::TsFnOrConstructorType(f) => self.resolve_fn_type(f),
+            ast::TsType::TsParenthesizedType(p) => self.resolve_type(&p.type_ann),
+            other => {
+                let pos = self.pos(other.span());
+                self.error(
+                    RuleCode::S100,
+                    "type annotation form outside the decided surface",
+                    pos,
+                );
+                Type::Error
+            }
+        }
+    }
+
+    fn resolve_keyword(&mut self, kw: &ast::TsKeywordType) -> Type {
+        use ast::TsKeywordTypeKind::*;
+        let pos = self.pos(kw.span);
+        match kw.kind {
+            TsNumberKeyword => {
+                self.error(
+                    RuleCode::S007,
+                    "bare `number` is rejected; there is no default numeric type — \
+                     use a sized type (i32, u32, i64, u64, f32, f64)",
+                    pos,
+                );
+                Type::Error
+            }
+            TsAnyKeyword => {
+                self.error(RuleCode::S001, "`any` is not part of the language", pos);
+                Type::Error
+            }
+            TsUndefinedKeyword => {
+                self.error(
+                    RuleCode::S012,
+                    "`undefined` is banned; the single null story is `null`",
+                    pos,
+                );
+                Type::Error
+            }
+            TsBooleanKeyword => Type::Bool,
+            TsStringKeyword => Type::Str,
+            TsVoidKeyword => Type::Void,
+            TsNullKeyword => Type::Null,
+            TsObjectKeyword => Type::Object,
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    "keyword type outside the decided surface",
+                    pos,
+                );
+                Type::Error
+            }
+        }
+    }
+
+    fn resolve_type_ref(&mut self, r: &ast::TsTypeRef) -> Type {
+        let ast::TsEntityName::Ident(ident) = &r.type_name else {
+            let pos = self.pos(r.span);
+            self.error(RuleCode::S100, "qualified type names are not decided", pos);
+            return Type::Error;
+        };
+        let name = ident.sym.as_ref();
+        let pos = self.pos(ident.span);
+
+        if let Some(bound) = self.subst.get(name) {
+            return bound.clone();
+        }
+        if let Some(sized) = crate::ambient::sized_alias(name) {
+            return sized;
+        }
+        match name {
+            "Promise" => {
+                self.error(
+                    RuleCode::S013,
+                    "`Promise` requires an event loop; the language has none",
+                    pos,
+                );
+                return Type::Error;
+            }
+            "FixedArray" => {
+                let Some(args) = &r.type_params else {
+                    self.error(
+                        RuleCode::S100,
+                        "`FixedArray` requires element type and length arguments",
+                        pos,
+                    );
+                    return Type::Error;
+                };
+                if args.params.len() != 2 {
+                    self.error(
+                        RuleCode::S100,
+                        "`FixedArray` takes exactly two type arguments",
+                        pos,
+                    );
+                    return Type::Error;
+                }
+                let elem = self.resolve_type(&args.params[0]);
+                let len = match &*args.params[1] {
+                    ast::TsType::TsLitType(ast::TsLitType {
+                        lit: ast::TsLit::Number(n),
+                        ..
+                    }) if n.value >= 0.0 && n.value.fract() == 0.0 => n.value as u32,
+                    other => {
+                        let p = self.pos(other.span());
+                        self.error(
+                            RuleCode::S100,
+                            "`FixedArray` length must be a non-negative integer literal",
+                            p,
+                        );
+                        return Type::Error;
+                    }
+                };
+                return Type::FixedArray(Box::new(elem), len);
+            }
+            "Array" => {
+                if let Some(args) = &r.type_params {
+                    if args.params.len() == 1 {
+                        let elem = self.resolve_type(&args.params[0]);
+                        return Type::Array(Box::new(elem));
+                    }
+                }
+                self.error(RuleCode::S100, "`Array` takes one type argument", pos);
+                return Type::Error;
+            }
+            "Generator" => {
+                if let Some(args) = &r.type_params {
+                    if let Some(first) = args.params.first() {
+                        let y = self.resolve_type(first);
+                        return Type::Generator(Box::new(y));
+                    }
+                }
+                self.error(
+                    RuleCode::S100,
+                    "`Generator` requires at least a yield type argument",
+                    pos,
+                );
+                return Type::Error;
+            }
+            _ => {}
+        }
+
+        match self.scope_item(name) {
+            Some(ScopeItem::Class(id)) => {
+                if r.type_params.is_some() {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{}` is not generic", name),
+                        pos,
+                    );
+                }
+                Type::Class(id)
+            }
+            Some(ScopeItem::GenericClass(key)) => {
+                let Some(args) = &r.type_params else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("generic class `{}` requires explicit type arguments", name),
+                        pos,
+                    );
+                    return Type::Error;
+                };
+                let resolved: Vec<Type> =
+                    args.params.iter().map(|t| self.resolve_type(t)).collect();
+                match self.instantiate_class(&key, &resolved, pos) {
+                    Some(id) => Type::Class(id),
+                    None => Type::Error,
+                }
+            }
+            Some(ScopeItem::Enum(id)) => Type::Enum(id),
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    format!("unknown type name `{}`", name),
+                    pos,
+                );
+                Type::Error
+            }
+        }
+    }
+
+    fn resolve_union(&mut self, u: &ast::TsUnionOrIntersectionType) -> Type {
+        let union = match u {
+            ast::TsUnionOrIntersectionType::TsUnionType(union) => union,
+            ast::TsUnionOrIntersectionType::TsIntersectionType(i) => {
+                let pos = self.pos(i.span);
+                self.error(
+                    RuleCode::S100,
+                    "intersection types are not in the decided surface",
+                    pos,
+                );
+                return Type::Error;
+            }
+        };
+        for member in &union.types {
+            if let ast::TsType::TsKeywordType(kw) = &**member {
+                if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword {
+                    let pos = self.pos(kw.span);
+                    self.error(
+                        RuleCode::S012,
+                        "`undefined` is banned; the single null story is `null`",
+                        pos,
+                    );
+                    return Type::Error;
+                }
+            }
+        }
+        let is_null = |t: &ast::TsType| {
+            matches!(
+                t,
+                ast::TsType::TsKeywordType(kw) if kw.kind == ast::TsKeywordTypeKind::TsNullKeyword
+            )
+        };
+        if union.types.len() == 2 {
+            let (base, has_null) = if is_null(&union.types[1]) {
+                (&union.types[0], true)
+            } else if is_null(&union.types[0]) {
+                (&union.types[1], true)
+            } else {
+                (&union.types[0], false)
+            };
+            if has_null {
+                let inner = self.resolve_type(base);
+                if matches!(inner, Type::Error) {
+                    return Type::Error;
+                }
+                let ok = inner.is_reference_shape()
+                    && !self.is_value_class(&inner);
+                if ok {
+                    return Type::Nullable(Box::new(inner));
+                }
+                let pos = self.pos(base.span());
+                let name = self.type_name(&inner);
+                self.error(
+                    RuleCode::S011,
+                    format!(
+                        "unions are limited to `Ref | null`; `{} | null` is not a \
+                         reference type union",
+                        name
+                    ),
+                    pos,
+                );
+                return Type::Error;
+            }
+        }
+        let pos = self.pos(union.span);
+        self.error(
+            RuleCode::S011,
+            "unions are limited to `Ref | null`",
+            pos,
+        );
+        Type::Error
+    }
+
+    fn resolve_fn_type(&mut self, f: &ast::TsFnOrConstructorType) -> Type {
+        let fn_ty = match f {
+            ast::TsFnOrConstructorType::TsFnType(fn_ty) => fn_ty,
+            ast::TsFnOrConstructorType::TsConstructorType(c) => {
+                let pos = self.pos(c.span);
+                self.error(
+                    RuleCode::S100,
+                    "constructor types are not in the decided surface",
+                    pos,
+                );
+                return Type::Error;
+            }
+        };
+        let mut params = Vec::new();
+        for p in &fn_ty.params {
+            match p {
+                ast::TsFnParam::Ident(binding) => match &binding.type_ann {
+                    Some(ann) => params.push(self.resolve_type(&ann.type_ann)),
+                    None => {
+                        let pos = self.pos(binding.id.span);
+                        self.error(
+                            RuleCode::S100,
+                            "function type parameters require annotations",
+                            pos,
+                        );
+                        params.push(Type::Error);
+                    }
+                },
+                other => {
+                    let pos = self.pos(other.span());
+                    self.error(
+                        RuleCode::S100,
+                        "function type parameter form outside the decided surface",
+                        pos,
+                    );
+                    params.push(Type::Error);
+                }
+            }
+        }
+        let ret = self.resolve_type(&fn_ty.type_ann.type_ann);
+        Type::Func(Box::new(FuncType { params, ret }))
+    }
+}

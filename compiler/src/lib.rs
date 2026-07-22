@@ -1,0 +1,372 @@
+#![warn(missing_docs)]
+//! subscript compiler front end (plan phase P1): SWC parse, semantic
+//! checker for the collision rules (`specs/blocks/collisions.md`), and
+//! the typed HIR.
+//!
+//! The public entry point is [`check_program`]: it takes one or more
+//! source files (multi-file programs use `import`/`export`, e.g. the
+//! `a19-modules` corpus entry) and returns either a typed
+//! [`hir::Module`] or a non-empty list of [`Diagnostic`]s with stable
+//! rule codes (S001–S013, S100) and TS positions.
+
+pub mod diag;
+pub mod hir;
+pub mod types;
+
+mod ambient;
+mod check;
+mod parse;
+
+pub use diag::{Diagnostic, Pos, RuleCode};
+pub use types::{ClassId, EnumId, FuncType, Type};
+
+/// One source file of a program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceFile {
+    /// File name used in diagnostics and for import resolution (the
+    /// base name without `.ts` is the module stem).
+    pub name: String,
+    /// Full source text.
+    pub source: String,
+}
+
+impl SourceFile {
+    /// Builds a source file.
+    #[must_use]
+    pub fn new(name: impl Into<String>, source: impl Into<String>) -> Self {
+        SourceFile {
+            name: name.into(),
+            source: source.into(),
+        }
+    }
+}
+
+/// Checks a program.
+///
+/// On success every accepted construct resolves to a typed HIR module:
+/// every expression carries its resolved type and TS position, and
+/// generic declarations are already monomorphized. On rejection the
+/// diagnostic list is non-empty; each entry carries a stable rule code
+/// and the position of the offending construct.
+///
+/// # Errors
+///
+/// Returns the diagnostic list when the program parses with errors or
+/// violates any language rule.
+pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic>> {
+    if files.is_empty() {
+        return Err(vec![Diagnostic::new(
+            RuleCode::S100,
+            "no source files given",
+            Pos::new(String::new(), 1, 1),
+        )]);
+    }
+    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+        let parsed = parse::parse_program(files)?;
+        check::run(&parsed)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check_one(src: &str) -> Result<hir::Module, Vec<Diagnostic>> {
+        check_program(&[SourceFile::new("test.ts", src)])
+    }
+
+    #[test]
+    fn empty_program_list_is_an_error() {
+        let err = check_program(&[]).unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+    }
+
+    #[test]
+    fn minimal_program_checks_clean() {
+        let module = check_one(
+            "export function main(): void {\n  print(\"hello\");\n}\n",
+        )
+        .expect("clean check");
+        assert_eq!(module.functions.len(), 1);
+        assert_eq!(module.functions[0].name, "main");
+        assert!(module.functions[0].exported);
+        assert_eq!(module.functions[0].ret, Type::Void);
+    }
+
+    #[test]
+    fn bare_number_is_s007_with_position() {
+        let err = check_one("const x: number = 1;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S007);
+        assert_eq!(err[0].pos.file, "test.ts");
+        assert_eq!(err[0].pos.line, 1);
+        assert_eq!(err[0].pos.col, 10);
+    }
+
+    #[test]
+    fn any_is_s001() {
+        let err = check_one("const x: any = 1;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S001);
+    }
+
+    #[test]
+    fn literal_overflow_is_s008() {
+        let err = check_one("const x: i32 = 3000000000;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S008);
+    }
+
+    #[test]
+    fn fractional_literal_in_integer_context_is_s008() {
+        let err = check_one("const x: i32 = 1.5;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S008);
+    }
+
+    #[test]
+    fn mixed_arithmetic_without_as_is_s007() {
+        let err = check_one(
+            "export function main(): void {\n  const a: i32 = 1;\n  const b: u32 = 2;\n  const c: i32 = a + b;\n  print(`${c}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S007);
+        assert_eq!(err[0].pos.line, 4);
+    }
+
+    #[test]
+    fn context_free_integer_literal_defaults_to_i32() {
+        let module = check_one(
+            "export function main(): void {\n  const x = 3;\n  print(`${x}`);\n}\n",
+        )
+        .expect("clean");
+        let hir::Stmt::Let { ty, .. } = &module.functions[0].body[0] else {
+            panic!("expected let");
+        };
+        assert_eq!(*ty, Type::I32);
+    }
+
+    #[test]
+    fn context_free_fractional_literal_defaults_to_f64() {
+        let module = check_one(
+            "export function main(): void {\n  const x = 1.5;\n  print(`${x}`);\n}\n",
+        )
+        .expect("clean");
+        let hir::Stmt::Let { ty, .. } = &module.functions[0].body[0] else {
+            panic!("expected let");
+        };
+        assert_eq!(*ty, Type::F64);
+    }
+
+    #[test]
+    fn undefined_is_s012() {
+        let err = check_one("let x: i32 | undefined = undefined;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S012);
+    }
+
+    #[test]
+    fn general_union_is_s011() {
+        let err = check_one("let x: i32 | string = 1;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+    }
+
+    #[test]
+    fn throw_is_s010() {
+        let err =
+            check_one("export function main(): void {\n  throw \"x\";\n}\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S010);
+        assert_eq!(err[0].pos.line, 2);
+    }
+
+    #[test]
+    fn async_is_s013() {
+        let err = check_one("async function f(): Promise<void> {}\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S013);
+    }
+
+    #[test]
+    fn eval_is_s002() {
+        let err = check_one("export function main(): void {\n  eval(\"1\");\n}\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S002);
+    }
+
+    #[test]
+    fn nonwhitelisted_array_member_is_s100_naming_the_member() {
+        let err = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1];\n  xs.map;\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("map"));
+    }
+
+    #[test]
+    fn nonwhitelisted_string_member_is_s100_naming_the_member() {
+        let err = check_one(
+            "export function main(): void {\n  const s: string = \"a\";\n  print(s.toUpperCase());\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("toUpperCase"));
+    }
+
+    #[test]
+    fn capturing_lambda_may_not_capture_mutable_locals() {
+        let err = check_one(
+            "export function main(): void {\n  let n: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + n;\n  print(`${f(1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S009);
+    }
+
+    #[test]
+    fn member_access_on_nullable_without_narrowing_is_s011() {
+        let err = check_one(
+            "class C { x: i32; constructor() { this.x = 1; } }\nfunction f(c: C | null): i32 {\n  return c.x;\n}\nexport function main(): void {\n  print(`${f(null)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+        assert_eq!(err[0].pos.line, 3);
+    }
+
+    #[test]
+    fn two_file_program_with_import_checks_clean() {
+        let module = check_program(&[
+            SourceFile::new(
+                "main.ts",
+                "import { double } from \"./util\";\nexport function main(): void {\n  print(`${double(2)}`);\n}\n",
+            ),
+            SourceFile::new(
+                "util.ts",
+                "export function double(x: i32): i32 {\n  return x * 2;\n}\n",
+            ),
+        ])
+        .expect("clean two-file check");
+        assert_eq!(module.functions.len(), 2);
+    }
+
+    #[test]
+    fn value_class_is_nominal_and_marked_value() {
+        let module = check_one(
+            "@value\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  print(`${v.x}`);\n}\n",
+        )
+        .expect("clean");
+        assert_eq!(module.classes.len(), 1);
+        assert!(module.classes[0].is_value);
+        assert_eq!(module.classes[0].fields[0].ty, Type::F32);
+    }
+
+    #[test]
+    fn fixed_array_length_mismatch_is_rejected() {
+        let err = check_one(
+            "const xs: FixedArray<f32, 4> = [1.0, 2.0, 3.0];\nexport function main(): void {\n  print(`${xs[0]}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("FixedArray"));
+    }
+
+    #[test]
+    fn fixed_array_literal_constructs_with_matching_length() {
+        let module = check_one(
+            "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${xs[2]}`);\n}\n",
+        )
+        .expect("clean");
+        let hir::Stmt::Let { ty, .. } = &module.functions[0].body[0] else {
+            panic!("expected let");
+        };
+        assert_eq!(*ty, Type::FixedArray(Box::new(Type::I32), 3));
+    }
+
+    #[test]
+    fn const_rebinding_is_rejected_but_field_writes_are_not() {
+        // Q17: `const` blocks rebinding only.
+        let err = check_one(
+            "export function main(): void {\n  const x: i32 = 1;\n  x = 2;\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("rebind"));
+
+        check_one(
+            "@value\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  v.x = 2.0;\n  print(`${v.x}`);\n}\n",
+        )
+        .expect("field writes through const value bindings are legal");
+    }
+
+    #[test]
+    fn mixed_width_bitwise_requires_as() {
+        // Q18.
+        let err = check_one(
+            "export function main(): void {\n  const a: u64 = 1;\n  const b: u32 = 2;\n  const c: u64 = a | b;\n  print(`${c}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S007);
+
+        check_one(
+            "export function main(): void {\n  const a: u64 = 1;\n  const b: u32 = 2;\n  const c: u64 = a | (b as u64);\n  print(`${c}`);\n}\n",
+        )
+        .expect("same-width bitwise after `as` is legal");
+    }
+
+    #[test]
+    fn returning_a_local_holding_a_capturing_lambda_is_s009() {
+        let err = check_one(
+            "function make(): (x: i32) => i32 {\n  const k: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + k;\n  return f;\n}\nexport function main(): void {\n  print(`${make()(1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S009);
+        assert_eq!(err[0].pos.line, 4);
+    }
+
+    #[test]
+    fn enum_casts_to_integer_but_not_the_reverse() {
+        let module = check_one(
+            "enum E { A = 1 }\nexport function main(): void {\n  const e: E = E.A;\n  print(`${e as i32}`);\n}\n",
+        )
+        .expect("enum to integer cast is legal");
+        assert_eq!(module.enums.len(), 1);
+
+        let err = check_one(
+            "enum E { A = 1 }\nexport function main(): void {\n  const e: E = 1 as E;\n  print(`${e as i32}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+    }
+
+    #[test]
+    fn optional_parameters_are_s012() {
+        let err = check_one("function f(x?: i32): void {}\nexport function main(): void { f(); }\n")
+            .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S012);
+    }
+
+    #[test]
+    fn narrowing_is_invalidated_by_reassignment() {
+        let err = check_one(
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  let c: C | null = new C();\n  if (c !== null) {\n    print(`${c.x}`);\n  }\n  c = null;\n  print(`${c.x}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+        assert_eq!(err[0].pos.line, 8);
+    }
+
+    #[test]
+    fn unsafe_delete_takes_reference_instances_only() {
+        check_one(
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  unsafeDelete(c);\n}\n",
+        )
+        .expect("reference instances cross into `object`");
+
+        let err = check_one(
+            "@value\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  unsafeDelete(v);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+    }
+
+    #[test]
+    fn same_shaped_classes_do_not_substitute() {
+        let err = check_one(
+            "class A { x: i32 = 1; }\nclass B { x: i32 = 1; }\nfunction f(a: A): i32 { return a.x; }\nexport function main(): void {\n  const b: B = new B();\n  print(`${f(b)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S005);
+    }
+}

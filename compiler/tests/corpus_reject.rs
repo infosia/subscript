@@ -1,0 +1,79 @@
+//! Gate test (compiler.md §6): every reject-corpus entry is rejected
+//! with its contracted rule code, and the diagnostic points into the
+//! entry's file at the line of the offending construct.
+
+use std::fs;
+use std::path::PathBuf;
+
+use subscript_compiler::{check_program, RuleCode, SourceFile};
+
+fn corpus_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
+}
+
+/// Expected (entry, rule code, 1-based line of the offending construct).
+/// Lines are derived from reading the corpus files; r02 and r05 both
+/// map to S002 (no dynamic code evaluation).
+const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r01-any.ts", RuleCode::S001, 7),
+    ("r02-eval.ts", RuleCode::S002, 8),
+    ("r03-prototype-mutation.ts", RuleCode::S003, 11),
+    ("r04-undeclared-property.ts", RuleCode::S004, 13),
+    ("r05-new-function.ts", RuleCode::S002, 8),
+    ("r06-structural-substitution.ts", RuleCode::S005, 21),
+    ("r07-value-class-extends.ts", RuleCode::S006, 13),
+    ("r08-bare-number.ts", RuleCode::S007, 7),
+    ("r09-int-literal-overflow.ts", RuleCode::S008, 7),
+    ("r10-escaping-capture.ts", RuleCode::S009, 9),
+    ("r11-throw.ts", RuleCode::S010, 8),
+    ("r12-general-union.ts", RuleCode::S011, 8),
+    ("r13-undefined.ts", RuleCode::S012, 7),
+    ("r14-async.ts", RuleCode::S013, 7),
+];
+
+#[test]
+fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
+    let dir = corpus_dir().join("reject");
+    for (file, code, line) in EXPECTED {
+        let path = dir.join(file);
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        let result = check_program(&[SourceFile::new(*file, source)]);
+        let diags = match result {
+            Err(diags) => diags,
+            Ok(_) => panic!("{} was accepted; expected {}", file, code),
+        };
+        assert!(!diags.is_empty(), "{}: empty diagnostic list", file);
+        let first = &diags[0];
+        assert_eq!(
+            first.code, *code,
+            "{}: expected first diagnostic {}, got {} ({})",
+            file, code, first.code, first.message
+        );
+        assert_eq!(
+            first.pos.file, *file,
+            "{}: diagnostic points at wrong file {}",
+            file, first.pos.file
+        );
+        assert_eq!(
+            first.pos.line, *line,
+            "{}: expected line {}, got {}:{} ({})",
+            file, line, first.pos.line, first.pos.col, first.message
+        );
+    }
+}
+
+#[test]
+fn reject_table_covers_every_corpus_entry() {
+    let dir = corpus_dir().join("reject");
+    let mut entries: Vec<String> = fs::read_dir(&dir)
+        .expect("read corpus/reject")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".ts"))
+        .collect();
+    entries.sort();
+    let mut expected: Vec<String> = EXPECTED.iter().map(|(f, _, _)| f.to_string()).collect();
+    expected.sort();
+    assert_eq!(entries, expected, "reject corpus and test table disagree");
+}
