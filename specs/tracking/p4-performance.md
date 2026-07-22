@@ -100,6 +100,76 @@ question the measurement has not asked. §3's thresholds and §9's
 methodology are unchanged; the standing gate protects correctness while
 the optimization lands.
 
+## P4.1 — lowering optimization and re-measurement (2026-07-23)
+
+Contract: `specs/blocks/compiler.md` §10. Two optimizations in the
+shared lowering (`codegen/src/lower/func.rs`), no tier branch:
+
+1. **Proof-based bounds-check elimination.** An `i128` interval lattice
+   (`interval_of`, `induction_interval`) proves a `FixedArray` index in
+   `[0, n)` and removes the check only then. Proof conditions:
+   constant loop start, proven `<`/`<=` bound, positive constant step,
+   the counter is not reassigned in the body (`++`/`--` included), and
+   `hi + step` does not overflow the counter type. Anything unproven
+   keeps the check. Fires on a22's `multiply`/`checksum`; declines all
+   dynamic-array (`T[]`) indexing.
+2. **Value-class copy elision.** A destination hint builds construct-like
+   RHS forms (`new` value class, `sret` call result, `FixedArray`
+   literal) straight into their home, eliding the temporary. C2's
+   observable copy semantics are unchanged (`a04` still prints `1,9`);
+   growth-relocatable array elements are excluded to preserve trap
+   order.
+
+### Re-measurement (§9 methodology unchanged, orchestrator-reproduced)
+
+| Subject | P4 vs C | P4.1 vs C | §3 limit | Verdict |
+|---|---|---|---|---|
+| ship-AOT | 34.40× | **23.37×** | 1.5× | **MISSED** |
+| dev-JIT | 38.32× | **26.69×** | 4× | **MISSED** |
+
+All three subjects still print the frozen golden byte-exactly; the
+standing gate (§8.3) is unchanged and green (no golden byte moved), so
+the optimization is correctness-preserving.
+
+### Gap attribution (§10 final clause; AOT profile, ~39k samples)
+
+- ~73% of the remaining 23.37×: Cranelift `opt_level=speed` emits a
+  **scalar, unvectorized, unrolled** inner matmul from clean
+  branch-free CLIF; the C baseline is NEON-vectorized by clang. This is
+  **backend behaviour, not a lowering defect** — the CLIF is now
+  branch-free and the disassembly confirms single-lane `fmul`/`fadd`.
+- ~10%: residual 64-byte value-struct copy traffic (part ABI/lowering,
+  part C2-fundamental).
+- ~6%: out-of-line dynamic-array indexing (`sub_rt_array_ptr`,
+  deliberately still checked; addressable in a later phase).
+
+Of the original ~35× gap, this project's own code generation
+contributed the removed ≈44 ms (≈32% of the original wall-time); the
+surviving gap is dominated by the backend. **The measurement now
+answers §3's real question**: with removable codegen overhead gone,
+Cranelift `opt_level=speed` does not bring the a22 matmul near 1.5× of
+`-O2` NEON-vectorized C, and the residual is overwhelmingly the
+backend's scalar output.
+
+### Phase Review (2026-07-23)
+
+Soundness-critical (removes bounds checks). Fresh no-context review ran
+37 adversarial programs through the JIT: 0 CRITICAL, 0 MAJOR, 2 MINOR.
+The interval analysis is **sound** — a check is removed only when the
+indexed array's own length dominates the whole proven interval, and
+every proof condition that could break monotonicity (non-constant/zero/
+negative step, in-body reassignment, closure capture, type overflow,
+signedness-changing casts) is correctly declined, with a real trap
+still firing in every unprovable out-of-range case including a loop
+bounded by one array's length but indexing a shorter one. Copy elision
+preserves C2 (verified: assign-then-mutate-source, `arr[i]=arr[j]`,
+self-assign, NRVO). MINOR fixed: the induction-counter assignment
+scanner's `#[non_exhaustive]` catch-alls now default to "possibly
+assigns" (declines the proof) rather than "no assignment", so a future
+HIR variant cannot silently enable an unsound proof. MINOR (perf figure
+reproducibility) closed by the orchestrator's independent re-run
+(23.37× / 26.69×).
+
 ## Artifacts
 
 `bench/a22-baseline.c` (baseline, header comment names the corpus
