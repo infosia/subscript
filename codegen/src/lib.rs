@@ -373,4 +373,94 @@ mod tests {
         );
         assert_eq!(out, "NaN,Infinity,-Infinity,-0\n");
     }
+
+    // ----- P4.1 bounds-check elimination: safety net (compiler.md §10) -----
+    //
+    // Proven-in-range FixedArray indices lose their check; every index
+    // the analysis cannot prove must still trap at its TS position.
+
+    #[test]
+    fn proven_induction_indices_compute_the_right_sum() {
+        // Nested counted loops with `r*4+c` in [0,15]: every access is
+        // proven and elided, and the result must still be correct
+        // (0+1+...+15 = 120).
+        let out = run_ok(
+            "export function main(): void {\n  const m: FixedArray<i32, 16> = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];\n  let sum: i32 = 0;\n  for (let r: i32 = 0; r < 4; r += 1) {\n    for (let c: i32 = 0; c < 4; c += 1) {\n      sum += m[r * 4 + c];\n    }\n  }\n  print(`${sum}`);\n}\n",
+        );
+        assert_eq!(out, "120\n");
+    }
+
+    #[test]
+    fn proven_last_element_is_elided_and_correct() {
+        // Boundary: the counter reaches exactly the last valid index
+        // (n-1); the check is elided and the last element is read.
+        let out = run_ok(
+            "export function main(): void {\n  const xs: FixedArray<i32, 4> = [10, 20, 30, 40];\n  let sum: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    sum += xs[i];\n  }\n  print(`${sum}`);\n}\n",
+        );
+        assert_eq!(out, "100\n");
+    }
+
+    #[test]
+    fn dynamic_index_from_argument_still_traps() {
+        // The index is a parameter — unprovable — so the check stays and
+        // fires at the indexing expression's position.
+        let t = run_trap(
+            "function at(xs: FixedArray<i32, 3>, i: i32): i32 {\n  return xs[i];\n}\nexport function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${at(xs, 5)}`);\n}\n",
+        );
+        assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
+        assert_eq!(t.pos.line, 2);
+    }
+
+    #[test]
+    fn loop_with_runtime_bound_still_traps() {
+        // The loop bound is a parameter, so the counter's range is not
+        // proven and the check stays; it fires when i reaches 3.
+        let t = run_trap(
+            "function fill(xs: FixedArray<i32, 3>, n: i32): i32 {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < n; i += 1) {\n    total += xs[i];\n  }\n  return total;\n}\nexport function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${fill(xs, 5)}`);\n}\n",
+        );
+        assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
+        assert_eq!(t.pos.line, 4);
+    }
+
+    #[test]
+    fn loop_counter_from_negative_start_still_traps() {
+        // A counter proven to be [-1, 2] is not in [0, n): the check
+        // stays and fires on the first (i == -1) iteration.
+        let t = run_trap(
+            "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  let sink: i32 = 0;\n  for (let i: i32 = -1; i < 3; i += 1) {\n    sink += xs[i];\n  }\n  print(`${sink}`);\n}\n",
+        );
+        assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
+        assert_eq!(t.pos.line, 5);
+    }
+
+    #[test]
+    fn reassigned_counter_is_not_proven_and_still_traps() {
+        // The body mutates the counter outside the step, so it is no
+        // longer monotonic: the analysis must decline the proof and keep
+        // the check, which fires when the mutated index leaves range.
+        // Without the reassignment guard the counter would be wrongly
+        // proven [0,2] and the out-of-range read would go unchecked.
+        let t = run_trap(
+            "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  let out: i32 = 0;\n  for (let i: i32 = 0; i < 3; i += 1) {\n    i += 5;\n    out += xs[i];\n  }\n  print(`${out}`);\n}\n",
+        );
+        assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
+        assert_eq!(t.pos.line, 6);
+    }
+
+    #[test]
+    fn constant_out_of_range_index_stays_a_checker_error() {
+        // A constant literal index equal to the length is a checker
+        // error (P1, S100), and remains so — the bounds-check elimination
+        // must never turn a rejected program into an unchecked access.
+        // Division of responsibility: constant OOB is P1's; every
+        // non-constant OOB the analysis cannot prove is a runtime trap
+        // (the tests above).
+        let err = run(
+            "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${xs[3]}`);\n}\n",
+        );
+        assert!(
+            matches!(err, Err(RunError::Rejected(_))),
+            "expected a checker rejection, got {err:?}"
+        );
+    }
 }

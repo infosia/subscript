@@ -65,6 +65,96 @@ enum Storage {
 struct Binding {
     ty: Type,
     storage: Storage,
+    /// Proven inclusive integer range of the binding's value, when one
+    /// is available (loop induction variables with constant bounds).
+    /// `None` means unproven — the value may be anything of its type.
+    /// Used only to elide provably-in-range bounds checks (§10.1); an
+    /// absent or conservative range never removes a check that could
+    /// fire.
+    range: Option<Interval>,
+}
+
+/// An inclusive integer interval `[lo, hi]`, computed in `i64`.
+///
+/// This is the lattice of the proof-based bounds-check elimination
+/// (`specs/blocks/compiler.md` §10.1): an interval is always a sound
+/// over-approximation of the values an expression can take at runtime,
+/// so a check is removed only when the whole interval is in range.
+/// Arithmetic is done in `i128` and rejected (`None`) if the result
+/// does not fit `i64`, so the interval itself never wraps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interval {
+    lo: i64,
+    hi: i64,
+}
+
+impl Interval {
+    fn point(v: i64) -> Interval {
+        Interval { lo: v, hi: v }
+    }
+
+    /// Narrows an `i128` pair back into an `i64` interval, failing when
+    /// either end does not fit (so the interval never silently wraps).
+    fn fit(lo: i128, hi: i128) -> Option<Interval> {
+        let lo = i64::try_from(lo).ok()?;
+        let hi = i64::try_from(hi).ok()?;
+        if lo > hi {
+            return None;
+        }
+        Some(Interval { lo, hi })
+    }
+
+    fn add(self, o: Interval) -> Option<Interval> {
+        Interval::fit(
+            self.lo as i128 + o.lo as i128,
+            self.hi as i128 + o.hi as i128,
+        )
+    }
+
+    fn sub(self, o: Interval) -> Option<Interval> {
+        Interval::fit(
+            self.lo as i128 - o.hi as i128,
+            self.hi as i128 - o.lo as i128,
+        )
+    }
+
+    fn mul(self, o: Interval) -> Option<Interval> {
+        let corners = [
+            self.lo as i128 * o.lo as i128,
+            self.lo as i128 * o.hi as i128,
+            self.hi as i128 * o.lo as i128,
+            self.hi as i128 * o.hi as i128,
+        ];
+        let lo = corners.iter().copied().min()?;
+        let hi = corners.iter().copied().max()?;
+        Interval::fit(lo, hi)
+    }
+}
+
+/// Inclusive representable range of an integer type, `None` for
+/// non-integers. Used to prove an induction variable's step cannot
+/// overflow its type (which would break monotonicity and void the
+/// interval).
+fn int_type_range(ty: &Type) -> Option<Interval> {
+    Some(match ty {
+        Type::I32 => Interval {
+            lo: i64::from(i32::MIN),
+            hi: i64::from(i32::MAX),
+        },
+        Type::U32 => Interval {
+            lo: 0,
+            hi: i64::from(u32::MAX),
+        },
+        Type::I64 => Interval {
+            lo: i64::MIN,
+            hi: i64::MAX,
+        },
+        // u64's upper bound does not fit i64; the interval lattice is
+        // i64, so u64 induction ranges are simply not proven (rare in
+        // index position and never in the corpus).
+        Type::U64 => return None,
+        _ => return None,
+    })
 }
 
 /// An assignable location.
@@ -177,6 +267,99 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<&'h Type>) {
             hir::Stmt::Block(b) => walk_lets(b, out),
             _ => {}
         }
+    }
+}
+
+/// True when any statement assigns (plainly or compound, `++`/`--`
+/// included — all lower to `Assign`) to a local named `name`. Used to
+/// disqualify a loop counter from range proof when the body mutates it
+/// outside the step (§10.1).
+fn stmts_assign_to(stmts: &[hir::Stmt], name: &str) -> bool {
+    stmts.iter().any(|s| stmt_assigns_to(s, name))
+}
+
+fn stmt_assigns_to(s: &hir::Stmt, name: &str) -> bool {
+    match s {
+        hir::Stmt::Let { init, .. } => expr_assigns_to(init, name),
+        hir::Stmt::Expr(e) => expr_assigns_to(e, name),
+        hir::Stmt::Return { value, .. } => {
+            value.as_ref().is_some_and(|e| expr_assigns_to(e, name))
+        }
+        hir::Stmt::If { cond, then, els, .. } => {
+            expr_assigns_to(cond, name)
+                || stmts_assign_to(then, name)
+                || els.as_ref().is_some_and(|e| stmts_assign_to(e, name))
+        }
+        hir::Stmt::While { cond, body, .. } => {
+            expr_assigns_to(cond, name) || stmts_assign_to(body, name)
+        }
+        hir::Stmt::For {
+            init, cond, step, body, ..
+        } => {
+            init.as_deref().is_some_and(|i| stmt_assigns_to(i, name))
+                || cond.as_ref().is_some_and(|e| expr_assigns_to(e, name))
+                || step.as_ref().is_some_and(|e| expr_assigns_to(e, name))
+                || stmts_assign_to(body, name)
+        }
+        hir::Stmt::Switch { disc, cases, .. } => {
+            expr_assigns_to(disc, name)
+                || cases.iter().any(|c| {
+                    c.test.as_ref().is_some_and(|e| expr_assigns_to(e, name))
+                        || stmts_assign_to(&c.body, name)
+                })
+        }
+        hir::Stmt::Block(b) => stmts_assign_to(b, name),
+        hir::Stmt::Break(_) | hir::Stmt::Continue(_) => false,
+        _ => false,
+    }
+}
+
+fn expr_assigns_to(e: &hir::Expr, name: &str) -> bool {
+    use hir::ExprKind as K;
+    match &e.kind {
+        K::Assign { op: _, target, value } => {
+            let hits_target = matches!(&target.kind, K::Local(n) if n == name);
+            hits_target || expr_assigns_to(target, name) || expr_assigns_to(value, name)
+        }
+        K::Unary { operand, .. } => expr_assigns_to(operand, name),
+        K::Binary { left, right, .. } => {
+            expr_assigns_to(left, name) || expr_assigns_to(right, name)
+        }
+        K::Cast(inner) => expr_assigns_to(inner, name),
+        K::Call { callee, args } => {
+            let in_callee = match callee {
+                hir::Callee::Value(v) => expr_assigns_to(v, name),
+                hir::Callee::Method { recv, .. } => expr_assigns_to(recv, name),
+                _ => false,
+            };
+            in_callee || args.iter().any(|a| expr_assigns_to(a, name))
+        }
+        K::New { args, .. } => args.iter().any(|a| expr_assigns_to(a, name)),
+        K::Field { obj, .. } => expr_assigns_to(obj, name),
+        K::Length(obj) => expr_assigns_to(obj, name),
+        K::Index { obj, index } => {
+            expr_assigns_to(obj, name) || expr_assigns_to(index, name)
+        }
+        K::ArrayLit(elems) => elems.iter().any(|x| expr_assigns_to(x, name)),
+        K::Template(parts) => parts.iter().any(|p| match p {
+            hir::TplPart::Expr(x) => expr_assigns_to(x, name),
+            _ => false,
+        }),
+        K::Cond { cond, then, els } => {
+            expr_assigns_to(cond, name)
+                || expr_assigns_to(then, name)
+                || expr_assigns_to(els, name)
+        }
+        K::Yield(arg) => arg.as_deref().is_some_and(|x| expr_assigns_to(x, name)),
+        // A lambda body is a separate function; a `const` capture of the
+        // counter cannot be reassigned there (C5), and the counter is
+        // not `const` while it is a loop variable — but to stay sound
+        // without scoping analysis, treat a lambda that mentions the
+        // name conservatively by not special-casing it here: lambdas do
+        // not appear in the corpus's counted loops, and a capturing
+        // lambda cannot assign to an outer mutable local anyway (C5
+        // forbids capturing non-`const`). So no descent is needed.
+        _ => false,
     }
 }
 
@@ -311,6 +494,169 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
         }
         Err(internal(format!("unbound local `{name}`")))
+    }
+
+    /// Records a proven integer range on an already-bound local
+    /// (innermost binding of that name). No-op when the name is not
+    /// found, which cannot remove a check.
+    fn set_range(&mut self, name: &str, range: Interval) {
+        for scope in self.scopes.iter_mut().rev() {
+            for (n, b) in scope.iter_mut().rev() {
+                if n == name {
+                    b.range = Some(range);
+                    return;
+                }
+            }
+        }
+    }
+
+    // ----- proof-based bounds-check elimination (§10.1) -----
+
+    /// Sound over-approximation of the integer value an expression can
+    /// take at this program point, or `None` when no bound is proven.
+    /// The result is only ever used to *keep* a check (when unproven or
+    /// out of range) or *remove* one (when the whole interval is in
+    /// range), so `None` is always the safe answer.
+    fn interval_of(&self, e: &hir::Expr) -> Option<Interval> {
+        use hir::ExprKind as K;
+        if !e.ty.is_integer() {
+            return None;
+        }
+        match &e.kind {
+            K::Int(v) => Some(Interval::point(*v)),
+            K::EnumMember { value, .. } => Some(Interval::point(*value)),
+            K::Local(name) => self.lookup(name).ok().and_then(|b| b.range),
+            K::Length(obj) => match &obj.ty {
+                // A `FixedArray`'s length is its compile-time constant N.
+                Type::FixedArray(_, n) => Some(Interval::point(i64::from(*n))),
+                _ => None,
+            },
+            K::Binary { op, left, right } => {
+                let l = self.interval_of(left)?;
+                let r = self.interval_of(right)?;
+                match op {
+                    hir::BinOp::Add => l.add(r),
+                    hir::BinOp::Sub => l.sub(r),
+                    hir::BinOp::Mul => l.mul(r),
+                    _ => None,
+                }
+            }
+            K::Cast(inner) => {
+                // Value-preserving only when the source is an integer
+                // and every value of the source interval also fits the
+                // integer target (a narrowing/reinterpreting cast could
+                // change the value, so it yields no proof).
+                if !inner.ty.is_integer() {
+                    return None;
+                }
+                let iv = self.interval_of(inner)?;
+                let target = int_type_range(&e.ty)?;
+                if iv.lo >= target.lo && iv.hi <= target.hi {
+                    Some(iv)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// True when `index` is proven within `[0, n)` for a `FixedArray`
+    /// of length `n`, so its bounds check is provably dead and elided.
+    fn index_in_bounds(&self, index: &hir::Expr, n: u32) -> bool {
+        match self.interval_of(index) {
+            Some(iv) => iv.lo >= 0 && iv.hi < i64::from(n),
+            None => false,
+        }
+    }
+
+    /// Recognizes a count-up `for` loop whose counter has a proven,
+    /// non-wrapping range, returning `(counter name, range)`.
+    ///
+    /// Exact proof conditions (all required; any miss yields `None` and
+    /// the loop's indices stay checked):
+    /// - init is `let <name>: <int> = START` with `START` a proven
+    ///   constant;
+    /// - cond is `<name> < BOUND` or `<name> <= BOUND` with `BOUND` a
+    ///   proven interval (a constant, another proven counter, or a
+    ///   `FixedArray` length);
+    /// - step is `<name> += STEP` (which `<name>++` also lowers to) with
+    ///   `STEP` a proven positive constant;
+    /// - the body never reassigns `<name>` (so it stays monotonic);
+    /// - the counter cannot overflow its type across the range, which
+    ///   would break monotonicity.
+    ///
+    /// The range is `[START, BOUND-1]` for `<` and `[START, BOUND]` for
+    /// `<=`; the counter only enters the body while the condition holds
+    /// and only increases, so the interval covers every value the body
+    /// can observe.
+    fn induction_interval(
+        &self,
+        init: Option<&hir::Stmt>,
+        cond: Option<&hir::Expr>,
+        step: Option<&hir::Expr>,
+        body: &[hir::Stmt],
+    ) -> Option<(String, Interval)> {
+        use hir::ExprKind as K;
+        let (name, ty, start_iv) = match init? {
+            hir::Stmt::Let { name, ty, init, .. } if ty.is_integer() => {
+                (name.clone(), ty.clone(), self.interval_of(init)?)
+            }
+            _ => return None,
+        };
+        // A constant start.
+        if start_iv.lo != start_iv.hi {
+            return None;
+        }
+        let start = start_iv.lo;
+        // cond: name </<= BOUND.
+        let (op, bound_iv) = match &cond?.kind {
+            K::Binary { op, left, right } => match &left.kind {
+                K::Local(n) if *n == name => (*op, self.interval_of(right)?),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let hi = match op {
+            hir::BinOp::Lt => bound_iv.hi.checked_sub(1)?,
+            hir::BinOp::Le => bound_iv.hi,
+            _ => return None,
+        };
+        // step: name += STEP, STEP a positive constant.
+        let step_iv = match &step?.kind {
+            K::Assign {
+                op: Some(hir::BinOp::Add),
+                target,
+                value,
+            } => match &target.kind {
+                K::Local(n) if *n == name => self.interval_of(value)?,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        if step_iv.lo != step_iv.hi || step_iv.lo <= 0 {
+            return None;
+        }
+        let stepv = step_iv.lo;
+        // Empty or reversed range: the body is dead; keep intervals
+        // well-formed by declining the proof.
+        if start > hi {
+            return None;
+        }
+        // The counter reaches at most `hi` inside the body, then the
+        // step computes `hi + STEP`; that must not overflow the type,
+        // or the counter could wrap to a value below `start` on a later
+        // iteration and violate the lower bound.
+        let tr = int_type_range(&ty)?;
+        if start < tr.lo || hi.checked_add(stepv)? > tr.hi {
+            return None;
+        }
+        // The counter must not be reassigned in the body (the step is
+        // the only permitted mutation), or it is no longer monotonic.
+        if stmts_assign_to(body, &name) {
+            return None;
+        }
+        Some((name, Interval { lo: start, hi }))
     }
 
     fn iconst(&mut self, t: types::Type, v: i64) -> Value {
@@ -658,14 +1004,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
-    /// Creates the storage for a new local and writes its initial
-    /// value. Managed scalars get a shadow slot; aggregates whose
-    /// interior holds managed handles (e.g. `FixedArray` of
-    /// references, `IterResult<string>`) live *inside* the shadow
-    /// frame so the collector's conservative word scan sees every
-    /// handle stored in them (M1).
-    fn declare_local(&mut self, name: &str, ty: &Type, init: RV) -> Result<(), String> {
-        let storage = if self.genc.is_some() {
+    /// Allocates the storage for a new local *without* writing it.
+    /// Managed scalars get a shadow slot; aggregates whose interior
+    /// holds managed handles (e.g. `FixedArray` of references,
+    /// `IterResult<string>`) live *inside* the shadow frame so the
+    /// collector's conservative word scan sees every handle stored in
+    /// them (M1). Splitting allocation from the write lets an aggregate
+    /// initializer be built directly into the storage (§10.2), eliding
+    /// the temporary a construct-then-copy would use.
+    fn alloc_storage(&mut self, ty: &Type) -> Result<Storage, String> {
+        Ok(if self.genc.is_some() {
             let g = self
                 .genc
                 .as_mut()
@@ -701,13 +1049,32 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Repr::Scalar(t) => Storage::Var(self.b.declare_var(t)),
                 Repr::None => Storage::Var(self.b.declare_var(types::I8)),
             }
-        };
+        })
+    }
+
+    /// Declares a local from its initializer *expression*. When the
+    /// local is an aggregate stored in memory, the initializer is built
+    /// straight into that storage (§10.2 copy elision); otherwise the
+    /// initializer is evaluated and written. The name is bound only
+    /// after the initializer runs, so it cannot reference itself.
+    fn declare_local(&mut self, name: &str, ty: &Type, init: &hir::Expr) -> Result<(), String> {
+        let storage = self.alloc_storage(ty)?;
         let binding = Binding {
             ty: ty.clone(),
             storage,
+            range: None,
         };
         let place = self.place_of_binding(&binding)?;
-        self.write_place(place, ty, init)?;
+        match place {
+            Place::Mem(addr, off) if matches!(self.ml.layouts.repr(ty)?, Repr::Agg { .. }) => {
+                let dest = self.addr_off(addr, i64::from(off));
+                self.eval_agg_into(init, dest, ty)?;
+            }
+            _ => {
+                let rv = self.eval(init)?;
+                self.write_place(place, ty, rv)?;
+            }
+        }
         self.bind(name, binding);
         Ok(())
     }
@@ -783,8 +1150,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let v = self.eval(inner)?;
                 self.eval_cast(v, &inner.ty, &e.ty, &e.pos)
             }
-            K::Call { callee, args } => self.eval_call(callee, args, &e.ty, &e.pos),
-            K::New { class, args } => self.eval_new(class.0, args, &e.pos),
+            K::Call { callee, args } => self.eval_call(callee, args, &e.ty, &e.pos, None),
+            K::New { class, args } => self.eval_new(class.0, args, &e.pos, None),
             K::Field { obj, name } => {
                 let (addr, off, fty) = self.field_addr(obj, name)?;
                 self.load_val(&fty, addr, off)
@@ -1224,12 +1591,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let base = self.expect_a(rv)?;
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
-                // Unsigned compare rejects negatives and >= n at once.
-                let ok = self
-                    .b
-                    .ins()
-                    .icmp_imm(IntCC::UnsignedLessThan, idx, i64::from(*n));
-                self.guard(ok, TrapKind::IndexOutOfBounds, pos)?;
+                // Proof-based elision (§10.1): emit the check only when
+                // the index is not proven in `[0, n)`. A proven index
+                // has no reachable trap, so removing it changes no
+                // observable behaviour; an unproven one keeps the
+                // unsigned compare, which rejects negatives and `>= n`
+                // at once. The branch, not just the compare, is what
+                // forecloses vectorization of the inner loop.
+                if !self.index_in_bounds(index, *n) {
+                    let ok = self
+                        .b
+                        .ins()
+                        .icmp_imm(IntCC::UnsignedLessThan, idx, i64::from(*n));
+                    self.guard(ok, TrapKind::IndexOutOfBounds, pos)?;
+                }
                 let stride = self.ml.layouts.stride(elem)?;
                 let idx64 = self.b.ins().uextend(types::I64, idx);
                 let scaled = self.b.ins().imul_imm(idx64, i64::from(stride));
@@ -1301,6 +1676,21 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let (place, ty) = self.place(target)?;
         match op {
             None => {
+                // §10.2: when the target is an aggregate at a stable
+                // address (a local, global, field, or in-place
+                // `FixedArray` element — never a growth-relocatable
+                // dynamic-array element), build the RHS straight into
+                // it, eliding the construct-then-copy temporary. C2's
+                // observable copy semantics are unchanged: a plain
+                // `b = a` still copies (the fallback path), and only a
+                // freshly produced aggregate is written in place.
+                if matches!(self.ml.layouts.repr(&ty)?, Repr::Agg { .. }) {
+                    if let Place::Mem(addr, off) = place {
+                        let dest = self.addr_off(addr, i64::from(off));
+                        self.eval_agg_into(value, dest, &ty)?;
+                        return Ok(RV::A(dest));
+                    }
+                }
                 let rv = self.eval(value)?;
                 // Copy semantics for aggregates: the write below copies
                 // bytes into the target's own storage (C2).
@@ -1477,12 +1867,27 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         })
     }
 
+    /// Allocates the by-value return slot (`sret`) for a call: the
+    /// caller-supplied `dest` when the aggregate result is wanted in a
+    /// known place (§10.2), otherwise a fresh temporary. `None` for a
+    /// non-aggregate return.
+    fn sret_slot(&mut self, ret: &Type, dest: Option<Value>) -> Result<Option<Value>, String> {
+        Ok(match self.ml.layouts.repr(ret)? {
+            Repr::Agg { size, align } => Some(match dest {
+                Some(d) => d,
+                None => self.temp_slot(size, align),
+            }),
+            _ => None,
+        })
+    }
+
     fn eval_call(
         &mut self,
         callee: &hir::Callee,
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
+        dest: Option<Value>,
     ) -> Result<RV, String> {
         match callee {
             hir::Callee::Func(name) => {
@@ -1497,14 +1902,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     ));
                 }
                 let mut argv = vec![self.ctx_v];
-                let sret = match self.ml.layouts.repr(&f.ret)? {
-                    Repr::Agg { size, align } => {
-                        let s = self.temp_slot(size, align);
-                        argv.push(s);
-                        Some(s)
-                    }
-                    _ => None,
-                };
+                let sret = self.sret_slot(&f.ret, dest)?;
+                if let Some(s) = sret {
+                    argv.push(s);
+                }
                 self.push_args(&mut argv, &f.params, args)?;
                 let ret = f.ret.clone();
                 let res = self.call_script(&FnKey::Free(name.clone()), &argv)?;
@@ -1519,14 +1920,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let rv = self.eval(v)?;
                 let (code, env) = self.expect_p(rv)?;
                 let mut argv = vec![self.ctx_v, env];
-                let sret = match self.ml.layouts.repr(&ft.ret)? {
-                    Repr::Agg { size, align } => {
-                        let s = self.temp_slot(size, align);
-                        argv.push(s);
-                        Some(s)
-                    }
-                    _ => None,
-                };
+                let sret = self.sret_slot(&ft.ret, dest)?;
+                if let Some(s) = sret {
+                    argv.push(s);
+                }
                 // Function-typed values have no defaults: arity is the
                 // full parameter list.
                 if args.len() != ft.params.len() {
@@ -1544,7 +1941,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.shape_results(&ft.ret, &res, sret)
             }
             hir::Callee::Method { recv, name } => {
-                self.eval_method(recv, name, args, ret_ty, pos)
+                self.eval_method(recv, name, args, ret_ty, pos, dest)
             }
             other => Err(internal(format!("callee {other:?}"))),
         }
@@ -1588,6 +1985,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         _ret_ty: &Type,
         pos: &Pos,
+        dest: Option<Value>,
     ) -> Result<RV, String> {
         match recv.ty.clone() {
             Type::Array(elem) => {
@@ -1683,14 +2081,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 };
                 let m = self.ml.hir_method(cid.0, name)?;
                 let mut argv = vec![self.ctx_v];
-                let sret = match self.ml.layouts.repr(&m.ret)? {
-                    Repr::Agg { size, align } => {
-                        let s = self.temp_slot(size, align);
-                        argv.push(s);
-                        Some(s)
-                    }
-                    _ => None,
-                };
+                let sret = self.sret_slot(&m.ret, dest)?;
+                if let Some(s) = sret {
+                    argv.push(s);
+                }
                 argv.push(this);
                 self.push_args(&mut argv, &m.params, args)?;
                 let ret = m.ret.clone();
@@ -1701,7 +2095,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
-    fn eval_new(&mut self, cid: usize, args: &[hir::Expr], pos: &Pos) -> Result<RV, String> {
+    /// Constructs `new C(...)`. For a value class, `dest` (when given)
+    /// is the storage the instance is built into directly (§10.2),
+    /// eliding the temporary the caller would otherwise copy from;
+    /// `dest` is ignored for a reference class, whose value is a handle.
+    fn eval_new(
+        &mut self,
+        cid: usize,
+        args: &[hir::Expr],
+        pos: &Pos,
+        dest: Option<Value>,
+    ) -> Result<RV, String> {
         let hirm = self.ml.hir;
         let class = hirm
             .classes
@@ -1709,7 +2113,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal("class id out of range"))?;
         let layout = self.ml.layouts.class(cid)?.clone();
         let this = if layout.is_value {
-            let slot = self.temp_slot(layout.size, layout.align);
+            let slot = match dest {
+                Some(d) => d,
+                None => self.temp_slot(layout.size, layout.align),
+            };
             self.zero_bytes(slot, layout.size, layout.align);
             slot
         } else {
@@ -1775,17 +2182,86 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 Ok(RV::S(h))
             }
-            Type::FixedArray(elem, _) => {
+            Type::FixedArray(..) => {
                 let (size, align) = self.ml.layouts.size_align(ty)?;
-                let stride = self.ml.layouts.stride(elem)?;
                 let slot = self.temp_slot(size, align);
-                for (i, e) in elems.iter().enumerate() {
-                    let rv = self.eval(e)?;
-                    self.store_val(elem, slot, (i as u32 * stride) as i32, rv)?;
-                }
+                self.array_lit_into(ty, elems, slot)?;
                 Ok(RV::A(slot))
             }
             other => Err(internal(format!("array literal of {other:?}"))),
+        }
+    }
+
+    /// Stores a `FixedArray` literal's elements straight into `dest`
+    /// (§10.2): the destination is a stable in-place address, so the
+    /// literal never needs an intermediate the caller would copy from.
+    fn array_lit_into(
+        &mut self,
+        ty: &Type,
+        elems: &[hir::Expr],
+        dest: Value,
+    ) -> Result<(), String> {
+        let elem = match ty {
+            Type::FixedArray(elem, _) => elem,
+            other => return Err(internal(format!("fixed-array literal into {other:?}"))),
+        };
+        let stride = self.ml.layouts.stride(elem)?;
+        for (i, e) in elems.iter().enumerate() {
+            let rv = self.eval(e)?;
+            self.store_val(elem, dest, (i as u32 * stride) as i32, rv)?;
+        }
+        Ok(())
+    }
+
+    /// Evaluates an aggregate expression, writing its bytes directly to
+    /// `dest` (§10.2 copy elision). Construct-like forms — `new` of a
+    /// value class, a call whose aggregate result becomes `dest`'s
+    /// `sret`, a `FixedArray` literal — build in place; any other
+    /// aggregate is evaluated and copied, as before.
+    ///
+    /// The caller guarantees `dest` is a stable address (a local's
+    /// storage, a field, an in-place `FixedArray` element, or an `sret`
+    /// slot), never a dynamic-array element whose bounds-checked address
+    /// must be resolved *after* the value (growth-safe, N3). C2's
+    /// observable copy semantics are unchanged: elision only removes a
+    /// temporary between a freshly produced aggregate and its final
+    /// home, which no alias can observe.
+    fn eval_agg_into(&mut self, e: &hir::Expr, dest: Value, ty: &Type) -> Result<(), String> {
+        use hir::ExprKind as K;
+        match &e.kind {
+            K::New { class, args } => {
+                self.eval_new(class.0, args, &e.pos, Some(dest))?;
+                Ok(())
+            }
+            K::Call { callee, args } => {
+                let rv = self.eval_call(callee, args, &e.ty, &e.pos, Some(dest))?;
+                match rv {
+                    RV::A(addr) => {
+                        // Calls that take an `sret` wrote straight into
+                        // `dest` (address identical). Built-in methods
+                        // that do not — generator `.next()`, array
+                        // `.pop()` — return their own slot, so copy from
+                        // it, preserving the value.
+                        if addr != dest {
+                            let (size, align) = self.ml.layouts.size_align(ty)?;
+                            self.copy_bytes(dest, addr, size, align);
+                        }
+                        Ok(())
+                    }
+                    RV::None => Ok(()),
+                    other => Err(internal(format!("aggregate call yielded {other:?}"))),
+                }
+            }
+            K::ArrayLit(elems) if matches!(ty, Type::FixedArray(..)) => {
+                self.array_lit_into(ty, elems, dest)
+            }
+            _ => {
+                let rv = self.eval(e)?;
+                let src = self.expect_a(rv)?;
+                let (size, align) = self.ml.layouts.size_align(ty)?;
+                self.copy_bytes(dest, src, size, align);
+                Ok(())
+            }
         }
     }
 
@@ -1963,14 +2439,31 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn lower_stmt(&mut self, s: &hir::Stmt) -> Result<(), String> {
         match s {
             hir::Stmt::Let { name, ty, init, .. } => {
-                let rv = self.eval(init)?;
-                self.declare_local(name, ty, rv)
+                self.declare_local(name, ty, init)
             }
             hir::Stmt::Expr(e) => {
                 self.eval(e)?;
                 Ok(())
             }
             hir::Stmt::Return { value, .. } => {
+                // §10.2 NRVO: an aggregate return builds directly into
+                // the caller-provided `sret`, so `return new M(...)` or
+                // `return f(...)` produces the result in the caller's
+                // slot with no intermediate copy. (Resume functions
+                // return the `done` flag, never an aggregate.)
+                let ret_ty = self.ret_ty.clone();
+                if !self.is_resume {
+                    if let (Some(v), Repr::Agg { .. }) =
+                        (value, self.ml.layouts.repr(&ret_ty)?)
+                    {
+                        let sret = self.sret_v.ok_or_else(|| internal("missing sret"))?;
+                        self.eval_agg_into(v, sret, &ret_ty)?;
+                        self.emit_shadow_pop()?;
+                        self.b.ins().return_(&[]);
+                        self.term = true;
+                        return Ok(());
+                    }
+                }
                 let rv = match value {
                     Some(v) => Some((self.eval(v)?, v.ty.clone())),
                     None => None,
@@ -2044,6 +2537,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.scope_push();
                 if let Some(i) = init {
                     self.lower_stmt(i)?;
+                }
+                // §10.1: if this is a counted loop over a constant range
+                // whose counter the body never reassigns, publish the
+                // counter's proven interval so indexing inside the body
+                // can drop the bounds check.
+                if let Some((name, range)) = self.induction_interval(
+                    init.as_deref(),
+                    cond.as_ref(),
+                    step.as_ref(),
+                    body,
+                ) {
+                    self.set_range(&name, range);
                 }
                 let hdr = self.b.create_block();
                 let body_blk = self.b.create_block();
@@ -2410,6 +2915,7 @@ fn bind_params<M: Module>(
             Binding {
                 ty: p.ty.clone(),
                 storage,
+                range: None,
             },
         );
     }
@@ -2530,6 +3036,7 @@ fn define_lambda<M: Module>(
                 Binding {
                     ty: ty.clone(),
                     storage: Storage::Addr(addr),
+                    range: None,
                 },
             );
         }
@@ -2798,6 +3305,7 @@ pub(crate) fn define_generator<M: Module>(
                     Binding {
                         ty: p.ty.clone(),
                         storage: Storage::Frame(*off),
+                        range: None,
                     },
                 );
             }
