@@ -1,9 +1,9 @@
 # Compiler and runtime — contract
 
-Status: Rev 3, 2026-07-22 (Rev 0: same day; Rev 1 moves the mobile link
+Status: Rev 4, 2026-07-22 (Rev 0: same day; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
-Rev 3 adds the §7 P2 runtime/JIT contract). Contract for the plan's
-P0.5–P5 phases
+Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
+AOT/reload contract). Contract for the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
 
@@ -145,6 +145,21 @@ Observable obligations only; internal design is the implementer's.
   rejected under a catch-all code S100 (`outside the decided surface`)
   with the offending member named in the message.
 
+- **Typed HIR**: every expression carries its resolved type (sized
+  numerics distinct from each other; value classes distinct from
+  reference classes; nominal identity preserved) and a TS position.
+  Monomorphization of the a12 generic shapes may happen in HIR or be
+  deferred to P2 lowering — implementer's choice, recorded in the
+  tracking file.
+- **Gate tests** (in the default `cargo test`): one integration test
+  iterates `corpus/reject/` and asserts, per entry, the expected rule
+  code (table above) and that the position lands in the entry's file at
+  the offending line; one iterates `corpus/accept/` and asserts zero
+  diagnostics and a well-formed HIR per entry.
+- SWC front end pinned in `Cargo.lock` (`swc_common 5.0.1`-compatible
+  family; the Cranelift 0.125.4 serde constraint —
+  `specs/tracking/p0.5-mobile-link.md` — binds the choice).
+
 ## 7. P2 runtime and JIT contract
 
 Observable obligations only; internal design is the implementer's.
@@ -190,17 +205,68 @@ Observable obligations only; internal design is the implementer's.
   golden is investigated as a bug on one side and resolved by evidence,
   never by silently editing the golden.
 - **Gate** (§4): run set a01–a24 matches goldens under the dev JIT.
-- **Typed HIR**: every expression carries its resolved type (sized
-  numerics distinct from each other; value classes distinct from
-  reference classes; nominal identity preserved) and a TS position.
-  Monomorphization of the a12 generic shapes may happen in HIR or be
-  deferred to P2 lowering — implementer's choice, recorded in the
-  tracking file.
-- **Gate tests** (in the default `cargo test`): one integration test
-  iterates `corpus/reject/` and asserts, per entry, the expected rule
-  code (table above) and that the position lands in the entry's file at
-  the offending line; one iterates `corpus/accept/` and asserts zero
-  diagnostics and a well-formed HIR per entry.
-- SWC front end pinned in `Cargo.lock` (`swc_common 5.0.1`-compatible
-  family; the Cranelift 0.125.4 serde constraint —
-  `specs/tracking/p0.5-mobile-link.md` — binds the choice).
+
+## 8. P3 AOT, hot reload, and the standing gate
+
+Observable obligations only; internal design is the implementer's.
+
+### 8.1 AOT tier
+
+- The **same** `lower_module` instantiated with `cranelift-object`
+  (§1: one lowering, both tiers). A lowering change that helps one tier
+  and not the other is a contract violation, not an optimization.
+- Host-target AOT (the machine running CI) is the gate path: emit an
+  object, link it with the runtime staticlib and a small C or Rust
+  entry that calls the program's `main` and writes the Context sink
+  bytes to stdout, run it, capture stdout bytes.
+- Device-triple AOT (`aarch64-apple-ios`, `aarch64-linux-android`)
+  must still **compile and link** for a run-set entry — the P0.5 spike
+  proved a minimal program; P3 proves the real lowering's output links.
+  No device execution is required (P0.5 criterion, unchanged).
+- Cross-tier determinism: the AOT binary's stdout bytes must equal the
+  JIT's for every run-set entry. Where they differ, the language rule
+  decides which side is wrong (§2), never the golden.
+
+### 8.2 Hot reload (dev tier)
+
+Per §1's rules, made testable:
+
+- **Declaration hash** over: every value/reference class (field names,
+  types, order), enum member values, `FixedArray` shapes, every
+  module-level variable's name and type, every function signature
+  (name, parameter types, return type). Function *bodies* are excluded
+  by construction. The hash is computed from the typed HIR, is stable
+  across recompiles of identical declarations, and changes for any
+  declaration edit.
+- **Accepted swap**: same declaration hash → the per-function
+  indirection table is repointed at the newly compiled bodies. Context
+  state (globals, live allocations) survives; execution continues.
+- **Rejected swap**: different declaration hash → the swap is refused
+  with a diagnostic naming the first differing declaration; the running
+  program is untouched (a refused reload never corrupts a live
+  Context).
+- **Stale coroutines**: a coroutine suspended in a function whose body
+  was replaced is invalidated; resuming it traps with a
+  `stale coroutine after reload` report carrying the resume position.
+- **Frame boundary**: swaps are applied only between host calls into
+  script (no swap while script code is on the stack). The demo drives
+  this explicitly.
+- **Demo** (a test, not a script): exercises all three cases — an
+  accepted body edit whose new behaviour is observed in output, a
+  rejected layout edit, and a stale-coroutine trap.
+
+### 8.3 Standing differential gate and golden freeze
+
+- The default `cargo test` path gains: for every run-set entry with a
+  committed golden, **dev-JIT bytes ≡ AOT bytes ≡ golden bytes**.
+  Byte-exact; no normalization; a missing AOT toolchain fails the test
+  rather than skipping it (the gate machine is the dev machine).
+- On green, the a22–a24 goldens captured at P2 are **frozen** (§2): the
+  tracking entry records the confirmation, and later changes follow the
+  golden-change procedure.
+
+### 8.4 Gate (§4)
+
+Run set matches goldens under AOT; JIT≡AOT≡golden is the default
+`cargo test`; reload demonstrated on a run-set program; device-triple
+link green for a run-set entry.
