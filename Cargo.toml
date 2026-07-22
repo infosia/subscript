@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "bench",
     "compiler",
     "runtime",
     "codegen",

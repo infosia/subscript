@@ -336,6 +336,23 @@ fn runtime_staticlib() -> Result<PathBuf, RunError> {
         .map_err(RunError::Internal)
 }
 
+/// Path to the runtime static library for the running build profile,
+/// building it with the workspace's own cargo when it is missing or
+/// older than the runtime sources.
+///
+/// [`run_aot`] uses it for its own link; it is public so that a host
+/// program which links an [`emit_object`] result with an entry of its
+/// own — the P4 benchmark harness is the one in-tree case — resolves
+/// the same archive the differential gate links.
+/// [`RUNTIME_STATICLIB_ENV`] overrides it.
+///
+/// # Errors
+///
+/// [`RunError::Internal`] when the archive cannot be located or built.
+pub fn runtime_staticlib_path() -> Result<PathBuf, RunError> {
+    runtime_staticlib()
+}
+
 /// The host C compiler driver used for linking.
 fn host_cc() -> std::ffi::OsString {
     std::env::var_os("CC").unwrap_or_else(|| "cc".into())
@@ -543,6 +560,12 @@ mod tests {
             }
             other => panic!("expected a trap, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_runtime_staticlib_resolves_to_a_file() {
+        let path = runtime_staticlib_path().expect("runtime static library");
+        assert!(path.is_file(), "{} must exist", path.display());
     }
 
     #[test]

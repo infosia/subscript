@@ -905,6 +905,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "subscript-bench"
+version = "0.1.0"
+dependencies = [
+ "subscript-codegen",
+ "subscript-compiler",
+]
+
+[[package]]
 name = "subscript-codegen"
 version = "0.1.0"
 dependencies = [

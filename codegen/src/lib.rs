@@ -23,6 +23,10 @@
 //!
 //! The standing differential gate (§8.3) compares the first two
 //! against the committed goldens on every `cargo test`.
+//!
+//! [`jit_bench`] is the dev tier's measurement entry point for the P4
+//! performance gate (§9): same compilation, but the exported `main` is
+//! called repeatedly and each call is timed on its own.
 
 mod aot;
 mod jit;
@@ -30,8 +34,10 @@ mod layout;
 mod lower;
 mod reload;
 
-pub use aot::{emit_object, run_aot, AotObject, AOT_ENTRY_C, RUNTIME_STATICLIB_ENV};
-pub use jit::{run_jit, RunError, TrapReport};
+pub use aot::{
+    emit_object, run_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C, RUNTIME_STATICLIB_ENV,
+};
+pub use jit::{jit_bench, run_jit, BenchSamples, RunError, TrapReport};
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 
 #[cfg(test)]
