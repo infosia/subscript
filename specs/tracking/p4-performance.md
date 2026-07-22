@@ -90,6 +90,16 @@ decision of what to do next is the owner's; the evidence above is the
 input. Recorded without adjustment, per §9's requirement that both
 outcomes be recorded.
 
+## Owner decision (2026-07-23)
+
+The lowering is optimized and the gate re-measured before the backend
+decision is judged (`specs/blocks/compiler.md` §10, P4.1). Rationale:
+the profile and the lowering inspection place the dominant cost in this
+project's code generation, so switching backend now would answer a
+question the measurement has not asked. §3's thresholds and §9's
+methodology are unchanged; the standing gate protects correctness while
+the optimization lands.
+
 ## Artifacts
 
 `bench/a22-baseline.c` (baseline, header comment names the corpus
