@@ -29,6 +29,7 @@
 //! called repeatedly and each call is timed on its own.
 
 mod aot;
+mod cemit;
 mod jit;
 mod layout;
 mod lower;
@@ -37,6 +38,7 @@ mod reload;
 pub use aot::{
     emit_object, run_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C, RUNTIME_STATICLIB_ENV,
 };
+pub use cemit::emit_c;
 pub use jit::{jit_bench, run_jit, BenchSamples, RunError, TrapReport};
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 

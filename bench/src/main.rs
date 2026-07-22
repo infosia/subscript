@@ -12,6 +12,11 @@
 //!   library and `bench/aot-entry.c`.
 //! - **dev-JIT** — the entry through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
+//! - **emitted-C** — the entry's typed HIR emitted as a self-contained
+//!   C translation unit (`subscript_codegen::emit_c`, the P4.2 spike),
+//!   compiled with the same flags as the hand C baseline. Reported, not
+//!   gated: the pre-registered §3 thresholds (ship-AOT, dev-JIT) do not
+//!   move; emitted-C's ratios are the spike's measured answer.
 //!
 //! Every subject times the workload execution only, inside its own
 //! process, with a monotonic clock: the C baseline times its workload
@@ -20,7 +25,7 @@
 //! Context creation, global initialization, and I/O are all outside
 //! the timed span.
 //!
-//! Before any timing is reported, all three subjects' stdout bytes are
+//! Before any timing is reported, every subject's stdout bytes are
 //! compared against the frozen golden
 //! `corpus/accept/a22-matrix-propagation.expected`; a mismatch aborts
 //! the run without a report, because subjects that compute different
@@ -51,8 +56,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
-use subscript_codegen::{emit_object, jit_bench, runtime_staticlib_path};
-use subscript_compiler::SourceFile;
+use subscript_codegen::{emit_c, emit_object, jit_bench, runtime_staticlib_path};
+use subscript_compiler::{check_program, SourceFile};
 
 /// The corpus entry under measurement (`specs/blocks/corpus.md` §4).
 const ENTRY_ID: &str = "a22-matrix-propagation";
@@ -213,7 +218,8 @@ fn run() -> Result<ExitCode, Fail> {
     let c = measure_c(workdir.path(), warmup, timed)?;
     let aot = measure_aot(&files, workdir.path(), warmup, timed)?;
     let jit = measure_jit(&files, warmup, timed)?;
-    let subjects = [&c, &aot, &jit];
+    let cemit = measure_emitted_c(&files, workdir.path(), warmup, timed)?;
+    let subjects: [&Subject; 4] = [&c, &aot, &jit, &cemit];
 
     for s in subjects {
         if s.stdout != ENTRY_GOLDEN {
@@ -236,9 +242,15 @@ fn run() -> Result<ExitCode, Fail> {
 }
 
 /// Builds the report and returns the process exit status it implies.
+///
+/// The first three subjects are the pre-registered P4 gate (`C`,
+/// `ship-AOT`, `dev-JIT`); the gated thresholds (§3) are computed for
+/// indices 1 and 2 exactly as before. Any further subjects (the P4.2
+/// emitted-C measurement) are reported as extra rows with their ratios,
+/// but never gate the run — the standing thresholds do not move.
 fn write_report(
     report: &mut String,
-    subjects: &[&Subject; 3],
+    subjects: &[&Subject],
     warmup: usize,
     timed: usize,
 ) -> Result<ExitCode, Fail> {
@@ -282,7 +294,7 @@ fn write_report(
     )?;
     w(
         report,
-        format_args!("output:      all three subjects match corpus/accept/{ENTRY_ID}.expected"),
+        format_args!("output:      every subject matches corpus/accept/{ENTRY_ID}.expected"),
     )?;
     w(report, format_args!(""))?;
     w(
@@ -361,6 +373,51 @@ fn write_report(
                 ratio,
                 limit,
                 if met { "MET" } else { "MISSED" }
+            ),
+        )?;
+    }
+
+    // P4.2 emitted-C measurement (index 3, if present): reported, not
+    // gated. Its ratios answer the spike's question — emitted-C through
+    // clang vs the hand C baseline, vs ship-AOT, and vs the 1.5x/4x
+    // thresholds — without moving any standing threshold.
+    if let (Some(cemit), Some(cst)) = (subjects.get(3), stats.get(3)) {
+        let vs_c = cst.median / baseline;
+        w(report, format_args!(""))?;
+        w(
+            report,
+            format_args!("emitted-C measurement (compiler.md P4.2 spike; reported, not gated):"),
+        )?;
+        w(
+            report,
+            format_args!(
+                "  {:<10} {:>5.2}x of hand C baseline (§3 AOT limit {:.2}x, dev-JIT limit {:.2}x)",
+                cemit.name, vs_c, AOT_LIMIT, JIT_LIMIT
+            ),
+        )?;
+        for (label, idx) in [("ship-AOT", 1usize), ("dev-JIT", 2usize)] {
+            if let Some(other) = stats.get(idx) {
+                if cst.median > 0.0 {
+                    w(
+                        report,
+                        format_args!(
+                            "  {:<10} {:>5.2}x faster than {} ({:.2}x of C vs {:.2}x of C)",
+                            cemit.name,
+                            other.median / cst.median,
+                            label,
+                            vs_c,
+                            other.median / baseline
+                        ),
+                    )?;
+                }
+            }
+        }
+        w(
+            report,
+            format_args!(
+                "  emitted-C clears 1.5x: {}; clears 4x: {}",
+                if vs_c <= AOT_LIMIT { "yes" } else { "no" },
+                if vs_c <= JIT_LIMIT { "yes" } else { "no" }
             ),
         )?;
     }
@@ -537,6 +594,64 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
         stdout,
         samples,
         prepare: vec![("compile (cc)", compile)],
+    })
+}
+
+/// Emits C from the entry's typed HIR (the P4.2 spike), compiles it
+/// with the same flags as the hand C baseline, and measures it under
+/// the same harness protocol (`specs/tracking/p4-performance.md`).
+///
+/// Self-contained: the emitted translation unit carries the language's
+/// semantics (C2 value-class copies, checked growable-array indexing and
+/// push growth, f32-precision arithmetic, Q14 formatting) and links
+/// against no runtime, so this measures emitted C through clang, timed
+/// on the whole `main` call exactly as the AOT subject is.
+fn measure_emitted_c(
+    files: &[SourceFile],
+    dir: &Path,
+    warmup: usize,
+    timed: usize,
+) -> Result<Subject, Fail> {
+    let started = Instant::now();
+    let module = check_program(files).map_err(|diags| {
+        format!(
+            "the entry did not check for C emission: {}",
+            diags
+                .first()
+                .map(|d| d.message.clone())
+                .unwrap_or_else(|| "no diagnostic".to_string())
+        )
+    })?;
+    let c_source = emit_c(&module).map_err(|e| format!("C emission: {e}"))?;
+    let emit = started.elapsed();
+
+    let source = dir.join("a22-cemit.c");
+    let exe = dir.join("a22-cemit");
+    write_file(&source, c_source.as_bytes())?;
+
+    let started = Instant::now();
+    let build = Command::new(host_cc())
+        .args(BASELINE_CFLAGS)
+        .arg(&source)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .map_err(|e| format!("the platform C compiler could not be run: {e}"))?;
+    let compile = started.elapsed();
+    if !build.status.success() {
+        return Err(format!(
+            "compiling the emitted C failed:\n{}",
+            String::from_utf8_lossy(&build.stderr)
+        ));
+    }
+
+    let (stdout, samples) = run_subject(&exe, warmup, timed)?;
+    Ok(Subject {
+        name: "emitted-C",
+        span: "the ss_main call in the emitted-C binary (output captured to a sink)",
+        stdout,
+        samples,
+        prepare: vec![("check + emit C", emit), ("compile (cc)", compile)],
     })
 }
 
