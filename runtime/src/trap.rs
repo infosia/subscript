@@ -37,6 +37,10 @@ pub enum TrapKind {
     AllocationFailure = 9,
     /// Integer division or remainder by zero.
     DivisionByZero = 10,
+    /// Internal inconsistency (e.g. an unknown trap kind crossed the
+    /// C boundary); always a compiler/runtime bug, never a program
+    /// fault.
+    Internal = 11,
 }
 
 impl TrapKind {
@@ -54,6 +58,7 @@ impl TrapKind {
             8 => TrapKind::InvalidDelete,
             9 => TrapKind::AllocationFailure,
             10 => TrapKind::DivisionByZero,
+            11 => TrapKind::Internal,
             _ => return None,
         })
     }
@@ -72,6 +77,7 @@ impl TrapKind {
             TrapKind::InvalidDelete => "invalid-delete",
             TrapKind::AllocationFailure => "allocation-failure",
             TrapKind::DivisionByZero => "division-by-zero",
+            TrapKind::Internal => "internal",
         }
     }
 }
@@ -113,7 +119,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=10u32 {
+        for v in 1..=11u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

@@ -245,6 +245,105 @@ mod tests {
         assert_eq!(out, "11,12,12\n");
     }
 
+    // ----- P2 phase-review regression tests -----
+
+    #[test]
+    fn m1_reference_held_only_in_a_fixed_array_survives_collect() {
+        // GC root coverage: the only handle to the C instance lives
+        // inside a FixedArray local; collect() must not free it.
+        let out = run_ok(
+            "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: FixedArray<C, 1> = [new C(7)];\n  collect();\n  print(`${xs[0].x}`);\n}\n",
+        );
+        assert_eq!(out, "7\n");
+    }
+
+    #[test]
+    fn m1_string_held_only_in_an_aggregate_survives_collect() {
+        // The concatenation result is not interned; the FixedArray
+        // interior is its only reference.
+        let out = run_ok(
+            "export function main(): void {\n  const parts: FixedArray<string, 2> = [\"al\" + \"pha\", \"beta\"];\n  collect();\n  print(parts[0] + parts[1]);\n}\n",
+        );
+        assert_eq!(out, "alphabeta\n");
+    }
+
+    #[test]
+    fn m1_iter_result_string_survives_collect() {
+        let out = run_ok(
+            "function* words() {\n  yield \"al\" + \"pha\";\n}\nexport function main(): void {\n  const g = words();\n  const s = g.next();\n  collect();\n  print(s.value);\n}\n",
+        );
+        assert_eq!(out, "alpha\n");
+    }
+
+    #[test]
+    fn m1_aggregate_params_are_rooted_in_the_callee() {
+        // The caller's argument temp is not a root; the callee must
+        // root its own copy before running collect().
+        let out = run_ok(
+            "class C { x: i32; constructor(x: i32) { this.x = x; } }\nfunction probe(xs: FixedArray<C, 1>): i32 {\n  collect();\n  return xs[0].x;\n}\nexport function main(): void {\n  print(`${probe([new C(9)])}`);\n}\n",
+        );
+        assert_eq!(out, "9\n");
+    }
+
+    #[test]
+    fn m2_generator_with_unreachable_yield_after_continue() {
+        let out = run_ok(
+            "function* seq() {\n  let i: i32 = 0;\n  while (i < 2) {\n    yield i;\n    i += 1;\n    continue;\n    yield 99;\n  }\n}\nexport function main(): void {\n  const g = seq();\n  let total: i32 = 0;\n  while (true) {\n    const s = g.next();\n    if (s.done) {\n      break;\n    }\n    total += s.value;\n  }\n  print(`${total}`);\n}\n",
+        );
+        assert_eq!(out, "1\n");
+    }
+
+    #[test]
+    fn m2_unreachable_yield_inside_dead_if_arm_after_return() {
+        let out = run_ok(
+            "function* seq() {\n  yield 4;\n  return;\n  if (true) {\n    yield 99;\n  }\n}\nexport function main(): void {\n  const g = seq();\n  let total: i32 = 0;\n  while (true) {\n    const s = g.next();\n    if (s.done) {\n      break;\n    }\n    total += s.value;\n  }\n  print(`${total}`);\n}\n",
+        );
+        assert_eq!(out, "4\n");
+    }
+
+    #[test]
+    fn n3_assignment_rhs_that_grows_the_array_is_not_lost() {
+        // xs starts at len 4 == capacity; grow() reallocates the
+        // element storage, so the element address must be resolved
+        // after the RHS runs.
+        let out = run_ok(
+            "let xs: i32[] = [];\nfunction grow(): i32 {\n  for (let i: i32 = 0; i < 60; i += 1) {\n    xs.push(0);\n  }\n  return 42;\n}\nexport function main(): void {\n  xs.push(1);\n  xs.push(2);\n  xs.push(3);\n  xs.push(4);\n  xs[0] = grow();\n  print(`${xs[0]},${xs.length}`);\n}\n",
+        );
+        assert_eq!(out, "42,64\n");
+    }
+
+    #[test]
+    fn n4_trap_inside_a_generator_unwinds_to_a_report() {
+        // The resume unwind path (which now also stores the terminal
+        // state) must hand the trap back through `.next()` and `main`.
+        let t = run_trap(
+            "function* bad() {\n  const xs: i32[] = [1];\n  yield xs[5];\n}\nexport function main(): void {\n  const g = bad();\n  const s = g.next();\n  print(`${s.value}`);\n}\n",
+        );
+        assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
+        assert_eq!(t.pos.line, 3);
+    }
+
+    #[test]
+    fn n2_forward_nested_value_classes_run_correctly() {
+        // Outer embeds Inner declared after it; the layout must be
+        // computed by resolving the forward reference.
+        let out = run_ok(
+            "@value\nclass Outer { inner: Inner; pad: f32;\n  constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; }\n}\n@value\nclass Inner { x: f64;\n  constructor(x: f64) { this.x = x; }\n}\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x},${o.pad}`);\n}\n",
+        );
+        assert_eq!(out, "2.5,1\n");
+    }
+
+    #[test]
+    fn n2_value_class_cycle_is_an_internal_error_not_a_crash() {
+        let err = run(
+            "@value\nclass S { s: S;\n  constructor(s: S) { this.s = s; }\n}\nexport function main(): void {}\n",
+        );
+        match err {
+            Err(RunError::Internal(msg)) => assert!(msg.contains("cycle"), "got: {msg}"),
+            other => panic!("expected an internal error, got {other:?}"),
+        }
+    }
+
     #[test]
     fn nan_and_infinity_spellings() {
         let out = run_ok(

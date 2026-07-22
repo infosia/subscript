@@ -87,7 +87,7 @@ pub struct Context {
     trap: Option<TrapRecord>,
     interned: HashMap<(usize, usize), usize>,
     shadow: Vec<(usize, usize)>,
-    roots: Vec<usize>,
+    roots: Vec<(usize, usize)>,
 }
 
 impl Context {
@@ -242,11 +242,13 @@ impl Context {
 
     // ----- roots and collection -----
 
-    /// Registers a permanent root slot (a module-global holding a
-    /// managed value). `slot` is the address of the 8-byte slot, not
-    /// the value in it.
-    pub fn root_add(&mut self, slot: usize) {
-        self.roots.push(slot);
+    /// Registers a permanent root range: `words` consecutive 8-byte
+    /// slots at `base`, conservatively scanned for managed handles.
+    /// One word for a scalar managed global; several for a global
+    /// aggregate (e.g. a `FixedArray` of references) whose interior
+    /// holds handles.
+    pub fn root_add(&mut self, base: usize, words: usize) {
+        self.roots.push((base, words));
     }
 
     /// Pushes a shadow frame: `slots` consecutive 8-byte slots at
@@ -264,11 +266,13 @@ impl Context {
     /// reachable from the registered roots. Never runs unbidden.
     pub fn collect(&mut self) {
         let mut work: Vec<usize> = Vec::new();
-        for &slot in &self.roots {
-            // SAFETY: root slots are addresses of live global/stack
-            // slots registered by generated code; reading 8 bytes from
-            // them is valid for the duration of the script run.
-            work.push(unsafe { (slot as *const usize).read_unaligned() });
+        for &(base, words) in &self.roots {
+            for i in 0..words {
+                // SAFETY: root ranges are addresses of live global
+                // slots registered by generated code; reading their
+                // words is valid for the duration of the script run.
+                work.push(unsafe { ((base + i * 8) as *const usize).read_unaligned() });
+            }
         }
         for &(base, slots) in &self.shadow {
             for i in 0..slots {
@@ -324,14 +328,17 @@ impl Context {
         p
     }
 
-    /// Reads the bytes of a string handle.
+    /// Reads the bytes of a string handle. The borrow is tied to
+    /// `&self`: string storage lives as long as the context and is
+    /// immutable, and `&self` prevents freeing while the slice is
+    /// alive.
     ///
     /// # Safety
     ///
     /// `handle` must be a string payload produced by [`Context::alloc_str`]
     /// on this context and still owned by it.
     #[must_use]
-    pub unsafe fn str_bytes<'a>(&self, handle: *const u8) -> &'a [u8] {
+    pub unsafe fn str_bytes(&self, handle: *const u8) -> &[u8] {
         // SAFETY: caller guarantees `handle` is a live string payload;
         // its first 8 bytes are the length of the following bytes.
         unsafe {
@@ -587,7 +594,7 @@ mod tests {
         let dropped = ctx.alloc(8, 1, 0);
         let mut slot: usize = kept as usize;
         let slot_ptr: *mut usize = &mut slot;
-        ctx.root_add(slot_ptr as usize);
+        ctx.root_add(slot_ptr as usize, 1);
         ctx.collect();
         assert!(ctx.is_live(kept as usize));
         assert!(!ctx.is_live(dropped as usize));
@@ -609,10 +616,24 @@ mod tests {
         // SAFETY: outer payload is 8 writable bytes.
         unsafe { (outer as *mut usize).write(inner as usize) };
         let mut slot: usize = outer as usize;
-        ctx.root_add(&mut slot as *mut usize as usize);
+        ctx.root_add(&mut slot as *mut usize as usize, 1);
         ctx.collect();
         assert!(ctx.is_live(outer as usize));
         assert!(ctx.is_live(inner as usize));
+    }
+
+    #[test]
+    fn root_ranges_scan_every_word() {
+        // A two-word root range (e.g. a global FixedArray of two
+        // references): both interior handles must survive collection.
+        let mut ctx = Context::new();
+        let a = ctx.alloc(8, 1, 0);
+        let b = ctx.alloc(8, 1, 0);
+        let range = [a as usize, b as usize];
+        ctx.root_add(range.as_ptr() as usize, 2);
+        ctx.collect();
+        assert!(ctx.is_live(a as usize));
+        assert!(ctx.is_live(b as usize));
     }
 
     #[test]
@@ -694,7 +715,7 @@ mod tests {
             ctx.array_push(h, &v as *const usize as *const u8, 0);
         }
         let mut slot: usize = h as usize;
-        ctx.root_add(&mut slot as *mut usize as usize);
+        ctx.root_add(&mut slot as *mut usize as usize, 1);
         ctx.collect();
         assert!(ctx.is_live(h as usize));
         assert!(ctx.is_live(inner as usize), "element reached via data pointer");

@@ -2,10 +2,13 @@
 //!
 //! Every function here is `extern "C"` with a stable signature; the
 //! code generator declares them by name and the JIT resolves them by
-//! symbol registration. None of them unwinds: the runtime reports
-//! faults through the Context trap state, never through panics, and
-//! the bodies contain no panicking operations on their script-facing
-//! paths (allocation failure is reported as a trap).
+//! symbol registration. Guarantee: no unwinding ever crosses this
+//! boundary — script faults are reported through the Context trap
+//! state, never through panics, and *Context* allocation failure is
+//! a trap. Host-heap exhaustion inside `format!`/`Vec` growth aborts
+//! the process (Rust's default OOM behavior); that is the accepted
+//! FFI-boundary exception of CLAUDE.md core principle 5, not an
+//! unwind.
 //!
 //! Shared safety contract (each function's `# Safety` builds on it):
 //! `ctx` is the non-null Context of the current script run, created by
@@ -84,28 +87,32 @@ pub unsafe extern "C" fn sub_rt_delete(ctx: *mut Context, payload: *mut u8, pos_
 pub unsafe extern "C" fn sub_rt_trap(ctx: *mut Context, kind: u32, pos_id: u32) {
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    let kind = TrapKind::from_u32(kind).unwrap_or(TrapKind::AllocationFailure);
+    // An unknown kind means the code generator and runtime disagree;
+    // report it as an internal fault instead of misattributing it.
+    let kind = TrapKind::from_u32(kind).unwrap_or(TrapKind::Internal);
     let message = match kind {
         TrapKind::IndexOutOfBounds => "index out of bounds",
         TrapKind::NullNarrowing => "`as` narrowing applied to null",
         TrapKind::ClassMismatch => "`as` narrowing to a class the instance does not have",
         TrapKind::UseAfterDelete => "use of a deleted allocation",
         TrapKind::DivisionByZero => "integer division by zero",
+        TrapKind::Internal => "unknown trap kind raised by generated code",
         other => other.rule(),
     };
     ctx.trap(kind, message, pos_id);
 }
 
-/// Registers a permanent root slot (module global of managed type).
+/// Registers a permanent root range: `words` consecutive 8-byte slots
+/// at `base` (module globals of managed type, or global aggregates
+/// with managed interior).
 ///
 /// # Safety
 ///
-/// Shared contract; `slot` is the address of an 8-byte slot that
-/// outlives the script run.
+/// Shared contract; the range outlives the script run.
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_root_add(ctx: *mut Context, slot: *mut u8) {
+pub unsafe extern "C" fn sub_rt_root_add(ctx: *mut Context, base: *mut u8, words: u64) {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.root_add(slot as usize);
+    unsafe { &mut *ctx }.root_add(base as usize, words as usize);
 }
 
 /// Pushes a shadow frame of `slots` managed-local slots at `base`.
@@ -208,8 +215,9 @@ pub unsafe extern "C" fn sub_rt_str_slice(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle.
-    let bytes = unsafe { ctx.str_bytes(s) };
+    // SAFETY: live string handle. Copied out so the borrow does not
+    // overlap the mutable trap/alloc calls below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
     let len = bytes.len() as i64;
     let (lo, hi) = (i64::from(start), i64::from(end));
     if lo < 0 || hi < lo || hi > len {
@@ -222,7 +230,7 @@ pub unsafe extern "C" fn sub_rt_str_slice(
     }
     // Strings are UTF-8 by construction (literals, concatenation, and
     // boundary-checked slices of UTF-8 strings).
-    let text = std::str::from_utf8(bytes).unwrap_or_default();
+    let text = std::str::from_utf8(&bytes).unwrap_or_default();
     let (lo, hi) = (lo as usize, hi as usize);
     if !text.is_char_boundary(lo) || !text.is_char_boundary(hi) {
         ctx.trap(
@@ -232,8 +240,7 @@ pub unsafe extern "C" fn sub_rt_str_slice(
         );
         return std::ptr::null_mut();
     }
-    let owned = bytes[lo..hi].to_vec();
-    ctx.alloc_str(&owned, pos_id)
+    ctx.alloc_str(&bytes[lo..hi], pos_id)
 }
 
 /// Content equality (`===` on strings): 1 when equal, else 0.
@@ -491,5 +498,32 @@ mod tests {
         let r = ctx.trap_record().expect("trap");
         assert_eq!(r.kind, TrapKind::UseAfterDelete);
         assert_eq!(r.pos_id, 12);
+    }
+
+    #[test]
+    fn ffi_unknown_trap_kind_is_reported_as_internal() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe { sub_rt_trap(p, 999, 3) };
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::Internal);
+        assert_eq!(r.pos_id, 3);
+    }
+
+    #[test]
+    fn ffi_root_ranges_cover_aggregate_globals() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let a = ctx.alloc(8, 1, 0);
+        let b = ctx.alloc(8, 1, 0);
+        let range = [a as usize, b as usize];
+        // SAFETY: valid context; the range outlives the collect call.
+        unsafe {
+            sub_rt_root_add(p, range.as_ptr() as *mut u8, 2);
+            sub_rt_collect(p);
+        }
+        assert!(ctx.is_live(a as usize));
+        assert!(ctx.is_live(b as usize));
     }
 }

@@ -29,7 +29,7 @@ use subscript_compiler::{hir, Pos, Type};
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::layout::{is_managed, is_unsigned, Repr};
+use crate::layout::{has_managed_interior, is_managed, is_unsigned, managed_words, Repr};
 use crate::lower::{internal, FnKey, ModLower};
 
 /// A computed value.
@@ -68,11 +68,21 @@ struct Binding {
 }
 
 /// An assignable location.
+///
+/// Dynamic-array elements stay *unresolved* (`ArrayElem`) until the
+/// moment of the access: resolving the element address early would
+/// dangle if the value expression grows the same array (its storage
+/// is reallocated on growth).
 #[derive(Debug, Clone, Copy)]
 enum Place {
     Var(Variable),
     Pair(Variable, Variable),
     Mem(Value, i32),
+    ArrayElem {
+        handle: Value,
+        index: Value,
+        pos_id: i64,
+    },
 }
 
 struct LoopCtx {
@@ -340,8 +350,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Loads a value of `ty` from `addr + off`.
-    fn load_val(&mut self, ty: &Type, addr: Value, off: i32) -> RV {
-        match self.ml.layouts.repr(ty) {
+    fn load_val(&mut self, ty: &Type, addr: Value, off: i32) -> Result<RV, String> {
+        Ok(match self.ml.layouts.repr(ty)? {
             Repr::None => RV::None,
             Repr::Scalar(t) => RV::S(self.b.ins().load(t, flags(), addr, off)),
             Repr::Pair => {
@@ -350,13 +360,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 RV::P(code, env)
             }
             Repr::Agg { .. } => RV::A(self.addr_off(addr, i64::from(off))),
-        }
+        })
     }
 
     /// Stores `rv` (of `ty`) to `addr + off` (copy semantics for
     /// aggregates, C2).
     fn store_val(&mut self, ty: &Type, addr: Value, off: i32, rv: RV) -> Result<(), String> {
-        match (self.ml.layouts.repr(ty), rv) {
+        match (self.ml.layouts.repr(ty)?, rv) {
             (Repr::None, _) => Ok(()),
             (Repr::Scalar(_), RV::S(v)) => {
                 self.b.ins().store(flags(), v, addr, off);
@@ -494,7 +504,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let env = self.b.use_var(b);
                 Ok(RV::P(code, env))
             }
-            Storage::Addr(a) => Ok(self.load_val(&binding.ty.clone(), a, 0)),
+            Storage::Addr(a) => self.load_val(&binding.ty.clone(), a, 0),
             Storage::Shadow(i) => {
                 let addr = self.shadow_addr(i)?;
                 Ok(RV::S(self.b.ins().load(types::I64, flags(), addr, 0)))
@@ -505,7 +515,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .as_ref()
                     .map(|g| g.frame)
                     .ok_or_else(|| internal("frame storage outside a generator"))?;
-                Ok(self.load_val(&binding.ty.clone(), frame, off as i32))
+                self.load_val(&binding.ty.clone(), frame, off as i32)
             }
         }
     }
@@ -530,16 +540,42 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         })
     }
 
+    /// Resolves a dynamic-array element place to its current address
+    /// (bounds-checked; called at access time so growth between place
+    /// computation and access cannot leave a dangling pointer).
+    fn resolve_array_elem(
+        &mut self,
+        handle: Value,
+        index: Value,
+        pos_id: i64,
+    ) -> Result<Value, String> {
+        let pos_v = self.iconst(types::I32, pos_id);
+        let r = self.call_rt(
+            self.ml.rt.array_ptr,
+            &[self.ctx_v, handle, index, pos_v],
+            true,
+        )?;
+        r.ok_or_else(|| internal("array_ptr result"))
+    }
+
     fn read_place(&mut self, p: Place, ty: &Type) -> Result<RV, String> {
-        Ok(match p {
-            Place::Var(v) => RV::S(self.b.use_var(v)),
+        match p {
+            Place::Var(v) => Ok(RV::S(self.b.use_var(v))),
             Place::Pair(a, b) => {
                 let code = self.b.use_var(a);
                 let env = self.b.use_var(b);
-                RV::P(code, env)
+                Ok(RV::P(code, env))
             }
             Place::Mem(addr, off) => self.load_val(ty, addr, off),
-        })
+            Place::ArrayElem {
+                handle,
+                index,
+                pos_id,
+            } => {
+                let addr = self.resolve_array_elem(handle, index, pos_id)?;
+                self.load_val(ty, addr, 0)
+            }
+        }
     }
 
     fn write_place(&mut self, p: Place, ty: &Type, rv: RV) -> Result<(), String> {
@@ -556,11 +592,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(())
             }
             Place::Mem(addr, off) => self.store_val(ty, addr, off, rv),
+            Place::ArrayElem {
+                handle,
+                index,
+                pos_id,
+            } => {
+                let addr = self.resolve_array_elem(handle, index, pos_id)?;
+                self.store_val(ty, addr, 0, rv)
+            }
         }
     }
 
     /// Creates the storage for a new local and writes its initial
-    /// value.
+    /// value. Managed scalars get a shadow slot; aggregates whose
+    /// interior holds managed handles (e.g. `FixedArray` of
+    /// references, `IterResult<string>`) live *inside* the shadow
+    /// frame so the collector's conservative word scan sees every
+    /// handle stored in them (M1).
     fn declare_local(&mut self, name: &str, ty: &Type, init: RV) -> Result<(), String> {
         let storage = if self.genc.is_some() {
             let g = self
@@ -573,13 +621,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .ok_or_else(|| internal("frame offset table exhausted"))?;
             g.next_let += 1;
             Storage::Frame(off)
-        } else if is_managed(&self.ml.layouts, ty) {
+        } else if is_managed(&self.ml.layouts, ty)? {
             let idx = self.next_shadow;
             self.next_shadow += 1;
             Storage::Shadow(idx)
         } else {
-            match self.ml.layouts.repr(ty) {
-                Repr::Agg { size, align } => Storage::Addr(self.temp_slot(size, align)),
+            match self.ml.layouts.repr(ty)? {
+                Repr::Agg { size, align } => {
+                    if has_managed_interior(&self.ml.layouts, ty)? {
+                        let words = managed_words(&self.ml.layouts, ty)?;
+                        let idx = self.next_shadow;
+                        self.next_shadow += words;
+                        let addr = self.shadow_addr(idx)?;
+                        Storage::Addr(addr)
+                    } else {
+                        Storage::Addr(self.temp_slot(size, align))
+                    }
+                }
                 Repr::Pair => {
                     let a = self.b.declare_var(types::I64);
                     let c = self.b.declare_var(types::I64);
@@ -605,7 +663,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         use hir::ExprKind as K;
         match &e.kind {
             K::Int(v) => {
-                let t = match self.ml.layouts.repr(&e.ty) {
+                let t = match self.ml.layouts.repr(&e.ty)? {
                     Repr::Scalar(t) => t,
                     _ => types::I32,
                 };
@@ -626,7 +684,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let (ptr, cid) = self
                     .this_v
                     .ok_or_else(|| internal("`this` outside a method"))?;
-                if self.ml.layouts.class(cid).is_value {
+                if self.ml.layouts.class(cid)?.is_value {
                     Ok(RV::A(ptr))
                 } else {
                     Ok(RV::S(ptr))
@@ -638,7 +696,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Global(name) => {
                 let (addr, ty) = self.global_slot(name)?;
-                Ok(self.load_val(&ty, addr, 0))
+                self.load_val(&ty, addr, 0)
             }
             K::FuncRef(name) => {
                 let id = wrapper_for(self.ml, name)?;
@@ -674,7 +732,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             K::New { class, args } => self.eval_new(class.0, args, &e.pos),
             K::Field { obj, name } => {
                 let (addr, off, fty) = self.field_addr(obj, name)?;
-                Ok(self.load_val(&fty, addr, off))
+                self.load_val(&fty, addr, off)
             }
             K::Length(obj) => {
                 let rv = self.eval(obj)?;
@@ -695,7 +753,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Index { obj, index } => {
                 let (addr, elem_ty) = self.index_addr(obj, index, &e.pos)?;
-                Ok(self.load_val(&elem_ty, addr, 0))
+                self.load_val(&elem_ty, addr, 0)
             }
             K::ArrayLit(elems) => self.eval_array_lit(&e.ty, elems, &e.pos),
             K::Template(parts) => self.eval_template(parts, &e.pos),
@@ -712,7 +770,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let then_blk = self.b.create_block();
                 let else_blk = self.b.create_block();
                 let merge = self.b.create_block();
-                let repr = self.ml.layouts.repr(&e.ty);
+                let repr = self.ml.layouts.repr(&e.ty)?;
                 let n_params = match repr {
                     Repr::None => 0,
                     Repr::Scalar(t) => {
@@ -1049,7 +1107,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 match name {
                     "done" => Ok((base, 0, Type::Bool)),
                     "value" => {
-                        let off = self.ml.layouts.iter_result_value_offset(v);
+                        let off = self.ml.layouts.iter_result_value_offset(v)?;
                         Ok((base, off as i32, (**v).clone()))
                     }
                     _ => Err(internal(format!("IterResult member `{name}`"))),
@@ -1067,9 +1125,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .position(|f| f.name == name)
                     .ok_or_else(|| internal(format!("no field `{name}`")))?;
                 let fty = class.fields[idx].ty.clone();
-                let off = self.ml.layouts.class(cid.0).field_offsets[idx] as i32;
+                let layout = self.ml.layouts.class(cid.0)?;
+                let off = *layout
+                    .field_offsets
+                    .get(idx)
+                    .ok_or_else(|| internal("field offset out of range"))?
+                    as i32;
+                let is_value = layout.is_value;
                 let rv = self.eval(obj)?;
-                if self.ml.layouts.class(cid.0).is_value {
+                if is_value {
                     let base = self.expect_a(rv)?;
                     Ok((base, off, fty))
                 } else {
@@ -1083,26 +1147,26 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Element address for indexing; bounds-checked. Returns
-    /// `(addr, element type)`.
+    /// `(addr, element type)`. Evaluation order: object, then index.
     fn index_addr(
         &mut self,
         obj: &hir::Expr,
         index: &hir::Expr,
         pos: &Pos,
     ) -> Result<(Value, Type), String> {
-        let idx_rv = self.eval(index)?;
-        let idx = self.expect_s(idx_rv)?;
         match &obj.ty {
             Type::FixedArray(elem, n) => {
                 let rv = self.eval(obj)?;
                 let base = self.expect_a(rv)?;
+                let idx_rv = self.eval(index)?;
+                let idx = self.expect_s(idx_rv)?;
                 // Unsigned compare rejects negatives and >= n at once.
                 let ok = self
                     .b
                     .ins()
                     .icmp_imm(IntCC::UnsignedLessThan, idx, i64::from(*n));
                 self.guard(ok, TrapKind::IndexOutOfBounds, pos)?;
-                let stride = self.ml.layouts.stride(elem);
+                let stride = self.ml.layouts.stride(elem)?;
                 let idx64 = self.b.ins().uextend(types::I64, idx);
                 let scaled = self.b.ins().imul_imm(idx64, i64::from(stride));
                 let addr = self.b.ins().iadd(base, scaled);
@@ -1111,11 +1175,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::Array(elem) => {
                 let rv = self.eval(obj)?;
                 let h = self.expect_s(rv)?;
+                let idx_rv = self.eval(index)?;
+                let idx = self.expect_s(idx_rv)?;
                 let pid = self.pos_id(pos);
-                let pos_v = self.iconst(types::I32, pid);
-                let r = self
-                    .call_rt(self.ml.rt.array_ptr, &[self.ctx_v, h, idx, pos_v], true)?;
-                let addr = r.ok_or_else(|| internal("array_ptr result"))?;
+                let addr = self.resolve_array_elem(h, idx, pid)?;
                 Ok((addr, (**elem).clone()))
             }
             other => Err(internal(format!("index on {other:?}"))),
@@ -1139,6 +1202,24 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok((Place::Mem(addr, off), fty))
             }
             K::Index { obj, index } => {
+                if let Type::Array(elem) = &obj.ty {
+                    // Deferred: the element address is resolved at the
+                    // moment of the access, after the assigned value
+                    // has been evaluated (growth-safe).
+                    let rv = self.eval(obj)?;
+                    let handle = self.expect_s(rv)?;
+                    let idx_rv = self.eval(index)?;
+                    let idx = self.expect_s(idx_rv)?;
+                    let pid = self.pos_id(&e.pos);
+                    return Ok((
+                        Place::ArrayElem {
+                            handle,
+                            index: idx,
+                            pos_id: pid,
+                        },
+                        (**elem).clone(),
+                    ));
+                }
                 let (addr, elem_ty) = self.index_addr(obj, index, &e.pos)?;
                 Ok((Place::Mem(addr, 0), elem_ty))
             }
@@ -1245,7 +1326,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         match rv {
             RV::A(ptr) => Ok(ptr),
             RV::S(v) => {
-                let (size, align) = self.ml.layouts.size_align(ty);
+                let (size, align) = self.ml.layouts.size_align(ty)?;
                 let slot = self.temp_slot(size.max(8), align.max(8));
                 self.b.ins().store(flags(), v, slot, 0);
                 Ok(slot)
@@ -1262,11 +1343,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
     /// Copies an aggregate into a fresh caller-owned temp (C2
     /// copy-on-pass) and returns the temp's address.
-    fn copy_to_temp(&mut self, src: Value, ty: &Type) -> Value {
-        let (size, align) = self.ml.layouts.size_align(ty);
+    fn copy_to_temp(&mut self, src: Value, ty: &Type) -> Result<Value, String> {
+        let (size, align) = self.ml.layouts.size_align(ty)?;
         let slot = self.temp_slot(size, align);
         self.copy_bytes(slot, src, size, align);
-        slot
+        Ok(slot)
     }
 
     /// Appends one evaluated argument as ABI values (aggregates are
@@ -1279,7 +1360,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 out.push(b);
             }
             RV::A(ptr) => {
-                let copy = self.copy_to_temp(ptr, ty);
+                let copy = self.copy_to_temp(ptr, ty)?;
                 out.push(copy);
             }
             RV::None => return Err(internal("void argument")),
@@ -1312,13 +1393,24 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
     /// Shapes a call's results according to the return type. `sret`
     /// is the temp the caller allocated when the return is aggregate.
-    fn shape_results(&self, ret: &Type, results: &[Value], sret: Option<Value>) -> RV {
-        match self.ml.layouts.repr(ret) {
+    fn shape_results(
+        &self,
+        ret: &Type,
+        results: &[Value],
+        sret: Option<Value>,
+    ) -> Result<RV, String> {
+        Ok(match self.ml.layouts.repr(ret)? {
             Repr::None => RV::None,
             Repr::Agg { .. } => sret.map(RV::A).unwrap_or(RV::None),
-            Repr::Pair => RV::P(results[0], results[1]),
+            Repr::Pair => {
+                let (a, b) = (results.first(), results.get(1));
+                match (a, b) {
+                    (Some(&a), Some(&b)) => RV::P(a, b),
+                    _ => return Err(internal("missing pair results")),
+                }
+            }
             Repr::Scalar(_) => results.first().copied().map(RV::S).unwrap_or(RV::None),
-        }
+        })
     }
 
     fn eval_call(
@@ -1341,7 +1433,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     ));
                 }
                 let mut argv = vec![self.ctx_v];
-                let sret = match self.ml.layouts.repr(&f.ret) {
+                let sret = match self.ml.layouts.repr(&f.ret)? {
                     Repr::Agg { size, align } => {
                         let s = self.temp_slot(size, align);
                         argv.push(s);
@@ -1352,7 +1444,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.push_args(&mut argv, &f.params, args)?;
                 let ret = f.ret.clone();
                 let res = self.call_script(&FnKey::Free(name.clone()), &argv)?;
-                Ok(self.shape_results(&ret, &res, sret))
+                self.shape_results(&ret, &res, sret)
             }
             hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos),
             hir::Callee::Value(v) => {
@@ -1363,7 +1455,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let rv = self.eval(v)?;
                 let (code, env) = self.expect_p(rv)?;
                 let mut argv = vec![self.ctx_v, env];
-                let sret = match self.ml.layouts.repr(&ft.ret) {
+                let sret = match self.ml.layouts.repr(&ft.ret)? {
                     Repr::Agg { size, align } => {
                         let s = self.temp_slot(size, align);
                         argv.push(s);
@@ -1380,12 +1472,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let rv = self.eval(a)?;
                     self.push_one_arg(&mut argv, t, rv)?;
                 }
-                let sig = self.ml.make_sig(&ft.params, &ft.ret, true, false);
+                let sig = self.ml.make_sig(&ft.params, &ft.ret, true, false)?;
                 let sigref = self.b.import_signature(sig);
                 let inst = self.b.ins().call_indirect(sigref, code, &argv);
                 let res = self.b.inst_results(inst).to_vec();
                 self.trap_check();
-                Ok(self.shape_results(&ft.ret, &res, sret))
+                self.shape_results(&ft.ret, &res, sret)
             }
             hir::Callee::Method { recv, name } => {
                 self.eval_method(recv, name, args, ret_ty, pos)
@@ -1452,7 +1544,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         res.map(RV::S).ok_or_else(|| internal("push result"))
                     }
                     "pop" => {
-                        let (size, align) = self.ml.layouts.size_align(&elem);
+                        let (size, align) = self.ml.layouts.size_align(&elem)?;
                         let dst = self.temp_slot(size.max(8), align.max(8));
                         let pid = self.pos_id(pos);
                         let pos_v = self.iconst(types::I32, pid);
@@ -1461,7 +1553,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                             &[self.ctx_v, h, dst, pos_v],
                             true,
                         )?;
-                        Ok(self.load_val(&elem, dst, 0))
+                        self.load_val(&elem, dst, 0)
                     }
                     other => Err(internal(format!("array method `{other}`"))),
                 }
@@ -1493,11 +1585,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let frame = self.expect_s(rv)?;
                 self.live_check(frame, pos)?;
                 let step_ty = Type::IterResult(y.clone());
-                let (size, align) = self.ml.layouts.size_align(&step_ty);
+                let (size, align) = self.ml.layouts.size_align(&step_ty)?;
                 let slot = self.temp_slot(size, align);
                 // C8: `value` zero-initialized when done.
                 self.zero_bytes(slot, size, align);
-                let value_off = self.ml.layouts.iter_result_value_offset(&y);
+                let value_off = self.ml.layouts.iter_result_value_offset(&y)?;
                 let out = self.addr_off(slot, i64::from(value_off));
                 let resume = self
                     .b
@@ -1526,7 +1618,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 };
                 let m = self.ml.hir_method(cid.0, name)?;
                 let mut argv = vec![self.ctx_v];
-                let sret = match self.ml.layouts.repr(&m.ret) {
+                let sret = match self.ml.layouts.repr(&m.ret)? {
                     Repr::Agg { size, align } => {
                         let s = self.temp_slot(size, align);
                         argv.push(s);
@@ -1538,7 +1630,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.push_args(&mut argv, &m.params, args)?;
                 let ret = m.ret.clone();
                 let res = self.call_script(&FnKey::Method(cid.0, name.to_string()), &argv)?;
-                Ok(self.shape_results(&ret, &res, sret))
+                self.shape_results(&ret, &res, sret)
             }
             other => Err(internal(format!("method on {other:?}"))),
         }
@@ -1550,7 +1642,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .classes
             .get(cid)
             .ok_or_else(|| internal("class id out of range"))?;
-        let layout = self.ml.layouts.class(cid).clone();
+        let layout = self.ml.layouts.class(cid)?.clone();
         let this = if layout.is_value {
             let slot = self.temp_slot(layout.size, layout.align);
             self.zero_bytes(slot, layout.size, layout.align);
@@ -1595,7 +1687,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ) -> Result<RV, String> {
         match ty {
             Type::Array(elem) => {
-                let stride = self.ml.layouts.stride(elem);
+                let stride = self.ml.layouts.stride(elem)?;
                 let stride_v = self.iconst(types::I64, i64::from(stride));
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
@@ -1619,8 +1711,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::S(h))
             }
             Type::FixedArray(elem, _) => {
-                let (size, align) = self.ml.layouts.size_align(ty);
-                let stride = self.ml.layouts.stride(elem);
+                let (size, align) = self.ml.layouts.size_align(ty)?;
+                let stride = self.ml.layouts.stride(elem)?;
                 let slot = self.temp_slot(size, align);
                 for (i, e) in elems.iter().enumerate() {
                     let rv = self.eval(e)?;
@@ -1701,7 +1793,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let mut env_align = 1u32;
         for name in captures {
             let binding = self.lookup(name)?;
-            let (s, a) = self.ml.layouts.size_align(&binding.ty);
+            let (s, a) = self.ml.layouts.size_align(&binding.ty)?;
             off = round_up(off, a);
             cap_info.push((name.clone(), binding.ty.clone(), off));
             off += s;
@@ -1761,15 +1853,39 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         for (i, s) in stmts.iter().enumerate() {
             if self.term {
                 // Statically unreachable code after a terminator; the
-                // checker allows it, the lowering skips it. Frame
-                // offsets were assigned by the pre-pass over *all*
-                // `let`s, so account for the skipped ones to keep the
-                // offset cursor aligned.
+                // checker allows it, the lowering skips it. The
+                // generator pre-passes assigned frame offsets and
+                // resume blocks over *all* `let`s and `yield`s, so
+                // both cursors must account for the skipped ones: the
+                // offset cursor advances, and each skipped yield's
+                // resume block (still referenced by the dispatch
+                // chain, but unreachable) is filled with a plain
+                // `done` return so the function stays well-formed.
                 if self.genc.is_some() {
                     let mut rest: Vec<&Type> = Vec::new();
                     walk_lets(&stmts[i..], &mut rest);
+                    let skipped_yields = count_yields(&stmts[i..]);
                     if let Some(g) = self.genc.as_mut() {
                         g.next_let += rest.len();
+                    }
+                    for _ in 0..skipped_yields {
+                        let blk = {
+                            let g = self
+                                .genc
+                                .as_mut()
+                                .ok_or_else(|| internal("generator context"))?;
+                            let blk = *g
+                                .resume_blocks
+                                .get(g.next_resume)
+                                .ok_or_else(|| internal("resume block table exhausted"))?;
+                            g.next_resume += 1;
+                            blk
+                        };
+                        // The current block is terminated (that is why
+                        // we are skipping), so switching away is legal.
+                        self.b.switch_to_block(blk);
+                        let one = self.iconst(types::I8, 1);
+                        self.b.ins().return_(&[one]);
                     }
                 }
                 break;
@@ -1998,7 +2114,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Ok(());
         }
         self.emit_shadow_pop()?;
-        match (self.ml.layouts.repr(&self.ret_ty.clone()), value) {
+        match (self.ml.layouts.repr(&self.ret_ty.clone())?, value) {
             (Repr::None, _) => {
                 self.b.ins().return_(&[]);
             }
@@ -2026,12 +2142,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// fills the unwind block, then seals and finalizes.
     fn finish(mut self) -> Result<(), String> {
         if !self.term {
-            if self.is_resume || matches!(self.ml.layouts.repr(&self.ret_ty), Repr::None) {
+            if self.is_resume || matches!(self.ml.layouts.repr(&self.ret_ty)?, Repr::None) {
                 self.emit_return(None)?;
             } else {
                 // Unreachable (the checker proved all paths return);
                 // emit a zeroed return to keep the block well-formed.
-                let zeros = self.zero_return_values();
+                let zeros = self.zero_return_values()?;
                 self.emit_shadow_pop()?;
                 self.b.ins().return_(&zeros);
             }
@@ -2040,9 +2156,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.b.switch_to_block(u);
             self.emit_shadow_pop()?;
             let vals = if self.is_resume {
+                // A trapped coroutine is finished: store the terminal
+                // state so a (hypothetical) later resume stays done
+                // instead of re-entering the body.
+                let g = self
+                    .genc
+                    .as_ref()
+                    .ok_or_else(|| internal("resume without generator context"))?;
+                let frame = g.frame;
+                let done_state = self.iconst(types::I32, GEN_DONE);
+                self.b.ins().store(flags(), done_state, frame, 0);
                 vec![self.iconst(types::I8, 1)]
             } else {
-                self.zero_return_values()
+                self.zero_return_values()?
             };
             self.b.ins().return_(&vals);
         }
@@ -2051,8 +2177,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(())
     }
 
-    fn zero_return_values(&mut self) -> Vec<Value> {
-        match self.ml.layouts.repr(&self.ret_ty.clone()) {
+    fn zero_return_values(&mut self) -> Result<Vec<Value>, String> {
+        Ok(match self.ml.layouts.repr(&self.ret_ty.clone())? {
             Repr::None | Repr::Agg { .. } => vec![],
             Repr::Scalar(t) => vec![self.zero_of(t)],
             Repr::Pair => {
@@ -2060,7 +2186,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let b = self.iconst(types::I64, 0);
                 vec![a, b]
             }
-        }
+        })
     }
 }
 
@@ -2096,7 +2222,7 @@ fn split_params<M: Module>(
     };
     let ctx_v = take("ctx")?;
     let env_v = if has_env { Some(take("env")?) } else { None };
-    let sret_v = if matches!(ml.layouts.repr(ret), Repr::Agg { .. }) {
+    let sret_v = if matches!(ml.layouts.repr(ret)?, Repr::Agg { .. }) {
         Some(take("sret")?)
     } else {
         None
@@ -2104,7 +2230,7 @@ fn split_params<M: Module>(
     let this_v = if has_this { Some(take("this")?) } else { None };
     let mut param_vals = Vec::new();
     for p in params {
-        match ml.layouts.repr(&p.ty) {
+        match ml.layouts.repr(&p.ty)? {
             Repr::None => {}
             Repr::Pair => {
                 param_vals.push(take("param")?);
@@ -2122,22 +2248,25 @@ fn split_params<M: Module>(
     })
 }
 
-/// Counts managed locals + managed params (shadow-frame size).
-fn shadow_count<M: Module>(ml: &ModLower<M>, f: &hir::Function) -> u32 {
+/// Shadow-frame size in 8-byte words: managed params and locals plus
+/// aggregate params/locals whose interior holds managed handles (M1:
+/// the collector word-scans the whole frame, so aggregates stored in
+/// it are covered).
+fn shadow_words<M: Module>(
+    ml: &ModLower<M>,
+    params: &[hir::Param],
+    body: &[hir::Stmt],
+) -> Result<u32, String> {
     let mut lets: Vec<&Type> = Vec::new();
-    walk_lets(&f.body, &mut lets);
+    walk_lets(body, &mut lets);
     let mut n = 0u32;
-    for p in &f.params {
-        if is_managed(&ml.layouts, &p.ty) {
-            n += 1;
-        }
+    for p in params {
+        n += managed_words(&ml.layouts, &p.ty)?;
     }
     for t in lets {
-        if is_managed(&ml.layouts, t) {
-            n += 1;
-        }
+        n += managed_words(&ml.layouts, t)?;
     }
-    n
+    Ok(n)
 }
 
 /// Emits the shadow-frame prologue; returns the base address.
@@ -2164,7 +2293,7 @@ fn bind_params<M: Module>(
 ) -> Result<(), String> {
     let mut vi = 0usize;
     for p in params {
-        let repr = body.ml.layouts.repr(&p.ty);
+        let repr = body.ml.layouts.repr(&p.ty)?;
         let storage = match repr {
             Repr::None => continue,
             Repr::Pair => {
@@ -2175,18 +2304,30 @@ fn bind_params<M: Module>(
                 vi += 2;
                 Storage::Pair(a, c)
             }
-            Repr::Agg { .. } => {
+            Repr::Agg { size, align } => {
                 // Pointer to the caller-owned copy (C2 copy-on-pass):
                 // the callee owns that copy for the duration of the
-                // call, so it doubles as the parameter's storage.
+                // call, so it doubles as the parameter's storage —
+                // unless it contains managed handles, in which case it
+                // is copied into the callee's shadow frame so the
+                // collector sees it (the caller's temp is not a root).
                 let v = vals[vi];
                 vi += 1;
-                Storage::Addr(v)
+                if has_managed_interior(&body.ml.layouts, &p.ty)? {
+                    let words = managed_words(&body.ml.layouts, &p.ty)?;
+                    let idx = body.next_shadow;
+                    body.next_shadow += words;
+                    let addr = body.shadow_addr(idx)?;
+                    body.copy_bytes(addr, v, size, align);
+                    Storage::Addr(addr)
+                } else {
+                    Storage::Addr(v)
+                }
             }
             Repr::Scalar(t) => {
                 let v = vals[vi];
                 vi += 1;
-                if is_managed(&body.ml.layouts, &p.ty) {
+                if is_managed(&body.ml.layouts, &p.ty)? {
                     let idx = body.next_shadow;
                     body.next_shadow += 1;
                     let addr = body.shadow_addr(idx)?;
@@ -2223,7 +2364,7 @@ pub(crate) fn define_function<M: Module>(
     } else {
         f.ret.clone()
     };
-    let sig = ml.make_sig(&params_ty, &ret, false, class.is_some());
+    let sig = ml.make_sig(&params_ty, &ret, false, class.is_some())?;
     let id = ml.func_id(&key)?;
     let mut cctx = ml.module.make_context();
     cctx.func.signature = sig;
@@ -2234,7 +2375,7 @@ pub(crate) fn define_function<M: Module>(
         b.append_block_params_for_function_params(entry);
         b.switch_to_block(entry);
         let pro = split_params(ml, &mut b, entry, &ret, false, class.is_some(), &f.params)?;
-        let slots = shadow_count(ml, f);
+        let slots = shadow_words(ml, &f.params, &f.body)?;
         let mut body = Body {
             ml,
             b,
@@ -2274,7 +2415,7 @@ fn define_lambda<M: Module>(
     pos: &Pos,
 ) -> Result<cranelift_module::FuncId, String> {
     let params_ty: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
-    let sig = ml.make_sig(&params_ty, ret, true, false);
+    let sig = ml.make_sig(&params_ty, ret, true, false)?;
     let name = format!("ss_lambda{}", ml.lambda_count);
     ml.lambda_count += 1;
     let id = ml
@@ -2290,22 +2431,10 @@ fn define_lambda<M: Module>(
         b.append_block_params_for_function_params(entry);
         b.switch_to_block(entry);
         let pro = split_params(ml, &mut b, entry, ret, true, false, params)?;
-        // Shadow slots: managed params + managed lets of the lambda
+        // Shadow words: managed params + managed lets of the lambda
         // body (captures are const copies owned by the enclosing
         // frame's environment slot; the originals stay rooted there).
-        let mut lets: Vec<&Type> = Vec::new();
-        walk_lets(stmts, &mut lets);
-        let mut slots = 0u32;
-        for p in params {
-            if is_managed(&ml.layouts, &p.ty) {
-                slots += 1;
-            }
-        }
-        for t in lets {
-            if is_managed(&ml.layouts, t) {
-                slots += 1;
-            }
-        }
+        let slots = shadow_words(ml, params, stmts)?;
         let mut body = Body {
             ml,
             b,
@@ -2364,7 +2493,7 @@ pub(crate) fn wrapper_for<M: Module>(
         return Err(internal("generators are not function values"));
     }
     let params_ty: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
-    let sig = ml.make_sig(&params_ty, &f.ret, true, false);
+    let sig = ml.make_sig(&params_ty, &f.ret, true, false)?;
     let sym = format!("ss_wrap_{}", ml.fns.len());
     let id = ml
         .module
@@ -2403,11 +2532,11 @@ pub(crate) fn wrapper_for<M: Module>(
 fn generator_frame<M: Module>(
     ml: &ModLower<M>,
     f: &hir::Function,
-) -> (Vec<u32>, Vec<u32>, u32) {
+) -> Result<(Vec<u32>, Vec<u32>, u32), String> {
     let mut off = GEN_PAYLOAD_OFF;
     let mut param_offsets = Vec::new();
     for p in &f.params {
-        let (s, a) = ml.layouts.size_align(&p.ty);
+        let (s, a) = ml.layouts.size_align(&p.ty)?;
         off = round_up(off, a.max(1));
         param_offsets.push(off);
         off += s.max(1);
@@ -2416,12 +2545,12 @@ fn generator_frame<M: Module>(
     walk_lets(&f.body, &mut lets);
     let mut let_offsets = Vec::new();
     for t in lets {
-        let (s, a) = ml.layouts.size_align(t);
+        let (s, a) = ml.layouts.size_align(t)?;
         off = round_up(off, a.max(1));
         let_offsets.push(off);
         off += s.max(1);
     }
-    (param_offsets, let_offsets, round_up(off, 8))
+    Ok((param_offsets, let_offsets, round_up(off, 8)))
 }
 
 /// Defines the creator and resume functions of a `function*` (C8).
@@ -2429,7 +2558,7 @@ pub(crate) fn define_generator<M: Module>(
     ml: &mut ModLower<M>,
     f: &hir::Function,
 ) -> Result<(), String> {
-    let (param_offsets, let_offsets, frame_size) = generator_frame(ml, f);
+    let (param_offsets, let_offsets, frame_size) = generator_frame(ml, f)?;
     let yield_ty = match &f.ret {
         Type::Generator(y) => (**y).clone(),
         other => return Err(internal(format!("generator return {other:?}"))),
@@ -2440,7 +2569,8 @@ pub(crate) fn define_generator<M: Module>(
     // --- creator ---
     {
         let params_ty: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
-        let sig = ml.make_sig(&params_ty, &Type::Generator(Box::new(Type::Void)), false, false);
+        let sig =
+            ml.make_sig(&params_ty, &Type::Generator(Box::new(Type::Void)), false, false)?;
         let mut cctx = ml.module.make_context();
         cctx.func.signature = sig;
         let mut fbx = FunctionBuilderContext::new();
@@ -2484,7 +2614,7 @@ pub(crate) fn define_generator<M: Module>(
             // Parameters into the frame.
             let mut vi = 0usize;
             for (p, off) in f.params.iter().zip(&param_offsets) {
-                match body.ml.layouts.repr(&p.ty) {
+                match body.ml.layouts.repr(&p.ty)? {
                     Repr::None => {}
                     Repr::Pair => {
                         let rv = RV::P(pro.param_vals[vi], pro.param_vals[vi + 1]);
@@ -2600,7 +2730,7 @@ pub(crate) fn define_generator<M: Module>(
 /// managed globals as collection roots.
 pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String> {
     let id = ml.func_id(&FnKey::Init)?;
-    let sig = ml.make_sig(&[], &Type::Void, false, false);
+    let sig = ml.make_sig(&[], &Type::Void, false, false)?;
     let mut cctx = ml.module.make_context();
     cctx.func.signature = sig;
     let mut fbx = FunctionBuilderContext::new();
@@ -2632,8 +2762,17 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
             let rv = body.eval(&g.init)?;
             let (addr, ty) = body.global_slot(&g.name)?;
             body.store_val(&ty, addr, 0, rv)?;
-            if is_managed(&body.ml.layouts, &ty) {
-                body.call_rt(body.ml.rt.root_add, &[body.ctx_v, addr], false)?;
+            // Root registration: one word for a managed scalar, the
+            // whole (word-scanned) range for an aggregate global with
+            // managed interior (M1).
+            let words = managed_words(&body.ml.layouts, &ty)?;
+            if words > 0 {
+                let words_v = body.iconst(types::I64, i64::from(words));
+                body.call_rt(
+                    body.ml.rt.root_add,
+                    &[body.ctx_v, addr, words_v],
+                    false,
+                )?;
             }
         }
         body.finish()?;

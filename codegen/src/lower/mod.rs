@@ -139,13 +139,13 @@ impl<'a, M: Module> ModLower<'a, M> {
         ret: &Type,
         has_env: bool,
         has_this: bool,
-    ) -> Signature {
+    ) -> Result<Signature, String> {
         let mut sig = Signature::new(self.call_conv);
         sig.params.push(AbiParam::new(types::I64)); // ctx
         if has_env {
             sig.params.push(AbiParam::new(types::I64));
         }
-        let ret_repr = self.layouts.repr(ret);
+        let ret_repr = self.layouts.repr(ret)?;
         if matches!(ret_repr, Repr::Agg { .. }) {
             sig.params.push(AbiParam::new(types::I64)); // sret
         }
@@ -153,7 +153,7 @@ impl<'a, M: Module> ModLower<'a, M> {
             sig.params.push(AbiParam::new(types::I64));
         }
         for p in params {
-            match self.layouts.repr(p) {
+            match self.layouts.repr(p)? {
                 Repr::None => {}
                 Repr::Scalar(t) => sig.params.push(AbiParam::new(t)),
                 Repr::Pair => {
@@ -171,7 +171,7 @@ impl<'a, M: Module> ModLower<'a, M> {
                 sig.returns.push(AbiParam::new(types::I64));
             }
         }
-        sig
+        Ok(sig)
     }
 
     /// Signature of a generator resume function:
@@ -261,7 +261,7 @@ fn declare_rt<M: Module>(
         alloc: mk("sub_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
         delete: mk("sub_rt_delete", &[I64, I64, I32], None)?,
         trap: mk("sub_rt_trap", &[I64, I32, I32], None)?,
-        root_add: mk("sub_rt_root_add", &[I64, I64], None)?,
+        root_add: mk("sub_rt_root_add", &[I64, I64, I64], None)?,
         shadow_push: mk("sub_rt_shadow_push", &[I64, I64, I64], None)?,
         shadow_pop: mk("sub_rt_shadow_pop", &[I64], None)?,
         str_lit: mk("sub_rt_str_lit", &[I64, I64, I64, I32], Some(I64))?,
@@ -303,7 +303,7 @@ pub(crate) fn lower_module<M: Module>(
     }
     let call_conv = module.isa().default_call_conv();
     let rt = declare_rt(module, call_conv)?;
-    let layouts = Layouts::build(hirm);
+    let layouts = Layouts::build(hirm)?;
 
     let mut ml = ModLower {
         module,
@@ -327,7 +327,7 @@ pub(crate) fn lower_module<M: Module>(
     // Globals: zero-initialized writable module data; the synthesized
     // init function fills them and registers managed ones as roots.
     for (gi, g) in hirm.globals.iter().enumerate() {
-        let (size, align) = ml.layouts.size_align(&g.ty);
+        let (size, align) = ml.layouts.size_align(&g.ty)?;
         let (size, align) = (size.max(1), align.max(1));
         let name = format!("ss_g{gi}");
         let id = ml
@@ -357,24 +357,25 @@ pub(crate) fn lower_module<M: Module>(
     for (i, f) in hirm.functions.iter().enumerate() {
         let params: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
         if f.is_generator {
-            let sig = ml.make_sig(&params, &Type::Generator(Box::new(Type::Void)), false, false);
+            let sig =
+                ml.make_sig(&params, &Type::Generator(Box::new(Type::Void)), false, false)?;
             decl(&mut ml, FnKey::Free(f.name.clone()), format!("ss_f{i}"), &sig)?;
             let rsig = ml.resume_sig();
             decl(&mut ml, FnKey::Resume(f.name.clone()), format!("ss_f{i}_resume"), &rsig)?;
         } else {
-            let sig = ml.make_sig(&params, &f.ret, false, false);
+            let sig = ml.make_sig(&params, &f.ret, false, false)?;
             decl(&mut ml, FnKey::Free(f.name.clone()), format!("ss_f{i}"), &sig)?;
         }
     }
     for (ci, c) in hirm.classes.iter().enumerate() {
         if let Some(ctor) = &c.ctor {
             let params: Vec<Type> = ctor.params.iter().map(|p| p.ty.clone()).collect();
-            let sig = ml.make_sig(&params, &Type::Void, false, true);
+            let sig = ml.make_sig(&params, &Type::Void, false, true)?;
             decl(&mut ml, FnKey::Ctor(ci), format!("ss_ctor{ci}"), &sig)?;
         }
         for (mi, m) in c.methods.iter().enumerate() {
             let params: Vec<Type> = m.params.iter().map(|p| p.ty.clone()).collect();
-            let sig = ml.make_sig(&params, &m.ret, false, true);
+            let sig = ml.make_sig(&params, &m.ret, false, true)?;
             decl(
                 &mut ml,
                 FnKey::Method(ci, m.name.clone()),
@@ -384,7 +385,7 @@ pub(crate) fn lower_module<M: Module>(
         }
     }
     {
-        let sig = ml.make_sig(&[], &Type::Void, false, false);
+        let sig = ml.make_sig(&[], &Type::Void, false, false)?;
         decl(&mut ml, FnKey::Init, "ss_init".to_string(), &sig)?;
     }
 

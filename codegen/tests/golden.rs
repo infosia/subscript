@@ -47,22 +47,43 @@ fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
 #[test]
 fn every_committed_golden_matches_the_jit_byte_for_byte() {
     let accept = corpus_accept();
-    let mut ids: Vec<String> = fs::read_dir(&accept)
-        .expect("read corpus/accept")
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".expected"))
-        .map(|n| n.trim_end_matches(".expected").to_string())
-        .collect();
-    ids.sort();
-    assert_eq!(ids.len(), 21, "expected 21 committed goldens (a01–a21)");
+    // Corpus entries: single-file `<id>.ts` plus multi-file `<id>/`
+    // directories.
+    let mut entry_ids: Vec<String> = Vec::new();
+    let mut golden_ids: Vec<String> = Vec::new();
+    for e in fs::read_dir(&accept).expect("read corpus/accept").flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if e.path().is_dir() {
+            entry_ids.push(name);
+        } else if let Some(id) = name.strip_suffix(".ts") {
+            entry_ids.push(id.to_string());
+        } else if let Some(id) = name.strip_suffix(".expected") {
+            golden_ids.push(id.to_string());
+        }
+    }
+    golden_ids.sort();
+    // The set is derived, never pinned: every committed golden is
+    // compared, today (a01–a21) and after the a22–a24 capture, with
+    // no edits here. The floor guards against silently comparing an
+    // empty set; goldens are never deleted (compiler.md §2).
+    assert!(
+        golden_ids.len() >= 21,
+        "expected at least the 21 authored goldens, found {}",
+        golden_ids.len()
+    );
 
     let mut failures = Vec::new();
-    for id in &ids {
+    let mut compared = 0usize;
+    for id in &golden_ids {
+        if !entry_ids.contains(id) {
+            failures.push(format!("{id}: golden has no corpus entry"));
+            continue;
+        }
         let golden = fs::read(accept.join(format!("{id}.expected"))).expect("read golden");
         let sources = entry_sources(&accept, id);
         match run_jit(&sources) {
             Ok(bytes) => {
+                compared += 1;
                 if bytes != golden {
                     failures.push(format!(
                         "{id}: JIT output {:?} != golden {:?}",
@@ -76,9 +97,14 @@ fn every_committed_golden_matches_the_jit_byte_for_byte() {
     }
     assert!(
         failures.is_empty(),
-        "{} golden mismatch(es):\n{}",
+        "{} golden failure(s):\n{}",
         failures.len(),
         failures.join("\n")
+    );
+    assert_eq!(
+        compared,
+        golden_ids.len(),
+        "every committed golden must be compared (no silent skips)"
     );
 }
 
