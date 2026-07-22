@@ -132,6 +132,42 @@ is empty — the goldens were confirmed, never adjusted. Later changes
 follow the golden-change procedure (§2). The test floors now pin 24
 entries.
 
+## Known limitations of "a trap does not end the dev session" (§8.2)
+
+Recorded 2026-07-23 when the rule landed; none blocks P4, all are
+candidates for a small phase after it.
+
+1. **Post-trap state is a valid execution prefix, not a valid state.**
+   A trap mid-statement leaves globals partially updated (`a = 1;`
+   applied, `b = 2;` not), so the script's own invariants can be broken
+   while the language's are intact. Subsequent calls then fail in ways
+   that look unrelated to the original trap.
+2. **A stale coroutine driven every frame traps every frame, forever.**
+   Staleness is permanent by design and the language cannot recreate a
+   coroutine, so after any accepted swap a module-level generator that
+   the host drives per frame produces an endless trap stream with no
+   in-language recovery. For this case the rule is worse for the
+   developer than stopping was, unless the host recreates the
+   coroutine. Fix candidate: report the invalidated coroutines from
+   `reload()` so the host can recreate them instead of waiting for the
+   trap.
+3. **Tier divergence after a trap, invisible to the standing gate.**
+   The dev tier clears and continues; the AOT entry writes the sink,
+   reports on stderr and exits non-zero (`codegen/src/aot.rs`). No
+   run-set entry traps, so the differential gate cannot see the
+   difference: a trapping program can behave differently in dev and
+   ship. Fix candidate: an accept entry that traps deliberately, with
+   its expected report as the golden, compared on both tiers.
+4. **Not every trap kind should be recoverable.** `AllocationFailure`
+   (Context memory exhausted) is cleared like any other, so a systemic
+   condition is re-reported as a series of sporadic errors; dev-tier
+   retained bytes make exhaustion reachable in a long session. Fix
+   candidate: mark allocation failure and internal errors
+   non-recoverable in §8.2.
+5. **Recovery is tested for two trap kinds only** (stale coroutine,
+   out-of-bounds). Use-after-delete, UTF-8 boundary, class-mismatch
+   narrowing and division-by-zero have no post-trap session test.
+
 ## P3 exit
 
 Gate (§8.4) met: run set matches goldens under AOT; JIT≡AOT≡golden is

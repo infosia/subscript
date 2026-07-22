@@ -1,9 +1,10 @@
 # Compiler and runtime — contract
 
-Status: Rev 5, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 6, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
-AOT/reload contract). Contract for the plan's P0.5–P5 phases
+AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
+measurement methodology). Contract for the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
 
@@ -276,3 +277,36 @@ Per §1's rules, made testable:
 Run set matches goldens under AOT; JIT≡AOT≡golden is the default
 `cargo test`; reload demonstrated on a run-set program; device-triple
 link green for a run-set entry.
+
+## 9. P4 measurement methodology
+
+The thresholds are pre-registered in §3 and do not move. This section
+pins *how* the numbers are produced, before any number exists.
+
+- **The baseline is verified, not asserted.** The hand-written C
+  program must print the same bytes as `corpus/accept/
+  a22-matrix-propagation.expected`. A baseline that does not reproduce
+  the frozen golden is not the same computation and the measurement is
+  void. Same N, same iteration count, same LCG seed and sequence, same
+  f32 arithmetic — the C source declares the correspondence in a
+  comment naming the corpus entry.
+- **What is timed**: the execution of the workload only — the loop the
+  entry performs, measured inside the process, excluding process
+  start-up, compilation, linking, JIT warm-up, and I/O. All three
+  subjects (C, ship-AOT, dev-JIT) time the same span by the same
+  clock class (monotonic).
+- **Procedure**: at least 3 warm-up runs discarded, then at least 11
+  timed runs; the reported figure is the **median**. Report the median
+  and the min/max spread for each subject; a spread wider than ±20% of
+  the median invalidates the run (machine too noisy) and it is redone.
+- **One session, one machine**: all three subjects are measured in the
+  same session on the same machine, with the machine's state described
+  in the tracking entry (host, CPU, whether on AC power). Numbers from
+  different sessions are never compared.
+- **Compile-time is reported, not gated**: dev-tier JIT compile time
+  for the entry is recorded alongside (it is the iteration-speed
+  argument), but §3's 4× criterion is about execution.
+- **Both outcomes are recorded.** If a threshold fails, the tracking
+  entry records the measurement, the failure, and the named criterion
+  reopening the backend decision (§3) — the gate is not retried with a
+  different methodology.
