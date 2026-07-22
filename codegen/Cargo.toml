@@ -1,0 +1,15 @@
+[package]
+name = "subscript-codegen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "HIR-to-CLIF lowering and the dev-tier JIT driver for subscript (plan phase P2). The lowering is tier-neutral: it targets any cranelift-module backend so P3 AOT reuses it unchanged."
+
+[dependencies]
+subscript-compiler = { path = "../compiler" }
+subscript-runtime = { path = "../runtime" }
+cranelift-codegen = "=0.125.4"
+cranelift-frontend = "=0.125.4"
+cranelift-module = "=0.125.4"
+cranelift-jit = "=0.125.4"
+cranelift-native = "=0.125.4"

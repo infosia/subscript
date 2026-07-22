@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "compiler",
+    "runtime",
+    "codegen",
     "spike/mobile-link",
     "spike/mobile-link/runtime-stub",
 ]
