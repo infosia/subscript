@@ -107,7 +107,39 @@ and measure it in the P4 harness alongside the existing subjects.
 Bounded to a22 — it is a measurement, not the C backend. Its result
 informs the §3 backend decision; it does not by itself decide it.
 
-## Owner decision (2026-07-23)
+### P4.2 result (orchestrator-verified)
+
+Emitter `codegen/src/cemit.rs` emits a self-contained C translation unit
+from the same typed HIR the CLIF path consumes, carrying the language's
+semantics: `Matrix4` value params **by value** (C2 copy-on-pass, which
+the hand baseline elides with `const*`); the `FixedArray` inner matmul
+**unchecked** via the same P4.1 interval proof; dynamic arrays as
+`(data,len,cap)` with a **bounds check per access** (`sub_arr_at`) and
+realloc-on-push; f32 kept in `float`; Q14 print replicated. Verified by
+inspecting the emitted C (inner loop unchecked, value params by value,
+dynamic access checked, element store resolved after the RHS) and by
+`codegen/tests/cemit.rs` asserting the frozen golden byte-exact.
+
+Measurement (§9 unchanged, `--warmup 30 --timed 11`, M2, AC;
+orchestrator-reproduced at 1.05×):
+
+| Subject | Median | vs C |
+|---|---|---|
+| C baseline (hand) | 3.98 ms | 1.00× |
+| ship-AOT (Cranelift) | 92.3 ms | 23.21× |
+| dev-JIT (Cranelift) | 104.6 ms | 26.34× |
+| **emitted-C (clang)** | **4.19 ms** | **1.05×** |
+
+**Emitted-C clears both thresholds** (1.05× ≤ 1.5× and ≤ 4×), carrying
+the C2 copies and checked dynamic indexing the measurement requires. The
+~5% over the hand baseline is exactly those semantics (value-param
+copies, per-access array checks, growth). The identical semantics cost
+~5% through LLVM and ~23× through Cranelift `opt_level=speed`.
+
+**Conclusion**: the residual P4.1 gap is confirmed as Cranelift backend
+behaviour, not a lowering defect, and the C-emission ship route reaches
+the pre-registered §3 threshold. This is the input to the backend
+decision; the decision itself is the owner's (§3).
 
 The lowering is optimized and the gate re-measured before the backend
 decision is judged (`specs/blocks/compiler.md` §10, P4.1). Rationale:
