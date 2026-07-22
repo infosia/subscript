@@ -310,7 +310,12 @@ fn stmt_assigns_to(s: &hir::Stmt, name: &str) -> bool {
         }
         hir::Stmt::Block(b) => stmts_assign_to(b, name),
         hir::Stmt::Break(_) | hir::Stmt::Continue(_) => false,
-        _ => false,
+        // `hir::Stmt` is `#[non_exhaustive]` across the crate boundary,
+        // so this arm cannot be removed. Every current variant that can
+        // carry an assignment is handled above; a future variant is
+        // treated conservatively as possibly assigning, which only
+        // declines an induction proof (soundness over optimization).
+        _ => true,
     }
 }
 
@@ -351,15 +356,27 @@ fn expr_assigns_to(e: &hir::Expr, name: &str) -> bool {
                 || expr_assigns_to(els, name)
         }
         K::Yield(arg) => arg.as_deref().is_some_and(|x| expr_assigns_to(x, name)),
-        // A lambda body is a separate function; a `const` capture of the
-        // counter cannot be reassigned there (C5), and the counter is
-        // not `const` while it is a loop variable — but to stay sound
-        // without scoping analysis, treat a lambda that mentions the
-        // name conservatively by not special-casing it here: lambdas do
-        // not appear in the corpus's counted loops, and a capturing
-        // lambda cannot assign to an outer mutable local anyway (C5
-        // forbids capturing non-`const`). So no descent is needed.
-        _ => false,
+        // A lambda cannot assign to an outer mutable local: C5 forbids a
+        // capturing lambda from capturing a non-`const`, and a loop
+        // counter is mutable while it is the loop variable. So a lambda
+        // never reassigns the counter and needs no descent.
+        K::Lambda { .. } => false,
+        // Read-only leaves: none can assign to an outer local.
+        K::Int(_)
+        | K::Float(_)
+        | K::Bool(_)
+        | K::Str(_)
+        | K::Null
+        | K::This
+        | K::Local(_)
+        | K::Global(_)
+        | K::FuncRef(_)
+        | K::EnumMember { .. } => false,
+        // `hir::ExprKind` is `#[non_exhaustive]` across the crate
+        // boundary. Every current variant is handled above; a future
+        // variant is treated conservatively as possibly assigning, which
+        // only declines an induction proof (soundness over optimization).
+        _ => true,
     }
 }
 
