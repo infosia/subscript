@@ -1,6 +1,7 @@
 # Compiler and runtime — contract
 
-Status: Rev 0, 2026-07-22. Contract for the plan's P1–P5 phases
+Status: Rev 1, 2026-07-22 (Rev 0: same day; Rev 1 moves the mobile link
+spike from P3 to P0.5 — plan §8). Contract for the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
 
@@ -67,8 +68,10 @@ SWC parse (TS-subset front end, Rust)
 
 ## 3. Pre-registered criteria
 
-- **P3 mobile link spike — kill criterion**: P3 opens with the spike. A
-  minimal program (arithmetic + a runtime call + printed result) compiled
+- **P0.5 mobile link spike — kill criterion**: the spike has no
+  dependency on the language (it emits a fixed program), so it runs
+  immediately after P0, before any compiler investment. A minimal
+  program (arithmetic + a runtime call + printed result) compiled
   through `cranelift-object` must produce a valid object and link cleanly
   with the platform linker for both device triples:
   `aarch64-linux-android` (NDK clang) and `aarch64-apple-ios` (Xcode
@@ -92,9 +95,10 @@ SWC parse (TS-subset front end, Rust)
 
 | # | Deliverable | Gate |
 |---|---|---|
+| P0.5 | Mobile link spike (`cranelift-object` emitter + runtime stub + link script + host-side object-parse tests) | Spike passes both targets or fallback is invoked and recorded |
 | P1 | Semantic checker + typed HIR | All 14 reject entries (r01–r14, plus any added since) rejected with rule-specific diagnostics at TS positions; accept corpus checks clean |
 | P2 | Runtime crate + HIR→CLIF + JIT; goldens authored/captured (§2) | Run set (a01–a24) matches goldens under dev JIT |
-| P3 | Mobile link spike; AOT objects + link + run; hot reload demo; standing differential gate; goldens frozen | Spike passes both targets or fallback is invoked and recorded; run set matches goldens under AOT; JIT≡AOT≡golden is the default `cargo test`; reload demonstrated on a run-set program |
+| P3 | AOT objects + link + run; hot reload demo; standing differential gate; goldens frozen | Run set matches goldens under AOT; JIT≡AOT≡golden is the default `cargo test`; reload demonstrated on a run-set program |
 | P4 | Performance gate | §3 criteria |
 | P5 | C-header binding slice: mirror generator from a neutral synthetic header (all five plan-§4 patterns), `offsetof` assertion suite, headless end-to-end slice on both forms, interop corpus entries | Slice green headless; layout suite green on dev targets |
 

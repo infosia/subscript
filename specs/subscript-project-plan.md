@@ -1,6 +1,6 @@
 # subscript — project plan
 
-**Rev 0 (2026-07-22).** This document records the design that founds the
+**Rev 1 (2026-07-22; Rev 0: same day).** This document records the design that founds the
 project and the phase plan. It is a working draft, not a contract.
 Corrections and revisions land in §8 with evidence; read §8 before
 reasoning from anything asserted here.
@@ -107,14 +107,16 @@ ship iOS/Android (arm64-only).
   `CLAUDE.md`), corpus `a01`–`a24` + `r01`–`r14`, `prelude/lang.d.ts`,
   the `tsc` gate. Exit: `tsc -p tsconfig.json` zero errors; reference
   sweep clean (no external-project references).
+- **P0.5 — mobile link spike** *(Rev 1: moved from P3 — §8)*. The spike
+  has no dependency on the language; it runs before any compiler
+  investment, with the pre-registered kill criterion (compiler block §3).
 - **P1 — semantic checker + typed HIR.** All reject entries rejected with
   rule-specific diagnostics at TS positions; accept corpus checks clean.
 - **P2 — runtime + JIT.** Runtime crate (Context memory, values, strings,
   arrays, traps, coroutine state, Q14 formatting) + HIR→CLIF lowering +
   `cranelift-jit` execution. Run set (a01–a24) runs; goldens captured per
   the compiler block's procedure.
-- **P3 — AOT + hot reload + standing gate.** Opens with the mobile link
-  spike (pre-registered kill criterion, compiler block §3). AOT via
+- **P3 — AOT + hot reload + standing gate.** AOT via
   `cranelift-object`; hot reload demonstrated; the differential gate
   (JIT ≡ AOT ≡ golden, byte-exact) becomes the default `cargo test` path
   and freezes the goldens.
@@ -130,9 +132,9 @@ a C facade, editor debugging depth.
 
 ## 7. Standing risks
 
-- **Cranelift ship-tier link is unproven in this repository.** P3's mobile
-  link spike converts it to evidence or invokes the pre-registered C
-  emission fallback.
+- **Cranelift ship-tier link is unproven in this repository.** The P0.5
+  mobile link spike converts it to evidence or invokes the pre-registered
+  C emission fallback. (Resolved when P0.5's tracking entry lands.)
 - **Single-implementation oracle until P3.** Goldens captured at P2 come
   from one tier; independent confirmation arrives only when P3's AOT path
   reproduces them byte-exactly. Until then a runtime bug can be frozen
@@ -147,4 +149,15 @@ a C facade, editor debugging depth.
 
 Convention: every entry records what changed, the evidence, and the
 consequence; later revisions must not reintroduce superseded claims from
-memory. No entries yet.
+memory.
+
+**Rev 1 (2026-07-22) — mobile link spike moved from P3 to P0.5.**
+
+- What changed: Rev 0 scheduled the spike as P3's opening step. It is now
+  its own milestone, P0.5, run before P1.
+- Evidence: owner decision 2026-07-22. The spike emits a fixed program
+  and has no dependency on the checker, runtime, or HIR, so nothing
+  orders it after P1/P2; running it first prices the backend bet before
+  any compiler investment.
+- Consequence: compiler block Rev 1 (§3 criterion unchanged, §4 gains the
+  P0.5 row); §7's ship-tier-link risk resolves at P0.5 instead of P3.
