@@ -178,7 +178,9 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q14 (numeric formatting)** — template-literal interpolation of sized
   numerics is defined by the language runtime, not the host libc:
   integers in decimal; `f32`/`f64` by shortest round-trip (Ryu class
-  algorithm), `-0`, `NaN`, `Infinity` spelled `-0`, `NaN`, `Infinity`.
+  algorithm), with integral values printed without a decimal point or
+  exponent (`7`, never `7.0` or `7E0`); `-0`, `NaN`, `Infinity` spelled
+  `-0`, `NaN`, `Infinity`.
   Both tiers share one implementation; byte-identical output is a
   standing differential-gate assertion (plan P3).
 - **Q17** — decided in C2. **Q18** — `|`, `&`, `^`, `~`, shifts on `i64`/
