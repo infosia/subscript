@@ -132,9 +132,9 @@ a C facade, editor debugging depth.
 
 ## 7. Standing risks
 
-- **Cranelift ship-tier link is unproven in this repository.** The P0.5
-  mobile link spike converts it to evidence or invokes the pre-registered
-  C emission fallback. (Resolved when P0.5's tracking entry lands.)
+- **Cranelift ship-tier link** — resolved 2026-07-22: the P0.5 spike
+  passed both device triples (`specs/tracking/p0.5-mobile-link.md`); the
+  C-emission fallback was not invoked.
 - **Single-implementation oracle until P3.** Goldens captured at P2 come
   from one tier; independent confirmation arrives only when P3's AOT path
   reproduces them byte-exactly. Until then a runtime bug can be frozen

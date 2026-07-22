@@ -1,0 +1,11 @@
+[package]
+name = "subscript-runtime-stub"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Minimal runtime stub for the P0.5 mobile link spike"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]

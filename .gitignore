@@ -1,4 +1,5 @@
 target/
 node_modules/
+spike/mobile-link/out/
 .claude/
 *.transcript.md

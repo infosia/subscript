@@ -42,4 +42,4 @@ clean.
 - `tsc -p tsconfig.json` (typescript 5.9.2): exit 0, zero errors, over
   `prelude/lang.d.ts` + all 25 accept files (2026-07-22).
 - Reference sweep: zero matches. Phase Review: no open findings.
-- Next: P1 — semantic checker + typed HIR (`specs/blocks/compiler.md` §4).
+- Next: P0.5 — mobile link spike (plan Rev 1), then P1.
