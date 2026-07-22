@@ -75,13 +75,26 @@ struct Allocation {
 
 /// The script execution context.
 ///
-/// `repr(C)` with the trap flag as the first field: generated code
-/// checks for a pending trap with a single 32-bit load at offset 0
-/// from the context pointer. Everything past offset 0 is opaque to
-/// generated code.
+/// `repr(C)` with a fixed prefix that generated code reads directly
+/// (the runtime's ABI contract):
+///
+/// | offset | field | read by |
+/// |---|---|---|
+/// | 0 | trap flag (`u32`) | every emitted trap check |
+/// | 4 | reload epoch (`u32`) | coroutine resume, hot-reload mode |
+/// | 8 | function table (`*const *const u8`) | script calls, hot-reload mode |
+/// | 16 | module-global block (`*mut u8`) | global access, hot-reload mode |
+///
+/// Everything past the prefix is opaque to generated code. The three
+/// hot-reload fields are read only by code lowered in reload mode; the
+/// AOT tier and the plain dev-JIT run never touch them.
 #[repr(C)]
 pub struct Context {
     trap_flag: u32,
+    reload_epoch: u32,
+    fn_table: *const *const u8,
+    globals: *mut u8,
+    script_depth: u32,
     allocations: HashMap<usize, Allocation>,
     stdout: Vec<u8>,
     trap: Option<TrapRecord>,
@@ -96,6 +109,10 @@ impl Context {
     pub fn new() -> Box<Context> {
         Box::new(Context {
             trap_flag: 0,
+            reload_epoch: 0,
+            fn_table: std::ptr::null(),
+            globals: std::ptr::null_mut(),
+            script_depth: 0,
             allocations: HashMap::new(),
             stdout: Vec::new(),
             trap: None,
@@ -111,6 +128,76 @@ impl Context {
     pub fn trap_flag_offset() -> usize {
         // repr(C): trap_flag is the first field.
         0
+    }
+
+    /// Byte offset of the reload epoch (ABI contract with generated
+    /// code lowered in hot-reload mode).
+    #[must_use]
+    pub fn reload_epoch_offset() -> usize {
+        4
+    }
+
+    /// Byte offset of the per-function indirection table pointer (ABI
+    /// contract with generated code lowered in hot-reload mode).
+    #[must_use]
+    pub fn fn_table_offset() -> usize {
+        8
+    }
+
+    /// Byte offset of the module-global block pointer (ABI contract
+    /// with generated code lowered in hot-reload mode).
+    #[must_use]
+    pub fn globals_offset() -> usize {
+        16
+    }
+
+    // ----- hot-reload state (dev tier) -----
+
+    /// Points the indirection table at `table`, an array of code
+    /// addresses indexed by the lowering's function slot numbers.
+    ///
+    /// Storing the pointer is safe; generated code dereferences it, so
+    /// the array must stay alive and correctly sized for as long as
+    /// script code compiled in reload mode can run.
+    pub fn set_fn_table(&mut self, table: *const *const u8) {
+        self.fn_table = table;
+    }
+
+    /// Points module-global storage at `base`, a block laid out by the
+    /// lowering. It must stay alive for the rest of the session: the
+    /// collector's registered root ranges point into it.
+    pub fn set_globals(&mut self, base: *mut u8) {
+        self.globals = base;
+    }
+
+    /// The current reload epoch. Coroutine frames record the epoch
+    /// they were created in; a resume across a swap traps.
+    #[must_use]
+    pub fn reload_epoch(&self) -> u32 {
+        self.reload_epoch
+    }
+
+    /// Advances the reload epoch, invalidating every coroutine frame
+    /// created before the swap.
+    pub fn bump_reload_epoch(&mut self) {
+        self.reload_epoch = self.reload_epoch.wrapping_add(1);
+    }
+
+    /// Marks entry into script code (the host called into the script).
+    pub fn enter_script(&mut self) {
+        self.script_depth = self.script_depth.saturating_add(1);
+    }
+
+    /// Marks return from script code.
+    pub fn exit_script(&mut self) {
+        self.script_depth = self.script_depth.saturating_sub(1);
+    }
+
+    /// Number of host-to-script calls currently on the stack. A hot
+    /// reload is applied only at zero (the frame-boundary rule).
+    #[must_use]
+    pub fn script_depth(&self) -> u32 {
+        self.script_depth
     }
 
     // ----- trap state -----
@@ -150,6 +237,12 @@ impl Context {
     #[must_use]
     pub fn take_stdout(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.stdout)
+    }
+
+    /// Borrows the captured stdout bytes without draining the sink.
+    #[must_use]
+    pub fn stdout_bytes(&self) -> &[u8] {
+        &self.stdout
     }
 
     // ----- allocation -----
@@ -525,6 +618,51 @@ mod tests {
         let base = &*ctx as *const Context as usize;
         let flag = &ctx.trap_flag as *const u32 as usize;
         assert_eq!(flag - base, Context::trap_flag_offset());
+    }
+
+    #[test]
+    fn reload_prefix_offsets_match_the_abi_contract() {
+        let ctx = Context::new();
+        let base = &*ctx as *const Context as usize;
+        assert_eq!(
+            &ctx.reload_epoch as *const u32 as usize - base,
+            Context::reload_epoch_offset()
+        );
+        assert_eq!(
+            &ctx.fn_table as *const *const *const u8 as usize - base,
+            Context::fn_table_offset()
+        );
+        assert_eq!(
+            &ctx.globals as *const *mut u8 as usize - base,
+            Context::globals_offset()
+        );
+    }
+
+    #[test]
+    fn reload_epoch_and_script_depth_track_swaps_and_entries() {
+        let mut ctx = Context::new();
+        assert_eq!(ctx.reload_epoch(), 0);
+        ctx.bump_reload_epoch();
+        assert_eq!(ctx.reload_epoch(), 1);
+        assert_eq!(ctx.script_depth(), 0);
+        ctx.enter_script();
+        ctx.enter_script();
+        assert_eq!(ctx.script_depth(), 2);
+        ctx.exit_script();
+        ctx.exit_script();
+        ctx.exit_script();
+        assert_eq!(ctx.script_depth(), 0);
+    }
+
+    #[test]
+    fn fn_table_and_globals_pointers_round_trip() {
+        let mut ctx = Context::new();
+        let table: [*const u8; 2] = [std::ptr::null(), std::ptr::null()];
+        let mut block = [0u8; 16];
+        ctx.set_fn_table(table.as_ptr());
+        ctx.set_globals(block.as_mut_ptr());
+        assert_eq!(ctx.fn_table, table.as_ptr());
+        assert_eq!(ctx.globals, block.as_mut_ptr());
     }
 
     #[test]

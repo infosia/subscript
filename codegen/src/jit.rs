@@ -7,7 +7,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use subscript_compiler::{check_program, Diagnostic, Pos, SourceFile};
 use subscript_runtime::{ffi, Context, TrapKind};
 
-use crate::lower::{dev_flags, internal, lower_module};
+use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 
 /// A runtime fault that stopped the script (collisions.md C6). The
 /// host process survives; this is the report the Context recorded.
@@ -60,7 +60,11 @@ impl std::fmt::Display for RunError {
 impl std::error::Error for RunError {}
 
 /// Registers every runtime symbol the lowering imports.
-fn register_runtime(builder: &mut JITBuilder) {
+///
+/// The dev tier binds them by address; the ship tier resolves the same
+/// names from the runtime static library at link time, so this list and
+/// the lowering's imports must stay in step with `runtime::ffi`.
+pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     let syms: &[(&str, *const u8)] = &[
         ("sub_rt_print", ffi::sub_rt_print as *const u8),
         ("sub_rt_collect", ffi::sub_rt_collect as *const u8),
@@ -116,7 +120,8 @@ pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     register_runtime(&mut builder);
     let mut module = JITModule::new(builder);
 
-    let lowered = lower_module(&mut module, &hir).map_err(RunError::Internal)?;
+    let lowered = lower_module_with(&mut module, &hir, LowerOptions::default())
+        .map_err(RunError::Internal)?;
     module
         .finalize_definitions()
         .map_err(|e| RunError::Internal(internal(format!("finalize: {e}"))))?;

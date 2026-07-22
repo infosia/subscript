@@ -1,22 +1,38 @@
 #![warn(missing_docs)]
-//! HIR-to-CLIF lowering and the dev-tier JIT for subscript (plan
-//! phase P2, `specs/blocks/compiler.md` §7).
+//! HIR-to-CLIF lowering and both execution tiers of subscript (plan
+//! phases P2 and P3, `specs/blocks/compiler.md` §7, §8).
 //!
 //! One lowering serves both tiers (§1): the `lower` module targets
-//! the `cranelift_module::Module` trait, and the JIT driver
-//! instantiates it with `JITModule`. P3's AOT path will instantiate
-//! the same lowering with `ObjectModule`.
+//! the `cranelift_module::Module` trait, the dev-tier JIT driver
+//! instantiates it with `JITModule`, and the ship-tier AOT driver
+//! instantiates the same lowering with `ObjectModule`.
 //!
-//! The public entry point is [`run_jit`]: check the sources, lower,
-//! execute the exported `main(): void`, and return the exact stdout
-//! bytes (print writes to a runtime-owned sink, never the process
-//! stdout) or a [`TrapReport`].
+//! Three entry points, all returning the exact stdout bytes of a run
+//! (print writes to a runtime-owned sink, never the process stdout) or
+//! a [`TrapReport`]:
+//!
+//! - [`run_jit`] — dev tier: check, lower, execute the exported
+//!   `main(): void` in process.
+//! - [`run_aot`] — ship tier: check, lower, emit an object, link it
+//!   with the runtime static library and the generated C entry, run
+//!   the binary. [`emit_object`] stops after emission and is what the
+//!   device-triple link script uses.
+//! - [`ReloadSession`] — dev tier with hot reload: a live program whose
+//!   function bodies can be swapped between host calls, accepted only
+//!   when its [`DeclarationHash`] is unchanged.
+//!
+//! The standing differential gate (§8.3) compares the first two
+//! against the committed goldens on every `cargo test`.
 
+mod aot;
 mod jit;
 mod layout;
 mod lower;
+mod reload;
 
+pub use aot::{emit_object, run_aot, AotObject, AOT_ENTRY_C, RUNTIME_STATICLIB_ENV};
 pub use jit::{run_jit, RunError, TrapReport};
+pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 
 #[cfg(test)]
 mod tests {

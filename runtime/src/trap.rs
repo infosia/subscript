@@ -41,6 +41,9 @@ pub enum TrapKind {
     /// C boundary); always a compiler/runtime bug, never a program
     /// fault.
     Internal = 11,
+    /// Resume of a coroutine suspended in a function body that a hot
+    /// reload replaced (`specs/blocks/compiler.md` §8.2).
+    StaleCoroutine = 12,
 }
 
 impl TrapKind {
@@ -59,6 +62,7 @@ impl TrapKind {
             9 => TrapKind::AllocationFailure,
             10 => TrapKind::DivisionByZero,
             11 => TrapKind::Internal,
+            12 => TrapKind::StaleCoroutine,
             _ => return None,
         })
     }
@@ -78,6 +82,7 @@ impl TrapKind {
             TrapKind::AllocationFailure => "allocation-failure",
             TrapKind::DivisionByZero => "division-by-zero",
             TrapKind::Internal => "internal",
+            TrapKind::StaleCoroutine => "stale-coroutine-after-reload",
         }
     }
 }
@@ -119,7 +124,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=11u32 {
+        for v in 1..=12u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

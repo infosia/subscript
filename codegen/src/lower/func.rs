@@ -30,7 +30,7 @@ use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
 use crate::layout::{has_managed_interior, is_managed, is_unsigned, managed_words, Repr};
-use crate::lower::{internal, FnKey, ModLower};
+use crate::lower::{internal, FnKey, GlobalSlot, ModLower};
 
 /// A computed value.
 #[derive(Debug, Clone, Copy)]
@@ -109,6 +109,37 @@ const GEN_PAYLOAD_OFF: u32 = 16;
 
 fn flags() -> MemFlags {
     MemFlags::trusted()
+}
+
+/// Frame offset of the reload epoch a coroutine frame was created in
+/// (`LowerOptions::reload` only; the word is unused otherwise).
+const GEN_EPOCH_OFF: i32 = 4;
+
+/// Context byte offset, as the `i32` displacement Cranelift loads take.
+fn ctx_off(offset: usize) -> Result<i32, String> {
+    i32::try_from(offset).map_err(|_| internal("context offset does not fit in i32"))
+}
+
+/// Loads a function's *current* code address out of the Context's
+/// per-function indirection table and imports its signature
+/// (`LowerOptions::reload`). A hot reload repoints the table, so every
+/// call emitted this way reaches the newly compiled body.
+fn indirect_target<M: Module>(
+    ml: &ModLower<'_, M>,
+    b: &mut FunctionBuilder<'_>,
+    ctx_v: Value,
+    key: &FnKey,
+) -> Result<(Value, cranelift_codegen::ir::SigRef), String> {
+    let id = ml.func_id(key)?;
+    let slot = ml.slot_of(key)?;
+    let disp = i32::try_from(u64::from(slot) * 8)
+        .map_err(|_| internal("function slot offset does not fit in i32"))?;
+    let sig = ml.signature_of(id);
+    let sigref = b.import_signature(sig);
+    let table_off = ctx_off(rtc::Context::fn_table_offset())?;
+    let table = b.ins().load(types::I64, flags(), ctx_v, table_off);
+    let code = b.ins().load(types::I64, flags(), table, disp);
+    Ok((code, sigref))
 }
 
 fn align_shift(align: u32) -> u8 {
@@ -457,6 +488,25 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.guard(ok, TrapKind::UseAfterDelete, pos)
     }
 
+    /// Stale-coroutine check on `.next()` (`LowerOptions::reload`):
+    /// the frame's creation epoch must still be the Context's epoch.
+    /// A hot reload replaces every function body and bumps the epoch,
+    /// so a coroutine suspended across a swap traps here, at the
+    /// resume position.
+    fn reload_epoch_check(&mut self, frame: Value, pos: &Pos) -> Result<(), String> {
+        if !self.ml.opts.reload {
+            return Ok(());
+        }
+        let epoch_off = ctx_off(rtc::Context::reload_epoch_offset())?;
+        let now = self
+            .b
+            .ins()
+            .load(types::I32, flags(), self.ctx_v, epoch_off);
+        let made = self.b.ins().load(types::I32, flags(), frame, GEN_EPOCH_OFF);
+        let ok = self.b.ins().icmp(IntCC::Equal, now, made);
+        self.guard(ok, TrapKind::StaleCoroutine, pos)
+    }
+
     // ----- calls -----
 
     fn call_rt(
@@ -479,9 +529,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         key: &FnKey,
         args: &[Value],
     ) -> Result<Vec<Value>, String> {
-        let id = self.ml.func_id(key)?;
-        let fref = self.ml.module.declare_func_in_func(id, self.b.func);
-        let inst = self.b.ins().call(fref, args);
+        let inst = if self.ml.opts.reload {
+            let (code, sigref) = indirect_target(self.ml, &mut self.b, self.ctx_v, key)?;
+            self.b.ins().call_indirect(sigref, code, args)
+        } else {
+            let id = self.ml.func_id(key)?;
+            let fref = self.ml.module.declare_func_in_func(id, self.b.func);
+            self.b.ins().call(fref, args)
+        };
         let res = self.b.inst_results(inst).to_vec();
         self.trap_check();
         Ok(res)
@@ -823,14 +878,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     fn global_slot(&mut self, name: &str) -> Result<(Value, Type), String> {
-        let (data, ty) = self
+        let (slot, ty) = self
             .ml
             .globals
             .get(name)
             .cloned()
             .ok_or_else(|| internal(format!("unknown global `{name}`")))?;
-        let gv = self.ml.module.declare_data_in_func(data, self.b.func);
-        let addr = self.b.ins().symbol_value(types::I64, gv);
+        let addr = match slot {
+            GlobalSlot::Data(data) => {
+                let gv = self.ml.module.declare_data_in_func(data, self.b.func);
+                self.b.ins().symbol_value(types::I64, gv)
+            }
+            GlobalSlot::Offset(off) => {
+                let base_off = ctx_off(rtc::Context::globals_offset())?;
+                let base = self.b.ins().load(types::I64, flags(), self.ctx_v, base_off);
+                self.addr_off(base, i64::from(off))
+            }
+        };
         Ok((addr, ty))
     }
 
@@ -1584,6 +1648,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let rv = self.eval(recv)?;
                 let frame = self.expect_s(rv)?;
                 self.live_check(frame, pos)?;
+                self.reload_epoch_check(frame, pos)?;
                 let step_ty = Type::IterResult(y.clone());
                 let (size, align) = self.ml.layouts.size_align(&step_ty)?;
                 let slot = self.temp_slot(size, align);
@@ -2499,9 +2564,11 @@ pub(crate) fn wrapper_for<M: Module>(
         .module
         .declare_function(&sym, cranelift_module::Linkage::Local, &sig)
         .map_err(|e| internal(format!("declare {sym}: {e}")))?;
+    ml.bind_slot(&key, id);
     ml.fns.insert(key, id);
 
-    let target = ml.func_id(&FnKey::Free(name.to_string()))?;
+    let target = FnKey::Free(name.to_string());
+    let target_id = ml.func_id(&target)?;
     let mut cctx = ml.module.make_context();
     cctx.func.signature = sig;
     let mut fbx = FunctionBuilderContext::new();
@@ -2514,8 +2581,18 @@ pub(crate) fn wrapper_for<M: Module>(
         // Drop the env parameter (vals[1]); forward the rest.
         let mut argv = vec![vals[0]];
         argv.extend_from_slice(&vals[2..]);
-        let fref = ml.module.declare_func_in_func(target, b.func);
-        let inst = b.ins().call(fref, &argv);
+        // The wrapper forwards through the indirection table in reload
+        // mode, so a function value taken before a swap still reaches
+        // the post-swap body (the wrapper itself is pure forwarding and
+        // its shape is fixed by the signature, which a swap cannot
+        // change).
+        let inst = if ml.opts.reload {
+            let (code, sigref) = indirect_target(ml, &mut b, vals[0], &target)?;
+            b.ins().call_indirect(sigref, code, &argv)
+        } else {
+            let fref = ml.module.declare_func_in_func(target_id, b.func);
+            b.ins().call(fref, &argv)
+        };
         let results = b.inst_results(inst).to_vec();
         b.ins().return_(&results);
         b.seal_all_blocks();
@@ -2611,6 +2688,16 @@ pub(crate) fn define_generator<M: Module>(
             let rref = body.ml.module.declare_func_in_func(resume_id, body.b.func);
             let raddr = body.b.ins().func_addr(types::I64, rref);
             body.b.ins().store(flags(), raddr, frame, GEN_RESUME_OFF);
+            if body.ml.opts.reload {
+                // Stamp the creation epoch so a resume after a swap
+                // traps instead of re-entering a replaced body.
+                let epoch_off = ctx_off(rtc::Context::reload_epoch_offset())?;
+                let epoch = body
+                    .b
+                    .ins()
+                    .load(types::I32, flags(), body.ctx_v, epoch_off);
+                body.b.ins().store(flags(), epoch, frame, GEN_EPOCH_OFF);
+            }
             // Parameters into the frame.
             let mut vi = 0usize;
             for (p, off) in f.params.iter().zip(&param_offsets) {

@@ -5,4 +5,7 @@ edition = "2021"
 publish = false
 description = "subscript runtime (plan phase P2): Context memory, strings, arrays, traps, coroutine frame storage, and Q14 numeric formatting behind a C-ABI-stable boundary."
 
+[lib]
+crate-type = ["rlib", "staticlib"]
+
 [dependencies]

@@ -913,8 +913,11 @@ dependencies = [
  "cranelift-jit",
  "cranelift-module",
  "cranelift-native",
+ "cranelift-object",
+ "object 0.36.7",
  "subscript-compiler",
  "subscript-runtime",
+ "target-lexicon",
 ]
 
 [[package]]

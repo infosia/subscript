@@ -97,6 +97,7 @@ pub unsafe extern "C" fn sub_rt_trap(ctx: *mut Context, kind: u32, pos_id: u32) 
         TrapKind::UseAfterDelete => "use of a deleted allocation",
         TrapKind::DivisionByZero => "integer division by zero",
         TrapKind::Internal => "unknown trap kind raised by generated code",
+        TrapKind::StaleCoroutine => "stale coroutine after reload",
         other => other.rule(),
     };
     ctx.trap(kind, message, pos_id);
@@ -420,9 +421,135 @@ pub unsafe extern "C" fn sub_rt_array_ptr(
     unsafe { (*ctx).array_elem_ptr(a, idx, pos_id) }
 }
 
+// ----- host driver entry points -----
+//
+// These are not called by generated code; they are the C-ABI surface a
+// host entry program uses to drive an AOT-linked script
+// (`specs/blocks/compiler.md` §8.1): create a Context, call the
+// program's exported entries, then read the sink and the trap state.
+
+/// Creates a Context and transfers ownership to the caller, who must
+/// return it with [`sub_rt_ctx_release`]. Never null.
+#[no_mangle]
+pub extern "C" fn sub_rt_ctx_new() -> *mut Context {
+    Box::into_raw(Context::new())
+}
+
+/// Destroys a Context created by [`sub_rt_ctx_new`], freeing every
+/// allocation it owns.
+///
+/// # Safety
+///
+/// `ctx` must be a pointer returned by [`sub_rt_ctx_new`] that has not
+/// been released yet; no handle into it may be used afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_release(ctx: *mut Context) {
+    if ctx.is_null() {
+        return;
+    }
+    // SAFETY: caller guarantees `ctx` came from `sub_rt_ctx_new` and is
+    // released exactly once.
+    drop(unsafe { Box::from_raw(ctx) });
+}
+
+/// Borrows the captured stdout bytes: returns the base pointer and
+/// writes the byte length through `len`. The bytes stay valid until
+/// the next script call or the Context's release.
+///
+/// # Safety
+///
+/// Shared contract; `len` is a writable `u64`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_stdout(ctx: *const Context, len: *mut u64) -> *const u8 {
+    // SAFETY: shared contract.
+    let bytes = unsafe { &*ctx }.stdout_bytes();
+    if !len.is_null() {
+        // SAFETY: caller guarantees `len` is writable.
+        unsafe { len.write(bytes.len() as u64) };
+    }
+    bytes.as_ptr()
+}
+
+/// The pending trap's kind as its stable `u32`, or 0 when the run did
+/// not trap.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_trap_kind(ctx: *const Context) -> u32 {
+    // SAFETY: shared contract.
+    unsafe { &*ctx }.trap_record().map_or(0, |r| r.kind as u32)
+}
+
+/// The pending trap's position-table index, or 0 when the run did not
+/// trap.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_trap_pos_id(ctx: *const Context) -> u32 {
+    // SAFETY: shared contract.
+    unsafe { &*ctx }.trap_record().map_or(0, |r| r.pos_id)
+}
+
+/// Borrows the pending trap's message bytes (UTF-8, no terminator);
+/// writes the length through `len`. Null with length 0 when the run
+/// did not trap.
+///
+/// # Safety
+///
+/// Shared contract; `len` is a writable `u64`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_trap_message(ctx: *const Context, len: *mut u64) -> *const u8 {
+    // SAFETY: shared contract.
+    let msg = unsafe { &*ctx }.trap_record().map(|r| r.message.as_bytes());
+    let bytes = msg.unwrap_or(&[]);
+    if !len.is_null() {
+        // SAFETY: caller guarantees `len` is writable.
+        unsafe { len.write(bytes.len() as u64) };
+    }
+    if bytes.is_empty() {
+        std::ptr::null()
+    } else {
+        bytes.as_ptr()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ffi_host_driver_round_trip() {
+        let ctx = sub_rt_ctx_new();
+        assert!(!ctx.is_null());
+        // SAFETY: `ctx` is the context just created; released once below.
+        unsafe {
+            let s = sub_rt_str_lit(ctx, b"hi".as_ptr(), 2, 0);
+            sub_rt_print(ctx, s);
+            let mut len: u64 = 0;
+            let p = sub_rt_ctx_stdout(ctx, &mut len);
+            assert_eq!(std::slice::from_raw_parts(p, len as usize), b"hi\n");
+            assert_eq!(sub_rt_ctx_trap_kind(ctx), 0);
+            let mut mlen: u64 = 1;
+            assert!(sub_rt_ctx_trap_message(ctx, &mut mlen).is_null());
+            assert_eq!(mlen, 0);
+            sub_rt_trap(ctx, TrapKind::EmptyPop as u32, 4);
+            assert_eq!(sub_rt_ctx_trap_kind(ctx), TrapKind::EmptyPop as u32);
+            assert_eq!(sub_rt_ctx_trap_pos_id(ctx), 4);
+            let m = sub_rt_ctx_trap_message(ctx, &mut mlen);
+            assert!(!m.is_null() && mlen > 0);
+            sub_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn ffi_release_of_null_is_a_no_op() {
+        // SAFETY: null is explicitly accepted.
+        unsafe { sub_rt_ctx_release(std::ptr::null_mut()) };
+    }
 
     #[test]
     fn ffi_string_round_trip() {
