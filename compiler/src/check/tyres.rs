@@ -66,7 +66,19 @@ impl<'p> Checker<'p> {
             TsStringKeyword => Type::Str,
             TsVoidKeyword => Type::Void,
             TsNullKeyword => Type::Null,
-            TsObjectKeyword => Type::Object,
+            TsObjectKeyword => {
+                // C7: the boundary-opaque `object` (and `object | null`)
+                // exists only at the C boundary; general declarations
+                // may not spell it. The ambient `unsafeDelete(value:
+                // object)` signature is hardcoded and unaffected.
+                self.error(
+                    RuleCode::S011,
+                    "`object` is a boundary-only type; it is not available to \
+                     general declarations",
+                    pos,
+                );
+                Type::Error
+            }
             _ => {
                 self.error(
                     RuleCode::S100,
@@ -124,7 +136,22 @@ impl<'p> Checker<'p> {
                     ast::TsType::TsLitType(ast::TsLitType {
                         lit: ast::TsLit::Number(n),
                         ..
-                    }) if n.value >= 0.0 && n.value.fract() == 0.0 => n.value as u32,
+                    }) if n.value >= 0.0 && n.value.fract() == 0.0 => {
+                        if n.value > f64::from(u32::MAX) {
+                            let p = self.pos(args.params[1].span());
+                            self.error(
+                                RuleCode::S008,
+                                format!(
+                                    "FixedArray length {} out of range (maximum {})",
+                                    n.value,
+                                    u32::MAX
+                                ),
+                                p,
+                            );
+                            return Type::Error;
+                        }
+                        n.value as u32
+                    }
                     other => {
                         let p = self.pos(other.span());
                         self.error(

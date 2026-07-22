@@ -494,6 +494,39 @@ impl<'p> Checker<'p> {
 
     fn check_update(&mut self, u: &ast::UpdateExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         let target = self.check_expr(&u.arg, None, fx);
+        // Q17: `++`/`--` rebind their target, so `const` bindings are
+        // rejected exactly like plain assignment.
+        match &target.kind {
+            ExprKind::Local(name) => {
+                let mutable = fx
+                    .scopes
+                    .iter()
+                    .rev()
+                    .find_map(|s| s.vars.get(name))
+                    .map(|l| l.mutable)
+                    .unwrap_or(true);
+                if !mutable {
+                    self.error(
+                        RuleCode::S100,
+                        format!("cannot rebind `const` binding `{}`", name),
+                        target.pos.clone(),
+                    );
+                }
+            }
+            ExprKind::Global(name) => {
+                if let Some(sig) = self.global_sigs.get(name) {
+                    if !sig.mutable {
+                        let name = name.clone();
+                        self.error(
+                            RuleCode::S100,
+                            format!("cannot rebind `const` binding `{}`", name),
+                            target.pos.clone(),
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
         if !target.ty.is_numeric() && !matches!(target.ty, Type::Error) {
             let name = self.type_name(&target.ty);
             self.error(
@@ -911,6 +944,13 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                         "the array element",
                     );
+                    if self.is_capturing_value(&checked, fx) {
+                        self.error(
+                            RuleCode::S009,
+                            "capturing lambdas may not be stored in arrays",
+                            checked.pos.clone(),
+                        );
+                    }
                     out.push(checked);
                 }
                 hir::Expr {
@@ -940,6 +980,15 @@ impl<'p> Checker<'p> {
                         "the array element",
                     );
                     out.push(checked);
+                }
+                for checked in &out {
+                    if self.is_capturing_value(checked, fx) {
+                        self.error(
+                            RuleCode::S009,
+                            "capturing lambdas may not be stored in arrays",
+                            checked.pos.clone(),
+                        );
+                    }
                 }
                 hir::Expr {
                     kind: ExprKind::ArrayLit(out),
@@ -1723,6 +1772,17 @@ impl<'p> Checker<'p> {
                         has_default: false,
                     }];
                     let args = self.check_args(&params, &c.args, fx, &pos, "push");
+                    // C5: `push` stores its argument in the array.
+                    for arg in &args {
+                        if self.is_capturing_value(arg, fx) {
+                            self.error(
+                                RuleCode::S009,
+                                "capturing lambdas may not escape: `push` stores its \
+                                 argument in the array",
+                                arg.pos.clone(),
+                            );
+                        }
+                    }
                     mk(recv, args, Type::I32, pos)
                 }
                 "pop" => {
@@ -2070,6 +2130,17 @@ impl<'p> Checker<'p> {
                 let mut out = Vec::new();
                 for s in &block.stmts {
                     self.check_stmt(s, fx, &mut out);
+                }
+                if let Some(ret) = &ret {
+                    if !matches!(ret, Type::Void | Type::Error)
+                        && !super::stmt::always_returns(&out)
+                    {
+                        self.error(
+                            RuleCode::S100,
+                            "not all paths return a value",
+                            pos.clone(),
+                        );
+                    }
                 }
                 out
             }

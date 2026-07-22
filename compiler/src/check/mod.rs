@@ -447,10 +447,20 @@ impl<'p> Checker<'p> {
             fields: Vec::new(),
             ctor: None,
             methods: Vec::new(),
-            pos,
+            pos: pos.clone(),
         });
         self.class_sigs.push(ClassSig::default());
-        self.class_ids.insert(name.to_string(), id);
+        if self.class_ids.contains_key(name) {
+            // Cross-file collisions land here; same-file ones are also
+            // caught by the per-file scope registration.
+            self.error(
+                RuleCode::S100,
+                format!("duplicate class name `{}` in the program", name),
+                pos,
+            );
+        } else {
+            self.class_ids.insert(name.to_string(), id);
+        }
         id
     }
 
@@ -515,7 +525,9 @@ impl<'p> Checker<'p> {
         let name = e.id.sym.to_string();
         let pos = self.pos(e.id.span);
         let mut members = Vec::new();
-        let mut next = 0i64;
+        // `None` means the previous member's value + 1 overflows i64, so
+        // the next implicit value has no representation.
+        let mut next: Option<i64> = Some(0);
         for m in &e.members {
             let member_name = match &m.id {
                 ast::TsEnumMemberId::Ident(id) => id.sym.to_string(),
@@ -526,7 +538,21 @@ impl<'p> Checker<'p> {
                 }
             };
             let value = match &m.init {
-                None => next,
+                None => match next {
+                    Some(v) => v,
+                    None => {
+                        let p = self.pos(m.span);
+                        self.error(
+                            RuleCode::S008,
+                            format!(
+                                "implicit value for enum member `{}` overflows i64",
+                                member_name
+                            ),
+                            p,
+                        );
+                        0
+                    }
+                },
                 Some(init) => match self.const_int_of(init) {
                     Some(v) => v,
                     None => {
@@ -536,11 +562,11 @@ impl<'p> Checker<'p> {
                             "enum members must have integer literal values",
                             p,
                         );
-                        next
+                        next.unwrap_or(0)
                     }
                 },
             };
-            next = value + 1;
+            next = value.checked_add(1);
             members.push((member_name, value));
         }
         let id = EnumId(self.enums.len());
@@ -1074,6 +1100,12 @@ impl<'p> Checker<'p> {
             }
             ret
         } else {
+            if f.body.is_some()
+                && !matches!(sig.ret, Type::Void | Type::Error)
+                && !stmt::always_returns(&body)
+            {
+                self.error(RuleCode::S100, "not all paths return a value", pos.clone());
+            }
             sig.ret.clone()
         };
         Some(hir::Function {
@@ -1384,8 +1416,13 @@ impl<'p> Checker<'p> {
         Some(local)
     }
 
-    /// True when an expression is (or names) a capturing lambda; such a
-    /// value may only be called locally or passed downward (C5).
+    /// True when an expression is (or can transport) a capturing
+    /// lambda; such a value may only be called locally or passed
+    /// downward (C5). Conditionals, assignment expressions, and array
+    /// literals forward the taint of their value positions. Other kinds
+    /// cannot carry one: parentheses are erased during checking, `||`
+    /// requires boolean operands, and reading a capturing lambda back
+    /// out of storage is impossible because storing one is rejected.
     pub(crate) fn is_capturing_value(&self, e: &hir::Expr, fx: &FnCtx) -> bool {
         match &e.kind {
             hir::ExprKind::Lambda { captures, .. } => !captures.is_empty(),
@@ -1396,6 +1433,13 @@ impl<'p> Checker<'p> {
                 .find_map(|s| s.vars.get(name))
                 .map(|l| l.holds_capturing)
                 .unwrap_or(false),
+            hir::ExprKind::Cond { then, els, .. } => {
+                self.is_capturing_value(then, fx) || self.is_capturing_value(els, fx)
+            }
+            hir::ExprKind::Assign { value, .. } => self.is_capturing_value(value, fx),
+            hir::ExprKind::ArrayLit(elems) => {
+                elems.iter().any(|e| self.is_capturing_value(e, fx))
+            }
             _ => false,
         }
     }

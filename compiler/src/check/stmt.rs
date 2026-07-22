@@ -55,6 +55,55 @@ fn root_of(key: &str) -> &str {
     key.split('.').next().unwrap_or(key)
 }
 
+/// Conservative all-paths-return analysis over checked bodies: true
+/// when every control path reaches a `return`. Used for functions with
+/// a non-void declared return type (generators are exempt).
+pub(crate) fn always_returns(stmts: &[hir::Stmt]) -> bool {
+    stmts.iter().any(stmt_returns)
+}
+
+fn stmt_returns(s: &hir::Stmt) -> bool {
+    match s {
+        hir::Stmt::Return { .. } => true,
+        hir::Stmt::Block(b) => always_returns(b),
+        hir::Stmt::If {
+            then,
+            els: Some(els),
+            ..
+        } => always_returns(then) && always_returns(els),
+        hir::Stmt::Switch { cases, .. } => {
+            // Every case must return before any fallthrough or break;
+            // a `default` must exist or the discriminant may skip all.
+            cases.iter().any(|c| c.test.is_none())
+                && cases.iter().all(|c| always_returns(&c.body))
+        }
+        hir::Stmt::While { cond, body, .. } => {
+            is_true_literal(cond) && !contains_break(body)
+        }
+        hir::Stmt::For { cond, body, .. } => {
+            cond.as_ref().map_or(true, is_true_literal) && !contains_break(body)
+        }
+        _ => false,
+    }
+}
+
+fn is_true_literal(e: &hir::Expr) -> bool {
+    matches!(e.kind, ExprKind::Bool(true))
+}
+
+/// True when the statements contain a `break` binding to the enclosing
+/// loop (nested loops and switches consume their own breaks).
+fn contains_break(stmts: &[hir::Stmt]) -> bool {
+    stmts.iter().any(|s| match s {
+        hir::Stmt::Break(_) => true,
+        hir::Stmt::Block(b) => contains_break(b),
+        hir::Stmt::If { then, els, .. } => {
+            contains_break(then) || els.as_ref().is_some_and(|e| contains_break(e))
+        }
+        _ => false,
+    })
+}
+
 /// Collects root names assigned anywhere in a statement (used to drop
 /// narrowing facts across loop iterations).
 fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {

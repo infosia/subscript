@@ -361,6 +361,164 @@ mod tests {
         assert_eq!(err[0].code, RuleCode::S100);
     }
 
+    // ----- P1 phase-review regression tests -----
+
+    #[test]
+    fn m1_enum_implicit_value_overflow_is_s008_not_a_panic() {
+        let err = check_one(
+            "enum E { A = 9223372036854775807, B }\nexport function main(): void {\n  print(`${E.A as i32}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S008);
+        assert!(err[0].message.contains("B"), "message names the member: {}", err[0].message);
+    }
+
+    #[test]
+    fn m2a_push_of_a_capturing_lambda_is_s009() {
+        let err = check_one(
+            "export function main(): void {\n  const k: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + k;\n  const xs: ((x: i32) => i32)[] = [];\n  xs.push(f);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S009);
+        assert_eq!(err[0].pos.line, 5);
+    }
+
+    #[test]
+    fn m2b_array_literals_reject_capturing_lambdas_in_every_context() {
+        // Inferred element type.
+        let err = check_one(
+            "export function main(): void {\n  const k: i32 = 1;\n  const fs = [(x: i32): i32 => x + k];\n  print(`${fs[0](1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S009);
+
+        // FixedArray context.
+        let err = check_one(
+            "export function main(): void {\n  const k: i32 = 1;\n  const fs: FixedArray<(x: i32) => i32, 1> = [(x: i32): i32 => x + k];\n  print(`${fs[0](1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S009);
+    }
+
+    #[test]
+    fn m2b_returning_a_local_bound_to_a_capturing_array_literal_is_s009() {
+        let diags = check_one(
+            "function make(): ((x: i32) => i32)[] {\n  const k: i32 = 1;\n  const fs = [(x: i32): i32 => x + k];\n  return fs;\n}\nexport function main(): void {\n  print(`${make()[0](1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert!(
+            diags.iter().any(|d| d.code == RuleCode::S009),
+            "expected an S009 among: {:?}",
+            diags.iter().map(|d| d.code).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m2c_returning_a_conditional_over_capturing_lambdas_is_s009() {
+        let err = check_one(
+            "function pick(flag: boolean): (x: i32) => i32 {\n  const a: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + a;\n  const g: (x: i32) => i32 = (x: i32): i32 => x - a;\n  return flag ? f : g;\n}\nexport function main(): void {\n  print(`${pick(true)(1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S009);
+        assert_eq!(err[0].pos.line, 5);
+    }
+
+    #[test]
+    fn m3_missing_return_path_is_s100_at_the_function() {
+        let err = check_one(
+            "function f(flag: boolean): i32 {\n  if (flag) {\n    return 1;\n  }\n}\nexport function main(): void {\n  print(`${f(true)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("return"));
+        assert_eq!(err[0].pos.line, 1);
+    }
+
+    #[test]
+    fn m3_all_return_shapes_check_clean() {
+        // if/else with both arms returning.
+        check_one(
+            "function f(flag: boolean): i32 {\n  if (flag) {\n    return 1;\n  } else {\n    return 2;\n  }\n}\nexport function main(): void {\n  print(`${f(true)}`);\n}\n",
+        )
+        .expect("if/else return");
+        // Infinite loop with no break never falls through.
+        check_one(
+            "function f(): i32 {\n  while (true) {\n    return 1;\n  }\n}\nexport function main(): void {\n  print(`${f()}`);\n}\n",
+        )
+        .expect("while(true) return");
+    }
+
+    #[test]
+    fn m3_while_true_with_break_does_not_count_as_returning() {
+        let err = check_one(
+            "function f(flag: boolean): i32 {\n  while (true) {\n    if (flag) {\n      return 1;\n    }\n    break;\n  }\n}\nexport function main(): void {\n  print(`${f(true)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("return"));
+    }
+
+    #[test]
+    fn m3_lambda_block_bodies_need_all_paths_to_return() {
+        let err = check_one(
+            "export function main(): void {\n  const f: (x: i32) => i32 = (x: i32): i32 => {\n    if (x > 0) {\n      return x;\n    }\n  };\n  print(`${f(1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("return"));
+    }
+
+    #[test]
+    fn minor1_update_operators_respect_const_bindings() {
+        let err = check_one(
+            "export function main(): void {\n  const x: i32 = 1;\n  x++;\n  print(`${x}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("rebind"));
+    }
+
+    #[test]
+    fn minor2_user_written_object_annotations_are_s011() {
+        let err = check_one("let o: object | null = null;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+
+        let err = check_one("function f(o: object): void {}\nexport function main(): void {}\n")
+            .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+
+        // The ambient `unsafeDelete(value: object)` stays callable.
+        check_one(
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  unsafeDelete(c);\n}\n",
+        )
+        .expect("ambient object parameter unaffected");
+    }
+
+    #[test]
+    fn minor3_cross_file_duplicate_class_names_are_s100() {
+        let err = check_program(&[
+            SourceFile::new("a.ts", "export class C { x: i32 = 1; }\nexport function main(): void {}\n"),
+            SourceFile::new("b.ts", "export class C { x: i32 = 1; }\n"),
+        ])
+        .unwrap_err();
+        assert!(
+            err.iter()
+                .any(|d| d.code == RuleCode::S100 && d.message.contains("duplicate class")),
+            "expected a duplicate-class diagnostic, got: {:?}",
+            err.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn minor4_fixed_array_length_beyond_u32_is_s008() {
+        let err = check_one(
+            "function f(xs: FixedArray<i32, 4294967296>): void {}\nexport function main(): void {}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S008);
+        assert!(err[0].message.contains("FixedArray length"));
+    }
+
     #[test]
     fn same_shaped_classes_do_not_substitute() {
         let err = check_one(
