@@ -2987,7 +2987,18 @@ typedef struct { void* code; void* env; } SubFn;
  * output, so its value is never observed. */
 static unsigned char ss_scratch[256];
 
+/* Mirror of the runtime ArrayHeader (runtime/src/context.rs, repr(C),
+ * compiler.md invariant 1 / §10a). The in-bounds fast path is inlined so
+ * the host C compiler can optimize the surrounding loops; an out-of-bounds
+ * index falls to sub_rt_array_ptr, the sole producer of the trap and its
+ * exact message, so behaviour stays byte-identical to the runtime path. */
+typedef struct { uint64_t len; uint64_t cap; uint64_t elem_size; unsigned char* data; } SsArrayHeader;
+
 static void* ss_arr_at(void* ctx, void* a, int32_t idx, uint32_t pos) {
+    SsArrayHeader* h = (SsArrayHeader*)a;
+    if (idx >= 0 && (uint64_t)idx < h->len) {
+        return h->data + (int64_t)idx * (int64_t)h->elem_size;
+    }
     void* p = sub_rt_array_ptr(ctx, a, idx, pos);
     return p ? p : (void*)ss_scratch;
 }

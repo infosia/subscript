@@ -711,6 +711,17 @@ impl std::fmt::Debug for Context {
 mod tests {
     use super::*;
 
+    // The emitted-C SsArrayHeader (codegen/src/cemit.rs, §10a) mirrors this
+    // layout; a reorder here is caught by this test.
+    #[test]
+    fn array_header_offsets_match_the_abi_contract() {
+        assert_eq!(core::mem::offset_of!(ArrayHeader, len), 0);
+        assert_eq!(core::mem::offset_of!(ArrayHeader, cap), 8);
+        assert_eq!(core::mem::offset_of!(ArrayHeader, elem_size), 16);
+        assert_eq!(core::mem::offset_of!(ArrayHeader, data), 24);
+        assert_eq!(core::mem::size_of::<ArrayHeader>(), 32);
+    }
+
     #[test]
     fn trap_flag_is_at_offset_zero() {
         let ctx = Context::new();

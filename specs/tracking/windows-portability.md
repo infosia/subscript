@@ -145,6 +145,22 @@ kept minimal:
   setup (§11) — a machine/toolchain difference, not a port defect: C and
   emitted-C are timed by the same method, so the ratio is timing-independent.
 
+- **Emitted-C x86 perf investigation (§10a) — A landed (2026-07-23).**
+  The bench's emitted-C = 2.6x hand C on x86/Windows (vs 1.05x on the arm64
+  ship target, §11) was root-caused by measurement, ruling out the Windows
+  port, `-fwrapv` (≈0 cost), QPC timing (ratio is method-independent), and
+  opt level (ratio ~2.5x flat at -O2 and -O3). It is structural: the emitted
+  C's growable-array access was an opaque `sub_rt_array_ptr` call and its
+  value-class math is copy-heavy, both of which clang optimizes on arm64 but
+  not on x86. These are the two well-understood AOT-codegen costs for a
+  C-ABI value-type language: out-of-line array access, and passing large
+  aggregates by value. Fix A (inline growable-array access, §10a) landed:
+  emitted-C 17.2→14.0 ms at -O2 (measured), workspace 237/0, goldens
+  byte-identical. Fix B (value-class params by const-pointer) is next
+  (measured A+B → 12.1 ms / 1.74x). Closing fully to 1.05x on x86 would need
+  a SIMD vector-type representation — a larger separate effort, not
+  scheduled.
+
 ### Open
 - **Reconcile the `mod.rs` gate doc comment**, which still says `(ptr,len)`
   is target-neutral — now contradicted by §12.3a and the func.rs Str/Array

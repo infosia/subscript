@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 12, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 13, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -356,6 +356,40 @@ judged.
   re-measurement that still misses by a wide margin is itself the
   evidence for changing backend; one that lands near the thresholds
   is evidence for keeping Cranelift.
+
+## 10a. Emitted-C growable-array element access is inlined
+
+The ship-tier C emitter (§11) lowered a **growable-array** element access to
+an opaque call into the runtime staticlib (`sub_rt_array_ptr`), which the
+host C compiler cannot inline, cannot prove the bounds branch of, and around
+which it will not vectorize. The **FixedArray** path was already inlined
+(`base + idx*elem`), so only growable arrays paid this. Measured on
+x86-64/Windows the opaque call alone cost ≈18% of the a22 emitted-C time
+(17.2→14.0 ms at `-O2`); on arm64 it is latent because the surrounding loops
+vectorize regardless — which is why the gap showed up only on x86
+(`specs/tracking/windows-portability.md`).
+
+The emitter now inlines the **in-bounds fast path** — a header-layout
+pointer computation `data + (int64)idx*elem_size` guarded by an inlined
+`0 <= idx < len` branch — and delegates only the **out-of-bounds case** to
+`sub_rt_array_ptr`, so the trap and its exact dynamic message stay
+byte-identical to the runtime path (the runtime is still the sole producer
+of the trap). This mirrors the FixedArray inline form and the standard AOT
+technique of keeping the bounds check but making array element access a
+header-inlinable operation rather than an opaque out-of-line call. This is
+a **C-emitter** optimization only; the dev-JIT tier is
+unchanged (it targets iteration speed, invariant 3), and dev-JIT ≡ ship-C
+equivalence is preserved by construction.
+
+The emitted C mirrors the runtime's committed array ABI — `ArrayHeader`
+(`runtime/src/context.rs`, `#[repr(C)]`):
+`{ u64 len; u64 cap; u64 elem_size; u8* data; }`, invariant 1 — as a C
+`SsArrayHeader` typedef. The coupling is machine-verified two ways: a runtime
+test pins the `ArrayHeader` field offsets (0/8/16/24), and the standing
+differential gate (dev-JIT ≡ ship-C-AOT ≡ golden, byte-exact) fails
+immediately on any layout drift, since a wrong offset reads garbage.
+Closing the x86 gap the rest of the way (to the arm64 1.05×) is a value-copy
+/ SIMD concern beyond this change, tracked separately.
 
 ## 11. P4.3 ship tier — C emission (LLVM)
 
