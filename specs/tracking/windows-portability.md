@@ -174,6 +174,21 @@ kept minimal:
   value-copy problem, already 1.05x). Owner decision: not worth the risk;
   B dropped, no B code committed. Closing fully to 1.05x on x86 would need a
   SIMD vector-type representation — a larger separate effort, not scheduled.
+- **Root cause of B's difficulty is a language-design choice (C2), not a
+  codegen gap.** A scripting language that defines struct/aggregate
+  parameters as **passed by reference** (no value-snapshot guarantee — the
+  parameter binds to a pointer into caller storage) reaches this speed for
+  free: no parameter copy is ever inserted. subscript's C2 deliberately
+  mandates value semantics (snapshot copies; `a04` is the witness), which is
+  precisely what turns by-reference parameter passing into an unsound
+  optimization requiring interprocedural aliasing proof. The `1`-vs-`99`
+  program above returns `99` under by-reference semantics and `1` under
+  value semantics — they are observably different languages, not two
+  implementations of one. Getting the same performance on this pattern
+  without weakening C2 requires (1) sound interprocedural elision, (2) an
+  opt-in by-reference parameter mode, or (3) SIMD value types — none free.
+  This is a tradeoff subscript chose (value semantics over the copy),
+  recorded so future perf work does not re-litigate it as a bug.
 
 ### Open
 - **Reconcile the `mod.rs` gate doc comment**, which still says `(ptr,len)`
