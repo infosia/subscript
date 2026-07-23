@@ -53,7 +53,7 @@ HOST_OS=$(uname -s)
 if [ "$HOST_OS" = "Darwin" ]; then
     cargo build --offline --release -p subscript-runtime --target aarch64-apple-ios
     xcrun --sdk iphoneos clang --target=arm64-apple-ios -miphoneos-version-min=10.0 \
-        -O2 -fwrapv -ffp-contract=off \
+        -std=c11 -O2 -fwrapv -ffp-contract=off \
         "$OUT_DIR/$ENTRY_ID.c" \
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/aarch64-apple-ios/release/$RUNTIME_LIB" \
@@ -95,7 +95,7 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_CC"
 export CC_aarch64_linux_android="$ANDROID_CC"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
 cargo build --offline --release -p subscript-runtime --target aarch64-linux-android
-"$ANDROID_CC" --target=aarch64-linux-android24 -O2 -fwrapv -ffp-contract=off \
+"$ANDROID_CC" --target=aarch64-linux-android24 -std=c11 -O2 -fwrapv -ffp-contract=off \
     "$OUT_DIR/$ENTRY_ID.c" \
     "$OUT_DIR/entry.c" \
     "$TARGET_DIR/aarch64-linux-android/release/$RUNTIME_LIB" \

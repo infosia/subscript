@@ -636,6 +636,11 @@ fn measure_emitted_c(
 
     let started = Instant::now();
     let build = Command::new(host_cc())
+        // Match the ship path's dialect (run_c_aot, compiler block §11):
+        // the emitted C is C11. The hand baseline keeps its §9-recorded
+        // flags; this subject stands in for the ship tier, so it tracks
+        // the ship tier's `-std`.
+        .arg("-std=c11")
         .args(BASELINE_CFLAGS)
         // The emitted ship-tier C requires two's-complement signed
         // wrap; `-fwrapv` makes signed overflow defined (matching the

@@ -477,6 +477,12 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     let interop = interop_dir();
     let cc = host_cc();
     let compile = Command::new(&cc)
+        // The emitted ship C targets C11 (compiler block §11); the
+        // language's C-ABI layout, compound literals, `_Alignof`, and
+        // `<stdbool.h>`/`<stdint.h>` types are all C11. Pinning the
+        // dialect keeps the ship tier independent of the platform
+        // compiler's default `-std`.
+        .arg("-std=c11")
         .arg("-O2")
         // Signed integer arithmetic in the emitted C must wrap
         // two's-complement (the language's semantics); `-fwrapv` makes

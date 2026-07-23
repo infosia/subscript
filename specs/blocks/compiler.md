@@ -360,7 +360,15 @@ judged.
 ## 11. P4.3 ship tier — C emission (LLVM)
 
 Owner decision 2026-07-23 (plan §8 Rev 2): the ship tier is
-HIR→C→platform C compiler (`clang -O2 -ffp-contract=off`, i.e. LLVM).
+HIR→C→platform C compiler (`clang -std=c11 -O2 -fwrapv
+-ffp-contract=off`, i.e. LLVM). The emitted C, the synthetic interop
+callee, and the device-link builds all pin **`-std=c11`** (owner
+2026-07-23) — the emitted dialect is verified C11 (compound literals,
+`<stdint.h>`/`<stdbool.h>` types, C-ABI layout; strict
+`-std=c11 -pedantic-errors` compiles it with no GNU extensions), so the
+ship tier does not depend on the platform compiler's default `-std`.
+`-fwrapv` makes signed overflow defined two's-complement wrap;
+`-ffp-contract=off` matches the language's non-contracting f32.
 Evidence: P4/P4.1/P4.2 (`specs/tracking/p4-performance.md`) — Cranelift
 ship-AOT 23× a C baseline, ≈73% attributable to its scalar output;
 emitted C carrying the same semantics measured 1.05×. The dev tier is

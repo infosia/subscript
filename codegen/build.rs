@@ -32,6 +32,9 @@ fn main() {
     let ar = std::env::var_os("AR").unwrap_or_else(|| "ar".into());
 
     let compile = Command::new(&cc)
+        // The synthetic interop callee is C11 (compiler block §11), the
+        // same dialect the emitted ship C targets.
+        .arg("-std=c11")
         .arg("-O2")
         .arg("-fPIC")
         .arg("-I")
