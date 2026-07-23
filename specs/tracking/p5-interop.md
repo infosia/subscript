@@ -131,7 +131,71 @@ param) by binding the ident in the guard. MINOR 2 (whether a bodyless
 entry) is a language-design question deferred beyond P5 — pre-existing
 behaviour, no soundness impact. **P5.2a COMPLETE.**
 
-Next: P5.2b — foreign-call lowering in both tiers (dev JIT + ship C):
-the callback trampoline (`SubFn{code,env}` ⇄ C `(fnptr, void* userdata)`),
-the chain-slot address-of, `(ptr,count)` / string / handle / `Struct|null`
-argument marshaling.
+## P5.2b — foreign-call lowering, both tiers: COMPLETE (2026-07-23)
+
+`Callee::Foreign` lowers to a real C-ABI call in both tiers. Dev JIT:
+the header symbol is `Linkage::Import`, and `codegen/build.rs` compiles
+`corpus/interop/interop.c` → `libinterop.a` whose addresses `jit.rs`
+registers with the JITModule (alongside new runtime symbols
+`sub_rt_str_data`/`array_data`/`cb_bind`/`cb_trampoline`). Ship C:
+`#include "interop.h"` + direct calls; `run_c_aot`/`run_aot` add
+`-I corpus/interop` and compile `interop.c` into the link. One C
+implementation serves both tiers.
+
+Marshaling (Q13): `string` ↔ `(const char*, size_t)`; `T[]` ↔
+`(const T*, size_t)`; handle / `object|null` ↔ one pointer; `Struct|null`
+↔ nullable struct pointer (address-of storage, or 0). Chain-slot
+address-of: a guarded `store_val` arm writes the struct's storage
+address into a `Nullable(value class)` slot — reachable only through a
+C7 boundary-only type, never from ordinary code. Callback trampoline:
+`sub_rt_cb_trampoline` bridges the language `SubFn{code,env}` /
+`(ctx,env,args)` convention to the C `(fnptr, void* userdata)`
+convention via a per-callback `CallbackBinding{ctx,code,env,userdata}`
+held in the Context; it delivers the script's real userdata and the
+Context is captured per-binding, not global.
+
+`corpus/interop/interop.c`: deterministic, headless, libc-only —
+create walks the chain, setLabel stores, setLogger fires the callback
+with the label, submit sums the `(ptr,count)` commands and fires the
+callback. Defines the P5.3 goldens.
+
+The five patterns each pass through a real foreign call, byte-identical
+across tiers (`codegen/tests/interop.rs`, 6 differential tests): handle
+create/retain/release, string label, `(ptr,count)` sum, chain-slot
+address-of (constructor and `next =` forms), all five composed.
+
+Phase Review (2026-07-23): 0 CRITICAL, 1 MAJOR, 3 MINOR. Sound and
+byte-identical across tiers **on arm64** (the gate machine, the sole
+ship target, and the run set's platform).
+
+- MAJOR M1: the JIT by-value boundary-struct marshaler was hardcoded to
+  AAPCS64, so on a non-arm64 dev host (x86-64 SysV / Win64) it would
+  mis-marshal a >16-byte struct (e.g. `SubCallbackInfo`, 24 B) — silent
+  dev-JIT ≠ ship-C. Contract scoped (compiler block Rev 10, §12.3a):
+  dev-tier boundary-struct-by-value marshaling is **arm64-only for
+  now**; on a non-arm64 target it is now a **loud codegen error**
+  (`boundary_struct_by_value_supported`, gated only on the by-value
+  path — scalar/pointer/`(ptr,len)`/`Struct|null`-pointer/`object|null`
+  args stay target-neutral). x86-64 SysV / Win64 marshaling is a
+  tracked follow-up (untested on this arm64 machine; a fail-loud
+  restriction beats untested ABI code). The ship tier is arm64-only C
+  emission where the C compiler marshals correctly, so shipped code is
+  unaffected.
+- MINOR m1 fixed: the trampoline now checks `ctx.trapped()` before
+  invoking script, so a trap stops the run even if a callee fires the
+  callback more than once. m2 (chain-slot / userdata lifetime) and m3
+  (transient `alloc_str` rooting) are by-design under Q13 / invariants
+  2 & 6 — recorded, not changed.
+
+Verification (orchestrator-reproduced): 236 tests green, zero warnings;
+6 interop differential tests byte-identical; the 24-entry standing gate
+byte-exact; goldens untouched; the arch classifier accepts aarch64 and
+rejects x86-64 SysV / Win64. **P5.2b COMPLETE.**
+
+### Follow-ups tracked (beyond P5)
+
+- Dev-tier boundary-struct-by-value marshaling for x86-64 SysV and
+  Win64 (target-aware ABI; §12.3a). Blocked on a non-arm64 host to
+  verify against.
+
+Next: P5.3 — both-tier corpus slice (a25+) + gate extension.
