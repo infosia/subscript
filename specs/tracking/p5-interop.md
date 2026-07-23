@@ -49,3 +49,48 @@ Each stage: contract already in §12 → handoff → independent
 verification → no-context Phase Review → fix → tracking. The standing
 gate and the reference sweep (no real-world-library names) hold
 throughout.
+
+## P5.1 — synthetic header + offsetof layout proof: COMPLETE (2026-07-23)
+
+`corpus/interop/interop.h`: neutral synthetic fixture (all `Sub`-prefixed,
+no external project named), structs/enums/opaque-handle/fn-ptr typedefs
+only, no unions/bitfields, all five plan-§4 patterns plus two
+padding-exercising payload structs.
+
+`codegen/src/layout.rs` gains `pub fn value_class_layouts(&Module) ->
+Result<Vec<StructLayout>>` (`#[must_use]`, name↔offset join over the
+positional `field_offsets`). `codegen/tests/offsetof_layout.rs` is the
+proof: it generates a C probe that `#include`s the header, compiles it
+with the platform `cc`, runs it, and asserts the language layout equals
+the C compiler's `sizeof`/`_Alignof`/`offsetof` for every mirrored
+struct. A missing `cc` fails (not skips).
+
+**Invariant 1 machine-verified — language layout == C for all 8 mirrored
+structs, zero disagreement:**
+
+| struct | size/align | notable |
+|---|---|---|
+| SubChainHeader | 16/8 | sType 0, next 8 |
+| SubChainExtA | 24/8 | header 0, intensity 16, flags 20 |
+| SubChainExtB | 32/8 | header 0, scale 16, level 24 |
+| SubBufferView | 16/8 | items 0, count 8 |
+| SubStringView | 16/8 | data 0, len 8 |
+| SubCallbackInfo | 24/8 | callback 0, userdata 8, userparam 16 |
+| SubTransform | 88/8 | basis[16] 0, bone 64, weight 72 (interior gap), visible 80 |
+| SubSample | 24/8 | a(bool) 0, b(f64) 8 (7-byte gap), c 16, d 20 |
+
+Pointer/`size_t`/handle/fn-ptr fields modeled as `u64` (identical 8/8);
+P5.2's generated mirror substitutes the boundary forms (`X|null`,
+branded handles, `string`), which lower to the same layout.
+
+Phase Review (2026-07-23): 0 CRITICAL, 0 MAJOR, 2 MINOR (no fix — a
+tautological field-name parse check, and generic chain field names that
+are compliant). The proof was verified real by execution: a corrupted
+language field (`i32`→`i64`) is caught with a precise per-field message;
+absent `cc` fails; the two sides are independent (real C compiler vs the
+same layout engine used in codegen); padding is non-trivial and
+reproduced on both sides. Verification: `cargo test --offline` 215
+green, zero warnings, sweep clean. **P5.1 COMPLETE.**
+
+Next: P5.2 — mirror generator + `.d.ts` ingestion + foreign-function
+machinery.
