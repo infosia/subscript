@@ -1,10 +1,13 @@
 #!/bin/sh
-# P3 device-triple AOT link (specs/blocks/compiler.md 8.1). The P0.5
-# spike proved a fixed minimal program links; this proves the real
-# lowering's output for a run-set corpus entry links, on both device
-# triples, against the real runtime static library and the generated C
-# entry. Compile+link is the whole criterion: no produced binary is
-# executed, and no simulator or emulator is involved.
+# Ship-tier device-triple link (specs/blocks/compiler.md 11). The ship
+# tier is C emission compiled by clang (LLVM); this proves the emitted C
+# for a run-set corpus entry cross-compiles and links, on both device
+# triples, against the real runtime static library cross-built per
+# triple and the generated C host entry. Compile+link is the whole
+# criterion: no produced binary is executed, and no simulator or
+# emulator is involved. This replaces the P3 cranelift-object device
+# link (its ship role has ended); the P0.5 kill criterion is unaffected,
+# C emission was its pre-registered fallback architecture.
 #
 # It is not part of `cargo test`: the Android half needs an NDK, which
 # an arbitrary machine does not have (headless-first, CLAUDE.md core
@@ -37,21 +40,22 @@ TARGET_DIR="$REPO_ROOT/target"
 RUNTIME_LIB=libsubscript_runtime.a
 ENTRY_ID=${ENTRY_ID:-a22-matrix-propagation}
 
-# 1. Emit both device objects and the generated C entry.
-cargo run --offline --release -p subscript-codegen --bin emit-object -- \
+# 1. Emit the ship-tier C translation unit and the generated C entry.
+cargo run --offline --release -p subscript-codegen --bin emit-c -- \
     "$OUT_DIR" "$ENTRY_ID"
 
 LINKED=""
 
-# 2. iOS: cross-build the runtime static library and link with Xcode clang.
-#    -miphoneos-version-min=10.0 matches the Rust static library's minimum
-#    OS and the build version stamped on the emitted object.
+# 2. iOS: cross-build the runtime static library and compile+link the
+#    emitted C with Xcode clang. -miphoneos-version-min=10.0 matches the
+#    Rust static library's minimum OS.
 HOST_OS=$(uname -s)
 if [ "$HOST_OS" = "Darwin" ]; then
     cargo build --offline --release -p subscript-runtime --target aarch64-apple-ios
-    xcrun --sdk iphoneos clang -target arm64-apple-ios -miphoneos-version-min=10.0 \
+    xcrun --sdk iphoneos clang --target=arm64-apple-ios -miphoneos-version-min=10.0 \
+        -O2 -ffp-contract=off \
+        "$OUT_DIR/$ENTRY_ID.c" \
         "$OUT_DIR/entry.c" \
-        "$OUT_DIR/$ENTRY_ID-aarch64-apple-ios.o" \
         "$TARGET_DIR/aarch64-apple-ios/release/$RUNTIME_LIB" \
         -o "$OUT_DIR/$ENTRY_ID-ios"
     LINKED="$LINKED $OUT_DIR/$ENTRY_ID-ios"
@@ -59,7 +63,8 @@ else
     echo "note: host is $HOST_OS; the iOS half requires a Mac and is skipped" >&2
 fi
 
-# 3. Android: cross-build the runtime static library and link with NDK clang.
+# 3. Android: cross-build the runtime static library and compile+link
+#    the emitted C with NDK clang.
 if [ -z "${ANDROID_NDK_HOME:-}" ]; then
     echo "error: ANDROID_NDK_HOME is not set; it must point to an Android NDK installation" >&2
     exit 1
@@ -90,9 +95,9 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_CC"
 export CC_aarch64_linux_android="$ANDROID_CC"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
 cargo build --offline --release -p subscript-runtime --target aarch64-linux-android
-"$ANDROID_CC" \
+"$ANDROID_CC" --target=aarch64-linux-android24 -O2 -ffp-contract=off \
+    "$OUT_DIR/$ENTRY_ID.c" \
     "$OUT_DIR/entry.c" \
-    "$OUT_DIR/$ENTRY_ID-aarch64-linux-android.o" \
     "$TARGET_DIR/aarch64-linux-android/release/$RUNTIME_LIB" \
     -o "$OUT_DIR/$ENTRY_ID-android"
 LINKED="$LINKED $OUT_DIR/$ENTRY_ID-android"

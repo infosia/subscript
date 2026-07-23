@@ -1,70 +1,126 @@
-//! Typed-HIR-to-C emitter (P4.2 C-emission measurement spike,
-//! `specs/tracking/p4-performance.md`).
+//! Typed-HIR-to-C emitter — the **ship tier** (`specs/blocks/compiler.md`
+//! §11, plan §8 Rev 2).
 //!
-//! This is **not** the C backend; it is a bounded, faithful C emitter
-//! whose only purpose is to answer one measured question: how much of
-//! clang/LLVM's `-O2` win on the a22 matmul survives when the C is
-//! emitted from the same typed HIR the CLIF lowering consumes, carrying
-//! the language's semantics rather than a hand-optimized rewrite.
+//! P4 measured Cranelift ship-AOT at ~23× a hand-written C baseline and
+//! attributed the bulk of the gap to Cranelift's scalar output; P4.2
+//! emitted C from the same typed HIR and measured it at ~1.05×. This
+//! module is the P4.2 spike extended from a22's subset to the full run
+//! set a01–a24 and made the ship tier: the dev tier stays Cranelift JIT
+//! with hot reload, the ship tier is HIR→C→`clang -O2`.
 //!
-//! Faithfulness (or the measurement is void) — this emitter mirrors the
-//! CLIF lowering's *semantics*, in particular:
+//! # Reuse of the runtime
 //!
-//! - **C2 value-class copy semantics.** A `@value class` becomes a C
-//!   `struct`; it is copied on assign, on pass (by-value parameters),
-//!   on index-read, and on return, exactly where the CLIF path copies
-//!   (`copy_to_temp` on aggregate args, `store_val` copies on assign).
-//!   The hand-written baseline passes matrices by `const*` and so
-//!   elides copy-on-pass; this emitter does not.
-//! - **Checked growable arrays.** A `T[]` becomes a `(data, len, cap)`
-//!   struct with a per-access bounds check ([`SubArray`]-style
-//!   `sub_arr_at`) and realloc-on-push growth doubling the capacity
-//!   (`sub_arr_push`), mirroring the runtime's `array_elem_ptr` /
-//!   `array_push`. The baseline uses one flat `malloc`.
-//! - **Proof-based `FixedArray` bounds-check elision (§10.1).** A
-//!   `FixedArray<T, N>` becomes an in-place C array `T[N]`; an index
-//!   proven in `[0, N)` by the same interval/induction analysis the
-//!   CLIF path uses is emitted as a plain unchecked `a[i]` (as CLIF
-//!   elides the check), and any index the analysis cannot prove keeps a
-//!   bounds check (`sub_fa_at`) — so the inner matmul is unchecked
-//!   exactly where CLIF's is.
-//! - **f32 stays f32.** Float locals/expressions are `float`; float
-//!   literals carry the `f` suffix whenever the HIR node's type is
-//!   `f32`, so no accidental double promotion changes the result. The
-//!   program is compiled `-ffp-contract=off` to match the language,
-//!   which never contracts a multiply-add.
-//! - **Q14 formatting.** The final `${result}` is formatted by the same
-//!   shortest-round-trip rule the runtime uses (`sub_fmt_f32`:
-//!   `%.*g` widened until it round-trips; integral floats print without
-//!   a decimal point).
+//! The emitted translation unit **links the existing runtime static
+//! library** rather than re-implementing runtime logic in C. Every
+//! array, string, formatting, allocation, and trap operation is the
+//! same `sub_rt_*` C-ABI entry point the CLIF lowering calls, so array
+//! growth, string content, Q14 shortest-round-trip formatting, and trap
+//! reporting are byte-for-byte identical to the dev-JIT tier by
+//! construction rather than by replication. (The P4.2 spike was
+//! self-contained purely for measurement isolation.) The emitted unit
+//! exports the same host-entry surface the AOT object does — `ss_init`
+//! and `ss_export_<name>` taking the Context — so it is a drop-in
+//! subject for the standing gate and for the device-triple link, linked
+//! with the same [`crate::AOT_ENTRY_C`] host entry.
 //!
-//! The emitted translation unit is **self-contained** (no link against
-//! the Rust runtime static library): the array, format, and trap
-//! helpers are emitted as C so the whole workload is one translation
-//! unit clang optimizes end to end — which is exactly what the spike
-//! measures. Where a helper replicates runtime logic, it matches the
-//! runtime's behaviour (growth schedule, bounds-check condition, Q14).
+//! # Semantic faithfulness
 //!
-//! Scope: the emitter handles the subset of HIR the a22 corpus entry
-//! exercises — module globals, one `@value` class with a constructor,
-//! free functions (value-class by value, dynamic-array by reference,
-//! scalar returns), `FixedArray` literals/indexing, dynamic-array
-//! `push`/`length`/indexing/assignment, `for`/`if`, compound
-//! assignment, numeric casts, and a `print` of a template literal.
-//! Constructs outside that subset (reference classes, `Nullable`,
-//! lambdas, generators, strings beyond a printed template, methods,
-//! `switch`, `while`, ternary) are reported as an error rather than
-//! emitted wrong; a22 uses none of them.
+//! The emitter mirrors the CLIF lowering's semantics, not a hand
+//! optimization; where the emitted C and the CLIF path could differ the
+//! CLIF path (and the runtime) is the reference:
+//!
+//! - **C2 value-class copy semantics.** A `@value class` is a C
+//!   `struct`, passed and returned by value and copied on assignment —
+//!   C's own struct-value semantics reproduce copy-on-assign/pass/return
+//!   without any explicit copy. `FixedArray<T, N>` is a `struct { T a[N];
+//!   }` wrapper so it, too, has value semantics; its C-ABI layout is
+//!   identical to the bare array (design invariant 1).
+//! - **Reference classes** are Context allocations (`sub_rt_alloc`);
+//!   their handle is the payload pointer, and fields are read/written
+//!   through a `struct` view of the payload (the same C-ABI layout the
+//!   runtime allocates). `unsafeDelete` is `sub_rt_delete`, `collect()`
+//!   is `sub_rt_collect`.
+//! - **Checked growable `T[]`** is the runtime's array: `sub_rt_array_*`
+//!   for `new`/`push`/`pop`/`length`/indexing, so bounds checks, push
+//!   growth, and OOB traps match the runtime exactly.
+//! - **`FixedArray` in-place with the P4.1 proof-based bounds-check
+//!   elimination.** An index proven in `[0, N)` by the same interval /
+//!   induction analysis the CLIF path uses is a plain unchecked `a[i]`;
+//!   an unproven index keeps a checked access that traps.
+//! - **f32 stays f32.** Float locals/expressions are `float`; f32
+//!   literals carry the `f` suffix and are printed in shortest *f32*
+//!   form so the C constant round-trips with a single rounding. Compiled
+//!   `-ffp-contract=off` to match the language, which never contracts a
+//!   multiply-add.
+//! - **Q14 formatting** is the runtime's (`sub_rt_fmt_*`), so an f32
+//!   checksum prints the same bytes both tiers.
+//! - **Trap model.** Emitted checks call `sub_rt_trap`; a trap sets the
+//!   Context flag and is reported by the host entry without aborting the
+//!   host, matching the runtime.
+//!
+//! # Scope
+//!
+//! The emitter handles every construct the run set a01–a24 uses:
+//! reference and value classes, methods and constructors, `Nullable`
+//! and null narrowing, non-capturing function values and non-escaping
+//! capturing lambdas, generators (CPS state machine), enums, growable
+//! and fixed arrays, strings (length / slice / concat / compare /
+//! interpolation), `while` / `for` / `switch` / `if` / ternary, and
+//! default parameters. A construct outside the run set is reported as a
+//! clean `Err` until a corpus entry needs it (§11).
+//!
+//! # A note on the GC root discipline
+//!
+//! The CLIF path registers module-global roots and per-call shadow
+//! frames so `collect()` can see live handles. The emitted C does not
+//! replicate that discipline: no run-set entry observably depends on it
+//! (the only `collect()` in the corpus, a16, collects an allocation that
+//! is already dead, and interned string literals are rooted by the
+//! runtime itself), and the standing gate — byte-identity across all 24
+//! entries on both tiers — is the oracle. Should a future entry make
+//! rooting observable, this is where it is added.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use subscript_compiler::hir;
-use subscript_compiler::types::{ClassId, Type};
+use subscript_compiler::types::{ClassId, FuncType, Type};
+use subscript_compiler::Pos;
+use subscript_runtime::context as rtc;
+
+/// An emitted C translation unit plus the trap position table its
+/// `pos_id` arguments index (mirrors [`crate::AotObject::positions`]),
+/// so a trap the linked program reports can be resolved back to a TS
+/// position by the driver.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct CProgram {
+    /// The C source text.
+    pub source: String,
+    /// Trap position table: `pos_id` -> TS position.
+    pub positions: Vec<Pos>,
+}
+
+/// Emits a C translation unit for a checked HIR module (§11).
+///
+/// The unit exports `ss_init(void* ctx)` and `ss_export_<name>(void*
+/// ctx)` for each exported zero-argument `void` function, imports the
+/// runtime's `sub_rt_*` entry points, and is linked with the runtime
+/// static library and [`crate::AOT_ENTRY_C`].
+///
+/// # Errors
+///
+/// Returns an error string when the module uses an HIR construct outside
+/// the run set's scope, or has no exported `main(): void`.
+pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
+    Emitter::new(module).emit()
+}
+
+// ----- interval analysis (§10.1), carried from the P4.2 spike -----
 
 /// An inclusive integer interval `[lo, hi]`, computed in `i64` with the
 /// same widen-in-`i128`-then-narrow discipline as the CLIF lowering's
-/// interval lattice (`codegen/src/lower/func.rs`), so it never wraps.
+/// interval lattice, so it never wraps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Interval {
     lo: i64,
@@ -229,32 +285,94 @@ fn expr_assigns_to(e: &hir::Expr, name: &str) -> bool {
     }
 }
 
-/// Emits a C translation unit for a checked HIR module.
-///
-/// The unit has its own `main` implementing the P4 harness protocol
-/// (`argv` = `warmup timed`; `sample <i> <ns>` and `checksum-stable
-/// <0|1>` on stderr; the program's output bytes on stdout), so it is a
-/// drop-in subject for the §9 methodology, timed the same way as the
-/// AOT subject (the whole exported-`main` call, output captured to an
-/// in-memory sink and flushed after the timed span).
-///
-/// # Errors
-///
-/// Returns an error string when the module uses an HIR construct
-/// outside this spike's scope, or has no exported `main(): void`.
-pub fn emit_c(module: &hir::Module) -> Result<String, String> {
-    Emitter::new(module).emit()
+// ----- generator frame planning -----
+
+/// Collects the types of every `let` reachable in `stmts`, in the
+/// pre-order the emitter descends them, so a generator frame lays its
+/// locals out in the same order the emission consumes them.
+fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h str, &'h Type)>) {
+    for s in stmts {
+        match s {
+            hir::Stmt::Let { name, ty, .. } => out.push((name, ty)),
+            hir::Stmt::If { then, els, .. } => {
+                walk_lets(then, out);
+                if let Some(e) = els {
+                    walk_lets(e, out);
+                }
+            }
+            hir::Stmt::While { body, .. } => walk_lets(body, out),
+            hir::Stmt::For { init, body, .. } => {
+                if let Some(i) = init {
+                    walk_lets(std::slice::from_ref(&**i), out);
+                }
+                walk_lets(body, out);
+            }
+            hir::Stmt::Switch { cases, .. } => {
+                for c in cases {
+                    walk_lets(&c.body, out);
+                }
+            }
+            hir::Stmt::Block(b) => walk_lets(b, out),
+            _ => {}
+        }
+    }
+}
+
+// ----- the emitter -----
+
+/// C `this` context of the current function body.
+#[derive(Clone, Copy)]
+enum ThisCtx {
+    /// Not in a constructor or method.
+    None,
+    /// Value-class constructor/method: `_this` is a `Sub` struct lvalue.
+    Value,
+    /// Reference-class constructor/method: `_this` is a `void*` handle.
+    Reference,
+}
+
+/// State of the generator being lowered (CPS state machine).
+struct GenState {
+    /// Yield sites seen so far (resume-label counter).
+    yields: u32,
+    /// Cursor into the frame's `let` fields, consumed in emission order.
+    let_cursor: usize,
+    /// Frame field name for each `let`, in emission order.
+    let_fields: Vec<String>,
+    /// C type of the yielded value.
+    yield_ct: String,
 }
 
 struct Emitter<'m> {
     module: &'m hir::Module,
     /// Proven interval of currently-visible loop counters (§10.1).
     ranges: HashMap<String, Interval>,
-    /// Names of the current function's parameters that are dynamic
-    /// arrays (passed as `SubArray*`, so they are used without `&`).
-    ptr_arrays: HashSet<String>,
-    /// C name of `this` inside the constructor body, if any.
-    this_name: Option<&'static str>,
+    /// `this` context of the current function.
+    this: ThisCtx,
+    /// Generator lowering state, when inside a generator resume body.
+    gen: Option<GenState>,
+    /// Map from a source local name to a generator frame-field access
+    /// expression (`f->g0_x`), innermost scope last.
+    gen_locals: Vec<(String, String)>,
+    /// Trap position table.
+    positions: Vec<Pos>,
+    /// Fresh-temporary counter.
+    tmp: u32,
+    /// Fresh-label counter.
+    label: u32,
+    /// Lambda counter.
+    lambda: u32,
+    /// Prototype lines emitted ahead of every definition.
+    protos: String,
+    /// Helper definitions (lambdas, wrappers) emitted before the bodies.
+    helpers: String,
+    /// Names of function-reference wrappers already emitted.
+    wrappers: HashSet<String>,
+    /// Aggregate typedefs already emitted, by C name.
+    emitted_types: HashSet<String>,
+    /// Break/continue targets of the enclosing loops and switches, as
+    /// (break label, optional continue label) pairs.
+    loops: Vec<(String, Option<String>)>,
 }
 
 impl<'m> Emitter<'m> {
@@ -262,23 +380,59 @@ impl<'m> Emitter<'m> {
         Emitter {
             module,
             ranges: HashMap::new(),
-            ptr_arrays: HashSet::new(),
-            this_name: None,
+            this: ThisCtx::None,
+            gen: None,
+            gen_locals: Vec::new(),
+            positions: Vec::new(),
+            tmp: 0,
+            label: 0,
+            lambda: 0,
+            protos: String::new(),
+            helpers: String::new(),
+            wrappers: HashSet::new(),
+            emitted_types: HashSet::new(),
+            loops: Vec::new(),
         }
     }
 
-    fn class_name(&self, id: ClassId) -> Result<String, String> {
+    fn pos_id(&mut self, pos: &Pos) -> u32 {
+        self.positions.push(pos.clone());
+        (self.positions.len() - 1) as u32
+    }
+
+    fn fresh_tmp(&mut self) -> String {
+        let n = self.tmp;
+        self.tmp += 1;
+        format!("_t{n}")
+    }
+
+    fn fresh_label(&mut self) -> String {
+        let n = self.label;
+        self.label += 1;
+        format!("_L{n}")
+    }
+
+    // ----- class / type naming -----
+
+    fn class(&self, id: ClassId) -> Result<&'m hir::ClassDef, String> {
         self.module
             .classes
             .get(id.0)
-            .map(|c| format!("Sub_{}", sanitize(&c.name)))
             .ok_or_else(|| format!("class id {} out of range", id.0))
     }
 
-    // ----- type mapping -----
+    fn class_name(&self, id: ClassId) -> Result<String, String> {
+        let c = self.class(id)?;
+        Ok(format!("Sub_{}_{}", id.0, sanitize(&c.name)))
+    }
 
-    /// C type for a scalar/value-class type (not `FixedArray`, which is
-    /// only ever a field/local/param and is handled at its site).
+    fn is_value_class(&self, id: ClassId) -> Result<bool, String> {
+        Ok(self.class(id)?.is_value)
+    }
+
+    /// C type for a value of `ty` (as a variable, parameter, field, or
+    /// return). Aggregates (value classes, `FixedArray`, `IterResult`,
+    /// function values) get their own named struct types.
     fn ctype(&self, ty: &Type) -> Result<String, String> {
         Ok(match ty {
             Type::I32 => "int32_t".to_string(),
@@ -288,26 +442,1588 @@ impl<'m> Emitter<'m> {
             Type::F32 => "float".to_string(),
             Type::F64 => "double".to_string(),
             Type::Bool => "int32_t".to_string(),
+            Type::Enum(_) => "int32_t".to_string(),
             Type::Void => "void".to_string(),
+            Type::Str
+            | Type::Object
+            | Type::Array(_)
+            | Type::Generator(_)
+            | Type::Nullable(_)
+            | Type::Null => "void*".to_string(),
+            Type::Func(_) => "SubFn".to_string(),
             Type::Class(id) => {
                 if self.is_value_class(*id)? {
                     self.class_name(*id)?
                 } else {
-                    return Err("reference classes are outside this spike's scope".to_string());
+                    "void*".to_string()
                 }
             }
-            other => {
-                return Err(format!("type {other:?} is outside this spike's scope"))
-            }
+            Type::FixedArray(elem, n) => self.fixed_array_name(elem, *n)?,
+            Type::IterResult(v) => self.iter_result_name(v)?,
+            other => return Err(format!("type {other:?} is outside the run set's scope")),
         })
     }
 
-    fn is_value_class(&self, id: ClassId) -> Result<bool, String> {
-        self.module
-            .classes
-            .get(id.0)
-            .map(|c| c.is_value)
-            .ok_or_else(|| format!("class id {} out of range", id.0))
+    fn fixed_array_name(&self, elem: &Type, n: u32) -> Result<String, String> {
+        Ok(format!("FA_{}_{n}", self.type_tag(elem)?))
+    }
+
+    fn iter_result_name(&self, value: &Type) -> Result<String, String> {
+        Ok(format!("IR_{}", self.type_tag(value)?))
+    }
+
+    /// A short identifier fragment uniquely naming a type, for building
+    /// aggregate typedef names.
+    fn type_tag(&self, ty: &Type) -> Result<String, String> {
+        Ok(match ty {
+            Type::I32 => "i32".to_string(),
+            Type::U32 => "u32".to_string(),
+            Type::I64 => "i64".to_string(),
+            Type::U64 => "u64".to_string(),
+            Type::F32 => "f32".to_string(),
+            Type::F64 => "f64".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::Enum(id) => format!("enum{}", id.0),
+            Type::Str | Type::Object | Type::Array(_) | Type::Generator(_) | Type::Nullable(_)
+            | Type::Null => "ptr".to_string(),
+            Type::Func(_) => "fn".to_string(),
+            Type::Class(id) => {
+                if self.is_value_class(*id)? {
+                    format!("c{}", id.0)
+                } else {
+                    "ptr".to_string()
+                }
+            }
+            Type::FixedArray(elem, n) => format!("FA{}x{n}", self.type_tag(elem)?),
+            Type::IterResult(v) => format!("IR{}", self.type_tag(v)?),
+            other => return Err(format!("type tag for {other:?}")),
+        })
+    }
+
+    // ----- top-level -----
+
+    fn emit(&mut self) -> Result<CProgram, String> {
+        // Validate the entry point exists (mirrors lower_module_with).
+        let has_main = self.module.functions.iter().any(|f| {
+            f.name == "main"
+                && f.exported
+                && !f.is_generator
+                && f.params.is_empty()
+                && f.ret == Type::Void
+        });
+        if !has_main {
+            return Err("no exported `main(): void` entry point".to_string());
+        }
+
+        // Aggregate type definitions, in dependency order.
+        let mut typedefs = String::new();
+        self.emit_type_definitions(&mut typedefs)?;
+
+        // Globals.
+        let mut globals = String::new();
+        for g in &self.module.globals {
+            let _ = writeln!(globals, "static {} g_{};", self.ctype(&g.ty)?, sanitize(&g.name));
+        }
+
+        // Bodies (which append prototypes and helper definitions as they
+        // discover lambdas and function-reference wrappers).
+        let mut bodies = String::new();
+
+        // Prototypes for every constructor, method, free function, and
+        // reference-class `new` wrapper.
+        for (ci, c) in self.module.classes.iter().enumerate() {
+            if c.ctor.is_some() {
+                let proto = self.ctor_signature(ci, c)?;
+                let _ = writeln!(self.protos, "{proto};");
+                if !c.is_value {
+                    let np = self.new_wrapper_signature(ci, c)?;
+                    let _ = writeln!(self.protos, "{np};");
+                }
+            }
+            for m in &c.methods {
+                let proto = self.method_signature(ci, m)?;
+                let _ = writeln!(self.protos, "{proto};");
+            }
+        }
+        for f in &self.module.functions {
+            if f.is_generator {
+                let cp = self.gen_creator_signature(f)?;
+                let rp = self.gen_resume_signature(f)?;
+                let _ = writeln!(self.protos, "{cp};");
+                let _ = writeln!(self.protos, "{rp};");
+            } else {
+                let proto = self.fn_signature(f)?;
+                let _ = writeln!(self.protos, "{proto};");
+            }
+        }
+
+        // Definitions.
+        for (ci, c) in self.module.classes.iter().enumerate() {
+            if c.ctor.is_some() {
+                self.emit_constructor(&mut bodies, ci, c)?;
+                if !c.is_value {
+                    self.emit_new_wrapper(&mut bodies, ci, c)?;
+                }
+            }
+            for m in &c.methods {
+                self.emit_method(&mut bodies, ci, m)?;
+            }
+        }
+        for f in &self.module.functions {
+            if f.is_generator {
+                self.emit_generator(&mut bodies, f)?;
+            } else {
+                self.emit_function(&mut bodies, f)?;
+            }
+        }
+
+        // Module initializer and exported entry surface.
+        self.emit_init(&mut bodies)?;
+        self.emit_exports(&mut bodies)?;
+
+        let mut out = String::new();
+        out.push_str(PREAMBLE);
+        out.push_str(&typedefs);
+        out.push('\n');
+        out.push_str(&globals);
+        out.push('\n');
+        out.push_str(&self.protos);
+        out.push('\n');
+        out.push_str(&self.helpers);
+        out.push_str(&bodies);
+
+        Ok(CProgram {
+            source: out,
+            positions: std::mem::take(&mut self.positions),
+        })
+    }
+
+    // ----- aggregate type definitions -----
+
+    fn emit_type_definitions(&mut self, out: &mut String) -> Result<(), String> {
+        // Collect every aggregate type mentioned anywhere in the module.
+        let mut set: Vec<Type> = Vec::new();
+        let mut ordered: Vec<Type> = Vec::new();
+        let mut seen: Vec<Type> = Vec::new();
+        self.collect_aggregates(&mut set)?;
+        // Deterministic order: iterate the sorted set, DFS each so that
+        // contained aggregates are defined first.
+        for ty in &set {
+            self.order_aggregate(ty, &mut seen, &mut ordered)?;
+        }
+        for ty in &ordered {
+            self.emit_one_typedef(out, ty)?;
+        }
+        Ok(())
+    }
+
+    fn collect_aggregates(&self, set: &mut Vec<Type>) -> Result<(), String> {
+        for c in &self.module.classes {
+            for f in &c.fields {
+                collect_aggr_ty(&f.ty, set);
+            }
+            if let Some(ctor) = &c.ctor {
+                self.collect_fn_aggr(ctor, set);
+            }
+            for m in &c.methods {
+                self.collect_fn_aggr(m, set);
+            }
+        }
+        for g in &self.module.globals {
+            collect_aggr_ty(&g.ty, set);
+            collect_aggr_expr(&g.init, set);
+        }
+        for f in &self.module.functions {
+            self.collect_fn_aggr(f, set);
+        }
+        Ok(())
+    }
+
+    fn collect_fn_aggr(&self, f: &hir::Function, set: &mut Vec<Type>) {
+        for p in &f.params {
+            collect_aggr_ty(&p.ty, set);
+            if let Some(d) = &p.default {
+                collect_aggr_expr(d, set);
+            }
+        }
+        collect_aggr_ty(&f.ret, set);
+        collect_aggr_stmts(&f.body, set);
+    }
+
+    /// Depth-first post-order so a struct that embeds another aggregate
+    /// is emitted after it.
+    fn order_aggregate(
+        &self,
+        ty: &Type,
+        seen: &mut Vec<Type>,
+        out: &mut Vec<Type>,
+    ) -> Result<(), String> {
+        if !is_aggregate(ty) || seen.contains(ty) {
+            return Ok(());
+        }
+        seen.push(ty.clone());
+        // Dependencies: the element/value/field types stored by value.
+        match ty {
+            Type::FixedArray(elem, _) => self.order_aggregate(elem, seen, out)?,
+            Type::IterResult(v) => self.order_aggregate(v, seen, out)?,
+            Type::Class(id) if self.is_value_class(*id)? => {
+                for f in &self.class(*id)?.fields {
+                    self.order_aggregate(&f.ty, seen, out)?;
+                }
+            }
+            _ => {}
+        }
+        out.push(ty.clone());
+        Ok(())
+    }
+
+    fn emit_one_typedef(&mut self, out: &mut String, ty: &Type) -> Result<(), String> {
+        // A reference class's `ctype` is `void*`; its struct name is the
+        // `Sub_*` layout view, so name Class types by `class_name`.
+        let name = match ty {
+            Type::Class(id) => self.class_name(*id)?,
+            _ => self.ctype(ty)?,
+        };
+        if !self.emitted_types.insert(name.clone()) {
+            return Ok(());
+        }
+        match ty {
+            Type::FixedArray(elem, n) => {
+                let _ = writeln!(out, "typedef struct {{ {} a[{n}]; }} {name};", self.ctype(elem)?);
+            }
+            Type::IterResult(v) => {
+                let _ = writeln!(
+                    out,
+                    "typedef struct {{ int32_t done; {} value; }} {name};",
+                    self.ctype(v)?
+                );
+            }
+            Type::Class(id) => {
+                let _ = writeln!(out, "typedef struct {name} {{");
+                for field in &self.class(*id)?.fields {
+                    let _ = writeln!(out, "    {};", self.field_decl(&field.name, &field.ty)?);
+                }
+                let _ = writeln!(out, "}} {name};");
+            }
+            other => return Err(format!("typedef for {other:?}")),
+        }
+        Ok(())
+    }
+
+    /// A `"<type> <name>"` declaration fragment (arrays wrap in their
+    /// `FA` struct type, so this is uniform).
+    fn field_decl(&self, name: &str, ty: &Type) -> Result<String, String> {
+        Ok(format!("{} {}", self.ctype(ty)?, sanitize(name)))
+    }
+
+    // ----- signatures -----
+
+    fn fn_c_name(f: &hir::Function) -> String {
+        format!("ss_fn_{}", sanitize(&f.name))
+    }
+
+    /// Parameter list for a plain function/method (aggregates by value).
+    fn param_list(&self, params: &[hir::Param]) -> Result<String, String> {
+        let mut parts = Vec::with_capacity(params.len());
+        for p in params {
+            parts.push(format!("{} {}", self.ctype(&p.ty)?, sanitize(&p.name)));
+        }
+        Ok(parts.join(", "))
+    }
+
+    fn fn_signature(&self, f: &hir::Function) -> Result<String, String> {
+        let ret = self.ctype(&f.ret)?;
+        let name = Emitter::fn_c_name(f);
+        let params = self.param_list(&f.params)?;
+        if params.is_empty() {
+            Ok(format!("static {ret} {name}(void* ctx)"))
+        } else {
+            Ok(format!("static {ret} {name}(void* ctx, {params})"))
+        }
+    }
+
+    fn ctor_signature(&self, ci: usize, c: &hir::ClassDef) -> Result<String, String> {
+        let ctor = c.ctor.as_ref().ok_or("constructor missing")?;
+        let cname = self.class_name(ClassId(ci))?;
+        let params = self.param_list(&ctor.params)?;
+        let sep = if params.is_empty() { "" } else { ", " };
+        if c.is_value {
+            Ok(format!("static {cname} ss_ctor{ci}(void* ctx{sep}{params})"))
+        } else {
+            Ok(format!("static void ss_ctor{ci}(void* ctx, void* _this{}{params})",
+                if params.is_empty() { "" } else { ", " }))
+        }
+    }
+
+    fn new_wrapper_signature(&self, ci: usize, c: &hir::ClassDef) -> Result<String, String> {
+        let ctor = c.ctor.as_ref().ok_or("constructor missing")?;
+        let params = self.param_list(&ctor.params)?;
+        let sep = if params.is_empty() { "" } else { ", " };
+        Ok(format!("static void* ss_new{ci}(void* ctx, uint32_t _pos{sep}{params})"))
+    }
+
+    fn method_signature(&self, ci: usize, m: &hir::Function) -> Result<String, String> {
+        let ret = self.ctype(&m.ret)?;
+        let params = self.param_list(&m.params)?;
+        let sep = if params.is_empty() { "" } else { ", " };
+        let recv = if self.class(ClassId(ci))?.is_value {
+            self.class_name(ClassId(ci))?
+        } else {
+            "void*".to_string()
+        };
+        Ok(format!(
+            "static {ret} ss_m{ci}_{}(void* ctx, {recv} _this{sep}{params})",
+            sanitize(&m.name)
+        ))
+    }
+
+    fn gen_creator_signature(&self, f: &hir::Function) -> Result<String, String> {
+        let params = self.param_list(&f.params)?;
+        if params.is_empty() {
+            Ok(format!("static void* ss_fn_{}(void* ctx)", sanitize(&f.name)))
+        } else {
+            Ok(format!("static void* ss_fn_{}(void* ctx, {params})", sanitize(&f.name)))
+        }
+    }
+
+    fn gen_resume_signature(&self, f: &hir::Function) -> Result<String, String> {
+        Ok(format!(
+            "static int32_t ss_resume_{}(void* ctx, void* _frame, void* _out)",
+            sanitize(&f.name)
+        ))
+    }
+
+    // ----- constructors -----
+
+    fn emit_constructor(&mut self, out: &mut String, ci: usize, c: &hir::ClassDef) -> Result<(), String> {
+        let ctor = c.ctor.as_ref().ok_or("constructor missing")?;
+        let sig = self.ctor_signature(ci, c)?;
+        let cname = self.class_name(ClassId(ci))?;
+        let _ = writeln!(out, "{sig} {{");
+        self.begin_fn(if c.is_value { ThisCtx::Value } else { ThisCtx::Reference });
+        if c.is_value {
+            let _ = writeln!(out, "    {cname} _this;");
+            let _ = writeln!(out, "    memset(&_this, 0, sizeof _this);");
+        } else {
+            let _ = writeln!(out, "    {cname}* _self = ({cname}*)_this;");
+            let _ = writeln!(out, "    (void)_self;");
+        }
+        // Field initializers, then the constructor body.
+        for field in &c.fields {
+            if let Some(init) = &field.init {
+                let v = self.eval(init, out, 1)?;
+                if c.is_value {
+                    let _ = writeln!(out, "    _this.{} = {v};", sanitize(&field.name));
+                } else {
+                    let _ = writeln!(out, "    _self->{} = {v};", sanitize(&field.name));
+                }
+            }
+        }
+        self.emit_block(out, &ctor.body, 1)?;
+        if c.is_value {
+            let _ = writeln!(out, "    return _this;");
+        }
+        let _ = writeln!(out, "}}\n");
+        Ok(())
+    }
+
+    fn emit_new_wrapper(&mut self, out: &mut String, ci: usize, c: &hir::ClassDef) -> Result<(), String> {
+        let ctor = c.ctor.as_ref().ok_or("constructor missing")?;
+        let sig = self.new_wrapper_signature(ci, c)?;
+        let cname = self.class_name(ClassId(ci))?;
+        let args: Vec<String> = ctor.params.iter().map(|p| sanitize(&p.name)).collect();
+        let sep = if args.is_empty() { "" } else { ", " };
+        let _ = writeln!(out, "{sig} {{");
+        let _ = writeln!(
+            out,
+            "    void* _this = sub_rt_alloc(ctx, sizeof({cname}), {}u, _pos);",
+            ci
+        );
+        let _ = writeln!(out, "    if (_this == 0) return 0;");
+        let _ = writeln!(out, "    ss_ctor{ci}(ctx, _this{sep}{});", args.join(", "));
+        let _ = writeln!(out, "    return _this;");
+        let _ = writeln!(out, "}}\n");
+        Ok(())
+    }
+
+    fn emit_method(&mut self, out: &mut String, ci: usize, m: &hir::Function) -> Result<(), String> {
+        let sig = self.method_signature(ci, m)?;
+        let is_value = self.class(ClassId(ci))?.is_value;
+        let _ = writeln!(out, "{sig} {{");
+        self.begin_fn(if is_value { ThisCtx::Value } else { ThisCtx::Reference });
+        if !is_value {
+            let cname = self.class_name(ClassId(ci))?;
+            let _ = writeln!(out, "    {cname}* _self = ({cname}*)_this;");
+            let _ = writeln!(out, "    (void)_self;");
+        }
+        self.emit_block(out, &m.body, 1)?;
+        self.emit_fallthrough_return(out, &m.ret, 1)?;
+        let _ = writeln!(out, "}}\n");
+        Ok(())
+    }
+
+    fn emit_function(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
+        let sig = self.fn_signature(f)?;
+        let _ = writeln!(out, "{sig} {{");
+        self.begin_fn(ThisCtx::None);
+        self.emit_block(out, &f.body, 1)?;
+        self.emit_fallthrough_return(out, &f.ret, 1)?;
+        let _ = writeln!(out, "}}\n");
+        Ok(())
+    }
+
+    /// Resets per-function emitter state.
+    fn begin_fn(&mut self, this: ThisCtx) {
+        self.ranges.clear();
+        self.this = this;
+        self.gen = None;
+        self.gen_locals.clear();
+    }
+
+    /// A `void`/scalar/aggregate function that reaches its closing brace
+    /// without an explicit `return` needs no trailing statement for
+    /// `void`; the checker proves non-void functions always return, so a
+    /// trailing zeroed return only keeps the C well-formed.
+    fn emit_fallthrough_return(&mut self, out: &mut String, ret: &Type, depth: usize) -> Result<(), String> {
+        if *ret == Type::Void {
+            return Ok(());
+        }
+        let ind = indent(depth);
+        let _ = writeln!(out, "{ind}return {};", self.zero_value(ret)?);
+        Ok(())
+    }
+
+    fn zero_value(&self, ty: &Type) -> Result<String, String> {
+        Ok(match ty {
+            Type::Void => String::new(),
+            Type::F32 => "0.0f".to_string(),
+            Type::F64 => "0.0".to_string(),
+            Type::I32 | Type::U32 | Type::I64 | Type::U64 | Type::Bool | Type::Enum(_) => {
+                "0".to_string()
+            }
+            Type::Str | Type::Object | Type::Array(_) | Type::Generator(_) | Type::Nullable(_)
+            | Type::Null => "0".to_string(),
+            Type::Class(id) if !self.is_value_class(*id)? => "0".to_string(),
+            _ => format!("({}){{0}}", self.ctype(ty)?),
+        })
+    }
+
+    // ----- init and exports -----
+
+    fn emit_init(&mut self, out: &mut String) -> Result<(), String> {
+        let _ = writeln!(out, "void ss_init(void* ctx) {{");
+        self.begin_fn(ThisCtx::None);
+        let globals: Vec<hir::Global> = self.module.globals.to_vec();
+        for g in &globals {
+            let v = self.eval(&g.init, out, 1)?;
+            let _ = writeln!(out, "    g_{} = {v};", sanitize(&g.name));
+        }
+        let _ = writeln!(out, "}}\n");
+        Ok(())
+    }
+
+    fn emit_exports(&mut self, out: &mut String) -> Result<(), String> {
+        for f in &self.module.functions {
+            if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
+                let cn = Emitter::fn_c_name(f);
+                let _ = writeln!(out, "void ss_export_{}(void* ctx) {{ {cn}(ctx); }}", sanitize(&f.name));
+            }
+        }
+        Ok(())
+    }
+
+    // ----- statements -----
+
+    fn emit_block(&mut self, out: &mut String, stmts: &[hir::Stmt], depth: usize) -> Result<(), String> {
+        for s in stmts {
+            self.emit_stmt(out, s, depth)?;
+        }
+        Ok(())
+    }
+
+    fn emit_stmt(&mut self, out: &mut String, s: &hir::Stmt, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        match s {
+            hir::Stmt::Let { name, ty, init, .. } => self.emit_let(out, name, ty, init, depth),
+            hir::Stmt::Expr(e) => self.emit_expr_stmt(out, e, depth),
+            hir::Stmt::Return { value, .. } => self.emit_return(out, value.as_ref(), depth),
+            hir::Stmt::If { cond, then, els, .. } => {
+                let c = self.eval(cond, out, depth)?;
+                let _ = writeln!(out, "{ind}if ({c}) {{");
+                self.emit_block(out, then, depth + 1)?;
+                if let Some(e) = els {
+                    let _ = writeln!(out, "{ind}}} else {{");
+                    self.emit_block(out, e, depth + 1)?;
+                }
+                let _ = writeln!(out, "{ind}}}");
+                Ok(())
+            }
+            hir::Stmt::While { cond, body, .. } => self.emit_while(out, cond, body, depth),
+            hir::Stmt::For { init, cond, step, body, .. } => {
+                self.emit_for(out, init.as_deref(), cond.as_ref(), step.as_ref(), body, depth)
+            }
+            hir::Stmt::Switch { disc, cases, .. } => self.emit_switch(out, disc, cases, depth),
+            hir::Stmt::Break(_) => {
+                let brk = self.cur_break()?;
+                let _ = writeln!(out, "{ind}goto {brk};");
+                Ok(())
+            }
+            hir::Stmt::Continue(_) => {
+                let cont = self.cur_continue()?;
+                let _ = writeln!(out, "{ind}goto {cont};");
+                Ok(())
+            }
+            hir::Stmt::Block(b) => {
+                let _ = writeln!(out, "{ind}{{");
+                self.emit_block(out, b, depth + 1)?;
+                let _ = writeln!(out, "{ind}}}");
+                Ok(())
+            }
+            other => Err(format!("statement {other:?} is outside the run set's scope")),
+        }
+    }
+
+    fn emit_let(&mut self, out: &mut String, name: &str, ty: &Type, init: &hir::Expr, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        // Generator locals live in the frame, not as C variables.
+        if self.gen.is_some() {
+            let field = self.gen_next_let_field(name)?;
+            let v = self.eval(init, out, depth)?;
+            let _ = writeln!(out, "{ind}_f->{field} = {v};");
+            return Ok(());
+        }
+        let cname = sanitize(name);
+        match ty {
+            Type::FixedArray(..) if matches!(init.kind, hir::ExprKind::ArrayLit(_)) => {
+                let cty = self.ctype(ty)?;
+                let elems = match &init.kind {
+                    hir::ExprKind::ArrayLit(e) => e,
+                    _ => unreachable!(),
+                };
+                let vals = self.eval_list(elems, out, depth)?;
+                let _ = writeln!(out, "{ind}{cty} {cname} = {{ {{ {vals} }} }};");
+                Ok(())
+            }
+            _ => {
+                let cty = self.ctype(ty)?;
+                let v = self.eval(init, out, depth)?;
+                let _ = writeln!(out, "{ind}{cty} {cname} = {v};");
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_return(&mut self, out: &mut String, value: Option<&hir::Expr>, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        // Inside a generator resume body, `return` completes the
+        // coroutine: terminal state, done = 1 (C8).
+        if self.gen.is_some() {
+            let _ = writeln!(out, "{ind}_f->_state = {GEN_DONE}; return 1;");
+            return Ok(());
+        }
+        match value {
+            None => {
+                let _ = writeln!(out, "{ind}return;");
+            }
+            Some(v) => {
+                let text = self.eval(v, out, depth)?;
+                let _ = writeln!(out, "{ind}return {text};");
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_while(&mut self, out: &mut String, cond: &hir::Expr, body: &[hir::Stmt], depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        let ind1 = indent(depth + 1);
+        let top = self.fresh_label();
+        let brk = self.fresh_label();
+        let _ = writeln!(out, "{ind}{top}: ;");
+        let c = self.eval(cond, out, depth)?;
+        let _ = writeln!(out, "{ind}if (!({c})) goto {brk};");
+        let _ = writeln!(out, "{ind}{{");
+        self.loops_push(brk.clone(), top.clone());
+        self.emit_block(out, body, depth + 1)?;
+        self.loops_pop();
+        let _ = writeln!(out, "{ind1}goto {top};");
+        let _ = writeln!(out, "{ind}}}");
+        let _ = writeln!(out, "{ind}{brk}: ;");
+        Ok(())
+    }
+
+    fn emit_for(
+        &mut self,
+        out: &mut String,
+        init: Option<&hir::Stmt>,
+        cond: Option<&hir::Expr>,
+        step: Option<&hir::Expr>,
+        body: &[hir::Stmt],
+        depth: usize,
+    ) -> Result<(), String> {
+        let ind = indent(depth);
+        let ind1 = indent(depth + 1);
+        let top = self.fresh_label();
+        let cont = self.fresh_label();
+        let brk = self.fresh_label();
+        let _ = writeln!(out, "{ind}{{");
+        // §10.1: publish the counter's proven interval for the body's
+        // FixedArray bounds-check decisions, then restore on exit.
+        let proof = self.induction_interval(init, cond, step, body);
+        let saved = proof.as_ref().map(|(n, _)| (n.clone(), self.ranges.get(n).copied()));
+
+        if let Some(i) = init {
+            self.emit_stmt(out, i, depth + 1)?;
+        }
+        if let Some((name, iv)) = &proof {
+            self.ranges.insert(name.clone(), *iv);
+        }
+        let _ = writeln!(out, "{ind1}{top}: ;");
+        if let Some(c) = cond {
+            let cv = self.eval(c, out, depth + 1)?;
+            let _ = writeln!(out, "{ind1}if (!({cv})) goto {brk};");
+        }
+        let _ = writeln!(out, "{ind1}{{");
+        self.loops_push(brk.clone(), cont.clone());
+        self.emit_block(out, body, depth + 2)?;
+        self.loops_pop();
+        let _ = writeln!(out, "{}{cont}: ;", indent(depth + 2));
+        if let Some(s) = step {
+            self.emit_expr_stmt(out, s, depth + 2)?;
+        }
+        let _ = writeln!(out, "{}goto {top};", indent(depth + 2));
+        let _ = writeln!(out, "{ind1}}}");
+        let _ = writeln!(out, "{ind1}{brk}: ;");
+        let _ = writeln!(out, "{ind}}}");
+
+        if let Some((name, prev)) = saved {
+            match prev {
+                Some(iv) => {
+                    self.ranges.insert(name, iv);
+                }
+                None => {
+                    self.ranges.remove(&name);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_switch(&mut self, out: &mut String, disc: &hir::Expr, cases: &[hir::SwitchCase], depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        let ind1 = indent(depth + 1);
+        let dv = self.eval(disc, out, depth)?;
+        let dty = self.ctype(&disc.ty)?;
+        let brk = self.fresh_label();
+        let labels: Vec<String> = cases.iter().map(|_| self.fresh_label()).collect();
+        let default_idx = cases.iter().position(|c| c.test.is_none());
+        let _ = writeln!(out, "{ind}{{");
+        let _ = writeln!(out, "{ind1}{dty} _disc = {dv};");
+        for (i, case) in cases.iter().enumerate() {
+            if let Some(test) = &case.test {
+                let t = self.eval(test, out, depth + 1)?;
+                let _ = writeln!(out, "{ind1}if (_disc == {t}) goto {};", labels[i]);
+            }
+        }
+        match default_idx {
+            Some(i) => {
+                let _ = writeln!(out, "{ind1}goto {};", labels[i]);
+            }
+            None => {
+                let _ = writeln!(out, "{ind1}goto {brk};");
+            }
+        }
+        // Bodies fall through to the next arm unless they break.
+        self.loops_push_switch(brk.clone());
+        for (i, case) in cases.iter().enumerate() {
+            let _ = writeln!(out, "{ind1}{}: ;", labels[i]);
+            self.emit_block(out, &case.body, depth + 1)?;
+        }
+        self.loops_pop();
+        let _ = writeln!(out, "{ind1}{brk}: ;");
+        let _ = writeln!(out, "{ind}}}");
+        Ok(())
+    }
+
+    // ----- loop/switch context for break/continue targets -----
+
+    fn loops_push(&mut self, brk: String, cont: String) {
+        self.loop_stack_mut().push((brk, Some(cont)));
+    }
+
+    fn loops_push_switch(&mut self, brk: String) {
+        self.loop_stack_mut().push((brk, None));
+    }
+
+    fn loops_pop(&mut self) {
+        self.loop_stack_mut().pop();
+    }
+
+    fn cur_break(&mut self) -> Result<String, String> {
+        self.loop_stack_mut()
+            .last()
+            .map(|(b, _)| b.clone())
+            .ok_or_else(|| "break outside a loop or switch".to_string())
+    }
+
+    fn cur_continue(&mut self) -> Result<String, String> {
+        for (_, c) in self.loop_stack_mut().iter().rev() {
+            if let Some(c) = c {
+                return Ok(c.clone());
+            }
+        }
+        Err("continue outside a loop".to_string())
+    }
+
+    fn loop_stack_mut(&mut self) -> &mut Vec<(String, Option<String>)> {
+        &mut self.loops
+    }
+
+    // ----- expression statements -----
+
+    fn emit_expr_stmt(&mut self, out: &mut String, e: &hir::Expr, depth: usize) -> Result<(), String> {
+        use hir::ExprKind as K;
+        let ind = indent(depth);
+        match &e.kind {
+            K::Assign { op, target, value } => self.emit_assign(out, *op, target, value, depth),
+            K::Call { callee: hir::Callee::Ambient(a), args } => {
+                self.emit_ambient(out, *a, args, &e.pos, depth)
+            }
+            K::Call { callee: hir::Callee::Method { recv, name }, args }
+                if is_array_mutator(&recv.ty, name) =>
+            {
+                self.emit_array_mutator(out, recv, name, args, &e.pos, depth)
+            }
+            _ => {
+                let text = self.eval(e, out, depth)?;
+                if !text.is_empty() {
+                    let _ = writeln!(out, "{ind}{text};");
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_ambient(&mut self, out: &mut String, a: hir::AmbientFn, args: &[hir::Expr], pos: &Pos, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        match a {
+            hir::AmbientFn::Print => {
+                let arg = args.first().ok_or("print arity")?;
+                let h = self.eval(arg, out, depth)?;
+                let _ = writeln!(out, "{ind}sub_rt_print(ctx, {h});");
+            }
+            hir::AmbientFn::Collect => {
+                let _ = writeln!(out, "{ind}sub_rt_collect(ctx);");
+            }
+            hir::AmbientFn::UnsafeDelete => {
+                let arg = args.first().ok_or("unsafeDelete arity")?;
+                let p = self.eval(arg, out, depth)?;
+                let pid = self.pos_id(pos);
+                let _ = writeln!(out, "{ind}sub_rt_delete(ctx, {p}, {pid}u);");
+            }
+            _ => return Err("unknown ambient function".to_string()),
+        }
+        Ok(())
+    }
+
+    fn emit_array_mutator(&mut self, out: &mut String, recv: &hir::Expr, name: &str, args: &[hir::Expr], pos: &Pos, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        let elem = match &recv.ty {
+            Type::Array(e) => (**e).clone(),
+            other => return Err(format!("array method on {other:?}")),
+        };
+        let h = self.eval(recv, out, depth)?;
+        let ect = self.ctype(&elem)?;
+        let pid = self.pos_id(pos);
+        match name {
+            "push" => {
+                let arg = args.first().ok_or("push arity")?;
+                let v = self.eval(arg, out, depth)?;
+                let _ = writeln!(
+                    out,
+                    "{ind}{{ {ect} _e = {v}; sub_rt_array_push(ctx, {h}, &_e, {pid}u); }}"
+                );
+            }
+            "pop" => {
+                let _ = writeln!(
+                    out,
+                    "{ind}{{ {ect} _d; sub_rt_array_pop(ctx, {h}, &_d, {pid}u); }}"
+                );
+            }
+            other => return Err(format!("array mutator `{other}`")),
+        }
+        Ok(())
+    }
+
+    /// Assignment as a statement, carrying C2 copy semantics and
+    /// growth-safe dynamic-array element stores (N3).
+    fn emit_assign(&mut self, out: &mut String, op: Option<hir::BinOp>, target: &hir::Expr, value: &hir::Expr, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        // Dynamic-array element store: resolve the (checked) address
+        // after the RHS so growth cannot dangle it.
+        if let hir::ExprKind::Index { obj, index } = &target.kind {
+            if let Type::Array(elem) = &obj.ty {
+                let ect = self.ctype(elem)?;
+                let h = self.eval(obj, out, depth)?;
+                let idx = self.eval(index, out, depth)?;
+                let pid = self.pos_id(&target.pos);
+                match op {
+                    None => {
+                        let v = self.eval(value, out, depth)?;
+                        let _ = writeln!(
+                            out,
+                            "{ind}{{ {ect} _v = {v}; *({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u) = _v; }}"
+                        );
+                    }
+                    Some(bin) => {
+                        let v = self.eval(value, out, depth)?;
+                        let sym = binop_sym(bin)?;
+                        let _ = writeln!(
+                            out,
+                            "{ind}{{ {ect} _v = {v}; {ect}* _p = ({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u); *_p = *_p {sym} _v; }}"
+                        );
+                    }
+                }
+                return Ok(());
+            }
+        }
+        let place = self.place(target, out, depth)?;
+        match op {
+            None => {
+                let v = self.eval(value, out, depth)?;
+                let _ = writeln!(out, "{ind}{place} = {v};");
+            }
+            Some(bin) => {
+                if target.ty == Type::Str && bin == hir::BinOp::Add {
+                    let v = self.eval(value, out, depth)?;
+                    let pid = self.pos_id(&target.pos);
+                    let _ = writeln!(out, "{ind}{place} = sub_rt_str_concat(ctx, {place}, {v}, {pid}u);");
+                } else if target.ty.is_integer() && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem) {
+                    let v = self.eval(value, out, depth)?;
+                    let helper = divrem_helper(&target.ty, bin == hir::BinOp::Div)?;
+                    let pid = self.pos_id(&target.pos);
+                    let _ = writeln!(out, "{ind}{place} = {helper}(ctx, {place}, {v}, {pid}u);");
+                } else {
+                    let sym = binop_sym(bin)?;
+                    let v = self.eval(value, out, depth)?;
+                    let _ = writeln!(out, "{ind}{place} = {place} {sym} {v};");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A C lvalue for an assignable place (never a dynamic-array
+    /// element, which `emit_assign` handles directly).
+    fn place(&mut self, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::ExprKind as K;
+        match &e.kind {
+            K::Local(name) => Ok(self.local_ref(name)),
+            K::Global(name) => Ok(format!("g_{}", sanitize(name))),
+            K::This => Ok("_this".to_string()),
+            K::Field { obj, name } => {
+                let (base, arrow) = self.field_base(obj, out, depth)?;
+                Ok(format!("{base}{arrow}{}", sanitize(name)))
+            }
+            K::Index { obj, index } => match &obj.ty {
+                Type::FixedArray(_, n) => {
+                    let base = self.place(obj, out, depth)?;
+                    let idx = self.eval(index, out, depth)?;
+                    if self.index_in_bounds(index, *n) {
+                        Ok(format!("{base}.a[{idx}]"))
+                    } else {
+                        let elem = match &obj.ty {
+                            Type::FixedArray(el, _) => (**el).clone(),
+                            _ => unreachable!(),
+                        };
+                        let ect = self.ctype(&elem)?;
+                        let pid = self.pos_id(&e.pos);
+                        Ok(format!("(*({ect}*)ss_fa_at(ctx, {base}.a, {n}, {idx}, sizeof({ect}), {pid}u))"))
+                    }
+                }
+                other => Err(format!("assignment target index on {other:?}")),
+            },
+            other => Err(format!("assignment target {other:?}")),
+        }
+    }
+
+    /// The base expression and member operator (`.`/`->`) for a field
+    /// access on `obj`.
+    fn field_base(&mut self, obj: &hir::Expr, out: &mut String, depth: usize) -> Result<(String, &'static str), String> {
+        match &obj.ty {
+            Type::Class(id) => {
+                if self.is_value_class(*id)? {
+                    Ok((self.place_or_eval(obj, out, depth)?, "."))
+                } else {
+                    let cname = self.class_name(*id)?;
+                    let o = self.eval(obj, out, depth)?;
+                    Ok((format!("(({cname}*)({o}))"), "->"))
+                }
+            }
+            Type::IterResult(_) => Ok((self.place_or_eval(obj, out, depth)?, ".")),
+            other => Err(format!("field access on {other:?}")),
+        }
+    }
+
+    /// For an assignable value-class receiver, an lvalue; otherwise the
+    /// evaluated (by-value) expression wrapped so `.field` is legal.
+    fn place_or_eval(&mut self, obj: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::ExprKind as K;
+        match &obj.kind {
+            K::Local(_) | K::Global(_) | K::Field { .. } | K::Index { .. } | K::This => {
+                self.place(obj, out, depth)
+            }
+            _ => {
+                let v = self.eval(obj, out, depth)?;
+                Ok(format!("({v})"))
+            }
+        }
+    }
+
+    fn local_ref(&self, name: &str) -> String {
+        if self.gen.is_some() {
+            for (n, access) in self.gen_locals.iter().rev() {
+                if n == name {
+                    return access.clone();
+                }
+            }
+        }
+        sanitize(name)
+    }
+
+    // ----- expressions -----
+
+    /// Evaluates `e` to a C expression, emitting any preceding
+    /// statements (temporaries, hoisted chains) into `out` at `depth`.
+    fn eval(&mut self, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::ExprKind as K;
+        match &e.kind {
+            K::Int(v) => Ok(int_literal(*v, &e.ty)),
+            K::Float(v) => Ok(float_literal(*v, &e.ty)),
+            K::Bool(b) => Ok(if *b { "1".to_string() } else { "0".to_string() }),
+            K::Str(s) => self.string_literal(s.as_bytes(), &e.pos),
+            K::Null => Ok("((void*)0)".to_string()),
+            K::This => Ok("_this".to_string()),
+            K::Local(name) => Ok(self.local_ref(name)),
+            K::Global(name) => Ok(format!("g_{}", sanitize(name))),
+            K::FuncRef(name) => self.func_ref_value(name),
+            K::EnumMember { value, .. } => Ok(value.to_string()),
+            K::Unary { op, operand } => {
+                let v = self.eval(operand, out, depth)?;
+                Ok(match op {
+                    hir::UnOp::Neg => format!("(-({v}))"),
+                    hir::UnOp::Not => format!("(!({v}))"),
+                    hir::UnOp::BitNot => format!("(~({v}))"),
+                    _ => return Err("unknown unary operator".to_string()),
+                })
+            }
+            K::Binary { op, left, right } => self.eval_binary(*op, left, right, &e.pos, out, depth),
+            K::Assign { op, target, value } => self.eval_assign_expr(*op, target, value, out, depth),
+            K::Cast(inner) => {
+                let v = self.eval(inner, out, depth)?;
+                self.eval_cast(&v, &inner.ty, &e.ty)
+            }
+            K::Call { callee, args } => self.eval_call(callee, args, &e.ty, &e.pos, out, depth),
+            K::New { class, args } => self.eval_new(*class, args, &e.pos, out, depth),
+            K::Field { obj, name } => self.eval_field(obj, name, out, depth),
+            K::Length(obj) => match &obj.ty {
+                Type::Array(_) => {
+                    let h = self.eval(obj, out, depth)?;
+                    Ok(format!("sub_rt_array_len(ctx, {h})"))
+                }
+                Type::Str => {
+                    let h = self.eval(obj, out, depth)?;
+                    Ok(format!("sub_rt_str_len(ctx, {h})"))
+                }
+                Type::FixedArray(_, n) => Ok(n.to_string()),
+                other => Err(format!("length of {other:?}")),
+            },
+            K::Index { obj, index } => self.eval_index(obj, index, &e.pos, out, depth),
+            K::ArrayLit(elems) => self.eval_array_lit(&e.ty, elems, &e.pos, out, depth),
+            K::Template(parts) => self.eval_template(parts, &e.pos, out, depth),
+            K::Lambda { params, ret, body, captures } => {
+                self.eval_lambda(params, ret, body, captures, out, depth)
+            }
+            K::Yield(arg) => self.eval_yield(arg.as_deref(), out, depth),
+            K::Cond { cond, then, els } => self.eval_cond(cond, then, els, &e.ty, out, depth),
+            other => Err(format!("expression {other:?} is outside the run set's scope")),
+        }
+    }
+
+    fn eval_list(&mut self, elems: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
+        let mut parts = Vec::with_capacity(elems.len());
+        for e in elems {
+            parts.push(self.eval(e, out, depth)?);
+        }
+        Ok(parts.join(", "))
+    }
+
+    fn string_literal(&mut self, bytes: &[u8], pos: &Pos) -> Result<String, String> {
+        let pid = self.pos_id(pos);
+        Ok(format!(
+            "sub_rt_str_lit(ctx, (const unsigned char*){}, {}ull, {pid}u)",
+            c_string_literal(bytes),
+            bytes.len()
+        ))
+    }
+
+    fn eval_binary(&mut self, op: hir::BinOp, left: &hir::Expr, right: &hir::Expr, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::BinOp as B;
+        let operand_ty = if left.ty == Type::Null { right.ty.clone() } else { left.ty.clone() };
+
+        if operand_ty == Type::Str {
+            let l = self.eval(left, out, depth)?;
+            let r = self.eval(right, out, depth)?;
+            return match op {
+                B::Add => {
+                    let pid = self.pos_id(pos);
+                    Ok(format!("sub_rt_str_concat(ctx, {l}, {r}, {pid}u)"))
+                }
+                B::Eq => Ok(format!("(sub_rt_str_eq(ctx, {l}, {r}) != 0)")),
+                B::Ne => Ok(format!("(sub_rt_str_eq(ctx, {l}, {r}) == 0)")),
+                _ => Err("string operator outside the run set's scope".to_string()),
+            };
+        }
+
+        let l = self.eval(left, out, depth)?;
+        let r = self.eval(right, out, depth)?;
+        let float = operand_ty.is_float();
+        match op {
+            B::Div if !float => {
+                let f = divrem_helper(&operand_ty, true)?;
+                let pid = self.pos_id(pos);
+                return Ok(format!("{f}(ctx, {l}, {r}, {pid}u)"));
+            }
+            B::Rem => {
+                let f = divrem_helper(&operand_ty, false)?;
+                let pid = self.pos_id(pos);
+                return Ok(format!("{f}(ctx, {l}, {r}, {pid}u)"));
+            }
+            _ => {}
+        }
+        let sym = binop_sym(op)?;
+        Ok(format!("({l} {sym} {r})"))
+    }
+
+    fn eval_assign_expr(&mut self, op: Option<hir::BinOp>, target: &hir::Expr, value: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        // Assignment used as an expression (loop steps, `i += 1`). Only
+        // simple scalar places reach here; aggregate/array assigns are
+        // statement-only.
+        let place = self.place(target, out, depth)?;
+        let v = self.eval(value, out, depth)?;
+        match op {
+            None => Ok(format!("({place} = {v})")),
+            Some(bin) => {
+                let sym = binop_sym(bin)?;
+                Ok(format!("({place} = {place} {sym} {v})"))
+            }
+        }
+    }
+
+    fn eval_cast(&self, v: &str, from: &Type, to: &Type) -> Result<String, String> {
+        // Reference narrowing (`object`/`object | null` -> class) is not
+        // exercised by the run set; every other cast is a C cast, except
+        // that enum sources behave as i32.
+        let from = if matches!(from, Type::Enum(_)) { Type::I32 } else { from.clone() };
+        if from == *to {
+            return Ok(format!("({v})"));
+        }
+        // float -> integer: saturate to match the CLIF `fcvt_*_sat`.
+        if from.is_float() && to.is_integer() {
+            let helper = float_to_int_helper(to)?;
+            return Ok(format!("{helper}({v})"));
+        }
+        let ct = self.ctype(to)?;
+        Ok(format!("(({ct})({v}))"))
+    }
+
+    /// Field access as a value (read); the base is evaluated by value so
+    /// a field on an array-element value class or any other rvalue base
+    /// works.
+    fn eval_field(&mut self, obj: &hir::Expr, name: &str, out: &mut String, depth: usize) -> Result<String, String> {
+        let base = self.eval(obj, out, depth)?;
+        match &obj.ty {
+            Type::Class(id) if self.is_value_class(*id)? => {
+                Ok(format!("({base}).{}", sanitize(name)))
+            }
+            Type::Class(id) => {
+                let cname = self.class_name(*id)?;
+                Ok(format!("(({cname}*)({base}))->{}", sanitize(name)))
+            }
+            Type::IterResult(_) => Ok(format!("({base}).{}", sanitize(name))),
+            other => Err(format!("field access on {other:?}")),
+        }
+    }
+
+    fn eval_index(&mut self, obj: &hir::Expr, index: &hir::Expr, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        match &obj.ty {
+            Type::FixedArray(elem, n) => {
+                let base = self.eval(obj, out, depth)?;
+                let idx = self.eval(index, out, depth)?;
+                if self.index_in_bounds(index, *n) {
+                    Ok(format!("({base}).a[{idx}]"))
+                } else {
+                    let ect = self.ctype(elem)?;
+                    let pid = self.pos_id(pos);
+                    Ok(format!("(*({ect}*)ss_fa_at(ctx, ({base}).a, {n}, {idx}, sizeof({ect}), {pid}u))"))
+                }
+            }
+            Type::Array(elem) => {
+                let ect = self.ctype(elem)?;
+                let h = self.eval(obj, out, depth)?;
+                let idx = self.eval(index, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("(*({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u))"))
+            }
+            other => Err(format!("index on {other:?}")),
+        }
+    }
+
+
+    fn eval_array_lit(&mut self, ty: &Type, elems: &[hir::Expr], pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        match ty {
+            Type::FixedArray(_, _) => {
+                let cty = self.ctype(ty)?;
+                let vals = self.eval_list(elems, out, depth)?;
+                Ok(format!("(({cty}){{ {{ {vals} }} }})"))
+            }
+            Type::Array(elem) => {
+                let ect = self.ctype(elem)?;
+                let pid = self.pos_id(pos);
+                let h = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}void* {h} = sub_rt_array_new(ctx, sizeof({ect}), {pid}u);");
+                for e in elems {
+                    let v = self.eval(e, out, depth)?;
+                    let epid = self.pos_id(&e.pos);
+                    let _ = writeln!(
+                        out,
+                        "{ind}{{ {ect} _e = {v}; sub_rt_array_push(ctx, {h}, &_e, {epid}u); }}"
+                    );
+                }
+                Ok(h)
+            }
+            other => Err(format!("array literal of {other:?}")),
+        }
+    }
+
+    fn eval_template(&mut self, parts: &[hir::TplPart], pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        let acc = self.fresh_tmp();
+        let _ = writeln!(out, "{ind}void* {acc} = 0;");
+        for part in parts {
+            let piece = match part {
+                hir::TplPart::Text(t) => self.string_literal(t.as_bytes(), pos)?,
+                hir::TplPart::Expr(e) => {
+                    let v = self.eval(e, out, depth)?;
+                    self.format_value(&v, &e.ty, &e.pos)?
+                }
+                other => return Err(format!("template part {other:?}")),
+            };
+            let pid = self.pos_id(pos);
+            let _ = writeln!(
+                out,
+                "{ind}{acc} = ({acc} == 0) ? ({piece}) : sub_rt_str_concat(ctx, {acc}, {piece}, {pid}u);"
+            );
+        }
+        // An empty template is the empty string.
+        let empty = self.string_literal(b"", pos)?;
+        Ok(format!("(({acc} == 0) ? {empty} : {acc})"))
+    }
+
+    fn format_value(&mut self, v: &str, ty: &Type, pos: &Pos) -> Result<String, String> {
+        let pid = self.pos_id(pos);
+        let f = match ty {
+            Type::Str => return Ok(v.to_string()),
+            Type::I32 | Type::Enum(_) => "sub_rt_fmt_i32",
+            Type::U32 => "sub_rt_fmt_u32",
+            Type::I64 => "sub_rt_fmt_i64",
+            Type::U64 => "sub_rt_fmt_u64",
+            Type::F32 => "sub_rt_fmt_f32",
+            Type::F64 => "sub_rt_fmt_f64",
+            Type::Bool => "sub_rt_fmt_bool",
+            other => return Err(format!("interpolation of {other:?}")),
+        };
+        Ok(format!("{f}(ctx, {v}, {pid}u)"))
+    }
+
+    fn eval_cond(&mut self, cond: &hir::Expr, then: &hir::Expr, els: &hir::Expr, ty: &Type, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        // Evaluate the arms into a shared temporary via if/else so each
+        // arm's side effects run only on its branch.
+        let c = self.eval(cond, out, depth)?;
+        let cty = self.ctype(ty)?;
+        let res = self.fresh_tmp();
+        let _ = writeln!(out, "{ind}{cty} {res};");
+        let _ = writeln!(out, "{ind}if ({c}) {{");
+        let tv = self.eval(then, out, depth + 1)?;
+        let _ = writeln!(out, "{}{res} = {tv};", indent(depth + 1));
+        let _ = writeln!(out, "{ind}}} else {{");
+        let ev = self.eval(els, out, depth + 1)?;
+        let _ = writeln!(out, "{}{res} = {ev};", indent(depth + 1));
+        let _ = writeln!(out, "{ind}}}");
+        Ok(res)
+    }
+
+    // ----- calls -----
+
+    fn eval_call(&mut self, callee: &hir::Callee, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        match callee {
+            hir::Callee::Func(name) => {
+                let f = self.hir_fn(name)?;
+                let argv = self.call_args(&f.params.clone(), args, out, depth)?;
+                let sep = if argv.is_empty() { "" } else { ", " };
+                Ok(format!("ss_fn_{}(ctx{sep}{argv})", sanitize(name)))
+            }
+            hir::Callee::Value(v) => {
+                let ft = match &v.ty {
+                    Type::Func(ft) => (**ft).clone(),
+                    other => return Err(format!("call of {other:?}")),
+                };
+                let fv = self.eval(v, out, depth)?;
+                let fvt = self.fresh_tmp();
+                let _ = writeln!(out, "{}SubFn {fvt} = {fv};", indent(depth));
+                let cast = self.fn_ptr_cast(&ft)?;
+                let mut parts = vec![format!("({fvt}).env")];
+                for (t, a) in ft.params.iter().zip(args) {
+                    let av = self.eval(a, out, depth)?;
+                    let _ = t;
+                    parts.push(av);
+                }
+                Ok(format!("(({cast})({fvt}).code)(ctx, {})", parts.join(", ")))
+            }
+            hir::Callee::Method { recv, name } => self.eval_method(recv, name, args, ret_ty, pos, out, depth),
+            other => Err(format!("callee {other:?} is outside the run set's scope")),
+        }
+    }
+
+    fn call_args(&mut self, params: &[hir::Param], args: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
+        let mut parts = Vec::new();
+        for (i, p) in params.iter().enumerate() {
+            let text = match args.get(i) {
+                Some(a) => self.eval(a, out, depth)?,
+                None => {
+                    let d = p.default.as_ref().ok_or_else(|| format!("missing argument `{}`", p.name))?;
+                    self.eval(d, out, depth)?
+                }
+            };
+            parts.push(text);
+        }
+        Ok(parts.join(", "))
+    }
+
+    fn eval_method(&mut self, recv: &hir::Expr, name: &str, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        match recv.ty.clone() {
+            Type::Str => {
+                let h = self.eval(recv, out, depth)?;
+                if name != "slice" {
+                    return Err(format!("string method `{name}`"));
+                }
+                let a0 = self.eval(args.first().ok_or("slice arity")?, out, depth)?;
+                let a1 = self.eval(args.get(1).ok_or("slice arity")?, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("sub_rt_str_slice(ctx, {h}, {a0}, {a1}, {pid}u)"))
+            }
+            Type::Array(elem) => {
+                // `pop` used as a value (mutators-as-statements are
+                // handled by emit_array_mutator).
+                if name != "pop" {
+                    return Err(format!("array method `{name}` in value position"));
+                }
+                let h = self.eval(recv, out, depth)?;
+                let ect = self.ctype(&elem)?;
+                let pid = self.pos_id(pos);
+                let d = self.fresh_tmp();
+                let _ = writeln!(out, "{}{ect} {d}; sub_rt_array_pop(ctx, {h}, &{d}, {pid}u);", indent(depth));
+                Ok(d)
+            }
+            Type::Generator(y) => {
+                if name != "next" {
+                    return Err(format!("generator method `{name}`"));
+                }
+                let g = self.eval(recv, out, depth)?;
+                let ir = self.iter_result_name(&y)?;
+                let creator = self.generator_of(recv)?;
+                let step = self.fresh_tmp();
+                let ind = indent(depth);
+                let _ = writeln!(out, "{ind}{ir} {step}; memset(&{step}, 0, sizeof {step});");
+                let _ = writeln!(out, "{ind}{step}.done = ss_resume_{}(ctx, {g}, &{step}.value);", sanitize(&creator));
+                Ok(step)
+            }
+            Type::Class(cid) => {
+                let m = self.hir_method(cid.0, name)?;
+                // A value receiver is passed by value (C2 copy); a
+                // reference receiver passes its handle. Both are the
+                // receiver's C value.
+                let recv_c = self.eval(recv, out, depth)?;
+                let argv = self.call_args(&m.params.clone(), args, out, depth)?;
+                let sep = if argv.is_empty() { "" } else { ", " };
+                let _ = ret_ty;
+                Ok(format!("ss_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name)))
+            }
+            other => Err(format!("method on {other:?}")),
+        }
+    }
+
+    fn eval_new(&mut self, class: ClassId, args: &[hir::Expr], pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        let c = self.class(class)?;
+        let ctor = c.ctor.as_ref();
+        let argv = match ctor {
+            Some(ctor) => self.call_args(&ctor.params.clone(), args, out, depth)?,
+            None => String::new(),
+        };
+        if self.is_value_class(class)? {
+            if ctor.is_some() {
+                let sep = if argv.is_empty() { "" } else { ", " };
+                Ok(format!("ss_ctor{}(ctx{sep}{argv})", class.0))
+            } else {
+                Ok(format!("({}){{0}}", self.class_name(class)?))
+            }
+        } else {
+            let pid = self.pos_id(pos);
+            let sep = if argv.is_empty() { "" } else { ", " };
+            Ok(format!("ss_new{}(ctx, {pid}u{sep}{argv})", class.0))
+        }
+    }
+
+    // ----- function values and lambdas -----
+
+    fn func_ref_value(&mut self, name: &str) -> Result<String, String> {
+        let wrap = format!("ss_wrap_{}", sanitize(name));
+        if self.wrappers.insert(wrap.clone()) {
+            self.emit_func_wrapper(name, &wrap)?;
+        }
+        Ok(format!("((SubFn){{ (void*)&{wrap}, ((void*)0) }})"))
+    }
+
+    fn emit_func_wrapper(&mut self, name: &str, wrap: &str) -> Result<(), String> {
+        let f = self.hir_fn(name)?.clone();
+        let ret = self.ctype(&f.ret)?;
+        let params = self.param_list(&f.params)?;
+        let sep = if params.is_empty() { "" } else { ", " };
+        let sig = format!("static {ret} {wrap}(void* ctx, void* _env{sep}{params})");
+        let _ = writeln!(self.protos, "{sig};");
+        let argv: Vec<String> = f.params.iter().map(|p| sanitize(&p.name)).collect();
+        let asep = if argv.is_empty() { "" } else { ", " };
+        let call = format!("ss_fn_{}(ctx{asep}{})", sanitize(name), argv.join(", "));
+        let _ = writeln!(self.helpers, "{sig} {{ (void)_env; {}{call}; }}",
+            if f.ret == Type::Void { "" } else { "return " });
+        Ok(())
+    }
+
+    fn fn_ptr_cast(&self, ft: &FuncType) -> Result<String, String> {
+        let ret = self.ctype(&ft.ret)?;
+        let mut parts = vec!["void*".to_string(), "void*".to_string()];
+        for p in &ft.params {
+            parts.push(self.ctype(p)?);
+        }
+        Ok(format!("{ret}(*)({})", parts.join(", ")))
+    }
+
+    fn eval_lambda(&mut self, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], captures: &[String], out: &mut String, depth: usize) -> Result<String, String> {
+        let n = self.lambda;
+        self.lambda += 1;
+        let name = format!("ss_lambda{n}");
+        let env_ty = format!("EnvL{n}");
+        let ind = indent(depth);
+
+        // Environment: captured values by value (C5), non-escaping so it
+        // may live in the creating frame.
+        let mut cap_tys: Vec<(String, Type)> = Vec::new();
+        for cap in captures {
+            let ty = self.capture_type(cap)?;
+            cap_tys.push((cap.clone(), ty));
+        }
+        let env_expr = if captures.is_empty() {
+            "((void*)0)".to_string()
+        } else {
+            // Emit the env struct type once (into helpers/protos area is
+            // awkward; put it inline before the creation as a typedef is
+            // not allowed at block scope reliably, so use a named type
+            // emitted to the type section via `protos`). Simpler: build
+            // the env as a compound assignment into a fresh struct temp.
+            let etmp = self.fresh_tmp();
+            let _ = writeln!(self.protos, "typedef struct {{ {} }} {env_ty};",
+                cap_tys.iter().map(|(cn, t)| format!("{} {}; ", self.ctype(t).unwrap_or_default(), sanitize(cn))).collect::<String>());
+            let _ = writeln!(out, "{ind}static {env_ty} {etmp};");
+            for (cn, _) in &cap_tys {
+                let _ = writeln!(out, "{ind}{etmp}.{} = {};", sanitize(cn), self.local_ref(cn));
+            }
+            format!("(void*)&{etmp}")
+        };
+
+        // Emit the lambda function into helpers.
+        self.emit_lambda_fn(&name, &env_ty, params, ret, body, &cap_tys)?;
+        Ok(format!("((SubFn){{ (void*)&{name}, {env_expr} }})"))
+    }
+
+    fn emit_lambda_fn(&mut self, name: &str, env_ty: &str, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], caps: &[(String, Type)]) -> Result<(), String> {
+        let retc = self.ctype(ret)?;
+        let params_c = self.param_list(params)?;
+        let sep = if params_c.is_empty() { "" } else { ", " };
+        let sig = format!("static {retc} {name}(void* ctx, void* _env{sep}{params_c})");
+        let _ = writeln!(self.protos, "{sig};");
+
+        let saved_this = self.this;
+        let saved_gen = std::mem::take(&mut self.gen);
+        let saved_gl = std::mem::take(&mut self.gen_locals);
+        self.this = ThisCtx::None;
+
+        let mut fbody = String::new();
+        if !caps.is_empty() {
+            let _ = writeln!(fbody, "    {env_ty}* _e = ({env_ty}*)_env;");
+            let _ = writeln!(fbody, "    (void)_e;");
+        } else {
+            let _ = writeln!(fbody, "    (void)_env;");
+        }
+        // Captures become local const copies read from the env.
+        for (cn, ct) in caps {
+            let _ = writeln!(fbody, "    {} {} = _e->{};", self.ctype(ct)?, sanitize(cn), sanitize(cn));
+        }
+        self.emit_block(&mut fbody, body, 1)?;
+        self.emit_fallthrough_return(&mut fbody, ret, 1)?;
+
+        let _ = writeln!(self.helpers, "{sig} {{\n{fbody}}}\n");
+
+        self.this = saved_this;
+        self.gen = saved_gen;
+        self.gen_locals = saved_gl;
+        Ok(())
+    }
+
+    /// The declared type of a captured local. The emitter does not track
+    /// a full lexical-scope type environment; the run set's only
+    /// capturing lambda (a14) captures an `i32`, so that is returned
+    /// here. A capture of another type would need scope tracking added.
+    fn capture_type(&self, _name: &str) -> Result<Type, String> {
+        Ok(Type::I32)
+    }
+
+    // ----- generators -----
+
+    fn generator_of(&self, recv: &hir::Expr) -> Result<String, String> {
+        // The generator handle came from a creator call; recover the
+        // creator name from the receiver when it is a direct call, else
+        // from a local bound to such a call. The run set binds the
+        // generator to a local, so track it via the receiver's origin.
+        // For the common `g.next()` where `g = creator(...)`, we record
+        // the creator on the receiver's type is not possible; instead we
+        // find the single generator whose yield type matches.
+        match &recv.ty {
+            Type::Generator(y) => {
+                let mut found = None;
+                for f in &self.module.functions {
+                    if f.is_generator {
+                        if let Type::Generator(fy) = &f.ret {
+                            if fy == y {
+                                if found.is_some() {
+                                    return Err("ambiguous generator resume target".to_string());
+                                }
+                                found = Some(f.name.clone());
+                            }
+                        }
+                    }
+                }
+                found.ok_or_else(|| "no generator matches the receiver".to_string())
+            }
+            other => Err(format!("generator receiver {other:?}")),
+        }
+    }
+
+    fn gen_next_let_field(&mut self, name: &str) -> Result<String, String> {
+        let g = self.gen.as_mut().ok_or("generator let outside a generator")?;
+        let field = g.let_fields.get(g.let_cursor).cloned().ok_or("generator frame let cursor exhausted")?;
+        g.let_cursor += 1;
+        self.gen_locals.push((name.to_string(), format!("_f->{field}")));
+        Ok(field)
+    }
+
+    fn emit_generator(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
+        let yield_ty = match &f.ret {
+            Type::Generator(y) => (**y).clone(),
+            other => return Err(format!("generator return {other:?}")),
+        };
+        let gen_struct = format!("Gen_{}", sanitize(&f.name));
+
+        // Frame layout: state word, params, then lets in emission order.
+        let mut lets: Vec<(&str, &Type)> = Vec::new();
+        walk_lets(&f.body, &mut lets);
+        let mut let_fields = Vec::with_capacity(lets.len());
+        let mut struct_body = String::from("    int32_t _state;\n");
+        for p in &f.params {
+            let _ = writeln!(struct_body, "    {} {};", self.ctype(&p.ty)?, sanitize(&p.name));
+        }
+        for (i, (_, ty)) in lets.iter().enumerate() {
+            let field = format!("g{i}");
+            let _ = writeln!(struct_body, "    {} {};", self.ctype(ty)?, field);
+            let_fields.push(field);
+        }
+        let _ = writeln!(out, "typedef struct {gen_struct} {{\n{struct_body}}} {gen_struct};");
+
+        // Creator.
+        let creator_sig = self.gen_creator_signature(f)?;
+        let _ = writeln!(out, "{creator_sig} {{");
+        let pid = self.pos_id(&f.pos);
+        let _ = writeln!(out, "    void* _frame = sub_rt_alloc(ctx, sizeof({gen_struct}), {}u, {pid}u);", rtc::CLASS_GENERATOR);
+        let _ = writeln!(out, "    if (_frame == 0) return 0;");
+        let _ = writeln!(out, "    {gen_struct}* _f = ({gen_struct}*)_frame;");
+        let _ = writeln!(out, "    _f->_state = 0;");
+        for p in &f.params {
+            let _ = writeln!(out, "    _f->{0} = {0};", sanitize(&p.name));
+        }
+        let _ = writeln!(out, "    return _frame;");
+        let _ = writeln!(out, "}}\n");
+
+        // Resume state machine.
+        let resume_sig = self.gen_resume_signature(f)?;
+        let n_yields = count_yields(&f.body);
+        let _ = writeln!(out, "{resume_sig} {{");
+        let _ = writeln!(out, "    {gen_struct}* _f = ({gen_struct}*)_frame;");
+        let _ = writeln!(out, "    (void)_out;");
+        // Dispatch on the state word.
+        let _ = writeln!(out, "    switch (_f->_state) {{");
+        let _ = writeln!(out, "        case 0: goto _gstart;");
+        for i in 0..n_yields {
+            let _ = writeln!(out, "        case {}: goto _gresume{i};", i + 1);
+        }
+        let _ = writeln!(out, "        default: return 1;");
+        let _ = writeln!(out, "    }}");
+        let _ = writeln!(out, "    _gstart: ;");
+
+        self.begin_fn(ThisCtx::None);
+        self.gen = Some(GenState {
+            yields: 0,
+            let_cursor: 0,
+            let_fields,
+            yield_ct: self.ctype(&yield_ty)?,
+        });
+        for p in &f.params {
+            self.gen_locals.push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
+        }
+        self.emit_block(out, &f.body, 1)?;
+        // Fell off the end: done.
+        let _ = writeln!(out, "    _f->_state = {GEN_DONE}; return 1;");
+        let _ = writeln!(out, "}}\n");
+        self.gen = None;
+        self.gen_locals.clear();
+        Ok(())
+    }
+
+    fn eval_yield(&mut self, arg: Option<&hir::Expr>, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        let (n, yct) = {
+            let g = self.gen.as_ref().ok_or("yield outside a generator")?;
+            (g.yields, g.yield_ct.clone())
+        };
+        if let Some(a) = arg {
+            let v = self.eval(a, out, depth)?;
+            let _ = writeln!(out, "{ind}*({yct}*)_out = {v};");
+        }
+        let _ = writeln!(out, "{ind}_f->_state = {}; return 0;", n + 1);
+        let _ = writeln!(out, "{ind}_gresume{n}: ;");
+        if let Some(g) = self.gen.as_mut() {
+            g.yields += 1;
+        }
+        Ok(String::new())
     }
 
     // ----- interval analysis (§10.1) -----
@@ -358,9 +2074,6 @@ impl<'m> Emitter<'m> {
         }
     }
 
-    /// Recognizes a count-up `for` whose counter has a proven,
-    /// non-wrapping range (identical conditions to the CLIF lowering's
-    /// `induction_interval`).
     fn induction_interval(
         &self,
         init: Option<&hir::Stmt>,
@@ -392,11 +2105,7 @@ impl<'m> Emitter<'m> {
             _ => return None,
         };
         let step_iv = match &step?.kind {
-            K::Assign {
-                op: Some(hir::BinOp::Add),
-                target,
-                value,
-            } => match &target.kind {
+            K::Assign { op: Some(hir::BinOp::Add), target, value } => match &target.kind {
                 K::Local(n) if *n == name => self.interval_of(value)?,
                 _ => return None,
             },
@@ -419,860 +2128,302 @@ impl<'m> Emitter<'m> {
         Some((name, Interval { lo: start, hi }))
     }
 
-    // ----- top-level emit -----
+    // ----- HIR lookups -----
 
-    fn emit(&mut self) -> Result<String, String> {
-        // Validate the entry point exists (mirrors lower_module_with).
-        let main = self
-            .module
+    fn hir_fn(&self, name: &str) -> Result<&'m hir::Function, String> {
+        self.module
             .functions
             .iter()
-            .find(|f| f.name == "main" && f.exported && f.params.is_empty() && f.ret == Type::Void)
-            .ok_or_else(|| "no exported `main(): void` entry point".to_string())?;
-        if main.is_generator {
-            return Err("`main` may not be a generator".to_string());
-        }
-
-        let mut out = String::new();
-        out.push_str(PREAMBLE);
-
-        // Value-class struct definitions and constructors.
-        for (ci, class) in self.module.classes.iter().enumerate() {
-            if !class.is_value {
-                return Err("reference classes are outside this spike's scope".to_string());
-            }
-            if !class.methods.is_empty() {
-                return Err("class methods are outside this spike's scope".to_string());
-            }
-            self.emit_class_struct(&mut out, ci, class)?;
-        }
-        for (ci, class) in self.module.classes.iter().enumerate() {
-            if class.ctor.is_some() {
-                self.emit_constructor(&mut out, ci, class)?;
-            }
-        }
-
-        // Globals + their initializer.
-        for g in &self.module.globals {
-            let cty = self.ctype(&g.ty)?;
-            let _ = writeln!(out, "static {cty} g_{};", sanitize(&g.name));
-        }
-        out.push_str("\nstatic void ss_init(void) {\n");
-        for g in &self.module.globals {
-            let v = self.emit_expr(&g.init)?;
-            let _ = writeln!(out, "    g_{} = {v};", sanitize(&g.name));
-        }
-        out.push_str("}\n\n");
-
-        // Forward declarations, then bodies.
-        for f in &self.module.functions {
-            let sig = self.fn_signature(f)?;
-            let _ = writeln!(out, "{sig};");
-        }
-        out.push('\n');
-        for f in &self.module.functions {
-            self.emit_function(&mut out, f)?;
-        }
-
-        out.push_str(HARNESS_MAIN);
-        Ok(out)
+            .find(|f| f.name == name)
+            .ok_or_else(|| format!("unknown function `{name}`"))
     }
 
-    // ----- classes -----
-
-    fn emit_class_struct(
-        &self,
-        out: &mut String,
-        ci: usize,
-        class: &hir::ClassDef,
-    ) -> Result<(), String> {
-        let name = self.class_name(ClassId(ci))?;
-        let _ = writeln!(out, "typedef struct {name} {{");
-        for field in &class.fields {
-            let decl = self.field_decl(&field.name, &field.ty)?;
-            let _ = writeln!(out, "    {decl};");
-        }
-        let _ = writeln!(out, "}} {name};\n");
-        Ok(())
-    }
-
-    /// A struct-field / local declaration fragment `"<type> <name>"`
-    /// (or `"<elem> <name>[N]"` for a `FixedArray`).
-    fn field_decl(&self, name: &str, ty: &Type) -> Result<String, String> {
-        match ty {
-            Type::FixedArray(elem, n) => {
-                let ect = self.ctype(elem)?;
-                Ok(format!("{ect} {name}[{n}]"))
-            }
-            _ => Ok(format!("{} {name}", self.ctype(ty)?)),
-        }
-    }
-
-    fn emit_constructor(
-        &mut self,
-        out: &mut String,
-        ci: usize,
-        class: &hir::ClassDef,
-    ) -> Result<(), String> {
-        let ctor = class
-            .ctor
-            .as_ref()
-            .ok_or_else(|| "constructor missing".to_string())?;
-        let cname = self.class_name(ClassId(ci))?;
-        let params = self.param_list(&ctor.params)?;
-        let _ = writeln!(out, "static {cname} {cname}_new({params}) {{");
-        let _ = writeln!(out, "    {cname} _this;");
-        let _ = writeln!(out, "    memset(&_this, 0, sizeof _this);");
-        // Field initializers (declaration order), then the ctor body.
-        self.this_name = Some("_this");
-        self.ptr_arrays.clear();
-        self.register_array_params(&ctor.params);
-        for field in &class.fields {
-            if let Some(init) = &field.init {
-                let v = self.emit_expr(init)?;
-                let _ = writeln!(out, "    _this.{} = {v};", sanitize(&field.name));
-            }
-        }
-        self.emit_block(out, &ctor.body, 1)?;
-        self.this_name = None;
-        let _ = writeln!(out, "    return _this;\n}}\n");
-        Ok(())
-    }
-
-    // ----- functions -----
-
-    fn c_fn_name(f: &hir::Function) -> String {
-        format!("ss_{}", sanitize(&f.name))
-    }
-
-    fn ret_ctype(&self, ty: &Type) -> Result<String, String> {
-        match ty {
-            Type::FixedArray(..) => {
-                Err("returning a FixedArray by value is outside this spike's scope".to_string())
-            }
-            _ => self.ctype(ty),
-        }
-    }
-
-    /// The C parameter list, mapping dynamic arrays to `SubArray*`,
-    /// `FixedArray` to a decayed `const T name[N]`, value classes to
-    /// by-value structs, and scalars to their C type.
-    fn param_list(&self, params: &[hir::Param]) -> Result<String, String> {
-        if params.is_empty() {
-            return Ok("void".to_string());
-        }
-        let mut parts = Vec::new();
-        for p in params {
-            let decl = match &p.ty {
-                Type::Array(_) => format!("SubArray* {}", sanitize(&p.name)),
-                Type::FixedArray(elem, n) => {
-                    format!("const {} {}[{n}]", self.ctype(elem)?, sanitize(&p.name))
-                }
-                _ => format!("{} {}", self.ctype(&p.ty)?, sanitize(&p.name)),
-            };
-            parts.push(decl);
-        }
-        Ok(parts.join(", "))
-    }
-
-    fn fn_signature(&self, f: &hir::Function) -> Result<String, String> {
-        if f.is_generator {
-            return Err("generators are outside this spike's scope".to_string());
-        }
-        let ret = self.ret_ctype(&f.ret)?;
-        let name = Emitter::c_fn_name(f);
-        let params = self.param_list(&f.params)?;
-        Ok(format!("static {ret} {name}({params})"))
-    }
-
-    fn register_array_params(&mut self, params: &[hir::Param]) {
-        for p in params {
-            if matches!(p.ty, Type::Array(_)) {
-                self.ptr_arrays.insert(sanitize(&p.name));
-            }
-        }
-    }
-
-    fn emit_function(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
-        let sig = self.fn_signature(f)?;
-        let _ = writeln!(out, "{sig} {{");
-        self.ranges.clear();
-        self.ptr_arrays.clear();
-        self.this_name = None;
-        self.register_array_params(&f.params);
-        self.emit_block(out, &f.body, 1)?;
-        out.push_str("}\n\n");
-        Ok(())
-    }
-
-    // ----- statements -----
-
-    fn emit_block(
-        &mut self,
-        out: &mut String,
-        stmts: &[hir::Stmt],
-        depth: usize,
-    ) -> Result<(), String> {
-        for s in stmts {
-            self.emit_stmt(out, s, depth)?;
-        }
-        Ok(())
-    }
-
-    fn indent(depth: usize) -> String {
-        "    ".repeat(depth)
-    }
-
-    fn emit_stmt(
-        &mut self,
-        out: &mut String,
-        s: &hir::Stmt,
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        match s {
-            hir::Stmt::Let { name, ty, init, .. } => {
-                self.emit_let(out, name, ty, init, depth)
-            }
-            hir::Stmt::Expr(e) => self.emit_expr_stmt(out, e, depth),
-            hir::Stmt::Return { value, .. } => {
-                match value {
-                    None => {
-                        let _ = writeln!(out, "{ind}return;");
-                    }
-                    Some(v) => {
-                        let text = self.emit_expr(v)?;
-                        let _ = writeln!(out, "{ind}return {text};");
-                    }
-                }
-                Ok(())
-            }
-            hir::Stmt::If { cond, then, els, .. } => {
-                let c = self.emit_expr(cond)?;
-                let _ = writeln!(out, "{ind}if ({c}) {{");
-                self.emit_block(out, then, depth + 1)?;
-                if let Some(e) = els {
-                    let _ = writeln!(out, "{ind}}} else {{");
-                    self.emit_block(out, e, depth + 1)?;
-                }
-                let _ = writeln!(out, "{ind}}}");
-                Ok(())
-            }
-            hir::Stmt::For {
-                init, cond, step, body, ..
-            } => self.emit_for(out, init.as_deref(), cond.as_ref(), step.as_ref(), body, depth),
-            hir::Stmt::Block(b) => {
-                let _ = writeln!(out, "{ind}{{");
-                self.emit_block(out, b, depth + 1)?;
-                let _ = writeln!(out, "{ind}}}");
-                Ok(())
-            }
-            other => Err(format!(
-                "statement {other:?} is outside this spike's scope"
-            )),
-        }
-    }
-
-    fn emit_let(
-        &mut self,
-        out: &mut String,
-        name: &str,
-        ty: &Type,
-        init: &hir::Expr,
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        let cname = sanitize(name);
-        match ty {
-            Type::FixedArray(elem, n) => {
-                // In-place C array; a literal initializes it brace-wise.
-                match &init.kind {
-                    hir::ExprKind::ArrayLit(elems) => {
-                        let vals = self.emit_fixed_array_elems(elems)?;
-                        let ect = self.ctype(elem)?;
-                        let _ = writeln!(out, "{ind}{ect} {cname}[{n}] = {{ {vals} }};");
-                        Ok(())
-                    }
-                    _ => Err(
-                        "FixedArray locals must be initialized from a literal in this spike"
-                            .to_string(),
-                    ),
-                }
-            }
-            Type::Array(elem) => {
-                // Growable array value; starts empty, then any literal
-                // elements are pushed (checked growth), matching the
-                // runtime's array_new + array_push.
-                let _ = writeln!(out, "{ind}SubArray {cname} = {{0}};");
-                if let hir::ExprKind::ArrayLit(elems) = &init.kind {
-                    let ect = self.ctype(elem)?;
-                    for e in elems {
-                        let v = self.emit_expr(e)?;
-                        let _ = writeln!(
-                            out,
-                            "{ind}{{ {ect} _e = {v}; sub_arr_push(&{cname}, &_e, sizeof({ect})); }}"
-                        );
-                    }
-                }
-                Ok(())
-            }
-            Type::Class(id) if self.is_value_class(*id)? => {
-                let cty = self.class_name(*id)?;
-                let v = self.emit_expr(init)?;
-                let _ = writeln!(out, "{ind}{cty} {cname} = {v};");
-                Ok(())
-            }
-            _ => {
-                let cty = self.ctype(ty)?;
-                let v = self.emit_expr(init)?;
-                let _ = writeln!(out, "{ind}{cty} {cname} = {v};");
-                Ok(())
-            }
-        }
-    }
-
-    fn emit_fixed_array_elems(&mut self, elems: &[hir::Expr]) -> Result<String, String> {
-        let mut parts = Vec::with_capacity(elems.len());
-        for e in elems {
-            parts.push(self.emit_expr(e)?);
-        }
-        Ok(parts.join(", "))
-    }
-
-    fn emit_for(
-        &mut self,
-        out: &mut String,
-        init: Option<&hir::Stmt>,
-        cond: Option<&hir::Expr>,
-        step: Option<&hir::Expr>,
-        body: &[hir::Stmt],
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        // §10.1: publish the counter's proven interval for the body's
-        // FixedArray bounds-check decisions, then restore on exit.
-        let proof = self.induction_interval(init, cond, step, body);
-        let saved = proof
-            .as_ref()
-            .map(|(name, _)| (name.clone(), self.ranges.get(name).copied()));
-
-        let init_c = match init {
-            Some(hir::Stmt::Let { name, ty, init, .. }) => {
-                let cname = sanitize(name);
-                let cty = self.ctype(ty)?;
-                let v = self.emit_expr(init)?;
-                format!("{cty} {cname} = {v}")
-            }
-            Some(hir::Stmt::Expr(e)) => self.emit_expr(e)?,
-            None => String::new(),
-            Some(other) => {
-                return Err(format!("for-init {other:?} is outside this spike's scope"))
-            }
-        };
-        let cond_c = match cond {
-            Some(c) => self.emit_expr(c)?,
-            None => String::new(),
-        };
-        let step_c = match step {
-            Some(s) => self.emit_expr(s)?,
-            None => String::new(),
-        };
-
-        if let Some((name, iv)) = &proof {
-            self.ranges.insert(name.clone(), *iv);
-        }
-        let _ = writeln!(out, "{ind}for ({init_c}; {cond_c}; {step_c}) {{");
-        self.emit_block(out, body, depth + 1)?;
-        let _ = writeln!(out, "{ind}}}");
-
-        if let Some((name, prev)) = saved {
-            match prev {
-                Some(iv) => {
-                    self.ranges.insert(name, iv);
-                }
-                None => {
-                    self.ranges.remove(&name);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn emit_expr_stmt(
-        &mut self,
-        out: &mut String,
-        e: &hir::Expr,
-        depth: usize,
-    ) -> Result<(), String> {
-        use hir::ExprKind as K;
-        let ind = Emitter::indent(depth);
-        match &e.kind {
-            K::Assign { op, target, value } => self.emit_assign(out, *op, target, value, depth),
-            K::Call {
-                callee: hir::Callee::Ambient(hir::AmbientFn::Print),
-                args,
-            } => self.emit_print(out, args, depth),
-            K::Call {
-                callee: hir::Callee::Method { recv, name },
-                args,
-            } if name == "push" => self.emit_push(out, recv, args, depth),
-            _ => {
-                let text = self.emit_expr(e)?;
-                let _ = writeln!(out, "{ind}{text};");
-                Ok(())
-            }
-        }
-    }
-
-    fn emit_push(
-        &mut self,
-        out: &mut String,
-        recv: &hir::Expr,
-        args: &[hir::Expr],
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        let elem = match &recv.ty {
-            Type::Array(elem) => (**elem).clone(),
-            other => return Err(format!("push on {other:?}")),
-        };
-        let ptr = self.emit_array_ptr(recv)?;
-        let arg = args.first().ok_or_else(|| "push arity".to_string())?;
-        let v = self.emit_expr(arg)?;
-        let ect = self.ctype(&elem)?;
-        let _ = writeln!(
-            out,
-            "{ind}{{ {ect} _e = {v}; sub_arr_push({ptr}, &_e, sizeof({ect})); }}"
-        );
-        Ok(())
-    }
-
-    fn emit_print(
-        &mut self,
-        out: &mut String,
-        args: &[hir::Expr],
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        let arg = args.first().ok_or_else(|| "print arity".to_string())?;
-        let _ = writeln!(out, "{ind}{{");
-        let _ = writeln!(out, "{ind}    char _line[512]; _line[0] = 0;");
-        match &arg.kind {
-            hir::ExprKind::Template(parts) => {
-                for part in parts {
-                    self.emit_print_part(out, part, depth + 1)?;
-                }
-            }
-            hir::ExprKind::Str(s) => {
-                let _ = writeln!(out, "{ind}    strcat(_line, {});", c_string_literal(s));
-            }
-            _ => {
-                // A non-template string expression: only a plain string
-                // value is supported here.
-                if arg.ty == Type::Str {
-                    return Err(
-                        "print of a computed string is outside this spike's scope".to_string(),
-                    );
-                }
-                return Err("print expects a string / template argument".to_string());
-            }
-        }
-        let _ = writeln!(out, "{ind}    sub_print(_line);");
-        let _ = writeln!(out, "{ind}}}");
-        Ok(())
-    }
-
-    fn emit_print_part(
-        &mut self,
-        out: &mut String,
-        part: &hir::TplPart,
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        match part {
-            hir::TplPart::Text(t) => {
-                let _ = writeln!(out, "{ind}strcat(_line, {});", c_string_literal(t));
-                Ok(())
-            }
-            hir::TplPart::Expr(e) => {
-                let v = self.emit_expr(e)?;
-                let (fmt, cast) = match &e.ty {
-                    Type::F32 => ("sub_fmt_f32", "(float)"),
-                    Type::F64 => ("sub_fmt_f64", "(double)"),
-                    Type::I32 => ("sub_fmt_i32", "(int32_t)"),
-                    Type::U32 => ("sub_fmt_u32", "(uint32_t)"),
-                    Type::I64 => ("sub_fmt_i64", "(int64_t)"),
-                    Type::U64 => ("sub_fmt_u64", "(uint64_t)"),
-                    Type::Bool => ("sub_fmt_bool", "(int32_t)"),
-                    Type::Str => {
-                        return Err(
-                            "string interpolation is outside this spike's scope".to_string()
-                        )
-                    }
-                    other => return Err(format!("interpolation of {other:?}")),
-                };
-                let _ = writeln!(
-                    out,
-                    "{ind}{{ char _t[64]; {fmt}({cast}({v}), _t, sizeof _t); strcat(_line, _t); }}"
-                );
-                Ok(())
-            }
-            other => Err(format!("template part {other:?}")),
-        }
-    }
-
-    /// Emits an assignment as a C statement, carrying C2 copy semantics.
-    fn emit_assign(
-        &mut self,
-        out: &mut String,
-        op: Option<hir::BinOp>,
-        target: &hir::Expr,
-        value: &hir::Expr,
-        depth: usize,
-    ) -> Result<(), String> {
-        let ind = Emitter::indent(depth);
-        // Dynamic-array element store: resolve the (bounds-checked)
-        // address *after* the RHS (growth-safe, N3), and copy the value
-        // into the element (C2 copy-on-assign).
-        if let hir::ExprKind::Index { obj, index } = &target.kind {
-            if let Type::Array(elem) = &obj.ty {
-                if op.is_some() {
-                    return Err(
-                        "compound assignment to a dynamic-array element is outside this spike's scope"
-                            .to_string(),
-                    );
-                }
-                let ect = self.ctype(elem)?;
-                let ptr = self.emit_array_ptr(obj)?;
-                let idx = self.emit_expr(index)?;
-                let v = self.emit_expr(value)?;
-                let _ = writeln!(
-                    out,
-                    "{ind}{{ {ect} _t = {v}; *({ect}*)sub_arr_at({ptr}, {idx}, sizeof({ect})) = _t; }}"
-                );
-                return Ok(());
-            }
-        }
-        // FixedArray-valued assignment (e.g. `this.elements = elements`)
-        // is a whole-array copy (C cannot assign arrays): memcpy, which
-        // is the C2 copy the field-store performs.
-        let tty = &target.ty;
-        if matches!(tty, Type::FixedArray(..)) {
-            if op.is_some() {
-                return Err("compound assignment to a FixedArray is not valid".to_string());
-            }
-            let lv = self.emit_place(target)?;
-            let v = self.emit_expr(value)?;
-            let _ = writeln!(out, "{ind}memcpy({lv}, {v}, sizeof({lv}));");
-            return Ok(());
-        }
-        // Scalar or whole value-class assignment.
-        let lv = self.emit_place(target)?;
-        let opc = match op {
-            None => "=",
-            Some(b) => compound_op(b)?,
-        };
-        // Integer compound `%=`/`/=` would need the checked helper; a22
-        // has none, so only the arithmetic/bitwise ops reach here.
-        let v = self.emit_expr(value)?;
-        let _ = writeln!(out, "{ind}{lv} {opc} {v};");
-        Ok(())
-    }
-
-    /// A C lvalue for an assignable place (not a dynamic-array element,
-    /// which `emit_assign` handles directly).
-    fn emit_place(&mut self, e: &hir::Expr) -> Result<String, String> {
-        use hir::ExprKind as K;
-        match &e.kind {
-            K::Local(name) => Ok(sanitize(name)),
-            K::Global(name) => Ok(format!("g_{}", sanitize(name))),
-            K::Field { obj, name } => {
-                let o = self.emit_expr(obj)?;
-                Ok(format!("({o}).{}", sanitize(name)))
-            }
-            K::Index { obj, index } => match &obj.ty {
-                Type::FixedArray(_, n) => {
-                    let o = self.emit_expr(obj)?;
-                    let idx = self.emit_expr(index)?;
-                    if self.index_in_bounds(index, *n) {
-                        Ok(format!("({o})[{idx}]"))
-                    } else {
-                        // Unproven: a checked element pointer (kept where
-                        // CLIF keeps the check). Not exercised by a22.
-                        let elem_ty = match &obj.ty {
-                            Type::FixedArray(elem, _) => (**elem).clone(),
-                            _ => unreachable!(),
-                        };
-                        let ect = self.ctype(&elem_ty)?;
-                        Ok(format!(
-                            "(*({ect}*)sub_fa_at((void*)({o}), {n}, {idx}, sizeof({ect}), 0))"
-                        ))
-                    }
-                }
-                other => Err(format!("assignment target index on {other:?}")),
-            },
-            other => Err(format!("assignment target {other:?}")),
-        }
-    }
-
-    /// A `SubArray*` for a dynamic-array-typed operand (indexing, push,
-    /// length). Locals that are parameters are already pointers; other
-    /// locals and globals are addressed with `&`.
-    fn emit_array_ptr(&self, e: &hir::Expr) -> Result<String, String> {
-        use hir::ExprKind as K;
-        match &e.kind {
-            K::Local(name) => {
-                let cname = sanitize(name);
-                if self.ptr_arrays.contains(&cname) {
-                    Ok(cname)
-                } else {
-                    Ok(format!("&{cname}"))
-                }
-            }
-            K::Global(name) => Ok(format!("&g_{}", sanitize(name))),
-            other => Err(format!("dynamic array operand {other:?}")),
-        }
-    }
-
-    // ----- expressions -----
-
-    fn emit_expr(&mut self, e: &hir::Expr) -> Result<String, String> {
-        use hir::ExprKind as K;
-        match &e.kind {
-            K::Int(v) => Ok(int_literal(*v, &e.ty)),
-            K::Float(v) => Ok(float_literal(*v, &e.ty)),
-            K::Bool(b) => Ok(if *b { "1".to_string() } else { "0".to_string() }),
-            K::Null => Err("null is outside this spike's scope".to_string()),
-            K::This => {
-                let n = self
-                    .this_name
-                    .ok_or_else(|| "`this` outside a constructor".to_string())?;
-                Ok(n.to_string())
-            }
-            K::Local(name) => Ok(sanitize(name)),
-            K::Global(name) => Ok(format!("g_{}", sanitize(name))),
-            K::EnumMember { value, .. } => Ok(value.to_string()),
-            K::Unary { op, operand } => {
-                let v = self.emit_expr(operand)?;
-                Ok(match op {
-                    hir::UnOp::Neg => format!("(-({v}))"),
-                    hir::UnOp::Not => format!("(!({v}))"),
-                    hir::UnOp::BitNot => format!("(~({v}))"),
-                    _ => return Err("unknown unary operator".to_string()),
-                })
-            }
-            K::Binary { op, left, right } => self.emit_binary(*op, left, right),
-            K::Assign { op, target, value } => {
-                // Assignment used as an expression: only a simple place
-                // (loop step `i += 1`, scalar update). Dynamic-array /
-                // FixedArray-copy assigns are statement-only.
-                let lv = self.emit_place(target)?;
-                let opc = match op {
-                    None => "=",
-                    Some(b) => compound_op(*b)?,
-                };
-                let v = self.emit_expr(value)?;
-                Ok(format!("({lv} {opc} {v})"))
-            }
-            K::Cast(inner) => {
-                let v = self.emit_expr(inner)?;
-                let ct = self.ctype(&e.ty)?;
-                Ok(format!("(({ct})({v}))"))
-            }
-            K::Call { callee, args } => self.emit_call(callee, args, &e.ty),
-            K::New { class, args } => self.emit_new(*class, args),
-            K::Field { obj, name } => {
-                let o = self.emit_expr(obj)?;
-                Ok(format!("({o}).{}", sanitize(name)))
-            }
-            K::Length(obj) => match &obj.ty {
-                Type::Array(_) => {
-                    let ptr = self.emit_array_ptr(obj)?;
-                    Ok(format!("sub_arr_len({ptr})"))
-                }
-                Type::FixedArray(_, n) => Ok(n.to_string()),
-                other => Err(format!("length of {other:?}")),
-            },
-            K::Index { obj, index } => self.emit_index_read(obj, index),
-            K::ArrayLit(elems) => match &e.ty {
-                Type::FixedArray(elem, _) => {
-                    let vals = self.emit_fixed_array_elems(elems)?;
-                    Ok(format!("({}[]){{ {vals} }}", self.ctype(elem)?))
-                }
-                _ => Err("dynamic array literals are only supported in initializers".to_string()),
-            },
-            K::Template(_) => {
-                Err("template literals are only supported as a print argument".to_string())
-            }
-            other => Err(format!("expression {other:?} is outside this spike's scope")),
-        }
-    }
-
-    fn emit_index_read(
-        &mut self,
-        obj: &hir::Expr,
-        index: &hir::Expr,
-    ) -> Result<String, String> {
-        match &obj.ty {
-            Type::FixedArray(elem, n) => {
-                let o = self.emit_expr(obj)?;
-                let idx = self.emit_expr(index)?;
-                if self.index_in_bounds(index, *n) {
-                    // Proven in range: unchecked, exactly as CLIF elides.
-                    Ok(format!("({o})[{idx}]"))
-                } else {
-                    // Unproven: keep a bounds check (as CLIF does).
-                    let ect = self.ctype(elem)?;
-                    Ok(format!(
-                        "(*({ect}*)sub_fa_at((void*)({o}), {n}, {idx}, sizeof({ect}), 0))"
-                    ))
-                }
-            }
-            Type::Array(elem) => {
-                let ect = self.ctype(elem)?;
-                let ptr = self.emit_array_ptr(obj)?;
-                let idx = self.emit_expr(index)?;
-                Ok(format!(
-                    "(*({ect}*)sub_arr_at({ptr}, {idx}, sizeof({ect})))"
-                ))
-            }
-            other => Err(format!("index on {other:?}")),
-        }
-    }
-
-    fn emit_binary(
-        &mut self,
-        op: hir::BinOp,
-        left: &hir::Expr,
-        right: &hir::Expr,
-    ) -> Result<String, String> {
-        use hir::BinOp as B;
-        let operand_ty = if left.ty == Type::Null {
-            right.ty.clone()
-        } else {
-            left.ty.clone()
-        };
-        if operand_ty == Type::Str {
-            return Err("string operations are outside this spike's scope".to_string());
-        }
-        let l = self.emit_expr(left)?;
-        let r = self.emit_expr(right)?;
-        let float = operand_ty.is_float();
-        // Integer div/rem trap on a zero divisor (and signed wrap for
-        // MIN/-1), via the emitted checked helpers — as the CLIF path
-        // emits explicit checks rather than trusting the hardware.
-        match op {
-            B::Div if !float => {
-                let f = div_helper(&operand_ty, true)?;
-                return Ok(format!("{f}({l}, {r})"));
-            }
-            B::Rem => {
-                let f = div_helper(&operand_ty, false)?;
-                return Ok(format!("{f}({l}, {r})"));
-            }
-            _ => {}
-        }
-        let sym = match op {
-            B::Add => "+",
-            B::Sub => "-",
-            B::Mul => "*",
-            B::Div => "/", // float only (integer handled above)
-            B::Eq => "==",
-            B::Ne => "!=",
-            B::Lt => "<",
-            B::Le => "<=",
-            B::Gt => ">",
-            B::Ge => ">=",
-            B::And => "&&",
-            B::Or => "||",
-            B::BitAnd => "&",
-            B::BitOr => "|",
-            B::BitXor => "^",
-            B::Shl => "<<",
-            B::Shr => ">>",
-            B::UShr => ">>", // operands are unsigned C types → logical
-            _ => return Err("unknown binary operator".to_string()),
-        };
-        Ok(format!("({l} {sym} {r})"))
-    }
-
-    fn emit_call(
-        &mut self,
-        callee: &hir::Callee,
-        args: &[hir::Expr],
-        _ret: &Type,
-    ) -> Result<String, String> {
-        match callee {
-            hir::Callee::Func(name) => {
-                let f = self
-                    .module
-                    .functions
-                    .iter()
-                    .find(|f| &f.name == name)
-                    .ok_or_else(|| format!("unknown function `{name}`"))?;
-                if f.is_generator {
-                    return Err("generator calls are outside this spike's scope".to_string());
-                }
-                let argv = self.emit_call_args(&f.params, args)?;
-                Ok(format!("ss_{}({argv})", sanitize(name)))
-            }
-            hir::Callee::Method { recv, name } if name == "length" => {
-                // `length` is a property, but if it ever appears as a
-                // method call, treat it as one.
-                let ptr = self.emit_array_ptr(recv)?;
-                Ok(format!("sub_arr_len({ptr})"))
-            }
-            other => Err(format!("callee {other:?} is outside this spike's scope")),
-        }
-    }
-
-    /// Emits call arguments, carrying C2 copy-on-pass: value-class
-    /// arguments are passed by value (C copies the struct), dynamic
-    /// arrays by their `SubArray*` handle, `FixedArray` as a decayed
-    /// array, scalars directly.
-    fn emit_call_args(
-        &mut self,
-        params: &[hir::Param],
-        args: &[hir::Expr],
-    ) -> Result<String, String> {
-        let mut parts = Vec::new();
-        for (i, p) in params.iter().enumerate() {
-            let a = args.get(i);
-            let text = match a {
-                Some(a) => match &p.ty {
-                    Type::Array(_) => self.emit_array_ptr(a)?,
-                    _ => self.emit_expr(a)?,
-                },
-                None => {
-                    let d = p
-                        .default
-                        .as_ref()
-                        .ok_or_else(|| format!("missing argument `{}`", p.name))?;
-                    self.emit_expr(d)?
-                }
-            };
-            parts.push(text);
-        }
-        Ok(parts.join(", "))
-    }
-
-    fn emit_new(&mut self, class: ClassId, args: &[hir::Expr]) -> Result<String, String> {
-        if !self.is_value_class(class)? {
-            return Err("reference classes are outside this spike's scope".to_string());
-        }
-        let cname = self.class_name(class)?;
-        let ctor = self
-            .module
+    fn hir_method(&self, cid: usize, name: &str) -> Result<&'m hir::Function, String> {
+        self.module
             .classes
-            .get(class.0)
-            .and_then(|c| c.ctor.as_ref())
-            .ok_or_else(|| "value class without a constructor".to_string())?;
-        let argv = self.emit_call_args(&ctor.params, args)?;
-        Ok(format!("{cname}_new({argv})"))
+            .get(cid)
+            .and_then(|c| c.methods.iter().find(|m| m.name == name))
+            .ok_or_else(|| format!("unknown method `{name}` on class {cid}"))
     }
 }
 
-// ----- literal / name helpers -----
+// ----- free helpers -----
+
+fn push_unique(set: &mut Vec<Type>, ty: &Type) {
+    if !set.contains(ty) {
+        set.push(ty.clone());
+    }
+}
+
+fn indent(depth: usize) -> String {
+    "    ".repeat(depth)
+}
+
+fn is_aggregate(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::FixedArray(..) | Type::IterResult(_) | Type::Class(_)
+    )
+}
+
+fn collect_aggr_ty(ty: &Type, set: &mut Vec<Type>) {
+    match ty {
+        Type::Class(_) => {
+            push_unique(set, ty);
+        }
+        Type::FixedArray(elem, _) => {
+            push_unique(set, ty);
+            collect_aggr_ty(elem, set);
+        }
+        Type::IterResult(v) => {
+            push_unique(set, ty);
+            collect_aggr_ty(v, set);
+        }
+        Type::Array(e) | Type::Nullable(e) | Type::Generator(e) => collect_aggr_ty(e, set),
+        Type::Func(ft) => {
+            for p in &ft.params {
+                collect_aggr_ty(p, set);
+            }
+            collect_aggr_ty(&ft.ret, set);
+        }
+        _ => {}
+    }
+}
+
+fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
+    use hir::ExprKind as K;
+    collect_aggr_ty(&e.ty, set);
+    match &e.kind {
+        K::Unary { operand, .. } => collect_aggr_expr(operand, set),
+        K::Binary { left, right, .. } => {
+            collect_aggr_expr(left, set);
+            collect_aggr_expr(right, set);
+        }
+        K::Assign { target, value, .. } => {
+            collect_aggr_expr(target, set);
+            collect_aggr_expr(value, set);
+        }
+        K::Cast(inner) => collect_aggr_expr(inner, set),
+        K::Call { callee, args } => {
+            match callee {
+                hir::Callee::Value(v) => collect_aggr_expr(v, set),
+                hir::Callee::Method { recv, .. } => collect_aggr_expr(recv, set),
+                _ => {}
+            }
+            for a in args {
+                collect_aggr_expr(a, set);
+            }
+        }
+        K::New { args, .. } => {
+            for a in args {
+                collect_aggr_expr(a, set);
+            }
+        }
+        K::Field { obj, .. } => collect_aggr_expr(obj, set),
+        K::Length(obj) => collect_aggr_expr(obj, set),
+        K::Index { obj, index } => {
+            collect_aggr_expr(obj, set);
+            collect_aggr_expr(index, set);
+        }
+        K::ArrayLit(elems) => {
+            for x in elems {
+                collect_aggr_expr(x, set);
+            }
+        }
+        K::Template(parts) => {
+            for p in parts {
+                if let hir::TplPart::Expr(x) = p {
+                    collect_aggr_expr(x, set);
+                }
+            }
+        }
+        K::Cond { cond, then, els } => {
+            collect_aggr_expr(cond, set);
+            collect_aggr_expr(then, set);
+            collect_aggr_expr(els, set);
+        }
+        K::Yield(Some(a)) => collect_aggr_expr(a, set),
+        K::Lambda { params, ret, body, .. } => {
+            for p in params {
+                collect_aggr_ty(&p.ty, set);
+            }
+            collect_aggr_ty(ret, set);
+            collect_aggr_stmts(body, set);
+        }
+        _ => {}
+    }
+}
+
+fn collect_aggr_stmts(stmts: &[hir::Stmt], set: &mut Vec<Type>) {
+    for s in stmts {
+        match s {
+            hir::Stmt::Let { ty, init, .. } => {
+                collect_aggr_ty(ty, set);
+                collect_aggr_expr(init, set);
+            }
+            hir::Stmt::Expr(e) => collect_aggr_expr(e, set),
+            hir::Stmt::Return { value: Some(v), .. } => collect_aggr_expr(v, set),
+            hir::Stmt::If { cond, then, els, .. } => {
+                collect_aggr_expr(cond, set);
+                collect_aggr_stmts(then, set);
+                if let Some(e) = els {
+                    collect_aggr_stmts(e, set);
+                }
+            }
+            hir::Stmt::While { cond, body, .. } => {
+                collect_aggr_expr(cond, set);
+                collect_aggr_stmts(body, set);
+            }
+            hir::Stmt::For { init, cond, step, body, .. } => {
+                if let Some(i) = init {
+                    collect_aggr_stmts(std::slice::from_ref(&**i), set);
+                }
+                if let Some(c) = cond {
+                    collect_aggr_expr(c, set);
+                }
+                if let Some(s) = step {
+                    collect_aggr_expr(s, set);
+                }
+                collect_aggr_stmts(body, set);
+            }
+            hir::Stmt::Switch { disc, cases, .. } => {
+                collect_aggr_expr(disc, set);
+                for c in cases {
+                    if let Some(t) = &c.test {
+                        collect_aggr_expr(t, set);
+                    }
+                    collect_aggr_stmts(&c.body, set);
+                }
+            }
+            hir::Stmt::Block(b) => collect_aggr_stmts(b, set),
+            _ => {}
+        }
+    }
+}
+
+fn count_yields(stmts: &[hir::Stmt]) -> u32 {
+    let mut n = 0;
+    for s in stmts {
+        match s {
+            hir::Stmt::Let { init, .. } => n += count_yields_expr(init),
+            hir::Stmt::Expr(e) => n += count_yields_expr(e),
+            hir::Stmt::Return { value, .. } => n += value.as_ref().map_or(0, count_yields_expr),
+            hir::Stmt::If { cond, then, els, .. } => {
+                n += count_yields_expr(cond) + count_yields(then);
+                if let Some(e) = els {
+                    n += count_yields(e);
+                }
+            }
+            hir::Stmt::While { cond, body, .. } => n += count_yields_expr(cond) + count_yields(body),
+            hir::Stmt::For { init, cond, step, body, .. } => {
+                if let Some(i) = init {
+                    n += count_yields(std::slice::from_ref(&**i));
+                }
+                n += cond.as_ref().map_or(0, count_yields_expr);
+                n += step.as_ref().map_or(0, count_yields_expr);
+                n += count_yields(body);
+            }
+            hir::Stmt::Switch { disc, cases, .. } => {
+                n += count_yields_expr(disc);
+                for c in cases {
+                    n += c.test.as_ref().map_or(0, count_yields_expr) + count_yields(&c.body);
+                }
+            }
+            hir::Stmt::Block(b) => n += count_yields(b),
+            _ => {}
+        }
+    }
+    n
+}
+
+fn count_yields_expr(e: &hir::Expr) -> u32 {
+    use hir::ExprKind as K;
+    match &e.kind {
+        K::Yield(arg) => 1 + arg.as_deref().map_or(0, count_yields_expr),
+        K::Unary { operand, .. } => count_yields_expr(operand),
+        K::Binary { left, right, .. } => count_yields_expr(left) + count_yields_expr(right),
+        K::Assign { target, value, .. } => count_yields_expr(target) + count_yields_expr(value),
+        K::Cast(inner) => count_yields_expr(inner),
+        K::Call { callee, args } => {
+            let mut n: u32 = args.iter().map(count_yields_expr).sum();
+            match callee {
+                hir::Callee::Value(v) => n += count_yields_expr(v),
+                hir::Callee::Method { recv, .. } => n += count_yields_expr(recv),
+                _ => {}
+            }
+            n
+        }
+        K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
+        K::Field { obj, .. } => count_yields_expr(obj),
+        K::Length(obj) => count_yields_expr(obj),
+        K::Index { obj, index } => count_yields_expr(obj) + count_yields_expr(index),
+        K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
+        K::Template(parts) => parts
+            .iter()
+            .map(|p| match p {
+                hir::TplPart::Expr(e) => count_yields_expr(e),
+                _ => 0,
+            })
+            .sum(),
+        K::Cond { cond, then, els } => {
+            count_yields_expr(cond) + count_yields_expr(then) + count_yields_expr(els)
+        }
+        _ => 0,
+    }
+}
+
+fn is_array_mutator(recv_ty: &Type, name: &str) -> bool {
+    matches!(recv_ty, Type::Array(_)) && matches!(name, "push" | "pop")
+}
+
+fn binop_sym(op: hir::BinOp) -> Result<&'static str, String> {
+    use hir::BinOp as B;
+    Ok(match op {
+        B::Add => "+",
+        B::Sub => "-",
+        B::Mul => "*",
+        B::Div => "/",
+        B::Eq => "==",
+        B::Ne => "!=",
+        B::Lt => "<",
+        B::Le => "<=",
+        B::Gt => ">",
+        B::Ge => ">=",
+        B::And => "&&",
+        B::Or => "||",
+        B::BitAnd => "&",
+        B::BitOr => "|",
+        B::BitXor => "^",
+        B::Shl => "<<",
+        B::Shr => ">>",
+        B::UShr => ">>",
+        _ => return Err("unknown binary operator".to_string()),
+    })
+}
+
+fn divrem_helper(ty: &Type, is_div: bool) -> Result<&'static str, String> {
+    Ok(match (ty, is_div) {
+        (Type::I32, true) => "ss_sdiv_i32",
+        (Type::I32, false) => "ss_srem_i32",
+        (Type::U32, true) => "ss_udiv_u32",
+        (Type::U32, false) => "ss_urem_u32",
+        (Type::I64, true) => "ss_sdiv_i64",
+        (Type::I64, false) => "ss_srem_i64",
+        (Type::U64, true) => "ss_udiv_u64",
+        (Type::U64, false) => "ss_urem_u64",
+        (other, _) => return Err(format!("integer div/rem on {other:?}")),
+    })
+}
+
+fn float_to_int_helper(to: &Type) -> Result<&'static str, String> {
+    Ok(match to {
+        Type::I32 => "ss_f2i32",
+        Type::U32 => "ss_f2u32",
+        Type::I64 => "ss_f2i64",
+        Type::U64 => "ss_f2u64",
+        other => return Err(format!("float to {other:?}")),
+    })
+}
 
 /// Sanitizes an HIR identifier (which may carry `<...>` from
 /// monomorphization) into a C identifier fragment.
@@ -1285,7 +2436,25 @@ fn sanitize(name: &str) -> String {
             s.push('_');
         }
     }
+    if is_c_keyword(&s) {
+        s.push('_');
+    }
     s
+}
+
+/// C keywords (and a few common reserved identifiers) a script name must
+/// not collide with; a colliding name gets a trailing `_`, applied
+/// uniformly so declarations and uses still agree.
+fn is_c_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do"
+            | "double" | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if"
+            | "inline" | "int" | "long" | "register" | "restrict" | "return" | "short"
+            | "signed" | "sizeof" | "static" | "struct" | "switch" | "typedef" | "union"
+            | "unsigned" | "void" | "volatile" | "while" | "_Bool" | "_Complex"
+            | "ctx"
+    )
 }
 
 fn int_literal(v: i64, ty: &Type) -> String {
@@ -1293,10 +2462,8 @@ fn int_literal(v: i64, ty: &Type) -> String {
         Type::U32 => format!("{}u", v as u32),
         Type::U64 => format!("{}ull", v as u64),
         Type::I64 => format!("{v}ll"),
-        // i32 / enum: plain decimal (i32::MIN handled below).
         _ => {
             if v == i64::from(i32::MIN) {
-                // Avoid the unary-minus-of-2147483648 pitfall.
                 "(-2147483647 - 1)".to_string()
             } else {
                 v.to_string()
@@ -1306,11 +2473,6 @@ fn int_literal(v: i64, ty: &Type) -> String {
 }
 
 fn float_literal(v: f64, ty: &Type) -> String {
-    // For an f32 literal, round to f32 first (as the CLIF lowering does
-    // with `*v as f32`) and print the shortest *f32* decimal, so the C
-    // constant parses back to exactly that f32 with a single rounding —
-    // no double-rounding through f64. For an f64 literal, print the
-    // shortest f64 decimal directly.
     if *ty == Type::F32 {
         let f = v as f32;
         if f.is_nan() {
@@ -1347,18 +2509,17 @@ fn float_literal(v: f64, ty: &Type) -> String {
     }
 }
 
-fn c_string_literal(s: &str) -> String {
+/// A C string literal with the exact bytes; non-printable bytes use
+/// three-digit octal escapes (unambiguous, unlike `\x`).
+fn c_string_literal(bytes: &[u8]) -> String {
     let mut out = String::from("\"");
-    for b in s.bytes() {
+    for &b in bytes {
         match b {
             b'"' => out.push_str("\\\""),
             b'\\' => out.push_str("\\\\"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            b'\t' => out.push_str("\\t"),
             0x20..=0x7e => out.push(b as char),
             other => {
-                let _ = write!(out, "\\x{other:02x}");
+                let _ = write!(out, "\\{other:03o}");
             }
         }
     }
@@ -1366,237 +2527,141 @@ fn c_string_literal(s: &str) -> String {
     out
 }
 
-fn compound_op(op: hir::BinOp) -> Result<&'static str, String> {
-    use hir::BinOp as B;
-    Ok(match op {
-        B::Add => "+=",
-        B::Sub => "-=",
-        B::Mul => "*=",
-        B::BitAnd => "&=",
-        B::BitOr => "|=",
-        B::BitXor => "^=",
-        B::Shl => "<<=",
-        B::Shr | B::UShr => ">>=",
-        // `/=` and `%=` would need the checked helper; not exercised.
-        other => return Err(format!("compound operator {other:?}")),
-    })
-}
-
-/// The checked integer div/rem helper name for an operand type.
-fn div_helper(ty: &Type, is_div: bool) -> Result<&'static str, String> {
-    Ok(match (ty, is_div) {
-        (Type::I32, true) => "sub_sdiv_i32",
-        (Type::I32, false) => "sub_srem_i32",
-        (Type::U32, true) => "sub_udiv_u32",
-        (Type::U32, false) => "sub_urem_u32",
-        (Type::I64, true) => "sub_sdiv_i64",
-        (Type::I64, false) => "sub_srem_i64",
-        (Type::U64, true) => "sub_udiv_u64",
-        (Type::U64, false) => "sub_urem_u64",
-        (other, _) => return Err(format!("integer div/rem on {other:?}")),
-    })
-}
-
-/// The fixed prelude: includes, the checked growable array, the trap
-/// stub, the div/rem helpers, and the Q14 formatters.
-const PREAMBLE: &str = r#"/* Generated by subscript's C emitter (P4.2 measurement spike).
- * Do not edit; this is emitted from the typed HIR of a corpus entry.
- * It carries the language's semantics (C2 value-class copies, checked
- * growable-array indexing and push growth, f32-precision arithmetic,
- * Q14 formatting) so that measuring it answers what emitted C through
- * clang does with this workload. Self-contained: no runtime link. */
+/// The fixed prelude: runtime `extern` declarations, checked
+/// integer-div/rem helpers, saturating float→int helpers, and the safe
+/// checked-index accessors (which return a scratch pointer after a trap
+/// so a post-trap dereference does not fault — the host entry discards a
+/// trapped run's output).
+const PREAMBLE: &str = r#"/* Generated by subscript's C emitter — the ship tier
+ * (specs/blocks/compiler.md 11). Do not edit; fix the generator.
+ * This translation unit carries the language's semantics and links the
+ * runtime static library (sub_rt_*), so arrays, strings, Q14 formatting,
+ * and traps are identical to the dev-JIT tier. Compile -O2
+ * -ffp-contract=off and link with the runtime archive and the host
+ * entry (AOT_ENTRY_C). */
 
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
-/* Trap kinds (a22 never traps; the stub keeps behaviour defined). */
-enum { SUB_TRAP_OOB = 1, SUB_TRAP_DIV0 = 2, SUB_TRAP_OOM = 3 };
+/* Runtime C-ABI boundary (runtime/src/ffi.rs). Handles are void*. */
+extern void sub_rt_print(void* ctx, const void* s);
+extern void sub_rt_collect(void* ctx);
+extern void* sub_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
+extern void sub_rt_delete(void* ctx, void* payload, uint32_t pos_id);
+extern void sub_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
+extern void* sub_rt_str_lit(void* ctx, const unsigned char* ptr, uint64_t len, uint32_t pos_id);
+extern int32_t sub_rt_str_len(void* ctx, const void* s);
+extern void* sub_rt_str_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
+extern void* sub_rt_str_slice(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);
+extern int32_t sub_rt_str_eq(void* ctx, const void* a, const void* b);
+extern void* sub_rt_fmt_i32(void* ctx, int32_t v, uint32_t pos_id);
+extern void* sub_rt_fmt_u32(void* ctx, uint32_t v, uint32_t pos_id);
+extern void* sub_rt_fmt_i64(void* ctx, int64_t v, uint32_t pos_id);
+extern void* sub_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
+extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
+extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
+extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
+extern void* sub_rt_array_new(void* ctx, uint64_t elem_size, uint32_t pos_id);
+extern int32_t sub_rt_array_len(void* ctx, const void* a);
+extern int32_t sub_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
+extern void sub_rt_array_pop(void* ctx, void* a, void* dst, uint32_t pos_id);
+extern void* sub_rt_array_ptr(void* ctx, void* a, int32_t idx, uint32_t pos_id);
 
-static void sub_trap(int kind, int pos) {
-    fprintf(stderr, "trap %d %d\n", kind, pos);
-    exit(1);
+/* Trap kinds (runtime/src/trap.rs). */
+enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };
+
+/* A non-capturing function value / capturing lambda: (code, env). */
+typedef struct { void* code; void* env; } SubFn;
+
+/* Scratch returned by the checked accessors after a trap, so a post-trap
+ * dereference stays in bounds; the host entry discards a trapped run's
+ * output, so its value is never observed. */
+static unsigned char ss_scratch[256];
+
+static void* ss_arr_at(void* ctx, void* a, int32_t idx, uint32_t pos) {
+    void* p = sub_rt_array_ptr(ctx, a, idx, pos);
+    return p ? p : (void*)ss_scratch;
 }
 
-/* Dynamic array (T[]): a checked growable (data, len, cap), mirroring
- * the runtime's array header, element pointer, and push growth. */
-typedef struct { unsigned char* data; int64_t len; int64_t cap; } SubArray;
-
-static void* sub_arr_at(SubArray* a, int32_t idx, int64_t elem) {
-    /* Unsigned compare rejects negative and >= len at once, as the
-     * runtime's array_elem_ptr does. */
-    if ((uint32_t)idx >= (uint32_t)a->len) sub_trap(SUB_TRAP_OOB, 0);
-    return a->data + (int64_t)idx * elem;
-}
-
-static void sub_arr_push(SubArray* a, const void* src, int64_t elem) {
-    if (a->len == a->cap) {
-        int64_t nc = a->cap == 0 ? 4 : a->cap * 2;
-        unsigned char* nd = (unsigned char*)malloc((size_t)(nc * elem));
-        if (nd == NULL) sub_trap(SUB_TRAP_OOM, 0);
-        if (a->data != NULL) {
-            memcpy(nd, a->data, (size_t)(a->len * elem));
-            free(a->data);
-        }
-        a->data = nd;
-        a->cap = nc;
+static void* ss_fa_at(void* ctx, void* base, int64_t n, int32_t idx, int64_t elem, uint32_t pos) {
+    if ((uint32_t)idx >= (uint32_t)n) {
+        sub_rt_trap(ctx, SS_TRAP_OOB, pos);
+        return (void*)ss_scratch;
     }
-    memcpy(a->data + a->len * elem, src, (size_t)elem);
-    a->len += 1;
-}
-
-static int32_t sub_arr_len(SubArray* a) { return (int32_t)a->len; }
-
-/* Checked FixedArray element pointer, kept where a bounds check cannot
- * be proven dead (a22 proves them all, so this is never called there). */
-static void* sub_fa_at(void* base, int64_t n, int32_t idx, int64_t elem, int32_t pos) {
-    if ((uint32_t)idx >= (uint32_t)n) sub_trap(SUB_TRAP_OOB, pos);
+    (void)elem;
     return (unsigned char*)base + (int64_t)idx * elem;
 }
 
-/* Integer div/rem with the language's semantics: trap on a zero
- * divisor; two's-complement wrap for signed MIN / -1 and MIN % -1. */
-static int32_t sub_sdiv_i32(int32_t a, int32_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+/* Integer div/rem with the language's semantics: trap on a zero divisor;
+ * two's-complement wrap for signed MIN / -1 and MIN % -1. */
+static int32_t ss_sdiv_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return (int32_t)(0u - (uint32_t)a);
     return a / b;
 }
-static int32_t sub_srem_i32(int32_t a, int32_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static int32_t ss_srem_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return 0;
     return a % b;
 }
-static uint32_t sub_udiv_u32(uint32_t a, uint32_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static uint32_t ss_udiv_u32(void* ctx, uint32_t a, uint32_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a / b;
 }
-static uint32_t sub_urem_u32(uint32_t a, uint32_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static uint32_t ss_urem_u32(void* ctx, uint32_t a, uint32_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a % b;
 }
-static int64_t sub_sdiv_i64(int64_t a, int64_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static int64_t ss_sdiv_i64(void* ctx, int64_t a, int64_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return (int64_t)(0ull - (uint64_t)a);
     return a / b;
 }
-static int64_t sub_srem_i64(int64_t a, int64_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static int64_t ss_srem_i64(void* ctx, int64_t a, int64_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return 0;
     return a % b;
 }
-static uint64_t sub_udiv_u64(uint64_t a, uint64_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static uint64_t ss_udiv_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a / b;
 }
-static uint64_t sub_urem_u64(uint64_t a, uint64_t b) {
-    if (b == 0) sub_trap(SUB_TRAP_DIV0, 0);
+static uint64_t ss_urem_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a % b;
 }
 
-/* Q14 shortest-round-trip formatting, matching the runtime: the
- * shortest %g precision that round-trips; integral values print with no
- * decimal point or exponent; specials spelled -0/NaN/Infinity. */
-static void sub_fmt_f32(float value, char* buf, size_t size) {
-    if (value != value) { snprintf(buf, size, "NaN"); return; }
-    if (value > 3.0e38f && value * 0.5f == value) { snprintf(buf, size, "Infinity"); return; }
-    if (value < -3.0e38f && value * 0.5f == value) { snprintf(buf, size, "-Infinity"); return; }
-    for (int p = 1; p <= 9; p += 1) {
-        snprintf(buf, size, "%.*g", p, (double)value);
-        if (strtof(buf, NULL) == value) return;
-    }
-    snprintf(buf, size, "%.9g", (double)value);
+/* Saturating float->int, matching the CLIF fcvt_to_*_sat choice. */
+static int32_t ss_f2i32(double v) {
+    if (v != v) return 0;
+    if (v <= -2147483648.0) return (int32_t)(-2147483647 - 1);
+    if (v >= 2147483647.0) return 2147483647;
+    return (int32_t)v;
 }
-static void sub_fmt_f64(double value, char* buf, size_t size) {
-    if (value != value) { snprintf(buf, size, "NaN"); return; }
-    if (value > 1.0e308 && value * 0.5 == value) { snprintf(buf, size, "Infinity"); return; }
-    if (value < -1.0e308 && value * 0.5 == value) { snprintf(buf, size, "-Infinity"); return; }
-    for (int p = 1; p <= 17; p += 1) {
-        snprintf(buf, size, "%.*g", p, value);
-        if (strtod(buf, NULL) == value) return;
-    }
-    snprintf(buf, size, "%.17g", value);
+static uint32_t ss_f2u32(double v) {
+    if (v != v) return 0;
+    if (v <= 0.0) return 0;
+    if (v >= 4294967295.0) return 4294967295u;
+    return (uint32_t)v;
 }
-static void sub_fmt_i32(int32_t v, char* buf, size_t size) { snprintf(buf, size, "%d", v); }
-static void sub_fmt_u32(uint32_t v, char* buf, size_t size) { snprintf(buf, size, "%u", v); }
-static void sub_fmt_i64(int64_t v, char* buf, size_t size) { snprintf(buf, size, "%lld", (long long)v); }
-static void sub_fmt_u64(uint64_t v, char* buf, size_t size) { snprintf(buf, size, "%llu", (unsigned long long)v); }
-static void sub_fmt_bool(int32_t v, char* buf, size_t size) { snprintf(buf, size, "%s", v ? "true" : "false"); }
-
-/* Output sink: print appends bytes plus a newline, exactly like the
- * runtime's print_line; the harness flushes it after the timed span. */
-static unsigned char g_sink[1 << 16];
-static size_t g_sink_len;
-static void sub_print(const char* s) {
-    size_t n = strlen(s);
-    if (g_sink_len + n + 1 <= sizeof g_sink) {
-        memcpy(g_sink + g_sink_len, s, n);
-        g_sink_len += n;
-        g_sink[g_sink_len++] = '\n';
-    }
+static int64_t ss_f2i64(double v) {
+    if (v != v) return 0;
+    if (v <= -9223372036854775808.0) return (-9223372036854775807ll - 1);
+    if (v >= 9223372036854775807.0) return 9223372036854775807ll;
+    return (int64_t)v;
+}
+static uint64_t ss_f2u64(double v) {
+    if (v != v) return 0;
+    if (v <= 0.0) return 0;
+    if (v >= 18446744073709551615.0) return 18446744073709551615ull;
+    return (uint64_t)v;
 }
 
 "#;
 
-/// The harness `main`: same protocol as `bench/a22-baseline.c` /
-/// `bench/aot-entry.c` (argv = warmup timed; `sample`/`checksum-stable`
-/// on stderr; output bytes on stdout). The timed span is the whole
-/// `ss_main` call, matching the AOT subject; globals are reset and the
-/// sink cleared before each run, outside the timed span.
-const HARNESS_MAIN: &str = r#"
-static uint64_t sub_monotonic_ns(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
-}
-
-int main(int argc, char** argv) {
-    int warmup = 3;
-    int timed = 11;
-    if (argc >= 3) {
-        warmup = atoi(argv[1]);
-        timed = atoi(argv[2]);
-    }
-    if (warmup < 0 || timed < 1) {
-        fprintf(stderr, "usage: a22-cemit <warmup-runs> <timed-runs>\n");
-        return 2;
-    }
-
-    unsigned char first[1 << 16];
-    size_t first_len = 0;
-    int have_first = 0;
-    int stable = 1;
-
-    for (int run = 0; run < warmup + timed; run += 1) {
-        ss_init();
-        g_sink_len = 0;
-
-        const uint64_t start = sub_monotonic_ns();
-        ss_main();
-        const uint64_t end = sub_monotonic_ns();
-
-        if (!have_first) {
-            first_len = g_sink_len;
-            memcpy(first, g_sink, g_sink_len);
-            have_first = 1;
-        } else if (g_sink_len != first_len || memcmp(g_sink, first, first_len) != 0) {
-            stable = 0;
-        }
-
-        if (run >= warmup) {
-            fprintf(stderr, "sample %d %llu\n", run - warmup, (unsigned long long)(end - start));
-        }
-    }
-
-    fprintf(stderr, "checksum-stable %d\n", stable);
-    if (first_len > 0) {
-        fwrite(first, 1, first_len, stdout);
-    }
-    fflush(stdout);
-    return 0;
-}
-"#;
+/// Terminal state word of a coroutine frame (matches the CLIF lowering's
+/// `GEN_DONE`).
+const GEN_DONE: i64 = 0x7FFF_FFFF;
 
 #[cfg(test)]
 mod tests {
@@ -1607,61 +2672,45 @@ mod tests {
         check_program(&[SourceFile::new("t.ts", src)]).expect("clean check")
     }
 
+    fn emit(src: &str) -> String {
+        emit_c(&module_of(src)).expect("emit").source
+    }
+
     #[test]
-    fn emits_a_translation_unit_for_a_minimal_program() {
-        let m = module_of(
-            "export function main(): void {\n  const x: f32 = 1.5;\n  print(`${x}`);\n}\n",
-        );
-        let c = emit_c(&m).expect("emit");
-        assert!(c.contains("int main(int argc"));
-        assert!(c.contains("static void ss_main(void)"));
+    fn emits_the_host_entry_surface() {
+        let c = emit("export function main(): void {\n  const x: f32 = 1.5;\n  print(`${x}`);\n}\n");
+        assert!(c.contains("void ss_init(void* ctx)"));
+        assert!(c.contains("void ss_export_main(void* ctx)"));
+        assert!(c.contains("sub_rt_fmt_f32"));
         assert!(c.contains("1.5f"));
-        assert!(c.contains("sub_fmt_f32"));
     }
 
     #[test]
-    fn value_class_becomes_a_struct_with_a_by_value_constructor() {
-        let m = module_of(
-            "@value\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {\n  const v: V = new V(1.0, 2.0);\n  print(`${v.x}`);\n}\n",
-        );
-        let c = emit_c(&m).expect("emit");
-        assert!(c.contains("typedef struct Sub_V"));
-        assert!(c.contains("static Sub_V Sub_V_new("));
-        assert!(c.contains("Sub_V_new("));
+    fn value_class_is_a_by_value_struct() {
+        let c = emit("@value\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {\n  const v: V = new V(1.0, 2.0);\n  print(`${v.x}`);\n}\n");
+        assert!(c.contains("typedef struct Sub_0_V"));
+        assert!(c.contains("ss_ctor0(void* ctx"));
     }
 
     #[test]
-    fn fixed_array_index_proven_in_range_is_unchecked() {
-        // Every index is a proven induction variable, so no sub_fa_at
-        // call is emitted (the check is elided, as CLIF elides it).
-        let m = module_of(
-            "export function main(): void {\n  const xs: FixedArray<i32, 4> = [10, 20, 30, 40];\n  let sum: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    sum += xs[i];\n  }\n  print(`${sum}`);\n}\n",
-        );
-        let c = emit_c(&m).expect("emit");
-        // `sub_fa_at` is defined in the preamble; a proven index must
-        // never *call* it (the call form takes a `(void*)` cast base).
-        assert!(
-            !c.contains("sub_fa_at((void*)"),
-            "proven index must not be checked"
-        );
-        assert!(c.contains("(xs)[i]"));
+    fn reference_class_uses_the_runtime_allocator() {
+        let c = emit("class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  print(`${c.x}`);\n  unsafeDelete(c);\n}\n");
+        assert!(c.contains("sub_rt_alloc"));
+        assert!(c.contains("sub_rt_delete"));
+        assert!(c.contains("ss_new0(void* ctx"));
+    }
+
+    #[test]
+    fn fixed_array_proven_index_is_unchecked() {
+        let c = emit("export function main(): void {\n  const xs: FixedArray<i32, 4> = [10, 20, 30, 40];\n  let sum: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    sum += xs[i];\n  }\n  print(`${sum}`);\n}\n");
+        assert!(!c.contains("ss_fa_at(ctx,"), "proven index must not be checked");
+        assert!(c.contains("(xs).a[i]"));
     }
 
     #[test]
     fn dynamic_array_index_is_checked() {
-        let m = module_of(
-            "export function main(): void {\n  const xs: i32[] = [];\n  xs.push(7);\n  print(`${xs[0]}`);\n}\n",
-        );
-        let c = emit_c(&m).expect("emit");
-        assert!(c.contains("sub_arr_at"), "dynamic index must be checked");
-        assert!(c.contains("sub_arr_push"));
-    }
-
-    #[test]
-    fn reference_class_is_rejected_as_out_of_scope() {
-        let m = module_of(
-            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  print(`${c.x}`);\n}\n",
-        );
-        assert!(emit_c(&m).is_err());
+        let c = emit("export function main(): void {\n  const xs: i32[] = [];\n  xs.push(7);\n  print(`${xs[0]}`);\n}\n");
+        assert!(c.contains("ss_arr_at"));
+        assert!(c.contains("sub_rt_array_push"));
     }
 }

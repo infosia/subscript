@@ -12,11 +12,12 @@
 //!   library and `bench/aot-entry.c`.
 //! - **dev-JIT** — the entry through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
-//! - **emitted-C** — the entry's typed HIR emitted as a self-contained
-//!   C translation unit (`subscript_codegen::emit_c`, the P4.2 spike),
-//!   compiled with the same flags as the hand C baseline. Reported, not
-//!   gated: the pre-registered §3 thresholds (ship-AOT, dev-JIT) do not
-//!   move; emitted-C's ratios are the spike's measured answer.
+//! - **emitted-C** — the entry's typed HIR emitted as C
+//!   (`subscript_codegen::emit_c`, now the ship tier — compiler.md §11),
+//!   compiled with the same flags as the hand C baseline and linked with
+//!   the runtime static library. Reported, not gated: the pre-registered
+//!   §3 thresholds (ship-AOT, dev-JIT) do not move; emitted-C's ratios
+//!   are the ship tier's measured answer.
 //!
 //! Every subject times the workload execution only, inside its own
 //! process, with a monotonic clock: the C baseline times its workload
@@ -597,15 +598,16 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
     })
 }
 
-/// Emits C from the entry's typed HIR (the P4.2 spike), compiles it
-/// with the same flags as the hand C baseline, and measures it under
-/// the same harness protocol (`specs/tracking/p4-performance.md`).
+/// Emits C from the entry's typed HIR (the ship tier — compiler.md §11),
+/// compiles it with the same flags as the hand C baseline, links it with
+/// the runtime static library, and measures it under the same harness
+/// protocol (`specs/tracking/p4-performance.md`).
 ///
-/// Self-contained: the emitted translation unit carries the language's
-/// semantics (C2 value-class copies, checked growable-array indexing and
-/// push growth, f32-precision arithmetic, Q14 formatting) and links
-/// against no runtime, so this measures emitted C through clang, timed
-/// on the whole `main` call exactly as the AOT subject is.
+/// The emitted translation unit carries the language's semantics (C2
+/// value-class copies, checked growable-array indexing and push growth,
+/// f32-precision arithmetic) and calls the runtime for arrays, strings,
+/// and Q14 formatting, so this measures the shipped path through clang,
+/// timed on the whole `ss_export_main` call exactly as the AOT subject.
 fn measure_emitted_c(
     files: &[SourceFile],
     dir: &Path,
@@ -622,17 +624,22 @@ fn measure_emitted_c(
                 .unwrap_or_else(|| "no diagnostic".to_string())
         )
     })?;
-    let c_source = emit_c(&module).map_err(|e| format!("C emission: {e}"))?;
+    let c_source = emit_c(&module).map_err(|e| format!("C emission: {e}"))?.source;
     let emit = started.elapsed();
 
     let source = dir.join("a22-cemit.c");
+    let entry = dir.join("cemit-entry.c");
     let exe = dir.join("a22-cemit");
     write_file(&source, c_source.as_bytes())?;
+    write_file(&entry, AOT_BENCH_ENTRY_C.as_bytes())?;
+    let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
 
     let started = Instant::now();
     let build = Command::new(host_cc())
         .args(BASELINE_CFLAGS)
         .arg(&source)
+        .arg(&entry)
+        .arg(&staticlib)
         .arg("-o")
         .arg(&exe)
         .output()
@@ -648,10 +655,10 @@ fn measure_emitted_c(
     let (stdout, samples) = run_subject(&exe, warmup, timed)?;
     Ok(Subject {
         name: "emitted-C",
-        span: "the ss_main call in the emitted-C binary (output captured to a sink)",
+        span: "the ss_export_main call in the emitted-C binary (linked with the runtime)",
         stdout,
         samples,
-        prepare: vec![("check + emit C", emit), ("compile (cc)", compile)],
+        prepare: vec![("check + emit C", emit), ("compile + link (cc)", compile)],
     })
 }
 

@@ -430,6 +430,76 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     }
 }
 
+/// Compiles, links, and runs `files` through the **ship tier** (§11) on
+/// the host target, returning the exact stdout bytes the program
+/// produced.
+///
+/// The ship tier emits C ([`crate::emit_c`]), which the platform C
+/// compiler compiles at `-O2 -ffp-contract=off` and links with the
+/// runtime static library and the same host entry [`AOT_ENTRY_C`] the
+/// Cranelift AOT path uses — the emitted C exports the identical
+/// `ss_init` / `ss_export_main` surface, so it is a drop-in subject.
+/// The whole cycle happens in a temporary directory removed before
+/// returning. The C compiler's absence is a failure, never a skip (the
+/// gate machine is the development machine, §8.3).
+///
+/// # Errors
+///
+/// [`RunError::Rejected`] when the checker rejects the program,
+/// [`RunError::Trap`] when the linked program trapped (mapped back
+/// through the emitted position table), [`RunError::Internal`] on
+/// emission, toolchain, compile, link, or execution failures.
+pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
+    let hir = check_program(files).map_err(RunError::Rejected)?;
+    let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
+    let staticlib = runtime_staticlib()?;
+    let dir = TempDir::new("crun")?;
+
+    let src_path = dir.path.join("program.c");
+    let entry_path = dir.path.join("entry.c");
+    let exe_path = dir.path.join("program");
+    write_file(&src_path, program.source.as_bytes())?;
+    write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
+
+    let cc = host_cc();
+    let compile = Command::new(&cc)
+        .arg("-O2")
+        .arg("-ffp-contract=off")
+        .arg(&src_path)
+        .arg(&entry_path)
+        .arg(&staticlib)
+        .arg("-o")
+        .arg(&exe_path)
+        .output()
+        .map_err(|e| {
+            RunError::Internal(internal(format!(
+                "the host C compiler ({}) could not be run: {e}",
+                cc.to_string_lossy()
+            )))
+        })?;
+    if !compile.status.success() {
+        return Err(RunError::Internal(internal(format!(
+            "compiling/linking the emitted C failed:\n{}",
+            String::from_utf8_lossy(&compile.stderr)
+        ))));
+    }
+
+    let run = Command::new(&exe_path)
+        .output()
+        .map_err(|e| RunError::Internal(internal(format!("run linked program: {e}"))))?;
+    if run.status.success() {
+        return Ok(run.stdout);
+    }
+    match parse_trap(&run.stderr, &program.positions) {
+        Some(report) => Err(RunError::Trap(report)),
+        None => Err(RunError::Internal(internal(format!(
+            "linked C program exited with {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        )))),
+    }
+}
+
 /// Parses the entry program's `trap <kind> <pos_id> <message>` line
 /// back into a report, resolving the position through the table the
 /// lowering produced for this object.

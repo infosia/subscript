@@ -36,9 +36,10 @@ mod lower;
 mod reload;
 
 pub use aot::{
-    emit_object, run_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C, RUNTIME_STATICLIB_ENV,
+    emit_object, run_aot, run_c_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C,
+    RUNTIME_STATICLIB_ENV,
 };
-pub use cemit::emit_c;
+pub use cemit::{emit_c, CProgram};
 pub use jit::{jit_bench, run_jit, BenchSamples, RunError, TrapReport};
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 
