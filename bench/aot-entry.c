@@ -25,6 +25,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <io.h>
+#include <fcntl.h>
+#include <windows.h>
+#endif
 
 extern void *sub_rt_ctx_new(void);
 extern void sub_rt_ctx_release(void *ctx);
@@ -36,12 +41,28 @@ extern const unsigned char *sub_rt_ctx_trap_message(const void *ctx, uint64_t *l
 extern void ss_init(void *ctx);
 extern void ss_export_main(void *ctx);
 
-/* Nanoseconds since an unspecified monotonic epoch. */
+/* Nanoseconds since an unspecified monotonic epoch. The MSVC UCRT has no
+ * clock_gettime/CLOCK_MONOTONIC, so on Windows the same monotonic span is
+ * read from QueryPerformanceCounter, converted to nanoseconds by exact
+ * integer arithmetic (no precision loss for the reported timed span). The
+ * POSIX path is unchanged on every other platform. */
+#if defined(_WIN32)
+static uint64_t monotonic_ns(void) {
+    LARGE_INTEGER freq;
+    LARGE_INTEGER counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    const uint64_t f = (uint64_t)freq.QuadPart;
+    const uint64_t c = (uint64_t)counter.QuadPart;
+    return (c / f) * 1000000000ull + (c % f) * 1000000000ull / f;
+}
+#else
 static uint64_t monotonic_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
+#endif
 
 /* Reports a trap the way the gate's entry program does, so a failing
  * benchmark run is diagnosable with the same reader. */
@@ -56,6 +77,12 @@ static void report_trap(const void *ctx) {
 }
 
 int main(int argc, char **argv) {
+#if defined(_WIN32)
+    /* The sink bytes are compared byte-for-byte against the LF golden; the
+     * MSVCRT opens stdout in text mode and would translate '\n' to '\r\n'.
+     * Binary mode writes the sink through unchanged. No-op off Windows. */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     int warmup = 3;
     int timed = 11;
     if (argc >= 3) {

@@ -478,10 +478,63 @@ fn cc_version() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// The platform C compiler driver, overridable with `CC` as the AOT
-/// tier's own link step allows.
+/// Finds `name` on `PATH`, returning its full path when an executable
+/// file exists. On Windows the `.exe` extension is tried as well.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
+    for dir in std::env::split_paths(&path) {
+        for ext in exts {
+            let cand = dir.join(format!("{name}{ext}"));
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+/// Resolves the C compiler used for the C subjects. The compiler is clang
+/// (compiler.md §11), matching the ship path (`codegen::aot`): `$CC`
+/// verbatim when set, else `clang` on `PATH`, else — on Windows only — the
+/// standard LLVM install (`%ProgramFiles%\LLVM\bin\clang.exe`). Falls back
+/// to the bare name `clang`, so a missing toolchain surfaces as a clear
+/// error rather than a silent skip.
 fn host_cc() -> std::ffi::OsString {
-    std::env::var_os("CC").unwrap_or_else(|| "cc".into())
+    if let Some(cc) = std::env::var_os("CC") {
+        return cc;
+    }
+    if let Some(p) = find_on_path("clang") {
+        return p.into_os_string();
+    }
+    #[cfg(windows)]
+    if let Some(pf) = std::env::var_os("ProgramFiles") {
+        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
+        if llvm.is_file() {
+            return llvm.into_os_string();
+        }
+    }
+    "clang".into()
+}
+
+/// System import libraries the linked program needs on windows-msvc that
+/// clang's own defaults do not supply. The runtime static library embeds
+/// Rust `std`, which references these; `rustc` passes them automatically
+/// when it links, so a manual clang link of the staticlib must add them
+/// (mirrors `codegen::aot::runtime_system_libs`). Empty on every other
+/// target.
+fn runtime_system_libs() -> &'static [&'static str] {
+    if cfg!(all(windows, target_env = "msvc")) {
+        &[
+            "-lkernel32",
+            "-lntdll",
+            "-luserenv",
+            "-lws2_32",
+            "-ldbghelp",
+        ]
+    } else {
+        &[]
+    }
 }
 
 /// A temporary directory outside the repository, removed on drop.
@@ -569,7 +622,7 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<(Vec<u8>, Vec<
 /// Compiles and measures the hand-written C baseline.
 fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
     let source = dir.join("a22-baseline.c");
-    let exe = dir.join("a22-baseline");
+    let exe = dir.join(format!("a22-baseline{}", std::env::consts::EXE_SUFFIX));
     write_file(&source, BASELINE_C.as_bytes())?;
 
     let started = Instant::now();
@@ -629,7 +682,7 @@ fn measure_emitted_c(
 
     let source = dir.join("a22-cemit.c");
     let entry = dir.join("cemit-entry.c");
-    let exe = dir.join("a22-cemit");
+    let exe = dir.join(format!("a22-cemit{}", std::env::consts::EXE_SUFFIX));
     write_file(&source, c_source.as_bytes())?;
     write_file(&entry, AOT_BENCH_ENTRY_C.as_bytes())?;
     let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
@@ -649,6 +702,7 @@ fn measure_emitted_c(
         .arg(&source)
         .arg(&entry)
         .arg(&staticlib)
+        .args(runtime_system_libs())
         .arg("-o")
         .arg(&exe)
         .output()
@@ -685,7 +739,7 @@ fn measure_aot(
     let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
     let obj_path = dir.join("a22-aot.o");
     let entry_path = dir.join("aot-entry.c");
-    let exe = dir.join("a22-aot");
+    let exe = dir.join(format!("a22-aot{}", std::env::consts::EXE_SUFFIX));
     write_file(&obj_path, &object.bytes)?;
     write_file(&entry_path, AOT_BENCH_ENTRY_C.as_bytes())?;
 
@@ -695,6 +749,7 @@ fn measure_aot(
         .arg(&entry_path)
         .arg(&obj_path)
         .arg(&staticlib)
+        .args(runtime_system_libs())
         .arg("-o")
         .arg(&exe)
         .output()

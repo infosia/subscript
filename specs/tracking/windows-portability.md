@@ -131,6 +131,20 @@ kept minimal:
   on any clang. Workspace stays 236/0, goldens byte-for-byte unchanged (the
   cast is compile-time). Closes CLAUDE.md principle 6 for this case.
 
+- **Bench port — DONE (2026-07-23).** `bench/src/main.rs` uses the clang
+  locator, `.exe` suffix, and Windows system libs; `bench/a22-baseline.c`
+  and `bench/aot-entry.c` set binary-mode stdout and, on Windows, read the
+  timed span from `QueryPerformanceCounter` (overflow-safe ns conversion)
+  since the MSVC UCRT has no `clock_gettime`. Verified by running
+  `cargo run -p subscript-bench --release -- --warmup 5 --timed 15`: all
+  four subjects (C, ship-AOT, dev-JIT, emitted-C) compile, run, and match
+  the frozen golden; noise check passes. The §3 perf thresholds are missed
+  as always for the Cranelift ship-AOT/dev-JIT tiers (the reason §11 Rev 8
+  moved the ship tier to C emission); emitted-C measured **2.60x** of hand
+  C on this Windows/clang-22 host vs the **1.05x** recorded on the reference
+  setup (§11) — a machine/toolchain difference, not a port defect: C and
+  emitted-C are timed by the same method, so the ratio is timing-independent.
+
 ### Open
 - **Reconcile the `mod.rs` gate doc comment**, which still says `(ptr,len)`
   is target-neutral — now contradicted by §12.3a and the func.rs Str/Array
@@ -165,3 +179,7 @@ kept minimal:
 - 2026-07-23: Follow-up 1 (generator fix) done — `cemit.rs` casts boundary
   struct pointers to the header type; `-Wno-error` flag removed. Verified
   236/0 flag-free, goldens byte-identical.
+- 2026-07-23: Bench port done — clang locator, `.exe` suffix, system libs,
+  binary-mode stdout, and a `QueryPerformanceCounter` timing shim in both
+  committed C entries. Benchmark runs on Windows; all four subjects match
+  the golden. §11b extended.

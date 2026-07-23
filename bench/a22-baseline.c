@@ -32,6 +32,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <io.h>
+#include <fcntl.h>
+#include <windows.h>
+#endif
 
 enum { NODE_COUNT = 10000 };
 enum { ITERATION_COUNT = 100 };
@@ -118,12 +123,28 @@ static float checksum(const Matrix4 *matrices, int32_t count) {
     return total;
 }
 
-/* Nanoseconds since an unspecified monotonic epoch. */
+/* Nanoseconds since an unspecified monotonic epoch. The MSVC UCRT has no
+ * clock_gettime/CLOCK_MONOTONIC, so on Windows the same monotonic span is
+ * read from QueryPerformanceCounter, converted to nanoseconds by exact
+ * integer arithmetic (no precision loss for the reported timed span). The
+ * POSIX path is unchanged on every other platform. */
+#if defined(_WIN32)
+static uint64_t monotonic_ns(void) {
+    LARGE_INTEGER freq;
+    LARGE_INTEGER counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    const uint64_t f = (uint64_t)freq.QuadPart;
+    const uint64_t c = (uint64_t)counter.QuadPart;
+    return (c / f) * 1000000000ull + (c % f) * 1000000000ull / f;
+}
+#else
 static uint64_t monotonic_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
+#endif
 
 /* One workload run: the body of the corpus entry's `main` up to (but
  * not including) the `print`. Returns the checksum and writes the
@@ -183,6 +204,12 @@ static void format_f32(float value, char *buffer, size_t size) {
 }
 
 int main(int argc, char **argv) {
+#if defined(_WIN32)
+    /* stdout is compared byte-for-byte against the LF golden; the MSVCRT
+     * opens stdout in text mode and would translate '\n' to '\r\n'.
+     * Binary mode writes the bytes through unchanged. No-op off Windows. */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     int warmup = 3;
     int timed = 11;
     if (argc >= 3) {

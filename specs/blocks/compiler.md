@@ -429,9 +429,9 @@ Consequence: the workspace compiles on `x86_64-pc-windows-msvc` — already a
 stated dev-tier host (§1). This is the *compilation* contract only; the
 C-invocation sites that run while tests execute are §11b, and the dev-JIT
 struct-by-value ABI is §12.3a. The bench harness (`bench/src/main.rs`)
-compiles C only when the benchmark is run (no test drives it) and is out of
-scope for the standing test gate; its port is tracked as a loose end in
-`specs/tracking/windows-portability.md`.
+compiles C only when the benchmark is run (no test drives it), so it is out
+of the standing test gate; it takes the same clang path (§11b) and is
+verified by running it, not by the suite.
 
 ## 11b. C toolchain at runtime is clang, located portably
 
@@ -456,6 +456,31 @@ target-aware: the linked executable carries the host executable extension
 convention — `libsubscript_runtime.a` on Unix, `subscript_runtime.lib` on
 `*-pc-windows-msvc` (`SUBSCRIPT_RUNTIME_STATICLIB` overrides resolution
 entirely).
+
+Two more Windows-only link/output details keep the byte-exact gate honest.
+(1) A manual clang link of the runtime staticlib must add the Windows system
+import libraries `rustc` supplies automatically (`kernel32`, `ntdll`,
+`userenv`, `ws2_32`, `dbghelp` for the current toolchain — matched to
+`rustc --print native-static-libs`); `cargo` links them for `rustc`, a hand
+clang link does not. (2) A committed host entry C that writes the sink to
+stdout sets that stream to binary mode (`_setmode(_fileno(stdout),
+_O_BINARY)`, `_WIN32`-guarded) so the MSVCRT text mode does not translate
+`\n` to `\r\n` and corrupt the byte-compared output; a no-op on every other
+platform.
+
+The benchmark harness (`bench/src/main.rs`, with its committed
+`bench/a22-baseline.c` and `bench/aot-entry.c`) is a fourth clang site with
+the same treatment — clang location, `.exe` suffix, Windows system libs on
+the staticlib links, and binary-mode stdout in both committed C entries so
+each subject matches the frozen golden. Its C entries also read the timed
+span from `QueryPerformanceCounter` on Windows (the MSVC UCRT has no
+`clock_gettime`/`CLOCK_MONOTONIC`), converted to nanoseconds by
+overflow-safe integer arithmetic — the same monotonic span, and since every
+subject is timed the same way the cross-subject ratio is timing-method
+independent. It is not gate-driven, so it is verified by running the
+benchmark, not by `cargo test`; the §3 performance thresholds it reports are
+machine- and toolchain-dependent (the recorded ship-tier figures are the
+reference setup's, §11).
 
 ## 12. P5 C-header binding vertical slice
 
