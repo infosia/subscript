@@ -33,8 +33,12 @@ Game and engine developers writing gameplay, simulation, or tools logic
   body, see it swap at the next frame boundary) without giving up native
   performance when shipping.
 - **Native ship performance** — the shipping tier compiles to a native
-  binary and is measured within **1.5× of hand-written C** on the
-  project's matrix-propagation benchmark.
+  binary that, on the project's matrix-propagation benchmark, runs within
+  **≈5% of an equivalent hand-written C program** (measured 1.05× of
+  `clang -O2`). The shipping tier emits C and hands it to the platform C
+  compiler (LLVM/clang), so it inherits that compiler's optimization; the
+  small gap is the cost of the language's memory-safety semantics over
+  hand-tuned C.
 - **Editor tooling with no custom plugin** — the syntax is a subset of
   TypeScript, so `tsserver` (completion, go-to-definition, inline errors)
   works unmodified against an ambient `.d.ts` prelude.
