@@ -191,13 +191,20 @@ kept minimal:
   recorded so future perf work does not re-litigate it as a bug.
 
 ### Open
-- **Reconcile the `mod.rs` gate doc comment**, which still says `(ptr,len)`
-  is target-neutral — now contradicted by §12.3a and the func.rs Str/Array
-  comments.
-- **arm64 re-verification.** The Str/Array routing change also runs on the
-  AAPCS64 path (16 bytes → ≤16 → two registers, behavior-preserving by
-  inspection) but was not executed on an arm64 host this session; the
-  standing arm64 gate covers it when next run there.
+- **`mod.rs` gate doc comment — RESOLVED.** `mod.rs:199-210`
+  (`boundary_struct_by_value_supported`) now states `(ptr,len)` /
+  string-view is a 16-byte by-value aggregate handled on the by-value
+  struct path, not target-neutral; consistent with §12.3a and the
+  func.rs Str/Array comments. (This Open item predated the fix.)
+- **arm64 re-verification — DONE (2026-07-23, orchestrator, arm64 Mac /
+  M2).** The Str/Array routing change (deviation 1) was verified
+  behavior-preserving on AAPCS64 by execution, not just inspection:
+  `cargo test --offline` **236 passed, 0 failed, zero warnings**; the
+  30-entry standing gate (dev-JIT ≡ ship-C-AOT ≡ golden) and the 6
+  interop differential tests green; `sh codegen/device-link.sh` produced
+  valid arm64 Mach-O (iOS) and ELF PIE (Android) with the changed
+  `aot.rs`. No golden changed. The Windows-portability commits are green
+  on both host architectures.
 - **x86-64 SysV dev marshaling** remains unimplemented (loud error), the
   open ABI case in §12.3a.
 - **`bench/src/main.rs`** C invocation is still Unix-only; no test drives
