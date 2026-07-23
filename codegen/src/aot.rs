@@ -13,8 +13,9 @@
 //!   with the platform toolchains.
 //! - [`run_aot`] does the whole host-target cycle in a temporary
 //!   directory: emit the object, write the C entry program, link both
-//!   against the runtime static library with the host `cc`, run the
-//!   binary, and return the stdout bytes it produced.
+//!   against the runtime static library with the host C compiler
+//!   (clang, §11), run the binary, and return the stdout bytes it
+//!   produced.
 //!
 //! # Entry program
 //!
@@ -148,6 +149,10 @@ pub const AOT_ENTRY_C: &str = r#"/* Host entry for a subscript AOT build (compil
 #include <stdint.h>
 #include <stdio.h>
 #include <stddef.h>
+#if defined(_WIN32)
+#include <io.h>
+#include <fcntl.h>
+#endif
 
 extern void *sub_rt_ctx_new(void);
 extern void sub_rt_ctx_release(void *ctx);
@@ -160,6 +165,13 @@ extern void ss_init(void *ctx);
 extern void ss_export_main(void *ctx);
 
 int main(void) {
+#if defined(_WIN32)
+    /* The sink bytes are compared byte-for-byte against the goldens; the
+     * MSVCRT opens stdout in text mode and would translate '\n' to
+     * '\r\n'. Binary mode writes the sink through unchanged. No-op on
+     * every other platform, which has no text-mode translation. */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     void *ctx = sub_rt_ctx_new();
     if (ctx == NULL) {
         return 2;
@@ -269,11 +281,22 @@ fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path) -> bool {
     }
 }
 
+/// The runtime static-library filename cargo produces for the host
+/// target: `subscript_runtime.lib` on windows-msvc, the GNU-style
+/// `libsubscript_runtime.a` everywhere else (Unix and windows-gnu).
+fn runtime_staticlib_name() -> &'static str {
+    if cfg!(all(windows, target_env = "msvc")) {
+        "subscript_runtime.lib"
+    } else {
+        "libsubscript_runtime.a"
+    }
+}
+
 /// Builds the runtime static library for the running profile and
 /// returns its path.
 fn build_runtime_staticlib() -> Result<PathBuf, String> {
     let dir = build_dir().map_err(|e| e.to_string())?;
-    let archive = dir.join("libsubscript_runtime.a");
+    let archive = dir.join(runtime_staticlib_name());
     let runtime_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime");
     if staticlib_is_fresh(&archive, &runtime_dir) {
         return Ok(archive);
@@ -353,9 +376,62 @@ pub fn runtime_staticlib_path() -> Result<PathBuf, RunError> {
     runtime_staticlib()
 }
 
-/// The host C compiler driver used for linking.
-fn host_cc() -> std::ffi::OsString {
-    std::env::var_os("CC").unwrap_or_else(|| "cc".into())
+/// Finds `name` on `PATH`, returning its full path when an executable
+/// file exists. On Windows the `.exe` extension is tried as well.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
+    for dir in std::env::split_paths(&path) {
+        for ext in exts {
+            let cand = dir.join(format!("{name}{ext}"));
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+/// Resolves the C compiler used for linking. The compiler is clang
+/// (compiler.md §11): `$CC` verbatim when set, else `clang` on `PATH`,
+/// else — on Windows only — the standard LLVM install
+/// (`%ProgramFiles%\LLVM\bin\clang.exe`). Falls back to the bare name
+/// `clang`, so a missing toolchain surfaces as a clear run error.
+fn host_c_compiler() -> std::ffi::OsString {
+    if let Some(cc) = std::env::var_os("CC") {
+        return cc;
+    }
+    if let Some(p) = find_on_path("clang") {
+        return p.into_os_string();
+    }
+    #[cfg(windows)]
+    if let Some(pf) = std::env::var_os("ProgramFiles") {
+        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
+        if llvm.is_file() {
+            return llvm.into_os_string();
+        }
+    }
+    "clang".into()
+}
+
+/// System import libraries the linked program needs on windows-msvc that
+/// clang's own defaults do not supply. The runtime static library embeds
+/// Rust `std`, which references these; `rustc` passes them automatically
+/// when it links, so a manual clang link of the staticlib must add them
+/// (`rustc --print native-static-libs` for this host: kernel32, ntdll,
+/// userenv, ws2_32, dbghelp). Empty on every other target.
+fn runtime_system_libs() -> &'static [&'static str] {
+    if cfg!(all(windows, target_env = "msvc")) {
+        &[
+            "-lkernel32",
+            "-lntdll",
+            "-luserenv",
+            "-lws2_32",
+            "-ldbghelp",
+        ]
+    } else {
+        &[]
+    }
 }
 
 /// The committed synthetic-header directory (`corpus/interop`), holding
@@ -379,9 +455,9 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
 /// target, returning the exact stdout bytes the program produced.
 ///
 /// The whole cycle happens in a temporary directory that is removed
-/// before returning. Linking uses the host C compiler driver (`cc`, or
-/// `$CC`); its absence is a failure, never a skip — the differential
-/// gate machine is the development machine
+/// before returning. Linking uses clang (resolved by
+/// [`host_c_compiler`], or `$CC`); its absence is a failure, never a
+/// skip — the differential gate machine is the development machine
 /// (`specs/blocks/compiler.md` §8.3).
 ///
 /// # Errors
@@ -398,12 +474,14 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 
     let obj_path = dir.path.join("program.o");
     let entry_path = dir.path.join("entry.c");
-    let exe_path = dir.path.join("program");
+    let exe_path = dir
+        .path
+        .join(format!("program{}", std::env::consts::EXE_SUFFIX));
     write_file(&obj_path, &object.bytes)?;
     write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
 
     let interop = interop_dir();
-    let cc = host_cc();
+    let cc = host_c_compiler();
     let link = Command::new(&cc)
         .arg("-I")
         .arg(&interop)
@@ -411,12 +489,15 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         .arg(&obj_path)
         .arg(interop.join("interop.c"))
         .arg(&staticlib)
+        .args(runtime_system_libs())
         .arg("-o")
         .arg(&exe_path)
         .output()
         .map_err(|e| {
             RunError::Internal(internal(format!(
-                "the host C compiler ({}) could not be run: {e}",
+                "the C compiler `{}` (clang) could not be run: {e}. \
+                 The ship-C AOT path requires clang (§11); \
+                 install LLVM or set $CC.",
                 cc.to_string_lossy()
             )))
         })?;
@@ -470,12 +551,14 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 
     let src_path = dir.path.join("program.c");
     let entry_path = dir.path.join("entry.c");
-    let exe_path = dir.path.join("program");
+    let exe_path = dir
+        .path
+        .join(format!("program{}", std::env::consts::EXE_SUFFIX));
     write_file(&src_path, program.source.as_bytes())?;
     write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
 
     let interop = interop_dir();
-    let cc = host_cc();
+    let cc = host_c_compiler();
     let compile = Command::new(&cc)
         // The emitted ship C targets C11 (compiler block §11); the
         // language's C-ABI layout, compound literals, `_Alignof`, and
@@ -483,6 +566,14 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         // dialect keeps the ship tier independent of the platform
         // compiler's default `-std`.
         .arg("-std=c11")
+        // A boundary value class emits as its own namespaced C struct
+        // (`Sub_0_SubChainHeader`) whose layout is identical to the foreign
+        // header's struct (design invariant 1), so passing a pointer to one
+        // where the other is expected is ABI-safe. clang 20+ promoted
+        // `-Wincompatible-pointer-types` from a warning to a default error;
+        // demote it back to a warning so the layout-identical (but nominally
+        // distinct) pointer conversion compiles across clang versions.
+        .arg("-Wno-error=incompatible-pointer-types")
         .arg("-O2")
         // Signed integer arithmetic in the emitted C must wrap
         // two's-complement (the language's semantics); `-fwrapv` makes
@@ -495,12 +586,15 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         .arg(&entry_path)
         .arg(interop.join("interop.c"))
         .arg(&staticlib)
+        .args(runtime_system_libs())
         .arg("-o")
         .arg(&exe_path)
         .output()
         .map_err(|e| {
             RunError::Internal(internal(format!(
-                "the host C compiler ({}) could not be run: {e}",
+                "the C compiler `{}` (clang) could not be run: {e}. \
+                 The ship-C AOT path requires clang (§11); \
+                 install LLVM or set $CC.",
                 cc.to_string_lossy()
             )))
         })?;

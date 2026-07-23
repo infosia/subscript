@@ -2080,6 +2080,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ) -> Result<(), String> {
         match ty {
             Type::Str => {
+                // A length-carrying string view is the C aggregate
+                // `{ const char *data; size_t len; }` (16 bytes, align 8),
+                // passed BY VALUE — so its ABI is target-specific exactly
+                // like any boundary struct (compiler.md §12.3a): AAPCS64
+                // packs it into two registers, Win64 passes it by reference.
                 let h = self.expect_s(rv)?;
                 let data = self
                     .call_rt(self.ml.rt.str_data, &[self.ctx_v, h], false)?
@@ -2088,11 +2093,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .call_rt(self.ml.rt.str_len, &[self.ctx_v, h], false)?
                     .ok_or_else(|| internal("str_len result"))?;
                 let len = self.b.ins().uextend(types::I64, len32);
-                self.push_abi(sig, argv, types::I64, data);
-                self.push_abi(sig, argv, types::I64, len);
+                let comps = [(0u32, types::I64, data), (8u32, types::I64, len)];
+                self.push_aggregate_abi(sig, argv, &comps, 16, 8);
                 Ok(())
             }
             Type::Array(_) => {
+                // A (pointer, count) descriptor is the C aggregate
+                // `{ const T *items; size_t count; }` (16 bytes, align 8),
+                // passed BY VALUE — target-specific ABI as above (§12.3a).
                 let h = self.expect_s(rv)?;
                 let data = self
                     .call_rt(self.ml.rt.array_data, &[self.ctx_v, h], false)?
@@ -2101,8 +2109,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .call_rt(self.ml.rt.array_len, &[self.ctx_v, h], false)?
                     .ok_or_else(|| internal("array_len result"))?;
                 let count = self.b.ins().uextend(types::I64, len32);
-                self.push_abi(sig, argv, types::I64, data);
-                self.push_abi(sig, argv, types::I64, count);
+                let comps = [(0u32, types::I64, data), (8u32, types::I64, count)];
+                self.push_aggregate_abi(sig, argv, &comps, 16, 8);
                 Ok(())
             }
             Type::Class(id) if self.is_value_class_ty(ty) => {
@@ -2147,11 +2155,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// C-layout components (each pointer/scalar field a value; a
     /// function-pointer field → the generic trampoline plus a binding
     /// built from the following `userdata` slot — the callback-info idiom),
-    /// then passes them the way the platform C ABI passes the struct: a
-    /// composite of ≤ 16 bytes goes in registers (the components as
-    /// arguments); a larger one is passed by reference (built into a stack
-    /// slot, its address passed — AAPCS64 B.4), which is how the C
-    /// compiler passes it on the ship tier.
+    /// then passes them the way the platform C ABI passes the struct.
+    /// AAPCS64: a composite of ≤ 16 bytes goes in registers (the components
+    /// as arguments); a larger one is passed by reference (built into a
+    /// stack slot, its address passed — AAPCS64 B.4). Win64: a 1/2/4/8-byte
+    /// aggregate goes in one integer register as its raw bytes; any other
+    /// size is passed by reference. Both match how the C compiler passes it
+    /// on the ship tier.
     fn marshal_boundary_struct(
         &mut self,
         cid: usize,
@@ -2160,17 +2170,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         argv: &mut Vec<Value>,
     ) -> Result<(), String> {
         // A boundary struct passed BY VALUE has a target-specific C ABI;
-        // only aarch64 is implemented and verified (compiler.md §12.3a).
-        // On any other dev host this must fail loudly rather than silently
-        // mis-marshal (dev-JIT ≠ ship-C). Scalar/pointer/(ptr,len) boundary
-        // args are target-neutral and reach here through other paths.
-        let arch = self.ml.module.isa().triple().architecture;
-        if !crate::lower::boundary_struct_by_value_supported(arch) {
-            let triple = self.ml.module.isa().triple().clone();
+        // AAPCS64 (aarch64) and Win64 (x86-64/Windows) are implemented and
+        // verified (compiler.md §12.3a). On any other dev host this must
+        // fail loudly rather than silently mis-marshal (dev-JIT ≠ ship-C).
+        // Genuinely scalar/single-pointer boundary args are target-neutral
+        // and reach here through other paths; a (ptr,len) descriptor is a
+        // 16-byte by-value aggregate and reaches the ABI-specific path here.
+        let triple = self.ml.module.isa().triple().clone();
+        if !crate::lower::boundary_struct_by_value_supported(&triple) {
             return Err(internal(format!(
                 "foreign call passing a boundary struct by value is only supported \
-                 on aarch64 in the dev JIT (compiler.md §12.3a); target {triple} is \
-                 unsupported"
+                 on aarch64 (AAPCS64) and x86-64 Windows (Win64) in the dev JIT \
+                 (compiler.md §12.3a); target {triple} is unsupported"
             )));
         }
         let class = self
@@ -2245,20 +2256,78 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
         }
         let total = round_up(coff, struct_align.max(1));
-        if total <= 16 {
-            // Small composite: passed in registers as its components.
+        self.push_aggregate_abi(sig, argv, &comps, total, struct_align.max(1));
+        Ok(())
+    }
+
+    /// True when the JIT host targets the Win64 ABI (`x86_64` + Windows).
+    fn is_win64(&self) -> bool {
+        let t = self.ml.module.isa().triple();
+        matches!(t.architecture, target_lexicon::Architecture::X86_64)
+            && matches!(t.operating_system, target_lexicon::OperatingSystem::Windows)
+    }
+
+    /// Passes an aggregate of `total` bytes to a foreign call the way the
+    /// target C ABI passes it (`specs/blocks/compiler.md` §12.3a). `comps`
+    /// are its C-layout components — `(byte offset, CLIF type, value)`.
+    ///
+    /// - **AAPCS64**: ≤ 16 bytes → its components in registers (as
+    ///   arguments); larger → by reference to a caller copy (B.4).
+    /// - **Win64**: exactly 1/2/4/8 bytes → one integer register holding
+    ///   the struct's raw bytes as a same-width integer (no HFA, no
+    ///   multi-register packing); every other size → by reference.
+    ///
+    /// The non-Win64 branch reproduces the AAPCS64 rule, which is also the
+    /// pre-existing behavior for `(ptr,len)` pairs on every non-Win64 host —
+    /// a 16-byte by-value aggregate that occupies two registers on
+    /// AAPCS64/SysV; only Win64 diverges (by reference at 16 bytes).
+    fn push_aggregate_abi(
+        &mut self,
+        sig: &mut Signature,
+        argv: &mut Vec<Value>,
+        comps: &[(u32, types::Type, Value)],
+        total: u32,
+        align: u32,
+    ) {
+        if self.is_win64() {
+            let int_ty = match total {
+                1 => Some(types::I8),
+                2 => Some(types::I16),
+                4 => Some(types::I32),
+                8 => Some(types::I64),
+                _ => None,
+            };
+            if let Some(width) = int_ty {
+                // Store the components at their offsets, then load the whole
+                // slot back as one integer: the stored bytes are the Win64
+                // register image for any field mix (including float fields).
+                let slot = self.temp_slot(total, align.max(total));
+                for (off, _, v) in comps {
+                    self.b.ins().store(flags(), *v, slot, *off as i32);
+                }
+                let word = self.b.ins().load(width, flags(), slot, 0);
+                self.push_abi(sig, argv, width, word);
+            } else {
+                // By reference: caller copy, its address passed.
+                let slot = self.temp_slot(total, align);
+                for (off, _, v) in comps {
+                    self.b.ins().store(flags(), *v, slot, *off as i32);
+                }
+                self.push_abi(sig, argv, types::I64, slot);
+            }
+        } else if total <= 16 {
+            // AAPCS64 small composite: passed in registers as its components.
             for (_, clif, v) in comps {
-                self.push_abi(sig, argv, clif, v);
+                self.push_abi(sig, argv, *clif, *v);
             }
         } else {
-            // Large composite: passed by reference to a caller copy.
-            let slot = self.temp_slot(total, struct_align.max(1));
+            // AAPCS64 large composite: passed by reference to a caller copy.
+            let slot = self.temp_slot(total, align);
             for (off, _, v) in comps {
-                self.b.ins().store(flags(), v, slot, off as i32);
+                self.b.ins().store(flags(), *v, slot, *off as i32);
             }
             self.push_abi(sig, argv, types::I64, slot);
         }
-        Ok(())
     }
 
     fn eval_ambient(

@@ -132,9 +132,41 @@ fn header_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop")
 }
 
-/// The host C compiler driver (`$CC`, else `cc`).
-fn host_cc() -> std::ffi::OsString {
-    std::env::var_os("CC").unwrap_or_else(|| "cc".into())
+/// Finds `name` on `PATH`, returning its full path when an executable
+/// file exists. On Windows the `.exe` extension is tried as well.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
+    for dir in std::env::split_paths(&path) {
+        for ext in exts {
+            let cand = dir.join(format!("{name}{ext}"));
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+/// Resolves the C compiler: clang (compiler.md §11). `$CC` verbatim when
+/// set, else `clang` on `PATH`, else — on Windows only — the standard
+/// LLVM install (`%ProgramFiles%\LLVM\bin\clang.exe`). Falls back to the
+/// bare name `clang`, so a missing toolchain fails with a clear message.
+fn host_c_compiler() -> std::ffi::OsString {
+    if let Some(cc) = std::env::var_os("CC") {
+        return cc;
+    }
+    if let Some(p) = find_on_path("clang") {
+        return p.into_os_string();
+    }
+    #[cfg(windows)]
+    if let Some(pf) = std::env::var_os("ProgramFiles") {
+        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
+        if llvm.is_file() {
+            return llvm.into_os_string();
+        }
+    }
+    "clang".into()
 }
 
 /// A temporary working directory, removed on drop.
@@ -192,9 +224,9 @@ fn c_truth(structs: &[(&'static str, Vec<&'static str>)]) -> BTreeMap<String, CL
     let dir = TempDir::new();
     let src = dir.path.join("probe.c");
     std::fs::write(&src, body).expect("write probe.c");
-    let exe = dir.path.join("probe");
+    let exe = dir.path.join(format!("probe{}", std::env::consts::EXE_SUFFIX));
 
-    let cc = host_cc();
+    let cc = host_c_compiler();
     let compile = Command::new(&cc)
         .arg("-std=c11")
         .arg("-I")
@@ -205,9 +237,9 @@ fn c_truth(structs: &[(&'static str, Vec<&'static str>)]) -> BTreeMap<String, CL
         .output()
         .unwrap_or_else(|e| {
             panic!(
-                "the platform C compiler `{}` could not be run: {e}. \
-                 The offsetof layout proof requires a C compiler (§11); \
-                 install one or set $CC.",
+                "the C compiler `{}` (clang) could not be run: {e}. \
+                 The offsetof layout proof requires clang (§11); \
+                 install LLVM or set $CC.",
                 cc.to_string_lossy()
             )
         });
