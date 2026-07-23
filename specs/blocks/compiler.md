@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 13, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 14, 2026-07-24 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -627,3 +627,95 @@ The five patterns each have a passing headless corpus entry on both
 tiers with a committed golden; the mirror regenerates byte-identically
 from the pinned header; the `offsetof` layout suite is green on the dev
 target. Zero real-world-library references (reference sweep clean).
+
+## 13. P6 — production-C-header interop (host-agnostic)
+
+Owner decision 2026-07-24. P5 proved every interop *pattern* on a small
+synthetic header; P6 makes the toolchain bind an **arbitrary production C
+header** (of the scale and shape of a real graphics/OS C API — ~200
+functions, ~100 structs, preprocessor, attributes, doc comments). The
+language stays **host-agnostic** (invariant 4): no external API is named,
+depended on, or committed; the reference sweep stays zero. Capability is
+proven on a neutral synthetic fixture that reproduces every production-C
+shape; pointing the tool at a specific real header is a **local,
+uncommitted** step the tool supports for any header path.
+
+Committed evidence names no external project. A real production header
+may be bound locally to demonstrate the capability; that demonstration
+is not committed and committed write-ups describe it generically (by
+scale/shape, never by API name).
+
+### 13.1 Real C parser (replaces the fixture parser)
+
+The `bindgen` crate's narrow fixture parser (`cparse`) is replaced by a
+**libclang-based frontend** (`clang-sys`, pinned; libclang resolved at
+build/run time with a documented env override). It parses real C:
+preprocessor (`#define`/`#if`/`#include`), function/nullable attributes,
+doc comments, `typedef`, nested structs, function-pointer typedefs,
+`static const` constants, enums, and flag typedefs. Gate: it regenerates
+the existing `corpus/interop/interop.generated.d.ts` **byte-identically**
+(proving the new frontend is a superset of the old), and parses a new
+neutral fixture carrying the production-C features above.
+
+### 13.2 New binding shapes
+
+- **Descriptor-embedded `(count, pointer)` arrays.** Production headers
+  spell arrays as adjacent fields *inside* a larger struct
+  (`size_t <n>Count; const T* <n>;` in either order), not as a standalone
+  two-field descriptor. The mirror generator recognizes the embedded
+  pair and maps the pointer field to `T[]` with the count elided;
+  zero-copy lowering as in §12 / a26 / a31.
+- **Flag typedefs.** `typedef <intN> XFlags;` + `static const XFlags
+  X_A = …;` → a `uXX` alias plus `declare const` members, combinable with
+  `|` (Q18), proven end-to-end (declare, combine, pass to a foreign call,
+  observe).
+- **Untyped bulk-data facade.** For a `void const* data, size_t size`
+  (byte-size) API, the documented path is a thin typed C facade taking a
+  typed slice descriptor (§ a31), bound as `T[]`, zero-copy, both tiers.
+  A fixture proves the untyped API + facade + count→bytes conversion.
+
+### 13.3 Async callback model
+
+Production callbacks register a callback-info now and fire later
+(host-driven), unlike P5's synchronous single fire (a28). P6 proves a
+**deferred** fire: the host harness stores the registration and invokes
+it after the registering call returns; the userdata-lifetime rule
+(userdata must outlive the registration) is enforced or the misuse traps
+with a stated diagnostic. Corpus entry + both-tier golden.
+
+### 13.4 Scaled layout proof
+
+The neutral fixture reaches production scale/complexity (intrusive
+chains, by-value string views, nested structs, flag typedefs,
+descriptor-embedded arrays, dozens of structs); the `offsetof` suite
+(§12.3) asserts language layout == platform C compiler for **every**
+mirrored struct at that scale.
+
+### 13.5 Generic header CLI + local capability demo
+
+`subscript-bindgen --header <path>` runs the libclang frontend on any
+header and emits the mirror. The capability is demonstrated in-session
+on a real production header (mirror produced, an `offsetof` spot-check
+against the platform C compiler); this run is **not committed** and the
+committed record describes it by scale/shape only. The committed proof
+is the neutral fixture passing every gate.
+
+### 13.6 Staging
+
+- **P6.1** — libclang frontend replacing `cparse`; byte-identical
+  regeneration of the existing mirror; neutral fixture with production-C
+  features (macros/attributes/doc-comments/static-const/flag-typedef)
+  parsed. Foundation.
+- **P6.2** — the §13.2 shapes (descriptor-embedded arrays, flags,
+  untyped-data facade): fixture + corpus + both-tier gate.
+- **P6.3** — §13.3 async model, §13.4 scaled offsetof, §13.5 generic
+  CLI + local real-header capability demo.
+
+### 13.7 Gate
+
+The neutral production-scale fixture binds end-to-end: the mirror
+regenerates byte-identically, every mirrored struct's layout == the C
+compiler's, the new shapes (embedded arrays, flags, facade, async) each
+have a passing both-tier corpus entry with a committed golden, and the
+generic CLI binds an arbitrary header path. Reference sweep clean (no
+external-API names in tracked files); invariant 4 intact.
