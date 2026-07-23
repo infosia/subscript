@@ -37,10 +37,24 @@ static int cmp_double(const void *a, const void *b) {
     return (x > y) - (x < y);
 }
 
-int main(void) {
-    const int warmup = 3, timed = 11;
+int main(int argc, char **argv) {
+    /* Warm-up and timed counts come from argv, defaulting to the 3/11 floor, so
+     * the runner drives this baseline with the same counts as every other
+     * subject. Only the workload call is timed. */
+    int warmup = 3, timed = 11;
+    if (argc >= 3) {
+        warmup = atoi(argv[1]);
+        timed = atoi(argv[2]);
+    }
+    if (warmup < 0 || timed < 1) {
+        fprintf(stderr, "usage: %s <warmup> <timed>\n", argv[0]);
+        return 2;
+    }
+    double *times = (double *)malloc((size_t)timed * sizeof(double));
+    if (times == NULL) {
+        return 2;
+    }
     int32_t checksum = 0;
-    double times[11];
     for (int i = 0; i < warmup; i++) {
         checksum = workload();
     }
@@ -51,6 +65,9 @@ int main(void) {
         times[i] = t1 - t0;
     }
     qsort(times, (size_t)timed, sizeof(double), cmp_double);
-    printf("%d %.9f\n", checksum, times[timed / 2]);
+    int mid = timed / 2;
+    double median = (timed % 2 == 1) ? times[mid] : (times[mid - 1] + times[mid]) / 2.0;
+    printf("%d %.9f\n", checksum, median);
+    free(times);
     return 0;
 }

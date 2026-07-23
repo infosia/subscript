@@ -60,7 +60,7 @@ fn workload_params(id: &str) -> &'static str {
         "sort" => "quicksort 300000 u32 from LCG state=state*1664525+1013904223 (seed 0x12345678); checksum = order-sensitive rolling hash h=h*31+a[i] (u32 wrap)",
         "tree" => "30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + unsafeDelete; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130",
         "queen" => "count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)",
-        "particles" => "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32",
+        "particles" => "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.",
         _ => "",
     }
 }
@@ -221,9 +221,9 @@ fn run() -> Result<ExitCode, Fail> {
         let c = measure_c(&tools, &dir, &work, id, args.warmup, args.timed);
         let ship = measure_ship(&tools, &files, &work, &staticlib, id, args.warmup, args.timed);
         let jit = measure_jit(&files, args.warmup, args.timed);
-        let lua = measure_script(&tools.luajit, &dir, "lua", "lua", id);
-        let jsc = measure_script(&tools.jsc, &dir, "js", "js", id);
-        let node = measure_script(&tools.node, &dir, "js", "js", id);
+        let lua = measure_script(&tools.luajit, &dir, "lua", "lua", id, args.warmup, args.timed, false);
+        let jsc = measure_script(&tools.jsc, &dir, "js", "js", id, args.warmup, args.timed, true);
+        let node = measure_script(&tools.node, &dir, "js", "js", id, args.warmup, args.timed, false);
 
         let outcomes: Vec<(&str, Outcome)> = vec![
             ("C", c),
@@ -374,8 +374,8 @@ fn measure_c(
     dir: &Path,
     work: &WorkDir,
     id: &str,
-    _warmup: usize,
-    _timed: usize,
+    warmup: usize,
+    timed: usize,
 ) -> Outcome {
     let Some(cc) = &tools.cc else {
         return Outcome::Absent;
@@ -398,7 +398,8 @@ fn measure_c(
         }
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
     }
-    run_self_timed(&exe, &[])
+    let argv: Vec<std::ffi::OsString> = vec![warmup.to_string().into(), timed.to_string().into()];
+    run_self_timed(&exe, &argv)
 }
 
 /// Emits C for the workload, compiles + links it with the runtime static
@@ -485,17 +486,29 @@ fn measure_script(
     subdir: &str,
     ext: &str,
     id: &str,
+    warmup: usize,
+    timed: usize,
+    dashdash: bool,
 ) -> Outcome {
     let Some(exe) = tool else {
         return Outcome::Absent;
     };
     let script = dir.join(subdir).join(format!("{id}.{ext}"));
-    run_self_timed(exe, &[script.as_os_str()])
+    // The self-timed subject reads its warm-up/timed counts from argv, so it runs
+    // the same schedule as the subscript tiers. `jsc` exposes script arguments
+    // only when they follow `--`; node and luajit take them directly.
+    let mut argv: Vec<std::ffi::OsString> = vec![script.into_os_string()];
+    if dashdash {
+        argv.push("--".into());
+    }
+    argv.push(warmup.to_string().into());
+    argv.push(timed.to_string().into());
+    run_self_timed(exe, &argv)
 }
 
 /// Runs `exe args…`, expecting a single `<checksum> <median_seconds>` line on
 /// stdout, and returns the parsed measurement.
-fn run_self_timed(exe: &Path, args: &[&std::ffi::OsStr]) -> Outcome {
+fn run_self_timed(exe: &Path, args: &[std::ffi::OsString]) -> Outcome {
     let out = match Command::new(exe).args(args).output() {
         Ok(o) => o,
         Err(e) => return Outcome::Error(format!("run {}: {e}", exe.display())),
@@ -699,13 +712,22 @@ impl Machine {
         Machine {
             arch: std::env::consts::ARCH.to_string(),
             os: std::env::consts::OS.to_string(),
-            cpu: sysctl("machdep.cpu.brand_string").unwrap_or_else(|| "unknown".to_string()),
+            cpu: cpu_brand(),
             cores: sysctl("hw.ncpu")
                 .or_else(|| std::thread::available_parallelism().ok().map(|n| n.to_string()))
                 .unwrap_or_else(|| "unknown".to_string()),
             power: ac_power(),
         }
     }
+}
+
+/// The CPU identifier for the report. `machdep.cpu.brand_string` is populated
+/// on Intel macs but empty on Apple Silicon, so fall back to `hw.model` (e.g.
+/// `Mac14,2`), then the build arch, reporting the first non-empty value.
+fn cpu_brand() -> String {
+    sysctl("machdep.cpu.brand_string")
+        .or_else(|| sysctl("hw.model"))
+        .unwrap_or_else(|| std::env::consts::ARCH.to_string())
 }
 
 /// Reads a `sysctl -n <key>` value (macOS); `None` when unavailable.
@@ -881,13 +903,24 @@ fn render_readme(
     let _ = writeln!(
         s,
         "## Method\n\n\
-         {warmup} warm-up runs discarded, {timed} timed runs, median reported. \
-         Only the workload execution is timed. C is the 1.00x reference; every \
-         other subject is `ratio (median)`. C, LuaJIT, JSC, and V8 self-time \
-         with a monotonic clock and print their own median; the two subscript \
-         tiers are timed by the runner (the language has no clock primitive). \
-         Every subject computes the identical integer checksum for a workload — \
-         the runner withholds a workload's timings otherwise."
+         All six subjects run the same schedule: {warmup} warm-up runs \
+         discarded, {timed} timed runs, median reported — the runner passes \
+         these counts to every self-timed subject (C/LuaJIT/JSC/V8 read them \
+         from argv), so the figures above hold for all six. Only the workload \
+         execution is timed. C is the 1.00x reference; every other subject is \
+         `ratio (median)`. C, LuaJIT, JSC, and V8 self-time with a monotonic \
+         clock and print their own median; the two subscript tiers are timed by \
+         the runner (the language has no clock primitive). Every subject \
+         computes the identical integer checksum for a workload — the runner \
+         withholds a workload's timings otherwise.\n\n\
+         **Span note.** The C/LuaJIT/JSC/V8 subjects time only the `workload()` \
+         call and print the checksum afterward; the two subscript tiers time the \
+         whole exported `main()`, which includes formatting and writing the \
+         one-line integer checksum to the runtime sink. That is a \
+         sub-microsecond step inside subscript's span but outside the others' — \
+         a conservative difference that penalizes subscript, retained because \
+         the ship-tier AOT timing entry and `jit_bench` are shared with the P4 \
+         performance gate and time the exported entry by contract."
     );
     let _ = writeln!(s);
     let _ = writeln!(s, "## Results");

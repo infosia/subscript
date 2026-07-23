@@ -1,16 +1,16 @@
 {
   "generated": "2026-07-23",
-  "procedure": "5 warm-up runs discarded, 11 timed runs, median reported",
+  "procedure": "20 warm-up runs discarded, 21 timed runs, median reported",
   "machine": {
     "arch": "aarch64",
     "os": "macos",
-    "cpu": "unknown",
+    "cpu": "Apple M2",
     "cores": "8",
     "power": "AC Power"
   },
   "versions": {
     "C": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
-    "subscript": "subscript @ ba2c568 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "subscript": "subscript @ 4ba01f9 (dev-JIT: Cranelift; ship: HIR->C->clang)",
     "LuaJIT": "LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/",
     "JSC": "JavaScriptCore (macOS 26.5.2)",
     "V8 (Node.js)": "Node.js v24.18.0"
@@ -23,12 +23,12 @@
       "checksum": 1346269,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.004754000,
-        "subscript-ship": 0.004414000,
-        "subscript-jit": 0.007905083,
-        "LuaJIT": 0.006796000,
+        "C": 0.003638000,
+        "subscript-ship": 0.003636000,
+        "subscript-jit": 0.007831834,
+        "LuaJIT": 0.006708000,
         "JSC": 0.005420000,
-        "V8 (Node.js)": 0.009674792
+        "V8 (Node.js)": 0.009619083
       }
     },
     {
@@ -37,12 +37,12 @@
       "checksum": 973132000,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.029553000,
-        "subscript-ship": 0.030362000,
-        "subscript-jit": 0.059492500,
-        "LuaJIT": 0.043708000,
-        "JSC": 0.032120000,
-        "V8 (Node.js)": 0.046714208
+        "C": 0.029393000,
+        "subscript-ship": 0.030162000,
+        "subscript-jit": 0.058468750,
+        "LuaJIT": 0.043392000,
+        "JSC": 0.032080000,
+        "V8 (Node.js)": 0.046400958
       }
     },
     {
@@ -51,12 +51,12 @@
       "checksum": 43027996,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.125631000,
-        "subscript-ship": 0.125502000,
-        "subscript-jit": 0.131566916,
-        "LuaJIT": 0.348214000,
-        "JSC": 0.125540000,
-        "V8 (Node.js)": 0.126524833
+        "C": 0.124325000,
+        "subscript-ship": 0.124399000,
+        "subscript-jit": 0.131097000,
+        "LuaJIT": 0.345399000,
+        "JSC": 0.124620000,
+        "V8 (Node.js)": 0.125335375
       }
     },
     {
@@ -65,12 +65,12 @@
       "checksum": 41538,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.022024000,
-        "subscript-ship": 0.021525000,
-        "subscript-jit": 0.032032125,
-        "LuaJIT": 0.046194000,
-        "JSC": 0.020320000,
-        "V8 (Node.js)": 0.037436542
+        "C": 0.021940000,
+        "subscript-ship": 0.021320000,
+        "subscript-jit": 0.031678416,
+        "LuaJIT": 0.045619000,
+        "JSC": 0.020140000,
+        "V8 (Node.js)": 0.037186875
       }
     },
     {
@@ -79,12 +79,12 @@
       "checksum": 3672124540,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.015272000,
-        "subscript-ship": 0.027210000,
-        "subscript-jit": 0.057318959,
-        "LuaJIT": 0.035125000,
-        "JSC": 0.022880000,
-        "V8 (Node.js)": 0.028206917
+        "C": 0.015247000,
+        "subscript-ship": 0.027133000,
+        "subscript-jit": 0.056887375,
+        "LuaJIT": 0.035048000,
+        "JSC": 0.022180000,
+        "V8 (Node.js)": 0.028000666
       }
     },
     {
@@ -93,12 +93,12 @@
       "checksum": 3932130,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.065675000,
-        "subscript-ship": 0.672154000,
-        "subscript-jit": 0.688879375,
-        "LuaJIT": 0.144572000,
-        "JSC": 0.021100000,
-        "V8 (Node.js)": 0.031113834
+        "C": 0.065349000,
+        "subscript-ship": 0.657756000,
+        "subscript-jit": 0.671581209,
+        "LuaJIT": 0.142825000,
+        "JSC": 0.019860000,
+        "V8 (Node.js)": 0.030977958
       }
     },
     {
@@ -107,26 +107,26 @@
       "checksum": 73712,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.023681000,
-        "subscript-ship": 0.023732000,
-        "subscript-jit": 0.035181250,
-        "LuaJIT": 0.035215000,
-        "JSC": 0.029200000,
-        "V8 (Node.js)": 0.060399042
+        "C": 0.023720000,
+        "subscript-ship": 0.023645000,
+        "subscript-jit": 0.034951500,
+        "LuaJIT": 0.035921000,
+        "JSC": 0.029020000,
+        "V8 (Node.js)": 0.041679208
       }
     },
     {
       "id": "particles",
-      "params": "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32",
+      "params": "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.",
       "checksum": 1712845248,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.039344000,
-        "subscript-ship": 0.119605000,
-        "subscript-jit": 0.402649750,
-        "LuaJIT": 0.149544000,
-        "JSC": 0.074300000,
-        "V8 (Node.js)": 0.139826000
+        "C": 0.038742000,
+        "subscript-ship": 0.118677000,
+        "subscript-jit": 0.398566166,
+        "LuaJIT": 0.148733000,
+        "JSC": 0.073780000,
+        "V8 (Node.js)": 0.138713625
       }
     }
   ]
