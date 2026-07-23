@@ -198,4 +198,55 @@ rejects x86-64 SysV / Win64. **P5.2b COMPLETE.**
   Win64 (target-aware ABI; §12.3a). Blocked on a non-arm64 host to
   verify against.
 
-Next: P5.3 — both-tier corpus slice (a25+) + gate extension.
+## P5.3 — both-tier interop corpus slice + gate: COMPLETE (2026-07-23)
+
+Six headless accept entries against the generated mirror, each
+self-creating its handle via `subDeviceCreate` (Q16), deterministic,
+`print`-terminated:
+
+| Id | Pattern | Golden |
+|---|---|---|
+| a25-interop-chain | intrusive extension chain (depth 3) | `3` |
+| a26-interop-array-pair | `(pointer,count)` `u32[]` view (sum 100) | `100` |
+| a27-interop-string-view | length-carrying string label (12 bytes) | `12` |
+| a28-interop-callback | callback + `as`-narrowed userdata, fired twice | `8` |
+| a29-interop-handle | opaque handle create/retain/release | `ok` |
+| a30-interop-compose | all five composed | `20` |
+
+The standing gate (`golden.rs`) floor is 24 → 30; it derives its set
+from `corpus/accept/`, asserts dev-JIT ≡ ship-C-AOT ≡ golden byte-exact
+per entry with `compared == golden_ids.len()` (no silent skip). The
+harness ingests the mirror as an ambient `.d.ts` for entries that call
+`subDevice…` and links `interop.c` in both tiers. The P1 checker gate
+(`corpus_accept.rs`) count is 23 → 29 (single-file entries), so a25–a30
+are rule-accepted, not merely tsc-clean.
+
+Phase Review (2026-07-23): 0 CRITICAL, 0 MAJOR, 2 MINOR (non-blocking:
+a29's `ok` weakly discriminates a pure-lifecycle pattern; the
+mirror-ingestion predicate is a `subDevice` substring match, safe in
+both directions). The review hand-derived every golden from `interop.c`
+and confirmed none is vacuous, and verified the freeze rests on real
+cross-tier agreement by experiment: corrupting a golden fails BOTH
+tiers, and perturbing the shared C callee moves both tiers in lockstep
+on exactly the callback-firing entries — proving both tiers re-derive
+and execute the real callee every gate run, not a one-time capture.
+
+Verification (orchestrator-reproduced): 236 tests green, zero warnings;
+`npx tsc -p tsconfig.json` clean (invariant 5 — the six entries + the
+mirror); 30-entry standing gate byte-exact on both tiers; interop
+goldens present and correct. **P5.3 COMPLETE.**
+
+## P5 — C-header binding vertical slice: COMPLETE (2026-07-23)
+
+All of §12 discharged: the neutral synthetic header (P5.1); invariant 1
+machine-verified against the platform C compiler's `offsetof`/`sizeof`/
+`_Alignof` for every mirrored struct (P5.1); the bindgen mirror
+generator with byte-identical regeneration + `.d.ts` ingestion +
+boundary type system (P5.2a); foreign-call lowering in both tiers with
+marshaling, chain-slot address-of, and the callback trampoline (P5.2b);
+and the headless five-pattern corpus slice with cross-tier-verified
+goldens in the standing gate (P5.3). The language's founding purpose —
+zero-marshaling C-ABI interop — is now proven from layout through
+execution to executable corpus definition, on the arm64 ship target,
+with the dev-tier boundary-struct-by-value marshaling scoped to arm64
+and fail-loud elsewhere (§12.3a).
