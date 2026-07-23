@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 9, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 10, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -446,6 +446,25 @@ from the real C header via the platform C compiler, equal the language
 compiler's computed offsets/size/alignment. A mismatch fails the suite.
 This runs for the dev targets (host) and is the concrete discharge of
 "machine-verifiable via `offsetof` assertions" (plan §3 invariant 1).
+
+### 12.3a Dev-tier boundary-struct marshaling is arm64-only (for now)
+
+The ship tier is arm64-only C emission (§11), where the platform C
+compiler performs all boundary-struct argument marshaling and is correct
+by construction. The dev JIT must hand-build the C-ABI call, and passing
+a boundary **struct by value** across a foreign call is ABI-specific
+(AAPCS64 passes a >16-byte struct by reference and packs ≤16-byte
+structs into registers; x86-64 SysV and Win64 differ, and float-only
+structs follow HFA/HVA rules). The current JIT marshaler implements
+**AAPCS64 (arm64) only**. On a non-arm64 dev host, lowering a foreign
+call that passes a boundary struct by value must be a **loud codegen
+error**, never a silent mis-marshal — dev-JIT ≡ ship-C equivalence is
+otherwise unverifiable there. Target-aware dev marshaling for x86-64
+SysV / Win64 is a tracked follow-up (`specs/tracking/p5-interop.md`);
+until it lands, the dev tier's foreign-struct-by-value support is
+arm64-only and says so at the point of failure. (Scalar/pointer
+boundary args — handles, `object|null`, `(ptr,len)` pairs — are
+target-neutral and unaffected.)
 
 ### 12.4 Headless end-to-end slice on both tiers
 
