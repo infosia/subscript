@@ -464,6 +464,10 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     let cc = host_cc();
     let compile = Command::new(&cc)
         .arg("-O2")
+        // Signed integer arithmetic in the emitted C must wrap
+        // two's-complement (the language's semantics); `-fwrapv` makes
+        // signed overflow defined rather than C undefined behaviour.
+        .arg("-fwrapv")
         .arg("-ffp-contract=off")
         .arg(&src_path)
         .arg(&entry_path)

@@ -637,6 +637,10 @@ fn measure_emitted_c(
     let started = Instant::now();
     let build = Command::new(host_cc())
         .args(BASELINE_CFLAGS)
+        // The emitted ship-tier C requires two's-complement signed
+        // wrap; `-fwrapv` makes signed overflow defined (matching the
+        // language and the run_c_aot gate build).
+        .arg("-fwrapv")
         .arg(&source)
         .arg(&entry)
         .arg(&staticlib)

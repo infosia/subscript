@@ -88,6 +88,8 @@ use subscript_compiler::types::{ClassId, FuncType, Type};
 use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 
+use crate::layout::{is_managed, managed_words, Layouts};
+
 /// An emitted C translation unit plus the trap position table its
 /// `pos_id` arguments index (mirrors [`crate::AotObject::positions`]),
 /// so a trap the linked program reports can be resolved back to a TS
@@ -113,7 +115,7 @@ pub struct CProgram {
 /// Returns an error string when the module uses an HIR construct outside
 /// the run set's scope, or has no exported `main(): void`.
 pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
-    Emitter::new(module).emit()
+    Emitter::new(module)?.emit()
 }
 
 // ----- interval analysis (§10.1), carried from the P4.2 spike -----
@@ -325,10 +327,26 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h str, &'h Type)>) {
 enum ThisCtx {
     /// Not in a constructor or method.
     None,
-    /// Value-class constructor/method: `_this` is a `Sub` struct lvalue.
-    Value,
+    /// Value-class constructor: `_this` is a `Sub` struct lvalue that is
+    /// built and returned by value.
+    ValueLValue,
+    /// Value-class method: `_this` is a `Sub*` pointing at the receiver's
+    /// storage (C2 — a mutating value method mutates the receiver, so the
+    /// receiver is passed by pointer exactly as the CLIF path does).
+    ValuePtr,
     /// Reference-class constructor/method: `_this` is a `void*` handle.
     Reference,
+}
+
+impl ThisCtx {
+    /// The C expression denoting `this` as a value in this context.
+    fn this_expr(self) -> Result<&'static str, String> {
+        Ok(match self {
+            ThisCtx::None => return Err("`this` outside a constructor or method".to_string()),
+            ThisCtx::ValueLValue | ThisCtx::Reference => "_this",
+            ThisCtx::ValuePtr => "(*_this)",
+        })
+    }
 }
 
 /// State of the generator being lowered (CPS state machine).
@@ -345,6 +363,10 @@ struct GenState {
 
 struct Emitter<'m> {
     module: &'m hir::Module,
+    /// C-ABI layouts, shared with the CLIF path: used for the exact same
+    /// managed-word counts so the shadow frame the collector scans has
+    /// the identical shape (M1).
+    layouts: Layouts,
     /// Proven interval of currently-visible loop counters (§10.1).
     ranges: HashMap<String, Interval>,
     /// `this` context of the current function.
@@ -354,6 +376,20 @@ struct Emitter<'m> {
     /// Map from a source local name to a generator frame-field access
     /// expression (`f->g0_x`), innermost scope last.
     gen_locals: Vec<(String, String)>,
+    /// Declared type of each in-scope local/parameter of the current
+    /// function, innermost last, so a lambda can emit the exact C type
+    /// of each captured local (C2).
+    local_types: Vec<(String, Type)>,
+    /// Shadow-frame access expression of each rooted (managed, or
+    /// managed-interior aggregate) local or parameter of the current
+    /// function, innermost last (M1: the collector scans the frame, so a
+    /// live handle held in one survives `collect()`).
+    managed_scope: Vec<(String, String)>,
+    /// Next managed-`let` shadow slot to assign in emission order.
+    shadow_cursor: u32,
+    /// True when the current function pushed a shadow frame (so its exits
+    /// pop it).
+    has_shadow: bool,
     /// Trap position table.
     positions: Vec<Pos>,
     /// Fresh-temporary counter.
@@ -376,13 +412,18 @@ struct Emitter<'m> {
 }
 
 impl<'m> Emitter<'m> {
-    fn new(module: &'m hir::Module) -> Emitter<'m> {
-        Emitter {
+    fn new(module: &'m hir::Module) -> Result<Emitter<'m>, String> {
+        Ok(Emitter {
             module,
+            layouts: Layouts::build(module)?,
             ranges: HashMap::new(),
             this: ThisCtx::None,
             gen: None,
             gen_locals: Vec::new(),
+            local_types: Vec::new(),
+            managed_scope: Vec::new(),
+            shadow_cursor: 0,
+            has_shadow: false,
             positions: Vec::new(),
             tmp: 0,
             label: 0,
@@ -392,7 +433,7 @@ impl<'m> Emitter<'m> {
             wrappers: HashSet::new(),
             emitted_types: HashSet::new(),
             loops: Vec::new(),
-        }
+        })
     }
 
     fn pos_id(&mut self, pos: &Pos) -> u32 {
@@ -766,8 +807,11 @@ impl<'m> Emitter<'m> {
         let ret = self.ctype(&m.ret)?;
         let params = self.param_list(&m.params)?;
         let sep = if params.is_empty() { "" } else { ", " };
+        // C2: a value-class receiver is a pointer to the receiver's
+        // storage (so a mutating method mutates it), exactly as the CLIF
+        // path passes value-method receivers.
         let recv = if self.class(ClassId(ci))?.is_value {
-            self.class_name(ClassId(ci))?
+            format!("{}*", self.class_name(ClassId(ci))?)
         } else {
             "void*".to_string()
         };
@@ -800,14 +844,12 @@ impl<'m> Emitter<'m> {
         let sig = self.ctor_signature(ci, c)?;
         let cname = self.class_name(ClassId(ci))?;
         let _ = writeln!(out, "{sig} {{");
-        self.begin_fn(if c.is_value { ThisCtx::Value } else { ThisCtx::Reference });
+        self.begin_fn(if c.is_value { ThisCtx::ValueLValue } else { ThisCtx::Reference });
         if c.is_value {
             let _ = writeln!(out, "    {cname} _this;");
             let _ = writeln!(out, "    memset(&_this, 0, sizeof _this);");
-        } else {
-            let _ = writeln!(out, "    {cname}* _self = ({cname}*)_this;");
-            let _ = writeln!(out, "    (void)_self;");
         }
+        self.emit_prologue(out, &ctor.params, &ctor.body, 1)?;
         // Field initializers, then the constructor body.
         for field in &c.fields {
             if let Some(init) = &field.init {
@@ -815,11 +857,12 @@ impl<'m> Emitter<'m> {
                 if c.is_value {
                     let _ = writeln!(out, "    _this.{} = {v};", sanitize(&field.name));
                 } else {
-                    let _ = writeln!(out, "    _self->{} = {v};", sanitize(&field.name));
+                    let _ = writeln!(out, "    (({cname}*)_this)->{} = {v};", sanitize(&field.name));
                 }
             }
         }
         self.emit_block(out, &ctor.body, 1)?;
+        self.emit_shadow_pop(out, 1);
         if c.is_value {
             let _ = writeln!(out, "    return _this;");
         }
@@ -850,14 +893,10 @@ impl<'m> Emitter<'m> {
         let sig = self.method_signature(ci, m)?;
         let is_value = self.class(ClassId(ci))?.is_value;
         let _ = writeln!(out, "{sig} {{");
-        self.begin_fn(if is_value { ThisCtx::Value } else { ThisCtx::Reference });
-        if !is_value {
-            let cname = self.class_name(ClassId(ci))?;
-            let _ = writeln!(out, "    {cname}* _self = ({cname}*)_this;");
-            let _ = writeln!(out, "    (void)_self;");
-        }
+        self.begin_fn(if is_value { ThisCtx::ValuePtr } else { ThisCtx::Reference });
+        self.emit_prologue(out, &m.params, &m.body, 1)?;
         self.emit_block(out, &m.body, 1)?;
-        self.emit_fallthrough_return(out, &m.ret, 1)?;
+        self.emit_exit(out, &m.ret, 1)?;
         let _ = writeln!(out, "}}\n");
         Ok(())
     }
@@ -866,8 +905,9 @@ impl<'m> Emitter<'m> {
         let sig = self.fn_signature(f)?;
         let _ = writeln!(out, "{sig} {{");
         self.begin_fn(ThisCtx::None);
+        self.emit_prologue(out, &f.params, &f.body, 1)?;
         self.emit_block(out, &f.body, 1)?;
-        self.emit_fallthrough_return(out, &f.ret, 1)?;
+        self.emit_exit(out, &f.ret, 1)?;
         let _ = writeln!(out, "}}\n");
         Ok(())
     }
@@ -878,19 +918,107 @@ impl<'m> Emitter<'m> {
         self.this = this;
         self.gen = None;
         self.gen_locals.clear();
+        self.local_types.clear();
+        self.managed_scope.clear();
+        self.shadow_cursor = 0;
+        self.has_shadow = false;
     }
 
-    /// A `void`/scalar/aggregate function that reaches its closing brace
-    /// without an explicit `return` needs no trailing statement for
-    /// `void`; the checker proves non-void functions always return, so a
-    /// trailing zeroed return only keeps the C well-formed.
-    fn emit_fallthrough_return(&mut self, out: &mut String, ret: &Type, depth: usize) -> Result<(), String> {
+    /// Emits the shadow-frame prologue and records parameter types (M1,
+    /// C2). Every parameter or local that is a Context allocation, or an
+    /// aggregate whose interior holds Context handles (a `FixedArray` of
+    /// references/strings, an `IterResult` of a managed type), lives in a
+    /// per-call shadow frame the collector conservatively word-scans, so
+    /// a live handle held in one survives `collect()`; the frame is
+    /// pushed here and popped at every exit, exactly as the CLIF path's
+    /// `shadow_push`/`shadow_pop` do (the P2 M1 fix, on the CLIF side).
+    fn emit_prologue(&mut self, out: &mut String, params: &[hir::Param], body: &[hir::Stmt], depth: usize) -> Result<(), String> {
+        for p in params {
+            self.local_types.push((p.name.clone(), p.ty.clone()));
+        }
+        let n = self.shadow_words(params, body)?;
+        if n == 0 {
+            return Ok(());
+        }
+        let ind = indent(depth);
+        let _ = writeln!(out, "{ind}void* _ssroots[{n}]; memset(_ssroots, 0, sizeof _ssroots);");
+        let _ = writeln!(out, "{ind}sub_rt_shadow_push(ctx, _ssroots, {n}ull);");
+        self.has_shadow = true;
+        let mut slot = 0u32;
+        for p in params {
+            let w = managed_words(&self.layouts, &p.ty)?;
+            if w == 0 {
+                continue;
+            }
+            let access = self.root_slot_store(out, &p.ty, slot, &sanitize(&p.name), depth)?;
+            self.managed_scope.push((p.name.clone(), access));
+            slot += w;
+        }
+        self.shadow_cursor = slot;
+        Ok(())
+    }
+
+    /// Stores `value` (a managed scalar or a managed-interior aggregate,
+    /// of type `ty`) into shadow slot `slot`, and returns the C access
+    /// expression for that slot. A managed scalar is one `void*` slot; a
+    /// managed-interior aggregate occupies `managed_words` consecutive
+    /// slots holding its bytes (its interior handles land on
+    /// word-aligned offsets the conservative scan reads).
+    fn root_slot_store(&mut self, out: &mut String, ty: &Type, slot: u32, value: &str, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        if is_managed(&self.layouts, ty)? {
+            let _ = writeln!(out, "{ind}_ssroots[{slot}] = {value};");
+            Ok(format!("_ssroots[{slot}]"))
+        } else {
+            let cty = self.ctype(ty)?;
+            let _ = writeln!(out, "{ind}*({cty}*)&_ssroots[{slot}] = {value};");
+            Ok(format!("(*({cty}*)&_ssroots[{slot}])"))
+        }
+    }
+
+    /// Pops the shadow frame if one was pushed.
+    fn emit_shadow_pop(&mut self, out: &mut String, depth: usize) {
+        if self.has_shadow {
+            let _ = writeln!(out, "{}sub_rt_shadow_pop(ctx);", indent(depth));
+        }
+    }
+
+    /// Function exit on the fall-through path: pop the shadow frame, then
+    /// (for a non-`void` return) a zeroed return keeps the C well-formed
+    /// (the checker proves all paths return).
+    fn emit_exit(&mut self, out: &mut String, ret: &Type, depth: usize) -> Result<(), String> {
+        self.emit_shadow_pop(out, depth);
         if *ret == Type::Void {
             return Ok(());
         }
         let ind = indent(depth);
         let _ = writeln!(out, "{ind}return {};", self.zero_value(ret)?);
         Ok(())
+    }
+
+    /// Number of shadow-frame words a function needs: `managed_words` per
+    /// parameter and per `let` (walk order), summing managed scalars (one
+    /// word) and managed-interior aggregates (their word-rounded size),
+    /// exactly as the CLIF path's `shadow_words`.
+    fn shadow_words(&self, params: &[hir::Param], body: &[hir::Stmt]) -> Result<u32, String> {
+        let mut n = 0u32;
+        for p in params {
+            n += managed_words(&self.layouts, &p.ty)?;
+        }
+        let mut lets: Vec<(&str, &Type)> = Vec::new();
+        walk_lets(body, &mut lets);
+        for (_, ty) in lets {
+            n += managed_words(&self.layouts, ty)?;
+        }
+        Ok(n)
+    }
+
+    /// True when a value of `ty` is a Context allocation held directly
+    /// (a scalar collection root), i.e. `managed_words` is nonzero and it
+    /// is not merely a managed-interior aggregate. Used to decide whether
+    /// a local needs shadow-frame storage at all.
+    fn needs_rooting(&self, ty: &Type) -> Result<bool, String> {
+        Ok(managed_words(&self.layouts, ty)? > 0)
     }
 
     fn zero_value(&self, ty: &Type) -> Result<String, String> {
@@ -917,6 +1045,13 @@ impl<'m> Emitter<'m> {
         for g in &globals {
             let v = self.eval(&g.init, out, 1)?;
             let _ = writeln!(out, "    g_{} = {v};", sanitize(&g.name));
+            // A managed global (or managed-interior aggregate global) is
+            // a permanent collection root (M1): `managed_words` words,
+            // as in the CLIF path's `root_add`.
+            let words = managed_words(&self.layouts, &g.ty)?;
+            if words > 0 {
+                let _ = writeln!(out, "    sub_rt_root_add(ctx, &g_{}, {words}ull);", sanitize(&g.name));
+            }
         }
         let _ = writeln!(out, "}}\n");
         Ok(())
@@ -992,6 +1127,20 @@ impl<'m> Emitter<'m> {
             let _ = writeln!(out, "{ind}_f->{field} = {v};");
             return Ok(());
         }
+        // A managed local — or an aggregate whose interior holds managed
+        // handles — lives in the shadow frame so `collect()` sees its
+        // handle(s) (M1); its storage is shadow slot(s), not a C var.
+        if self.needs_rooting(ty)? {
+            let w = managed_words(&self.layouts, ty)?;
+            let slot = self.shadow_cursor;
+            self.shadow_cursor += w;
+            self.local_types.push((name.to_string(), ty.clone()));
+            let v = self.eval(init, out, depth)?;
+            let access = self.root_slot_store(out, ty, slot, &v, depth)?;
+            self.managed_scope.push((name.to_string(), access));
+            return Ok(());
+        }
+        self.local_types.push((name.to_string(), ty.clone()));
         let cname = sanitize(name);
         match ty {
             Type::FixedArray(..) if matches!(init.kind, hir::ExprKind::ArrayLit(_)) => {
@@ -1023,10 +1172,16 @@ impl<'m> Emitter<'m> {
         }
         match value {
             None => {
+                self.emit_shadow_pop(out, depth);
                 let _ = writeln!(out, "{ind}return;");
             }
             Some(v) => {
+                // The return value is computed before the frame is
+                // popped; no collection runs between the pop and the
+                // return, and the shadow array's memory outlives the pop
+                // (it is unregistered, not freed), so reading it is safe.
                 let text = self.eval(v, out, depth)?;
+                self.emit_shadow_pop(out, depth);
                 let _ = writeln!(out, "{ind}return {text};");
             }
         }
@@ -1319,7 +1474,7 @@ impl<'m> Emitter<'m> {
         match &e.kind {
             K::Local(name) => Ok(self.local_ref(name)),
             K::Global(name) => Ok(format!("g_{}", sanitize(name))),
-            K::This => Ok("_this".to_string()),
+            K::This => Ok(self.this.this_expr()?.to_string()),
             K::Field { obj, name } => {
                 let (base, arrow) = self.field_base(obj, out, depth)?;
                 Ok(format!("{base}{arrow}{}", sanitize(name)))
@@ -1387,6 +1542,12 @@ impl<'m> Emitter<'m> {
                 }
             }
         }
+        // A rooted local/param is its shadow-frame access (M1).
+        for (n, access) in self.managed_scope.iter().rev() {
+            if n == name {
+                return access.clone();
+            }
+        }
         sanitize(name)
     }
 
@@ -1402,7 +1563,7 @@ impl<'m> Emitter<'m> {
             K::Bool(b) => Ok(if *b { "1".to_string() } else { "0".to_string() }),
             K::Str(s) => self.string_literal(s.as_bytes(), &e.pos),
             K::Null => Ok("((void*)0)".to_string()),
-            K::This => Ok("_this".to_string()),
+            K::This => Ok(self.this.this_expr()?.to_string()),
             K::Local(name) => Ok(self.local_ref(name)),
             K::Global(name) => Ok(format!("g_{}", sanitize(name))),
             K::FuncRef(name) => self.func_ref_value(name),
@@ -1751,16 +1912,46 @@ impl<'m> Emitter<'m> {
             }
             Type::Class(cid) => {
                 let m = self.hir_method(cid.0, name)?;
-                // A value receiver is passed by value (C2 copy); a
-                // reference receiver passes its handle. Both are the
-                // receiver's C value.
-                let recv_c = self.eval(recv, out, depth)?;
+                // C2: a value receiver is passed by pointer to its
+                // storage (so a mutating method mutates the receiver); a
+                // reference receiver passes its handle.
+                let recv_c = if self.is_value_class(cid)? {
+                    self.value_recv_ptr(recv, cid, out, depth)?
+                } else {
+                    self.eval(recv, out, depth)?
+                };
                 let argv = self.call_args(&m.params.clone(), args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let _ = ret_ty;
                 Ok(format!("ss_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name)))
             }
             other => Err(format!("method on {other:?}")),
+        }
+    }
+
+    /// A `Sub*` pointing at a value-class receiver's storage (C2). When
+    /// the receiver is an lvalue its address is taken so a mutating
+    /// method mutates it; an rvalue is materialized into a temporary
+    /// first, so a mutation of the temporary is correctly lost, matching
+    /// the CLIF path (whose rvalue receiver is a temp too).
+    fn value_recv_ptr(&mut self, recv: &hir::Expr, cid: ClassId, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::ExprKind as K;
+        let addressable = matches!(
+            recv.kind,
+            K::Local(_) | K::Global(_) | K::Field { .. } | K::Index { .. } | K::This
+        );
+        if addressable {
+            // `eval` of a value-class lvalue expression yields a C lvalue
+            // (a named local, a field access, an array-element deref, or
+            // `(*_this)`), so its address is the receiver's storage.
+            let lv = self.eval(recv, out, depth)?;
+            Ok(format!("&({lv})"))
+        } else {
+            let cname = self.class_name(cid)?;
+            let v = self.eval(recv, out, depth)?;
+            let t = self.fresh_tmp();
+            let _ = writeln!(out, "{}{cname} {t} = {v};", indent(depth));
+            Ok(format!("&{t}"))
         }
     }
 
@@ -1836,14 +2027,16 @@ impl<'m> Emitter<'m> {
         let env_expr = if captures.is_empty() {
             "((void*)0)".to_string()
         } else {
-            // Emit the env struct type once (into helpers/protos area is
-            // awkward; put it inline before the creation as a typedef is
-            // not allowed at block scope reliably, so use a named type
-            // emitted to the type section via `protos`). Simpler: build
-            // the env as a compound assignment into a fresh struct temp.
+            // The environment is a named struct of the captured values by
+            // value (C5), built into a fresh temp in the creating frame
+            // (non-escaping, so stack lifetime suffices). Each field
+            // carries the capture's *actual* C type (C2).
+            let mut fields = String::new();
+            for (cn, t) in &cap_tys {
+                let _ = write!(fields, "{} {}; ", self.ctype(t)?, sanitize(cn));
+            }
+            let _ = writeln!(self.protos, "typedef struct {{ {fields}}} {env_ty};");
             let etmp = self.fresh_tmp();
-            let _ = writeln!(self.protos, "typedef struct {{ {} }} {env_ty};",
-                cap_tys.iter().map(|(cn, t)| format!("{} {}; ", self.ctype(t).unwrap_or_default(), sanitize(cn))).collect::<String>());
             let _ = writeln!(out, "{ind}static {env_ty} {etmp};");
             for (cn, _) in &cap_tys {
                 let _ = writeln!(out, "{ind}{etmp}.{} = {};", sanitize(cn), self.local_ref(cn));
@@ -1863,10 +2056,19 @@ impl<'m> Emitter<'m> {
         let sig = format!("static {retc} {name}(void* ctx, void* _env{sep}{params_c})");
         let _ = writeln!(self.protos, "{sig};");
 
+        // The lambda is a distinct function: save and reset the enclosing
+        // function's per-function state, restore it afterward.
         let saved_this = self.this;
         let saved_gen = std::mem::take(&mut self.gen);
         let saved_gl = std::mem::take(&mut self.gen_locals);
+        let saved_lt = std::mem::take(&mut self.local_types);
+        let saved_ms = std::mem::take(&mut self.managed_scope);
+        let saved_cursor = self.shadow_cursor;
+        let saved_has = self.has_shadow;
+        let saved_ranges = std::mem::take(&mut self.ranges);
         self.this = ThisCtx::None;
+        self.shadow_cursor = 0;
+        self.has_shadow = false;
 
         let mut fbody = String::new();
         if !caps.is_empty() {
@@ -1875,27 +2077,38 @@ impl<'m> Emitter<'m> {
         } else {
             let _ = writeln!(fbody, "    (void)_env;");
         }
-        // Captures become local const copies read from the env.
+        self.emit_prologue(&mut fbody, params, body, 1)?;
+        // Captures become local const copies read from the env, with
+        // their actual types (C2).
         for (cn, ct) in caps {
             let _ = writeln!(fbody, "    {} {} = _e->{};", self.ctype(ct)?, sanitize(cn), sanitize(cn));
+            self.local_types.push((cn.clone(), ct.clone()));
         }
         self.emit_block(&mut fbody, body, 1)?;
-        self.emit_fallthrough_return(&mut fbody, ret, 1)?;
+        self.emit_exit(&mut fbody, ret, 1)?;
 
         let _ = writeln!(self.helpers, "{sig} {{\n{fbody}}}\n");
 
         self.this = saved_this;
         self.gen = saved_gen;
         self.gen_locals = saved_gl;
+        self.local_types = saved_lt;
+        self.managed_scope = saved_ms;
+        self.shadow_cursor = saved_cursor;
+        self.has_shadow = saved_has;
+        self.ranges = saved_ranges;
         Ok(())
     }
 
-    /// The declared type of a captured local. The emitter does not track
-    /// a full lexical-scope type environment; the run set's only
-    /// capturing lambda (a14) captures an `i32`, so that is returned
-    /// here. A capture of another type would need scope tracking added.
-    fn capture_type(&self, _name: &str) -> Result<Type, String> {
-        Ok(Type::I32)
+    /// The declared type of a captured local, from the enclosing
+    /// function's scope (C2).
+    fn capture_type(&self, name: &str) -> Result<Type, String> {
+        for (n, t) in self.local_types.iter().rev() {
+            if n == name {
+                return Ok(t.clone());
+            }
+        }
+        Err(format!("captured local `{name}` has no known type"))
     }
 
     // ----- generators -----
@@ -2549,6 +2762,9 @@ extern void sub_rt_collect(void* ctx);
 extern void* sub_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
 extern void sub_rt_delete(void* ctx, void* payload, uint32_t pos_id);
 extern void sub_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
+extern void sub_rt_root_add(void* ctx, void* base, uint64_t words);
+extern void sub_rt_shadow_push(void* ctx, void* base, uint64_t slots);
+extern void sub_rt_shadow_pop(void* ctx);
 extern void* sub_rt_str_lit(void* ctx, const unsigned char* ptr, uint64_t len, uint32_t pos_id);
 extern int32_t sub_rt_str_len(void* ctx, const void* s);
 extern void* sub_rt_str_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
@@ -2714,3 +2930,6 @@ mod tests {
         assert!(c.contains("sub_rt_array_push"));
     }
 }
+
+
+
