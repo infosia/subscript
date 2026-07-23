@@ -4,7 +4,7 @@
 //! Measures six subjects on eight workloads in one session and writes
 //! `benchmarks/results.json` and `benchmarks/README.md`:
 //!
-//! - **C** — the hand-written baseline (`benchmarks/c/<id>.c`), compiled
+//! - **C** — the hand-written baseline (`benchmarks/workloads/c/<id>.c`), compiled
 //!   `clang -O2 -ffp-contract=off`, self-timed, the 1.00x reference.
 //! - **subscript-ship** — the ship tier: the workload's typed HIR emitted as C
 //!   (`subscript_codegen::emit_c`), compiled `clang -std=c11 -O2 -fwrapv
@@ -21,7 +21,7 @@
 //! measures them live and renders the table from what it measured.
 //!
 //! Usage (release only — a debug runtime would be unoptimized and unfair):
-//! `cargo run --offline --release -p subscript-bench --bin benchmarks`
+//! `cargo run --offline --release -p subscript-benchmarks --bin cross-language`
 //! Flags: `--warmup N` `--timed M` (subscript tiers; the self-timed scripts use
 //! the 3/11 floor), `--only <id>`, `--check` (validate the subscript sources
 //! through the JIT and print each checksum, no timing/external tools).
@@ -68,7 +68,7 @@ fn workload_params(id: &str) -> &'static str {
 /// The AOT timing entry: calls the exported workload `warmup+timed` times and
 /// times each call, printing `sample <i> <ns>` lines on stderr (shared with the
 /// P4 gate harness). Reused verbatim so the ship-tier span matches the gate.
-const AOT_BENCH_ENTRY_C: &str = include_str!("../bench/aot-entry.c");
+const AOT_BENCH_ENTRY_C: &str = include_str!("../../aot-entry.c");
 
 /// C baseline flags (`benchmarks.md` Subjects table).
 const BASELINE_CFLAGS: [&str; 2] = ["-O2", "-ffp-contract=off"];
@@ -178,14 +178,17 @@ fn parse_args() -> Result<Args, Fail> {
 fn run() -> Result<ExitCode, Fail> {
     if cfg!(debug_assertions) {
         return Err("this is a debug build: the tiers would call an unoptimized runtime. \
-             Re-run with `cargo run --offline --release -p subscript-bench --bin benchmarks`"
+             Re-run with `cargo run --offline --release -p subscript-benchmarks --bin cross-language`"
             .to_string());
     }
     let args = parse_args()?;
-    let dir = benchmarks_dir();
+    // `root` holds the generated results.json/README.md; the per-language
+    // workload sources live under `root/workloads/{subscript,c,js,lua}/`.
+    let root = benchmarks_dir();
+    let dir = root.join("workloads");
     if !dir.is_dir() {
         return Err(format!(
-            "benchmarks directory {} not found; set SUBSCRIPT_BENCHMARKS_DIR",
+            "benchmarks workloads directory {} not found; set SUBSCRIPT_BENCHMARKS_DIR to the benchmarks/ root",
             dir.display()
         ));
     }
@@ -279,14 +282,14 @@ fn run() -> Result<ExitCode, Fail> {
 
     let json = render_json(&rows, &machine, &versions, &generated, args.warmup, args.timed);
     let readme = render_readme(&rows, &machine, &versions, &generated, args.warmup, args.timed);
-    std::fs::write(dir.join("results.json"), json.as_bytes())
+    std::fs::write(root.join("results.json"), json.as_bytes())
         .map_err(|e| format!("write results.json: {e}"))?;
-    std::fs::write(dir.join("README.md"), readme.as_bytes())
+    std::fs::write(root.join("README.md"), readme.as_bytes())
         .map_err(|e| format!("write README.md: {e}"))?;
     eprintln!(
         "wrote {} and {}",
-        dir.join("results.json").display(),
-        dir.join("README.md").display()
+        root.join("results.json").display(),
+        root.join("README.md").display()
     );
 
     print!("{readme}");
@@ -667,14 +670,15 @@ fn runtime_system_libs() -> &'static [&'static str] {
     }
 }
 
-/// The `benchmarks/` data directory (`$SUBSCRIPT_BENCHMARKS_DIR`, else next to
-/// the bench crate). `CARGO_MANIFEST_DIR` is a build-time value, not a
-/// committed path.
+/// The `benchmarks/` root (`$SUBSCRIPT_BENCHMARKS_DIR`, else this crate's own
+/// directory — the benchmarks crate lives at the benchmarks root). Holds the
+/// generated results.json/README.md and the `workloads/` subtree.
+/// `CARGO_MANIFEST_DIR` is a build-time value, not a committed path.
 fn benchmarks_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("SUBSCRIPT_BENCHMARKS_DIR") {
         return PathBuf::from(d);
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../benchmarks")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 /// A temporary directory outside the repository, removed on drop.
@@ -883,8 +887,8 @@ fn render_readme(
     let _ = writeln!(
         s,
         "Snapshot captured {generated}. Measured live by the runner \
-         (`benchmarks/runner.rs`), never hardcoded; re-run with \
-         `cargo run --offline --release -p subscript-bench --bin benchmarks`. \
+         (`benchmarks/src/bin/cross-language.rs`), never hardcoded; re-run with \
+         `cargo run --offline --release -p subscript-benchmarks --bin cross-language`. \
          Contract: `specs/blocks/benchmarks.md`."
     );
     let _ = writeln!(s);

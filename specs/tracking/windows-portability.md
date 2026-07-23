@@ -41,7 +41,7 @@ Environment: Visual Studio 2022 Community is installed
    (AOT / standing gate). Follow-up.
 3. `codegen/tests/offsetof_layout.rs:198` — layout probe. Test path.
    Follow-up.
-4. `bench/src/main.rs:643` — bench harness. Bench path. Follow-up.
+4. `benchmarks/src/bin/perf-gate.rs:643` — bench harness. Bench path. Follow-up.
 
 Sites 2–4 run outside a build script, where the `cc` crate's `Build`
 (which reads the build-script env vars `TARGET`/`OPT_LEVEL`/`HOST`) does
@@ -96,7 +96,7 @@ the AOT run's purpose is byte-exact golden reproduction, which `cl` (no
    integer register, else by reference). Expected: cause B clears
    (interop ×6).
 
-Out of scope for the test gate: `bench/src/main.rs` (no test drives it).
+Out of scope for the test gate: `benchmarks/src/bin/perf-gate.rs` (no test drives it).
 
 ## Result (2026-07-23)
 
@@ -131,12 +131,12 @@ kept minimal:
   on any clang. Workspace stays 236/0, goldens byte-for-byte unchanged (the
   cast is compile-time). Closes CLAUDE.md principle 6 for this case.
 
-- **Bench port — DONE (2026-07-23).** `bench/src/main.rs` uses the clang
-  locator, `.exe` suffix, and Windows system libs; `bench/a22-baseline.c`
-  and `bench/aot-entry.c` set binary-mode stdout and, on Windows, read the
+- **Bench port — DONE (2026-07-23).** `benchmarks/src/bin/perf-gate.rs` uses the clang
+  locator, `.exe` suffix, and Windows system libs; `benchmarks/a22-baseline.c`
+  and `benchmarks/aot-entry.c` set binary-mode stdout and, on Windows, read the
   timed span from `QueryPerformanceCounter` (overflow-safe ns conversion)
   since the MSVC UCRT has no `clock_gettime`. Verified by running
-  `cargo run -p subscript-bench --release -- --warmup 5 --timed 15`: all
+  `cargo run -p subscript-benchmarks --bin perf-gate --release -- --warmup 5 --timed 15`: all
   four subjects (C, ship-AOT, dev-JIT, emitted-C) compile, run, and match
   the frozen golden; noise check passes. The §3 perf thresholds are missed
   as always for the Cranelift ship-AOT/dev-JIT tiers (the reason §11 Rev 8
@@ -207,7 +207,7 @@ kept minimal:
   on both host architectures.
 - **x86-64 SysV dev marshaling** remains unimplemented (loud error), the
   open ABI case in §12.3a.
-- **`bench/src/main.rs`** C invocation is still Unix-only; no test drives
+- **`benchmarks/src/bin/perf-gate.rs`** C invocation is still Unix-only; no test drives
   it, so it is out of the standing gate.
 
 ## Status log

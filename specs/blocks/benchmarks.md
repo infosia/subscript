@@ -76,19 +76,26 @@ input array is identical.
 ## Layout
 
 ```
-benchmarks/
-  subscript/<id>.ts     one exported workload fn returning/printing the checksum
-  c/<id>.c              baseline + self-timing harness
-  js/<id>.js            run under both jsc and node
-  lua/<id>.lua          run under luajit
-  <runner>              a Rust bin (may extend the bench crate) or a script
-  results.json          captured medians (per subject, per workload)
-  README.md             the generated table (C = 1.00×), with machine + versions
+benchmarks/                        the subscript-benchmarks crate
+  src/bin/cross-language.rs        the runner (bin `cross-language`)
+  src/bin/perf-gate.rs             the P4 perf-gate harness (bin `perf-gate`)
+  aot-entry.c                      AOT timing entry, shared by both bins
+  a22-baseline.c                   the perf-gate's hand-written C baseline
+  workloads/
+    subscript/<id>.ts              one exported workload fn returning/printing the checksum
+    c/<id>.c                       baseline + self-timing harness
+    js/<id>.js                     run under both jsc and node
+    lua/<id>.lua                   run under luajit
+  results.json                     captured medians (per subject, per workload)
+  README.md                        the generated table (C = 1.00×), with machine + versions
 ```
+
+Re-run the cross-language suite with
+`cargo run --offline --release -p subscript-benchmarks --bin cross-language`.
 
 - The subscript workloads are ordinary accept-corpus-style programs
   (tsc-clean, decided spellings). They may be added to `corpus/accept/`
-  with goldens if useful, or kept under `benchmarks/subscript/`; the
+  with goldens if useful, or kept under `benchmarks/workloads/subscript/`; the
   implementer states which. Either way they type-check under stock `tsc`.
 - The runner builds subscript-ship via the codegen crate's C emission and
   subscript-jit via `jit_bench`, shells out to `clang`/`luajit`/`jsc`/

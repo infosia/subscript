@@ -1,6 +1,6 @@
 # Cross-language benchmarks — captured results
 
-Snapshot captured 2026-07-23. Measured live by the runner (`benchmarks/runner.rs`), never hardcoded; re-run with `cargo run --offline --release -p subscript-bench --bin benchmarks`. Contract: `specs/blocks/benchmarks.md`.
+Snapshot captured 2026-07-23. Measured live by the runner (`benchmarks/src/bin/cross-language.rs`), never hardcoded; re-run with `cargo run --offline --release -p subscript-benchmarks --bin cross-language`. Contract: `specs/blocks/benchmarks.md`.
 
 ## Machine
 

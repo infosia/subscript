@@ -4,12 +4,12 @@
 //! It measures three subjects on the `a22-matrix-propagation` corpus
 //! entry, in one process, in one session:
 //!
-//! - **C baseline** — `bench/a22-baseline.c`, the hand-written C
+//! - **C baseline** — `benchmarks/a22-baseline.c`, the hand-written C
 //!   implementation of the same workload, compiled here with the
 //!   platform C compiler at `-O2`.
 //! - **ship-AOT** — the entry through the AOT tier: object emitted by
 //!   `subscript_codegen::emit_object`, linked with the runtime static
-//!   library and `bench/aot-entry.c`.
+//!   library and `benchmarks/aot-entry.c`.
 //! - **dev-JIT** — the entry through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
 //! - **emitted-C** — the entry's typed HIR emitted as C
@@ -33,7 +33,7 @@
 //! things cannot be compared.
 //!
 //! Usage:
-//! `cargo run --offline --release -p subscript-bench --bin bench [-- --warmup N --timed M]`
+//! `cargo run --offline --release -p subscript-benchmarks --bin perf-gate [-- --warmup N --timed M]`
 //!
 //! # Warm-up
 //!
@@ -65,16 +65,16 @@ const ENTRY_ID: &str = "a22-matrix-propagation";
 
 /// The entry's source, compiled into the harness so the measured
 /// program is exactly the committed corpus file.
-const ENTRY_SOURCE: &str = include_str!("../../corpus/accept/a22-matrix-propagation.ts");
+const ENTRY_SOURCE: &str = include_str!("../../../corpus/accept/a22-matrix-propagation.ts");
 
 /// The entry's frozen golden output (`specs/blocks/compiler.md` §2).
-const ENTRY_GOLDEN: &[u8] = include_bytes!("../../corpus/accept/a22-matrix-propagation.expected");
+const ENTRY_GOLDEN: &[u8] = include_bytes!("../../../corpus/accept/a22-matrix-propagation.expected");
 
 /// The hand-written C baseline, written out and compiled at run time.
-const BASELINE_C: &str = include_str!("../a22-baseline.c");
+const BASELINE_C: &str = include_str!("../../a22-baseline.c");
 
 /// The timing entry program linked with the AOT object.
-const AOT_BENCH_ENTRY_C: &str = include_str!("../aot-entry.c");
+const AOT_BENCH_ENTRY_C: &str = include_str!("../../aot-entry.c");
 
 /// Flags the C baseline is compiled with. `-O2` is the criterion's
 /// (§3); `-ffp-contract=off` matches the language's f32 arithmetic,
@@ -208,7 +208,7 @@ fn run() -> Result<ExitCode, Fail> {
     if cfg!(debug_assertions) {
         return Err(
             "this is a debug build: the runtime the tiers call would be unoptimized. \
-             Re-run with `cargo run --offline --release -p subscript-bench --bin bench`"
+             Re-run with `cargo run --offline --release -p subscript-benchmarks --bin perf-gate`"
                 .to_string(),
         );
     }
@@ -546,7 +546,7 @@ struct WorkDir {
 impl WorkDir {
     /// Creates the directory under the platform temporary directory.
     fn new() -> Result<WorkDir, Fail> {
-        let path = std::env::temp_dir().join(format!("subscript-bench-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("subscript-perf-gate-{}", std::process::id()));
         std::fs::create_dir_all(&path).map_err(|e| format!("temp dir: {e}"))?;
         Ok(WorkDir { path })
     }

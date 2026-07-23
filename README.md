@@ -194,7 +194,7 @@ What the numbers show, honestly:
 
 This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. Re-run them yourself with
-`cargo run --release -p subscript-bench --bin benchmarks`.
+`cargo run --release -p subscript-benchmarks --bin cross-language`.
 
 ## How it works
 

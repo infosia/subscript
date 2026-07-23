@@ -292,9 +292,9 @@ C-header binding vertical slice.
 
 ## Artifacts
 
-`bench/a22-baseline.c` (baseline, header comment names the corpus
-entry), `bench/aot-entry.c`, `bench/src/main.rs` (harness crate
-`subscript-bench`, bin `bench`). Run:
-`cargo run --offline --release -p subscript-bench --bin bench --
+`benchmarks/a22-baseline.c` (baseline, header comment names the corpus
+entry), `benchmarks/aot-entry.c`, `benchmarks/src/bin/perf-gate.rs` (harness crate
+`subscript-benchmarks`, bin `perf-gate`). Run:
+`cargo run --offline --release -p subscript-benchmarks --bin perf-gate --
 --warmup 30 --timed 11`. Release is enforced. No build products are
 written inside the repository.
