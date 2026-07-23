@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 8, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 9, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11, plan §8 Rev 2). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -400,3 +400,70 @@ ship tier.
 - **Gate**: run set a01–a24 matches goldens under the C ship tier;
   dev-JIT ≡ ship-C-AOT ≡ golden is the default `cargo test`; device
   triples compile and link.
+
+## 12. P5 C-header binding vertical slice
+
+The language's founding purpose (plan §4): express C-ABI interop with
+zero marshaling. P5 proves it against a **neutral synthetic C header**
+that exercises all five interop patterns — no real-world library is
+named or depended on (invariant 4; CLAUDE.md repo hygiene).
+
+### 12.1 The synthetic header
+
+A committed C header (`corpus/interop/<name>.h` or similar) authored for
+this slice, containing only the constructs the five patterns need and
+**no unions, no bitfields** (the layout-identity guarantee is about C
+structs/enums/pointers/function-pointers/opaque-handles only). It
+exercises, one construct per plan-§4 pattern:
+
+1. an intrusive extension chain (a common embedded header with a `next`
+   pointer and a type tag, plus ≥2 chainable extension structs);
+2. a `(pointer, count)` array-pair API;
+3. a length-carrying string-view struct (`{ const char*; size_t; }`,
+   not NUL-terminated);
+4. a callback API (function pointer + `void* userdata`);
+5. an opaque handle with create/retain/release.
+
+### 12.2 Mirror generator
+
+A generator (`bindgen`-style, this project's own) reads the header and
+emits the ambient `.d.ts` mirror per the Q13 boundary typing rules
+(`specs/blocks/collisions.md` §2 Q13), already decided and binding:
+opaque handles → branded empty interfaces; struct pointers and zeroable
+by-value sub-layouts → `X | null`; string views → `string`; flag sets →
+`u64` aliases; callback userdata → `object | null` narrowed with `as`.
+The generated mirror is **never hand-edited** (CLAUDE.md core principle
+6); regenerating from the pinned header reproduces it byte-for-byte
+(a test).
+
+### 12.3 `offsetof` assertion suite — the layout proof
+
+Invariant 1 (C-ABI-identical layout) is machine-verified here, not
+asserted. For every struct the mirror exposes, a generated test asserts
+that the language's lowered layout matches the C compiler's:
+`offsetof`/`sizeof`/`_Alignof` of each field and the whole struct, taken
+from the real C header via the platform C compiler, equal the language
+compiler's computed offsets/size/alignment. A mismatch fails the suite.
+This runs for the dev targets (host) and is the concrete discharge of
+"machine-verifiable via `offsetof` assertions" (plan §3 invariant 1).
+
+### 12.4 Headless end-to-end slice on both tiers
+
+Corpus accept entries (a25+, numbered here) written in the language
+against the generated mirror, one per pattern plus one that composes all
+five, exercised headless (no GPU, no window, no external device —
+CLAUDE.md core principle 4). A minimal C implementation of the synthetic
+header (committed, compiled and linked into the test) provides the
+callee side. Each entry runs under **both tiers** and its output is a
+committed golden; the standing differential gate (§11) extends to them:
+dev-JIT ≡ ship-C-AOT ≡ golden, byte-exact. Q16 (how a corpus program
+obtains a host-created handle) is decided here: the host harness creates
+the handle and calls an exported entry, or the entry creates it through
+the synthetic `create` — state which per entry.
+
+### 12.5 Gate (§4)
+
+The five patterns each have a passing headless corpus entry on both
+tiers with a committed golden; the mirror regenerates byte-identically
+from the pinned header; the `offsetof` layout suite is green on the dev
+target. Zero real-world-library references (reference sweep clean).
