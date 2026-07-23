@@ -2108,13 +2108,12 @@ impl<'p> Checker<'p> {
             // error. This is how a boundary callback (e.g. a `void*`
             // `object | null` userdata slot) is typed without the program
             // spelling the boundary type itself.
-            let unannotated = matches!(
-                pat,
-                ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional
-            );
-            let sig = if unannotated {
+            let unannotated_ident = match pat {
+                ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional => Some(b),
+                _ => None,
+            };
+            let sig = if let Some(b) = unannotated_ident {
                 if let Some(t) = ctx_fn.as_ref().and_then(|f| f.params.get(i)) {
-                    let ast::Pat::Ident(b) = pat else { unreachable!() };
                     ParamSig {
                         name: b.id.sym.to_string(),
                         ty: t.clone(),

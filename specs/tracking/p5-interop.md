@@ -92,5 +92,46 @@ same layout engine used in codegen); padding is non-trivial and
 reproduced on both sides. Verification: `cargo test --offline` 215
 green, zero warnings, sweep clean. **P5.1 COMPLETE.**
 
-Next: P5.2 — mirror generator + `.d.ts` ingestion + foreign-function
-machinery.
+## P5.2a — bindgen + ingestion + boundary types: COMPLETE (2026-07-23)
+
+New `bindgen/` crate (std-only): `interop.h` → `corpus/interop/
+interop.generated.d.ts` per the Q13 rules, with a byte-identical
+regeneration test (§12.2). The checker ingests the mirror as a global
+ambient scope (parser `dts:true` for mirror files via
+`SourceFile::ambient`): `interface`→branded handle (nominal reference
+class, non-cross-assignable), `declare class`→boundary struct (value
+class bypassing the C2 field whitelist), `type`→alias, `declare
+function`→a foreign symbol (`hir::ForeignFn`, `Callee::Foreign`, signature
+only — no lowering), `declare const`/`enum`→ambient constants.
+
+Boundary rule implemented: value-class-with-null resolves to
+`Nullable(Class)` and `object`/`object | null` are legal **only** while
+`in_boundary` is set (mirror pass); in ordinary program source both
+stay S011. Branded-handle non-cross-assignment is nominal.
+
+Deviation from the Q13 suggestion, recorded: handles use a `never`
+phantom-property brand, not `unique symbol` — tsc (TS1332) forbids
+`unique symbol` on interface members; the `never` form is tsc-clean and
+non-cross-assignable. interop.h contains no flag-set typedef, so the
+`u64`-alias path is tested via an inline mirror, not the committed one.
+
+Verification (orchestrator-reproduced): `cargo test --offline` 229
+green, zero warnings; `npx tsc -p tsconfig.json` clean (invariant 5 —
+the mirror + a using program `corpus/interop/use-interop.ts` type-check
+under stock tsc and this checker); regen test fails on drift both ways.
+
+Phase Review (2026-07-23): 0 CRITICAL, 0 MAJOR, 2 MINOR. The review
+machine-confirmed no weakening of ordinary-code checking — every
+boundary relaxation is reachable only through `dts:true` mirror files,
+and `Struct|null` / `object` / ingested `interface`/`declare function`/
+`type` all stay rejected in ordinary `.ts`. MINOR 1 fixed: removed the
+one `unreachable!()` in library code (`check/expr.rs`, contextual-lambda
+param) by binding the ident in the guard. MINOR 2 (whether a bodyless
+`declare class` in ordinary program source should be a reject-corpus
+entry) is a language-design question deferred beyond P5 — pre-existing
+behaviour, no soundness impact. **P5.2a COMPLETE.**
+
+Next: P5.2b — foreign-call lowering in both tiers (dev JIT + ship C):
+the callback trampoline (`SubFn{code,env}` ⇄ C `(fnptr, void* userdata)`),
+the chain-slot address-of, `(ptr,count)` / string / handle / `Struct|null`
+argument marshaling.
