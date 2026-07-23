@@ -9,6 +9,13 @@ description = "The P4 performance-gate harness: measures the hand-written C base
 name = "bench"
 path = "src/main.rs"
 
+# The cross-language benchmark suite runner (specs/blocks/benchmarks.md). Its
+# sources live under benchmarks/ next to the workloads it measures; it reuses
+# this crate's codegen/compiler dependencies and the AOT timing entry.
+[[bin]]
+name = "benchmarks"
+path = "../benchmarks/runner.rs"
+
 [dependencies]
 subscript-codegen = { path = "../codegen" }
 subscript-compiler = { path = "../compiler" }

@@ -1,0 +1,69 @@
+/* benchmark: mandelbrot (C baseline)
+ * 800x800 escape-iteration grid, escape test x^2 + y^2 >= 4, cap 255, all f64.
+ * Products are stored in temporaries and only added/subtracted afterwards; with
+ * -ffp-contract=off no multiply-add is fused, so escape counts are bit-identical
+ * across subjects. Checksum: sum of escape counts (int64).
+ */
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <time.h>
+
+enum { GRID = 800, MAX_ITER = 255 };
+
+static int32_t escapes(double cx, double cy) {
+    double zx = 0.0, zy = 0.0;
+    for (int32_t i = 0; i < MAX_ITER; i++) {
+        double zx2 = zx * zx;
+        double zy2 = zy * zy;
+        if (zx2 + zy2 >= 4.0) {
+            return i;
+        }
+        double xy = zx * zy;
+        zy = xy + xy + cy;
+        zx = zx2 - zy2 + cx;
+    }
+    return MAX_ITER;
+}
+
+static int64_t workload(void) {
+    const double xmin = -2.0, xmax = 0.5, ymin = -1.25, ymax = 1.25;
+    int64_t checksum = 0;
+    for (int32_t py = 0; py < GRID; py++) {
+        double cy = ymin + (ymax - ymin) * (double)py / (double)GRID;
+        for (int32_t px = 0; px < GRID; px++) {
+            double cx = xmin + (xmax - xmin) * (double)px / (double)GRID;
+            checksum += (int64_t)escapes(cx, cy);
+        }
+    }
+    return checksum;
+}
+
+static double now_seconds(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+
+static int cmp_double(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return (x > y) - (x < y);
+}
+
+int main(void) {
+    const int warmup = 3, timed = 11;
+    int64_t checksum = 0;
+    double times[11];
+    for (int i = 0; i < warmup; i++) {
+        checksum = workload();
+    }
+    for (int i = 0; i < timed; i++) {
+        double t0 = now_seconds();
+        checksum = workload();
+        double t1 = now_seconds();
+        times[i] = t1 - t0;
+    }
+    qsort(times, (size_t)timed, sizeof(double), cmp_double);
+    printf("%lld %.9f\n", (long long)checksum, times[timed / 2]);
+    return 0;
+}

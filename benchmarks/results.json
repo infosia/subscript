@@ -1,0 +1,133 @@
+{
+  "generated": "2026-07-23",
+  "procedure": "5 warm-up runs discarded, 11 timed runs, median reported",
+  "machine": {
+    "arch": "aarch64",
+    "os": "macos",
+    "cpu": "unknown",
+    "cores": "8",
+    "power": "AC Power"
+  },
+  "versions": {
+    "C": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "subscript": "subscript @ ba2c568 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "LuaJIT": "LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/",
+    "JSC": "JavaScriptCore (macOS 26.5.2)",
+    "V8 (Node.js)": "Node.js v24.18.0"
+  },
+  "subjects": ["C", "subscript-ship", "subscript-jit", "LuaJIT", "JSC", "V8 (Node.js)"],
+  "workloads": [
+    {
+      "id": "fib-recursive",
+      "params": "naive recursion, fib(31); checksum = fib(31) = 1346269 (i32)",
+      "checksum": 1346269,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.004754000,
+        "subscript-ship": 0.004414000,
+        "subscript-jit": 0.007905083,
+        "LuaJIT": 0.006796000,
+        "JSC": 0.005420000,
+        "V8 (Node.js)": 0.009674792
+      }
+    },
+    {
+      "id": "fib-loop",
+      "params": "iterative fib, INNER=32 x OUTER=3000000, masked feedback on the accumulator; checksum = accumulated i32 sum",
+      "checksum": 973132000,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.029553000,
+        "subscript-ship": 0.030362000,
+        "subscript-jit": 0.059492500,
+        "LuaJIT": 0.043708000,
+        "JSC": 0.032120000,
+        "V8 (Node.js)": 0.046714208
+      }
+    },
+    {
+      "id": "mandelbrot",
+      "params": "800x800 grid, escape test x^2+y^2>=4, cap 255, f64; checksum = sum of escape counts (i64)",
+      "checksum": 43027996,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.125631000,
+        "subscript-ship": 0.125502000,
+        "subscript-jit": 0.131566916,
+        "LuaJIT": 0.348214000,
+        "JSC": 0.125540000,
+        "V8 (Node.js)": 0.126524833
+      }
+    },
+    {
+      "id": "primes",
+      "params": "count primes up to 500000 by trial division (j*j<=n); checksum = count (i32)",
+      "checksum": 41538,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.022024000,
+        "subscript-ship": 0.021525000,
+        "subscript-jit": 0.032032125,
+        "LuaJIT": 0.046194000,
+        "JSC": 0.020320000,
+        "V8 (Node.js)": 0.037436542
+      }
+    },
+    {
+      "id": "sort",
+      "params": "quicksort 300000 u32 from LCG state=state*1664525+1013904223 (seed 0x12345678); checksum = order-sensitive rolling hash h=h*31+a[i] (u32 wrap)",
+      "checksum": 3672124540,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.015272000,
+        "subscript-ship": 0.027210000,
+        "subscript-jit": 0.057318959,
+        "LuaJIT": 0.035125000,
+        "JSC": 0.022880000,
+        "V8 (Node.js)": 0.028206917
+      }
+    },
+    {
+      "id": "tree",
+      "params": "30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + unsafeDelete; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130",
+      "checksum": 3932130,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.065675000,
+        "subscript-ship": 0.672154000,
+        "subscript-jit": 0.688879375,
+        "LuaJIT": 0.144572000,
+        "JSC": 0.021100000,
+        "V8 (Node.js)": 0.031113834
+      }
+    },
+    {
+      "id": "queen",
+      "params": "count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)",
+      "checksum": 73712,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.023681000,
+        "subscript-ship": 0.023732000,
+        "subscript-jit": 0.035181250,
+        "LuaJIT": 0.035215000,
+        "JSC": 0.029200000,
+        "V8 (Node.js)": 0.060399042
+      }
+    },
+    {
+      "id": "particles",
+      "params": "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32",
+      "checksum": 1712845248,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.039344000,
+        "subscript-ship": 0.119605000,
+        "subscript-jit": 0.402649750,
+        "LuaJIT": 0.149544000,
+        "JSC": 0.074300000,
+        "V8 (Node.js)": 0.139826000
+      }
+    }
+  ]
+}
