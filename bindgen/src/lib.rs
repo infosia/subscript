@@ -33,21 +33,26 @@
 //! synthetic (`Sub`-prefixed) or a standard C scalar. It depends only on
 //! `std`. Errors are returned as `Result`, never panics.
 
+mod clangfe;
 mod cparse;
 mod emit;
 
-pub use cparse::ParseError;
+pub use clangfe::{parse, Alias, Constant, Macro, Parsed};
+pub use cparse::{CField, Decl, ParseError};
 
-/// Generates the ambient `.d.ts` mirror text for a synthetic C interop
-/// header.
+/// Generates the ambient `.d.ts` mirror text for a C interop header.
+///
+/// The header is parsed by the libclang-based frontend
+/// ([`clangfe`], `specs/blocks/compiler.md` §13.1), which replaced the
+/// narrow fixture parser at P6.1; the emitter is unchanged and reproduces
+/// the committed mirror byte-for-byte.
 ///
 /// # Errors
 ///
-/// Returns a [`ParseError`] when the header contains a construct outside
-/// the constrained fixture grammar (`specs/blocks/compiler.md` §12.1:
-/// struct/enum/pointer/function-pointer/opaque-handle typedefs and
-/// function declarations only — no unions, no bitfields).
+/// Returns a [`ParseError`] when libclang cannot be loaded, when the
+/// header fails to parse, or when it uses a construct the frontend does
+/// not model.
 pub fn generate(header: &str) -> Result<String, ParseError> {
-    let decls = cparse::parse_header(header)?;
-    Ok(emit::emit(&decls))
+    let parsed = clangfe::parse(header)?;
+    Ok(emit::emit(&parsed.decls))
 }

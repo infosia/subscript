@@ -5,6 +5,14 @@ edition = "2021"
 publish = false
 description = "Mirror generator (this project's own bindgen): reads the neutral synthetic C interop header and emits the ambient .d.ts boundary mirror per the Q13 rules (specs/blocks/compiler.md §12.2). Depends only on std; no external library is named."
 
+[dependencies]
+# libclang-based C frontend (P6.1). The `runtime` feature dlopens
+# libclang at run time (via `libloading`) instead of link-time binding, so
+# the build needs no libclang present and the library is located at run
+# time (LIBCLANG_PATH override, else the platform default search including
+# the macOS Command Line Tools path). Pinned; resolvable fully offline.
+clang-sys = { version = "=1.8.1", default-features = false, features = ["runtime", "clang_11_0"] }
+
 [[bin]]
 name = "bindgen"
 path = "src/main.rs"

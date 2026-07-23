@@ -1,11 +1,16 @@
-//! A small parser for the constrained synthetic-C fixture grammar
-//! (`specs/blocks/compiler.md` §12.1): comments, preprocessor lines,
-//! `typedef enum`, `typedef struct`, opaque-handle typedefs, function-
-//! pointer typedefs, and function declarations. No unions, no bitfields.
-//!
-//! It is deliberately narrow: it recognizes exactly the shapes the
-//! fixture uses and rejects anything else, rather than being a general C
+//! The boundary intermediate representation ([`CField`], [`Decl`]) shared
+//! by the frontend and the emitter, plus the original narrow fixture
 //! parser.
+//!
+//! The narrow parser (`specs/blocks/compiler.md` §12.1: comments,
+//! preprocessor lines, `typedef enum`/`struct`, opaque-handle typedefs,
+//! function-pointer typedefs, function declarations — no unions, no
+//! bitfields) was the P5 frontend. At P6.1 it is superseded by the
+//! libclang frontend ([`crate::clangfe`], §13.1); it is retained
+//! **test-only** — under `#[cfg(test)]` — as a documented record of the
+//! fixture grammar and is exercised by its own unit tests. The
+//! production path never uses it; only the [`CField`]/[`Decl`] types below
+//! remain in the shipped library.
 
 use std::fmt;
 
@@ -21,10 +26,6 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
-
-fn err<T>(msg: impl Into<String>) -> Result<T, ParseError> {
-    Err(ParseError(msg.into()))
-}
 
 /// One field of a C struct, or one parameter of a function or function
 /// pointer.
@@ -85,12 +86,19 @@ pub enum Decl {
     },
 }
 
-/// Parses the header into ordered declarations.
+#[cfg(test)]
+fn err<T>(msg: impl Into<String>) -> Result<T, ParseError> {
+    Err(ParseError(msg.into()))
+}
+
+/// Parses the header into ordered declarations. Retained test-only (see
+/// the module docs); superseded in production by [`crate::clangfe`].
 ///
 /// # Errors
 ///
 /// Returns [`ParseError`] for any construct outside the constrained
 /// fixture grammar.
+#[cfg(test)]
 pub fn parse_header(src: &str) -> Result<Vec<Decl>, ParseError> {
     let cleaned = strip_comments_and_directives(src);
     let mut decls = Vec::new();
@@ -106,6 +114,7 @@ pub fn parse_header(src: &str) -> Result<Vec<Decl>, ParseError> {
 
 /// Removes `/* ... */` and `// ...` comments and `#...` preprocessor
 /// lines, leaving the declaration text.
+#[cfg(test)]
 fn strip_comments_and_directives(src: &str) -> String {
     // First strip comments.
     let mut out = String::with_capacity(src.len());
@@ -137,6 +146,7 @@ fn strip_comments_and_directives(src: &str) -> String {
 
 /// Splits into `;`-terminated top-level statements, respecting brace
 /// nesting (a struct/enum body's inner `;`/`,` do not split).
+#[cfg(test)]
 fn split_statements(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut depth = 0i32;
@@ -160,6 +170,7 @@ fn split_statements(src: &str) -> Vec<String> {
     out
 }
 
+#[cfg(test)]
 fn parse_statement(stmt: &str) -> Result<Decl, ParseError> {
     if let Some(rest) = stmt.strip_prefix("typedef") {
         let rest = rest.trim_start();
@@ -180,6 +191,7 @@ fn parse_statement(stmt: &str) -> Result<Decl, ParseError> {
 }
 
 /// `enum Name { members } Name`
+#[cfg(test)]
 fn parse_enum(rest: &str) -> Result<Decl, ParseError> {
     let open = rest
         .find('{')
@@ -217,6 +229,7 @@ fn parse_enum(rest: &str) -> Result<Decl, ParseError> {
 }
 
 /// `struct Name { fields } Name`
+#[cfg(test)]
 fn parse_struct(rest: &str) -> Result<Decl, ParseError> {
     let open = rest
         .find('{')
@@ -241,6 +254,7 @@ fn parse_struct(rest: &str) -> Result<Decl, ParseError> {
 }
 
 /// `struct Name_T *Name`
+#[cfg(test)]
 fn parse_handle(rest: &str) -> Result<Decl, ParseError> {
     // rest looks like `struct SubDevice_T *SubDevice`.
     let star = rest
@@ -254,6 +268,7 @@ fn parse_handle(rest: &str) -> Result<Decl, ParseError> {
 }
 
 /// `Ret (*Name)(params)`
+#[cfg(test)]
 fn parse_fn_ptr(rest: &str) -> Result<Decl, ParseError> {
     let star_paren = rest
         .find("(*")
@@ -275,6 +290,7 @@ fn parse_fn_ptr(rest: &str) -> Result<Decl, ParseError> {
 }
 
 /// `Ret name(params)`
+#[cfg(test)]
 fn parse_func(stmt: &str) -> Result<Decl, ParseError> {
     let open = stmt
         .find('(')
@@ -298,6 +314,7 @@ fn parse_func(stmt: &str) -> Result<Decl, ParseError> {
 }
 
 /// Returns the text inside the first balanced `(...)`.
+#[cfg(test)]
 fn param_list(s: &str) -> Result<&str, ParseError> {
     let open = s
         .find('(')
@@ -311,6 +328,7 @@ fn param_list(s: &str) -> Result<&str, ParseError> {
     Ok(&s[open + 1..close])
 }
 
+#[cfg(test)]
 fn parse_params(text: &str) -> Result<Vec<CField>, ParseError> {
     let trimmed = text.trim();
     if trimmed.is_empty() || trimmed == "void" {
@@ -327,6 +345,7 @@ fn parse_params(text: &str) -> Result<Vec<CField>, ParseError> {
     Ok(params)
 }
 
+#[cfg(test)]
 fn strip_name(mut f: CField) -> CField {
     f.name.clear();
     f
@@ -334,6 +353,7 @@ fn strip_name(mut f: CField) -> CField {
 
 /// Parses one declaration `TYPE name`, e.g. `const uint32_t *items`,
 /// `struct SubChainHeader *next`, `float basis[16]`, `SubDevice device`.
+#[cfg(test)]
 fn parse_field(decl: &str) -> Result<CField, ParseError> {
     let spaced = decl
         .replace('*', " * ")
@@ -468,5 +488,22 @@ mod tests {
     fn unions_and_bitfields_are_out_of_grammar() {
         // A union typedef is not one of the recognized forms.
         assert!(parse_statement("typedef union U { int a; float b; } U").is_err());
+    }
+
+    #[test]
+    fn parse_header_strips_comments_and_directives() {
+        // Exercises the full narrow-parser entry point: block/line
+        // comments and `#` preprocessor lines are removed, and the
+        // remaining `;`-terminated statements parse in order.
+        let src = "\
+/* leading block comment */
+#include <stdint.h>
+typedef enum E { A = 0, B = 1 } E; // trailing line comment
+typedef struct S { uint32_t x; } S;
+";
+        let decls = parse_header(src).unwrap();
+        assert_eq!(decls.len(), 2);
+        assert!(matches!(&decls[0], Decl::Enum { name, .. } if name == "E"));
+        assert!(matches!(&decls[1], Decl::Struct { name, .. } if name == "S"));
     }
 }
