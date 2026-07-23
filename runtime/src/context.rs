@@ -73,6 +73,30 @@ struct Allocation {
     marked: bool,
 }
 
+/// A registered C-callback binding (P5.2b). The language's function value
+/// is a `(code, env)` pair with the calling convention `(ctx, env,
+/// args...)`; a C callback wants a bare `(fnptr, void* userdata)`. A
+/// generic C-ABI trampoline ([`crate::ffi::sub_rt_cb_trampoline`]) bridges
+/// the two: the record is what the trampoline receives through the C
+/// `userdata` slot, so it carries everything the language convention needs
+/// — the Context, the language `code`/`env`, and the *real* userdata the
+/// script registered. Records live for the whole Context (the Q13
+/// lifetime rule: userdata must outlive the registration that holds it).
+#[repr(C)]
+pub struct CallbackBinding {
+    /// The Context the script runs under; captured at bind time.
+    pub ctx: *mut Context,
+    /// The language function value's code pointer (a wrapper taking
+    /// `(ctx, env, args...)`, host C calling convention).
+    pub code: *const u8,
+    /// The language function value's environment pointer (null for a
+    /// non-capturing function — the only kind usable as a C callback, C5).
+    pub env: *const u8,
+    /// The userdata the script registered, passed back to the language
+    /// callback unchanged.
+    pub userdata: *mut u8,
+}
+
 /// The script execution context.
 ///
 /// `repr(C)` with a fixed prefix that generated code reads directly
@@ -101,6 +125,7 @@ pub struct Context {
     interned: HashMap<(usize, usize), usize>,
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
+    callbacks: Vec<Box<CallbackBinding>>,
 }
 
 impl Context {
@@ -119,6 +144,7 @@ impl Context {
             interned: HashMap::new(),
             shadow: Vec::new(),
             roots: Vec::new(),
+            callbacks: Vec::new(),
         })
     }
 
@@ -460,6 +486,57 @@ impl Context {
             let len = (handle as *const u64).read() as usize;
             std::slice::from_raw_parts(handle.add(8), len)
         }
+    }
+
+    /// The address of a string handle's UTF-8 bytes (the C `const char*`
+    /// half of a `(ptr, len)` string view; the length is
+    /// [`Context::str_bytes`]`.len()`, also `sub_rt_str_len`). Skips the
+    /// 8-byte length prefix of the string payload.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live string payload of this context.
+    #[must_use]
+    pub unsafe fn str_data(&self, handle: *const u8) -> *const u8 {
+        // SAFETY: the bytes follow the 8-byte length prefix.
+        unsafe { handle.add(8) }
+    }
+
+    /// The address of a dynamic array's element storage (the C `const T*`
+    /// half of a `(ptr, count)` descriptor; the count is
+    /// [`Context::array_len`]). Null for an array that has never grown.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live array payload of this context.
+    #[must_use]
+    pub unsafe fn array_data(&self, handle: *const u8) -> *const u8 {
+        // SAFETY: caller guarantees an array payload.
+        unsafe { (*(handle as *const ArrayHeader)).data }
+    }
+
+    /// Registers a C-callback binding and returns a stable pointer to it
+    /// (P5.2b). The pointer is what a boundary marshaler stores in a C
+    /// `void* userdata` slot; the generic trampoline
+    /// ([`crate::ffi::sub_rt_cb_trampoline`]) reads the binding back
+    /// through it. Bindings live for the whole Context (the Q13 lifetime
+    /// rule), so the pointer stays valid for every later callback.
+    pub fn bind_callback(
+        &mut self,
+        code: *const u8,
+        env: *const u8,
+        userdata: *mut u8,
+    ) -> *mut u8 {
+        let ctx: *mut Context = self;
+        let mut rec = Box::new(CallbackBinding {
+            ctx,
+            code,
+            env,
+            userdata,
+        });
+        let ptr: *mut CallbackBinding = &mut *rec;
+        self.callbacks.push(rec);
+        ptr as *mut u8
     }
 
     /// Interns a string literal by its static data address; repeated

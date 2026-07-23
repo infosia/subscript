@@ -55,6 +55,14 @@ pub struct ClassDef {
     pub name: String,
     /// True for `@value class` (C-layout, copy semantics — C2).
     pub is_value: bool,
+    /// True for a mirror-ingested boundary struct (a `declare class` in a
+    /// `.d.ts`, P5.2): a C-layout value type whose constructor has no
+    /// in-language body. `new` initializes its fields positionally from
+    /// the constructor arguments (arg `i` → field `i`), applying the
+    /// boundary coercions at each field (the chain-slot address-of for a
+    /// `Struct | null` field). Always `false` for ordinary value classes,
+    /// which carry a real [`ClassDef::ctor`].
+    pub is_boundary: bool,
     /// Declared fields, in declaration order (C layout order).
     pub fields: Vec<Field>,
     /// The constructor, when declared.

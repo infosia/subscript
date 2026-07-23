@@ -96,6 +96,10 @@ pub(crate) struct RtFns {
     pub array_push: FuncId,
     pub array_pop: FuncId,
     pub array_ptr: FuncId,
+    pub str_data: FuncId,
+    pub array_data: FuncId,
+    pub cb_bind: FuncId,
+    pub cb_trampoline: FuncId,
 }
 
 /// Parameters of the shared lowering.
@@ -178,6 +182,8 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub fn_index: HashMap<String, usize>,
     pub str_data: HashMap<Vec<u8>, DataId>,
     pub globals: HashMap<String, (GlobalSlot, Type)>,
+    /// Imported foreign C symbols, declared on first use (P5.2b).
+    pub foreign_ids: HashMap<String, FuncId>,
     pub positions: Vec<Pos>,
     pub lambda_count: u32,
     pub str_count: u32,
@@ -275,6 +281,15 @@ impl<'a, M: Module> ModLower<'a, M> {
             .map_err(|e| internal(format!("define data: {e}")))?;
         self.str_data.insert(bytes.to_vec(), id);
         Ok(id)
+    }
+
+    /// The foreign (C-ABI) function named `name` (P5.2b).
+    pub fn foreign_fn(&self, name: &str) -> Result<&'a hir::ForeignFn, String> {
+        self.hir
+            .foreign_fns
+            .iter()
+            .find(|f| f.name == name)
+            .ok_or_else(|| internal(format!("unknown foreign function `{name}`")))
     }
 
     /// The HIR function named `name`.
@@ -380,6 +395,14 @@ fn declare_rt<M: Module>(
         array_push: mk("sub_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,
         array_pop: mk("sub_rt_array_pop", &[I64, I64, I64, I32], None)?,
         array_ptr: mk("sub_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
+        str_data: mk("sub_rt_str_data", &[I64, I64], Some(I64))?,
+        array_data: mk("sub_rt_array_data", &[I64, I64], Some(I64))?,
+        cb_bind: mk("sub_rt_cb_bind", &[I64, I64, I64, I64], Some(I64))?,
+        // The generic C-ABI callback trampoline (P5.2b). Generated code
+        // never calls it — a foreign C API does — so it is imported only
+        // to take its address (`func_addr`) for a callback-info struct's
+        // function-pointer slot; the declared signature is unused.
+        cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64], None)?,
     })
 }
 
@@ -458,6 +481,7 @@ pub(crate) fn lower_module_with<M: Module>(
         fn_index: HashMap::new(),
         str_data: HashMap::new(),
         globals: HashMap::new(),
+        foreign_ids: HashMap::new(),
         positions: Vec::new(),
         lambda_count: 0,
         str_count: 0,

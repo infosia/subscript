@@ -21,10 +21,11 @@
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-    types, Block, BlockArg, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value,
+    types, AbiParam, Block, BlockArg, InstBuilder, MemFlags, Signature, StackSlotData,
+    StackSlotKind, Value,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use cranelift_module::Module;
+use cranelift_module::{Linkage, Module};
 use subscript_compiler::{hir, Pos, Type};
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
@@ -774,6 +775,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             (Repr::Agg { size, align }, RV::A(src)) => {
                 let dest = self.addr_off(addr, i64::from(off));
                 self.copy_bytes(dest, src, size, align);
+                Ok(())
+            }
+            // Chain-slot address-of (Q13's single implicit address-of): a
+            // value struct written into a `Struct | null` boundary pointer
+            // slot stores the *address* of the struct's storage. Confined
+            // to this boundary-only slot type (C7); ordinary code never
+            // reaches it. The struct must outlive the holder (lifetime
+            // rule): here its storage is a live caller local/stack slot.
+            (Repr::Scalar(_), RV::A(src)) if self.is_boundary_struct_ptr(ty) => {
+                self.b.ins().store(flags(), src, addr, off);
                 Ok(())
             }
             (r, v) => Err(internal(format!("store mismatch {r:?} vs {v:?}"))),
@@ -1960,8 +1971,280 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Method { recv, name } => {
                 self.eval_method(recv, name, args, ret_ty, pos, dest)
             }
+            hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, pos),
             other => Err(internal(format!("callee {other:?}"))),
         }
+    }
+
+    /// Lowers a foreign C-ABI call (`Callee::Foreign`, P5.2b) to a direct
+    /// call of the header symbol. The signature is built from the mirror's
+    /// boundary types by marshaling each argument per Q13; the symbol is
+    /// imported (`Linkage::Import`) exactly as the `sub_rt_*` runtime is,
+    /// and resolved by the JIT's symbol registration / the ship-C link.
+    fn eval_foreign_call(
+        &mut self,
+        name: &str,
+        args: &[hir::Expr],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        let ff = self.ml.foreign_fn(name)?;
+        let params: Vec<Type> = ff.params.iter().map(|p| p.ty.clone()).collect();
+        let ret = ff.ret.clone();
+        if args.len() != params.len() {
+            return Err(internal(format!("foreign call `{name}` arity at {pos}")));
+        }
+        let mut sig = Signature::new(self.ml.call_conv);
+        let mut argv: Vec<Value> = Vec::new();
+        for (ty, a) in params.iter().zip(args) {
+            let rv = self.eval(a)?;
+            self.marshal_foreign_arg(ty, rv, &mut sig, &mut argv)?;
+        }
+        let ret_repr = self.ml.layouts.repr(&ret)?;
+        match ret_repr {
+            Repr::None => {}
+            Repr::Scalar(t) => sig.returns.push(AbiParam::new(t)),
+            other => {
+                return Err(internal(format!(
+                    "foreign return {other:?} is not a boundary form at {pos}"
+                )))
+            }
+        }
+        let id = if let Some(&id) = self.ml.foreign_ids.get(name) {
+            id
+        } else {
+            let id = self
+                .ml
+                .module
+                .declare_function(name, Linkage::Import, &sig)
+                .map_err(|e| internal(format!("declare foreign {name}: {e}")))?;
+            self.ml.foreign_ids.insert(name.to_string(), id);
+            id
+        };
+        let fref = self.ml.module.declare_func_in_func(id, self.b.func);
+        let inst = self.b.ins().call(fref, &argv);
+        let res = self.b.inst_results(inst).to_vec();
+        // A foreign call may set the Context trap flag — directly, or via
+        // a callback that trapped inside the trampoline — so check it.
+        self.trap_check();
+        Ok(match ret_repr {
+            Repr::Scalar(_) => RV::S(*res.first().ok_or_else(|| internal("foreign result"))?),
+            _ => RV::None,
+        })
+    }
+
+    /// Appends one ABI value (type + value) to a foreign call's signature
+    /// and argument list, keeping the two in lockstep.
+    fn push_abi(&self, sig: &mut Signature, argv: &mut Vec<Value>, t: types::Type, v: Value) {
+        sig.params.push(AbiParam::new(t));
+        argv.push(v);
+    }
+
+    /// True when `ty` is a value class (a boundary struct / `@value`).
+    fn is_value_class_ty(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Class(id)
+            if self.ml.layouts.class(id.0).map(|l| l.is_value).unwrap_or(false))
+    }
+
+    /// True for a `Struct | null` boundary pointer slot (a nullable value
+    /// class): the one place the language takes a value's address
+    /// implicitly (Q13's chain-slot address-of).
+    fn is_boundary_struct_ptr(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Nullable(inner) if self.is_value_class_ty(inner))
+    }
+
+    /// The pointer form of a `Struct | null` value: the address of a
+    /// struct's storage (an aggregate), or the already-pointer scalar
+    /// (`null` is 0). The struct must outlive the call — its storage is
+    /// the caller's stack/local, live across the synchronous foreign call
+    /// (the userdata/borrow lifetime rule).
+    fn boundary_ptr(&self, rv: RV) -> Result<Value, String> {
+        match rv {
+            RV::A(addr) => Ok(addr),
+            RV::S(v) => Ok(v),
+            other => Err(internal(format!("boundary pointer from {other:?}"))),
+        }
+    }
+
+    /// Marshals one evaluated argument to a foreign call's C-ABI values
+    /// per Q13: `string` → `(const char*, size_t)`; `T[]` →
+    /// `(const T*, size_t)`; a by-value boundary struct → its fields as
+    /// eightbytes (with the callback trampoline for a function-pointer
+    /// field); `Struct | null` → a nullable struct pointer; handles,
+    /// `object | null`, and scalars → one value.
+    fn marshal_foreign_arg(
+        &mut self,
+        ty: &Type,
+        rv: RV,
+        sig: &mut Signature,
+        argv: &mut Vec<Value>,
+    ) -> Result<(), String> {
+        match ty {
+            Type::Str => {
+                let h = self.expect_s(rv)?;
+                let data = self
+                    .call_rt(self.ml.rt.str_data, &[self.ctx_v, h], false)?
+                    .ok_or_else(|| internal("str_data result"))?;
+                let len32 = self
+                    .call_rt(self.ml.rt.str_len, &[self.ctx_v, h], false)?
+                    .ok_or_else(|| internal("str_len result"))?;
+                let len = self.b.ins().uextend(types::I64, len32);
+                self.push_abi(sig, argv, types::I64, data);
+                self.push_abi(sig, argv, types::I64, len);
+                Ok(())
+            }
+            Type::Array(_) => {
+                let h = self.expect_s(rv)?;
+                let data = self
+                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, h], false)?
+                    .ok_or_else(|| internal("array_data result"))?;
+                let len32 = self
+                    .call_rt(self.ml.rt.array_len, &[self.ctx_v, h], false)?
+                    .ok_or_else(|| internal("array_len result"))?;
+                let count = self.b.ins().uextend(types::I64, len32);
+                self.push_abi(sig, argv, types::I64, data);
+                self.push_abi(sig, argv, types::I64, count);
+                Ok(())
+            }
+            Type::Class(id) if self.is_value_class_ty(ty) => {
+                let addr = self.expect_a(rv)?;
+                self.marshal_boundary_struct(id.0, addr, sig, argv)
+            }
+            _ if self.is_boundary_struct_ptr(ty) => {
+                let v = self.boundary_ptr(rv)?;
+                self.push_abi(sig, argv, types::I64, v);
+                Ok(())
+            }
+            _ => match self.ml.layouts.repr(ty)? {
+                Repr::Scalar(t) => {
+                    let v = self.expect_s(rv)?;
+                    self.push_abi(sig, argv, t, v);
+                    Ok(())
+                }
+                other => Err(internal(format!("foreign argument repr {other:?}"))),
+            },
+        }
+    }
+
+    /// The C-ABI size and alignment of one boundary-struct field: a
+    /// function-pointer field is a single pointer (8) in the C struct,
+    /// unlike the language `(code, env)` pair (16); scalars/enums keep
+    /// their C size; pointers/`object`/`Struct | null` are 8.
+    fn boundary_c_field(&self, ty: &Type) -> Result<(u32, u32), String> {
+        Ok(match ty {
+            Type::Func(_) | Type::Object | Type::Nullable(_) => (8, 8),
+            Type::I64 | Type::U64 | Type::F64 => (8, 8),
+            Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
+            Type::Bool => (1, 1),
+            Type::Class(id) if self.is_value_class_ty(ty) => {
+                let l = self.ml.layouts.class(id.0)?;
+                (l.size, l.align)
+            }
+            other => return Err(internal(format!("boundary C field type {other:?}"))),
+        })
+    }
+
+    /// Marshals a by-value boundary struct to the C ABI. It builds the
+    /// C-layout components (each pointer/scalar field a value; a
+    /// function-pointer field → the generic trampoline plus a binding
+    /// built from the following `userdata` slot — the callback-info idiom),
+    /// then passes them the way the platform C ABI passes the struct: a
+    /// composite of ≤ 16 bytes goes in registers (the components as
+    /// arguments); a larger one is passed by reference (built into a stack
+    /// slot, its address passed — AAPCS64 B.4), which is how the C
+    /// compiler passes it on the ship tier.
+    fn marshal_boundary_struct(
+        &mut self,
+        cid: usize,
+        addr: Value,
+        sig: &mut Signature,
+        argv: &mut Vec<Value>,
+    ) -> Result<(), String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        let layout = self.ml.layouts.class(cid)?.clone();
+        // C-layout components: (byte offset in the C struct, CLIF type,
+        // value). Offsets follow C struct rules over the C field sizes.
+        let mut comps: Vec<(u32, types::Type, Value)> = Vec::new();
+        let mut coff = 0u32;
+        let mut struct_align = 1u32;
+        let mut i = 0;
+        while i < class.fields.len() {
+            let field = &class.fields[i];
+            let lang_off = *layout
+                .field_offsets
+                .get(i)
+                .ok_or_else(|| internal("boundary field offset"))? as i32;
+            let (cs, ca) = self.boundary_c_field(&field.ty)?;
+            coff = round_up(coff, ca);
+            struct_align = struct_align.max(ca);
+            match &field.ty {
+                Type::Func(_) => {
+                    let code = self.b.ins().load(types::I64, flags(), addr, lang_off);
+                    let env = self.b.ins().load(types::I64, flags(), addr, lang_off + 8);
+                    let tref = self
+                        .ml
+                        .module
+                        .declare_func_in_func(self.ml.rt.cb_trampoline, self.b.func);
+                    let tramp = self.b.ins().func_addr(types::I64, tref);
+                    comps.push((coff, types::I64, tramp));
+                    coff += cs;
+                    // The following field is this callback's userdata: it
+                    // becomes the binding record the trampoline reads.
+                    let ud_field = class
+                        .fields
+                        .get(i + 1)
+                        .ok_or_else(|| internal("a callback field needs a following userdata slot"))?;
+                    let ud_lang = *layout
+                        .field_offsets
+                        .get(i + 1)
+                        .ok_or_else(|| internal("userdata field offset"))?
+                        as i32;
+                    let (uds, uda) = self.boundary_c_field(&ud_field.ty)?;
+                    coff = round_up(coff, uda);
+                    struct_align = struct_align.max(uda);
+                    let ud = self.b.ins().load(types::I64, flags(), addr, ud_lang);
+                    let record = self
+                        .call_rt(self.ml.rt.cb_bind, &[self.ctx_v, code, env, ud], false)?
+                        .ok_or_else(|| internal("cb_bind result"))?;
+                    comps.push((coff, types::I64, record));
+                    coff += uds;
+                    i += 2;
+                }
+                other => {
+                    let ty = other.clone();
+                    let rv = self.load_val(&ty, addr, lang_off)?;
+                    let clif = match self.ml.layouts.repr(&ty)? {
+                        Repr::Scalar(t) => t,
+                        other => {
+                            return Err(internal(format!("boundary field repr {other:?}")))
+                        }
+                    };
+                    let v = self.expect_s(rv)?;
+                    comps.push((coff, clif, v));
+                    coff += cs;
+                    i += 1;
+                }
+            }
+        }
+        let total = round_up(coff, struct_align.max(1));
+        if total <= 16 {
+            // Small composite: passed in registers as its components.
+            for (_, clif, v) in comps {
+                self.push_abi(sig, argv, clif, v);
+            }
+        } else {
+            // Large composite: passed by reference to a caller copy.
+            let slot = self.temp_slot(total, struct_align.max(1));
+            for (off, _, v) in comps {
+                self.b.ins().store(flags(), v, slot, off as i32);
+            }
+            self.push_abi(sig, argv, types::I64, slot);
+        }
+        Ok(())
     }
 
     fn eval_ambient(
@@ -2154,6 +2437,26 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let rv = self.eval(init)?;
                 let off = layout.field_offsets[i] as i32;
                 self.store_val(&field.ty, this, off, rv)?;
+            }
+        }
+        // A mirror boundary struct has no in-language constructor body: its
+        // `new` stores the arguments positionally into the fields (arg `i`
+        // → field `i`), each through the boundary coercion (chain-slot
+        // address-of for a `Struct | null` field).
+        if class.is_boundary {
+            if args.len() != class.fields.len() {
+                return Err(internal(format!(
+                    "boundary struct `{}` expects {} field arguments, got {}",
+                    class.name,
+                    class.fields.len(),
+                    args.len()
+                )));
+            }
+            for (i, field) in class.fields.iter().enumerate() {
+                let off = layout.field_offsets[i] as i32;
+                let fty = field.ty.clone();
+                let rv = self.eval(&args[i])?;
+                self.store_val(&fty, this, off, rv)?;
             }
         }
         if let Some(ctor) = &class.ctor {

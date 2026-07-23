@@ -358,6 +358,15 @@ fn host_cc() -> std::ffi::OsString {
     std::env::var_os("CC").unwrap_or_else(|| "cc".into())
 }
 
+/// The committed synthetic-header directory (`corpus/interop`), holding
+/// `interop.h` and its implementation `interop.c` (P5.2b). Both AOT link
+/// paths compile `interop.c` in and add this as an include directory, so
+/// a foreign call resolves to the same implementation the dev-JIT tier
+/// links (compiler.md §12.4). Repo-relative, resolved from the crate.
+fn interop_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop")
+}
+
 /// Writes `bytes` to `path`.
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
     let mut f = std::fs::File::create(path)
@@ -393,10 +402,14 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     write_file(&obj_path, &object.bytes)?;
     write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
 
+    let interop = interop_dir();
     let cc = host_cc();
     let link = Command::new(&cc)
+        .arg("-I")
+        .arg(&interop)
         .arg(&entry_path)
         .arg(&obj_path)
+        .arg(interop.join("interop.c"))
         .arg(&staticlib)
         .arg("-o")
         .arg(&exe_path)
@@ -461,6 +474,7 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     write_file(&src_path, program.source.as_bytes())?;
     write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
 
+    let interop = interop_dir();
     let cc = host_cc();
     let compile = Command::new(&cc)
         .arg("-O2")
@@ -469,8 +483,11 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         // signed overflow defined rather than C undefined behaviour.
         .arg("-fwrapv")
         .arg("-ffp-contract=off")
+        .arg("-I")
+        .arg(&interop)
         .arg(&src_path)
         .arg(&entry_path)
+        .arg(interop.join("interop.c"))
         .arg(&staticlib)
         .arg("-o")
         .arg(&exe_path)

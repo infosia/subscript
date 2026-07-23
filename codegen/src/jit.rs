@@ -93,6 +93,44 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_array_push", ffi::sub_rt_array_push as *const u8),
         ("sub_rt_array_pop", ffi::sub_rt_array_pop as *const u8),
         ("sub_rt_array_ptr", ffi::sub_rt_array_ptr as *const u8),
+        ("sub_rt_str_data", ffi::sub_rt_str_data as *const u8),
+        ("sub_rt_array_data", ffi::sub_rt_array_data as *const u8),
+        ("sub_rt_cb_bind", ffi::sub_rt_cb_bind as *const u8),
+        ("sub_rt_cb_trampoline", ffi::sub_rt_cb_trampoline as *const u8),
+    ];
+    for (name, addr) in syms {
+        builder.symbol(*name, *addr);
+    }
+    register_interop(builder);
+}
+
+// The synthetic-header implementation, linked into this process by
+// `build.rs` (from `corpus/interop/interop.c`). Only the addresses are
+// taken — generated JIT code calls these under the C-ABI signatures the
+// foreign-call lowering builds — so the declared Rust signatures are
+// deliberately argument-less; a mismatch is irrelevant to address-taking
+// and these are never called from Rust.
+extern "C" {
+    fn subDeviceCreate();
+    fn subDeviceRetain();
+    fn subDeviceRelease();
+    fn subDeviceSubmit();
+    fn subDeviceSetLogger();
+    fn subDeviceSetLabel();
+}
+
+/// Registers the foreign C-header symbols (`corpus/interop/interop.c`,
+/// linked by `build.rs`) so a `Callee::Foreign` call resolves at JIT
+/// time, the same way the ship-C tier resolves them from the linked
+/// object (compiler.md §12.4).
+pub(crate) fn register_interop(builder: &mut JITBuilder) {
+    let syms: &[(&str, *const u8)] = &[
+        ("subDeviceCreate", subDeviceCreate as *const u8),
+        ("subDeviceRetain", subDeviceRetain as *const u8),
+        ("subDeviceRelease", subDeviceRelease as *const u8),
+        ("subDeviceSubmit", subDeviceSubmit as *const u8),
+        ("subDeviceSetLogger", subDeviceSetLogger as *const u8),
+        ("subDeviceSetLabel", subDeviceSetLabel as *const u8),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);

@@ -505,6 +505,7 @@ impl<'p> Checker<'p> {
         self.classes.push(hir::ClassDef {
             name: name.to_string(),
             is_value,
+            is_boundary: false,
             fields: Vec::new(),
             ctor: None,
             methods: Vec::new(),
@@ -710,6 +711,7 @@ impl<'p> Checker<'p> {
         let pos = self.pos(c.ident.span);
         let id = self.new_class(&name, true, pos.clone());
         self.boundary_classes.insert(id);
+        self.classes[id.0].is_boundary = true;
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }
 

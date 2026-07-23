@@ -17,8 +17,20 @@
 //! the script ran under the emitted trap-check discipline, so a null
 //! result from a trapping function is never fed into another call.
 
-use crate::context::Context;
+use crate::context::{CallbackBinding, Context};
 use crate::trap::TrapKind;
+
+/// A `(ptr, len)` string view, ABI-identical to the synthetic header's
+/// `SubStringView` (`{ const char*; size_t; }`) and to the language's
+/// own string representation (Q5). It is the by-value first argument the
+/// C callback ABI hands [`sub_rt_cb_trampoline`].
+#[repr(C)]
+pub struct SubStrView {
+    /// UTF-8 bytes; no NUL terminator assumed.
+    pub data: *const u8,
+    /// Byte length.
+    pub len: usize,
+}
 
 /// `print(message)`: appends the string's bytes and a newline to the
 /// Context stdout sink.
@@ -419,6 +431,108 @@ pub unsafe extern "C" fn sub_rt_array_ptr(
 ) -> *mut u8 {
     // SAFETY: shared contract.
     unsafe { (*ctx).array_elem_ptr(a, idx, pos_id) }
+}
+
+// ----- C-boundary marshaling (P5.2b) -----
+
+/// Data pointer of a string handle: the `const char*` half of a
+/// `(ptr, len)` string view passed to a foreign call. Length is
+/// [`sub_rt_str_len`].
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle (or null).
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_data(ctx: *const Context, s: *const u8) -> *const u8 {
+    if s.is_null() {
+        return std::ptr::null();
+    }
+    // SAFETY: shared contract; live string handle.
+    unsafe { (*ctx).str_data(s) }
+}
+
+/// Data pointer of a dynamic array: the `const T*` half of a
+/// `(ptr, count)` descriptor passed to a foreign call. Count is
+/// [`sub_rt_array_len`]. Null for an array that has never grown.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle (or null).
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_array_data(ctx: *const Context, a: *const u8) -> *const u8 {
+    if a.is_null() {
+        return std::ptr::null();
+    }
+    // SAFETY: shared contract; live array handle.
+    unsafe { (*ctx).array_data(a) }
+}
+
+/// Registers a C-callback binding and returns the stable pointer a
+/// boundary marshaler stores in a C `void* userdata` slot (P5.2b). The
+/// binding bundles the Context, the language function value's
+/// `(code, env)`, and the real userdata; [`sub_rt_cb_trampoline`] reads
+/// it back. The binding lives for the whole Context (Q13 lifetime rule).
+///
+/// # Safety
+///
+/// Shared contract; `code`/`env` are a language function value (a
+/// non-capturing wrapper, so `env` is null); `userdata` outlives the run.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_cb_bind(
+    ctx: *mut Context,
+    code: *const u8,
+    env: *const u8,
+    userdata: *mut u8,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.bind_callback(code, env, userdata)
+}
+
+/// The generic C-ABI callback trampoline (P5.2b). A C API invokes it with
+/// the bare callback ABI `(message, userdata)`, where `userdata` is the
+/// binding pointer a marshaler installed via [`sub_rt_cb_bind`]. It
+/// reconstructs the language `string` from the `(ptr, len)` view, then
+/// calls the language function value under its own convention
+/// `(ctx, env, message, userdata)`.
+///
+/// The Context reaches the trampoline through the binding (captured at
+/// registration), not through global state: scripts are single-threaded
+/// and trusted (invariant 6), the trampoline only ever runs synchronously
+/// inside a foreign call made by generated code executing under that same
+/// Context, so `binding.ctx` is always the live, correct Context. A trap
+/// in the language callback sets the Context trap flag and returns a
+/// zeroed value; the generated code that made the foreign call checks the
+/// flag on return and unwinds, so the trap propagates without crossing
+/// this boundary as an unwind.
+///
+/// # Safety
+///
+/// `userdata` is a binding produced by [`sub_rt_cb_bind`] on the running
+/// Context; `message` points at `len` readable bytes (or is null/empty).
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_cb_trampoline(message: SubStrView, userdata: *mut u8) {
+    if userdata.is_null() {
+        return;
+    }
+    // SAFETY: `userdata` is a live binding of the running Context.
+    let rec = unsafe { &*(userdata as *const CallbackBinding) };
+    let bytes: &[u8] = if message.data.is_null() || message.len == 0 {
+        &[]
+    } else {
+        // SAFETY: caller guarantees `len` readable bytes at `data`.
+        unsafe { std::slice::from_raw_parts(message.data, message.len) }
+    };
+    // SAFETY: `rec.ctx` is the live Context captured at bind time.
+    let ctx = unsafe { &mut *rec.ctx };
+    let s = ctx.alloc_str(bytes, 0);
+    // The language function value's wrapper takes `(ctx, env, args...)`
+    // with the host C calling convention; here the args are the `string`
+    // handle and the userdata slot.
+    type LangCb = unsafe extern "C" fn(*mut Context, *const u8, *mut u8, *mut u8);
+    // SAFETY: `rec.code` is a language callback wrapper of this shape.
+    let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(rec.code) };
+    // SAFETY: calling generated code that never unwinds across FFI.
+    unsafe { f(rec.ctx, rec.env, s, rec.userdata) };
 }
 
 // ----- host driver entry points -----

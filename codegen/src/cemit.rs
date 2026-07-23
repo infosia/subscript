@@ -624,6 +624,15 @@ impl<'m> Emitter<'m> {
 
         let mut out = String::new();
         out.push_str(PREAMBLE);
+        // Foreign C-header binding (P5.2b): the ship tier includes the real
+        // synthetic header so boundary struct layouts and foreign
+        // prototypes come from one source (compiler.md §12.4; the link
+        // provides `interop.c`). The generic callback trampoline is
+        // declared here because its type mentions `SubStringView`.
+        if !self.module.foreign_fns.is_empty() {
+            out.push_str("#include \"interop.h\"\n");
+            out.push_str("extern void sub_rt_cb_trampoline(SubStringView message, void* userdata);\n\n");
+        }
         out.push_str(&typedefs);
         out.push('\n');
         out.push_str(&globals);
@@ -1444,6 +1453,18 @@ impl<'m> Emitter<'m> {
         let place = self.place(target, out, depth)?;
         match op {
             None => {
+                // Chain-slot address-of (Q13): a value struct assigned into
+                // a `Struct | null` boundary pointer slot stores the
+                // address of the struct's storage.
+                if self.is_boundary_struct_ptr(&target.ty)? {
+                    if let Type::Class(cid) = value.ty {
+                        if self.is_value_class(cid)? {
+                            let p = self.value_recv_ptr(value, cid, out, depth)?;
+                            let _ = writeln!(out, "{ind}{place} = {p};");
+                            return Ok(());
+                        }
+                    }
+                }
                 let v = self.eval(value, out, depth)?;
                 let _ = writeln!(out, "{ind}{place} = {v};");
             }
@@ -1853,8 +1874,125 @@ impl<'m> Emitter<'m> {
                 Ok(format!("(({cast})({fvt}).code)(ctx, {})", parts.join(", ")))
             }
             hir::Callee::Method { recv, name } => self.eval_method(recv, name, args, ret_ty, pos, out, depth),
+            hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, out, depth),
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
+    }
+
+    /// A `Struct | null` boundary pointer slot (a nullable value class):
+    /// Q13's single implicit address-of position.
+    fn is_boundary_struct_ptr(&self, ty: &Type) -> Result<bool, String> {
+        if let Type::Nullable(inner) = ty {
+            if let Type::Class(id) = **inner {
+                return self.is_value_class(id);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Emits a foreign C-ABI call (`Callee::Foreign`, P5.2b): a direct
+    /// call of the header symbol with each argument marshaled per Q13. The
+    /// C compiler resolves the ABI; the symbol resolves from the linked
+    /// `interop.c` (compiler.md §12.4).
+    fn eval_foreign_call(&mut self, name: &str, args: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
+        let ff = self.module.foreign_fns.iter().find(|f| f.name == name)
+            .ok_or_else(|| format!("unknown foreign function `{name}`"))?
+            .clone();
+        let mut parts = Vec::new();
+        for (p, a) in ff.params.iter().zip(args) {
+            parts.push(self.marshal_foreign_c_arg(&p.ty, a, out, depth)?);
+        }
+        Ok(format!("{name}({})", parts.join(", ")))
+    }
+
+    /// Marshals one argument of a foreign call to a C expression (Q13),
+    /// emitting any needed temporaries into `out`.
+    fn marshal_foreign_c_arg(&mut self, pty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        match pty {
+            Type::Str => {
+                let h = self.eval(arg, out, depth)?;
+                let t = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}void* {t} = {h};");
+                Ok(format!(
+                    "((SubStringView){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
+                ))
+            }
+            Type::Array(_) => {
+                let h = self.eval(arg, out, depth)?;
+                let t = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}void* {t} = {h};");
+                Ok(format!(
+                    "((SubBufferView){{ sub_rt_array_data(ctx, {t}), (size_t)sub_rt_array_len(ctx, {t}) }})"
+                ))
+            }
+            Type::Class(id) if self.is_value_class(*id)? => {
+                self.marshal_boundary_c_struct(*id, arg, out, depth)
+            }
+            _ if self.is_boundary_struct_ptr(pty)? => {
+                // Struct | null pointer: address of a value struct's
+                // storage (chain-slot address-of), or an existing pointer
+                // (`null`, or a `Struct | null` value).
+                if let Type::Class(cid) = arg.ty {
+                    if self.is_value_class(cid)? {
+                        return self.value_recv_ptr(arg, cid, out, depth);
+                    }
+                }
+                self.eval(arg, out, depth)
+            }
+            _ => self.eval(arg, out, depth),
+        }
+    }
+
+    /// Marshals a by-value boundary struct to the corresponding C header
+    /// struct: pointer/scalar fields pass through; a function-pointer
+    /// field becomes the generic trampoline plus a binding built from the
+    /// following userdata slot (the callback-info idiom), so the C API
+    /// sees `(fnptr, void* userdata)`.
+    fn marshal_boundary_c_struct(&mut self, cid: ClassId, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        let lang_ty = self.class_name(cid)?;
+        let v = self.eval(arg, out, depth)?;
+        let t = self.fresh_tmp();
+        let _ = writeln!(out, "{ind}{lang_ty} {t} = {v};");
+        let fields = self.class(cid)?.fields.clone();
+        let header_name = self.class(cid)?.name.clone();
+        let mut parts = Vec::new();
+        let mut i = 0;
+        while i < fields.len() {
+            let f = &fields[i];
+            match &f.ty {
+                Type::Func(_) => {
+                    let ud = fields.get(i + 1)
+                        .ok_or_else(|| "a callback field needs a following userdata slot".to_string())?;
+                    parts.push("(SubLogCallback)&sub_rt_cb_trampoline".to_string());
+                    parts.push(format!(
+                        "sub_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{})",
+                        sanitize(&f.name), sanitize(&f.name), sanitize(&ud.name)
+                    ));
+                    i += 2;
+                }
+                _ => {
+                    parts.push(format!("{t}.{}", sanitize(&f.name)));
+                    i += 1;
+                }
+            }
+        }
+        Ok(format!("(({header_name}){{ {} }})", parts.join(", ")))
+    }
+
+    /// A boundary-struct field initializer: for a `Struct | null` field
+    /// receiving a value struct, the address of that struct's storage
+    /// (chain-slot address-of); otherwise the plain value.
+    fn boundary_field_init(&mut self, fty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        if self.is_boundary_struct_ptr(fty)? {
+            if let Type::Class(cid) = arg.ty {
+                if self.is_value_class(cid)? {
+                    return self.value_recv_ptr(arg, cid, out, depth);
+                }
+            }
+        }
+        self.eval(arg, out, depth)
     }
 
     fn call_args(&mut self, params: &[hir::Param], args: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
@@ -1957,6 +2095,25 @@ impl<'m> Emitter<'m> {
 
     fn eval_new(&mut self, class: ClassId, args: &[hir::Expr], pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         let c = self.class(class)?;
+        // A mirror boundary struct has no in-language constructor body: its
+        // `new` is a struct literal filled positionally from the arguments
+        // (arg `i` → field `i`), each through the boundary coercion
+        // (chain-slot address-of for a `Struct | null` field).
+        if c.is_boundary {
+            let cname = self.class_name(class)?;
+            let fields = c.fields.clone();
+            if args.len() != fields.len() {
+                return Err(format!(
+                    "boundary struct `{}` expects {} field arguments, got {}",
+                    c.name, fields.len(), args.len()
+                ));
+            }
+            let mut parts = Vec::new();
+            for (i, field) in fields.iter().enumerate() {
+                parts.push(self.boundary_field_init(&field.ty, &args[i], out, depth)?);
+            }
+            return Ok(format!("(({cname}){{ {} }})", parts.join(", ")));
+        }
         let ctor = c.ctor.as_ref();
         let argv = match ctor {
             Some(ctor) => self.call_args(&ctor.params.clone(), args, out, depth)?,
@@ -2782,6 +2939,12 @@ extern int32_t sub_rt_array_len(void* ctx, const void* a);
 extern int32_t sub_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
 extern void sub_rt_array_pop(void* ctx, void* a, void* dst, uint32_t pos_id);
 extern void* sub_rt_array_ptr(void* ctx, void* a, int32_t idx, uint32_t pos_id);
+/* C-boundary marshaling (P5.2b): string/array data pointers and the
+ * callback binding constructor. The generic trampoline itself is declared
+ * with the boundary include below, since its type mentions SubStringView. */
+extern const void* sub_rt_str_data(void* ctx, const void* s);
+extern const void* sub_rt_array_data(void* ctx, const void* a);
+extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata);
 
 /* Trap kinds (runtime/src/trap.rs). */
 enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };
