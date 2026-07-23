@@ -53,6 +53,83 @@ pub(crate) struct Layouts {
     classes: Vec<ClassLayout>,
 }
 
+/// One field's name and byte offset inside its struct, as surfaced by
+/// [`value_class_layouts`] for the external `offsetof` proof
+/// (`specs/blocks/compiler.md` §12.3). The offset is what
+/// `offsetof(S, field)` yields for the equivalent C struct.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct FieldLayout {
+    /// Field name (from [`hir::ClassDef::fields`], declaration order).
+    pub name: String,
+    /// Byte offset from the start of the struct.
+    pub offset: u32,
+}
+
+/// The C-ABI layout of one `@value class`: total size, alignment, and
+/// each field's name and byte offset.
+///
+/// This joins the positional offsets of [`ClassLayout`] with the field
+/// names in [`hir::ClassDef`], giving the name↔offset mapping the
+/// `offsetof` layout proof (`specs/blocks/compiler.md` §12.3) compares
+/// against the platform C compiler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StructLayout {
+    /// Class name (monomorphized instances use `Name<args>` spelling).
+    pub name: String,
+    /// Total size in bytes, rounded up to `align`.
+    pub size: u32,
+    /// Alignment in bytes (the maximum field alignment).
+    pub align: u32,
+    /// Fields in declaration (C layout) order.
+    pub fields: Vec<FieldLayout>,
+}
+
+/// Computes the C-ABI layout of every `@value class` in a checked
+/// module (design invariant 1): for each such class, its total size,
+/// alignment, and every field's name and byte offset.
+///
+/// Reference classes are skipped — they are heap handles, not
+/// value-layout aggregates. The returned vector preserves module
+/// declaration order among value classes.
+///
+/// This is the public entry point for the `offsetof` layout proof
+/// (`specs/blocks/compiler.md` §12.3): the caller compares each
+/// returned [`StructLayout`] against `sizeof`/`_Alignof`/`offsetof`
+/// taken from the equivalent C struct via the platform C compiler.
+///
+/// Returns an internal-error string (never panics) when a layout cannot
+/// be computed — a value-class containment cycle or an out-of-range
+/// class id.
+#[must_use = "the computed layouts are the result to compare against C"]
+pub fn value_class_layouts(module: &hir::Module) -> Result<Vec<StructLayout>, String> {
+    let layouts = Layouts::build(module)?;
+    let mut out = Vec::new();
+    for (id, class) in module.classes.iter().enumerate() {
+        if !class.is_value {
+            continue;
+        }
+        let layout = layouts.class(id)?;
+        let fields = class
+            .fields
+            .iter()
+            .zip(&layout.field_offsets)
+            .map(|(field, &offset)| FieldLayout {
+                name: field.name.clone(),
+                offset,
+            })
+            .collect();
+        out.push(StructLayout {
+            name: class.name.clone(),
+            size: layout.size,
+            align: layout.align,
+            fields,
+        });
+    }
+    Ok(out)
+}
+
 fn round_up(v: u32, align: u32) -> u32 {
     debug_assert!(align.is_power_of_two());
     (v + align - 1) & !(align - 1)
@@ -425,6 +502,45 @@ mod tests {
         assert!(!has_managed_interior(&layouts, &plain).expect("interior"));
         assert_eq!(managed_words(&layouts, &plain).expect("words"), 0);
         assert_eq!(managed_words(&layouts, &Type::Str).expect("words"), 1);
+    }
+
+    #[test]
+    fn value_class_layouts_surface_names_offsets_size_and_align() {
+        // Two value classes plus a reference class: the public API
+        // reports only the value classes, with named per-field offsets.
+        let module = module_of(
+            "@value\nclass P { a: boolean; b: f64; c: i32;\n constructor() { this.a = true; this.b = 1.0; this.c = 1; } }\nclass R { x: i32; constructor() { this.x = 1; } }\n@value\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void { const p: P = new P(); const v: V = new V(1.0, 2.0); const r: R = new R(); print(`${p.c}${v.x}${r.x}`); }\n",
+        );
+        let layouts = value_class_layouts(&module).expect("layouts");
+        // R (reference) is excluded; P and V remain in declaration order.
+        assert_eq!(layouts.len(), 2);
+        assert_eq!(layouts[0].name, "P");
+        assert_eq!((layouts[0].size, layouts[0].align), (24, 8));
+        assert_eq!(
+            layouts[0].fields,
+            vec![
+                FieldLayout { name: "a".into(), offset: 0 },
+                FieldLayout { name: "b".into(), offset: 8 },
+                FieldLayout { name: "c".into(), offset: 16 },
+            ]
+        );
+        assert_eq!(layouts[1].name, "V");
+        assert_eq!((layouts[1].size, layouts[1].align), (8, 4));
+        assert_eq!(
+            layouts[1].fields,
+            vec![
+                FieldLayout { name: "x".into(), offset: 0 },
+                FieldLayout { name: "y".into(), offset: 4 },
+            ]
+        );
+    }
+
+    #[test]
+    fn value_class_layouts_reports_cycles_as_errors() {
+        let module = module_of(
+            "@value\nclass S { s: S;\n constructor(s: S) { this.s = s; } }\nexport function main(): void {}\n",
+        );
+        assert!(value_class_layouts(&module).is_err());
     }
 
     #[test]

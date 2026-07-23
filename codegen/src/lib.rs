@@ -41,6 +41,7 @@ pub use aot::{
 };
 pub use cemit::{emit_c, CProgram};
 pub use jit::{jit_bench, run_jit, BenchSamples, RunError, TrapReport};
+pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 
 #[cfg(test)]
