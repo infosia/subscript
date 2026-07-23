@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 10, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 11, 2026-07-23 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -408,6 +408,32 @@ ship tier.
 - **Gate**: run set a01–a24 matches goldens under the C ship tier;
   dev-JIT ≡ ship-C-AOT ≡ golden is the default `cargo test`; device
   triples compile and link.
+
+## 11a. C toolchain selection is target-portable (crate build)
+
+`codegen/build.rs` compiles the synthetic interop callee
+(`corpus/interop/interop.c`) and archives it into every binary linking
+`subscript-codegen`; being the crate's build step, it decides whether
+`cargo build`/`cargo check` succeed at all. It selects the
+target-appropriate C toolchain instead of hardcoding the Unix `cc`/`ar`
+drivers: selection is by Rust target triple through the `cc` crate (already
+resolved in `Cargo.lock` and present in the local registry cache —
+offline-clean, no fetch), which drives the GCC/Clang driver
+(`-std=c11 -O2 -fPIC`) plus `ar` on Unix targets and the MSVC toolchain
+(`cl`/`lib`) on `*-pc-windows-msvc`. The `-std=c11` dialect pin (§11) is
+carried across; the exact per-toolchain flag set is the implementation's
+and is validated by execution, not asserted here. `CC`/`AR` overrides
+remain honored where the driver accepts them.
+
+Consequence: the workspace compiles on `x86_64-pc-windows-msvc` — already a
+stated dev-tier host (§1) — not only on Unix gate machines. This is the
+*compilation* contract only. The other C-invocation sites — ship-C
+compile+link (`codegen/src/aot.rs`), the `offsetof` layout probe
+(`codegen/tests/offsetof_layout.rs`), and the bench harness
+(`bench/src/main.rs`) — run outside a build script and remain
+Unix-toolchain-only; porting them, together with the §12.3a Win64 dev-JIT
+struct-by-value marshaling, is the tracked follow-up for a fully test-green
+x86-64/Windows gate (`specs/tracking/windows-portability.md`).
 
 ## 12. P5 C-header binding vertical slice
 

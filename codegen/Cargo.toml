@@ -18,6 +18,13 @@ cranelift-native = "=0.125.4"
 cranelift-object = "=0.125.4"
 target-lexicon = "=0.13.5"
 
+[build-dependencies]
+# Selects the target-appropriate C toolchain by Rust target triple
+# (GCC/Clang + ar on Unix; MSVC cl/lib on Windows) for the interop
+# staticlib compiled in build.rs. Already resolved in Cargo.lock and the
+# local registry cache — offline-clean, no fetch.
+cc = "1"
+
 [dev-dependencies]
 # Object-file inspection for the AOT emission tests, as in the P0.5
 # spike; the same version the spike pins.
