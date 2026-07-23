@@ -21,9 +21,30 @@ pub struct Module {
     /// Free functions, including monomorphized generic instances.
     /// Constructors and methods live on their [`ClassDef`].
     pub functions: Vec<Function>,
+    /// Foreign (C-ABI) functions declared by an ingested ambient mirror
+    /// (`declare function` in a `.d.ts`, P5.2). They carry a signature
+    /// but no body; lowering a call to one is P5.2b, not P5.2a.
+    pub foreign_fns: Vec<ForeignFn>,
     /// Checked top-level non-declaration statements, in source order
     /// (the accept corpus has none; kept for completeness).
     pub top_level: Vec<Stmt>,
+}
+
+/// A foreign function declared by an ambient C-header mirror
+/// (`declare function`, P5.2). It is neither a script [`Function`] nor a
+/// hardcoded [`AmbientFn`]: it names a C-ABI callee resolved at link
+/// time, with a mapped boundary signature and no in-language body.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct ForeignFn {
+    /// C symbol name (also the in-language call name).
+    pub name: String,
+    /// Parameters, in order, with their mapped boundary types.
+    pub params: Vec<Param>,
+    /// Return type (a mapped boundary type or `void`).
+    pub ret: Type,
+    /// Position of the `declare function` in the mirror.
+    pub pos: Pos,
 }
 
 /// A class definition.
@@ -298,6 +319,9 @@ pub enum AmbientFn {
 pub enum Callee {
     /// A module function by (possibly monomorphized) name.
     Func(String),
+    /// A foreign C-ABI function declared by an ambient mirror (P5.2);
+    /// carries the symbol name. No lowering path yet (P5.2b).
+    Foreign(String),
     /// An ambient prelude function.
     Ambient(AmbientFn),
     /// A function-typed value (function pointer or local lambda).
@@ -467,6 +491,7 @@ mod tests {
             enums: Vec::new(),
             globals: Vec::new(),
             functions: Vec::new(),
+            foreign_fns: Vec::new(),
             top_level: Vec::new(),
         };
         assert!(m.functions.is_empty());

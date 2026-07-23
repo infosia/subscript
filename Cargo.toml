@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "bench",
+    "bindgen",
     "compiler",
     "runtime",
     "codegen",

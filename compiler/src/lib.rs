@@ -28,15 +28,33 @@ pub struct SourceFile {
     pub name: String,
     /// Full source text.
     pub source: String,
+    /// True for an ambient declaration file (`.d.ts`): parsed in ambient
+    /// mode, and its top-level declarations become a global ambient
+    /// source (the generated C-header mirror, P5.2) rather than a
+    /// checked program module.
+    pub dts: bool,
 }
 
 impl SourceFile {
-    /// Builds a source file.
+    /// Builds a program source file (ordinary `.ts`).
     #[must_use]
     pub fn new(name: impl Into<String>, source: impl Into<String>) -> Self {
         SourceFile {
             name: name.into(),
             source: source.into(),
+            dts: false,
+        }
+    }
+
+    /// Builds an ambient declaration source (`.d.ts`): parsed in ambient
+    /// mode; its declarations join the global ambient surface (P5.2
+    /// mirror ingestion), visible to every program file without import.
+    #[must_use]
+    pub fn ambient(name: impl Into<String>, source: impl Into<String>) -> Self {
+        SourceFile {
+            name: name.into(),
+            source: source.into(),
+            dts: true,
         }
     }
 }

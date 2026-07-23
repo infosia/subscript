@@ -68,16 +68,22 @@ impl<'p> Checker<'p> {
             TsNullKeyword => Type::Null,
             TsObjectKeyword => {
                 // C7: the boundary-opaque `object` (and `object | null`)
-                // exists only at the C boundary; general declarations
-                // may not spell it. The ambient `unsafeDelete(value:
-                // object)` signature is hardcoded and unaffected.
-                self.error(
-                    RuleCode::S011,
-                    "`object` is a boundary-only type; it is not available to \
-                     general declarations",
-                    pos,
-                );
-                Type::Error
+                // exists only at the C boundary. It is legal while
+                // resolving a mirror declaration (`in_boundary`); general
+                // declarations may not spell it. The ambient
+                // `unsafeDelete(value: object)` signature is hardcoded and
+                // unaffected.
+                if self.in_boundary {
+                    Type::Object
+                } else {
+                    self.error(
+                        RuleCode::S011,
+                        "`object` is a boundary-only type; it is not available to \
+                         general declarations",
+                        pos,
+                    );
+                    Type::Error
+                }
             }
             _ => {
                 self.error(
@@ -104,6 +110,11 @@ impl<'p> Checker<'p> {
         }
         if let Some(sized) = crate::ambient::sized_alias(name) {
             return sized;
+        }
+        // Mirror `type` aliases (function-pointer typedefs, flag-set
+        // `u64` aliases) resolve to their aliased language type (P5.2).
+        if let Some(alias) = self.type_aliases.get(name) {
+            return alias.clone();
         }
         match name {
             "Promise" => {
@@ -275,8 +286,13 @@ impl<'p> Checker<'p> {
                 if matches!(inner, Type::Error) {
                     return Type::Error;
                 }
-                let ok = inner.is_reference_shape()
-                    && !self.is_value_class(&inner);
+                // C7: `Ref | null` for reference shapes (classes, opaque
+                // handles, functions, `object`). At a boundary position
+                // (`in_boundary`), the `Struct | null` form is also legal
+                // — a value-class-with-null whose `null` lowers to the
+                // zeroed struct (P5.2b). It stays rejected elsewhere.
+                let ok = (inner.is_reference_shape() && !self.is_value_class(&inner))
+                    || (self.in_boundary && self.is_value_class(&inner));
                 if ok {
                     return Type::Nullable(Box::new(inner));
                 }

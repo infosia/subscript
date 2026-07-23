@@ -16,6 +16,10 @@ pub(crate) struct ParsedFile {
     pub stem: String,
     /// The SWC module AST.
     pub module: ast::Module,
+    /// True for an ambient declaration source (`.d.ts`): its
+    /// declarations are ingested into the global ambient surface (the
+    /// P5.2 mirror), not checked as a program module.
+    pub dts: bool,
 }
 
 /// A parsed program: all files plus the shared source map.
@@ -72,7 +76,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         let syntax = Syntax::Typescript(TsSyntax {
             tsx: false,
             decorators: true,
-            dts: false,
+            dts: source.dts,
             no_early_errors: false,
             disallow_ambiguous_jsx_like: false,
         });
@@ -99,6 +103,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
                         name: source.name.clone(),
                         stem: stem_of(&source.name),
                         module,
+                        dts: source.dts,
                     });
                 }
             }
@@ -140,6 +145,7 @@ mod tests {
         SourceFile {
             name: name.to_string(),
             source: text.to_string(),
+            dts: false,
         }
     }
 

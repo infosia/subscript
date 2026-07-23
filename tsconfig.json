@@ -9,5 +9,10 @@
     "types": [],
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["prelude/**/*.d.ts", "corpus/accept/**/*.ts"]
+  "include": [
+    "prelude/**/*.d.ts",
+    "corpus/accept/**/*.ts",
+    "corpus/interop/**/*.d.ts",
+    "corpus/interop/**/*.ts"
+  ]
 }

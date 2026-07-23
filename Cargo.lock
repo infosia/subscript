@@ -913,6 +913,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "subscript-bindgen"
+version = "0.1.0"
+
+[[package]]
 name = "subscript-codegen"
 version = "0.1.0"
 dependencies = [

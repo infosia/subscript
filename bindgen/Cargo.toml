@@ -1,0 +1,14 @@
+[package]
+name = "subscript-bindgen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Mirror generator (this project's own bindgen): reads the neutral synthetic C interop header and emits the ambient .d.ts boundary mirror per the Q13 rules (specs/blocks/compiler.md §12.2). Depends only on std; no external library is named."
+
+[[bin]]
+name = "bindgen"
+path = "src/main.rs"
+
+[lib]
+name = "subscript_bindgen"
+path = "src/lib.rs"

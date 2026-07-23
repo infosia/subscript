@@ -85,6 +85,9 @@ pub(crate) enum ScopeItem {
     GenericClass(String),
     Enum(EnumId),
     Global(String),
+    /// A foreign C-ABI function declared by an ambient mirror (P5.2);
+    /// callable but not usable as a value.
+    Foreign(String),
 }
 
 /// A local binding inside a function body.
@@ -183,6 +186,27 @@ pub(crate) struct Checker<'p> {
     pub top_level: Vec<hir::Stmt>,
     pub cur_file: usize,
     pub subst: HashMap<String, Type>,
+    /// Global ambient names contributed by ingested mirror (`.d.ts`)
+    /// files (P5.2): handles, boundary structs, enums, foreign functions,
+    /// ambient constants. Consulted after the per-file scope.
+    pub ambient_scope: HashMap<String, ScopeItem>,
+    /// Resolved signatures of foreign functions, keyed by symbol name.
+    pub foreign_sigs: HashMap<String, FnSig>,
+    /// Foreign function definitions, in mirror declaration order.
+    pub foreign_defs: Vec<hir::ForeignFn>,
+    /// Class ids that are opaque handles (empty branded nominal types).
+    pub handle_classes: HashSet<ClassId>,
+    /// Class ids that are boundary structs: value-layout structs whose
+    /// fields may hold boundary types (`X | null`, `object | null`,
+    /// function pointers) outside the ordinary C2 value-field whitelist.
+    pub boundary_classes: HashSet<ClassId>,
+    /// Mirror `type` aliases (function-pointer typedefs, flag-set `u64`
+    /// aliases), resolved to language types.
+    pub type_aliases: HashMap<String, Type>,
+    /// True while resolving mirror declarations: the boundary null forms
+    /// (`Struct | null`, `object`/`object | null`) are legal here and
+    /// rejected elsewhere (C7).
+    pub in_boundary: bool,
 }
 
 /// Runs the checker over a parsed program.
@@ -207,22 +231,47 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         top_level: Vec::new(),
         cur_file: 0,
         subst: HashMap::new(),
+        ambient_scope: HashMap::new(),
+        foreign_sigs: HashMap::new(),
+        foreign_defs: Vec::new(),
+        handle_classes: HashSet::new(),
+        boundary_classes: HashSet::new(),
+        type_aliases: HashMap::new(),
+        in_boundary: false,
     };
 
+    // Pass A: collect top-level names. Mirror (`.d.ts`) declarations land
+    // in the global ambient scope; program declarations in per-file scopes.
     for i in 0..prog.files.len() {
         ck.cur_file = i;
         ck.collect_file(i);
     }
     ck.resolve_imports();
+    // Pass B: signatures. Mirror files first, in a boundary context (so
+    // the boundary null forms resolve), then program files.
+    ck.in_boundary = true;
     for i in 0..prog.files.len() {
-        ck.cur_file = i;
-        ck.subst.clear();
-        ck.resolve_signatures(i);
+        if prog.files[i].dts {
+            ck.cur_file = i;
+            ck.subst.clear();
+            ck.resolve_mirror_signatures(i);
+        }
     }
+    ck.in_boundary = false;
     for i in 0..prog.files.len() {
-        ck.cur_file = i;
-        ck.subst.clear();
-        ck.check_bodies(i);
+        if !prog.files[i].dts {
+            ck.cur_file = i;
+            ck.subst.clear();
+            ck.resolve_signatures(i);
+        }
+    }
+    // Pass C: bodies (program files only; mirror declarations have none).
+    for i in 0..prog.files.len() {
+        if !prog.files[i].dts {
+            ck.cur_file = i;
+            ck.subst.clear();
+            ck.check_bodies(i);
+        }
     }
 
     if ck.diags.is_empty() {
@@ -231,6 +280,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
             enums: ck.enums,
             globals: ck.globals,
             functions: ck.functions,
+            foreign_fns: ck.foreign_defs,
             top_level: ck.top_level,
         })
     } else {
@@ -342,7 +392,14 @@ impl<'p> Checker<'p> {
     // ----- pass A: name collection -----
 
     fn register_scope_item(&mut self, file: usize, name: &str, item: ScopeItem, pos: Pos) {
-        if self.file_scopes[file].contains_key(name) {
+        // Mirror (`.d.ts`) declarations populate the global ambient scope;
+        // program declarations populate the per-file scope.
+        let scope = if self.prog.files[file].dts {
+            &mut self.ambient_scope
+        } else {
+            &mut self.file_scopes[file]
+        };
+        if scope.contains_key(name) {
             self.error(
                 RuleCode::S100,
                 format!("duplicate top-level name `{}`", name),
@@ -350,7 +407,7 @@ impl<'p> Checker<'p> {
             );
             return;
         }
-        self.file_scopes[file].insert(name.to_string(), item);
+        scope.insert(name.to_string(), item);
     }
 
     fn collect_file(&mut self, file: usize) {
@@ -378,6 +435,10 @@ impl<'p> Checker<'p> {
     }
 
     fn collect_decl(&mut self, file: usize, decl: &ast::Decl, exported: bool) {
+        if self.prog.files[file].dts {
+            self.collect_mirror_decl(file, decl);
+            return;
+        }
         match decl {
             ast::Decl::Class(c) => self.collect_class(file, c, exported),
             ast::Decl::Fn(f) => self.collect_fn(file, f, exported),
@@ -590,6 +651,164 @@ impl<'p> Checker<'p> {
             }
             ast::Expr::Paren(p) => self.const_int_of(&p.expr),
             _ => None,
+        }
+    }
+
+    // ----- mirror (`.d.ts`) ingestion (P5.2) -----
+
+    /// Pass A for a mirror declaration: registers the name (handle,
+    /// boundary struct, enum, type alias, foreign function, or ambient
+    /// const) into the global ambient scope. Shapes/signatures are
+    /// resolved in [`Self::resolve_mirror_signatures`].
+    fn collect_mirror_decl(&mut self, file: usize, decl: &ast::Decl) {
+        match decl {
+            ast::Decl::TsInterface(i) => self.collect_handle(file, i),
+            ast::Decl::Class(c) if c.class.type_params.is_none() => {
+                self.collect_boundary_struct(file, c)
+            }
+            ast::Decl::TsTypeAlias(t) => {
+                // Reserve the name; the aliased type is resolved in pass B.
+                self.type_aliases
+                    .entry(t.id.sym.to_string())
+                    .or_insert(Type::Error);
+            }
+            ast::Decl::Fn(f) => {
+                let name = f.ident.sym.to_string();
+                let pos = self.pos(f.ident.span);
+                self.register_scope_item(file, &name, ScopeItem::Foreign(name.clone()), pos);
+            }
+            ast::Decl::Var(v) => self.collect_ambient_consts(file, v),
+            ast::Decl::TsEnum(e) => self.collect_enum(file, e, false),
+            other => {
+                let pos = self.pos(other.span());
+                self.error(
+                    RuleCode::S100,
+                    "mirror declaration form outside the decided surface",
+                    pos,
+                );
+            }
+        }
+    }
+
+    /// An ambient `interface` in a mirror is an opaque handle (Q13): an
+    /// empty branded nominal type. Its members (the phantom brand) carry
+    /// no in-language meaning and are ignored; it lowers to a
+    /// pointer-sized handle (a reference-shaped nominal, non-value).
+    fn collect_handle(&mut self, file: usize, i: &ast::TsInterfaceDecl) {
+        let name = i.id.sym.to_string();
+        let pos = self.pos(i.id.span);
+        let id = self.new_class(&name, false, pos.clone());
+        self.handle_classes.insert(id);
+        self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
+    }
+
+    /// A mirror `declare class` is a boundary struct: a C-layout value
+    /// type (Q13) whose fields may hold boundary types. Shape resolved
+    /// in pass B.
+    fn collect_boundary_struct(&mut self, file: usize, c: &ast::ClassDecl) {
+        let name = c.ident.sym.to_string();
+        let pos = self.pos(c.ident.span);
+        let id = self.new_class(&name, true, pos.clone());
+        self.boundary_classes.insert(id);
+        self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
+    }
+
+    /// A mirror `declare const` (enum/flag constant, Q13): a read-only
+    /// ambient global of the given type. Type resolved in pass B.
+    fn collect_ambient_consts(&mut self, file: usize, v: &ast::VarDecl) {
+        for d in &v.decls {
+            let ast::Pat::Ident(binding) = &d.name else {
+                let pos = self.pos(d.span);
+                self.error(RuleCode::S100, "destructuring is not in the decided surface", pos);
+                continue;
+            };
+            let name = binding.id.sym.to_string();
+            let pos = self.pos(binding.id.span);
+            self.register_scope_item(file, &name, ScopeItem::Global(name.clone()), pos);
+        }
+    }
+
+    /// Pass B for a mirror file: resolves type aliases first (so later
+    /// declarations may reference them), then boundary-struct shapes,
+    /// foreign-function signatures, and ambient-constant types. Runs with
+    /// `in_boundary` set so the boundary null forms are legal.
+    fn resolve_mirror_signatures(&mut self, file: usize) {
+        let module = &self.prog.files[file].module;
+        // Sub-pass 1: type aliases.
+        for item in &module.body {
+            let decl = match item {
+                ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => d,
+                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => &e.decl,
+                _ => continue,
+            };
+            if let ast::Decl::TsTypeAlias(t) = decl {
+                let ty = self.resolve_type(&t.type_ann);
+                self.type_aliases.insert(t.id.sym.to_string(), ty);
+            }
+        }
+        // Sub-pass 2: struct shapes, foreign signatures, ambient consts.
+        for item in &module.body {
+            let decl = match item {
+                ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => d,
+                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => &e.decl,
+                _ => continue,
+            };
+            match decl {
+                ast::Decl::Class(c) if c.class.type_params.is_none() => {
+                    let name = c.ident.sym.to_string();
+                    if let Some(&id) = self.class_ids.get(&name) {
+                        self.resolve_class_shape(id, &c.class);
+                    }
+                }
+                ast::Decl::Fn(f) => {
+                    let name = f.ident.sym.to_string();
+                    let pos = self.pos(f.ident.span);
+                    let sig = self.resolve_fn_sig(&f.function, pos.clone());
+                    let params: Vec<hir::Param> = sig
+                        .params
+                        .iter()
+                        .map(|p| hir::Param {
+                            name: p.name.clone(),
+                            ty: p.ty.clone(),
+                            default: None,
+                            pos: pos.clone(),
+                        })
+                        .collect();
+                    self.foreign_defs.push(hir::ForeignFn {
+                        name: name.clone(),
+                        params,
+                        ret: sig.ret.clone(),
+                        pos,
+                    });
+                    self.foreign_sigs.insert(name, sig);
+                }
+                ast::Decl::Var(v) => {
+                    for d in &v.decls {
+                        let ast::Pat::Ident(binding) = &d.name else { continue };
+                        let name = binding.id.sym.to_string();
+                        let ty = match &binding.type_ann {
+                            Some(ann) => self.resolve_type(&ann.type_ann),
+                            None => {
+                                let pos = self.pos(binding.id.span);
+                                self.error(
+                                    RuleCode::S100,
+                                    "ambient constants require a type annotation",
+                                    pos,
+                                );
+                                Type::Error
+                            }
+                        };
+                        self.global_sigs.insert(
+                            name,
+                            GlobalSig {
+                                ty,
+                                mutable: false,
+                            },
+                        );
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -881,7 +1100,13 @@ impl<'p> Checker<'p> {
                             Type::Error
                         }
                     };
-                    if is_value && !self.value_field_ok(&ty) {
+                    // Boundary structs (mirror-ingested) relax the C2
+                    // value-field whitelist: they may carry `X | null`,
+                    // `object | null`, and function-pointer fields.
+                    if is_value
+                        && !self.boundary_classes.contains(&id)
+                        && !self.value_field_ok(&ty)
+                    {
                         self.error(
                             RuleCode::S100,
                             format!(
@@ -1359,11 +1584,13 @@ impl<'p> Checker<'p> {
 
     // ----- shared lookups -----
 
-    /// Resolves a name against the current file's top-level scope.
+    /// Resolves a name against the current file's top-level scope, then
+    /// the global ambient scope (mirror declarations, P5.2).
     pub(crate) fn scope_item(&self, name: &str) -> Option<ScopeItem> {
         self.file_scopes
             .get(self.cur_file)
             .and_then(|scope| scope.get(name))
+            .or_else(|| self.ambient_scope.get(name))
             .cloned()
     }
 

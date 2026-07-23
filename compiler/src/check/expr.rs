@@ -358,6 +358,14 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(pos)
             }
+            Some(ScopeItem::Foreign(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("foreign function `{}` may only be called", name),
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
             None => {
                 if name == "eval" || name == "Function" {
                     self.error(
@@ -1075,7 +1083,7 @@ impl<'p> Checker<'p> {
                 }
             }
             Some(ScopeItem::Global(_)) | Some(ScopeItem::Func(_))
-            | Some(ScopeItem::GenericFunc(_)) => None,
+            | Some(ScopeItem::GenericFunc(_)) | Some(ScopeItem::Foreign(_)) => None,
             None => {
                 if name == "Object" && prop == "setPrototypeOf" {
                     self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
@@ -1556,6 +1564,16 @@ impl<'p> Checker<'p> {
                 }
                 self.check_direct_call(&f, c, fx, pos)
             }
+            Some(ScopeItem::Foreign(f)) => {
+                if c.type_args.is_some() {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{}` is not generic", name),
+                        ident_pos.clone(),
+                    );
+                }
+                self.check_foreign_call(&f, c, fx, pos)
+            }
             Some(ScopeItem::GenericFunc(key)) => {
                 let Some(type_args) = &c.type_args else {
                     self.error(
@@ -1651,6 +1669,31 @@ impl<'p> Checker<'p> {
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(fn_name.to_string()),
+                args,
+            },
+            ty: sig.ret,
+            pos,
+        }
+    }
+
+    /// Checks a call to a foreign C-ABI function declared by an ambient
+    /// mirror (P5.2). Type-checks arguments against the mapped boundary
+    /// signature and emits a [`Callee::Foreign`] call; no lowering path
+    /// exists yet (P5.2b).
+    fn check_foreign_call(
+        &mut self,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let Some(sig) = self.foreign_sigs.get(name).cloned() else {
+            return self.err_expr(pos);
+        };
+        let args = self.check_args(&sig.params, &c.args, fx, &pos, name);
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Foreign(name.to_string()),
                 args,
             },
             ty: sig.ret,
@@ -1994,6 +2037,17 @@ impl<'p> Checker<'p> {
         let Some(class_id) = class_id else {
             return self.err_expr(pos);
         };
+        if self.handle_classes.contains(&class_id) {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "opaque handle `{}` is obtained from the host, not constructed",
+                    name
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let params = self.class_sigs[class_id.0].ctor.clone().unwrap_or_default();
         let empty: Vec<ast::ExprOrSpread> = Vec::new();
         let args_ast = n.args.as_deref().unwrap_or(&empty);
@@ -2048,14 +2102,30 @@ impl<'p> Checker<'p> {
         };
         let mut params = Vec::new();
         for (i, pat) in a.params.iter().enumerate() {
-            let mut sig = self.resolve_param_pat(pat);
-            if matches!(sig.ty, Type::Error) {
-                if let Some(ctx_fn) = &ctx_fn {
-                    if let Some(t) = ctx_fn.params.get(i) {
-                        sig.ty = t.clone();
+            // An un-annotated lambda parameter takes its type from the
+            // contextual function type (tsc-style contextual typing);
+            // only a parameter with neither annotation nor context is an
+            // error. This is how a boundary callback (e.g. a `void*`
+            // `object | null` userdata slot) is typed without the program
+            // spelling the boundary type itself.
+            let unannotated = matches!(
+                pat,
+                ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional
+            );
+            let sig = if unannotated {
+                if let Some(t) = ctx_fn.as_ref().and_then(|f| f.params.get(i)) {
+                    let ast::Pat::Ident(b) = pat else { unreachable!() };
+                    ParamSig {
+                        name: b.id.sym.to_string(),
+                        ty: t.clone(),
+                        has_default: false,
                     }
+                } else {
+                    self.resolve_param_pat(pat)
                 }
-            }
+            } else {
+                self.resolve_param_pat(pat)
+            };
             params.push(sig);
         }
         let mut ret = a
