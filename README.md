@@ -2,9 +2,10 @@
 
 A statically-typed, AOT-compilable scripting language for native game
 engines: a **C-compatible execution and memory model wearing a
-TypeScript-subset syntax**. You write what looks like TypeScript and get
-editor tooling for free; the compiler gives you sound static types, C-ABI
-data layout, deterministic memory, and zero-marshaling C interop.
+TypeScript-subset syntax**. Because the syntax is a subset of TypeScript,
+standard TypeScript editor tooling works against it; the compiler adds
+sound static types, C-ABI data layout, deterministic memory, and
+zero-marshaling C interop.
 
 subscript is a language project — not a JavaScript runtime, not a
 JavaScript binding.
@@ -13,16 +14,16 @@ JavaScript binding.
 
 Game scripting usually forces a choice:
 
-- A **dynamic embedded language** (Lua, JS) — great iteration speed and
-  tooling, but boxed values, a garbage collector that pauses when it
-  likes, and a marshaling layer between the script and the engine's C
-  structs.
+- A **dynamic embedded language** (Lua, JS) — fast iteration and good
+  tooling, but boxed values, garbage-collector pauses you do not control,
+  and a marshaling layer between the script and the engine's C structs.
 - **Native C/C++** — no marshaling and full control, but slow iteration
-  (recompile-and-relaunch) and no memory safety net for honest mistakes.
+  (recompile-and-relaunch) and no safety net when the code is wrong.
 
-subscript aims for the useful middle: the **iteration speed and tooling of
-a scripting language** with the **data model and performance of C**, and a
-sound type system that turns honest mistakes into early, precise errors.
+subscript aims for the middle: the **iteration speed and tooling of a
+scripting language** with the **data model and performance of C**, and a
+sound type system that reports ordinary mistakes as early diagnostics at
+the source position.
 
 ## Who it's for
 
@@ -41,11 +42,14 @@ Game and engine developers writing gameplay, simulation, or tools logic
   hand-tuned C.
 - **Editor tooling with no custom plugin** — the syntax is a subset of
   TypeScript, so `tsserver` (completion, go-to-definition, inline errors)
-  works unmodified against an ambient `.d.ts` prelude.
-- **Zero-cost C interop** — bind a C header and call it directly; the
-  language's structs *are* the C structs (layout is machine-verified
-  against the platform C compiler), so there is no marshaling at the
-  boundary.
+  works unmodified against an ambient `.d.ts` prelude. Note that
+  `tsserver` checks the permissive TypeScript superset; the language's
+  sound rules (integer types, value types, nominal identity) are enforced
+  by subscript's own checker, not by the editor.
+- **Zero-marshaling C interop** — bind a C header and call it directly;
+  the language's structs *are* the C structs (layout is machine-verified
+  against the platform C compiler), so no data is converted or copied at
+  the boundary.
 - **Deterministic memory** — Context-scoped allocation, manual `delete`,
   and collection only when you ask for it. No collector runs unbidden, so
   there are no surprise pauses in the frame loop.
@@ -69,11 +73,12 @@ gaps to be closed later:
 ### Sound TypeScript-subset syntax
 
 Every accepted program type-checks under stock `tsc` with the ambient
-prelude — that is what buys the free editor tooling. The compiler then
-*narrows*: `tsc` accepts a superset, and subscript enforces the sound
-rules on top (nominal types, sized integers, value types, restricted
-unions, no exceptions). A program `tsc` cannot police is rejected here
-with a rule-specific diagnostic at the TypeScript source position.
+prelude — that is what makes the TypeScript editor tooling work. The
+compiler then *narrows*: `tsc` accepts a superset, and subscript enforces
+the sound rules on top (nominal types, sized integers, value types,
+restricted unions, no exceptions). A program `tsc` cannot police is
+rejected here with a rule-specific diagnostic at the TypeScript source
+position.
 
 ```ts
 @value
@@ -132,7 +137,7 @@ reclaimed. Nothing collects unbidden — a program that never collects is
 correct, merely larger — so there are no collector pauses in the frame
 loop.
 
-### Two execution tiers, proven equivalent
+### Two execution tiers, checked against each other
 
 - **Development tier** — an in-process JIT ([Cranelift](https://cranelift.dev))
   with hot reload: a function-body edit is recompiled and swapped at a
