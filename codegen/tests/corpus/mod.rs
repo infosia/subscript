@@ -16,6 +16,31 @@ pub fn corpus_accept() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept")
 }
 
+/// The committed ambient mirror (`corpus/interop/interop.generated.d.ts`),
+/// generated from the pinned synthetic header. Interop entries (a25+) are
+/// written against these global ambient declarations exactly as the
+/// language prelude, so the gate ingests it as an ambient source for any
+/// entry that uses it (`specs/blocks/compiler.md` §12.4). Linking of
+/// `interop.c` is unconditional in both tiers (`run_jit`/`run_c_aot`), so
+/// the only per-entry step is supplying the mirror surface.
+fn interop_mirror() -> SourceFile {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../corpus/interop/interop.generated.d.ts");
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    SourceFile::ambient("interop.generated.d.ts", text)
+}
+
+/// True when any of `sources` calls a foreign function of the synthetic
+/// interop header (every interop entry obtains its handle through
+/// `subDeviceCreate`). A false negative is not silent: the entry then
+/// fails to check with an unresolved `Sub…` identifier, failing the gate
+/// loudly rather than skipping — a false positive would only add unused
+/// ambient declarations.
+fn uses_interop_mirror(sources: &[SourceFile]) -> bool {
+    sources.iter().any(|s| s.source.contains("subDevice"))
+}
+
 /// Every entry id present in `accept`, single- and multi-file.
 fn entry_ids(accept: &Path) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
@@ -61,7 +86,7 @@ pub fn golden_bytes(accept: &Path, id: &str) -> Vec<u8> {
 /// directory of `.ts` files).
 pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     let dir = accept.join(id);
-    if dir.is_dir() {
+    let mut sources: Vec<SourceFile> = if dir.is_dir() {
         let mut names: Vec<String> = fs::read_dir(&dir)
             .expect("read entry dir")
             .filter_map(|e| e.ok())
@@ -84,5 +109,13 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
         let text =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         vec![SourceFile::new(format!("{id}.ts"), text)]
+    };
+    // Interop entries (a25+) resolve the synthetic-header mirror as an
+    // ambient surface; it is prepended so it is ingested before the
+    // program module (the ambient source is not a checked module and
+    // carries no entry point).
+    if uses_interop_mirror(&sources) {
+        sources.insert(0, interop_mirror());
     }
+    sources
 }

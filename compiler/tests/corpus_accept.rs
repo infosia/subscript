@@ -11,8 +11,20 @@ fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
 }
 
+/// The committed ambient mirror generated from the pinned synthetic
+/// header. Interop entries (a25+) are written against these global
+/// ambient declarations exactly as the language prelude, so the checker
+/// gate ingests it as an ambient source for any entry that uses it
+/// (`specs/blocks/compiler.md` §12.4).
+fn interop_mirror() -> SourceFile {
+    let path = corpus_dir().join("interop/interop.generated.d.ts");
+    let source = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+    SourceFile::ambient("interop.generated.d.ts", source)
+}
+
 fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
-    let sources: Vec<SourceFile> = files
+    let mut sources: Vec<SourceFile> = files
         .iter()
         .map(|(name, path)| {
             let source = fs::read_to_string(path)
@@ -20,6 +32,13 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
             SourceFile::new(*name, source)
         })
         .collect();
+    // Interop entries call a foreign function of the synthetic header
+    // (`subDevice…`); prepend the mirror ambient surface so those names
+    // resolve. A false negative is not silent — the entry then fails to
+    // check with an unresolved identifier.
+    if sources.iter().any(|s| s.source.contains("subDevice")) {
+        sources.insert(0, interop_mirror());
+    }
     match check_program(&sources) {
         Ok(module) => module,
         Err(diags) => {
@@ -63,8 +82,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        23,
-        "expected 23 single-file accept entries plus a19-modules"
+        29,
+        "expected 29 single-file accept entries (23 run set + a25–a30 interop) plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
