@@ -120,13 +120,18 @@ kept minimal:
    default error (host clang is 22.1.6). The flag restores the pre-20
    warning behavior.
 
-## Follow-ups (open)
+## Follow-ups
 
-- **Generator fix (MINOR), CLAUDE.md principle 6.** Deviation 2 masks a
-  generator issue with a compiler flag rather than fixing the generator.
-  The C emitter (`codegen/src/cemit.rs`) should emit an ABI-compatible
-  pointer type or an explicit cast at the foreign-call boundary so the
-  `-Wno-error` flag is unnecessary. Tracked, not blocking (ABI-safe, green).
+- **Generator fix — DONE (2026-07-23).** The C emitter
+  (`codegen/src/cemit.rs`) now casts a boundary struct pointer to the
+  foreign header pointer type (`(SubChainHeader*)(&x)`) at both boundary
+  sites (`marshal_foreign_c_arg`, `boundary_field_init`), via
+  `boundary_ptr_cast`. The `-Wno-error=incompatible-pointer-types` flag
+  (Deviation 2) was removed from `run_c_aot`; the emitted C compiles clean
+  on any clang. Workspace stays 236/0, goldens byte-for-byte unchanged (the
+  cast is compile-time). Closes CLAUDE.md principle 6 for this case.
+
+### Open
 - **Reconcile the `mod.rs` gate doc comment**, which still says `(ptr,len)`
   is target-neutral — now contradicted by §12.3a and the func.rs Str/Array
   comments.
@@ -155,5 +160,8 @@ kept minimal:
   0 MAJOR, 3 MINOR (stale `(ptr,len)` "target-neutral" comments; global
   `-Wno-error` flag; hardcoded system-lib list). Win64 ABI, AAPCS64
   non-regression, `_setmode`, clang location, no-panic all verified correct.
-  Gate satisfied. The doc-comment MINOR is being fixed before commit; the
-  other two remain tracked follow-ups above.
+  Gate satisfied. Doc-comment MINOR fixed; test-green work committed
+  (1e15563).
+- 2026-07-23: Follow-up 1 (generator fix) done — `cemit.rs` casts boundary
+  struct pointers to the header type; `-Wno-error` flag removed. Verified
+  236/0 flag-free, goldens byte-identical.

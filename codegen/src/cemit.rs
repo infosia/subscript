@@ -1890,6 +1890,34 @@ impl<'m> Emitter<'m> {
         Ok(false)
     }
 
+    /// For a boundary struct-pointer target (`Struct | null`), the foreign
+    /// header pointer type an emitted pointer expression is cast to
+    /// (`SubChainHeader*`) — the header struct name, not the language name.
+    /// `None` when `ty` is not a boundary struct pointer.
+    fn boundary_ptr_cast(&self, ty: &Type) -> Result<Option<String>, String> {
+        if let Type::Nullable(inner) = ty {
+            if let Type::Class(cid) = **inner {
+                if self.is_value_class(cid)? {
+                    return Ok(Some(format!("{}*", self.class(cid)?.name)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// The pointer expression for a boundary struct-pointer target, before
+    /// the header-type cast: a value struct's storage address (chain-slot
+    /// address-of), or an existing pointer (`null`, or a `Struct | null`
+    /// value).
+    fn boundary_struct_ptr_expr(&mut self, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        if let Type::Class(cid) = arg.ty {
+            if self.is_value_class(cid)? {
+                return self.value_recv_ptr(arg, cid, out, depth);
+            }
+        }
+        self.eval(arg, out, depth)
+    }
+
     /// Emits a foreign C-ABI call (`Callee::Foreign`, P5.2b): a direct
     /// call of the header symbol with each argument marshaled per Q13. The
     /// C compiler resolves the ABI; the symbol resolves from the linked
@@ -1932,13 +1960,15 @@ impl<'m> Emitter<'m> {
             _ if self.is_boundary_struct_ptr(pty)? => {
                 // Struct | null pointer: address of a value struct's
                 // storage (chain-slot address-of), or an existing pointer
-                // (`null`, or a `Struct | null` value).
-                if let Type::Class(cid) = arg.ty {
-                    if self.is_value_class(cid)? {
-                        return self.value_recv_ptr(arg, cid, out, depth);
-                    }
-                }
-                self.eval(arg, out, depth)
+                // (`null`, or a `Struct | null` value). Cast to the foreign
+                // header pointer type: the language struct is layout-
+                // identical (invariant 1) so the pointer is ABI-safe, but
+                // nominally distinct, and the cast documents that intent
+                // and compiles clean on any clang.
+                let cast = self.boundary_ptr_cast(pty)?
+                    .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
+                let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
+                Ok(format!("({cast})({expr})"))
             }
             _ => self.eval(arg, out, depth),
         }
@@ -1985,12 +2015,12 @@ impl<'m> Emitter<'m> {
     /// receiving a value struct, the address of that struct's storage
     /// (chain-slot address-of); otherwise the plain value.
     fn boundary_field_init(&mut self, fty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
-        if self.is_boundary_struct_ptr(fty)? {
-            if let Type::Class(cid) = arg.ty {
-                if self.is_value_class(cid)? {
-                    return self.value_recv_ptr(arg, cid, out, depth);
-                }
-            }
+        if let Some(cast) = self.boundary_ptr_cast(fty)? {
+            // Same header-pointer cast as at a direct foreign-call argument
+            // (see `marshal_foreign_c_arg`): layout-identical, ABI-safe,
+            // nominally distinct.
+            let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
+            return Ok(format!("({cast})({expr})"));
         }
         self.eval(arg, out, depth)
     }

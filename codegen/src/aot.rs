@@ -566,14 +566,6 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         // dialect keeps the ship tier independent of the platform
         // compiler's default `-std`.
         .arg("-std=c11")
-        // A boundary value class emits as its own namespaced C struct
-        // (`Sub_0_SubChainHeader`) whose layout is identical to the foreign
-        // header's struct (design invariant 1), so passing a pointer to one
-        // where the other is expected is ABI-safe. clang 20+ promoted
-        // `-Wincompatible-pointer-types` from a warning to a default error;
-        // demote it back to a warning so the layout-identical (but nominally
-        // distinct) pointer conversion compiles across clang versions.
-        .arg("-Wno-error=incompatible-pointer-types")
         .arg("-O2")
         // Signed integer arithmetic in the emitted C must wrap
         // two's-complement (the language's semantics); `-fwrapv` makes
