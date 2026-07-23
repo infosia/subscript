@@ -32,11 +32,15 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
             SourceFile::new(*name, source)
         })
         .collect();
-    // Interop entries call a foreign function of the synthetic header
-    // (`subDevice…`); prepend the mirror ambient surface so those names
-    // resolve. A false negative is not silent — the entry then fails to
-    // check with an unresolved identifier.
-    if sources.iter().any(|s| s.source.contains("subDevice")) {
+    // Interop entries call a foreign function of the synthetic header — a
+    // device entry (`subDevice…`) or a typed-slice facade (`subSlice…`);
+    // prepend the mirror ambient surface so those names resolve. A false
+    // negative is not silent — the entry then fails to check with an
+    // unresolved identifier.
+    if sources
+        .iter()
+        .any(|s| s.source.contains("subDevice") || s.source.contains("subSlice"))
+    {
         sources.insert(0, interop_mirror());
     }
     match check_program(&sources) {
@@ -82,8 +86,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        29,
-        "expected 29 single-file accept entries (23 run set + a25–a30 interop) plus a19-modules"
+        30,
+        "expected 30 single-file accept entries (23 run set + a25–a31 interop) plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

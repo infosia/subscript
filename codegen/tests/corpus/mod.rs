@@ -32,13 +32,15 @@ fn interop_mirror() -> SourceFile {
 }
 
 /// True when any of `sources` calls a foreign function of the synthetic
-/// interop header (every interop entry obtains its handle through
-/// `subDeviceCreate`). A false negative is not silent: the entry then
-/// fails to check with an unresolved `Sub…` identifier, failing the gate
-/// loudly rather than skipping — a false positive would only add unused
-/// ambient declarations.
+/// interop header — a device entry (`subDevice…`) or a typed-slice facade
+/// (`subSlice…`). A false negative is not silent: the entry then fails to
+/// check with an unresolved `Sub…` identifier, failing the gate loudly
+/// rather than skipping — a false positive would only add unused ambient
+/// declarations.
 fn uses_interop_mirror(sources: &[SourceFile]) -> bool {
-    sources.iter().any(|s| s.source.contains("subDevice"))
+    sources
+        .iter()
+        .any(|s| s.source.contains("subDevice") || s.source.contains("subSlice"))
 }
 
 /// Every entry id present in `accept`, single- and multi-file.

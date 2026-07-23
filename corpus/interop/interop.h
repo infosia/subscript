@@ -136,4 +136,46 @@ void subDeviceSubmit(SubDevice device, SubBufferView commands);
 void subDeviceSetLogger(SubDevice device, SubCallbackInfo logger);
 void subDeviceSetLabel(SubDevice device, SubStringView label);
 
+/* ---- Pattern 2 (cont.): typed slice descriptors, multiple element ----
+ *      types.
+ *
+ * The (pointer, count) descriptor generalizes across primitive element
+ * types: each `SubSlice*` borrows a contiguous run of one element type,
+ * and the matching `subSliceChecksum*` reads all `count` elements from
+ * `items` — the borrow is zero-copy, the callee reading the caller's own
+ * array storage directly. This is the generic "typed descriptor →
+ * (array, count) converted host-side" facade that lets a caller hand a
+ * primitive array to a C API with no copy, for any element type, not
+ * just the u32 case (SubBufferView above; no specific external API is
+ * named). Each checksum is an order-sensitive, i32-wrapping rolling hash
+ * `h = h*31 + (int32_t)items[i]`, computed in unsigned arithmetic so the
+ * wrap is well-defined; float elements are cast to int32_t first, so the
+ * result is exact and independent of floating-point format. Deterministic
+ * and headless. */
+
+typedef struct SubSliceF32 {
+    const float *items;
+    size_t count;
+} SubSliceF32;
+
+typedef struct SubSliceI32 {
+    const int32_t *items;
+    size_t count;
+} SubSliceI32;
+
+typedef struct SubSliceF64 {
+    const double *items;
+    size_t count;
+} SubSliceF64;
+
+typedef struct SubSliceI64 {
+    const int64_t *items;
+    size_t count;
+} SubSliceI64;
+
+int32_t subSliceChecksumF32(SubSliceF32 data);
+int32_t subSliceChecksumI32(SubSliceI32 data);
+int32_t subSliceChecksumF64(SubSliceF64 data);
+int32_t subSliceChecksumI64(SubSliceI64 data);
+
 #endif /* SUBSCRIPT_INTEROP_H */

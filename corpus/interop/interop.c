@@ -128,3 +128,43 @@ void subDeviceSubmit(SubDevice device, SubBufferView commands) {
         device->cb(msg, device->cb_userdata);
     }
 }
+
+/* Typed slice facades: each reads all `data.count` elements straight from
+ * the borrowed `data.items` — the caller's own array storage (zero-copy)
+ * — and returns an order-sensitive, i32-wrapping rolling hash. The
+ * accumulation is unsigned so the wrap is well-defined; float elements
+ * are cast to int32_t first so the result is exact and float-format
+ * independent. The returned checksum depends on every element value,
+ * which is what makes the zero-copy read observable. */
+
+int32_t subSliceChecksumF32(SubSliceF32 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)(int32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumI32(SubSliceI32 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumF64(SubSliceF64 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)(int32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumI64(SubSliceI64 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)(int32_t)data.items[i];
+    }
+    return (int32_t)h;
+}

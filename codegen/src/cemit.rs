@@ -1946,12 +1946,24 @@ impl<'m> Emitter<'m> {
                     "((SubStringView){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
                 ))
             }
-            Type::Array(_) => {
+            Type::Array(elem) => {
+                // A (pointer, count) array-pair descriptor is passed BY
+                // VALUE, so C requires the compound literal to name the
+                // exact header aggregate type of the parameter. The mirror
+                // absorbs every such descriptor into `T[]` (Q13), discarding
+                // its C name, so the name is reconstructed from the element
+                // type by the synthetic header's convention (this
+                // foreign-call path is the P5 interop-slice marshaler and is
+                // coupled to that header, as the SubStringView / SubLogCallback
+                // spellings elsewhere in this function already are). The JIT
+                // tier needs no name — it passes the two components (data,
+                // count) per the ABI directly.
+                let desc = interop_array_pair_c_struct(elem)?;
                 let h = self.eval(arg, out, depth)?;
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
                 Ok(format!(
-                    "((SubBufferView){{ sub_rt_array_data(ctx, {t}), (size_t)sub_rt_array_len(ctx, {t}) }})"
+                    "(({desc}){{ sub_rt_array_data(ctx, {t}), (size_t)sub_rt_array_len(ctx, {t}) }})"
                 ))
             }
             Type::Class(id) if self.is_value_class(*id)? => {
@@ -2557,6 +2569,27 @@ fn push_unique(set: &mut Vec<Type>, ty: &Type) {
 
 fn indent(depth: usize) -> String {
     "    ".repeat(depth)
+}
+
+/// The synthetic interop header's C aggregate name for a `(pointer, count)`
+/// array-pair descriptor of the given element type (P5 interop slice,
+/// `specs/blocks/compiler.md` §12). The header spells the u32 descriptor
+/// `SubBufferView` (historical) and the other primitive descriptors
+/// `SubSlice<T>`. An element type without a header descriptor is a loud
+/// codegen error, never a silent mis-marshal (dev-JIT ≠ ship-C otherwise).
+fn interop_array_pair_c_struct(elem: &Type) -> Result<&'static str, String> {
+    Ok(match elem {
+        Type::U32 => "SubBufferView",
+        Type::F32 => "SubSliceF32",
+        Type::I32 => "SubSliceI32",
+        Type::F64 => "SubSliceF64",
+        Type::I64 => "SubSliceI64",
+        other => {
+            return Err(format!(
+                "no interop array-pair descriptor for element type {other:?}"
+            ))
+        }
+    })
 }
 
 fn is_aggregate(ty: &Type) -> bool {

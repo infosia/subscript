@@ -117,6 +117,10 @@ extern "C" {
     fn subDeviceSubmit();
     fn subDeviceSetLogger();
     fn subDeviceSetLabel();
+    fn subSliceChecksumF32();
+    fn subSliceChecksumI32();
+    fn subSliceChecksumF64();
+    fn subSliceChecksumI64();
 }
 
 /// Registers the foreign C-header symbols (`corpus/interop/interop.c`,
@@ -131,6 +135,10 @@ pub(crate) fn register_interop(builder: &mut JITBuilder) {
         ("subDeviceSubmit", subDeviceSubmit as *const u8),
         ("subDeviceSetLogger", subDeviceSetLogger as *const u8),
         ("subDeviceSetLabel", subDeviceSetLabel as *const u8),
+        ("subSliceChecksumF32", subSliceChecksumF32 as *const u8),
+        ("subSliceChecksumI32", subSliceChecksumI32 as *const u8),
+        ("subSliceChecksumF64", subSliceChecksumF64 as *const u8),
+        ("subSliceChecksumI64", subSliceChecksumI64 as *const u8),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);

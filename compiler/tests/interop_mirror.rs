@@ -40,7 +40,10 @@ fn using_program_type_checks_against_the_generated_mirror() {
             panic!("using-program rejected:\n{}", rendered.join("\n"));
         });
 
-    // The six C functions became foreign symbols with mapped signatures.
+    // Every C function in the header became a foreign symbol with a mapped
+    // signature, in declaration order: the six device entries, then the
+    // four typed-slice facades (their `SubSlice*` descriptors absorbed into
+    // `T[]`, so each takes a primitive array and returns i32).
     let names: Vec<&str> = module.foreign_fns.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names,
@@ -51,8 +54,20 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subDeviceSubmit",
             "subDeviceSetLogger",
             "subDeviceSetLabel",
+            "subSliceChecksumF32",
+            "subSliceChecksumI32",
+            "subSliceChecksumF64",
+            "subSliceChecksumI64",
         ]
     );
+
+    // The typed-slice facades map their `{const T*; size_t}` descriptor to
+    // `T[]` for each primitive element type, and return i32.
+    let f32_slice = module.foreign_fns.iter().find(|f| f.name == "subSliceChecksumF32").unwrap();
+    assert_eq!(f32_slice.params[0].ty, Type::Array(Box::new(Type::F32)));
+    assert_eq!(f32_slice.ret, Type::I32);
+    let i64_slice = module.foreign_fns.iter().find(|f| f.name == "subSliceChecksumI64").unwrap();
+    assert_eq!(i64_slice.params[0].ty, Type::Array(Box::new(Type::I64)));
 
     // subDeviceCreate returns the branded handle (a nominal class type),
     // and its chain parameter is the `Struct | null` boundary form.
