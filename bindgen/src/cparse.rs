@@ -14,8 +14,9 @@
 
 use std::fmt;
 
-/// A parse failure with a human-readable reason. Carries no source
-/// position (the fixture is tiny); the message names the offending text.
+/// A parse failure with a human-readable reason: the libclang loader or
+/// translation-unit diagnostics, or (in the retained fixture parser) the
+/// offending text. Carries no structured source position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError(pub String);
 

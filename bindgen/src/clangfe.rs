@@ -178,9 +178,9 @@ unsafe fn parse_inner(source: &str) -> Result<Parsed, ParseError> {
     // Parse as C11; request a detailed preprocessing record so `#define`
     // macros are represented as cursors.
     let args: [CString; 3] = [
-        CString::new("-x").unwrap(),
-        CString::new("c").unwrap(),
-        CString::new("-std=c11").unwrap(),
+        CString::new("-x").expect("no NUL in literal"),
+        CString::new("c").expect("no NUL in literal"),
+        CString::new("-std=c11").expect("no NUL in literal"),
     ];
     let arg_ptrs: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
     let tu = clang_parseTranslationUnit(
@@ -231,8 +231,9 @@ unsafe fn visit_top_level(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), P
         }
         CXCursor_MacroDefinition => {
             let name = cursor_spelling(cursor);
-            // Skip the header include-guard's own defined symbol is not
-            // possible to tell apart reliably; keep all main-file macros.
+            // An include-guard's own symbol cannot be told apart from a
+            // real object-like macro reliably, so all main-file macros are
+            // kept; downstream decides which matter.
             parsed.macros.push(Macro {
                 name,
                 function_like: clang_Cursor_isMacroFunctionLike(cursor) != 0,

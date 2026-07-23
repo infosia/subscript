@@ -298,3 +298,55 @@ add the matching cemit mapping, and the standing both-tiers gate catches
 the mismatch loudly (ship-C run fails). A registry-derived struct name
 (instead of the hardcoded table) would remove the manual sync step —
 future robustness, not a defect.
+
+## P6.1 — libclang C frontend: COMPLETE (2026-07-24)
+
+`bindgen` crate's narrow fixture parser (`cparse`) replaced by a
+libclang frontend (`bindgen/src/clangfe.rs`, `clang-sys = "=1.8.1"`
+feature `runtime`, offline-clean; libclang located via `LIBCLANG_PATH`
+then existence-guarded OS defaults, missing → clean `Err`). It walks the
+translation unit into the same `CField`/`Decl` IR `emit.rs` consumes,
+preserving stdint spellings and const/pointer flags exactly (only
+`_Bool`→`bool` / `void` normalized).
+
+Gate: **byte-identical regeneration** of `corpus/interop/
+interop.generated.d.ts` via libclang (`emit.rs` untouched, committed
+mirror unchanged) — proving the new frontend is a superset of `cparse`
+on the existing fixture. New neutral fixture `corpus/interop/prodfix.h`
+(macros object/function-like, visibility + nullability attributes, doc
+comments, `static const`, `typedef uint64_t SubFlags` + members, nested
+structs, fn-ptr typedef, intrusive chain) parses; `bindgen/tests/
+prodfix.rs` (6 tests) asserts non-vacuous extraction (macros stripped
+from signatures, attributes ignored, flag members at correct bit
+values). `cparse` kept as the shared IR module + a `#[cfg(test)]`
+fixture parser; `generate()` uses libclang exclusively.
+
+Verification (orchestrator): `cargo test --offline` 244/0, zero
+warnings; mirror `git diff` empty; sweep clean. `cparse.rs`
+`#endif`-diagnostic from the harness linter is a false positive
+(`#ifndef`@21/`#define`@22/`#endif`@89 balanced; `clang -fsyntax-only`
+exit 0).
+
+Phase Review (2026-07-24): 0 CRITICAL, 0 MAJOR, 5 MINOR. FFI memory-safe
+(RAII dispose of index/TU in correct order on every path, all
+strings/diagnostics/eval-results freed, no use-after-free, no
+panic/UB on parse errors, accurate SAFETY comments); libclang location
+robust; byte-identity robust by probe, not luck; production-C parsing
+genuine. Trivial MINORs fixed (infallible `unwrap`→`expect`; two doc/
+comment nits). **P6.1 COMPLETE.**
+
+**Carried into P6.2 (from the review's key robustness finding).** The
+*emitter* (`emit.rs`, unchanged by P6.1) maps only stdint typedef
+spellings via `lang_scalar`; on an arbitrary real header a field written
+as a raw C builtin (`int`/`unsigned int`/`long`/`char`), an anonymous
+inline struct, or a double pointer would currently be emitted **literally**
+into the `.d.ts` (silent invalid mirror). Before P6.2/P6.3 feed
+`generate()` an arbitrary header, `emit.rs` must (a) map the raw builtins
+with a defined language equivalent and (b) **fail loud (`Err`) on any
+unmapped base spelling**, never emit a literal. Not reachable today
+(`generate()` only runs on stdint-only `interop.h`), but a required P6.2
+deliverable.
+
+Next: P6.2 — descriptor-embedded `(count,pointer)` arrays, flag typedefs
+end-to-end, untyped-data facade; plus the emit.rs fail-loud/builtin
+mapping above.
