@@ -2159,6 +2159,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         sig: &mut Signature,
         argv: &mut Vec<Value>,
     ) -> Result<(), String> {
+        // A boundary struct passed BY VALUE has a target-specific C ABI;
+        // only aarch64 is implemented and verified (compiler.md §12.3a).
+        // On any other dev host this must fail loudly rather than silently
+        // mis-marshal (dev-JIT ≠ ship-C). Scalar/pointer/(ptr,len) boundary
+        // args are target-neutral and reach here through other paths.
+        let arch = self.ml.module.isa().triple().architecture;
+        if !crate::lower::boundary_struct_by_value_supported(arch) {
+            let triple = self.ml.module.isa().triple().clone();
+            return Err(internal(format!(
+                "foreign call passing a boundary struct by value is only supported \
+                 on aarch64 in the dev JIT (compiler.md §12.3a); target {triple} is \
+                 unsupported"
+            )));
+        }
         let class = self
             .ml
             .hir

@@ -196,6 +196,19 @@ pub(crate) fn internal(msg: impl Into<String>) -> String {
     format!("internal lowering error: {}", msg.into())
 }
 
+/// Whether the dev-JIT boundary marshaler may pass a **boundary struct by
+/// value** to a foreign call on `arch` (`specs/blocks/compiler.md`
+/// §12.3a). Only aarch64 is implemented and verified: a by-value
+/// aggregate's C ABI differs by target (AAPCS64 passes a >16-byte struct
+/// by reference; x86-64 SysV passes 24 bytes by value on the stack;
+/// Win64 differs again), so on any other dev host this path must fail
+/// loudly rather than silently mis-marshal (dev-JIT ≠ ship-C). Scalar /
+/// pointer / `(ptr,len)` boundary arguments are target-neutral and are
+/// **not** gated by this — only the by-value struct path is.
+pub(crate) fn boundary_struct_by_value_supported(arch: target_lexicon::Architecture) -> bool {
+    matches!(arch, target_lexicon::Architecture::Aarch64(_))
+}
+
 impl<'a, M: Module> ModLower<'a, M> {
     /// Allocates a position-table entry.
     pub fn pos_id(&mut self, pos: &Pos) -> u32 {
@@ -639,4 +652,28 @@ pub(crate) fn lower_module_with<M: Module>(
         globals_size,
         globals_align,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::boundary_struct_by_value_supported;
+    use std::str::FromStr;
+    use target_lexicon::Triple;
+
+    /// The dev-JIT boundary-struct-by-value marshaler is aarch64-only
+    /// (compiler.md §12.3a): the classifier must accept aarch64 and reject
+    /// the other declared dev hosts, so a non-arm64 target fails loudly at
+    /// codegen instead of silently mis-marshaling (dev-JIT ≠ ship-C).
+    #[test]
+    fn boundary_struct_by_value_is_aarch64_only() {
+        let aarch64 = Triple::from_str("aarch64-apple-darwin").expect("triple");
+        assert!(boundary_struct_by_value_supported(aarch64.architecture));
+        for t in ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"] {
+            let triple = Triple::from_str(t).expect("triple");
+            assert!(
+                !boundary_struct_by_value_supported(triple.architecture),
+                "{t} must be unsupported by the aarch64-only by-value struct path"
+            );
+        }
+    }
 }

@@ -516,14 +516,20 @@ pub unsafe extern "C" fn sub_rt_cb_trampoline(message: SubStrView, userdata: *mu
     }
     // SAFETY: `userdata` is a live binding of the running Context.
     let rec = unsafe { &*(userdata as *const CallbackBinding) };
+    // SAFETY: `rec.ctx` is the live Context captured at bind time.
+    let ctx = unsafe { &mut *rec.ctx };
+    // A trap already stopped the script (e.g. an earlier callback in the
+    // same foreign call trapped): do not run script code — a trap stops
+    // the run, even when a C API fires the callback more than once.
+    if ctx.trapped() {
+        return;
+    }
     let bytes: &[u8] = if message.data.is_null() || message.len == 0 {
         &[]
     } else {
         // SAFETY: caller guarantees `len` readable bytes at `data`.
         unsafe { std::slice::from_raw_parts(message.data, message.len) }
     };
-    // SAFETY: `rec.ctx` is the live Context captured at bind time.
-    let ctx = unsafe { &mut *rec.ctx };
     let s = ctx.alloc_str(bytes, 0);
     // The language function value's wrapper takes `(ctx, env, args...)`
     // with the host C calling convention; here the args are the `string`
