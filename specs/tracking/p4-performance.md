@@ -219,6 +219,77 @@ HIR variant cannot silently enable an unsound proof. MINOR (perf figure
 reproducibility) closed by the orchestrator's independent re-run
 (23.37× / 26.69×).
 
+## P4.3 — C emission as the ship tier (2026-07-23)
+
+Contract: `specs/blocks/compiler.md` §11; plan §8 Rev 2. The a22-only
+P4.2 emitter (`codegen/src/cemit.rs`) is extended to the full run set
+and made the ship tier, replacing `cranelift-object`. It links the
+runtime staticlib (identical arrays/strings/coroutines/Q14/traps) and
+exports the same `ss_init` / `ss_export_<name>` surface, so it is a
+drop-in for the AOT entry.
+
+### Standing gate rewired
+
+The default `cargo test` differential is now **dev-JIT ≡ ship-C-AOT ≡
+golden**, byte-exact, all 24 entries (a19 two-file), derived from the
+corpus (no id list, floor 24, no silent skips, missing `cc`/link
+fails). `cranelift-object` AOT is retained only as an optional
+cross-check column; its ship role has ended. Device triples are
+cross-compiled with `clang --target=…` (iOS `-miphoneos-version-min=10.0`,
+Android NDK), replacing the `cranelift-object` device link; compile+link
+only. No golden byte changed.
+
+### Phase Review (2026-07-23) — the finite-gate blind spot
+
+Fresh no-context, soundness-focused review: the 24-entry gate was green,
+but the ship tier silently miscompiled **checker-accepted programs the
+goldens do not exercise** — exactly the risk of proving a second
+lowering with a finite gate. Found and fixed: 2 CRITICAL, 3 MAJOR.
+
+- CRITICAL: a mutating value-class method dropped the mutation (receiver
+  passed by value) → pointer receiver, mirroring the CLIF path.
+- CRITICAL: a capturing lambda over a non-`i32` capture truncated it
+  (capture type hard-coded `i32`) → real per-capture type tracking.
+- MAJOR: `collect()` mis-collected live objects (no GC roots in the C
+  tier), so `collect()` + `unsafeDelete` of a live handle spuriously
+  trapped → shadow-frame rooting reusing the shared `layout` helpers.
+- MAJOR (orchestrator-reproduced, initially mis-filed as a follow-up):
+  the same mis-collection for references held inside a `FixedArray`
+  local/param → root managed-aggregate interiors via `managed_words`,
+  byte-identical shadow-frame shape to the dev tier.
+- MAJOR: signed `+`/`-`/`*` was C UB on overflow (clang happened to
+  wrap) → compile the ship C with `-fwrapv` everywhere it is built.
+
+Value-class fields of managed type (reference/string/`FixedArray`-of-ref/
+dynamic-array) are unreachable — the checker rejects them S100 (C2
+whitelist), matching the CLIF path's `has_managed_interior`.
+
+**Lesson (one line):** a second lowering adopted as a shipping tier is
+only as sound as the inputs its differential gate exercises; every
+class of divergence found must become a permanent dev-JIT ≡ ship-C-AOT
+regression test, not just a fixed golden. Six such tests were added
+(mutating value method; f32/i64/i32 captures; collect+delete and
+collect+use of live handles; managed references inside a FixedArray
+local and param).
+
+### Verification
+
+`cargo test --offline`: 212 passing, zero failures, zero warnings; the
+standing gate byte-exact on all 24; the orchestrator's original
+divergence probe (`FixedArray<Box,2>` + `collect()` + `unsafeDelete`)
+now agrees across tiers (`10,20\nok\n`). Goldens untouched.
+
+## P4 exit
+
+The performance gate (§3) is met via the C ship tier: emitted-C
+ship-AOT 1.05× the C baseline (≤ 1.5×), dev-JIT is the dev tier
+(iteration-speed argument carried by JIT compile at ~2 ms; its 26×
+execution ratio is recorded, not a ship concern — shipping is C). The
+backend decision (§3, reopened by P4) is resolved: ship = C emission
+(LLVM); dev = Cranelift JIT. Standing gate proves the two tiers
+byte-identical on the run set. P4/P4.1/P4.2/P4.3 COMPLETE. Next: P5 —
+C-header binding vertical slice.
+
 ## Artifacts
 
 `bench/a22-baseline.c` (baseline, header comment names the corpus
