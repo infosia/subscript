@@ -156,10 +156,24 @@ kept minimal:
   C-ABI value-type language: out-of-line array access, and passing large
   aggregates by value. Fix A (inline growable-array access, §10a) landed:
   emitted-C 17.2→14.0 ms at -O2 (measured), workspace 237/0, goldens
-  byte-identical. Fix B (value-class params by const-pointer) is next
-  (measured A+B → 12.1 ms / 1.74x). Closing fully to 1.05x on x86 would need
-  a SIMD vector-type representation — a larger separate effort, not
-  scheduled.
+  byte-identical.
+- **Fix B (value-class params by const-pointer) — investigated and DROPPED
+  (2026-07-23).** A prototype passed large read-only value-class parameters
+  of plain functions by `const T*` (measured A+B → ~12.1 ms / ~1.9x). An
+  adversarial soundness review found it **unsound**: eligibility scanned only
+  the callee's own body, so `f(m, arr)` reading `m` but calling `g(arr)`
+  (which does `arr[0] = …`) elided `m` to a pointer aliasing `arr[0]` — the
+  by-value tier returned the pre-call value, the by-pointer tier the mutated
+  one (`1` vs `99`); the corpus lacked that shape, so the gate missed it. The
+  sound restriction (leaf functions only — no call/`new`) is correct but
+  disqualifies the one value-class-parameter function in a22 (`multiply` ends
+  `return new Matrix4(result)`), so it yields ~0 benefit. A correct win needs
+  interprocedural heap-write-freedom (transitive purity) — soundness-critical
+  (its errors are silent miscompiles the test suite does not catch) for a
+  benefit that is **x86-dev-host only** (the arm64 ship target has no
+  value-copy problem, already 1.05x). Owner decision: not worth the risk;
+  B dropped, no B code committed. Closing fully to 1.05x on x86 would need a
+  SIMD vector-type representation — a larger separate effort, not scheduled.
 
 ### Open
 - **Reconcile the `mod.rs` gate doc comment**, which still says `(ptr,len)`
