@@ -9,8 +9,10 @@ use subscript_bindgen::generate;
 
 #[test]
 fn raw_c_builtins_map_to_sized_numerics() {
-    // A header whose fields are raw C builtins (no stdint typedefs).
-    let header = "typedef struct SubRaw { int a; unsigned int b; long c; \
+    // A header whose fields are the width-stable raw C builtins (no stdint
+    // typedefs). `long`/`unsigned long` are intentionally excluded (LP64 vs
+    // LLP64), so a 64-bit int is spelled `long long` here.
+    let header = "typedef struct SubRaw { int a; unsigned int b; long long c; \
                   unsigned long long d; float e; double f; } SubRaw;";
     let mirror = generate(header).expect("raw builtins map cleanly");
     for expect in [
@@ -18,6 +20,15 @@ fn raw_c_builtins_map_to_sized_numerics() {
     ] {
         assert!(mirror.contains(expect), "missing `{expect}` in:\n{mirror}");
     }
+}
+
+#[test]
+fn bare_long_is_target_dependent_and_fails_loud() {
+    // `long` is 64-bit on LP64 but 32-bit on LLP64 (Windows): dropped from
+    // the builtin map so it cannot mirror a target-dependent width.
+    let header = "typedef struct SubHasLong { long n; } SubHasLong;";
+    let err = generate(header).expect_err("bare long must fail loud");
+    assert!(err.to_string().contains("long"), "message names long: {err}");
 }
 
 #[test]

@@ -106,6 +106,20 @@ pub fn emit(parsed: &Parsed) -> Result<String, ParseError> {
         let mut block = format!("type {} = {scalar};", alias.name);
         for c in &parsed.constants {
             if c.type_base == alias.name {
+                // The mirror carries the value as a bare numeric literal,
+                // which the language reads through the f64-exact integer
+                // range (collisions.md C3: no i64/u64 literal surface above
+                // 2^53-1). A larger flag value would truncate silently when
+                // folded, so refuse to mirror it — fail loud at the source.
+                if !exact_f64_integer(c.value) {
+                    return Err(ParseError(format!(
+                        "flag member `{}` has value {} outside the exactly-f64-\
+                         representable integer range (|v| <= 2^53-1); the language \
+                         has no integer-literal surface above 2^53 (collisions.md \
+                         C3), so this flag cannot be mirrored as a folded constant",
+                        c.name, c.value
+                    )));
+                }
                 block.push_str(&format!("\ndeclare const {} = {};", c.name, c.value));
             }
         }
@@ -179,6 +193,13 @@ fn flag_alias_scalar(alias: &Alias) -> Option<&'static str> {
     lang_scalar(&alias.underlying)
 }
 
+/// True when `v` is exactly representable as an `f64` integer
+/// (`|v| <= 2^53 - 1`) — the range a bare numeric literal survives without
+/// silent rounding (collisions.md C3).
+fn exact_f64_integer(v: i64) -> bool {
+    v.unsigned_abs() <= (1u64 << 53) - 1
+}
+
 /// Descriptor-embedded `(count, pointer)` array pairs within a struct
 /// (§13.2): the index of each `const T*` pointer field mapped to its
 /// element scalar, and the set of `size_t` count-field indices to elide.
@@ -190,35 +211,37 @@ struct EmbeddedPairs {
     count_idx: HashSet<usize>,
 }
 
-/// Recognizes embedded `(count, pointer)` array pairs by name: a
-/// `const T*` field named `<n>` paired with a `size_t` field named
-/// `<n>Count` or `<n>_count` in the same struct. The pointer maps to
-/// `T[]`; the count is elided. Order-independent recognition; the lowering
-/// reconstructs the C pair count-first (`specs/blocks/compiler.md` §13.2).
-/// Only scalar element types are treated as embedded arrays (a pointer to
-/// a struct stays a `X | null` field).
+/// Recognizes embedded `(count, pointer)` array pairs (§13.2), and ONLY
+/// the one shape both lowerings reconstruct: a `size_t` count field named
+/// `<n>Count` or `<n>_count` **immediately followed** by a `const T*`
+/// pointer field named `<n>` with a scalar element (count-first,
+/// contiguous). The pointer field index maps to `T[]`; the count field
+/// index is elided. Any other spelling — pointer-first, non-adjacent
+/// count, a struct-element pointer — is deliberately NOT an embedded array:
+/// the pointer then falls through to `map_use`, where a lone scalar
+/// pointer has no boundary type and fails loud. Both lowerings marshal the
+/// pair count-immediately-before-pointer, contiguous, so recognizing any
+/// looser shape would silently mismarshal on both tiers (no `-Werror` on
+/// the AOT tier; the JIT never compiles the C struct).
 fn embedded_array_pairs(fields: &[CField]) -> EmbeddedPairs {
     let mut pairs = EmbeddedPairs::default();
-    for (i, f) in fields.iter().enumerate() {
-        if !(f.pointer && f.is_const && f.array_len.is_none()) {
+    for i in 0..fields.len().saturating_sub(1) {
+        let count = &fields[i];
+        let ptr = &fields[i + 1];
+        if count.pointer || count.array_len.is_some() || count.base != "size_t" {
             continue;
         }
-        let Some(elem) = lang_scalar(&f.base) else {
+        if !(ptr.pointer && ptr.is_const && ptr.array_len.is_none()) {
+            continue;
+        }
+        let Some(elem) = lang_scalar(&ptr.base) else {
             continue;
         };
-        let want1 = format!("{}Count", f.name);
-        let want2 = format!("{}_count", f.name);
-        let count = fields.iter().position(|c| {
-            !c.pointer
-                && c.array_len.is_none()
-                && c.base == "size_t"
-                && (c.name == want1 || c.name == want2)
-        });
-        if let Some(ci) = count {
-            if ci != i {
-                pairs.ptr_elem.insert(i, elem.to_string());
-                pairs.count_idx.insert(ci);
-            }
+        let want1 = format!("{}Count", ptr.name);
+        let want2 = format!("{}_count", ptr.name);
+        if count.name == want1 || count.name == want2 {
+            pairs.count_idx.insert(i);
+            pairs.ptr_elem.insert(i + 1, elem.to_string());
         }
     }
     pairs
@@ -357,11 +380,19 @@ fn unmapped(base: &str) -> ParseError {
 }
 
 /// Language spelling of a C scalar or raw builtin, or `None` for a named
-/// type. The stdint typedefs and the raw LP64 builtins map to the sized
-/// numerics (`specs/blocks/compiler.md` §13.2). A standalone `char` is
-/// deliberately unmapped — it is the string-view element only; a bare
-/// `char`/`signed char`/`unsigned char` scalar has no language type and
-/// fails loud at a use site.
+/// type. The stdint typedefs and the width-stable raw builtins map to the
+/// sized numerics (`specs/blocks/compiler.md` §13.2). Two deliberate
+/// exclusions fail loud rather than mirror a target-dependent width:
+///
+/// - `long`/`unsigned long` — 64-bit on LP64 (Unix) but 32-bit on LLP64
+///   (Windows); an ABI-stable header must spell a 64-bit int
+///   `int64_t`/`long long`, so a bare `long` is unmapped.
+/// - `char`/`signed char`/`unsigned char` — the string-view element only;
+///   a standalone `char` scalar has no language type.
+///
+/// `int`/`unsigned int` (32-bit on every supported target) and `long
+/// long`/`unsigned long long` (64-bit everywhere) are width-stable and
+/// mapped.
 fn lang_scalar(base: &str) -> Option<&'static str> {
     Some(match base {
         "bool" => "boolean",
@@ -372,11 +403,11 @@ fn lang_scalar(base: &str) -> Option<&'static str> {
         "int64_t" => "i64",
         "uint64_t" => "u64",
         "size_t" => "u64",
-        // Raw C builtins on the 64-bit (LP64) target.
+        // Width-stable raw C builtins.
         "int" => "i32",
         "unsigned int" => "u32",
-        "long" | "long long" => "i64",
-        "unsigned long" | "unsigned long long" => "u64",
+        "long long" => "i64",
+        "unsigned long long" => "u64",
         _ => return None,
     })
 }
@@ -409,7 +440,7 @@ mod tests {
             fields: vec![
                 field("int", false, false, "a"),
                 field("unsigned int", false, false, "b"),
-                field("long", false, false, "c"),
+                field("long long", false, false, "c"),
                 field("unsigned long long", false, false, "d"),
                 field("float", false, false, "e"),
                 field("double", false, false, "f"),
@@ -480,6 +511,85 @@ mod tests {
             m.contains("constructor(layer: u32, draws: u32[]);"),
             "constructor drops the count: {m}"
         );
+    }
+
+    #[test]
+    fn pointer_first_embedded_shape_fails_loud() {
+        // Pointer-before-count inside a larger struct is NOT the shape both
+        // lowerings reconstruct (count immediately before pointer), so the
+        // pointer stays a lone scalar pointer → fail loud. (A bare two-field
+        // `{const T*; size_t}` is instead the standalone descriptor absorbed
+        // to `T[]`, a26/a31 — a different, correct path; hence the third
+        // field here forces the embedded interpretation.)
+        let decls = vec![Decl::Struct {
+            name: "SubPtrFirst".into(),
+            fields: vec![
+                field("uint32_t", false, false, "layer"),
+                field("uint32_t", true, true, "draws"),
+                field("size_t", false, false, "drawsCount"),
+            ],
+        }];
+        let err = emit(&parsed_with(decls)).expect_err("pointer-first must fail loud");
+        assert!(err.0.contains("uint32_t"), "{}", err.0);
+    }
+
+    #[test]
+    fn non_adjacent_count_fails_loud() {
+        // A count separated from the pointer by another field is not an
+        // embedded pair; the pointer then fails loud as a lone scalar ptr.
+        let decls = vec![Decl::Struct {
+            name: "SubGap".into(),
+            fields: vec![
+                field("size_t", false, false, "drawsCount"),
+                field("uint32_t", false, false, "layer"),
+                field("uint32_t", true, true, "draws"),
+            ],
+        }];
+        let err = emit(&parsed_with(decls)).expect_err("non-adjacent count must fail loud");
+        assert!(err.0.contains("uint32_t"), "{}", err.0);
+    }
+
+    #[test]
+    fn lone_scalar_pointer_field_fails_loud() {
+        // A `const uint32_t*` field with no paired count is not an array
+        // descriptor and has no boundary type → fail loud, not `u32 | null`.
+        let decls = vec![Decl::Struct {
+            name: "SubLonePtr".into(),
+            fields: vec![field("uint32_t", true, true, "items")],
+        }];
+        let err = emit(&parsed_with(decls)).expect_err("lone scalar pointer must fail loud");
+        assert!(err.0.contains("uint32_t"), "{}", err.0);
+    }
+
+    #[test]
+    fn bare_long_is_unmapped_and_fails_loud() {
+        // `long`/`unsigned long` are target-width-dependent (LP64 vs LLP64)
+        // and dropped from the builtin map.
+        for spelling in ["long", "unsigned long"] {
+            let decls = vec![Decl::Struct {
+                name: "SubLong".into(),
+                fields: vec![field(spelling, false, false, "n")],
+            }];
+            let err = emit(&parsed_with(decls)).expect_err("bare long must fail loud");
+            assert!(err.0.contains("long"), "{spelling}: {}", err.0);
+        }
+    }
+
+    #[test]
+    fn flag_value_above_f64_exact_range_fails_loud() {
+        let mut p = Parsed::default();
+        p.aliases = vec![Alias {
+            name: "SubBig".into(),
+            underlying: "uint64_t".into(),
+        }];
+        p.constants = vec![crate::clangfe::Constant {
+            name: "SUB_BIG_ONE".into(),
+            type_base: "SubBig".into(),
+            value: (1i64 << 53) + 1,
+        }];
+        let err = emit(&p).expect_err("flag value above 2^53 must fail loud");
+        assert!(err.0.contains("SUB_BIG_ONE"), "{}", err.0);
+        assert!(err.0.contains("2^53"), "{}", err.0);
     }
 
     #[test]
