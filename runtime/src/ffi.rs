@@ -484,6 +484,145 @@ pub unsafe extern "C" fn sub_rt_ctx_seed_random(ctx: *mut Context, seed: u64) {
     unsafe { &mut *ctx }.seed_random(seed);
 }
 
+// ----- Date (stdlib.md §3) -----
+//
+// One implementation, both tiers, through these opaque symbols (never a
+// direct libc time call in generated code). A `Date` value crosses this
+// boundary as its `i64` epoch-millisecond representation. The trapping
+// entries (`utc`, `new`, `to_iso`) carry a trailing `pos_id`; the pure
+// accessors do not trap and take none.
+
+/// `Date.UTC(y, m0, d, h, min, s, ms)` — the checker always supplies
+/// all seven arguments (missing trailing ones default to day 1 / time
+/// 0 at check time). ECMA MakeDay/MakeFullYear semantics; a result
+/// outside the TimeClip range traps (Q20) and returns 0.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_date_utc(
+    ctx: *mut Context,
+    year: i32,
+    month0: i32,
+    day: i32,
+    hours: i32,
+    minutes: i32,
+    seconds: i32,
+    millis: i32,
+    pos_id: u32,
+) -> i64 {
+    match crate::date::utc_ms(year, month0, day, hours, minutes, seconds, millis) {
+        Some(ms) => ms,
+        None => {
+            // SAFETY: shared contract.
+            unsafe { &mut *ctx }.trap(
+                TrapKind::DateRange,
+                "Date out of range: Date.UTC result exceeds the valid time range \
+                 (|ms| <= 8640000000000000)",
+                pos_id,
+            );
+            0
+        }
+    }
+}
+
+/// `new Date(ms)`: the identity on an in-range time value; out of the
+/// TimeClip range traps (Q20 — no Invalid-Date value) and returns 0.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_date_new(ctx: *mut Context, ms: i64, pos_id: u32) -> i64 {
+    if crate::date::in_range(ms) {
+        return ms;
+    }
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.trap(
+        TrapKind::DateRange,
+        format!("Date out of range: {ms} ms (valid: |ms| <= 8640000000000000)"),
+        pos_id,
+    );
+    0
+}
+
+/// `Date.now()`: current UTC milliseconds from the Context clock —
+/// pinned by [`sub_rt_ctx_set_now`], else the system clock.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_date_now(ctx: *mut Context) -> i64 {
+    // SAFETY: shared contract.
+    unsafe { &*ctx }.now_utc_ms()
+}
+
+/// One UTC accessor on a Date's millisecond value, selected by its
+/// `FIELD_*` code ([`crate::date`]). An unknown code is a
+/// compiler/runtime disagreement: reported as an internal trap, never
+/// a panic.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_date_get(ctx: *mut Context, ms: i64, field: u32) -> i32 {
+    match crate::date::get_field(ms, field) {
+        Some(v) => v,
+        None => {
+            // SAFETY: shared contract.
+            unsafe { &mut *ctx }.trap(
+                TrapKind::Internal,
+                format!("unknown Date accessor field code {field}"),
+                0,
+            );
+            0
+        }
+    }
+}
+
+/// `toISOString()`: allocates the `YYYY-MM-DDTHH:mm:ss.sssZ` string;
+/// a year outside 0000–9999 traps (Q20) and returns null.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_date_to_iso(
+    ctx: *mut Context,
+    ms: i64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match crate::date::to_iso(ms) {
+        Some(s) => ctx.alloc_str(s.as_bytes(), pos_id),
+        None => {
+            let year = crate::date::decompose(ms).year;
+            ctx.trap(
+                TrapKind::DateRange,
+                format!("toISOString requires a year in 0000-9999, got year {year}"),
+                pos_id,
+            );
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Pins the Context's `Date.now` clock to `ms` (stdlib.md §3; tests and
+/// replays). The default, unpinned source is the system UTC clock.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_set_now(ctx: *mut Context, ms: i64) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.set_now(ms);
+}
+
 // ----- arrays (Q4) -----
 
 /// Allocates an empty dynamic array of `elem_size`-byte elements.
@@ -950,6 +1089,93 @@ mod tests {
         assert_eq!(sub_rt_math_pow(p, 2.0, 10.0), 1024.0);
         assert_eq!(sub_rt_math_max(p, 2.5, 7.0), 7.0);
         assert_eq!(sub_rt_math_min(p, 2.5, 7.0), 2.5);
+    }
+
+    #[test]
+    fn ffi_date_entries_forward_to_the_date_module() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            let ms = sub_rt_date_utc(p, 2020, 5, 15, 12, 34, 56, 789, 0);
+            assert_eq!(ms, 1_592_224_496_789);
+            assert_eq!(sub_rt_date_new(p, ms, 0), ms);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_FULL_YEAR), 2020);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_MONTH), 5);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_DATE), 15);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_DAY), 1);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_HOURS), 12);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_MINUTES), 34);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_SECONDS), 56);
+            assert_eq!(sub_rt_date_get(p, ms, crate::date::FIELD_MILLISECONDS), 789);
+            let iso = sub_rt_date_to_iso(p, ms, 0);
+            assert_eq!(ctx.str_bytes(iso), b"2020-06-15T12:34:56.789Z");
+        }
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_date_new_out_of_range_traps_with_position() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            assert_eq!(sub_rt_date_new(p, 8_640_000_000_000_001, 7), 0);
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::DateRange);
+        assert_eq!(r.pos_id, 7);
+    }
+
+    #[test]
+    fn ffi_date_utc_out_of_range_traps() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            assert_eq!(sub_rt_date_utc(p, 275_760, 8, 14, 0, 0, 0, 0, 9), 0);
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::DateRange);
+        assert_eq!(r.pos_id, 9);
+    }
+
+    #[test]
+    fn ffi_date_to_iso_out_of_year_range_traps() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            assert!(sub_rt_date_to_iso(p, 253_402_300_800_000, 11).is_null());
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::DateRange);
+        assert_eq!(r.pos_id, 11);
+        assert!(r.message.contains("0000-9999"), "message: {}", r.message);
+    }
+
+    #[test]
+    fn ffi_date_get_unknown_field_is_an_internal_trap_not_a_panic() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            assert_eq!(sub_rt_date_get(p, 0, 99), 0);
+        }
+        assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
+    }
+
+    #[test]
+    fn ffi_date_now_reads_the_pinned_context_clock() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            sub_rt_ctx_set_now(p, 1_592_224_496_789);
+            assert_eq!(sub_rt_date_now(p), 1_592_224_496_789);
+            sub_rt_ctx_set_now(p, -1);
+            assert_eq!(sub_rt_date_now(p), -1);
+        }
     }
 
     #[test]

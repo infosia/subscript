@@ -202,6 +202,17 @@ impl<'p> Checker<'p> {
             _ => {}
         }
 
+        // The ambient `Date` value type (stdlib.md §3): applies only
+        // when no program declaration shadows the name — a user class
+        // named `Date` wins, exactly as for `Math`.
+        if name == "Date" && self.scope_item(name).is_none() {
+            if r.type_params.is_some() {
+                self.error(RuleCode::S100, "`Date` is not generic", pos);
+                return Type::Error;
+            }
+            return Type::Date;
+        }
+
         match self.scope_item(name) {
             Some(ScopeItem::Class(id)) => {
                 if r.type_params.is_some() {

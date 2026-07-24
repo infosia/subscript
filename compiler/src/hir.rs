@@ -487,6 +487,86 @@ impl MathFn {
     }
 }
 
+/// `Date` intrinsic operations (stdlib.md §3): the accepted
+/// UTC-deterministic subset, lowered by both tiers to the opaque
+/// `sub_rt_date_*` runtime symbols. A `Date` value is `i64` epoch
+/// milliseconds in generated code ([`crate::types::Type::Date`] erases
+/// to `i64`); `getTime()` has no variant here — it is the identity on
+/// the representation and folds to the receiver at check time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DateFn {
+    /// `new Date(ms)` → `sub_rt_date_new` (TimeClip range check; out of
+    /// range traps, Q20 — no Invalid-Date value).
+    New,
+    /// `Date.UTC(y, m0, d, h, min, s, ms)` → `sub_rt_date_utc`. The
+    /// checker normalizes missing trailing arguments to their defaults
+    /// (day 1, time components 0), so the call is always 7-argument.
+    Utc,
+    /// `Date.now()` → `sub_rt_date_now` (the Context clock; pinnable
+    /// via `sub_rt_ctx_set_now`).
+    Now,
+    /// `getUTCFullYear()` → `sub_rt_date_get` field 0.
+    GetUtcFullYear,
+    /// `getUTCMonth()` (0-based) → `sub_rt_date_get` field 1.
+    GetUtcMonth,
+    /// `getUTCDate()` → `sub_rt_date_get` field 2.
+    GetUtcDate,
+    /// `getUTCDay()` (0 = Sunday) → `sub_rt_date_get` field 3.
+    GetUtcDay,
+    /// `getUTCHours()` → `sub_rt_date_get` field 4.
+    GetUtcHours,
+    /// `getUTCMinutes()` → `sub_rt_date_get` field 5.
+    GetUtcMinutes,
+    /// `getUTCSeconds()` → `sub_rt_date_get` field 6.
+    GetUtcSeconds,
+    /// `getUTCMilliseconds()` → `sub_rt_date_get` field 7.
+    GetUtcMilliseconds,
+    /// `toISOString()` → `sub_rt_date_to_iso` (years 0000–9999, else a
+    /// trap, Q20).
+    ToIso,
+}
+
+impl DateFn {
+    /// The lib member name (diagnostics and the checker's lookup).
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            DateFn::New => "Date",
+            DateFn::Utc => "UTC",
+            DateFn::Now => "now",
+            DateFn::GetUtcFullYear => "getUTCFullYear",
+            DateFn::GetUtcMonth => "getUTCMonth",
+            DateFn::GetUtcDate => "getUTCDate",
+            DateFn::GetUtcDay => "getUTCDay",
+            DateFn::GetUtcHours => "getUTCHours",
+            DateFn::GetUtcMinutes => "getUTCMinutes",
+            DateFn::GetUtcSeconds => "getUTCSeconds",
+            DateFn::GetUtcMilliseconds => "getUTCMilliseconds",
+            DateFn::ToIso => "toISOString",
+        }
+    }
+
+    /// The `sub_rt_date_get` field code of a UTC accessor (`None` for
+    /// the non-accessor operations). The codes are an ABI contract with
+    /// the runtime's `date` module; a codegen test asserts the two
+    /// tables agree.
+    #[must_use]
+    pub fn field_code(self) -> Option<u32> {
+        Some(match self {
+            DateFn::GetUtcFullYear => 0,
+            DateFn::GetUtcMonth => 1,
+            DateFn::GetUtcDate => 2,
+            DateFn::GetUtcDay => 3,
+            DateFn::GetUtcHours => 4,
+            DateFn::GetUtcMinutes => 5,
+            DateFn::GetUtcSeconds => 6,
+            DateFn::GetUtcMilliseconds => 7,
+            _ => return None,
+        })
+    }
+}
+
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -500,6 +580,10 @@ pub enum Callee {
     Ambient(AmbientFn),
     /// A `Math.<fn>` ambient-namespace intrinsic (stdlib.md §1).
     Math(MathFn),
+    /// A `Date` intrinsic (stdlib.md §3): `new Date(ms)`, the `Date.UTC`
+    /// / `Date.now` statics, the UTC accessors, and `toISOString`. For
+    /// the instance operations the receiver is the first argument.
+    Date(DateFn),
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members
@@ -680,6 +764,31 @@ mod tests {
         assert_eq!(MathFn::Random.arity(), 0);
         assert_eq!(MathFn::Random.name(), "random");
         assert_eq!(MathFn::Log1p.name(), "log1p");
+    }
+
+    #[test]
+    fn date_fn_field_codes_cover_the_eight_accessors_in_order() {
+        // The sub_rt_date_get field-code contract (stdlib.md §3): the
+        // eight UTC accessors carry codes 0..=7 in accessor order; the
+        // non-accessor operations carry none.
+        let accessors = [
+            DateFn::GetUtcFullYear,
+            DateFn::GetUtcMonth,
+            DateFn::GetUtcDate,
+            DateFn::GetUtcDay,
+            DateFn::GetUtcHours,
+            DateFn::GetUtcMinutes,
+            DateFn::GetUtcSeconds,
+            DateFn::GetUtcMilliseconds,
+        ];
+        for (i, f) in accessors.iter().enumerate() {
+            assert_eq!(f.field_code(), Some(i as u32), "field code of {}", f.name());
+        }
+        for f in [DateFn::New, DateFn::Utc, DateFn::Now, DateFn::ToIso] {
+            assert_eq!(f.field_code(), None, "{} is not an accessor", f.name());
+        }
+        assert_eq!(DateFn::ToIso.name(), "toISOString");
+        assert_eq!(DateFn::Utc.name(), "UTC");
     }
 
     #[test]

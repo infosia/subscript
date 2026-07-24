@@ -33,6 +33,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r16-math-variadic-max.ts", RuleCode::S014, 8),
     ("r17-math-fround.ts", RuleCode::S014, 9),
     ("r18-math-value.ts", RuleCode::S014, 9),
+    ("r19-date-local-accessor.ts", RuleCode::S014, 10),
+    ("r20-date-setter.ts", RuleCode::S014, 9),
+    ("r21-date-multiarg-ctor.ts", RuleCode::S014, 10),
+    ("r22-date-template.ts", RuleCode::S014, 11),
+    ("r23-date-zero-arg-ctor.ts", RuleCode::S014, 9),
 ];
 
 #[test]

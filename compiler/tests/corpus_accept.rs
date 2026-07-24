@@ -101,9 +101,9 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        40,
-        "expected 40 single-file accept entries (23 run set + a25–a39 interop \
-         + a40–a41 stdlib) plus a19-modules"
+        41,
+        "expected 41 single-file accept entries (23 run set + a25–a39 interop \
+         + a40–a42 stdlib) plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
@@ -195,6 +195,86 @@ fn a40_math_calls_are_intrinsics_and_constants_fold_to_literals() {
             "Math.{name} did not fold to its literal"
         );
     }
+}
+
+#[test]
+fn a42_date_operations_are_intrinsics_and_the_type_is_nominal() {
+    let accept = corpus_dir().join("accept");
+    let module = check_entry(&[("a42-date.ts", accept.join("a42-date.ts"))]);
+    // A Date-typed class field and a Date[] element type survive to HIR
+    // as the nominal Date type (it erases to i64 only in codegen).
+    let stamp = find_class(&module, "Stamp");
+    assert_eq!(stamp.fields[0].ty, Type::Date);
+    let main = find_fn(&module, "main");
+
+    fn walk_expr(e: &hir::Expr, dates: &mut Vec<hir::DateFn>, methods: &mut Vec<String>) {
+        match &e.kind {
+            hir::ExprKind::Call { callee, args } => {
+                match callee {
+                    hir::Callee::Date(f) => dates.push(*f),
+                    hir::Callee::Method { recv, name } => {
+                        if recv.ty == Type::Date {
+                            methods.push(name.clone());
+                        }
+                        walk_expr(recv, dates, methods);
+                    }
+                    _ => {}
+                }
+                for a in args {
+                    walk_expr(a, dates, methods);
+                }
+            }
+            hir::ExprKind::Template(parts) => {
+                for p in parts {
+                    if let hir::TplPart::Expr(e) = p {
+                        walk_expr(e, dates, methods);
+                    }
+                }
+            }
+            hir::ExprKind::New { args, .. } => {
+                for a in args {
+                    walk_expr(a, dates, methods);
+                }
+            }
+            hir::ExprKind::Index { obj, index } => {
+                walk_expr(obj, dates, methods);
+                walk_expr(index, dates, methods);
+            }
+            hir::ExprKind::Field { obj, .. } => walk_expr(obj, dates, methods),
+            _ => {}
+        }
+    }
+    let mut dates = Vec::new();
+    let mut methods = Vec::new();
+    for s in &main.body {
+        match s {
+            hir::Stmt::Expr(e) => walk_expr(e, &mut dates, &mut methods),
+            hir::Stmt::Let { init, .. } => walk_expr(init, &mut dates, &mut methods),
+            _ => {}
+        }
+    }
+    // Every accepted Date operation appears as an intrinsic call —
+    // never the class-method path — and getTime never survives as a
+    // call (it folds to the receiver at check time).
+    for f in [
+        hir::DateFn::New,
+        hir::DateFn::Utc,
+        hir::DateFn::GetUtcFullYear,
+        hir::DateFn::GetUtcMonth,
+        hir::DateFn::GetUtcDate,
+        hir::DateFn::GetUtcDay,
+        hir::DateFn::GetUtcHours,
+        hir::DateFn::GetUtcMinutes,
+        hir::DateFn::GetUtcSeconds,
+        hir::DateFn::GetUtcMilliseconds,
+        hir::DateFn::ToIso,
+    ] {
+        assert!(dates.contains(&f), "a42 lacks a Date intrinsic for {}", f.name());
+    }
+    assert!(
+        methods.is_empty(),
+        "Date operations must not take the method path: {methods:?}"
+    );
 }
 
 #[test]

@@ -70,6 +70,29 @@ mod tests {
     }
 
     #[test]
+    fn date_field_codes_agree_between_compiler_and_runtime() {
+        // The sub_rt_date_get contract: the checker/codegen field codes
+        // (hir::DateFn::field_code) and the runtime's FIELD_* constants
+        // are one table. This crate sees both crates, so it holds the
+        // cross-check.
+        use subscript_compiler::hir::DateFn;
+        use subscript_runtime::date;
+        let pairs = [
+            (DateFn::GetUtcFullYear, date::FIELD_FULL_YEAR),
+            (DateFn::GetUtcMonth, date::FIELD_MONTH),
+            (DateFn::GetUtcDate, date::FIELD_DATE),
+            (DateFn::GetUtcDay, date::FIELD_DAY),
+            (DateFn::GetUtcHours, date::FIELD_HOURS),
+            (DateFn::GetUtcMinutes, date::FIELD_MINUTES),
+            (DateFn::GetUtcSeconds, date::FIELD_SECONDS),
+            (DateFn::GetUtcMilliseconds, date::FIELD_MILLISECONDS),
+        ];
+        for (f, code) in pairs {
+            assert_eq!(f.field_code(), Some(code), "field code of {}", f.name());
+        }
+    }
+
+    #[test]
     fn hello_prints_to_the_sink() {
         assert_eq!(run_ok("export function main(): void {\n  print(\"hello\");\n}\n"), "hello\n");
     }

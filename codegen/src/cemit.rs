@@ -515,6 +515,8 @@ impl<'m> Emitter<'m> {
             Type::U32 => "uint32_t".to_string(),
             Type::I64 => "int64_t".to_string(),
             Type::U64 => "uint64_t".to_string(),
+            // A Date is its i64 epoch-millisecond value (stdlib.md §3).
+            Type::Date => "int64_t".to_string(),
             Type::F32 => "float".to_string(),
             Type::F64 => "double".to_string(),
             Type::Bool => "int32_t".to_string(),
@@ -556,6 +558,7 @@ impl<'m> Emitter<'m> {
             Type::U32 => "u32".to_string(),
             Type::I64 => "i64".to_string(),
             Type::U64 => "u64".to_string(),
+            Type::Date => "date".to_string(),
             Type::F32 => "f32".to_string(),
             Type::F64 => "f64".to_string(),
             Type::Bool => "bool".to_string(),
@@ -1919,6 +1922,43 @@ impl<'m> Emitter<'m> {
                 let sep = if argv.is_empty() { "" } else { ", " };
                 Ok(format!("sub_rt_math_{}(ctx{sep}{argv})", f.name()))
             }
+            // A Date intrinsic (stdlib.md §3) calls its opaque runtime
+            // symbol; the value is its int64_t millisecond form. The
+            // trapping entries carry a position id; `getTime` never
+            // reaches here (folded at check time).
+            hir::Callee::Date(f) => {
+                use subscript_compiler::hir::DateFn as D;
+                match f {
+                    D::New => {
+                        let ms = self.eval(args.first().ok_or("Date arity")?, out, depth)?;
+                        let pid = self.pos_id(pos);
+                        Ok(format!("sub_rt_date_new(ctx, {ms}, {pid}u)"))
+                    }
+                    D::Utc => {
+                        if args.len() != 7 {
+                            return Err("Date.UTC arity (checker normalizes to 7)".to_string());
+                        }
+                        let argv = self.eval_list(args, out, depth)?;
+                        let pid = self.pos_id(pos);
+                        Ok(format!("sub_rt_date_utc(ctx, {argv}, {pid}u)"))
+                    }
+                    D::Now => Ok("sub_rt_date_now(ctx)".to_string()),
+                    D::ToIso => {
+                        let ms =
+                            self.eval(args.first().ok_or("toISOString receiver")?, out, depth)?;
+                        let pid = self.pos_id(pos);
+                        Ok(format!("sub_rt_date_to_iso(ctx, {ms}, {pid}u)"))
+                    }
+                    accessor => {
+                        let code = accessor
+                            .field_code()
+                            .ok_or_else(|| format!("Date intrinsic {accessor:?}"))?;
+                        let ms = self
+                            .eval(args.first().ok_or("Date accessor receiver")?, out, depth)?;
+                        Ok(format!("sub_rt_date_get(ctx, {ms}, {code}u)"))
+                    }
+                }
+            }
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
     }
@@ -3131,6 +3171,15 @@ extern double sub_rt_math_pow(void* ctx, double base, double exp);
 extern double sub_rt_math_max(void* ctx, double a, double b);
 extern double sub_rt_math_min(void* ctx, double a, double b);
 extern double sub_rt_math_random(void* ctx);
+
+/* Date intrinsics (stdlib.md 3): a Date value is its int64_t epoch
+ * milliseconds; the calendar arithmetic lives in the runtime so both
+ * tiers share one implementation. */
+extern int64_t sub_rt_date_utc(void* ctx, int32_t y, int32_t m0, int32_t d, int32_t h, int32_t min, int32_t s, int32_t ms, uint32_t pos_id);
+extern int64_t sub_rt_date_new(void* ctx, int64_t ms, uint32_t pos_id);
+extern int64_t sub_rt_date_now(void* ctx);
+extern int32_t sub_rt_date_get(void* ctx, int64_t ms, uint32_t field);
+extern void* sub_rt_date_to_iso(void* ctx, int64_t ms, uint32_t pos_id);
 
 /* Trap kinds (runtime/src/trap.rs). */
 enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };

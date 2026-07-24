@@ -18,6 +18,7 @@
 //! host process is never killed and no foreign frames are unwound.
 
 pub mod context;
+pub mod date;
 pub mod ffi;
 pub mod fmt;
 pub mod math;

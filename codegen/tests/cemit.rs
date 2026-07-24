@@ -98,6 +98,54 @@ fn m1_collect_keeps_references_inside_a_fixed_array_param_alive() {
     );
 }
 
+#[test]
+fn date_intrinsics_match_across_tiers() {
+    // stdlib.md §3: construction, accessors, carries, toISOString — the
+    // committed a42 golden pins the full battery; this pins cross-tier
+    // agreement for a compact slice without a golden.
+    assert_tiers_agree(
+        "export function main(): void {\n  const d: Date = new Date(Date.UTC(1999, 11, 31, 23, 59, 59, 999));\n  print(`${d.getTime()},${d.getUTCFullYear()},${d.getUTCDay()}`);\n  print(d.toISOString());\n  print(new Date(-1).toISOString());\n}\n",
+    );
+}
+
+#[test]
+fn ship_c_aot_reports_a_date_range_trap_with_its_position() {
+    // Q20: out-of-range times trap — there is no Invalid-Date value.
+    let files = [SourceFile::new(
+        "test.ts",
+        "export function main(): void {\n  const d: Date = new Date(8640000000000001);\n  print(d.toISOString());\n}\n",
+    )];
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::DateRange, "{tier}");
+                assert_eq!(t.pos.file, "test.ts", "{tier}");
+                assert_eq!(t.pos.line, 2, "{tier}");
+            }
+            other => panic!("{tier}: expected a DateRange trap, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn ship_c_aot_reports_a_to_iso_year_range_trap() {
+    // toISOString requires years 0000–9999 (stdlib.md §3); the TimeClip
+    // maximum is a valid time but not printable.
+    let files = [SourceFile::new(
+        "test.ts",
+        "export function main(): void {\n  const d: Date = new Date(8640000000000000);\n  print(d.toISOString());\n}\n",
+    )];
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::DateRange, "{tier}");
+                assert_eq!(t.pos.line, 3, "{tier}");
+            }
+            other => panic!("{tier}: expected a DateRange trap, got {other:?}"),
+        }
+    }
+}
+
 /// The a22 corpus entry and its frozen golden, compiled into the test so
 /// the measured program is exactly the committed file.
 const A22_SOURCE: &str = include_str!("../../corpus/accept/a22-matrix-propagation.ts");

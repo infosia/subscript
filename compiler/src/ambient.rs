@@ -4,7 +4,7 @@
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
 
-use crate::hir::{AmbientFn, MathFn};
+use crate::hir::{AmbientFn, DateFn, MathFn};
 use crate::types::Type;
 
 /// Maps a sized-numeric alias name to its type.
@@ -61,6 +61,25 @@ pub(crate) fn math_const(name: &str) -> Option<f64> {
     }
 }
 
+/// Maps a `Date` instance-method name to its intrinsic (stdlib.md §3):
+/// the eight UTC accessors and `toISOString`. `getTime` is not here —
+/// it folds to the receiver value at check time — and the statics
+/// (`UTC`, `now`) are resolved on the `Date` namespace, not a receiver.
+pub(crate) fn date_method(name: &str) -> Option<DateFn> {
+    Some(match name {
+        "getUTCFullYear" => DateFn::GetUtcFullYear,
+        "getUTCMonth" => DateFn::GetUtcMonth,
+        "getUTCDate" => DateFn::GetUtcDate,
+        "getUTCDay" => DateFn::GetUtcDay,
+        "getUTCHours" => DateFn::GetUtcHours,
+        "getUTCMinutes" => DateFn::GetUtcMinutes,
+        "getUTCSeconds" => DateFn::GetUtcSeconds,
+        "getUTCMilliseconds" => DateFn::GetUtcMilliseconds,
+        "toISOString" => DateFn::ToIso,
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +128,22 @@ mod tests {
         }
         assert_eq!(math_const("EPSILON"), None);
         assert_eq!(math_const("floor"), None);
+    }
+
+    #[test]
+    fn date_method_lookup_covers_the_subset_and_nothing_else() {
+        assert_eq!(date_method("getUTCFullYear"), Some(DateFn::GetUtcFullYear));
+        assert_eq!(date_method("getUTCDay"), Some(DateFn::GetUtcDay));
+        assert_eq!(date_method("toISOString"), Some(DateFn::ToIso));
+        // getTime folds at check time; it is not an intrinsic lookup.
+        assert_eq!(date_method("getTime"), None);
+        // Out-of-subset members resolve to nothing (Q20).
+        assert_eq!(date_method("getFullYear"), None);
+        assert_eq!(date_method("setTime"), None);
+        assert_eq!(date_method("toString"), None);
+        // Statics are namespace members, not instance methods.
+        assert_eq!(date_method("UTC"), None);
+        assert_eq!(date_method("now"), None);
     }
 
     #[test]

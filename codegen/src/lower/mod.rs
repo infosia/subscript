@@ -103,6 +103,16 @@ pub(crate) struct RtFns {
     /// `sub_rt_math_*` imports (stdlib.md §1), indexed by
     /// `hir::MathFn as usize` (the [`hir::MathFn::ALL`] order).
     pub math: [FuncId; hir::MathFn::ALL.len()],
+    /// `sub_rt_date_utc` (stdlib.md §3): 7 `i32` components + pos id → i64.
+    pub date_utc: FuncId,
+    /// `sub_rt_date_new`: ms + pos id → range-checked ms.
+    pub date_new: FuncId,
+    /// `sub_rt_date_now`: Context clock → i64 ms.
+    pub date_now: FuncId,
+    /// `sub_rt_date_get`: (ms, field code) → i32 UTC accessor.
+    pub date_get: FuncId,
+    /// `sub_rt_date_to_iso`: (ms, pos id) → string handle.
+    pub date_to_iso: FuncId,
 }
 
 /// Parameters of the shared lowering.
@@ -441,6 +451,16 @@ fn declare_rt<M: Module>(
         // as two words, then the two userdata slots) is unused.
         cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
         math,
+        // Date intrinsics (stdlib.md §3): opaque symbols on both tiers.
+        date_utc: mk(
+            "sub_rt_date_utc",
+            &[I64, I32, I32, I32, I32, I32, I32, I32, I32],
+            Some(I64),
+        )?,
+        date_new: mk("sub_rt_date_new", &[I64, I64, I32], Some(I64))?,
+        date_now: mk("sub_rt_date_now", &[I64], Some(I64))?,
+        date_get: mk("sub_rt_date_get", &[I64, I64, I32], Some(I32))?,
+        date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
     })
 }
 

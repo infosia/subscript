@@ -205,6 +205,9 @@ pub struct Context {
     // The `Math.random` PRNG (stdlib.md §2), default-seeded on every
     // construction path so dev and ship draw the same contract stream.
     rng: crate::math::Rng,
+    // The `Date.now` source (stdlib.md §3): `Some` pins the clock
+    // (tests, replays); `None` reads the system UTC clock.
+    now_override: Option<i64>,
     // ----- ship-tier arena state (§8.1b); empty on the dev tier -----
     // Every chunk, in creation order.
     chunks: Vec<Chunk>,
@@ -263,6 +266,7 @@ impl Context {
             callbacks: Vec::new(),
             release_on_delete,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
+            now_override: None,
             chunks: Vec::new(),
             chunk_map: Vec::new(),
             free_heads: [0; NUM_CLASSES],
@@ -363,6 +367,32 @@ impl Context {
     /// replay control; [`crate::ffi::sub_rt_ctx_seed_random`]).
     pub fn seed_random(&mut self, seed: u64) {
         self.rng.reseed(seed);
+    }
+
+    // ----- Date.now clock (stdlib.md §3) -----
+
+    /// The `Date.now()` source: the pinned value when the host set one
+    /// ([`Context::set_now`]), otherwise the system UTC clock in epoch
+    /// milliseconds. A pre-1970 system clock yields the exact negative
+    /// millisecond value, never a panic.
+    #[must_use]
+    pub fn now_utc_ms(&self) -> i64 {
+        if let Some(ms) = self.now_override {
+            return ms;
+        }
+        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(d) => d.as_millis() as i64,
+            // The clock is before the epoch: the error carries the
+            // (positive) distance back to it.
+            Err(e) => -(e.duration().as_millis() as i64),
+        }
+    }
+
+    /// Pins the `Date.now` clock to `ms` (tests, replays;
+    /// [`crate::ffi::sub_rt_ctx_set_now`]). Every later `Date.now()`
+    /// returns exactly `ms` until pinned again.
+    pub fn set_now(&mut self, ms: i64) {
+        self.now_override = Some(ms);
     }
 
     // ----- trap state -----
@@ -1310,6 +1340,24 @@ mod tests {
         ctx.seed_random(7);
         let again: Vec<u64> = (0..4).map(|_| ctx.random_f64().to_bits()).collect();
         assert_eq!(first, again);
+    }
+
+    #[test]
+    fn now_defaults_to_the_system_clock_and_pins_on_set() {
+        let mut ctx = Context::new();
+        // Unpinned: a valid, non-decreasing time value from the system
+        // clock (stdlib.md §3).
+        let a = ctx.now_utc_ms();
+        let b = ctx.now_utc_ms();
+        assert!(crate::date::in_range(a), "system clock out of TimeClip: {a}");
+        assert!(b >= a);
+        // Pinned: exactly the set value, stable across reads, negative
+        // (pre-1970) values included.
+        ctx.set_now(123);
+        assert_eq!(ctx.now_utc_ms(), 123);
+        assert_eq!(ctx.now_utc_ms(), 123);
+        ctx.set_now(-456);
+        assert_eq!(ctx.now_utc_ms(), -456);
     }
 
     #[test]

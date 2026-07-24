@@ -537,6 +537,124 @@ mod tests {
         assert!(err[0].message.contains("FixedArray length"));
     }
 
+    // ----- P9.2 Date (stdlib.md §3, Q20) -----
+
+    #[test]
+    fn date_round_trip_program_checks_clean_with_nominal_types() {
+        let module = check_one(
+            "export function main(): void {\n  const d: Date = new Date(Date.UTC(2020, 0, 2));\n  const t: i64 = d.getTime();\n  print(`${t},${d.getUTCFullYear()}`);\n  print(d.toISOString());\n}\n",
+        )
+        .expect("clean");
+        let hir::Stmt::Let { ty, .. } = &module.functions[0].body[0] else {
+            panic!("expected let");
+        };
+        assert_eq!(*ty, Type::Date);
+        // getTime folds to the receiver retyped i64 — no call survives.
+        let hir::Stmt::Let { ty, init, .. } = &module.functions[0].body[1] else {
+            panic!("expected let");
+        };
+        assert_eq!(*ty, Type::I64);
+        assert!(
+            matches!(init.kind, hir::ExprKind::Local(_)),
+            "getTime must fold to the receiver, got {:?}",
+            init.kind
+        );
+    }
+
+    #[test]
+    fn date_utc_normalizes_missing_trailing_arguments_to_defaults() {
+        let module = check_one(
+            "export function main(): void {\n  const t: i64 = Date.UTC(2020, 0);\n  print(`${t}`);\n}\n",
+        )
+        .expect("clean");
+        let hir::Stmt::Let { init, .. } = &module.functions[0].body[0] else {
+            panic!("expected let");
+        };
+        let hir::ExprKind::Call { callee, args } = &init.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(*callee, hir::Callee::Date(hir::DateFn::Utc));
+        assert_eq!(args.len(), 7, "the runtime signature is always 7-argument");
+        // day defaults to 1, the time components to 0.
+        let values: Vec<i64> = args
+            .iter()
+            .skip(2)
+            .map(|a| match a.kind {
+                hir::ExprKind::Int(v) => v,
+                ref other => panic!("expected an int default, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(values, vec![1, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn date_is_not_interchangeable_with_i64() {
+        // i64 → Date needs `new Date(ms)`.
+        let err = check_one(
+            "export function main(): void {\n  const d: Date = 0;\n  print(d.toISOString());\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        // Date → i64 needs `getTime()`.
+        let err = check_one(
+            "export function main(): void {\n  const d: Date = new Date(0);\n  const t: i64 = d;\n  print(`${t}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+    }
+
+    #[test]
+    fn date_equality_is_s014_with_the_gettime_hint() {
+        let err = check_one(
+            "export function main(): void {\n  const a: Date = new Date(0);\n  const b: Date = new Date(0);\n  if (a === b) {\n    print(\"same\");\n  }\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("getTime"), "message: {}", err[0].message);
+        // Relational comparison is the same rejection.
+        let err = check_one(
+            "export function main(): void {\n  const a: Date = new Date(0);\n  const b: Date = new Date(1);\n  if (a < b) {\n    print(\"before\");\n  }\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+    }
+
+    #[test]
+    fn date_nullable_union_is_s011() {
+        let err = check_one("let d: Date | null = null;\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+    }
+
+    #[test]
+    fn date_as_a_value_and_static_member_reads_are_s014() {
+        let err = check_one("export function main(): void {\n  const d = Date;\n}\n").unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        let err = check_one(
+            "export function main(): void {\n  const f = Date.now;\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        let err = check_one(
+            "export function main(): void {\n  const t: i64 = Date.parse(\"2020\");\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("parse"));
+    }
+
+    #[test]
+    fn a_user_class_named_date_shadows_the_builtin() {
+        // Same rule as Math: program declarations win. The user class's
+        // own constructor and methods apply, including local-sounding
+        // names the ambient subset would reject.
+        let module = check_one(
+            "class Date { ms: i32;\n  constructor(ms: i32) { this.ms = ms; }\n  getFullYear(): i32 { return 1970; }\n}\nexport function main(): void {\n  const d: Date = new Date(3);\n  print(`${d.getFullYear()},${d.ms}`);\n}\n",
+        )
+        .expect("shadowing class checks clean");
+        assert_eq!(module.classes.len(), 1);
+        assert_eq!(module.classes[0].name, "Date");
+    }
+
     #[test]
     fn same_shaped_classes_do_not_substitute() {
         let err = check_one(

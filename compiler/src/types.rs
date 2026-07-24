@@ -34,6 +34,11 @@ pub enum Type {
     Bool,
     /// Immutable UTF-8 byte view (Q5).
     Str,
+    /// The ambient `Date` value type (stdlib.md §3, Q20): an immutable
+    /// UTC timestamp erasing to `i64` epoch milliseconds everywhere in
+    /// codegen, but nominal in the checker — not interchangeable with
+    /// `i64` without an explicit `getTime()`.
+    Date,
     /// Absence of a value (function returns only).
     Void,
     /// The type of the `null` literal.
@@ -125,6 +130,7 @@ pub fn display_type(
         Type::F64 => "f64".to_string(),
         Type::Bool => "boolean".to_string(),
         Type::Str => "string".to_string(),
+        Type::Date => "Date".to_string(),
         Type::Void => "void".to_string(),
         Type::Null => "null".to_string(),
         Type::Object => "object".to_string(),

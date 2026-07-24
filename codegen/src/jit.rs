@@ -131,6 +131,13 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_math_max", ffi::sub_rt_math_max as *const u8),
         ("sub_rt_math_min", ffi::sub_rt_math_min as *const u8),
         ("sub_rt_math_random", ffi::sub_rt_math_random as *const u8),
+        // Date intrinsics (stdlib.md §3): same opaque-symbol rule; the
+        // ship tier resolves these from the runtime static library.
+        ("sub_rt_date_utc", ffi::sub_rt_date_utc as *const u8),
+        ("sub_rt_date_new", ffi::sub_rt_date_new as *const u8),
+        ("sub_rt_date_now", ffi::sub_rt_date_now as *const u8),
+        ("sub_rt_date_get", ffi::sub_rt_date_get as *const u8),
+        ("sub_rt_date_to_iso", ffi::sub_rt_date_to_iso as *const u8),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);
@@ -428,6 +435,41 @@ mod tests {
     fn jit_bench_needs_a_timed_run() {
         let err = jit_bench(&sources("export function main(): void {}\n"), 1, 0);
         assert!(matches!(err, Err(RunError::Internal(_))));
+    }
+
+    #[test]
+    fn date_now_reads_the_pinned_context_clock_in_the_dev_tier() {
+        // stdlib.md §3: `Date.now()` is Context-owned and pinnable. The
+        // public `run_jit` builds its own Context, so this drives the
+        // compiled entries directly on a Context whose clock is pinned.
+        // Both tiers call the identical `sub_rt_date_now` symbol; the
+        // ship tier's link resolves it from the same runtime.
+        let (module, lowered) = compile_jit(&sources(
+            "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n",
+        ))
+        .expect("compile");
+        let init_ptr = module.get_finalized_function(lowered.init);
+        let main_ptr = module.get_finalized_function(lowered.main);
+        let mut ctx = Context::new();
+        ctx.set_now(1_592_224_496_789);
+        type Entry = unsafe extern "C" fn(*mut Context);
+        // SAFETY: finalized JIT code with the `(ctx) -> void` entry
+        // signature; the module outlives the calls; generated code
+        // never unwinds (trap-flag discipline).
+        unsafe {
+            let init: Entry = std::mem::transmute(init_ptr);
+            init(&mut *ctx);
+            let main: Entry = std::mem::transmute(main_ptr);
+            main(&mut *ctx);
+        }
+        assert!(ctx.trap_record().is_none());
+        assert_eq!(
+            ctx.take_stdout(),
+            b"1592224496789\n2020-06-15T12:34:56.789Z\n"
+        );
+        // SAFETY: all executions above have returned; no pointer into
+        // the JIT memory survives.
+        unsafe { module.free_memory() };
     }
 
     #[test]

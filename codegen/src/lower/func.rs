@@ -1978,6 +1978,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos),
             hir::Callee::Math(f) => self.eval_math(*f, args),
+            hir::Callee::Date(f) => self.eval_date(*f, args, pos),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -2642,6 +2643,77 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let res = self.call_rt(self.ml.rt.math[f as usize], &argv, false)?;
         res.map(RV::S)
             .ok_or_else(|| internal(format!("Math.{} result", f.name())))
+    }
+
+    /// Lowers a `Date` intrinsic (stdlib.md §3) to its opaque
+    /// `sub_rt_date_*` runtime call. A Date value is its `i64`
+    /// millisecond representation (`Type::Date` reprs as I64); the
+    /// range-checked operations (`new`, `UTC`, `toISOString`) are
+    /// fault-capable and followed by a trap check, the accessors and
+    /// `now` are not. `getTime` never reaches here — it folded to the
+    /// receiver at check time.
+    fn eval_date(
+        &mut self,
+        f: hir::DateFn,
+        args: &[hir::Expr],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        use hir::DateFn as D;
+        let scalar_arg = |this: &mut Self, e: &hir::Expr| -> Result<Value, String> {
+            let rv = this.eval(e)?;
+            this.expect_s(rv)
+        };
+        match f {
+            D::New => {
+                let ms = scalar_arg(self, args.first().ok_or_else(|| internal("Date arity"))?)?;
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(self.ml.rt.date_new, &[self.ctx_v, ms, pos_v], true)?;
+                res.map(RV::S).ok_or_else(|| internal("Date result"))
+            }
+            D::Utc => {
+                if args.len() != 7 {
+                    return Err(internal("Date.UTC arity (checker normalizes to 7)"));
+                }
+                let mut argv = vec![self.ctx_v];
+                for a in args {
+                    argv.push(scalar_arg(self, a)?);
+                }
+                let pid = self.pos_id(pos);
+                argv.push(self.iconst(types::I32, pid));
+                let res = self.call_rt(self.ml.rt.date_utc, &argv, true)?;
+                res.map(RV::S).ok_or_else(|| internal("Date.UTC result"))
+            }
+            D::Now => {
+                let res = self.call_rt(self.ml.rt.date_now, &[self.ctx_v], false)?;
+                res.map(RV::S).ok_or_else(|| internal("Date.now result"))
+            }
+            D::ToIso => {
+                let ms = scalar_arg(
+                    self,
+                    args.first().ok_or_else(|| internal("toISOString receiver"))?,
+                )?;
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res =
+                    self.call_rt(self.ml.rt.date_to_iso, &[self.ctx_v, ms, pos_v], true)?;
+                res.map(RV::S).ok_or_else(|| internal("toISOString result"))
+            }
+            accessor => {
+                let code = accessor
+                    .field_code()
+                    .ok_or_else(|| internal(format!("Date intrinsic {accessor:?}")))?;
+                let ms = scalar_arg(
+                    self,
+                    args.first().ok_or_else(|| internal("Date accessor receiver"))?,
+                )?;
+                let field = self.iconst(types::I32, i64::from(code));
+                let res =
+                    self.call_rt(self.ml.rt.date_get, &[self.ctx_v, ms, field], false)?;
+                res.map(RV::S)
+                    .ok_or_else(|| internal(format!("Date accessor {} result", accessor.name())))
+            }
+        }
     }
 
     fn eval_ambient(

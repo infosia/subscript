@@ -6,7 +6,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
-use crate::hir::{self, AmbientFn, BinOp, Callee, ExprKind, MathFn, TplPart, UnOp};
+use crate::hir::{self, AmbientFn, BinOp, Callee, DateFn, ExprKind, MathFn, TplPart, UnOp};
 use crate::types::{FuncType, Type};
 
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
@@ -259,7 +259,16 @@ impl<'p> Checker<'p> {
                         checked.ty,
                         Type::Str | Type::Bool | Type::Enum(_) | Type::Error
                     );
-                if !printable {
+                if checked.ty == Type::Date {
+                    // Q20: a Date has no implicit string form (the lib's
+                    // would be local-time `toString`).
+                    self.error(
+                        RuleCode::S014,
+                        "a `Date` cannot be interpolated into a template; \
+                         format it with `toISOString()` (Q20)",
+                        checked.pos.clone(),
+                    );
+                } else if !printable {
                     let name = self.type_name(&checked.ty);
                     self.error(
                         RuleCode::S100,
@@ -389,6 +398,15 @@ impl<'p> Checker<'p> {
                         RuleCode::S014,
                         "`Math` is an ambient namespace, not a value; \
                          only `Math.<member>` is accepted (Q19)",
+                        pos.clone(),
+                    );
+                } else if name == "Date" {
+                    // The ambient Date surface is a type and a namespace,
+                    // never a value (Q20).
+                    self.error(
+                        RuleCode::S014,
+                        "`Date` is not a value; only `new Date(ms)`, `Date.UTC(…)`, \
+                         and `Date.now()` are accepted (Q20)",
                         pos.clone(),
                     );
                 } else if crate::ambient::ambient_fn(&name).is_some() {
@@ -758,6 +776,23 @@ impl<'p> Checker<'p> {
         if ok || err {
             return mk(hop, if err { Type::Error } else { ty });
         }
+        // Q20: Dates are values erasing to i64, but the nominal wall
+        // stands both ways — comparison crosses through `getTime()`.
+        if lt == Type::Date
+            && rt == Type::Date
+            && matches!(
+                op,
+                B::EqEqEq | B::NotEqEq | B::Lt | B::LtEq | B::Gt | B::GtEq
+            )
+        {
+            self.error(
+                RuleCode::S014,
+                "`Date` values are not directly comparable; compare `getTime()` \
+                 values (Q20)",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let ln = self.type_name(&lt);
         let rn = self.type_name(&rt);
         if mixed_numeric {
@@ -1075,6 +1110,12 @@ impl<'p> Checker<'p> {
         if name == "Math" && self.scope_item(&name).is_none() {
             return Some(self.check_math_member(prop, prop_pos, for_write));
         }
+        // `Date.<member>` (stdlib.md §3): the static function members
+        // (`UTC`, `now`) are intercepted by `check_method_call` before
+        // this point; here every member read is a rejection.
+        if name == "Date" && self.scope_item(&name).is_none() {
+            return Some(self.check_date_member(prop, prop_pos, for_write));
+        }
         match self.scope_item(&name) {
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
                 if prop == "prototype" {
@@ -1221,6 +1262,245 @@ impl<'p> Checker<'p> {
             ty: Type::F64,
             pos,
         }
+    }
+
+    /// True when `obj` is the ambient `Date` namespace (stdlib.md §3):
+    /// the identifier `Date` with no local binding and no program
+    /// declaration shadowing it (same rule as `Math`).
+    fn is_date_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+        let ast::Expr::Ident(id) = obj else {
+            return false;
+        };
+        if id.sym.as_ref() != "Date" {
+            return false;
+        }
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|s| s.vars.contains_key("Date"));
+        !shadowed && self.scope_item("Date").is_none()
+    }
+
+    /// A `Date` namespace member outside a call position (stdlib.md §3):
+    /// there are no constant members, so every read is a Q20 rejection.
+    fn check_date_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
+        if for_write {
+            self.error(
+                RuleCode::S014,
+                format!("`Date.{}` is read-only (Q20)", prop),
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
+        let why = match prop {
+            "UTC" | "now" => format!(
+                "`Date.{}` may only be called, not read as a value (Q20)",
+                prop
+            ),
+            "parse" => "`Date.parse` is outside the accepted Date subset; construct \
+                        with `Date.UTC(…)` (Q20)"
+                .to_string(),
+            _ => format!("`Date.{}` is outside the accepted Date subset (Q20)", prop),
+        };
+        self.error(RuleCode::S014, why, prop_pos.clone());
+        self.err_expr(prop_pos)
+    }
+
+    /// A `Date` static call (`Date.UTC(…)`, `Date.now()`, stdlib.md §3).
+    /// Returns `None` when `name` is not a static function member; the
+    /// caller then falls through to the member rejection path.
+    fn check_date_static_call(
+        &mut self,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> Option<hir::Expr> {
+        match name {
+            "UTC" => {
+                // year and month0 are required; day defaults to 1, the
+                // time components to 0 (ECMA Date.UTC with the lib's
+                // optional parameters).
+                let params: Vec<ParamSig> = (0..7)
+                    .map(|i| ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: i >= 2,
+                    })
+                    .collect();
+                let mut args = self.check_args(&params, &c.args, fx, &pos, "Date.UTC");
+                // Normalize to the fixed 7-argument runtime signature at
+                // check time, so both tiers lower the identical call.
+                while args.len() < 7 {
+                    let default = if args.len() == 2 { 1 } else { 0 };
+                    args.push(hir::Expr {
+                        kind: ExprKind::Int(default),
+                        ty: Type::I32,
+                        pos: pos.clone(),
+                    });
+                }
+                Some(hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Date(DateFn::Utc),
+                        args,
+                    },
+                    ty: Type::I64,
+                    pos,
+                })
+            }
+            "now" => {
+                let args = self.check_args(&[], &c.args, fx, &pos, "Date.now");
+                Some(hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Date(DateFn::Now),
+                        args,
+                    },
+                    ty: Type::I64,
+                    pos,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// `new Date(…)` when no program declaration shadows `Date`
+    /// (stdlib.md §3): exactly one `i64` millisecond argument. The
+    /// zero-argument and multi-argument lib constructors mean
+    /// current/local time and are out of subset (Q20).
+    fn check_date_new(&mut self, n: &ast::NewExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+        let empty: Vec<ast::ExprOrSpread> = Vec::new();
+        let args_ast = n.args.as_deref().unwrap_or(&empty);
+        match args_ast.len() {
+            1 => {
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: Type::I64,
+                    has_default: false,
+                }];
+                let args = self.check_args(&params, args_ast, fx, &pos, "new Date");
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Date(DateFn::New),
+                        args,
+                    },
+                    ty: Type::Date,
+                    pos,
+                }
+            }
+            0 => {
+                self.error(
+                    RuleCode::S014,
+                    "`new Date()` means the current time in the lib; out of subset — \
+                     write `new Date(Date.now())` (Q20)",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            _ => {
+                self.error(
+                    RuleCode::S014,
+                    "the multi-argument `new Date(y, m, …)` is interpreted in local \
+                     time by the lib; out of subset — write `new Date(Date.UTC(y, m, …))` \
+                     (Q20)",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+        }
+    }
+
+    /// A method call on a `Date` receiver (stdlib.md §3): `getTime()`
+    /// folds to the receiver value retyped `i64` (the identity on the
+    /// representation — both tiers agree by construction), the UTC
+    /// accessors and `toISOString` become intrinsics carrying the
+    /// receiver as their first argument, and everything else is a Q20
+    /// rejection.
+    fn check_date_method(
+        &mut self,
+        recv: hir::Expr,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        if name == "getTime" {
+            self.check_args(&[], &c.args, fx, &pos, "getTime");
+            return hir::Expr {
+                kind: recv.kind,
+                ty: Type::I64,
+                pos,
+            };
+        }
+        if let Some(f) = crate::ambient::date_method(name) {
+            self.check_args(&[], &c.args, fx, &pos, name);
+            let ty = if f == DateFn::ToIso {
+                Type::Str
+            } else {
+                Type::I32
+            };
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Date(f),
+                    args: vec![recv],
+                },
+                ty,
+                pos,
+            };
+        }
+        self.date_subset_rejection(name, prop_pos.clone());
+        self.err_expr(pos)
+    }
+
+    /// Emits the Q20 rejection for an out-of-subset `Date` instance
+    /// member, naming the member and pointing at the accepted spelling.
+    fn date_subset_rejection(&mut self, name: &str, pos: Pos) {
+        const LOCAL_ACCESSORS: &[&str] = &[
+            "getFullYear",
+            "getMonth",
+            "getDate",
+            "getDay",
+            "getHours",
+            "getMinutes",
+            "getSeconds",
+            "getMilliseconds",
+            "getTimezoneOffset",
+            "getYear",
+        ];
+        const TO_STRING_FAMILY: &[&str] = &[
+            "toString",
+            "toDateString",
+            "toTimeString",
+            "toLocaleString",
+            "toLocaleDateString",
+            "toLocaleTimeString",
+            "toUTCString",
+            "toJSON",
+            "valueOf",
+        ];
+        let why = if LOCAL_ACCESSORS.contains(&name) {
+            format!(
+                "`{}` reads local time; the accepted Date subset is UTC-only — \
+                 use the `getUTC…` accessor (Q20)",
+                name
+            )
+        } else if name.starts_with("set") {
+            format!(
+                "`{}`: a `Date` is an immutable value; setters are out of subset — \
+                 construct a new `Date` (Q20)",
+                name
+            )
+        } else if TO_STRING_FAMILY.contains(&name) {
+            format!(
+                "`{}` is outside the accepted Date subset; format with \
+                 `toISOString()` (Q20)",
+                name
+            )
+        } else {
+            format!("`{}` is outside the accepted Date subset (Q20)", name)
+        };
+        self.error(RuleCode::S014, why, pos);
     }
 
     fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
@@ -1433,6 +1713,26 @@ impl<'p> Checker<'p> {
                         self.err_expr(prop_pos)
                     }
                 }
+            }
+            Type::Date => {
+                // A member on a Date receiver outside a call position
+                // (stdlib.md §3): the accepted members are all methods.
+                if for_write {
+                    self.error(
+                        RuleCode::S014,
+                        format!("`Date` is an immutable value; `{}` cannot be assigned (Q20)", name),
+                        prop_pos.clone(),
+                    );
+                } else if name == "getTime" || crate::ambient::date_method(name).is_some() {
+                    self.error(
+                        RuleCode::S014,
+                        format!("`{}` may only be called, not read as a value (Q20)", name),
+                        prop_pos.clone(),
+                    );
+                } else {
+                    self.date_subset_rejection(name, prop_pos.clone());
+                }
+                self.err_expr(prop_pos)
             }
             Type::Object => {
                 self.error(
@@ -1926,6 +2226,13 @@ impl<'p> Checker<'p> {
                 return self.check_math_call(f, c, fx, pos);
             }
         }
+        // `Date.UTC(…)` / `Date.now()` (stdlib.md §3): static intrinsic
+        // calls, resolved before the generic namespace-member path.
+        if self.is_date_namespace(&m.obj, fx) {
+            if let Some(handled) = self.check_date_static_call(&name, c, fx, pos.clone()) {
+                return handled;
+            }
+        }
         if let Some(handled) =
             self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
         {
@@ -1949,6 +2256,7 @@ impl<'p> Checker<'p> {
         };
         match recv.ty.clone() {
             Type::Error => self.err_expr(pos),
+            Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Array(elem) => match name.as_str() {
                 "push" => {
                     let params = [ParamSig {
@@ -2134,6 +2442,11 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
             return self.err_expr(pos);
+        }
+        // `new Date(ms)` (stdlib.md §3): the ambient constructor applies
+        // only when no program declaration shadows the name.
+        if name == "Date" && self.scope_item(&name).is_none() {
+            return self.check_date_new(n, fx, pos);
         }
         let class_id = match self.scope_item(&name) {
             Some(ScopeItem::Class(class_id)) => {
