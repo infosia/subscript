@@ -751,9 +751,9 @@ The emitter follows a `typedef → typedef → integer` chain to the
 underlying sized type: `typedef uint32_t B; typedef B X;` → `type X =
 u32` (and the flag-alias + `declare const` form when members exist). P6.2
 handled one-level aliases and **fails loud** on two-level; P7.1 resolves
-the chain (production headers, incl. WebGPU-class ones, spell flags as a
-two-level alias). Still fail loud if the chain does not bottom out in a
-mapped integer.
+the chain (production GPU C APIs commonly spell flags as a two-level
+alias). Still fail loud if the chain does not bottom out in a mapped
+integer.
 
 ### 14.2 By-value boundary-struct return
 

@@ -463,7 +463,7 @@ regen). P6.2: descriptor-embedded arrays, flag typedefs, untyped-data
 facade, and a fail-loud emitter (no silent invalid mirror). P6.3: async
 deferred-fire callbacks, a 36-struct offsetof proof, and a generic
 `--header` CLI proven locally on a real ~20k-line GPU C API. Verdict on
-the founding question: binding a real production C API (WebGPU-class) has
+the founding question: binding a real production GPU C API has
 no language-level blocker — the committed proof is the neutral
 production-scale fixture on both tiers; pointing the CLI at a specific
 real header is a local step it now supports, with any unmapped construct

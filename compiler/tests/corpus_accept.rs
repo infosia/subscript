@@ -45,6 +45,12 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
         "SUB_ACCESS",
         "subAccessMatches",
         "subBulk",
+        // P7.1 async/Future shapes (compiler.md §14).
+        "SUB_STAGE",
+        "subStageMatches",
+        "subFutureMake",
+        "subStatsMake",
+        "SubQueryStatus",
     ];
     if sources
         .iter()
@@ -95,8 +101,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        34,
-        "expected 34 single-file accept entries (23 run set + a25–a35 interop) plus a19-modules"
+        37,
+        "expected 37 single-file accept entries (23 run set + a25–a38 interop) plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

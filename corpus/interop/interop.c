@@ -261,3 +261,43 @@ int32_t subCommandBufferTotal(SubCommandBuffer buf) {
     }
     return (int32_t)sum;
 }
+
+/* ==== P7.1 incremental async/Future interop shapes (compiler.md §14) === */
+
+/* §14.1 chained flag alias: 1 when every bit of `required` is set in
+ * `mask`, else 0 — the same observable bit test as subAccessMatches, over
+ * the two-level SubStageFlags alias. */
+int32_t subStageMatches(SubStageFlags mask, SubStageFlags required) {
+    return (mask & required) == required ? 1 : 0;
+}
+
+/* §14.2 by-value struct return. Both are deterministic and host-state-free
+ * so the corpus golden depends only on the argument, isolating the struct-
+ * return marshaling. SubFuture is 8 bytes (register return); SubStats is 24
+ * bytes (sret). */
+SubFuture subFutureMake(uint32_t request) {
+    SubFuture f;
+    f.id = (uint64_t)request * 3u + 1u;
+    return f;
+}
+
+SubStats subStatsMake(uint32_t base) {
+    SubStats s;
+    s.submitted = (uint64_t)base;
+    s.completed = (uint64_t)base * 2u;
+    s.pending = (uint64_t)base * 3u;
+    return s;
+}
+
+/* §14.3 out field: WRITE the caller-provided status record. The pointer is
+ * the caller's own storage (layout-identical), so the writes are observed by
+ * the script after this returns with no copy-back. future encodes the
+ * request plus the device chain depth; completed is set to 1. */
+void subDeviceQuery(SubDevice device, uint32_t request, SubQueryStatus *status) {
+    if (status == NULL) {
+        return;
+    }
+    int depth = (device != NULL) ? device->chain_depth : 0;
+    status->future = (uint64_t)request * 10u + (uint64_t)depth;
+    status->completed = 1;
+}

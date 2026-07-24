@@ -51,6 +51,12 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "SUB_ACCESS",
         "subAccessMatches",
         "subBulk",
+        // P7.1 async/Future shapes (compiler.md §14).
+        "SUB_STAGE",
+        "subStageMatches",
+        "subFutureMake",
+        "subStatsMake",
+        "SubQueryStatus",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

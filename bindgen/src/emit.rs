@@ -156,10 +156,11 @@ fn classify(parsed: &Parsed) -> HashMap<String, Kind> {
         }
     }
     // A scalar typedef alias resolves to its own name at use sites (the
-    // emitted `type X = <scalar>` alias). Only aliases over a mapped scalar
-    // are registered; others are left unmapped so a use site fails loud.
+    // emitted `type X = <scalar>` alias). Only aliases whose typedef chain
+    // bottoms out in a mapped integer are registered; others are left
+    // unmapped so a use site fails loud (§14.1).
     for alias in &parsed.aliases {
-        if lang_scalar(&alias.underlying).is_some() {
+        if alias_scalar(alias).is_some() {
             reg.insert(alias.name.clone(), Kind::Alias);
         }
     }
@@ -190,7 +191,22 @@ fn classify_struct(fields: &[CField]) -> Kind {
 /// The language spelling of a flag typedef's element scalar, when the
 /// alias is over a mapped scalar; `None` otherwise (that alias is skipped).
 fn flag_alias_scalar(alias: &Alias) -> Option<&'static str> {
-    lang_scalar(&alias.underlying)
+    alias_scalar(alias)
+}
+
+/// Resolves a scalar/flag typedef alias to its language integer by
+/// following its typedef chain to the first spelling that maps (§14.1):
+/// `typedef uint32_t B; typedef B X;` resolves `X` to `u32`. A chain that
+/// never reaches a mapped integer resolves to `None` (unregistered → its
+/// use site fails loud). The immediate underlying is checked first, then
+/// each deeper link, so a stdint spelling (`int64_t`, `size_t`) is honored
+/// before its target-dependent canonical builtin (`long`, `unsigned long`)
+/// which is deliberately unmapped.
+fn alias_scalar(alias: &Alias) -> Option<&'static str> {
+    if let Some(s) = lang_scalar(&alias.underlying) {
+        return Some(s);
+    }
+    alias.chain.iter().find_map(|s| lang_scalar(s))
 }
 
 /// True when `v` is exactly representable as an `f64` integer
@@ -581,6 +597,7 @@ mod tests {
         p.aliases = vec![Alias {
             name: "SubBig".into(),
             underlying: "uint64_t".into(),
+            chain: vec!["uint64_t".into()],
         }];
         p.constants = vec![crate::clangfe::Constant {
             name: "SUB_BIG_ONE".into(),
@@ -598,6 +615,7 @@ mod tests {
         p.aliases = vec![Alias {
             name: "SubAccess".into(),
             underlying: "uint64_t".into(),
+            chain: vec!["uint64_t".into()],
         }];
         p.constants = vec![
             Constant("SUB_ACCESS_READ", "SubAccess", 1),
@@ -610,6 +628,50 @@ mod tests {
         assert!(m.contains("type SubAccess = u64;"), "{m}");
         assert!(m.contains("declare const SUB_ACCESS_READ = 1;"), "{m}");
         assert!(m.contains("declare const SUB_ACCESS_WRITE = 2;"), "{m}");
+    }
+
+    #[test]
+    fn two_level_flag_alias_resolves_through_the_chain() {
+        // `typedef uint32_t B; typedef B X;` — the immediate underlying is
+        // the intermediate typedef `B` (not a mapped integer); the emitter
+        // follows the chain to `uint32_t` → `u32` (§14.1).
+        let mut p = Parsed::default();
+        p.aliases = vec![Alias {
+            name: "SubStageFlags".into(),
+            underlying: "SubStageBits".into(),
+            chain: vec![
+                "SubStageBits".into(),
+                "uint32_t".into(),
+                "unsigned int".into(),
+            ],
+        }];
+        p.constants = vec![Constant("SUB_STAGE_VERTEX", "SubStageFlags", 1)]
+            .into_iter()
+            .map(|c| c.into())
+            .collect();
+        let m = emit(&p).expect("two-level alias resolves");
+        assert!(m.contains("type SubStageFlags = u32;"), "{m}");
+        assert!(m.contains("declare const SUB_STAGE_VERTEX = 1;"), "{m}");
+    }
+
+    #[test]
+    fn alias_chain_not_reaching_an_integer_fails_loud_at_use() {
+        // A typedef chain that never bottoms out in a mapped integer is not
+        // registered, so a boundary use site of it fails loud (§14.1) —
+        // never a silently wrong mirror.
+        let mut p = Parsed::default();
+        p.aliases = vec![Alias {
+            name: "SubOpaqueId".into(),
+            underlying: "SubBase".into(),
+            chain: vec!["SubBase".into(), "SubThing".into()],
+        }];
+        p.decls = vec![Decl::Func {
+            name: "subUse".into(),
+            ret: field("void", false, false, ""),
+            params: vec![field("SubOpaqueId", false, false, "id")],
+        }];
+        let err = emit(&p).expect_err("unresolvable alias chain must fail loud");
+        assert!(err.0.contains("SubOpaqueId"), "{}", err.0);
     }
 
     // Tiny helper to keep the flag test terse.

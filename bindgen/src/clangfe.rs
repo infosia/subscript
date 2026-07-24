@@ -86,8 +86,17 @@ pub struct Constant {
 pub struct Alias {
     /// Alias name.
     pub name: String,
-    /// Underlying type spelling as written, e.g. `uint64_t`.
+    /// Immediate underlying type spelling as written, e.g. `uint64_t`
+    /// (the first link of [`Alias::chain`]).
     pub underlying: String,
+    /// The typedef chain under this alias, from the immediate underlying
+    /// type to the canonical builtin, each spelling stripped of
+    /// `const`/`struct`/… (compiler.md §14.1). A two-level flag alias
+    /// `typedef uint32_t B; typedef B X;` records `["B", "uint32_t",
+    /// "unsigned int"]` for `X`, so the emitter can follow the chain to the
+    /// first spelling that maps to a language integer. Empty for a pointer
+    /// alias.
+    pub chain: Vec<String>,
 }
 
 /// Parses `source` as a C header via libclang.
@@ -282,20 +291,47 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
                     let params = typedef_params(cursor);
                     parsed.decls.push(Decl::FnPtr { name, ret, params });
                 }
-                // Pointer to a scalar/other — record as a plain alias.
+                // Pointer to a scalar/other — record as a plain alias with
+                // no integer chain (a pointer never maps to a language
+                // integer; its use site fails loud).
                 _ => parsed.aliases.push(Alias {
                     name,
                     underlying: type_spelling(under),
+                    chain: Vec::new(),
                 }),
             }
         }
-        // Scalar typedef, including flag typedefs (`typedef uintN XFlags`).
+        // Scalar typedef, including flag typedefs (`typedef uintN XFlags`)
+        // and multi-level flag aliases (`typedef uint32_t B; typedef B X`,
+        // §14.1). The chain is followed so the emitter can resolve any
+        // depth that bottoms out in a mapped integer.
         _ => parsed.aliases.push(Alias {
             name,
             underlying: type_spelling(under),
+            chain: typedef_chain(under),
         }),
     }
     Ok(())
+}
+
+/// Collects the typedef chain under a scalar typedef's immediate underlying
+/// type, from that immediate type down to the canonical builtin, each as a
+/// stripped base spelling (compiler.md §14.1). Each link is one typedef
+/// level: `typedef uint32_t B; typedef B X;` yields `["B", "uint32_t",
+/// "unsigned int"]` under `X`. The walk is bounded so a pathological input
+/// cannot loop.
+unsafe fn typedef_chain(under: CXType) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut t = under;
+    for _ in 0..64 {
+        chain.push(base_spelling(t));
+        let decl = clang_getTypeDeclaration(t);
+        if clang_getCursorKind(decl) != CXCursor_TypedefDecl {
+            break;
+        }
+        t = clang_getTypedefDeclUnderlyingType(decl);
+    }
+    chain
 }
 
 /// Reads the members (name, value) of an enum declaration, in order.

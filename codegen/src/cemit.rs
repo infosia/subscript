@@ -1930,7 +1930,24 @@ impl<'m> Emitter<'m> {
         for (p, a) in ff.params.iter().zip(args) {
             parts.push(self.marshal_foreign_c_arg(&p.ty, a, out, depth)?);
         }
-        Ok(format!("{name}({})", parts.join(", ")))
+        let call = format!("{name}({})", parts.join(", "));
+        // A by-value boundary-struct return (§14.2): the C compiler performs
+        // the struct-return ABI; the returned header struct is copied into a
+        // language value class of identical layout (invariant 1), so callers
+        // see an ordinary in-language value they can read fields from.
+        if let Type::Class(cid) = &ff.ret {
+            if self.is_value_class(*cid)? {
+                let ind = indent(depth);
+                let header_ty = self.class(*cid)?.name.clone();
+                let lang_ty = self.class_name(*cid)?;
+                let h = self.fresh_tmp();
+                let t = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{header_ty} {h} = {call};");
+                let _ = writeln!(out, "{ind}{lang_ty} {t}; memcpy(&{t}, &{h}, sizeof {t});");
+                return Ok(t);
+            }
+        }
+        Ok(call)
     }
 
     /// Marshals one argument of a foreign call to a C expression (Q13),

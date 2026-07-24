@@ -310,6 +310,28 @@ class SubCompletionInfo {
   userdata: u64;
 }
 
+// ---- P7.1 async/Future shapes (compiler.md §14) ----------------------
+// SubFuture: a small (8-byte, register-returned) by-value return. SubStats:
+// a larger (24-byte, sret-returned) by-value return. SubQueryStatus: the
+// out-field record a callee writes by reference.
+@value
+class SubFuture {
+  id: u64;
+}
+
+@value
+class SubStats {
+  submitted: u64;
+  completed: u64;
+  pending: u64;
+}
+
+@value
+class SubQueryStatus {
+  future: u64;
+  completed: i32;
+}
+
 export function main(): void {}
 "#;
 
@@ -355,6 +377,10 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubDrawList", vec!["layer", "drawsCount", "draws"]),
         ("SubCommandBuffer", vec!["queue", "commandsCount", "commands"]),
         ("SubCompletionInfo", vec!["callback", "userdata"]),
+        // P7.1 async/Future shapes (§14).
+        ("SubFuture", vec!["id"]),
+        ("SubStats", vec!["submitted", "completed", "pending"]),
+        ("SubQueryStatus", vec!["future", "completed"]),
     ]
 }
 

@@ -21,8 +21,8 @@
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-    types, AbiParam, Block, BlockArg, InstBuilder, MemFlags, Signature, StackSlotData,
-    StackSlotKind, Value,
+    types, AbiParam, ArgumentPurpose, Block, BlockArg, InstBuilder, MemFlags, Signature,
+    StackSlotData, StackSlotKind, Value,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
@@ -44,6 +44,20 @@ enum RV {
     P(Value, Value),
     /// Aggregate viewed through a pointer to its storage.
     A(Value),
+}
+
+/// How a by-value boundary struct returned from a foreign call reaches its
+/// language slot (§14.2). Either the callee wrote a caller `sret` slot, or
+/// the result came back in registers to be stored chunk-by-chunk.
+enum StructRet {
+    /// A hidden result pointer was passed; the callee wrote the slot.
+    Sret(Value),
+    /// The struct was returned in registers; each `(byte offset, CLIF
+    /// type)` chunk is one returned value to store into the slot.
+    Reg {
+        slot: Value,
+        chunks: Vec<(u32, types::Type)>,
+    },
 }
 
 /// Where a binding lives.
@@ -1994,14 +2008,25 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Err(internal(format!("foreign call `{name}` arity at {pos}")));
         }
         let mut sig = Signature::new(self.ml.call_conv);
+        // A by-value boundary-struct return (§14.2): plan the C-ABI return
+        // before the arguments, since a large (sret) return prepends a
+        // hidden result-pointer argument.
+        let ret_repr = self.ml.layouts.repr(&ret)?;
+        let struct_ret = if let Repr::Agg { size, align } = ret_repr {
+            Some(self.plan_foreign_struct_return(&ret, size, align, &mut sig, pos)?)
+        } else {
+            None
+        };
         let mut argv: Vec<Value> = Vec::new();
+        if let Some(StructRet::Sret(slot)) = struct_ret {
+            argv.push(slot);
+        }
         for (ty, a) in params.iter().zip(args) {
             let rv = self.eval(a)?;
             self.marshal_foreign_arg(ty, rv, &mut sig, &mut argv)?;
         }
-        let ret_repr = self.ml.layouts.repr(&ret)?;
         match ret_repr {
-            Repr::None => {}
+            Repr::None | Repr::Agg { .. } => {}
             Repr::Scalar(t) => sig.returns.push(AbiParam::new(t)),
             other => {
                 return Err(internal(format!(
@@ -2028,8 +2053,134 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.trap_check();
         Ok(match ret_repr {
             Repr::Scalar(_) => RV::S(*res.first().ok_or_else(|| internal("foreign result"))?),
+            Repr::Agg { .. } => {
+                // Reconstruct the returned by-value struct into a language
+                // slot (§14.2): sret already wrote it; a register return is
+                // stored into the slot chunk-by-chunk.
+                let sr = struct_ret.ok_or_else(|| internal("struct-return plan missing"))?;
+                RV::A(self.finish_foreign_struct_return(sr, &res))
+            }
             _ => RV::None,
         })
+    }
+
+    /// Plans the C-ABI return of a by-value boundary struct (§14.2),
+    /// arch-gated by §12.3a exactly as by-value struct *arguments* are: the
+    /// by-value aggregate ABI is target-specific, so only AAPCS64 and Win64
+    /// are honored; any other host fails loud rather than silently
+    /// mis-marshal (dev-JIT ≠ ship-C otherwise). A small struct is returned
+    /// in registers (declared in `sig.returns`); a large one via `sret` (a
+    /// hidden result pointer to a caller slot).
+    ///
+    /// - **AAPCS64**: ≤ 16 bytes → returned in general registers as
+    ///   `ceil(size/8)` eightbyte integer chunks; larger → `sret`.
+    /// - **Win64**: exactly 1/2/4/8 bytes → one integer register of that
+    ///   width; every other size → `sret`.
+    fn plan_foreign_struct_return(
+        &mut self,
+        ret: &Type,
+        size: u32,
+        align: u32,
+        sig: &mut Signature,
+        pos: &Pos,
+    ) -> Result<StructRet, String> {
+        let triple = self.ml.module.isa().triple().clone();
+        if !crate::lower::boundary_struct_by_value_supported(&triple) {
+            return Err(internal(format!(
+                "foreign call returning a boundary struct by value is only supported \
+                 on aarch64 (AAPCS64) and x86-64 Windows (Win64) in the dev JIT \
+                 (compiler.md §12.3a); target {triple} is unsupported (at {pos})"
+            )));
+        }
+        // A returned struct's fields must be plain data (scalars / nested
+        // value structs). Callback and descriptor-embedded-array fields are
+        // input-only marshaling idioms; a foreign function does not return
+        // them by value.
+        self.assert_returnable_struct(ret)?;
+        if self.is_win64() {
+            let width = match size {
+                1 => Some(types::I8),
+                2 => Some(types::I16),
+                4 => Some(types::I32),
+                8 => Some(types::I64),
+                _ => None,
+            };
+            if let Some(w) = width {
+                sig.returns.push(AbiParam::new(w));
+                let slot = self.temp_slot(size, align);
+                return Ok(StructRet::Reg {
+                    slot,
+                    chunks: vec![(0, w)],
+                });
+            }
+            let slot = self.temp_slot(size, align);
+            sig.params
+                .push(AbiParam::special(types::I64, ArgumentPurpose::StructReturn));
+            return Ok(StructRet::Sret(slot));
+        }
+        // AAPCS64.
+        if size <= 16 {
+            let mut chunks = Vec::new();
+            let mut off = 0u32;
+            while off < size {
+                sig.returns.push(AbiParam::new(types::I64));
+                chunks.push((off, types::I64));
+                off += 8;
+            }
+            // The register image is up to `chunks.len() * 8` bytes; the slot
+            // is sized to hold whole eightbyte stores without overrunning
+            // (only the struct's own `size` bytes are ever read back).
+            let slot = self.temp_slot(chunks.len() as u32 * 8, align.max(8));
+            Ok(StructRet::Reg { slot, chunks })
+        } else {
+            let slot = self.temp_slot(size, align);
+            sig.params
+                .push(AbiParam::special(types::I64, ArgumentPurpose::StructReturn));
+            Ok(StructRet::Sret(slot))
+        }
+    }
+
+    /// Fails loud if a struct returned by value from a foreign call carries
+    /// a field that is not plain data (callback pair or descriptor-embedded
+    /// array — input-only marshaling idioms).
+    fn assert_returnable_struct(&self, ret: &Type) -> Result<(), String> {
+        let Type::Class(id) = ret else {
+            return Err(internal("returnable-struct check on a non-class"));
+        };
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(id.0)
+            .ok_or_else(|| internal("return struct class id out of range"))?;
+        for f in &class.fields {
+            match &f.ty {
+                Type::Func(_) | Type::Array(_) => {
+                    return Err(internal(format!(
+                        "foreign return struct field `{}` is a {:?}, not plain data; \
+                         callback/array fields are input-only boundary idioms",
+                        f.name, f.ty
+                    )))
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Materializes a planned struct return into its language slot and
+    /// returns the slot address. `sret` already wrote the slot; a register
+    /// return stores each returned chunk at its offset.
+    fn finish_foreign_struct_return(&mut self, sr: StructRet, res: &[Value]) -> Value {
+        match sr {
+            StructRet::Sret(slot) => slot,
+            StructRet::Reg { slot, chunks } => {
+                for ((off, _ty), v) in chunks.iter().zip(res) {
+                    self.b.ins().store(flags(), *v, slot, *off as i32);
+                }
+                slot
+            }
+        }
     }
 
     /// Appends one ABI value (type + value) to a foreign call's signature

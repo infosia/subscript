@@ -414,4 +414,72 @@ typedef struct SubCommandBuffer {
 
 int32_t subCommandBufferTotal(SubCommandBuffer buf);
 
+/* ==== P7.1 incremental async/Future interop shapes (compiler.md §14) === */
+
+/* ---- §14.1 Chained (two-level) flag alias --------------------------- *
+ *
+ * A production flag typedef spelled as TWO typedef levels: SubStageFlags is
+ * a typedef of SubStageBits, itself a typedef of uint64_t. The mirror
+ * follows the chain to the underlying integer (`type SubStageFlags = u64`),
+ * emits the `static const` members as folded `declare const`s, and they
+ * combine with `|` (Q18) and cross to a foreign bit test exactly as the
+ * one-level SubAccess flag (a33) does. Two levels over uint64_t (not
+ * uint32_t) so the folded members — typed u64 by the ambient-const rule —
+ * match the alias width and the foreign parameter width. subStageMatches
+ * reports whether every bit of `required` is set in `mask`. */
+
+typedef uint64_t SubStageBits;
+typedef SubStageBits SubStageFlags;
+static const SubStageFlags SUB_STAGE_NONE = 0x0;
+static const SubStageFlags SUB_STAGE_VERTEX = 0x1;
+static const SubStageFlags SUB_STAGE_FRAGMENT = 0x2;
+static const SubStageFlags SUB_STAGE_COMPUTE = 0x4;
+
+int32_t subStageMatches(SubStageFlags mask, SubStageFlags required);
+
+/* ---- §14.2 By-value boundary-struct return -------------------------- *
+ *
+ * A foreign function returns a boundary value class BY VALUE. The dev JIT
+ * marshals the C-ABI struct return (small structs in registers, larger via
+ * sret), subject to the §12.3a by-value-aggregate arch-gate; the ship tier
+ * gets the direct C return. SubFuture is the small (register-returned,
+ * 8-byte) async-future shape the production model uses; SubStats is the
+ * larger (sret-returned, 24-byte) case, so one corpus entry proves both ABI
+ * return paths. The returned value class is an ordinary in-language value
+ * afterward (read its fields). */
+
+typedef struct SubFuture {
+    uint64_t id;
+} SubFuture;
+
+typedef struct SubStats {
+    uint64_t submitted;
+    uint64_t completed;
+    uint64_t pending;
+} SubStats;
+
+/* Deterministic, no host state: id = request*3 + 1. */
+SubFuture subFutureMake(uint32_t request);
+/* Deterministic, no host state: (base, base*2, base*3). */
+SubStats subStatsMake(uint32_t base);
+
+/* ---- §14.3 Out field written by the callee -------------------------- *
+ *
+ * A caller-provided boundary struct passed BY REFERENCE (the `Struct | null`
+ * boundary form): the callee WRITES its fields and the script reads them
+ * back after the call. There is no copy-back — the callee wrote the caller's
+ * own storage, because both tiers pass the address of the language struct's
+ * storage (layout-identical to the C struct, invariant 1). This is the
+ * out-field spelling of §14.3 ("or writes a struct out-field"); SubQueryStatus
+ * is exactly the per-future status record the P7.2 out-array capstone fills
+ * many of. subDeviceQuery writes status->future (derived from `request` plus
+ * the device chain depth) and status->completed = 1. */
+
+typedef struct SubQueryStatus {
+    uint64_t future;
+    int32_t completed;
+} SubQueryStatus;
+
+void subDeviceQuery(SubDevice device, uint32_t request, SubQueryStatus *status);
+
 #endif /* SUBSCRIPT_INTEROP_H */

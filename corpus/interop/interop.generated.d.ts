@@ -253,9 +253,41 @@ declare class SubCommandBuffer {
 }
 
 declare function subCommandBufferTotal(buf: SubCommandBuffer): i32;
+declare function subStageMatches(mask: SubStageFlags, required: SubStageFlags): i32;
+
+declare class SubFuture {
+  id: u64;
+  constructor(id: u64);
+}
+
+declare class SubStats {
+  submitted: u64;
+  completed: u64;
+  pending: u64;
+  constructor(submitted: u64, completed: u64, pending: u64);
+}
+
+declare function subFutureMake(request: u32): SubFuture;
+declare function subStatsMake(base: u32): SubStats;
+
+declare class SubQueryStatus {
+  future: u64;
+  completed: i32;
+  constructor(future: u64, completed: i32);
+}
+
+declare function subDeviceQuery(device: SubDevice, request: u32, status: SubQueryStatus | null): void;
 
 type SubAccess = u64;
 declare const SUB_ACCESS_NONE = 0;
 declare const SUB_ACCESS_READ = 1;
 declare const SUB_ACCESS_WRITE = 2;
 declare const SUB_ACCESS_EXEC = 4;
+
+type SubStageBits = u64;
+
+type SubStageFlags = u64;
+declare const SUB_STAGE_NONE = 0;
+declare const SUB_STAGE_VERTEX = 1;
+declare const SUB_STAGE_FRAGMENT = 2;
+declare const SUB_STAGE_COMPUTE = 4;

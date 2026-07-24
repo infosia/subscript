@@ -69,6 +69,12 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subDeviceOnComplete",
             "subDevicePump",
             "subCommandBufferTotal",
+            // P7.1 async/Future shapes (§14): chained-flag bit test,
+            // by-value struct returns, and an out-field writer.
+            "subStageMatches",
+            "subFutureMake",
+            "subStatsMake",
+            "subDeviceQuery",
         ]
     );
 

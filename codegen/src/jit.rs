@@ -128,6 +128,10 @@ extern "C" {
     fn subDeviceOnComplete();
     fn subDevicePump();
     fn subCommandBufferTotal();
+    fn subStageMatches();
+    fn subFutureMake();
+    fn subStatsMake();
+    fn subDeviceQuery();
 }
 
 /// Registers the foreign C-header symbols (`corpus/interop/interop.c`,
@@ -153,6 +157,10 @@ pub(crate) fn register_interop(builder: &mut JITBuilder) {
         ("subDeviceOnComplete", subDeviceOnComplete as *const u8),
         ("subDevicePump", subDevicePump as *const u8),
         ("subCommandBufferTotal", subCommandBufferTotal as *const u8),
+        ("subStageMatches", subStageMatches as *const u8),
+        ("subFutureMake", subFutureMake as *const u8),
+        ("subStatsMake", subStatsMake as *const u8),
+        ("subDeviceQuery", subDeviceQuery as *const u8),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);
