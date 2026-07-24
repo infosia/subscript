@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -277,6 +277,74 @@ corpse.
   poisoned-corpse trap. The `tree` benchmark's per-allocation cost, flat
   in C and superlinear under retention, is the informal corroboration, not
   a gate.
+
+### 8.1b P8 — ship-tier allocator: Context-owned arena, size-class free lists
+
+§8.1a removed retention; the remaining ship-tier allocation cost is the
+**per-allocation bookkeeping map** (measured: on the `tree` workload's
+30×131071 alloc/delete pairs, the map plus its bookkeeping is ~75% of the
+runtime's allocation overhead; the 32-byte-zeroed-with-header allocation
+shape itself is ~+17% over the C baseline's bare `malloc`/`free`). The
+ship tier therefore drops the per-allocation map from the hot path.
+
+**Scope: ship tier only** (`Context::new_releasing`). The dev tier keeps
+the map and retain-and-poison unchanged — the map is what funds its
+trap-on-stale-handle diagnostics (§8.1a). One runtime, two allocation
+policies, selected at Context construction as today; no generated-code,
+lowering, or `sub_rt_*` ABI change.
+
+- **Mechanism.** The ship Context owns memory in chunks. Small
+  allocations (header + payload up to a largest size class) are carved
+  from **per-size-class chunks** by bump pointer; `unsafeDelete` pushes
+  the block onto that class's LIFO free list; the next same-class `alloc`
+  pops it. Allocations above the largest class are carried as individual
+  system allocations with their own Context record (they remain
+  enumerable). Context drop frees chunks and large records wholesale —
+  Context-scoped memory (invariant 2) is preserved.
+- **Header.** The 16-byte block header (state word, class id) is kept and
+  additionally carries what tracing needs (payload size or size class);
+  payload alignment stays 16.
+- **Zeroing.** `alloc` returns a zeroed payload in every case, including
+  free-list reuse — conservative tracing and language zero-init rely on
+  it.
+- **Membership is exact.** The conservative scan and `collect()` need
+  "is this word a managed payload address?". The test must never
+  identify an address as a managed block unless it is one: chunk-range
+  lookup, block-grid alignment within the per-class chunk, bump-watermark
+  bound, and a live header state — all four. A false positive that lets
+  the sweeper treat arbitrary memory as a block is memory corruption, not
+  conservatism.
+- **`collect()`** (Q7, explicitly invoked only) still works on the ship
+  tier: mark from roots/shadow/interned as today; sweep by walking each
+  chunk's blocks linearly (bump watermark bounds the walk) plus the large
+  records; unreached live blocks go to their free list (or are freed, for
+  large records). Mark state lives in the block, not in a map.
+- **Q6 amendment.** §8.1a described ship-tier double delete as "presents
+  as an absent entry, a silent no-op" — that was a property of the map
+  implementation, not of the contract. Under the arena, double delete and
+  use-after-delete remain **undefined** on the ship tier (Q6, trusted
+  scripts) and may corrupt the allocator; the dev tier remains the
+  diagnosing tier and still traps both.
+- **Retired array blocks** (§8.1a array growth) flow through the same
+  free-list/large-record path.
+
+**Exit criteria (pre-registered):**
+
+1. Ship `tree` ratio **≤ 2.0× C** on the arm64 reference machine
+   (from 5.11×), same runner and methodology (§9); no other workload's
+   ship row regresses by more than 5% beyond run noise.
+2. The standing gate (§8.3) stays byte-exact on every corpus entry —
+   including `a16` (collect) and the reference-class entries — on both
+   tiers.
+3. Runtime unit tests, same commit: (a) ship alloc→delete→alloc reuses
+   free-listed storage without chunk growth over N cycles; (b) Context
+   drop frees every chunk and large record (no leak, asserted by a
+   counting hook or chunk count); (c) ship `collect()` frees unreachable
+   blocks and keeps rooted ones (arena edition of the existing tests);
+   (d) the dev-tier trap tests (double delete, stale handle) pass
+   unchanged.
+4. Inspection aids (`is_live`, `live_count`) remain functional on both
+   tiers.
 
 ### 8.2 Hot reload (dev tier)
 
