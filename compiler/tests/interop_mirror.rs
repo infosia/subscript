@@ -58,6 +58,12 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subSliceChecksumI32",
             "subSliceChecksumF64",
             "subSliceChecksumI64",
+            // P6.2 shapes: flag bit test, embedded-array struct consumer,
+            // untyped bulk API + its typed facade.
+            "subAccessMatches",
+            "subDrawListTotal",
+            "subBulkConsume",
+            "subBulkConsumeF32",
         ]
     );
 

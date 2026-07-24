@@ -168,3 +168,43 @@ int32_t subSliceChecksumI64(SubSliceI64 data) {
     }
     return (int32_t)h;
 }
+
+/* ==== P6.2 production-C binding shapes (compiler.md §13.2) ============= */
+
+/* Flag bit test: 1 when every bit of `required` is set in `mask`, else 0.
+ * The observable result of combining flag members with `|` and passing the
+ * combined u64 across the boundary. */
+int32_t subAccessMatches(SubAccess mask, SubAccess required) {
+    return (mask & required) == required ? 1 : 0;
+}
+
+/* Descriptor-embedded (count, pointer) array: sum `layer` plus every draw.
+ * Reads the borrowed `draws` run zero-copy (the caller's own array
+ * storage), so the returned total depends on every element. */
+int32_t subDrawListTotal(SubDrawList list) {
+    long long sum = (long long)list.layer;
+    for (size_t i = 0; i < list.drawsCount; i++) {
+        sum += (long long)list.draws[i];
+    }
+    return (int32_t)sum;
+}
+
+/* Untyped bulk-data API: a raw byte range. Records the byte size in an
+ * order-sensitive, i32-wrapping rolling checksum over the bytes, seeded by
+ * the byte size, so the returned value witnesses both the size and the
+ * bytes. */
+int32_t subBulkConsume(const void *data, size_t size) {
+    const unsigned char *b = (const unsigned char *)data;
+    uint32_t h = (uint32_t)size;
+    for (size_t i = 0; i < size; i++) {
+        h = h * 31u + (uint32_t)b[i];
+    }
+    return (int32_t)h;
+}
+
+/* Typed facade over the untyped API: computes the byte size from the typed
+ * f32 slice (count * sizeof(float)) and forwards the borrowed run zero-copy.
+ * The documented path for `void*`+byte-size APIs. */
+int32_t subBulkConsumeF32(SubSliceF32 data) {
+    return subBulkConsume(data.items, data.count * sizeof(float));
+}

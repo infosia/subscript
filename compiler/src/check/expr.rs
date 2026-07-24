@@ -299,6 +299,15 @@ impl<'p> Checker<'p> {
         }
         match self.scope_item(&name) {
             Some(ScopeItem::Global(g)) => {
+                // A mirror flag member (§13.2) folds to its C value here, so
+                // both tiers emit an immediate rather than reading a global.
+                if let Some((value, ty)) = self.ambient_int_consts.get(&g).cloned() {
+                    return hir::Expr {
+                        kind: ExprKind::Int(value),
+                        ty,
+                        pos,
+                    };
+                }
                 let ty = self
                     .global_sigs
                     .get(&g)

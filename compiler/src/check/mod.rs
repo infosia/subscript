@@ -21,6 +21,23 @@ use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::types::{ClassId, EnumId, Type};
 
+/// The integer value of a non-negative numeric-literal expression (a flag
+/// member initializer, §13.2), or `None` for any other expression.
+fn int_literal_value(e: &ast::Expr) -> Option<i64> {
+    match e {
+        ast::Expr::Lit(ast::Lit::Num(n)) => {
+            let v = n.value;
+            if v.is_finite() && v.fract() == 0.0 && v >= 0.0 {
+                Some(v as i64)
+            } else {
+                None
+            }
+        }
+        ast::Expr::Paren(p) => int_literal_value(&p.expr),
+        _ => None,
+    }
+}
+
 /// One declared parameter in a signature.
 #[derive(Debug, Clone)]
 pub(crate) struct ParamSig {
@@ -207,6 +224,11 @@ pub(crate) struct Checker<'p> {
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).
     pub in_boundary: bool,
+    /// Mirror flag members: an ambient `declare const X = <int literal>;`
+    /// (§13.2) folds to its C `static const` value at each reference, so
+    /// both tiers emit an immediate rather than reading a runtime global.
+    /// Keyed by name → (value, `u64` flag type).
+    pub ambient_int_consts: HashMap<String, (i64, Type)>,
 }
 
 /// Runs the checker over a parsed program.
@@ -238,6 +260,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
         in_boundary: false,
+        ambient_int_consts: HashMap::new(),
     };
 
     // Pass A: collect top-level names. Mirror (`.d.ts`) declarations land
@@ -790,15 +813,29 @@ impl<'p> Checker<'p> {
                         let name = binding.id.sym.to_string();
                         let ty = match &binding.type_ann {
                             Some(ann) => self.resolve_type(&ann.type_ann),
-                            None => {
-                                let pos = self.pos(binding.id.span);
-                                self.error(
-                                    RuleCode::S100,
-                                    "ambient constants require a type annotation",
-                                    pos,
-                                );
-                                Type::Error
-                            }
+                            None => match d.init.as_deref().and_then(int_literal_value) {
+                                // A mirror flag member (§13.2):
+                                // `declare const X = <int literal>;`. tsc
+                                // accepts a bare literal initializer on an
+                                // ambient const only without a type
+                                // annotation, so the value travels here and
+                                // the `u64` flag type is supplied by rule.
+                                Some(value) => {
+                                    self.ambient_int_consts
+                                        .insert(name.clone(), (value, Type::U64));
+                                    Type::U64
+                                }
+                                None => {
+                                    let pos = self.pos(binding.id.span);
+                                    self.error(
+                                        RuleCode::S100,
+                                        "ambient constants require a type annotation \
+                                         or an integer-literal initializer",
+                                        pos,
+                                    );
+                                    Type::Error
+                                }
+                            },
                         };
                         self.global_sigs.insert(
                             name,

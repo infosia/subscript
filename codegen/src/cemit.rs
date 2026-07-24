@@ -2014,6 +2014,20 @@ impl<'m> Emitter<'m> {
                     ));
                     i += 2;
                 }
+                Type::Array(_) => {
+                    // Descriptor-embedded `(count, pointer)` array field
+                    // (§13.2): the language struct carries one `T[]`; the C
+                    // struct declares the pair `size_t <n>Count; const T*
+                    // <n>;` (count-first), so the positional compound literal
+                    // fills count then pointer, both from the array's own
+                    // backing store (zero-copy). The element pointer type is
+                    // the C struct field's, so no element-specific cast is
+                    // needed (unlike the standalone descriptor).
+                    let fld = sanitize(&f.name);
+                    parts.push(format!("(size_t)sub_rt_array_len(ctx, {t}.{fld})"));
+                    parts.push(format!("sub_rt_array_data(ctx, {t}.{fld})"));
+                    i += 1;
+                }
                 _ => {
                     parts.push(format!("{t}.{}", sanitize(&f.name)));
                     i += 1;

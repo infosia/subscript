@@ -2140,6 +2140,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn boundary_c_field(&self, ty: &Type) -> Result<(u32, u32), String> {
         Ok(match ty {
             Type::Func(_) | Type::Object | Type::Nullable(_) => (8, 8),
+            // A descriptor-embedded `(count, pointer)` array field (§13.2)
+            // is the C pair `size_t count; const T* ptr;` — 16 bytes, align 8.
+            Type::Array(_) => (16, 8),
             Type::I64 | Type::U64 | Type::F64 => (8, 8),
             Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
             Type::Bool => (1, 1),
@@ -2238,6 +2241,25 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     comps.push((coff, types::I64, record));
                     coff += uds;
                     i += 2;
+                }
+                Type::Array(_) => {
+                    // Descriptor-embedded (count, pointer) array field
+                    // (§13.2): the language struct holds one array handle at
+                    // `lang_off`; the C struct wants (size_t count, const T*
+                    // ptr) reconstructed count-first, both from the array's
+                    // own backing store (zero-copy). `cs` is 16 (boundary_c_field).
+                    let handle = self.b.ins().load(types::I64, flags(), addr, lang_off);
+                    let data = self
+                        .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+                        .ok_or_else(|| internal("array_data result"))?;
+                    let len32 = self
+                        .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
+                        .ok_or_else(|| internal("array_len result"))?;
+                    let count = self.b.ins().uextend(types::I64, len32);
+                    comps.push((coff, types::I64, count));
+                    comps.push((coff + 8, types::I64, data));
+                    coff += cs;
+                    i += 1;
                 }
                 other => {
                     let ty = other.clone();

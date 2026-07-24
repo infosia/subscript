@@ -178,4 +178,52 @@ int32_t subSliceChecksumI32(SubSliceI32 data);
 int32_t subSliceChecksumF64(SubSliceF64 data);
 int32_t subSliceChecksumI64(SubSliceI64 data);
 
+/* ==== P6.2 production-C binding shapes (compiler.md §13.2) ============= */
+
+/* ---- Flag typedef end-to-end ---------------------------------------- *
+ *
+ * A `uintN` alias plus `static const` members combinable with `|` (Q18).
+ * The mirror maps the alias to a `u64` type alias and folds each member's
+ * value into a `declare const` (bindgen reads the value from the C
+ * `static const`). subAccessMatches reports whether every bit in
+ * `required` is set in `mask` — the observable bit test. */
+
+typedef uint64_t SubAccess;
+static const SubAccess SUB_ACCESS_NONE = 0x0;
+static const SubAccess SUB_ACCESS_READ = 0x1;
+static const SubAccess SUB_ACCESS_WRITE = 0x2;
+static const SubAccess SUB_ACCESS_EXEC = 0x4;
+
+int32_t subAccessMatches(SubAccess mask, SubAccess required);
+
+/* ---- Descriptor-embedded (count, pointer) array --------------------- *
+ *
+ * Production headers place an array as adjacent count+pointer fields
+ * inside a larger struct, not as a standalone descriptor. The mirror
+ * recognizes the `size_t <n>Count; const T* <n>;` pair by name, maps the
+ * pointer field to `T[]`, and elides the count; the lowering reconstructs
+ * the pair count-first from the one array (zero-copy). `layer` makes this
+ * a genuinely larger struct (>16 bytes, exercising the by-reference ABI
+ * path). subDrawListTotal sums `layer + every draw`. */
+
+typedef struct SubDrawList {
+    uint32_t layer;
+    size_t drawsCount;
+    const uint32_t *draws;
+} SubDrawList;
+
+int32_t subDrawListTotal(SubDrawList list);
+
+/* ---- Untyped bulk-data facade --------------------------------------- *
+ *
+ * A `const void* data, size_t size` (byte-size) API, plus a thin typed C
+ * facade taking a typed slice descriptor (as SubSliceF32) that computes
+ * `size = count * sizeof(T)` and forwards to the untyped API zero-copy.
+ * The subscript program passes an `f32[]` to the facade (bound as `T[]`);
+ * the untyped API records the byte size in its checksum. The documented
+ * path for `void*`+byte-size APIs. */
+
+int32_t subBulkConsume(const void *data, size_t size);
+int32_t subBulkConsumeF32(SubSliceF32 data);
+
 #endif /* SUBSCRIPT_INTEROP_H */

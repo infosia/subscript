@@ -121,6 +121,10 @@ extern "C" {
     fn subSliceChecksumI32();
     fn subSliceChecksumF64();
     fn subSliceChecksumI64();
+    fn subDrawListTotal();
+    fn subAccessMatches();
+    fn subBulkConsume();
+    fn subBulkConsumeF32();
 }
 
 /// Registers the foreign C-header symbols (`corpus/interop/interop.c`,
@@ -139,6 +143,10 @@ pub(crate) fn register_interop(builder: &mut JITBuilder) {
         ("subSliceChecksumI32", subSliceChecksumI32 as *const u8),
         ("subSliceChecksumF64", subSliceChecksumF64 as *const u8),
         ("subSliceChecksumI64", subSliceChecksumI64 as *const u8),
+        ("subDrawListTotal", subDrawListTotal as *const u8),
+        ("subAccessMatches", subAccessMatches as *const u8),
+        ("subBulkConsume", subBulkConsume as *const u8),
+        ("subBulkConsumeF32", subBulkConsumeF32 as *const u8),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);

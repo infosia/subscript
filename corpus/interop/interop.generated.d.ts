@@ -78,3 +78,20 @@ declare function subSliceChecksumF32(data: f32[]): i32;
 declare function subSliceChecksumI32(data: i32[]): i32;
 declare function subSliceChecksumF64(data: f64[]): i32;
 declare function subSliceChecksumI64(data: i64[]): i32;
+declare function subAccessMatches(mask: SubAccess, required: SubAccess): i32;
+
+declare class SubDrawList {
+  layer: u32;
+  draws: u32[];
+  constructor(layer: u32, draws: u32[]);
+}
+
+declare function subDrawListTotal(list: SubDrawList): i32;
+declare function subBulkConsume(data: object | null, size: u64): i32;
+declare function subBulkConsumeF32(data: f32[]): i32;
+
+type SubAccess = u64;
+declare const SUB_ACCESS_NONE = 0;
+declare const SUB_ACCESS_READ = 1;
+declare const SUB_ACCESS_WRITE = 2;
+declare const SUB_ACCESS_EXEC = 4;

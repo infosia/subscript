@@ -31,16 +31,28 @@ fn interop_mirror() -> SourceFile {
     SourceFile::ambient("interop.generated.d.ts", text)
 }
 
-/// True when any of `sources` calls a foreign function of the synthetic
-/// interop header — a device entry (`subDevice…`) or a typed-slice facade
-/// (`subSlice…`). A false negative is not silent: the entry then fails to
-/// check with an unresolved `Sub…` identifier, failing the gate loudly
-/// rather than skipping — a false positive would only add unused ambient
-/// declarations.
+/// True when any of `sources` names a foreign function, boundary struct,
+/// or flag member of the synthetic interop header. A false negative is not
+/// silent: the entry then fails to check with an unresolved `Sub…`
+/// identifier, failing the gate loudly rather than skipping — a false
+/// positive would only add unused ambient declarations.
 fn uses_interop_mirror(sources: &[SourceFile]) -> bool {
-    sources
-        .iter()
-        .any(|s| s.source.contains("subDevice") || s.source.contains("subSlice"))
+    sources.iter().any(|s| references_interop(&s.source))
+}
+
+/// Interop-mirror name fragments: the P5 device/slice APIs plus the P6.2
+/// shapes (embedded-array struct, flag members, untyped-facade APIs).
+pub(crate) fn references_interop(src: &str) -> bool {
+    const TOKENS: &[&str] = &[
+        "subDevice",
+        "subSlice",
+        "SubDrawList",
+        "subDrawListTotal",
+        "SUB_ACCESS",
+        "subAccessMatches",
+        "subBulk",
+    ];
+    TOKENS.iter().any(|t| src.contains(t))
 }
 
 /// Every entry id present in `accept`, single- and multi-file.

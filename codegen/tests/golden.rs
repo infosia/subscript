@@ -31,8 +31,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // (compiler.md §2 — goldens are never deleted). The floor is the
     // run set (a01–a24) plus the P5 interop entries (a25–a31).
     assert!(
-        golden_ids.len() >= 31,
-        "expected at least the 31 committed goldens (a01–a24 run set + a25–a31 interop), found {}",
+        golden_ids.len() >= 34,
+        "expected at least the 34 committed goldens (a01–a24 run set + a25–a34 interop), found {}",
         golden_ids.len()
     );
 

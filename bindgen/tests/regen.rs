@@ -59,6 +59,22 @@ fn q13_rules_are_reflected_in_the_mirror() {
     // Fixed C array → FixedArray<T, N>.
     assert!(m.contains("basis: FixedArray<f32, 16>;"));
 
+    // P6.2 (§13.2). Descriptor-embedded (count, pointer) array: the count
+    // is elided, the pointer field becomes `T[]`.
+    assert!(m.contains("draws: u32[];"));
+    assert!(!m.contains("drawsCount"));
+    assert!(m.contains("constructor(layer: u32, draws: u32[]);"));
+
+    // Flag typedef: a `u64` alias plus `declare const` members whose C
+    // values are folded into the mirror.
+    assert!(m.contains("type SubAccess = u64;"));
+    assert!(m.contains("declare const SUB_ACCESS_READ = 1;"));
+    assert!(m.contains("declare const SUB_ACCESS_EXEC = 4;"));
+
+    // Untyped bulk-data API (`void*` + byte size) plus its typed facade.
+    assert!(m.contains("subBulkConsume(data: object | null, size: u64): i32;"));
+    assert!(m.contains("subBulkConsumeF32(data: f32[]): i32;"));
+
     // No external library is named; every synthetic type is `Sub`-prefixed.
     assert!(!m.to_lowercase().contains("vulkan"));
     assert!(!m.to_lowercase().contains("webgpu"));

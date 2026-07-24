@@ -15,8 +15,13 @@
 //! - length-carrying string-view struct (`{ const char*; size_t; }`) →
 //!   `string` at use sites (no named type emitted);
 //! - enum → an ambient `declare enum` carrying its constant values;
-//! - flag-set typedef → a `u64` type alias with `declare const` members
-//!   (the pinned header has no flag-set instance — see the report);
+//! - flag-set typedef (`typedef <uintN> X;` + `static const X …`) → a
+//!   `u64` type alias plus `declare const` members whose C values are
+//!   folded into the mirror (bare literal initializers, tsc-clean on an
+//!   ambient const only without a type annotation), §13.2;
+//! - descriptor-embedded `(count, pointer)` array pair inside a struct
+//!   (`size_t <n>Count; const T* <n>;`) → the pointer field becomes `T[]`
+//!   with the count elided (§13.2);
 //! - callback userdata slot (`void*`) → `object | null`;
 //! - function-pointer typedef → a `type` alias;
 //! - every other struct → a boundary `declare class` (C-layout value
@@ -54,5 +59,5 @@ pub use cparse::{CField, Decl, ParseError};
 /// not model.
 pub fn generate(header: &str) -> Result<String, ParseError> {
     let parsed = clangfe::parse(header)?;
-    Ok(emit::emit(&parsed.decls))
+    emit::emit(&parsed)
 }
