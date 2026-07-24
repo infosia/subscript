@@ -588,7 +588,7 @@ incl. SubFuture/SubWaitEntry/SubWaitList; bindgen regen byte-identical;
 
 ## P7 — async/Future interop model: COMPLETE (2026-07-24)
 
-The WGPUFuture-shape async model is proven end to end, both-tier
+The future-handle async model is proven end to end, both-tier
 byte-exact, for its common main-thread-driven usage: a foreign call
 returns a future handle by value, a host process-events call writes
 per-future completion into a caller-owned out-array, and a callback
