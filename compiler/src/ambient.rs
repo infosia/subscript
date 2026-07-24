@@ -4,7 +4,7 @@
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
 
-use crate::hir::{AmbientFn, DateFn, MathFn, StrFn};
+use crate::hir::{AmbientFn, ArrFn, DateFn, MathFn, StrFn};
 use crate::types::Type;
 
 /// Maps a sized-numeric alias name to its type.
@@ -85,6 +85,14 @@ pub(crate) fn date_method(name: &str) -> Option<DateFn> {
 /// `Callee::Method` path; the out-of-subset members resolve to nothing.
 pub(crate) fn str_method(name: &str) -> Option<StrFn> {
     StrFn::ALL.iter().copied().find(|f| f.name() == name)
+}
+
+/// Maps an `Array` method name to its intrinsic (stdlib.md §9, Q22).
+/// `push`/`pop` are not here — they predate the §9 surface and stay on
+/// the `Callee::Method` path; the out-of-subset members resolve to
+/// nothing.
+pub(crate) fn arr_method(name: &str) -> Option<ArrFn> {
+    ArrFn::ALL.iter().copied().find(|f| f.name() == name)
 }
 
 #[cfg(test)]
@@ -170,6 +178,25 @@ mod tests {
         assert_eq!(str_method("match"), None);
         assert_eq!(str_method("toLocaleUpperCase"), None);
         assert_eq!(str_method("concat"), None);
+    }
+
+    #[test]
+    fn arr_method_lookup_covers_the_subset_and_nothing_else() {
+        assert_eq!(arr_method("indexOf"), Some(ArrFn::IndexOf));
+        assert_eq!(arr_method("findIndex"), Some(ArrFn::FindIndex));
+        assert_eq!(arr_method("sort"), Some(ArrFn::Sort));
+        // Every declared method round-trips through its name.
+        for f in ArrFn::ALL {
+            assert_eq!(arr_method(f.name()), Some(f));
+        }
+        // `push`/`pop` stay on the standing Callee::Method path.
+        assert_eq!(arr_method("push"), None);
+        assert_eq!(arr_method("pop"), None);
+        // Out-of-subset members resolve to nothing (Q22).
+        assert_eq!(arr_method("find"), None);
+        assert_eq!(arr_method("reduceRight"), None);
+        assert_eq!(arr_method("splice"), None);
+        assert_eq!(arr_method("flatMap"), None);
     }
 
     #[test]

@@ -6,7 +6,9 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
-use crate::hir::{self, AmbientFn, BinOp, Callee, DateFn, ExprKind, MathFn, StrFn, TplPart, UnOp};
+use crate::hir::{
+    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MathFn, StrFn, TplPart, UnOp,
+};
 use crate::types::{FuncType, Type};
 
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
@@ -1629,6 +1631,471 @@ impl<'p> Checker<'p> {
         );
     }
 
+    /// The [`hir::ArrElemKind`] of an array element type under this
+    /// program's class table (value classes excluded, stdlib.md §9).
+    fn arr_elem_kind(&self, ty: &Type) -> Option<hir::ArrElemKind> {
+        let classes = &self.classes;
+        hir::ArrElemKind::of(ty, &|id| classes.get(id.0).is_some_and(|c| c.is_value))
+    }
+
+    /// Checks an accepted `Array` method call (stdlib.md §9, Q22):
+    /// validates the arguments against the method's fixed shape,
+    /// normalizes the optional ones (`join` separator, `slice`/`fill`
+    /// range), types the callbacks under C5, and emits the
+    /// [`Callee::Arr`] intrinsic with the receiver first.
+    fn check_array_method(
+        &mut self,
+        recv: hir::Expr,
+        elem: Type,
+        f: ArrFn,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        use ArrFn as A;
+        let arr_ty = Type::Array(Box::new(elem.clone()));
+        let mk = |args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Arr(f),
+                args,
+            },
+            ty,
+            pos,
+        };
+        let int_default = |value: i64, pos: &Pos| hir::Expr {
+            kind: ExprKind::Int(value),
+            ty: Type::I32,
+            pos: pos.clone(),
+        };
+        // The callback-taking methods (and the equality searches) move
+        // element values across the runtime↔script boundary; the
+        // checker gates the element kinds that can (Q22).
+        let needs_elem_kind = f.takes_callback() || matches!(f, A::IndexOf | A::LastIndexOf | A::Includes);
+        if needs_elem_kind && self.arr_elem_kind(&elem).is_none() {
+            let elem_n = self.type_name(&elem);
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`{}` is defined per element kind (scalars, strings, `Date`, \
+                     reference classes); `{}` elements are outside that set (Q22)",
+                    f.name(),
+                    elem_n
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        match f {
+            A::IndexOf | A::LastIndexOf | A::Includes => {
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: elem.clone(),
+                    has_default: false,
+                }];
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, f.name()));
+                let ty = if f == A::Includes { Type::Bool } else { Type::I32 };
+                mk(args, ty, pos)
+            }
+            A::Join => {
+                if hir::ArrFmtKind::of(&elem).is_none() {
+                    let elem_n = self.type_name(&elem);
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`join` formats elements by the Q14 interpolation rules; \
+                             `{}` elements are not interpolatable (Q22)",
+                            elem_n
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: Type::Str,
+                    has_default: true,
+                }];
+                let mut checked = self.check_args(&params, &c.args, fx, &pos, "join");
+                if checked.is_empty() {
+                    checked.push(hir::Expr {
+                        kind: ExprKind::Str(",".to_string()),
+                        ty: Type::Str,
+                        pos: pos.clone(),
+                    });
+                }
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(args, Type::Str, pos)
+            }
+            A::Slice => {
+                let params = [
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
+                ];
+                let mut checked = self.check_args(&params, &c.args, fx, &pos, "slice");
+                if checked.is_empty() {
+                    checked.push(int_default(0, &pos));
+                }
+                if checked.len() == 1 {
+                    checked.push(int_default(ArrFn::END_SENTINEL, &pos));
+                }
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(args, arr_ty, pos)
+            }
+            A::Fill => {
+                let params = [
+                    ParamSig {
+                        name: String::new(),
+                        ty: elem.clone(),
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
+                ];
+                let mut checked = self.check_args(&params, &c.args, fx, &pos, "fill");
+                // C5: `fill` stores its argument in the array.
+                if let Some(value) = checked.first() {
+                    if self.is_capturing_value(value, fx) {
+                        self.error(
+                            RuleCode::S009,
+                            "capturing lambdas may not escape: `fill` stores its \
+                             argument in the array",
+                            value.pos.clone(),
+                        );
+                    }
+                }
+                if checked.len() == 1 {
+                    checked.push(int_default(0, &pos));
+                }
+                if checked.len() == 2 {
+                    checked.push(int_default(ArrFn::END_SENTINEL, &pos));
+                }
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(args, arr_ty, pos)
+            }
+            A::Reverse => {
+                let args_checked = self.check_args(&[], &c.args, fx, &pos, "reverse");
+                let mut args = vec![recv];
+                args.extend(args_checked);
+                mk(args, arr_ty, pos)
+            }
+            A::Concat => {
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: arr_ty.clone(),
+                    has_default: false,
+                }];
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, "concat"));
+                mk(args, arr_ty, pos)
+            }
+            A::Sort => {
+                if c.args.is_empty() {
+                    self.error(
+                        RuleCode::S014,
+                        "`sort` requires a comparator: the lib's no-argument sort \
+                         coerces elements to strings (Q22)",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if c.args.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`sort` expects 1 argument (the comparator), got {}", c.args.len()),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let cb = self.check_arr_callback(
+                    &c.args[0],
+                    vec![elem.clone(), elem],
+                    Some(Type::I32),
+                    fx,
+                    "sort",
+                );
+                mk(vec![recv, cb], arr_ty, pos)
+            }
+            A::Reduce => {
+                if c.args.len() < 2 {
+                    self.error(
+                        RuleCode::S014,
+                        "`reduce` requires an explicit `init`: the lib's no-init \
+                         overload changes meaning by arity (Q22)",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if c.args.len() != 2 {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`reduce` expects 2 arguments (callback, init), got {}",
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if let Some(spread) = c.args[1].spread {
+                    let p = self.pos(spread);
+                    self.error(RuleCode::S100, "spread arguments are not decided", p.clone());
+                    return self.err_expr(p);
+                }
+                // The init's type is the accumulator type `U` (checked
+                // first so the callback's `acc` parameter has context).
+                let init = self.check_expr(&c.args[1].expr, None, fx);
+                let acc_ty = init.ty.clone();
+                if matches!(acc_ty, Type::Error) {
+                    return self.err_expr(pos);
+                }
+                if self.arr_elem_kind(&acc_ty).is_none() {
+                    let acc_n = self.type_name(&acc_ty);
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "the `reduce` accumulator crosses the runtime↔script \
+                             boundary; `{}` is outside the supported kinds (Q22)",
+                            acc_n
+                        ),
+                        init.pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let cb = self.check_arr_callback(
+                    &c.args[0],
+                    vec![acc_ty.clone(), elem],
+                    Some(acc_ty.clone()),
+                    fx,
+                    "reduce",
+                );
+                mk(vec![recv, cb, init], acc_ty, pos)
+            }
+            A::ForEach | A::Map | A::Filter | A::Some | A::Every | A::FindIndex => {
+                if c.args.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`{}` expects 1 argument (the callback), got {}",
+                            f.name(),
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let ret_ctx = match f {
+                    A::ForEach => Some(Type::Void),
+                    A::Map => None, // `U` inferred from the callback
+                    _ => Some(Type::Bool),
+                };
+                let cb =
+                    self.check_arr_callback(&c.args[0], vec![elem], ret_ctx, fx, f.name());
+                let ty = match f {
+                    A::ForEach => Type::Void,
+                    A::Filter => arr_ty,
+                    A::Some | A::Every => Type::Bool,
+                    A::FindIndex => Type::I32,
+                    A::Map => {
+                        let u = match &cb.ty {
+                            Type::Func(ft) => ft.ret.clone(),
+                            _ => Type::Error,
+                        };
+                        if matches!(u, Type::Error) {
+                            return self.err_expr(pos);
+                        }
+                        if matches!(u, Type::Void) {
+                            self.error(
+                                RuleCode::S100,
+                                "the `map` callback must return a value",
+                                cb.pos.clone(),
+                            );
+                            return self.err_expr(pos);
+                        }
+                        if self.arr_elem_kind(&u).is_none() {
+                            let u_n = self.type_name(&u);
+                            self.error(
+                                RuleCode::S014,
+                                format!(
+                                    "`map` produces a `{}[]`; `{}` is outside the \
+                                     supported element kinds (Q22)",
+                                    u_n, u_n
+                                ),
+                                cb.pos.clone(),
+                            );
+                            return self.err_expr(pos);
+                        }
+                        Type::Array(Box::new(u))
+                    }
+                    _ => Type::Error,
+                };
+                mk(vec![recv, cb], ty, pos)
+            }
+        }
+    }
+
+    /// Checks one callback argument of an `Array` method (stdlib.md §9):
+    /// a lambda is typed with the fixed parameter context (its arity
+    /// must match exactly — the lib's optional index/array parameters
+    /// are rejected, Q22); any other expression must already have the
+    /// exact function type (a named function reference or a
+    /// function-typed local, C5). `ret` is `None` when the return type
+    /// is inferred from the callback (`map`).
+    fn check_arr_callback(
+        &mut self,
+        arg: &ast::ExprOrSpread,
+        params: Vec<Type>,
+        ret: Option<Type>,
+        fx: &mut FnCtx,
+        method: &str,
+    ) -> hir::Expr {
+        if let Some(spread) = arg.spread {
+            let p = self.pos(spread);
+            self.error(RuleCode::S100, "spread arguments are not decided", p.clone());
+            return self.err_expr(p);
+        }
+        let expr = &*arg.expr;
+        if let ast::Expr::Arrow(a) = expr {
+            let a_pos = self.pos(a.span);
+            if a.params.len() != params.len() {
+                self.error(
+                    RuleCode::S014,
+                    format!(
+                        "`{}` callbacks take exactly {} parameter(s); the lib's \
+                         optional index/array parameters are not accepted (Q22)",
+                        method,
+                        params.len()
+                    ),
+                    a_pos.clone(),
+                );
+                return self.err_expr(a_pos);
+            }
+            let checked = self.check_lambda_with(a, Some(&params), ret.as_ref(), fx, a_pos);
+            // An annotation may override the context; the resulting
+            // function type must still match the method's fixed shape
+            // (the return stays free when it is inferred, `map`).
+            return self.expect_callback_shape(checked, &params, ret.as_ref(), method);
+        }
+        // A function value (named reference or function-typed local).
+        let ctx_ty = ret.as_ref().map(|r| {
+            Type::Func(Box::new(FuncType {
+                params: params.clone(),
+                ret: r.clone(),
+            }))
+        });
+        let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
+        self.expect_callback_shape(checked, &params, ret.as_ref(), method)
+    }
+
+    /// Validates a checked callback value against the method's fixed
+    /// parameter list (and return type, when it is not inferred);
+    /// returns the value unchanged on success and a poisoned expression
+    /// after the mismatch diagnostic otherwise.
+    fn expect_callback_shape(
+        &mut self,
+        checked: hir::Expr,
+        params: &[Type],
+        ret: Option<&Type>,
+        method: &str,
+    ) -> hir::Expr {
+        let ok = match &checked.ty {
+            Type::Error => true,
+            Type::Func(ft) => {
+                ft.params == params && ret.is_none_or(|r| ft.ret == *r)
+            }
+            _ => false,
+        };
+        if ok {
+            return checked;
+        }
+        let got = self.type_name(&checked.ty);
+        let wanted: Vec<String> = params.iter().map(|t| self.type_name(t)).collect();
+        let ret_n = match ret {
+            Some(r) => self.type_name(r),
+            None => "…".to_string(),
+        };
+        self.error(
+            RuleCode::S100,
+            format!(
+                "type mismatch: the `{}` callback expects `({}) => {}`, got `{}`",
+                method,
+                wanted.join(", "),
+                ret_n,
+                got
+            ),
+            checked.pos.clone(),
+        );
+        self.err_expr(checked.pos)
+    }
+
+    /// Emits the Q22 rejection for a known out-of-subset `Array`
+    /// member, naming the member and pointing at the accepted spelling;
+    /// returns `false` when `name` is not in the rejected set (the
+    /// caller then falls back to the generic surface diagnostic).
+    fn arr_subset_rejection(&mut self, name: &str, pos: Pos) -> bool {
+        const STRUCTURAL: &[&str] = &["splice", "shift", "unshift", "copyWithin"];
+        const NESTING: &[&str] = &["flat", "flatMap"];
+        const ITERATORS: &[&str] = &["entries", "keys", "values"];
+        let why = if name == "find" || name == "findLast" {
+            format!(
+                "`{}` has no miss value for scalar element types (`T | null` does \
+                 not cover scalars); use `findIndex` (Q22)",
+                name
+            )
+        } else if name == "reduceRight" {
+            "`reduceRight` is outside the accepted Array subset; fold with `reduce` \
+             (Q22)"
+                .to_string()
+        } else if STRUCTURAL.contains(&name) {
+            format!(
+                "`{}` is outside the accepted Array subset (push, pop, slice, fill, \
+                 and the Q22 methods) (Q22)",
+                name
+            )
+        } else if NESTING.contains(&name) {
+            format!("`{}` requires nested-array flattening, out of the Q22 subset (Q22)", name)
+        } else if ITERATORS.contains(&name) {
+            format!("`{}` requires the iterator protocol, out of the Q22 subset (Q22)", name)
+        } else {
+            return false;
+        };
+        self.error(RuleCode::S014, why, pos);
+        true
+    }
+
+    /// The generic out-of-surface diagnostic for an array member that is
+    /// neither accepted nor in the named Q22 rejected set.
+    fn arr_surface_error(&mut self, name: &str, pos: Pos) {
+        self.error(
+            RuleCode::S100,
+            format!(
+                "`{}` is outside the array surface (length, indexing, push, pop, \
+                 and the Q22 Array methods)",
+                name
+            ),
+            pos,
+        );
+    }
+
     fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
         let pos = self.pos(m.span);
         match &m.prop {
@@ -1769,16 +2236,36 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
-                let surface = if matches!(obj.ty, Type::Array(_)) {
-                    "the array surface (length, indexing, push, pop)"
+                if matches!(obj.ty, Type::Array(_)) {
+                    // A member on an array outside a call position
+                    // (stdlib.md §9): the accepted members beyond
+                    // `length` are all methods.
+                    if !for_write
+                        && (name == "push"
+                            || name == "pop"
+                            || crate::ambient::arr_method(name).is_some())
+                    {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "method `{}` may only be called, not read as a value",
+                                name
+                            ),
+                            prop_pos.clone(),
+                        );
+                    } else if !self.arr_subset_rejection(name, prop_pos.clone()) {
+                        self.arr_surface_error(name, prop_pos.clone());
+                    }
                 } else {
-                    "the FixedArray surface (length, indexing)"
-                };
-                self.error(
-                    RuleCode::S100,
-                    format!("`{}` is outside {}", name, surface),
-                    prop_pos.clone(),
-                );
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`{}` is outside the FixedArray surface (length, indexing)",
+                            name
+                        ),
+                        prop_pos.clone(),
+                    );
+                }
                 self.err_expr(prop_pos)
             }
             Type::Str => {
@@ -2414,17 +2901,43 @@ impl<'p> Checker<'p> {
                     mk(recv, args, (*elem).clone(), pos)
                 }
                 other => {
-                    self.error(
-                        RuleCode::S100,
-                        format!(
-                            "`{}` is outside the array surface (length, indexing, push, pop)",
-                            other
-                        ),
-                        prop_pos.clone(),
-                    );
+                    // The §9 method intrinsics (stdlib.md §9, Q22).
+                    if let Some(f) = crate::ambient::arr_method(other) {
+                        return self.check_array_method(recv, (*elem).clone(), f, c, fx, pos);
+                    }
+                    if !self.arr_subset_rejection(other, prop_pos.clone()) {
+                        self.arr_surface_error(other, prop_pos.clone());
+                    }
                     self.err_expr(pos)
                 }
             },
+            Type::FixedArray(..) => {
+                // stdlib.md §9: the v1 Array methods are `T[]` only.
+                if name == "push"
+                    || name == "pop"
+                    || crate::ambient::arr_method(&name).is_some()
+                {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`{}` is not available on `FixedArray`; the Array methods \
+                             apply to `T[]` only (Q22)",
+                            name
+                        ),
+                        prop_pos.clone(),
+                    );
+                } else {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`{}` is outside the FixedArray surface (length, indexing)",
+                            name
+                        ),
+                        prop_pos.clone(),
+                    );
+                }
+                self.err_expr(pos)
+            }
             Type::Str => match name.as_str() {
                 "slice" => {
                     let params = [
@@ -2665,6 +3178,29 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        let ctx_fn = match ctx {
+            Some(Type::Func(ft)) => Some((**ft).clone()),
+            _ => None,
+        };
+        let (param_ctx, ret_ctx) = match &ctx_fn {
+            Some(ft) => (Some(ft.params.as_slice()), Some(&ft.ret)),
+            None => (None, None),
+        };
+        self.check_lambda_with(a, param_ctx, ret_ctx, fx, pos)
+    }
+
+    /// [`Self::check_lambda`] with the contextual function type split
+    /// into its two halves, so a caller can supply parameter context
+    /// while leaving the return type to be inferred from the body (the
+    /// `map` callback, stdlib.md §9: `U` comes from the closure).
+    fn check_lambda_with(
+        &mut self,
+        a: &ast::ArrowExpr,
+        param_ctx: Option<&[Type]>,
+        ret_ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
         if a.is_async {
             self.error(
                 RuleCode::S013,
@@ -2681,10 +3217,6 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let ctx_fn = match ctx {
-            Some(Type::Func(ft)) => Some((**ft).clone()),
-            _ => None,
-        };
         let mut params = Vec::new();
         for (i, pat) in a.params.iter().enumerate() {
             // An un-annotated lambda parameter takes its type from the
@@ -2698,7 +3230,7 @@ impl<'p> Checker<'p> {
                 _ => None,
             };
             let sig = if let Some(b) = unannotated_ident {
-                if let Some(t) = ctx_fn.as_ref().and_then(|f| f.params.get(i)) {
+                if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
                     ParamSig {
                         name: b.id.sym.to_string(),
                         ty: t.clone(),
@@ -2716,7 +3248,7 @@ impl<'p> Checker<'p> {
             .return_type
             .as_ref()
             .map(|ann| self.resolve_type(&ann.type_ann))
-            .or_else(|| ctx_fn.as_ref().map(|f| f.ret.clone()));
+            .or_else(|| ret_ctx.cloned());
 
         fx.frames.push(Frame {
             ret: ret.clone().unwrap_or(Type::Error),

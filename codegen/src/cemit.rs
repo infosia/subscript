@@ -1980,7 +1980,148 @@ impl<'m> Emitter<'m> {
                     _ => call,
                 })
             }
+            // An Array method intrinsic (stdlib.md §9) calls its opaque
+            // runtime symbol. The receiver is the first HIR argument;
+            // element values the runtime receives are materialized into
+            // temporaries and passed by pointer; a callback passes its
+            // SubFn (code, env) halves; kind tags come from the shared
+            // compiler mapping so the tiers cannot disagree.
+            hir::Callee::Arr(f) => self.eval_arr_call(*f, args, ret_ty, pos, out, depth),
             other => Err(format!("callee {other:?} is outside the run set's scope")),
+        }
+    }
+
+    /// Emits an `Array` method intrinsic call (stdlib.md §9, Q22). The
+    /// in-place methods (`fill`, `reverse`, `sort`) bind the receiver
+    /// handle to a temporary and yield it as the expression's value.
+    fn eval_arr_call(&mut self, f: hir::ArrFn, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::ArrFn as A;
+        let ind = indent(depth);
+        let recv = args.first().ok_or("array method receiver")?;
+        let elem = match &recv.ty {
+            Type::Array(e) => (**e).clone(),
+            other => return Err(format!("array method on {other:?}")),
+        };
+        let h = self.eval(recv, out, depth)?;
+        let arg_at = |args: &[hir::Expr], i: usize| -> Result<hir::Expr, String> {
+            args.get(i)
+                .cloned()
+                .ok_or_else(|| format!("{} arity (checker normalizes)", f.name()))
+        };
+        // Materializes one element value into an addressable temporary.
+        let sym = f.symbol();
+        match f {
+            A::IndexOf | A::LastIndexOf | A::Includes => {
+                let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
+                let ect = self.ctype(&elem)?;
+                let x = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let t = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{ect} {t} = {x};");
+                let call = format!("{sym}(ctx, {h}, &{t}, {kind}u)");
+                Ok(if f == A::Includes {
+                    format!("({call} != 0)")
+                } else {
+                    call
+                })
+            }
+            A::Join => {
+                let kind = crate::layout::arr_fmt_kind(&elem)?.code();
+                let sep = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("{sym}(ctx, {h}, {sep}, {kind}u, {pid}u)"))
+            }
+            A::Slice => {
+                let start = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let end = self.eval(&arg_at(args, 2)?, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("{sym}(ctx, {h}, {start}, {end}, {pid}u)"))
+            }
+            A::Fill => {
+                // Bind the receiver once: it is both the call operand
+                // and the expression's value (in place, §9).
+                let th = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}void* {th} = {h};");
+                let ect = self.ctype(&elem)?;
+                let x = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let start = self.eval(&arg_at(args, 2)?, out, depth)?;
+                let end = self.eval(&arg_at(args, 3)?, out, depth)?;
+                let _ = writeln!(
+                    out,
+                    "{ind}{{ {ect} _e = {x}; {sym}(ctx, {th}, &_e, {start}, {end}); }}"
+                );
+                Ok(th)
+            }
+            A::Reverse => {
+                let th = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}void* {th} = {h};");
+                let _ = writeln!(out, "{ind}{sym}(ctx, {th});");
+                Ok(th)
+            }
+            A::Concat => {
+                let other = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("{sym}(ctx, {h}, {other}, {pid}u)"))
+            }
+            A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex => {
+                let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
+                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let tf = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
+                let call = match f {
+                    A::Filter => {
+                        let pid = self.pos_id(pos);
+                        format!("{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {pid}u)")
+                    }
+                    _ => format!("{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u)"),
+                };
+                Ok(match f {
+                    A::Some | A::Every => format!("({call} != 0)"),
+                    _ => call,
+                })
+            }
+            A::Sort => {
+                let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
+                let th = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}void* {th} = {h};");
+                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let tf = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
+                let _ = writeln!(out, "{ind}{sym}(ctx, {th}, {tf}.code, {tf}.env, {kind}u);");
+                Ok(th)
+            }
+            A::Map => {
+                let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
+                let ret_elem = match ret_ty {
+                    Type::Array(u) => (**u).clone(),
+                    other => return Err(format!("map result {other:?}")),
+                };
+                let ret_kind = crate::layout::arr_elem_kind(self.module, &ret_elem)?.code();
+                let rect = self.ctype(&ret_elem)?;
+                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let tf = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
+                let pid = self.pos_id(pos);
+                Ok(format!(
+                    "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u)"
+                ))
+            }
+            A::Reduce => {
+                let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
+                let acc_kind = crate::layout::arr_elem_kind(self.module, ret_ty)?.code();
+                let acct = self.ctype(ret_ty)?;
+                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let tf = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
+                let init = self.eval(&arg_at(args, 2)?, out, depth)?;
+                let acc = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{acct} {acc} = {init};");
+                let _ = writeln!(
+                    out,
+                    "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc});"
+                );
+                Ok(acc)
+            }
+            other => Err(format!("unknown ArrFn {other:?}")),
         }
     }
 
@@ -3178,6 +3319,28 @@ extern void* sub_rt_str_to_upper(void* ctx, const void* s, uint32_t pos_id);
 extern void* sub_rt_str_to_lower(void* ctx, const void* s, uint32_t pos_id);
 extern void* sub_rt_str_replace(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
 extern void* sub_rt_str_replace_all(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
+
+/* Array method intrinsics (stdlib.md 9, Q22): one opaque runtime symbol
+ * per accepted method, shared with the dev tier. Element values the
+ * runtime receives travel by pointer; script callbacks travel as the
+ * SubFn (code, env) halves; kind tags are the shared compiler mapping's
+ * u32 codes; allocating entries carry a trailing pos_id. */
+extern int32_t sub_rt_arr_index_of(void* ctx, void* a, const void* x, uint32_t kind);
+extern int32_t sub_rt_arr_last_index_of(void* ctx, void* a, const void* x, uint32_t kind);
+extern int32_t sub_rt_arr_includes(void* ctx, void* a, const void* x, uint32_t kind);
+extern void* sub_rt_arr_join(void* ctx, void* a, const void* sep, uint32_t kind, uint32_t pos_id);
+extern void* sub_rt_arr_slice(void* ctx, void* a, int32_t start, int32_t end, uint32_t pos_id);
+extern void sub_rt_arr_fill(void* ctx, void* a, const void* x, int32_t start, int32_t end);
+extern void sub_rt_arr_reverse(void* ctx, void* a);
+extern void* sub_rt_arr_concat(void* ctx, void* a, void* b, uint32_t pos_id);
+extern void sub_rt_arr_for_each(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern void* sub_rt_arr_map(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id);
+extern void* sub_rt_arr_filter(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t pos_id);
+extern void sub_rt_arr_reduce(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc);
+extern int32_t sub_rt_arr_some(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern int32_t sub_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern int32_t sub_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern void sub_rt_arr_sort(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
 
 /* Math intrinsics (stdlib.md 1): opaque runtime symbols, never bare
  * libm calls — clang constant-folds recognized libm calls at -O2, a

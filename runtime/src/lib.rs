@@ -17,6 +17,7 @@
 //! returns normally to the driver, which then reads the record. The
 //! host process is never killed and no foreign frames are unwound.
 
+pub mod arrops;
 pub mod context;
 pub mod date;
 pub mod ffi;

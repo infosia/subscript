@@ -34,6 +34,24 @@ pub(crate) enum Repr {
     Agg { size: u32, align: u32 },
 }
 
+/// The [`hir::ArrElemKind`] of array element type `ty` under `module`'s
+/// class table (stdlib.md §9): the tag both tiers pass to the
+/// `sub_rt_arr_*` entries, computed from the one shared compiler
+/// mapping so the tiers cannot disagree. An error for a type the
+/// checker should have rejected (value classes, function values).
+pub(crate) fn arr_elem_kind(module: &hir::Module, ty: &Type) -> Result<hir::ArrElemKind, String> {
+    hir::ArrElemKind::of(ty, &|id| {
+        module.classes.get(id.0).is_some_and(|c| c.is_value)
+    })
+    .ok_or_else(|| internal(format!("array element type {ty:?} has no marshaling kind")))
+}
+
+/// The [`hir::ArrFmtKind`] of a `join` element type (stdlib.md §9).
+pub(crate) fn arr_fmt_kind(ty: &Type) -> Result<hir::ArrFmtKind, String> {
+    hir::ArrFmtKind::of(ty)
+        .ok_or_else(|| internal(format!("array element type {ty:?} has no Q14 format kind")))
+}
+
 /// Layout of one class.
 #[derive(Debug, Clone)]
 pub(crate) struct ClassLayout {

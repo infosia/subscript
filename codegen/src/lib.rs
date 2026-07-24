@@ -93,6 +93,44 @@ mod tests {
     }
 
     #[test]
+    fn arr_kind_codes_agree_between_compiler_and_runtime() {
+        // The sub_rt_arr_* tag contract (stdlib.md §9): the compiler's
+        // ArrElemKind/ArrFmtKind codes and the runtime arrops decoders
+        // are one table. This crate sees both crates, so it holds the
+        // cross-check.
+        use subscript_compiler::hir::{ArrElemKind, ArrFmtKind};
+        use subscript_runtime::arrops::{ElemKind, FmtKind};
+        for (compiler, runtime) in [
+            (ArrElemKind::Int, ElemKind::Int),
+            (ArrElemKind::F32, ElemKind::F32),
+            (ArrElemKind::F64, ElemKind::F64),
+            (ArrElemKind::Str, ElemKind::Str),
+        ] {
+            assert_eq!(
+                ElemKind::from_u32(compiler.code()),
+                Some(runtime),
+                "elem kind {compiler:?}"
+            );
+        }
+        for (compiler, runtime) in [
+            (ArrFmtKind::I32, FmtKind::I32),
+            (ArrFmtKind::U32, FmtKind::U32),
+            (ArrFmtKind::I64, FmtKind::I64),
+            (ArrFmtKind::U64, FmtKind::U64),
+            (ArrFmtKind::F32, FmtKind::F32),
+            (ArrFmtKind::F64, FmtKind::F64),
+            (ArrFmtKind::Bool, FmtKind::Bool),
+            (ArrFmtKind::Str, FmtKind::Str),
+        ] {
+            assert_eq!(
+                FmtKind::from_u32(compiler.code()),
+                Some(runtime),
+                "format kind {compiler:?}"
+            );
+        }
+    }
+
+    #[test]
     fn hello_prints_to_the_sink() {
         assert_eq!(run_ok("export function main(): void {\n  print(\"hello\");\n}\n"), "hello\n");
     }

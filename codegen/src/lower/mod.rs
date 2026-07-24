@@ -118,6 +118,11 @@ pub(crate) struct RtFns {
     /// signature is `(ctx, recv, params…[, pos_id])` per
     /// [`hir::StrFn::params`] / [`hir::StrFn::takes_pos_id`].
     pub str_ops: [FuncId; hir::StrFn::ALL.len()],
+    /// `sub_rt_arr_*` method imports (stdlib.md §9), indexed by
+    /// `hir::ArrFn as usize` (the [`hir::ArrFn::ALL`] order). Each
+    /// signature starts `(ctx, recv, …)`; element values travel by
+    /// pointer, callbacks as `(code, env)`, kind tags as `u32`.
+    pub arr_ops: [FuncId; hir::ArrFn::ALL.len()],
 }
 
 /// Parameters of the shared lowering.
@@ -449,6 +454,50 @@ fn declare_rt<M: Module>(
     let str_ops: [FuncId; hir::StrFn::ALL.len()] = str_ids
         .try_into()
         .map_err(|_| internal("string import table size"))?;
+    // Array method imports (stdlib.md §9): one opaque symbol per
+    // accepted method, in ArrFn::ALL order so `f as usize` indexes the
+    // table. Signatures per the §9 marshaling contract: element values
+    // by pointer (I64), callbacks as `(code, env)` (I64, I64), kind
+    // tags and pos ids as u32 (I32), sizes as u64 (I64).
+    let mut arr_ids: Vec<FuncId> = Vec::with_capacity(hir::ArrFn::ALL.len());
+    for f in hir::ArrFn::ALL {
+        use hir::ArrFn as A;
+        let (params, ret): (&[types::Type], Option<types::Type>) = match f {
+            // (ctx, recv, x_ptr, kind) -> i32
+            A::IndexOf | A::LastIndexOf | A::Includes => (&[I64, I64, I64, I32], Some(I32)),
+            // (ctx, recv, sep, fmt_kind, pos_id) -> str handle
+            A::Join => (&[I64, I64, I64, I32, I32], Some(I64)),
+            // (ctx, recv, start, end, pos_id) -> array handle
+            A::Slice => (&[I64, I64, I32, I32, I32], Some(I64)),
+            // (ctx, recv, x_ptr, start, end)
+            A::Fill => (&[I64, I64, I64, I32, I32], None),
+            // (ctx, recv)
+            A::Reverse => (&[I64, I64], None),
+            // (ctx, recv, other, pos_id) -> array handle
+            A::Concat => (&[I64, I64, I64, I32], Some(I64)),
+            // (ctx, recv, code, env, kind)
+            A::ForEach => (&[I64, I64, I64, I64, I32], None),
+            // (ctx, recv, code, env, elem_kind, ret_kind, ret_size,
+            // pos_id) -> array handle
+            A::Map => (&[I64, I64, I64, I64, I32, I32, I64, I32], Some(I64)),
+            // (ctx, recv, code, env, kind, pos_id) -> array handle
+            A::Filter => (&[I64, I64, I64, I64, I32, I32], Some(I64)),
+            // (ctx, recv, code, env, elem_kind, acc_kind, acc_size,
+            // acc_ptr)
+            A::Reduce => (&[I64, I64, I64, I64, I32, I32, I64, I64], None),
+            // (ctx, recv, code, env, kind) -> i32
+            A::Some | A::Every | A::FindIndex => (&[I64, I64, I64, I64, I32], Some(I32)),
+            // (ctx, recv, code, env, kind)
+            A::Sort => (&[I64, I64, I64, I64, I32], None),
+            // `ArrFn` is #[non_exhaustive]; a variant this crate does
+            // not know is a compiler/codegen version skew.
+            other => return Err(internal(format!("unknown ArrFn {other:?}"))),
+        };
+        arr_ids.push(mk(f.symbol(), params, ret)?);
+    }
+    let arr_ops: [FuncId; hir::ArrFn::ALL.len()] = arr_ids
+        .try_into()
+        .map_err(|_| internal("array import table size"))?;
     Ok(RtFns {
         print: mk("sub_rt_print", &[I64, I64], None)?,
         collect: mk("sub_rt_collect", &[I64], None)?,
@@ -498,6 +547,7 @@ fn declare_rt<M: Module>(
         date_get: mk("sub_rt_date_get", &[I64, I64, I32], Some(I32))?,
         date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
         str_ops,
+        arr_ops,
     })
 }
 

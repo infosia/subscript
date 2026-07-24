@@ -1980,6 +1980,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Math(f) => self.eval_math(*f, args),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos),
             hir::Callee::Str(f) => self.eval_str(*f, args, pos),
+            hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -2744,6 +2745,158 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::StrRet::Bool => self.b.ins().icmp_imm(IntCC::NotEqual, res, 0),
             _ => res,
         }))
+    }
+
+    /// Lowers an `Array` method intrinsic (stdlib.md §9) to its opaque
+    /// `sub_rt_arr_*` runtime call. The receiver handle is the first
+    /// HIR argument; element values the runtime receives are
+    /// materialized and passed by pointer; a callback is evaluated to
+    /// its `(code, env)` pair; kind tags come from the shared compiler
+    /// mapping ([`crate::layout::arr_elem_kind`]). Calls that can leave
+    /// the Context trapped (allocation, or any callback) are followed
+    /// by the standing trap check.
+    fn eval_arr(
+        &mut self,
+        f: hir::ArrFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        use hir::ArrFn as A;
+        let recv = args.first().ok_or_else(|| internal("array method receiver"))?;
+        let elem = match &recv.ty {
+            Type::Array(e) => (**e).clone(),
+            other => return Err(internal(format!("array method on {other:?}"))),
+        };
+        let rv = self.eval(recv)?;
+        let h = self.expect_s(rv)?;
+        let rt = self.ml.rt.arr_ops[f as usize];
+        let arg_at = |i: usize| -> Result<&hir::Expr, String> {
+            args.get(i)
+                .ok_or_else(|| internal(format!("{} arity (checker normalizes)", f.name())))
+        };
+        let checked = f.can_trap();
+        match f {
+            A::IndexOf | A::LastIndexOf | A::Includes => {
+                let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
+                let x = self.eval(arg_at(1)?)?;
+                let ptr = self.materialize(x, &elem)?;
+                let kv = self.iconst(types::I32, i64::from(kind.code()));
+                let res = self.call_rt(rt, &[self.ctx_v, h, ptr, kv], checked)?;
+                let res = res.ok_or_else(|| internal(format!("{} result", f.name())))?;
+                Ok(RV::S(if f == A::Includes {
+                    self.b.ins().icmp_imm(IntCC::NotEqual, res, 0)
+                } else {
+                    res
+                }))
+            }
+            A::Join => {
+                let kind = crate::layout::arr_fmt_kind(&elem)?;
+                let sep = self.eval(arg_at(1)?)?;
+                let sep = self.expect_s(sep)?;
+                let kv = self.iconst(types::I32, i64::from(kind.code()));
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(rt, &[self.ctx_v, h, sep, kv, pos_v], checked)?;
+                res.map(RV::S).ok_or_else(|| internal("join result"))
+            }
+            A::Slice => {
+                let start = self.eval(arg_at(1)?)?;
+                let start = self.expect_s(start)?;
+                let end = self.eval(arg_at(2)?)?;
+                let end = self.expect_s(end)?;
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(rt, &[self.ctx_v, h, start, end, pos_v], checked)?;
+                res.map(RV::S).ok_or_else(|| internal("slice result"))
+            }
+            A::Fill => {
+                let x = self.eval(arg_at(1)?)?;
+                let ptr = self.materialize(x, &elem)?;
+                let start = self.eval(arg_at(2)?)?;
+                let start = self.expect_s(start)?;
+                let end = self.eval(arg_at(3)?)?;
+                let end = self.expect_s(end)?;
+                self.call_rt(rt, &[self.ctx_v, h, ptr, start, end], checked)?;
+                // In place: the expression's value is the receiver.
+                Ok(RV::S(h))
+            }
+            A::Reverse => {
+                self.call_rt(rt, &[self.ctx_v, h], checked)?;
+                Ok(RV::S(h))
+            }
+            A::Concat => {
+                let other = self.eval(arg_at(1)?)?;
+                let other = self.expect_s(other)?;
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(rt, &[self.ctx_v, h, other, pos_v], checked)?;
+                res.map(RV::S).ok_or_else(|| internal("concat result"))
+            }
+            A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex | A::Sort => {
+                let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
+                let cb = self.eval(arg_at(1)?)?;
+                let (code, env) = self.expect_p(cb)?;
+                let kv = self.iconst(types::I32, i64::from(kind.code()));
+                let mut argv = vec![self.ctx_v, h, code, env, kv];
+                if f == A::Filter {
+                    let pid = self.pos_id(pos);
+                    argv.push(self.iconst(types::I32, pid));
+                }
+                let res = self.call_rt(rt, &argv, checked)?;
+                Ok(match f {
+                    A::ForEach => RV::None,
+                    A::Sort => RV::S(h),
+                    A::Some | A::Every => {
+                        let r = res.ok_or_else(|| internal("predicate result"))?;
+                        RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, r, 0))
+                    }
+                    _ => RV::S(res.ok_or_else(|| internal(format!("{} result", f.name())))?),
+                })
+            }
+            A::Map => {
+                let elem_kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
+                let ret_elem = match ret_ty {
+                    Type::Array(u) => (**u).clone(),
+                    other => return Err(internal(format!("map result {other:?}"))),
+                };
+                let ret_kind = crate::layout::arr_elem_kind(self.ml.hir, &ret_elem)?;
+                let ret_stride = self.ml.layouts.stride(&ret_elem)?;
+                let cb = self.eval(arg_at(1)?)?;
+                let (code, env) = self.expect_p(cb)?;
+                let ekv = self.iconst(types::I32, i64::from(elem_kind.code()));
+                let rkv = self.iconst(types::I32, i64::from(ret_kind.code()));
+                let size_v = self.iconst(types::I64, i64::from(ret_stride));
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(
+                    rt,
+                    &[self.ctx_v, h, code, env, ekv, rkv, size_v, pos_v],
+                    checked,
+                )?;
+                res.map(RV::S).ok_or_else(|| internal("map result"))
+            }
+            A::Reduce => {
+                let elem_kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
+                let acc_kind = crate::layout::arr_elem_kind(self.ml.hir, ret_ty)?;
+                let acc_stride = self.ml.layouts.stride(ret_ty)?;
+                let cb = self.eval(arg_at(1)?)?;
+                let (code, env) = self.expect_p(cb)?;
+                // The accumulator travels in/out through a caller slot.
+                let init = self.eval(arg_at(2)?)?;
+                let slot = self.materialize(init, ret_ty)?;
+                let ekv = self.iconst(types::I32, i64::from(elem_kind.code()));
+                let akv = self.iconst(types::I32, i64::from(acc_kind.code()));
+                let size_v = self.iconst(types::I64, i64::from(acc_stride));
+                self.call_rt(
+                    rt,
+                    &[self.ctx_v, h, code, env, ekv, akv, size_v, slot],
+                    checked,
+                )?;
+                self.load_val(ret_ty, slot, 0)
+            }
+            other => Err(internal(format!("unknown ArrFn {other:?}"))),
+        }
     }
 
     fn eval_ambient(

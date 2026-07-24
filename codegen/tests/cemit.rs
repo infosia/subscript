@@ -218,6 +218,42 @@ fn string_methods_match_across_tiers_without_a_golden() {
     );
 }
 
+#[test]
+fn array_trapping_map_callback_reports_identically_across_tiers() {
+    // stdlib.md §9 gate: a callback that traps mid-`map` (an OOB index
+    // inside the closure at v == 3) aborts the iteration in the shared
+    // runtime; the standing post-call trap check surfaces it on both
+    // tiers with an identical kind/message/position tuple.
+    let files = [SourceFile::new(
+        "test.ts",
+        "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const ys: i32[] = xs.map((v: i32): i32 => xs[v + 1]);\n  print(`${ys.length}`);\n}\n",
+    )];
+    let mut reports = Vec::new();
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
+                assert_eq!(t.pos.file, "test.ts", "{tier}");
+                assert_eq!(t.pos.line, 3, "{tier}");
+                reports.push((t.rule, t.message, t.pos));
+            }
+            other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
+fn array_methods_match_across_tiers_without_a_golden() {
+    // The committed a44/a45 goldens pin the full batteries; this pins
+    // cross-tier agreement for a compact slice with computed receivers,
+    // a function-typed local as the callback, and a capturing
+    // comparator (C5: non-escaping, legal as a callback).
+    assert_tiers_agree(
+        "export function main(): void {\n  const xs: i32[] = [3, 1, 2];\n  const pred: (v: i32) => boolean = (v: i32): boolean => v > 1;\n  print(`${xs.filter(pred).length} ${xs.findIndex(pred)}`);\n  const pivot: i32 = 2;\n  xs.sort((a: i32, b: i32): i32 => (a === pivot ? -1 : a) - (b === pivot ? -1 : b));\n  print(xs.slice(0).concat(xs).join(\",\"));\n}\n",
+    );
+}
+
 /// The a22 corpus entry and its frozen golden, compiled into the test so
 /// the measured program is exactly the committed file.
 const A22_SOURCE: &str = include_str!("../../corpus/accept/a22-matrix-propagation.ts");

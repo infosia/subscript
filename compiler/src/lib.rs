@@ -321,6 +321,145 @@ mod tests {
     }
 
     #[test]
+    fn array_methods_type_and_normalize_optional_arguments() {
+        // stdlib.md §9: every accepted method resolves to a Callee::Arr
+        // intrinsic with the receiver first; the optional arguments are
+        // normalized at check time (join separator -> ",", slice/fill
+        // start -> 0, end -> the END_SENTINEL) so each runtime symbol
+        // has a fixed arity; map's `U` is inferred from the closure.
+        let module = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const i: i32 = xs.indexOf(2);\n  const s: string = xs.join();\n  const sl: i32[] = xs.slice(1);\n  const fl: i32[] = xs.fill(0);\n  const m: string[] = xs.map((v: i32) => `${v}`);\n  const r: string = xs.reduce((acc: string, v: i32): string => acc + `${v}`, \"#\");\n  print(`${i}${s}${sl.length}${fl.length}${m.length}${r}`);\n}\n",
+        )
+        .expect("clean check");
+        let mut found = Vec::new();
+        fn walk(e: &hir::Expr, found: &mut Vec<(hir::ArrFn, usize, Type)>) {
+            if let hir::ExprKind::Call { callee, args } = &e.kind {
+                if let hir::Callee::Arr(f) = callee {
+                    found.push((*f, args.len(), e.ty.clone()));
+                }
+                for a in args {
+                    walk(a, found);
+                }
+            }
+        }
+        for s in &module.functions[0].body {
+            match s {
+                hir::Stmt::Let { init, .. } => walk(init, &mut found),
+                hir::Stmt::Expr(e) => walk(e, &mut found),
+                _ => {}
+            }
+        }
+        let get = |f: hir::ArrFn| {
+            found
+                .iter()
+                .find(|(g, _, _)| *g == f)
+                .unwrap_or_else(|| panic!("no Callee::Arr({}) call", f.name()))
+                .clone()
+        };
+        assert_eq!(get(hir::ArrFn::IndexOf).1, 2); // recv + needle
+        assert_eq!(get(hir::ArrFn::Join).1, 2); // recv + defaulted ","
+        assert_eq!(get(hir::ArrFn::Slice).1, 3); // recv + start + end
+        assert_eq!(get(hir::ArrFn::Fill).1, 4); // recv + x + start + end
+        // map's U is inferred from the closure: string[].
+        assert_eq!(get(hir::ArrFn::Map).2, Type::Array(Box::new(Type::Str)));
+        // reduce's result is the init's type.
+        assert_eq!(get(hir::ArrFn::Reduce).2, Type::Str);
+        assert_eq!(get(hir::ArrFn::Reduce).1, 3); // recv + callback + init
+    }
+
+    #[test]
+    fn rejected_array_member_is_s014_naming_the_member() {
+        for (member, call) in [
+            ("sort", "xs.sort()"),
+            ("reduce", "xs.reduce((acc: i32, v: i32): i32 => acc + v)"),
+            ("find", "xs.find((v: i32): boolean => v > 1)"),
+            ("findLast", "xs.findLast((v: i32): boolean => v > 1)"),
+            ("reduceRight", "xs.reduceRight((acc: i32, v: i32): i32 => acc + v, 0)"),
+            ("splice", "xs.splice(0, 1)"),
+            ("shift", "xs.shift()"),
+            ("unshift", "xs.unshift(0)"),
+            ("flat", "xs.flat()"),
+            ("copyWithin", "xs.copyWithin(0, 1)"),
+            ("keys", "xs.keys()"),
+        ] {
+            let err = check_one(&format!(
+                "export function main(): void {{\n  const xs: i32[] = [1, 2, 3];\n  {call};\n}}\n"
+            ))
+            .unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{member}");
+            assert!(err[0].message.contains(member), "{member}: {}", err[0].message);
+            assert!(err[0].message.contains("Q22"), "{member}: {}", err[0].message);
+        }
+    }
+
+    #[test]
+    fn array_callback_with_extra_parameters_is_s014() {
+        // Q22: the lib's optional index/array callback parameters are
+        // not accepted; arities are fixed.
+        let err = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const m: i32[] = xs.map((v: i32, i: i32): i32 => v + i);\n  print(`${m.length}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("index/array"));
+        assert!(err[0].message.contains("Q22"));
+    }
+
+    #[test]
+    fn array_method_on_fixed_array_is_s014() {
+        // stdlib.md §9: v1 Array methods are `T[]` only.
+        let err = check_one(
+            "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(xs.join(\",\"));\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("FixedArray"));
+    }
+
+    #[test]
+    fn array_callback_over_value_class_elements_is_s014() {
+        // Value-class elements cannot cross the runtime->script element
+        // boundary (stdlib.md §9); the checker gates them.
+        let err = check_one(
+            "@value\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: V[] = [new V(1)];\n  xs.forEach((v: V): void => {});\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("Q22"));
+    }
+
+    #[test]
+    fn array_join_on_date_elements_is_s014() {
+        // Date is not interpolatable (Q20); join follows the Q14 rules.
+        let err = check_one(
+            "export function main(): void {\n  const ds: Date[] = [new Date(0)];\n  print(ds.join(\",\"));\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("join"));
+    }
+
+    #[test]
+    fn array_method_read_as_a_value_is_rejected() {
+        let err = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1];\n  xs.map;\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("only be called"));
+    }
+
+    #[test]
+    fn unknown_array_member_keeps_the_surface_diagnostic() {
+        let err = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1];\n  xs.frobnicate();\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("Q22"), "{}", err[0].message);
+    }
+
+    #[test]
     fn capturing_lambda_may_not_capture_mutable_locals() {
         let err = check_one(
             "export function main(): void {\n  let n: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + n;\n  print(`${f(1)}`);\n}\n",

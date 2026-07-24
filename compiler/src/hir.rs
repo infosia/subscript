@@ -762,6 +762,301 @@ impl StrFn {
     }
 }
 
+/// `Array` intrinsic methods (stdlib.md §9, Q22): the accepted subset
+/// on `T[]`, lowered by both tiers to opaque `sub_rt_arr_*` runtime
+/// symbols. The receiver handle is the call's first argument. Element
+/// values the runtime *receives* (search needles, `fill` values,
+/// `reduce`'s accumulator) travel by pointer, so every symbol has one
+/// fixed C signature; values the runtime *passes to a script callback*
+/// travel by value under the language calling convention
+/// `(ctx, env, args…)`, dispatched inside the runtime from an
+/// [`ArrElemKind`] tag plus the element byte width.
+///
+/// The checker normalizes optional arguments at check time (the
+/// `Date.UTC` technique): `join`'s separator defaults `","`; `slice`'s
+/// and `fill`'s missing `start` is `0` and missing `end` is the
+/// [`ArrFn::END_SENTINEL`] (clamped to the length at runtime, so it
+/// means "to the end").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ArrFn {
+    /// `indexOf(x)` — first index by per-kind `===` equality, or −1.
+    IndexOf,
+    /// `lastIndexOf(x)` — last index or −1.
+    LastIndexOf,
+    /// `includes(x)` — per-kind `===` equality (so `NaN` is never
+    /// found — the contract pins `===` semantics for all three, Q22).
+    Includes,
+    /// `join(sep)` — Q14 formatting per element; `sep` defaults `","`.
+    Join,
+    /// `slice(start, end)` — JS negative/clamp rules; fresh array.
+    Slice,
+    /// `fill(x, start, end)` — in place; the expression's value is the
+    /// receiver.
+    Fill,
+    /// `reverse()` — in place; the expression's value is the receiver.
+    Reverse,
+    /// `concat(other)` — exactly one array argument; fresh array.
+    Concat,
+    /// `forEach(f)` — `f: (v: T) => void`.
+    ForEach,
+    /// `map(f)` — `f: (v: T) => U`; `U` inferred from the callback.
+    Map,
+    /// `filter(f)` — `f: (v: T) => boolean`; fresh array.
+    Filter,
+    /// `reduce(f, init)` — `f: (acc: U, v: T) => U`; `init` required
+    /// (Q22). The accumulator travels by pointer (in/out).
+    Reduce,
+    /// `some(f)` — short-circuits on the first `true`.
+    Some,
+    /// `every(f)` — short-circuits on the first `false`.
+    Every,
+    /// `findIndex(f)` — first index where `f` is `true`, or −1.
+    FindIndex,
+    /// `sort(cmp)` — comparator required (Q22); stable merge sort; in
+    /// place; the expression's value is the receiver.
+    Sort,
+}
+
+impl ArrFn {
+    /// Every accepted `Array` method, in declaration order; the index
+    /// of each variant equals its discriminant, so `f as usize` indexes
+    /// tables built from this list.
+    pub const ALL: [ArrFn; 16] = [
+        ArrFn::IndexOf,
+        ArrFn::LastIndexOf,
+        ArrFn::Includes,
+        ArrFn::Join,
+        ArrFn::Slice,
+        ArrFn::Fill,
+        ArrFn::Reverse,
+        ArrFn::Concat,
+        ArrFn::ForEach,
+        ArrFn::Map,
+        ArrFn::Filter,
+        ArrFn::Reduce,
+        ArrFn::Some,
+        ArrFn::Every,
+        ArrFn::FindIndex,
+        ArrFn::Sort,
+    ];
+
+    /// The checker's spelling of a defaulted missing `end` argument of
+    /// `slice`/`fill`: `i32::MAX`, which the runtime's JS clamp reduces
+    /// to the length ("to the end"). An explicit `end` of this value
+    /// means the same thing, so the sentinel is not observable.
+    pub const END_SENTINEL: i64 = i32::MAX as i64;
+
+    /// The lib member name (the checker's lookup and diagnostics).
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            ArrFn::IndexOf => "indexOf",
+            ArrFn::LastIndexOf => "lastIndexOf",
+            ArrFn::Includes => "includes",
+            ArrFn::Join => "join",
+            ArrFn::Slice => "slice",
+            ArrFn::Fill => "fill",
+            ArrFn::Reverse => "reverse",
+            ArrFn::Concat => "concat",
+            ArrFn::ForEach => "forEach",
+            ArrFn::Map => "map",
+            ArrFn::Filter => "filter",
+            ArrFn::Reduce => "reduce",
+            ArrFn::Some => "some",
+            ArrFn::Every => "every",
+            ArrFn::FindIndex => "findIndex",
+            ArrFn::Sort => "sort",
+        }
+    }
+
+    /// The opaque runtime symbol both tiers call.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            ArrFn::IndexOf => "sub_rt_arr_index_of",
+            ArrFn::LastIndexOf => "sub_rt_arr_last_index_of",
+            ArrFn::Includes => "sub_rt_arr_includes",
+            ArrFn::Join => "sub_rt_arr_join",
+            ArrFn::Slice => "sub_rt_arr_slice",
+            ArrFn::Fill => "sub_rt_arr_fill",
+            ArrFn::Reverse => "sub_rt_arr_reverse",
+            ArrFn::Concat => "sub_rt_arr_concat",
+            ArrFn::ForEach => "sub_rt_arr_for_each",
+            ArrFn::Map => "sub_rt_arr_map",
+            ArrFn::Filter => "sub_rt_arr_filter",
+            ArrFn::Reduce => "sub_rt_arr_reduce",
+            ArrFn::Some => "sub_rt_arr_some",
+            ArrFn::Every => "sub_rt_arr_every",
+            ArrFn::FindIndex => "sub_rt_arr_find_index",
+            ArrFn::Sort => "sub_rt_arr_sort",
+        }
+    }
+
+    /// True for the methods whose second HIR argument is a script
+    /// callback (a `(code, env)` function value).
+    #[must_use]
+    pub fn takes_callback(self) -> bool {
+        matches!(
+            self,
+            ArrFn::ForEach
+                | ArrFn::Map
+                | ArrFn::Filter
+                | ArrFn::Reduce
+                | ArrFn::Some
+                | ArrFn::Every
+                | ArrFn::FindIndex
+                | ArrFn::Sort
+        )
+    }
+
+    /// Whether the runtime symbol takes a trailing `pos_id`: exactly
+    /// the operations that allocate through the Context (a fresh array
+    /// or string), whose allocation failure traps at the call site.
+    /// The callback-taking non-allocating operations surface only
+    /// *callback* traps, which carry their own position.
+    #[must_use]
+    pub fn takes_pos_id(self) -> bool {
+        matches!(
+            self,
+            ArrFn::Join | ArrFn::Slice | ArrFn::Concat | ArrFn::Map | ArrFn::Filter
+        )
+    }
+
+    /// Whether the generated call must be followed by a trap check:
+    /// every operation that can leave the Context trapped (an
+    /// allocation failure, or a script callback that trapped).
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        self.takes_callback() || self.takes_pos_id()
+    }
+}
+
+/// The marshaling kind of an array element type (stdlib.md §9): what
+/// the runtime needs to (a) compare two elements under `===` semantics
+/// and (b) pass one element by value to a script callback. The byte
+/// width completes the picture and comes from each tier's own element
+/// size, so a type whose width differs between tiers (`boolean`) stays
+/// correct on both.
+///
+/// The `u32` codes are an ABI contract with the runtime's `arrops`
+/// module (`ElemKind`); a codegen test asserts the two tables agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ArrElemKind {
+    /// Bitwise integer equality at the element width; passed in an
+    /// integer register. Covers the sized integers, `boolean`, enums,
+    /// `Date` (millis), and reference handles (identity).
+    Int,
+    /// IEEE `f32` equality (`NaN` never equal); float register.
+    F32,
+    /// IEEE `f64` equality; float register.
+    F64,
+    /// String handle: content equality; integer (pointer) register.
+    Str,
+}
+
+impl ArrElemKind {
+    /// The stable `u32` code passed to the runtime.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            ArrElemKind::Int => 0,
+            ArrElemKind::F32 => 1,
+            ArrElemKind::F64 => 2,
+            ArrElemKind::Str => 3,
+        }
+    }
+
+    /// The kind of element type `ty`, or `None` when the type cannot
+    /// cross the runtime↔script element boundary (value classes,
+    /// function values, `FixedArray`, `void`). `is_value_class`
+    /// distinguishes value classes (excluded) from reference classes
+    /// (identity — included).
+    #[must_use]
+    pub fn of(ty: &Type, is_value_class: &dyn Fn(ClassId) -> bool) -> Option<ArrElemKind> {
+        Some(match ty {
+            Type::Bool
+            | Type::I32
+            | Type::U32
+            | Type::I64
+            | Type::U64
+            | Type::Enum(_)
+            | Type::Date
+            | Type::Object
+            | Type::Array(_) => ArrElemKind::Int,
+            Type::Class(id) if !is_value_class(*id) => ArrElemKind::Int,
+            Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
+            Type::F32 => ArrElemKind::F32,
+            Type::F64 => ArrElemKind::F64,
+            Type::Str => ArrElemKind::Str,
+            _ => return None,
+        })
+    }
+}
+
+/// The Q14 formatting kind of a `join` element (stdlib.md §9): selects
+/// the runtime `fmt_*` family member. `None` for element types that are
+/// not interpolatable (`Date` — Q20 — and references), which the
+/// checker rejects.
+///
+/// The `u32` codes are an ABI contract with the runtime's `arrops`
+/// module (`FmtKind`); a codegen test asserts the two tables agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ArrFmtKind {
+    /// `i32` decimal (also enums, which are `i32`-valued).
+    I32,
+    /// `u32` decimal.
+    U32,
+    /// `i64` decimal.
+    I64,
+    /// `u64` decimal.
+    U64,
+    /// `f32` shortest round-trip.
+    F32,
+    /// `f64` shortest round-trip.
+    F64,
+    /// `true` / `false`.
+    Bool,
+    /// String elements pass through unformatted.
+    Str,
+}
+
+impl ArrFmtKind {
+    /// The stable `u32` code passed to the runtime.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            ArrFmtKind::I32 => 0,
+            ArrFmtKind::U32 => 1,
+            ArrFmtKind::I64 => 2,
+            ArrFmtKind::U64 => 3,
+            ArrFmtKind::F32 => 4,
+            ArrFmtKind::F64 => 5,
+            ArrFmtKind::Bool => 6,
+            ArrFmtKind::Str => 7,
+        }
+    }
+
+    /// The formatting kind of element type `ty`, or `None` when `ty`
+    /// is not interpolatable under Q14.
+    #[must_use]
+    pub fn of(ty: &Type) -> Option<ArrFmtKind> {
+        Some(match ty {
+            Type::I32 | Type::Enum(_) => ArrFmtKind::I32,
+            Type::U32 => ArrFmtKind::U32,
+            Type::I64 => ArrFmtKind::I64,
+            Type::U64 => ArrFmtKind::U64,
+            Type::F32 => ArrFmtKind::F32,
+            Type::F64 => ArrFmtKind::F64,
+            Type::Bool => ArrFmtKind::Bool,
+            Type::Str => ArrFmtKind::Str,
+            _ => return None,
+        })
+    }
+}
+
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -783,6 +1078,11 @@ pub enum Callee {
     /// the first argument; optional arguments were normalized at check
     /// time, so the arity is `1 + f.params().len()` exactly.
     Str(StrFn),
+    /// An `Array` method intrinsic (stdlib.md §9, Q22). The receiver is
+    /// the first argument; optional arguments were normalized at check
+    /// time (`join` separator, `slice`/`fill` range). For `reduce` the
+    /// argument order is `[receiver, callback, init]`.
+    Arr(ArrFn),
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members
@@ -1038,6 +1338,129 @@ mod tests {
         assert!(StrFn::ALL.iter().all(|f| f.symbol().starts_with("sub_rt_str_")));
         assert_eq!(StrFn::ToUpperCase.symbol(), "sub_rt_str_to_upper");
         assert_eq!(StrFn::CharCodeAt.name(), "charCodeAt");
+    }
+
+    #[test]
+    fn arr_fn_all_is_indexed_by_discriminant() {
+        // Runtime-import tables index by `f as usize`; the ALL order
+        // must therefore equal declaration order.
+        for (i, f) in ArrFn::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, i, "ArrFn::ALL out of order at {i}");
+        }
+    }
+
+    #[test]
+    fn arr_fn_shapes_match_the_section_9_contract() {
+        // Symbols follow the sub_rt_arr_* convention, distinctly.
+        let mut symbols: Vec<&str> = ArrFn::ALL.iter().map(|f| f.symbol()).collect();
+        symbols.sort_unstable();
+        symbols.dedup();
+        assert_eq!(symbols.len(), ArrFn::ALL.len());
+        assert!(ArrFn::ALL.iter().all(|f| f.symbol().starts_with("sub_rt_arr_")));
+        assert_eq!(ArrFn::ForEach.symbol(), "sub_rt_arr_for_each");
+        assert_eq!(ArrFn::FindIndex.name(), "findIndex");
+        // Callback set: exactly the eight closure-taking methods.
+        let with_cb: Vec<ArrFn> = ArrFn::ALL.iter().copied().filter(|f| f.takes_callback()).collect();
+        assert_eq!(
+            with_cb,
+            [
+                ArrFn::ForEach,
+                ArrFn::Map,
+                ArrFn::Filter,
+                ArrFn::Reduce,
+                ArrFn::Some,
+                ArrFn::Every,
+                ArrFn::FindIndex,
+                ArrFn::Sort,
+            ]
+        );
+        // pos_id: exactly the allocating operations.
+        for f in ArrFn::ALL {
+            let allocates = matches!(
+                f,
+                ArrFn::Join | ArrFn::Slice | ArrFn::Concat | ArrFn::Map | ArrFn::Filter
+            );
+            assert_eq!(f.takes_pos_id(), allocates, "pos_id of {}", f.name());
+            assert_eq!(
+                f.can_trap(),
+                allocates || f.takes_callback(),
+                "trap check of {}",
+                f.name()
+            );
+        }
+        assert_eq!(ArrFn::END_SENTINEL, i64::from(i32::MAX));
+    }
+
+    #[test]
+    fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
+        use crate::types::FuncType;
+        let value_class = |id: ClassId| id.0 == 0; // class 0 is @value, class 1 is a reference
+        let of = |ty: &Type| ArrElemKind::of(ty, &value_class);
+        for ty in [
+            Type::Bool,
+            Type::I32,
+            Type::U32,
+            Type::I64,
+            Type::U64,
+            Type::Date,
+            Type::Enum(EnumId(0)),
+            Type::Object,
+            Type::Class(ClassId(1)),
+            Type::Nullable(Box::new(Type::Class(ClassId(1)))),
+            Type::Array(Box::new(Type::I32)),
+        ] {
+            assert_eq!(of(&ty), Some(ArrElemKind::Int), "{ty:?}");
+        }
+        assert_eq!(of(&Type::F32), Some(ArrElemKind::F32));
+        assert_eq!(of(&Type::F64), Some(ArrElemKind::F64));
+        assert_eq!(of(&Type::Str), Some(ArrElemKind::Str));
+        // Excluded: value classes, function values, FixedArray, void.
+        assert_eq!(of(&Type::Class(ClassId(0))), None);
+        let ft = Type::Func(Box::new(FuncType {
+            params: vec![Type::I32],
+            ret: Type::I32,
+        }));
+        assert_eq!(of(&ft), None);
+        assert_eq!(of(&Type::Nullable(Box::new(ft))), None);
+        assert_eq!(of(&Type::FixedArray(Box::new(Type::I32), 3)), None);
+        assert_eq!(of(&Type::Void), None);
+        // Stable ABI codes.
+        assert_eq!(ArrElemKind::Int.code(), 0);
+        assert_eq!(ArrElemKind::F32.code(), 1);
+        assert_eq!(ArrElemKind::F64.code(), 2);
+        assert_eq!(ArrElemKind::Str.code(), 3);
+    }
+
+    #[test]
+    fn arr_fmt_kind_matches_the_q14_interpolable_set() {
+        assert_eq!(ArrFmtKind::of(&Type::I32), Some(ArrFmtKind::I32));
+        assert_eq!(ArrFmtKind::of(&Type::Enum(EnumId(0))), Some(ArrFmtKind::I32));
+        assert_eq!(ArrFmtKind::of(&Type::U32), Some(ArrFmtKind::U32));
+        assert_eq!(ArrFmtKind::of(&Type::I64), Some(ArrFmtKind::I64));
+        assert_eq!(ArrFmtKind::of(&Type::U64), Some(ArrFmtKind::U64));
+        assert_eq!(ArrFmtKind::of(&Type::F32), Some(ArrFmtKind::F32));
+        assert_eq!(ArrFmtKind::of(&Type::F64), Some(ArrFmtKind::F64));
+        assert_eq!(ArrFmtKind::of(&Type::Bool), Some(ArrFmtKind::Bool));
+        assert_eq!(ArrFmtKind::of(&Type::Str), Some(ArrFmtKind::Str));
+        // Not interpolatable (Q20 for Date; references have no Q14 form).
+        assert_eq!(ArrFmtKind::of(&Type::Date), None);
+        assert_eq!(ArrFmtKind::of(&Type::Class(ClassId(0))), None);
+        assert_eq!(ArrFmtKind::of(&Type::Object), None);
+        // Stable ABI codes, in declaration order.
+        let codes: Vec<u32> = [
+            ArrFmtKind::I32,
+            ArrFmtKind::U32,
+            ArrFmtKind::I64,
+            ArrFmtKind::U64,
+            ArrFmtKind::F32,
+            ArrFmtKind::F64,
+            ArrFmtKind::Bool,
+            ArrFmtKind::Str,
+        ]
+        .iter()
+        .map(|k| k.code())
+        .collect();
+        assert_eq!(codes, (0..8).collect::<Vec<u32>>());
     }
 
     #[test]

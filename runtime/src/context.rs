@@ -1129,6 +1129,18 @@ impl Context {
         unsafe { (*(handle as *const ArrayHeader)).len as i32 }
     }
 
+    /// Element size in bytes of a dynamic array (the size the array was
+    /// created with; every element occupies exactly this many bytes).
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be an array payload owned by this context.
+    #[must_use]
+    pub unsafe fn array_elem_size(&self, handle: *const u8) -> usize {
+        // SAFETY: caller guarantees an array payload.
+        unsafe { (*(handle as *const ArrayHeader)).elem_size as usize }
+    }
+
     /// Appends one element (copied from `src`); returns the new length,
     /// or -1 after a trap.
     ///
@@ -1676,6 +1688,18 @@ mod tests {
         let r = ctx.trap_record().expect("oob trap");
         assert_eq!(r.kind, TrapKind::IndexOutOfBounds);
         assert_eq!(r.pos_id, 9);
+    }
+
+    #[test]
+    fn array_elem_size_reports_the_creation_size() {
+        let mut ctx = Context::new();
+        let a = ctx.array_new(4, 0);
+        let b = ctx.array_new(16, 0);
+        // SAFETY: live array handles of this context.
+        unsafe {
+            assert_eq!(ctx.array_elem_size(a), 4);
+            assert_eq!(ctx.array_elem_size(b), 16);
+        }
     }
 
     #[test]

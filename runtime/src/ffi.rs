@@ -1207,6 +1207,383 @@ pub unsafe extern "C" fn sub_rt_array_ptr(
     unsafe { (*ctx).array_elem_ptr(a, idx, pos_id) }
 }
 
+// ----- Array methods (stdlib.md §9, Q22) -----
+//
+// The logic lives in [`crate::arrops`]; these wrappers decode the kind
+// tags. Convention: the receiver handle follows `ctx`; element values
+// the runtime receives travel by pointer; script callbacks travel as a
+// `(code, env)` language function value; allocating entries carry a
+// trailing `pos_id`. Every callback-taking entry returns immediately
+// when the Context is already trapped and re-checks the trap flag after
+// each callback return (stdlib.md §9).
+
+/// Decodes an element-kind tag; an unknown tag records an Internal trap
+/// (compiler↔runtime skew, never a program fault).
+///
+/// # Safety
+///
+/// Shared contract.
+unsafe fn decode_elem_kind(ctx: *mut Context, kind: u32) -> Option<crate::arrops::ElemKind> {
+    let decoded = crate::arrops::ElemKind::from_u32(kind);
+    if decoded.is_none() {
+        // SAFETY: shared contract.
+        unsafe { &mut *ctx }.trap(
+            TrapKind::Internal,
+            format!("unknown array element kind {kind}"),
+            0,
+        );
+    }
+    decoded
+}
+
+/// `indexOf(x)`: first index under per-kind `===` equality, or −1
+/// (stdlib.md §9). `x` points at one element-sized value.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle, `x` readable for the
+/// element size, string elements/needles live handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_index_of(
+    ctx: *mut Context,
+    a: *mut u8,
+    x: *const u8,
+    kind: u32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return -1;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::index_of(ctx, a, x, kind) }
+}
+
+/// `lastIndexOf(x)`: last index or −1.
+///
+/// # Safety
+///
+/// As [`sub_rt_arr_index_of`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_last_index_of(
+    ctx: *mut Context,
+    a: *mut u8,
+    x: *const u8,
+    kind: u32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return -1;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::last_index_of(ctx, a, x, kind) }
+}
+
+/// `includes(x)`: 1 when found under `===` equality, else 0.
+///
+/// # Safety
+///
+/// As [`sub_rt_arr_index_of`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_includes(
+    ctx: *mut Context,
+    a: *mut u8,
+    x: *const u8,
+    kind: u32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return 0;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::includes(ctx, a, x, kind) }
+}
+
+/// `join(sep)`: Q14-formatted elements separated by `sep` (stdlib.md
+/// §9); a fresh string handle.
+///
+/// # Safety
+///
+/// Shared contract; `a` a live array handle, `sep` a live string
+/// handle, string elements live handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_join(
+    ctx: *mut Context,
+    a: *mut u8,
+    sep: *const u8,
+    kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    let Some(kind) = crate::arrops::FmtKind::from_u32(kind) else {
+        // SAFETY: shared contract.
+        unsafe { &mut *ctx }.trap(
+            TrapKind::Internal,
+            format!("unknown array format kind {kind}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::join(ctx, a, sep, kind, pos_id) }
+}
+
+/// `slice(start, end)`: a fresh array of the clamped range (JS negative
+/// rules; the checker spells a missing `end` as `i32::MAX`).
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_slice(
+    ctx: *mut Context,
+    a: *mut u8,
+    start: i32,
+    end: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::slice(ctx, a, start, end, pos_id) }
+}
+
+/// `fill(x, start, end)` in place (JS clamp rules); generated code
+/// reuses the receiver handle as the expression's value.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle, `x` readable for the
+/// element size.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_fill(
+    ctx: *mut Context,
+    a: *mut u8,
+    x: *const u8,
+    start: i32,
+    end: i32,
+) {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::fill(ctx, a, x, start, end) }
+}
+
+/// `reverse()` in place; generated code reuses the receiver handle as
+/// the expression's value.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_reverse(ctx: *mut Context, a: *mut u8) {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::reverse(ctx, a) }
+}
+
+/// `concat(other)`: a fresh array of `a`'s then `b`'s elements.
+///
+/// # Safety
+///
+/// Shared contract; `a` and `b` are live array handles of equal element
+/// size.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_concat(
+    ctx: *mut Context,
+    a: *mut u8,
+    b: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::concat(ctx, a, b, pos_id) }
+}
+
+/// `forEach(f)`: calls the language callback per element; aborts on the
+/// first trap (stdlib.md §9).
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle; `code`/`env` are a
+/// language function value of shape `(ctx, env, T) -> void` for the
+/// element ABI.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_for_each(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+) {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::for_each(ctx, a, code, env, kind) }
+}
+
+/// `map(f)`: a fresh `ret_size`-byte-element array of callback results;
+/// a mid-iteration trap aborts and returns the valid partial array.
+///
+/// # Safety
+///
+/// Shared contract; callback shape `(ctx, env, T) -> R` for the element
+/// and result ABIs.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_map(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    ret_kind: u32,
+    ret_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    let (Some(ek), Some(rk)) = (unsafe { decode_elem_kind(ctx, elem_kind) }, unsafe {
+        decode_elem_kind(ctx, ret_kind)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::map(ctx, a, code, env, ek, rk, ret_size as usize, pos_id) }
+}
+
+/// `filter(f)`: a fresh array of the elements whose predicate returned
+/// true.
+///
+/// # Safety
+///
+/// Shared contract; callback shape `(ctx, env, T) -> boolean`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_filter(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::filter(ctx, a, code, env, kind, pos_id) }
+}
+
+/// `reduce(f, init)`: folds left; the accumulator travels in/out
+/// through `acc` (`acc_size` bytes of `acc_kind`). On a callback trap
+/// the last completed accumulator remains in `acc`.
+///
+/// # Safety
+///
+/// Shared contract; callback shape `(ctx, env, A, T) -> A`; `acc`
+/// readable and writable for `acc_size` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_reduce(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    acc_kind: u32,
+    acc_size: u64,
+    acc: *mut u8,
+) {
+    // SAFETY: shared contract (forwarded).
+    let (Some(ek), Some(ak)) = (unsafe { decode_elem_kind(ctx, elem_kind) }, unsafe {
+        decode_elem_kind(ctx, acc_kind)
+    }) else {
+        return;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::reduce(ctx, a, code, env, ek, ak, acc_size as usize, acc) }
+}
+
+/// `some(f)`: 1 when any element satisfies the predicate
+/// (short-circuits), else 0.
+///
+/// # Safety
+///
+/// Shared contract; callback shape `(ctx, env, T) -> boolean`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_some(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return 0;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::some(ctx, a, code, env, kind) }
+}
+
+/// `every(f)`: 1 when every element satisfies the predicate
+/// (short-circuits on the first miss), else 0.
+///
+/// # Safety
+///
+/// As [`sub_rt_arr_some`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_every(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return 0;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::every(ctx, a, code, env, kind) }
+}
+
+/// `findIndex(f)`: the first satisfying index or −1 (short-circuits).
+///
+/// # Safety
+///
+/// As [`sub_rt_arr_some`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_find_index(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return -1;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::find_index(ctx, a, code, env, kind) }
+}
+
+/// `sort(cmp)`: stable merge sort in place; a comparator trap leaves
+/// the array exactly as it was (stdlib.md §9). Generated code reuses
+/// the receiver handle as the expression's value.
+///
+/// # Safety
+///
+/// Shared contract; comparator shape `(ctx, env, T, T) -> i32`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_sort(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+) {
+    // SAFETY: shared contract (forwarded).
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::sort(ctx, a, code, env, kind) }
+}
+
 // ----- C-boundary marshaling (P5.2b) -----
 
 /// Data pointer of a string handle: the `const char*` half of a
@@ -1884,6 +2261,71 @@ mod tests {
             let b = sub_rt_math_random(p);
             assert_eq!(a.to_bits(), b.to_bits());
         }
+    }
+
+    unsafe extern "C" fn triple_i32(_ctx: *mut Context, _env: *const u8, v: i32) -> i32 {
+        v * 3
+    }
+
+    unsafe extern "C" fn cmp_desc_i32(_ctx: *mut Context, _env: *const u8, a: i32, b: i32) -> i32 {
+        b - a
+    }
+
+    #[test]
+    fn ffi_arr_entries_forward_to_the_arrops_module() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let a = ctx.array_new(4, 0);
+        // SAFETY: valid context; live 4-byte-element array; readable
+        // needles; callbacks match the dispatched ABI.
+        unsafe {
+            for v in [3i32, 1, 2, 1] {
+                sub_rt_array_push(p, a, (&v as *const i32).cast(), 0);
+            }
+            let one = 1i32;
+            assert_eq!(sub_rt_arr_index_of(p, a, (&one as *const i32).cast(), 0), 1);
+            assert_eq!(sub_rt_arr_last_index_of(p, a, (&one as *const i32).cast(), 0), 3);
+            assert_eq!(sub_rt_arr_includes(p, a, (&one as *const i32).cast(), 0), 1);
+            let sep = ctx.alloc_str(b"-", 0);
+            let joined = sub_rt_arr_join(p, a, sep, 0, 0);
+            assert_eq!(ctx.str_bytes(joined), b"3-1-2-1");
+            let sl = sub_rt_arr_slice(p, a, 1, 3, 0);
+            assert_eq!(sub_rt_array_len(p, sl), 2);
+            let mapped = sub_rt_arr_map(
+                p,
+                a,
+                triple_i32 as *const u8,
+                std::ptr::null(),
+                0,
+                0,
+                4,
+                0,
+            );
+            assert_eq!(ctx.array_data(mapped).cast::<i32>().read_unaligned(), 9);
+            sub_rt_arr_sort(p, a, cmp_desc_i32 as *const u8, std::ptr::null(), 0);
+            assert_eq!(ctx.array_data(a).cast::<i32>().read_unaligned(), 3);
+            let b = sub_rt_arr_slice(p, a, 0, 1, 0);
+            let cat = sub_rt_arr_concat(p, a, b, 0);
+            assert_eq!(sub_rt_array_len(p, cat), 5);
+            let z = 0i32;
+            sub_rt_arr_fill(p, a, (&z as *const i32).cast(), 0, i32::MAX);
+            sub_rt_arr_reverse(p, a);
+            assert_eq!(sub_rt_arr_every(p, a, triple_i32 as *const u8, std::ptr::null(), 0), 0);
+        }
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_arr_unknown_kind_tag_traps_internal() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let a = ctx.array_new(4, 0);
+        let x = 1i32;
+        // SAFETY: valid context; live array; readable needle.
+        unsafe {
+            assert_eq!(sub_rt_arr_index_of(p, a, (&x as *const i32).cast(), 99), -1);
+        }
+        assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
     }
 
     #[test]
