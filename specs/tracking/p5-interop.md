@@ -534,3 +534,79 @@ COMPLETE.**
 
 Next: P7.2 — two userdata slots + the composed Future-shape async
 capstone (§14.4/§14.5).
+
+## P7.2 — two userdata + async Future capstone: COMPLETE (2026-07-24)
+
+The four incremental interop shapes (P7.1 three + P7.2 two-userdata)
+composed into one both-tier corpus entry that exercises the common
+main-thread-driven Future usage end to end (dev-JIT ≡ ship-C-AOT ≡
+golden):
+
+- **Two userdata slots** (§14.4): `CallbackBinding` carries userdata1 +
+  userdata2 (`object|null` each); `sub_rt_cb_bind`/`sub_rt_cb_trampoline`
+  deliver both to the language callback as its two trailing args. ABI
+  matches C `SubLogCallback(SubStringView, void*, void*)` on both tiers
+  (JIT sig `[I64×4]`; cemit extern updated). The binding is
+  Context-lived (§13.3) so both userdata survive a deferred fire with no
+  UAF (Context allocations, no unbidden collector — invariant 2). The
+  a25–a30 + `use-interop.ts` callbacks migrated 2-param → 3-param (the
+  checker requires exact callback arity, S100 otherwise); goldens
+  byte-unchanged (behavior preserved, third param typed and unused).
+- **Async Future capstone** (§14.5, a39 `16\n0\n0\n1\n1\n2\n1`):
+  `subDeviceKickAsync` returns `SubFuture` by value (id = request·3+1 =
+  16) and stores a two-userdata callback-info; `subDeviceWait` takes a
+  mutable `SubWaitEntry[]` out-array the callee writes (`completed` 0→1
+  per entry, both tiers pass the language array's own storage — zero
+  copy-back), then fires the callback synchronously on the calling thread
+  delivering both userdata (sink via userdata1 → total 2; counter via
+  userdata2 → hits 1). Golden independently derived and byte-matched.
+
+Mutable out-array is ABI-identical to the const-borrow array (a26/a31);
+only bindgen recognition (a non-const `{T*; size_t}` → out-array) and
+the cemit element-pointer cast changed. Const-borrow scalar arrays
+unaffected (their goldens unchanged, verified).
+
+Phase Review (2026-07-24, fresh no-context): 0 CRITICAL, 0 MAJOR, 2
+MINOR (informational, non-blocking) — (1) the value-class→descriptor
+name map in `cemit.rs` (`interop_array_pair_desc`) is a hardcoded arm,
+fails loud on unknown elements (matches the pre-existing scalar naming
+coupling, no silent mismarshal); (2) `classify_struct` marks out-vs-
+borrow by element kind (named struct ⇒ out, scalar ⇒ borrow) not header
+const-ness — ABI-identical, no such divergent shape in the corpus.
+Adversarial probes (both tiers, byte-identical): ud1=null/ud2=set and
+the reverse (no mis-attribution); two distinct reference-class userdata
+with distinct mutations (delivered non-swapped, non-aliased);
+3-entry out-array with nested `SubFuture.id` round-trip. Spontaneous/
+arbitrary-thread callbacks NOT implemented (§14.6 respected — fire is
+synchronous same-thread only; no thread/spawn in runtime or fixture).
+
+Verification (orchestrator): `cargo test --offline` 271/0, zero
+warnings; golden gate byte-exact on all 39 (floor ≥39); a28/a35 + the
+migrated a25/a26/a27/a30 goldens unchanged; offsetof matches C compiler
+incl. SubFuture/SubWaitEntry/SubWaitList; bindgen regen byte-identical;
+`tsc` clean; reference sweep zero on tracked files. **P7.2 COMPLETE.**
+
+## P7 — async/Future interop model: COMPLETE (2026-07-24)
+
+The WGPUFuture-shape async model is proven end to end, both-tier
+byte-exact, for its common main-thread-driven usage: a foreign call
+returns a future handle by value, a host process-events call writes
+per-future completion into a caller-owned out-array, and a callback
+fires (deferred, on the calling thread) carrying two userdata. All four
+enabling shapes (chained aliases, by-value struct return, callee-written
+out field/array, two userdata) are corpus entries a36–a39 with committed
+goldens under the standing dev-JIT ≡ ship-C-AOT ≡ golden gate.
+
+**Permanent non-goal (§14.6):** spontaneous / arbitrary-thread callbacks
+(a host firing a subscript callback from a thread the script did not
+drive). The single-threaded Context memory model (invariant 2) makes
+this out of scope by construction; real Future APIs expose a
+main-thread-drained event queue (the a39 `subDeviceWait` shape), which
+is supported.
+
+### Follow-ups (beyond P7, not requested)
+- Full HFA-return SIMD support (P7.1 follow-up; currently fail-loud).
+- Two userdata sufficed; no wider userdata arity needed.
+- Reload-epoch-guard the callback binding (hot-reload interaction).
+- x86-64 SysV dev-JIT struct-by-value marshaling (§12.3a arm64/Win64
+  only; ship-C tier already portable).
