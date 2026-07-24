@@ -11,7 +11,7 @@ Snapshot captured 2026-07-24. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: Apple clang version 21.0.0 (clang-2100.1.1.101)
-- **subscript**: subscript @ b248844 (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ d19e304 (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/
 - **JSC**: JavaScriptCore (macOS 26.5.2)
 - **V8 (Node.js)**: Node.js v24.18.0
@@ -26,14 +26,14 @@ All six subjects run the same schedule: 3 warm-up runs discarded, 11 timed runs,
 
 | Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|---|
-| fib-recursive | 1346269 | 1.00x (4.805 ms) | 0.97x (4.683 ms) | 1.68x (8.086 ms) | 1.46x (7.012 ms) | 1.16x (5.580 ms) | 2.01x (9.670 ms) |
-| fib-loop | 973132000 | 1.00x (30.413 ms) | 1.00x (30.307 ms) | 2.04x (61.930 ms) | 1.48x (45.029 ms) | 1.09x (33.140 ms) | 1.58x (48.122 ms) |
-| mandelbrot | 43027996 | 1.00x (128.254 ms) | 0.99x (127.008 ms) | 1.05x (134.964 ms) | 2.79x (358.153 ms) | 1.00x (128.340 ms) | 1.01x (129.203 ms) |
-| primes | 41538 | 1.00x (22.200 ms) | 0.97x (21.638 ms) | 1.45x (32.190 ms) | 2.13x (47.200 ms) | 0.94x (20.780 ms) | 1.74x (38.686 ms) |
-| sort | 3672124540 | 1.00x (15.934 ms) | 1.76x (28.005 ms) | 3.59x (57.240 ms) | 2.22x (35.327 ms) | 1.45x (23.140 ms) | 1.78x (28.343 ms) |
-| tree | 3932130 | 1.00x (66.023 ms) | 1.36x (89.840 ms) | 10.61x (700.414 ms) | 2.28x (150.417 ms) | 0.31x (20.600 ms) | 0.48x (31.371 ms) |
-| queen | 73712 | 1.00x (24.070 ms) | 0.99x (23.877 ms) | 1.47x (35.411 ms) | 1.54x (37.087 ms) | 1.21x (29.220 ms) | 1.75x (42.123 ms) |
-| particles | 1712845248 | 1.00x (39.237 ms) | 3.06x (119.877 ms) | 10.33x (405.438 ms) | 3.83x (150.160 ms) | 1.90x (74.420 ms) | 3.58x (140.282 ms) |
+| fib-recursive | 1346269 | 1.00x (4.816 ms) | 0.98x (4.697 ms) | 1.67x (8.035 ms) | 1.52x (7.305 ms) | 1.13x (5.420 ms) | 1.98x (9.550 ms) |
+| fib-loop | 973132000 | 1.00x (29.243 ms) | 1.03x (30.122 ms) | 2.08x (60.772 ms) | 1.52x (44.473 ms) | 1.09x (31.960 ms) | 1.63x (47.599 ms) |
+| mandelbrot | 43027996 | 1.00x (124.020 ms) | 1.00x (124.116 ms) | 1.05x (130.134 ms) | 2.84x (352.725 ms) | 1.00x (124.480 ms) | 1.01x (125.060 ms) |
+| primes | 41538 | 1.00x (21.799 ms) | 0.97x (21.243 ms) | 1.45x (31.635 ms) | 2.09x (45.547 ms) | 0.92x (20.080 ms) | 1.71x (37.258 ms) |
+| sort | 3672124540 | 1.00x (15.208 ms) | 1.81x (27.572 ms) | 3.73x (56.698 ms) | 2.29x (34.873 ms) | 1.50x (22.840 ms) | 1.84x (28.003 ms) |
+| tree | 3932130 | 1.00x (65.257 ms) | 1.36x (88.856 ms) | 10.23x (667.377 ms) | 2.18x (142.420 ms) | 0.32x (21.160 ms) | 0.47x (30.508 ms) |
+| queen | 73712 | 1.00x (23.719 ms) | 0.99x (23.571 ms) | 1.47x (34.910 ms) | 1.50x (35.522 ms) | 1.22x (28.920 ms) | 1.75x (41.462 ms) |
+| particles | 1712845248 | 1.00x (38.677 ms) | 3.06x (118.487 ms) | 10.38x (401.342 ms) | 3.83x (148.304 ms) | 1.90x (73.640 ms) | 3.58x (138.484 ms) |
 
 ## Workload parameters
 

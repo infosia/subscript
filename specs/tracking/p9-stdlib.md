@@ -62,3 +62,72 @@ particles 3.06×, compute-bound 0.97–1.00×; run noise only).
 `cargo test --offline` 304/0, zero warnings.
 
 Next: P9.2 — `Date` (stdlib.md §3).
+
+## P9.2 — `Date`: COMPLETE (2026-07-24)
+
+The UTC-deterministic subset (stdlib.md §3, Q20): a nominal checker
+type (`Type::Date`) erasing to i64 UTC epoch milliseconds; `new
+Date(ms)` (TimeClip trap — no Invalid-Date value), `Date.UTC` (ECMA
+MakeDay/MakeTime carry incl. negative months/days, MakeFullYear
+0–99→1900+, i128 intermediates — extreme i32 args trap, never wrap),
+`Date.now()` (Context clock; `sub_rt_ctx_set_now` pins it; default
+system UTC, pre-epoch-safe), field-coded `getUTC*` accessors,
+`toISOString` (years 0000–9999 else trap; euclidean decomposition —
+`-1 ms` is `1969-12-31T23:59:59.999Z`). `getTime` folds at check time
+to the i64 receiver (trap order preserved — probe-verified). Both
+tiers call identical opaque `sub_rt_date_*` symbols; extern widths
+verified against the runtime signatures. Rejections (S014, Q20):
+local-time accessors, setters, `parse`, `toString` family, multi- and
+zero-argument constructors, `Date` in templates, direct `Date`
+comparison (compare `getTime()`); the nominal wall blocks implicit
+`Date`↔`i64` both directions; user declarations named `Date` shadow
+the builtin in every scope form.
+
+Calendar verification (Phase Review, fresh no-context): 3009
+decompose/ISO values and 2017 `Date.UTC` tuples — randomized across
+the full ±8.64e15 range plus adversarial edges (negative carries,
+MakeFullYear 0/99/100/-1, TimeClip ±1 ms, i32 extremes) — all matched
+an independent ECMA-262 implementation; the three trap paths fire
+byte-identically on both tiers with identical kind/message/position.
+
+Review: 0 CRITICAL, 3 MAJOR, 2 MINOR. Fixed (`d19e304`):
+
+- MAJOR 1: `new Date` under a *function-local* binding named `Date`
+  bypassed the shadow and accepted a program stock `tsc` rejects
+  (TS2351, run-verified) — invariant 5. `check_new` now consults
+  function-local scopes via the shared `date_is_ambient` helper; a
+  shadowed `new Date(...)` is S100. Three scope-form unit tests.
+- MAJOR 2: the §3-promised ship-tier pinned-clock `Date.now` test was
+  missing (dev-tier only). Added in `cemit.rs`: entry derived from
+  `AOT_ENTRY_C` pins the clock via `sub_rt_ctx_set_now` before
+  `ss_init`; same program/ms/expected bytes as the dev-tier test.
+- MAJOR 3: this entry (with the §5.5 row below).
+- MINOR 1: `r24-date-compare` reject entry added; Q20's rejection
+  list amended (`0ad8e36`) to record the comparison and zero-arg-
+  constructor decisions (corpus-first).
+- MINOR 2: r23 header rationale corrected to nondeterminism (a Date
+  value is timezone-less UTC millis).
+
+§5 gate evidence: standing gate byte-exact on all 42 entries, both
+tiers, goldens byte-unchanged through the fixes; `tsc` zero errors,
+config unchanged; a42 (27 lines) + r19–r24 at pinned S014 positions;
+calendar unit tests incl. the 1600–2400 full-day round-trip sweep;
+§5.5 benchmark at `d19e304` — ship rows unchanged (tree 1.36×,
+sort 1.81×, particles 3.06×, compute-bound 0.97–1.03×; run noise
+only). `cargo test --offline` 344/0, zero warnings.
+
+## P9 — stdlib v1 (`Math`, `Date`): COMPLETE (2026-07-24)
+
+Both stages complete; the pattern for further stdlib areas is now
+standing: the `tsc` side stays lib ES2022, the checker admits a
+deterministic sized-typed subset (out-of-subset members S014 with a
+Q-register citation), one runtime implementation serves both tiers
+through opaque `sub_rt_*` symbols, semantics are pinned by corpus
+goldens under the standing differential gate, and nondeterministic
+inputs (clock, entropy) are Context-owned and host-settable.
+
+Follow-ups (recorded, not scheduled): S014 wording when calling a
+folded constant (`Math.PI(1)` reports S100 — P9.1 MINOR 1); integer
+`Math.abs`/`min`/`max` overloads; further areas (`String` methods,
+`JSON`, `Array` methods beyond push/pop) each need their own
+contract + corpus before implementation.
