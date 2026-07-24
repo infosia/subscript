@@ -475,3 +475,62 @@ failing loud.
   real headers use that the mapped subset fails loud on today).
 - x86-64 SysV dev-JIT boundary-struct-by-value marshaling (§12.3a, still
   arm64/Win64 only).
+
+## P7.1 — chained aliases, struct return, out field: COMPLETE (2026-07-24)
+
+Three incremental interop shapes, each a both-tier corpus entry (dev-JIT
+≡ ship-C-AOT ≡ golden):
+
+- **Chained integer/flag aliases** (§14.1, a36 `1\n0`): the frontend
+  records the full typedef chain and the emitter maps the first spelling
+  that resolves to a language integer, so a two-level `typedef uint64_t
+  SubStageBits; typedef SubStageBits SubStageFlags;` → `type
+  SubStageFlags = u64` + folded `declare const` members, combined with
+  `|` (Q18). A chain that never reaches a mapped integer fails loud. The
+  P6.2 `long`→i64 LP64 hazard is NOT re-introduced (stdint spellings sit
+  ahead of the ambiguous canonical builtin; `typedef long L; typedef L
+  X;` fails loud, `typedef int64_t B; typedef B X;` → i64 — probe-verified).
+- **By-value boundary-struct return** (§14.2, a37 `16\n10\n20\n30`): a
+  foreign fn returns a value class by value. `SubFuture{u64}` (8B →
+  register path) and `SubStats{u64,u64,u64}` (24B → sret) in one entry;
+  both ABI paths byte-exact on both tiers. Arch-gated (§12.3a).
+- **Callee-written out field** (§14.3, a38 `70\n1`): a boundary struct
+  passed by reference (`Struct | null`) the callee writes; the script
+  reads it after the call. Both tiers pass the language struct's own
+  storage (no copy-back). `SubQueryStatus{u64 future; i32 completed}` —
+  the per-future status record the P7.2 out-array will fill.
+
+Phase Review (2026-07-24): 1 CRITICAL, 0 MAJOR, 0 MINOR. Committed
+shapes correct; the CRITICAL was in the return machinery a37 didn't
+exercise. Fixed:
+
+- CRITICAL C-1: a **pure HFA** float struct return (1–4 members all the
+  same fundamental float type — all `f32` or all `f64`) is returned in
+  SIMD registers (AAPCS64 v0–v3, Win64 XMM0), but the register-return
+  path hardcoded integer eightbyte chunks (reads x0/x1) — a silent
+  dev-JIT ≠ ship-C divergence on a natural GPU-API shape (`{float x,y}`
+  vector, `{float r,g,b,a}` color). The reviewer confirmed with clang
+  `-O2 -S`. **Fixed by a fail-loud guard** (`is_pure_hfa_leaves` +
+  leaf-flattening in `plan_foreign_struct_return`, before the ABI branch
+  so it covers AAPCS64 and Win64), size-independent (a 3–4-double HFA is
+  >16B yet still SIMD-returned, so the `>16→sret` assumption was also
+  wrong). Precise scope verified by probe: pure HFA (`{f32,f32}`,
+  `{f64}`, `{f32×4}`) → loud Err; int (`{u64,u64}`), mixed int+float
+  (`{u64,f64}`), mixed float widths (`{f32,f64}`), and sret shapes still
+  work. HFA returns are unsupported-for-now, not needed for the async/
+  Future model (returns `{u64}`/`{u64,bool}`, never float vectors).
+
+Verification (orchestrator): `cargo test --offline` 271/0, zero
+warnings; a36/a37/a38 goldens unchanged; golden gate byte-exact on all
+38; the pure-HFA/mixed/int probe reproduced independently. **P7.1
+COMPLETE.**
+
+### Follow-up (beyond P7)
+- Full HFA-return support (declare the return chunks with the fields'
+  real CLIF float types so a pure HFA returns in SIMD registers,
+  mirroring the by-value argument path) with an HFA-returning fixture +
+  both-tier golden. Currently fail-loud; not needed for the Future
+  model.
+
+Next: P7.2 — two userdata slots + the composed Future-shape async
+capstone (§14.4/§14.5).
