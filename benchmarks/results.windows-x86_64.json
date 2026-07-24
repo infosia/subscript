@@ -1,0 +1,133 @@
+{
+  "generated": "2026-07-24",
+  "procedure": "20 warm-up runs discarded, 21 timed runs, median reported",
+  "machine": {
+    "arch": "x86_64",
+    "os": "windows",
+    "cpu": "Intel64 Family 6 Model 198 Stepping 2, GenuineIntel",
+    "cores": "20",
+    "power": "unknown"
+  },
+  "versions": {
+    "C": "clang version 22.1.6 (https://github.com/llvm/llvm-project fc4aad7b5db3fff421df9a9637605b9ca5667881)",
+    "subscript": "subscript @ 69c3739 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "LuaJIT": "absent",
+    "JSC": "absent",
+    "V8 (Node.js)": "Node.js v24.16.0"
+  },
+  "subjects": ["C", "subscript-ship", "subscript-jit", "LuaJIT", "JSC", "V8 (Node.js)"],
+  "workloads": [
+    {
+      "id": "fib-recursive",
+      "params": "naive recursion, fib(31); checksum = fib(31) = 1346269 (i32)",
+      "checksum": 1346269,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.002386700,
+        "subscript-ship": 0.002382400,
+        "subscript-jit": 0.003672000,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.006824100
+      }
+    },
+    {
+      "id": "fib-loop",
+      "params": "iterative fib, INNER=32 x OUTER=3000000, masked feedback on the accumulator; checksum = accumulated i32 sum",
+      "checksum": 973132000,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.021719400,
+        "subscript-ship": 0.021487300,
+        "subscript-jit": 0.048627200,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.036668100
+      }
+    },
+    {
+      "id": "mandelbrot",
+      "params": "800x800 grid, escape test x^2+y^2>=4, cap 255, f64; checksum = sum of escape counts (i64)",
+      "checksum": 43027996,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.078508700,
+        "subscript-ship": 0.078679000,
+        "subscript-jit": 0.078703800,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.077679700
+      }
+    },
+    {
+      "id": "primes",
+      "params": "count primes up to 500000 by trial division (j*j<=n); checksum = count (i32)",
+      "checksum": 41538,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.033026400,
+        "subscript-ship": 0.033146800,
+        "subscript-jit": 0.033699800,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.033962200
+      }
+    },
+    {
+      "id": "sort",
+      "params": "quicksort 300000 u32 from LCG state=state*1664525+1013904223 (seed 0x12345678); checksum = order-sensitive rolling hash h=h*31+a[i] (u32 wrap)",
+      "checksum": 3672124540,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.014061800,
+        "subscript-ship": 0.026796300,
+        "subscript-jit": 0.043752800,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.024280700
+      }
+    },
+    {
+      "id": "tree",
+      "params": "30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + unsafeDelete; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130",
+      "checksum": 3932130,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.103142400,
+        "subscript-ship": 0.549398800,
+        "subscript-jit": 1.144333100,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.062921600
+      }
+    },
+    {
+      "id": "queen",
+      "params": "count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)",
+      "checksum": 73712,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.022955700,
+        "subscript-ship": 0.021856100,
+        "subscript-jit": 0.037833300,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.030886000
+      }
+    },
+    {
+      "id": "particles",
+      "params": "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.",
+      "checksum": 1712845248,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.039754800,
+        "subscript-ship": 0.089121300,
+        "subscript-jit": 0.314892400,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.107025200
+      }
+    }
+  ]
+}

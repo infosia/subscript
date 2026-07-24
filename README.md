@@ -193,7 +193,16 @@ What the numbers show, honestly:
   fast-iteration tier.
 
 This is one benchmark set on one machine; treat the ratios as indicative,
-not a leaderboard. Re-run them yourself with
+not a leaderboard. The table above is the arm64 / Apple M2 snapshot (the
+shipping target) captured at commit `4ba01f9`; its `tree` and `particles`
+rows predate the ship-tier **free-on-`delete`** change (compiler block
+§8.1a), which removed the allocation-table growth that dominated
+per-node-allocation workloads, so an arm64 re-measurement is pending. A
+current x86_64 / Windows snapshot — four subjects, since LuaJIT and JSC are
+not built there — is in
+[`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md);
+on it, post-§8.1a ship `tree` measures 5.33× (down from the prior retain
+policy's superlinear growth). Re-run either yourself with
 `cargo run --release -p subscript-benchmarks --bin cross-language`.
 
 ## How it works
