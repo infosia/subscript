@@ -82,6 +82,10 @@ struct Allocation {
 /// — the Context, the language `code`/`env`, and the *real* userdata the
 /// script registered. Records live for the whole Context (the Q13
 /// lifetime rule: userdata must outlive the registration that holds it).
+///
+/// P7.2 (§14.4): the record carries **two** userdata slots (`userdata1`,
+/// `userdata2`), both delivered to the language callback. A callback-info
+/// with one userdata slot binds the second as null.
 #[repr(C)]
 pub struct CallbackBinding {
     /// The Context the script runs under; captured at bind time.
@@ -92,9 +96,12 @@ pub struct CallbackBinding {
     /// The language function value's environment pointer (null for a
     /// non-capturing function — the only kind usable as a C callback, C5).
     pub env: *const u8,
-    /// The userdata the script registered, passed back to the language
-    /// callback unchanged.
-    pub userdata: *mut u8,
+    /// The first userdata the script registered, passed back to the
+    /// language callback unchanged.
+    pub userdata1: *mut u8,
+    /// The second userdata (§14.4); null when the callback-info carries
+    /// only one slot.
+    pub userdata2: *mut u8,
 }
 
 /// The script execution context.
@@ -521,18 +528,23 @@ impl Context {
     /// ([`crate::ffi::sub_rt_cb_trampoline`]) reads the binding back
     /// through it. Bindings live for the whole Context (the Q13 lifetime
     /// rule), so the pointer stays valid for every later callback.
+    ///
+    /// Both userdata slots (§14.4) are stored and delivered to the language
+    /// callback; a one-slot callback-info passes `userdata2` as null.
     pub fn bind_callback(
         &mut self,
         code: *const u8,
         env: *const u8,
-        userdata: *mut u8,
+        userdata1: *mut u8,
+        userdata2: *mut u8,
     ) -> *mut u8 {
         let ctx: *mut Context = self;
         let mut rec = Box::new(CallbackBinding {
             ctx,
             code,
             env,
-            userdata,
+            userdata1,
+            userdata2,
         });
         let ptr: *mut CallbackBinding = &mut *rec;
         self.callbacks.push(rec);

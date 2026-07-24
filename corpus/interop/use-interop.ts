@@ -33,15 +33,15 @@ export function main(): void {
   subDeviceSubmit(device, commands);
 
   // Register a callback. The callback is a non-capturing function (C5) and
-  // its `userdata` parameter is the boundary `object | null` slot, typed
-  // contextually from the mirror's SubLogCallback — the program never
-  // spells the boundary type. Inside, the userdata is narrowed to null and
-  // then to its concrete class via `as` (C3).
+  // its two `userdata` parameters are the boundary `object | null` slots
+  // (§14.4), typed contextually from the mirror's SubLogCallback — the
+  // program never spells the boundary type. Inside, the first userdata is
+  // narrowed to null and then to its concrete class via `as` (C3).
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {
-      if (userdata !== null) {
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {
+      if (userdata1 !== null) {
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }
     },

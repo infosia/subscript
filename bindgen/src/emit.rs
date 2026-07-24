@@ -167,22 +167,39 @@ fn classify(parsed: &Parsed) -> HashMap<String, Kind> {
     reg
 }
 
-/// A two-field `{ const P*; size_t; }` struct is a string view when `P`
-/// is `char`, otherwise a `(pointer, count)` array-pair descriptor.
-/// Everything else is a boundary struct (embedded array pairs inside it
-/// are collapsed field-by-field at emission, not here — §13.2).
+/// A two-field `{ P*; size_t; }` struct is a string view when `P` is a
+/// `const char`, a scalar `(pointer, count)` array-pair descriptor when `P`
+/// is a `const` scalar, or a boundary-struct array-pair descriptor when `P`
+/// is a named struct (§14.5). For a struct element the pointer may be const
+/// (a borrow) or non-const (a callee-written out-array, §14.3) — both map
+/// to `T[]`, since the marshaling is identical and const-ness is the C
+/// callee's concern. Everything else is a boundary struct (embedded array
+/// pairs inside it are collapsed field-by-field at emission, not here —
+/// §13.2).
 fn classify_struct(fields: &[CField]) -> Kind {
     if fields.len() == 2
         && fields[0].pointer
-        && fields[0].is_const
+        && fields[0].array_len.is_none()
         && !fields[1].pointer
         && fields[1].base == "size_t"
     {
-        if fields[0].base == "char" {
-            return Kind::StringView;
+        // Const scalar / char descriptor (const borrow, §12).
+        if fields[0].is_const {
+            if fields[0].base == "char" {
+                return Kind::StringView;
+            }
+            if let Some(elem) = lang_scalar(&fields[0].base) {
+                return Kind::ArrayPair(elem.to_string());
+            }
         }
-        if let Some(elem) = lang_scalar(&fields[0].base) {
-            return Kind::ArrayPair(elem.to_string());
+        // Named-struct element → a boundary-struct array pair (§14.5); the
+        // element spelling is the struct's own name. `void` is not an
+        // element type (an untyped bulk pointer takes the §13.2 facade).
+        if lang_scalar(&fields[0].base).is_none()
+            && fields[0].base != "char"
+            && fields[0].base != "void"
+        {
+            return Kind::ArrayPair(fields[0].base.clone());
         }
     }
     Kind::Boundary

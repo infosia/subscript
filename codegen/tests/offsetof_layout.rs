@@ -332,6 +332,23 @@ class SubQueryStatus {
   completed: i32;
 }
 
+// ---- P7.2 composed async capstone (compiler.md §14.4/§14.5) ----------
+// SubWaitEntry: the per-future status the out-array fills (nested SubFuture
+// then a callee-written i32). SubWaitList: the mutable (pointer, count)
+// descriptor over it, modeled by its raw C pair layout (as SubBufferView),
+// since the mirror absorbs it into `SubWaitEntry[]`.
+@value
+class SubWaitEntry {
+  future: SubFuture;
+  completed: i32;
+}
+
+@value
+class SubWaitList {
+  entries: u64;
+  count: u64;
+}
+
 export function main(): void {}
 "#;
 
@@ -381,6 +398,9 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubFuture", vec!["id"]),
         ("SubStats", vec!["submitted", "completed", "pending"]),
         ("SubQueryStatus", vec!["future", "completed"]),
+        // P7.2 composed async capstone (§14.4/§14.5).
+        ("SubWaitEntry", vec!["future", "completed"]),
+        ("SubWaitList", vec!["entries", "count"]),
     ]
 }
 

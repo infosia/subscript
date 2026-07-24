@@ -101,8 +101,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        37,
-        "expected 37 single-file accept entries (23 run set + a25–a38 interop) plus a19-modules"
+        38,
+        "expected 38 single-file accept entries (23 run set + a25–a39 interop) plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

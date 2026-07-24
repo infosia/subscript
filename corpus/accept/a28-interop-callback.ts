@@ -4,8 +4,8 @@
 // questions: Q13, Q16
 
 // Q16: self-created handle via subDeviceCreate(null). The callback is a
-// non-capturing function (C5) plus an explicit userdata slot (the
-// boundary `object | null` form); inside, the userdata is narrowed to its
+// non-capturing function (C5) plus two userdata slots (§14.4; the boundary
+// `object | null` form); inside, the first userdata is narrowed to its
 // concrete class through a checked `as` (C3). The sink accumulates across
 // two separate callback firings (setLogger and submit), proving the
 // userdata outlives the registration.
@@ -22,9 +22,9 @@ export function main(): void {
 
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {
-      if (userdata !== null) {
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {
+      if (userdata1 !== null) {
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }
     },

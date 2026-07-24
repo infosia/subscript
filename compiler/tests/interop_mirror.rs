@@ -75,6 +75,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subFutureMake",
             "subStatsMake",
             "subDeviceQuery",
+            // P7.2 composed async capstone (§14.4/§14.5): kick returns a
+            // future by value + two-userdata callback-info; wait takes the
+            // out-array of SubWaitEntry.
+            "subDeviceKickAsync",
+            "subDeviceWait",
         ]
     );
 

@@ -416,12 +416,15 @@ fn declare_rt<M: Module>(
         array_ptr: mk("sub_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
         str_data: mk("sub_rt_str_data", &[I64, I64], Some(I64))?,
         array_data: mk("sub_rt_array_data", &[I64, I64], Some(I64))?,
-        cb_bind: mk("sub_rt_cb_bind", &[I64, I64, I64, I64], Some(I64))?,
-        // The generic C-ABI callback trampoline (P5.2b). Generated code
-        // never calls it — a foreign C API does — so it is imported only
-        // to take its address (`func_addr`) for a callback-info struct's
-        // function-pointer slot; the declared signature is unused.
-        cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64], None)?,
+        // (ctx, code, env, userdata1, userdata2) → binding pointer (§14.4:
+        // two userdata slots).
+        cb_bind: mk("sub_rt_cb_bind", &[I64, I64, I64, I64, I64], Some(I64))?,
+        // The generic C-ABI callback trampoline (P5.2b, §14.4). Generated
+        // code never calls it — a foreign C API does — so it is imported
+        // only to take its address (`func_addr`) for a callback-info
+        // struct's function-pointer slot; the declared signature (message
+        // as two words, then the two userdata slots) is unused.
+        cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
     })
 }
 

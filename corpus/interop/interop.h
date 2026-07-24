@@ -82,9 +82,10 @@ typedef struct SubStringView {
 
 /* ---- Pattern 4: callback info (function pointer + userdata) --------- */
 
-/* Callback receiving a string view by value plus an opaque userdata
- * pointer supplied at registration time. */
-typedef void (*SubLogCallback)(SubStringView message, void *userdata);
+/* Callback receiving a string view by value plus TWO opaque userdata
+ * pointers supplied at registration time (§14.4): the common
+ * two-userdata callback shape a production async C API uses. */
+typedef void (*SubLogCallback)(SubStringView message, void *userdata1, void *userdata2);
 
 /* Registration record: the callback plus two independent userdata
  * slots (a primary sink and an auxiliary context). */
@@ -481,5 +482,46 @@ typedef struct SubQueryStatus {
 } SubQueryStatus;
 
 void subDeviceQuery(SubDevice device, uint32_t request, SubQueryStatus *status);
+
+/* ==== P7.2 composed Future-shape async capstone (compiler.md §14.4/§14.5) ==
+ *
+ * The whole common main-thread-driven async model, composed: an async op
+ * returns a future BY VALUE (§14.2) while taking a two-userdata callback-
+ * info (§14.4) and storing it without firing (the a35 deferred model); a
+ * host wait/process-events call takes an OUT-ARRAY of per-future status
+ * records the callee writes (§14.3, the out-array generalization of a38's
+ * out field) and fires the registered callback on the calling thread
+ * (§14.6 main-thread model) delivering BOTH userdata. */
+
+/* Per-future status the wait/process-events call writes: the future plus a
+ * callee-written completed flag. The array element the out-array fills
+ * many of; the same record shape as a38's SubQueryStatus. */
+typedef struct SubWaitEntry {
+    SubFuture future;
+    int32_t completed;
+} SubWaitEntry;
+
+/* Mutable (pointer, count) descriptor over SubWaitEntry: the callee WRITES
+ * each entry's `completed` through `entries` — the caller's own array
+ * storage, layout-identical (invariant 1), so the writes are observed
+ * after the call with no copy-back. The non-const pointer marks the
+ * out/mutable array (§14.3), distinct from the const borrow of
+ * SubBufferView / SubSlice*. The mirror absorbs it into `SubWaitEntry[]`. */
+typedef struct SubWaitList {
+    SubWaitEntry *entries;
+    size_t count;
+} SubWaitList;
+
+/* Async op: registers the two-userdata callback-info, returns a future BY
+ * VALUE (§14.2), and does NOT fire (deferred, like subDeviceOnComplete).
+ * The future id is deterministic: request*3 + 1 (as subFutureMake). */
+SubFuture subDeviceKickAsync(SubDevice device, uint32_t request, SubCallbackInfo info);
+
+/* Host driver: writes each wait entry's `completed` flag, then fires the
+ * registered async callback ON THE CALLING THREAD (§14.6) delivering both
+ * userdata. The fired message length reports the number of entries
+ * completed plus the device chain depth, so the callback observes the
+ * wait. A no-op when nothing is registered. */
+void subDeviceWait(SubDevice device, SubWaitList waits);
 
 #endif /* SUBSCRIPT_INTEROP_H */

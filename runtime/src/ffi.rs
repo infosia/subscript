@@ -470,30 +470,41 @@ pub unsafe extern "C" fn sub_rt_array_data(ctx: *const Context, a: *const u8) ->
 /// Registers a C-callback binding and returns the stable pointer a
 /// boundary marshaler stores in a C `void* userdata` slot (P5.2b). The
 /// binding bundles the Context, the language function value's
-/// `(code, env)`, and the real userdata; [`sub_rt_cb_trampoline`] reads
-/// it back. The binding lives for the whole Context (Q13 lifetime rule).
+/// `(code, env)`, and both real userdata slots (§14.4);
+/// [`sub_rt_cb_trampoline`] reads it back. The binding lives for the whole
+/// Context (Q13 lifetime rule).
 ///
 /// # Safety
 ///
 /// Shared contract; `code`/`env` are a language function value (a
-/// non-capturing wrapper, so `env` is null); `userdata` outlives the run.
+/// non-capturing wrapper, so `env` is null); `userdata1`/`userdata2`
+/// outlive the run.
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_cb_bind(
     ctx: *mut Context,
     code: *const u8,
     env: *const u8,
-    userdata: *mut u8,
+    userdata1: *mut u8,
+    userdata2: *mut u8,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.bind_callback(code, env, userdata)
+    unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2)
 }
 
-/// The generic C-ABI callback trampoline (P5.2b). A C API invokes it with
-/// the bare callback ABI `(message, userdata)`, where `userdata` is the
-/// binding pointer a marshaler installed via [`sub_rt_cb_bind`]. It
-/// reconstructs the language `string` from the `(ptr, len)` view, then
-/// calls the language function value under its own convention
-/// `(ctx, env, message, userdata)`.
+/// The generic C-ABI callback trampoline (P5.2b, §14.4). A C API invokes
+/// it with the two-userdata callback ABI `(message, userdata1, userdata2)`,
+/// where `userdata1` is the binding pointer a marshaler installed via
+/// [`sub_rt_cb_bind`]. It reconstructs the language `string` from the
+/// `(ptr, len)` view, then calls the language function value under its own
+/// convention `(ctx, env, message, userdata1, userdata2)`.
+///
+/// The binding is the authoritative source of both language userdata: the
+/// marshaler installs the binding in the callback-info's first userdata
+/// slot and null in the second, so the trampoline reads both userdata from
+/// the binding and ignores its `userdata2` argument. The second C slot
+/// exists for the production callback-info shape (offsetof-proven layout)
+/// and is wired through the C fire path, but the language values travel in
+/// the binding, not the raw C slot.
 ///
 /// The Context reaches the trampoline through the binding (captured at
 /// registration), not through global state: scripts are single-threaded
@@ -507,15 +518,22 @@ pub unsafe extern "C" fn sub_rt_cb_bind(
 ///
 /// # Safety
 ///
-/// `userdata` is a binding produced by [`sub_rt_cb_bind`] on the running
+/// `userdata1` is a binding produced by [`sub_rt_cb_bind`] on the running
 /// Context; `message` points at `len` readable bytes (or is null/empty).
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_cb_trampoline(message: SubStrView, userdata: *mut u8) {
-    if userdata.is_null() {
+pub unsafe extern "C" fn sub_rt_cb_trampoline(
+    message: SubStrView,
+    userdata1: *mut u8,
+    userdata2: *mut u8,
+) {
+    // The binding travels in the first slot; the second slot is unused (the
+    // binding carries both language userdata).
+    let _ = userdata2;
+    if userdata1.is_null() {
         return;
     }
-    // SAFETY: `userdata` is a live binding of the running Context.
-    let rec = unsafe { &*(userdata as *const CallbackBinding) };
+    // SAFETY: `userdata1` is a live binding of the running Context.
+    let rec = unsafe { &*(userdata1 as *const CallbackBinding) };
     // SAFETY: `rec.ctx` is the live Context captured at bind time.
     let ctx = unsafe { &mut *rec.ctx };
     // A trap already stopped the script (e.g. an earlier callback in the
@@ -533,12 +551,12 @@ pub unsafe extern "C" fn sub_rt_cb_trampoline(message: SubStrView, userdata: *mu
     let s = ctx.alloc_str(bytes, 0);
     // The language function value's wrapper takes `(ctx, env, args...)`
     // with the host C calling convention; here the args are the `string`
-    // handle and the userdata slot.
-    type LangCb = unsafe extern "C" fn(*mut Context, *const u8, *mut u8, *mut u8);
+    // handle and the two userdata slots (§14.4).
+    type LangCb = unsafe extern "C" fn(*mut Context, *const u8, *mut u8, *mut u8, *mut u8);
     // SAFETY: `rec.code` is a language callback wrapper of this shape.
     let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(rec.code) };
     // SAFETY: calling generated code that never unwinds across FFI.
-    unsafe { f(rec.ctx, rec.env, s, rec.userdata) };
+    unsafe { f(rec.ctx, rec.env, s, rec.userdata1, rec.userdata2) };
 }
 
 // ----- host driver entry points -----

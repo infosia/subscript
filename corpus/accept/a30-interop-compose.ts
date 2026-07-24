@@ -29,9 +29,9 @@ export function main(): void {
   // Pattern 4: a callback with a userdata sink, narrowed via `as`.
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {
-      if (userdata !== null) {
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {
+      if (userdata1 !== null) {
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }
     },

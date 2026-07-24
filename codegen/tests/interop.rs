@@ -74,9 +74,9 @@ fn string_label_round_trips_through_the_callback() {
   const device: SubDevice = subDeviceCreate(null);
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {{
-      if (userdata !== null) {{
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }}
     }},
@@ -103,9 +103,9 @@ fn buffer_view_sum_through_the_callback() {
   const device: SubDevice = subDeviceCreate(null);
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {{
-      if (userdata !== null) {{
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }}
     }},
@@ -136,9 +136,9 @@ fn chain_slot_address_of_via_constructor() {
   const device: SubDevice = subDeviceCreate(head);
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {{
-      if (userdata !== null) {{
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }}
     }},
@@ -167,9 +167,9 @@ fn chain_slot_address_of_via_assignment() {
   const device: SubDevice = subDeviceCreate(head);
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {{
-      if (userdata !== null) {{
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }}
     }},
@@ -199,9 +199,9 @@ fn deferred_completion_callback_fires_on_pump() {
   const device: SubDevice = subDeviceCreate(null);
   const sink: LogSink = new LogSink();
   const info: SubCompletionInfo = new SubCompletionInfo(
-    (message, userdata) => {{
-      if (userdata !== null) {{
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }}
     }},
@@ -232,9 +232,9 @@ fn all_patterns_composed() {
   const device: SubDevice = subDeviceCreate(chain);
   const sink: LogSink = new LogSink();
   const info: SubCallbackInfo = new SubCallbackInfo(
-    (message, userdata) => {{
-      if (userdata !== null) {{
-        const s = userdata as LogSink;
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const s = userdata1 as LogSink;
         s.count = s.count + message.length;
       }}
     }},

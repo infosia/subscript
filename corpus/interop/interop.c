@@ -42,6 +42,7 @@ struct SubDevice_T {
     long long acc;
     SubLogCallback cb;
     void *cb_userdata;
+    void *cb_userparam;
     size_t label_len;
     char label[128];
     /* Deferred completion callback: STORED by subDeviceOnComplete, FIRED
@@ -49,6 +50,11 @@ struct SubDevice_T {
      * synchronous logger above so a device can carry both. */
     SubLogCallback completion_cb;
     void *completion_userdata;
+    /* Composed async capstone (P7.2): STORED by subDeviceKickAsync, FIRED
+     * later by subDeviceWait, carrying both userdata slots. */
+    SubLogCallback async_cb;
+    void *async_ud1;
+    void *async_ud2;
 };
 
 /* Deterministic scratch used to synthesize a callback message of a given
@@ -101,11 +107,12 @@ void subDeviceSetLogger(SubDevice device, SubCallbackInfo logger) {
     }
     device->cb = logger.callback;
     device->cb_userdata = logger.userdata;
+    device->cb_userparam = logger.userparam;
     if (device->cb != NULL) {
         SubStringView msg;
         msg.data = device->label;
         msg.len = device->label_len;
-        device->cb(msg, device->cb_userdata);
+        device->cb(msg, device->cb_userdata, device->cb_userparam);
     }
 }
 
@@ -130,7 +137,7 @@ void subDeviceSubmit(SubDevice device, SubBufferView commands) {
         SubStringView msg;
         msg.data = sub_msgbuf;
         msg.len = (size_t)n;
-        device->cb(msg, device->cb_userdata);
+        device->cb(msg, device->cb_userdata, device->cb_userparam);
     }
 }
 
@@ -248,7 +255,7 @@ void subDevicePump(SubDevice device) {
     SubStringView msg;
     msg.data = sub_msgbuf;
     msg.len = (size_t)n;
-    device->completion_cb(msg, device->completion_userdata);
+    device->completion_cb(msg, device->completion_userdata, NULL);
 }
 
 /* Descriptor-embedded (count, pointer) array at production scale: sum
@@ -300,4 +307,50 @@ void subDeviceQuery(SubDevice device, uint32_t request, SubQueryStatus *status) 
     int depth = (device != NULL) ? device->chain_depth : 0;
     status->future = (uint64_t)request * 10u + (uint64_t)depth;
     status->completed = 1;
+}
+
+/* ==== P7.2 composed Future-shape async capstone (compiler.md §14.4/§14.5) == */
+
+/* Register the two-userdata callback-info (STORE, do not fire — the a35
+ * deferred model) and return a future BY VALUE (§14.2). Both userdata slots
+ * are stored so a later subDeviceWait fires the callback with both. */
+SubFuture subDeviceKickAsync(SubDevice device, uint32_t request, SubCallbackInfo info) {
+    SubFuture f;
+    f.id = (uint64_t)request * 3u + 1u;
+    if (device != NULL) {
+        device->async_cb = info.callback;
+        device->async_ud1 = info.userdata;
+        device->async_ud2 = info.userparam;
+    }
+    return f;
+}
+
+/* Host driver: WRITE each wait entry's `completed` flag through the caller's
+ * own array storage (§14.3 out-array; no copy-back), then fire the stored
+ * async callback on THIS thread (§14.6) delivering both userdata. The fired
+ * message length is (entries completed + chain depth), so the callback
+ * observes the wait. */
+void subDeviceWait(SubDevice device, SubWaitList waits) {
+    if (device == NULL) {
+        return;
+    }
+    long long done = 0;
+    for (size_t i = 0; i < waits.count; i++) {
+        waits.entries[i].completed = 1;
+        done++;
+    }
+    if (device->async_cb != NULL) {
+        long long n = done + (long long)device->chain_depth;
+        if (n < 0) {
+            n = 0;
+        }
+        if (n > (long long)sizeof(sub_msgbuf)) {
+            n = (long long)sizeof(sub_msgbuf);
+        }
+        memset(sub_msgbuf, 'x', (size_t)n);
+        SubStringView msg;
+        msg.data = sub_msgbuf;
+        msg.len = (size_t)n;
+        device->async_cb(msg, device->async_ud1, device->async_ud2);
+    }
 }

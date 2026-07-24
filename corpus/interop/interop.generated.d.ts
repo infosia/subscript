@@ -39,7 +39,7 @@ declare class SubChainExtB {
   constructor(header: SubChainHeader, scale: f64, level: i32);
 }
 
-type SubLogCallback = (message: string, userdata: object | null) => void;
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {
   callback: SubLogCallback;
@@ -277,6 +277,15 @@ declare class SubQueryStatus {
 }
 
 declare function subDeviceQuery(device: SubDevice, request: u32, status: SubQueryStatus | null): void;
+
+declare class SubWaitEntry {
+  future: SubFuture;
+  completed: i32;
+  constructor(future: SubFuture, completed: i32);
+}
+
+declare function subDeviceKickAsync(device: SubDevice, request: u32, info: SubCallbackInfo): SubFuture;
+declare function subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;
 
 type SubAccess = u64;
 declare const SUB_ACCESS_NONE = 0;

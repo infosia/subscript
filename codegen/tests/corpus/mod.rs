@@ -57,6 +57,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subFutureMake",
         "subStatsMake",
         "SubQueryStatus",
+        // P7.2 composed async capstone (compiler.md §14.4/§14.5).
+        "SubWaitEntry",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

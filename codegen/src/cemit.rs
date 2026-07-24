@@ -471,6 +471,41 @@ impl<'m> Emitter<'m> {
         Ok(self.class(id)?.is_value)
     }
 
+    /// The C header descriptor struct name for a `(pointer, count)` array
+    /// pair over `elem`, plus the element-pointer cast the compound literal
+    /// needs. Scalar elements use the header's `SubSlice*` / `SubBufferView`
+    /// const descriptors (`const void*` → `const T*` is implicit, no cast).
+    /// A value-class element uses its mutable out-array descriptor
+    /// (§14.3/§14.5): the element pointer is non-const, so the const-
+    /// qualified `sub_rt_array_data` result is cast to the element pointer
+    /// type (using the raw C header struct name, layout-identical to the
+    /// language value class — invariant 1). This path is coupled to the
+    /// synthetic header exactly like the scalar descriptor names.
+    fn interop_array_pair_desc(&self, elem: &Type) -> Result<(String, String), String> {
+        match elem {
+            Type::U32 => Ok(("SubBufferView".to_string(), String::new())),
+            Type::F32 => Ok(("SubSliceF32".to_string(), String::new())),
+            Type::I32 => Ok(("SubSliceI32".to_string(), String::new())),
+            Type::F64 => Ok(("SubSliceF64".to_string(), String::new())),
+            Type::I64 => Ok(("SubSliceI64".to_string(), String::new())),
+            Type::Class(id) if self.is_value_class(*id)? => {
+                let name = self.class(*id)?.name.clone();
+                let desc = match name.as_str() {
+                    "SubWaitEntry" => "SubWaitList",
+                    other => {
+                        return Err(format!(
+                            "no interop array-pair descriptor for value-class element {other}"
+                        ))
+                    }
+                };
+                Ok((desc.to_string(), format!("({name}*)")))
+            }
+            other => Err(format!(
+                "no interop array-pair descriptor for element type {other:?}"
+            )),
+        }
+    }
+
     /// C type for a value of `ty` (as a variable, parameter, field, or
     /// return). Aggregates (value classes, `FixedArray`, `IterResult`,
     /// function values) get their own named struct types.
@@ -631,7 +666,7 @@ impl<'m> Emitter<'m> {
         // declared here because its type mentions `SubStringView`.
         if !self.module.foreign_fns.is_empty() {
             out.push_str("#include \"interop.h\"\n");
-            out.push_str("extern void sub_rt_cb_trampoline(SubStringView message, void* userdata);\n\n");
+            out.push_str("extern void sub_rt_cb_trampoline(SubStringView message, void* userdata1, void* userdata2);\n\n");
         }
         out.push_str(&typedefs);
         out.push('\n');
@@ -1975,12 +2010,12 @@ impl<'m> Emitter<'m> {
                 // spellings elsewhere in this function already are). The JIT
                 // tier needs no name — it passes the two components (data,
                 // count) per the ABI directly.
-                let desc = interop_array_pair_c_struct(elem)?;
+                let (desc, elem_cast) = self.interop_array_pair_desc(elem)?;
                 let h = self.eval(arg, out, depth)?;
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
                 Ok(format!(
-                    "(({desc}){{ sub_rt_array_data(ctx, {t}), (size_t)sub_rt_array_len(ctx, {t}) }})"
+                    "(({desc}){{ {elem_cast}sub_rt_array_data(ctx, {t}), (size_t)sub_rt_array_len(ctx, {t}) }})"
                 ))
             }
             Type::Class(id) if self.is_value_class(*id)? => {
@@ -2022,14 +2057,33 @@ impl<'m> Emitter<'m> {
             let f = &fields[i];
             match &f.ty {
                 Type::Func(_) => {
-                    let ud = fields.get(i + 1)
+                    // The callback field is followed by one or two userdata
+                    // slots (§14.4). Both are bound into one binding the
+                    // trampoline reads; the C struct's first userdata slot
+                    // carries the binding, any second slot carries null (the
+                    // binding is authoritative for both language userdata).
+                    let ud1 = fields.get(i + 1)
                         .ok_or_else(|| "a callback field needs a following userdata slot".to_string())?;
+                    let has_ud2 = fields.get(i + 2)
+                        .map(|f| is_userdata_slot(&f.ty))
+                        .unwrap_or(false);
+                    let ud2_expr = if has_ud2 {
+                        format!("{t}.{}", sanitize(&fields[i + 2].name))
+                    } else {
+                        "NULL".to_string()
+                    };
                     parts.push("(SubLogCallback)&sub_rt_cb_trampoline".to_string());
                     parts.push(format!(
-                        "sub_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{})",
-                        sanitize(&f.name), sanitize(&f.name), sanitize(&ud.name)
+                        "sub_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{}, {})",
+                        sanitize(&f.name), sanitize(&f.name), sanitize(&ud1.name), ud2_expr
                     ));
-                    i += 2;
+                    if has_ud2 {
+                        // Second userdata C slot → null.
+                        parts.push("NULL".to_string());
+                        i += 3;
+                    } else {
+                        i += 2;
+                    }
                 }
                 Type::Array(_) => {
                     // Descriptor-embedded `(count, pointer)` array field
@@ -2608,26 +2662,19 @@ fn indent(depth: usize) -> String {
 /// `SubBufferView` (historical) and the other primitive descriptors
 /// `SubSlice<T>`. An element type without a header descriptor is a loud
 /// codegen error, never a silent mis-marshal (dev-JIT ≠ ship-C otherwise).
-fn interop_array_pair_c_struct(elem: &Type) -> Result<&'static str, String> {
-    Ok(match elem {
-        Type::U32 => "SubBufferView",
-        Type::F32 => "SubSliceF32",
-        Type::I32 => "SubSliceI32",
-        Type::F64 => "SubSliceF64",
-        Type::I64 => "SubSliceI64",
-        other => {
-            return Err(format!(
-                "no interop array-pair descriptor for element type {other:?}"
-            ))
-        }
-    })
-}
-
 fn is_aggregate(ty: &Type) -> bool {
     matches!(
         ty,
         Type::FixedArray(..) | Type::IterResult(_) | Type::Class(_)
     )
+}
+
+/// True for a callback-info userdata slot — the boundary `object | null`
+/// form (`Type::Nullable(Object)`) or a bare `object` (§14.4): a callback
+/// field is followed by one or two such slots.
+fn is_userdata_slot(ty: &Type) -> bool {
+    matches!(ty, Type::Object)
+        || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
 }
 
 fn collect_aggr_ty(ty: &Type, set: &mut Vec<Type>) {
@@ -3038,7 +3085,7 @@ extern void* sub_rt_array_ptr(void* ctx, void* a, int32_t idx, uint32_t pos_id);
  * with the boundary include below, since its type mentions SubStringView. */
 extern const void* sub_rt_str_data(void* ctx, const void* s);
 extern const void* sub_rt_array_data(void* ctx, const void* a);
-extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata);
+extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata1, void* userdata2);
 
 /* Trap kinds (runtime/src/trap.rs). */
 enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };

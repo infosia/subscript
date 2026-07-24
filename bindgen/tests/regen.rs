@@ -53,7 +53,10 @@ fn q13_rules_are_reflected_in_the_mirror() {
     assert!(!m.contains("SubStringView"));
 
     // Function-pointer typedef → a `type` alias; callback userdata → `object | null`.
-    assert!(m.contains("type SubLogCallback = (message: string, userdata: object | null) => void;"));
+    // Two-userdata callback (§14.4): the callback type carries both slots.
+    assert!(m.contains(
+        "type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;"
+    ));
     assert!(m.contains("userdata: object | null;"));
 
     // Fixed C array → FixedArray<T, N>.
@@ -74,6 +77,17 @@ fn q13_rules_are_reflected_in_the_mirror() {
     // Untyped bulk-data API (`void*` + byte size) plus its typed facade.
     assert!(m.contains("subBulkConsume(data: object | null, size: u64): i32;"));
     assert!(m.contains("subBulkConsumeF32(data: f32[]): i32;"));
+
+    // P7.2 (§14.5). Mutable (pointer, count) descriptor over a value class
+    // → `SubWaitEntry[]`; the descriptor struct (SubWaitList) is absorbed,
+    // never emitted as a named type.
+    assert!(m.contains("subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;"));
+    assert!(!m.contains("SubWaitList"));
+    // Async op returning a future by value while taking the two-userdata
+    // callback-info.
+    assert!(m.contains(
+        "subDeviceKickAsync(device: SubDevice, request: u32, info: SubCallbackInfo): SubFuture;"
+    ));
 
     // No external library is named; every synthetic type is `Sub`-prefixed.
     assert!(!m.to_lowercase().contains("vulkan"));

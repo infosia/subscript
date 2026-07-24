@@ -268,6 +268,16 @@ fn is_pure_hfa_leaves(leaves: &[types::Type]) -> bool {
     leaves.iter().all(|t| *t == types::F32) || leaves.iter().all(|t| *t == types::F64)
 }
 
+/// True for a callback-info userdata slot — the boundary `object | null`
+/// form (`Type::Nullable(Object)`) or a bare `object` (§14.4). A callback
+/// field is followed by one such slot (single-userdata info) or two
+/// (two-userdata info); this distinguishes a trailing userdata slot from
+/// any other field.
+fn is_userdata_slot(ty: &Type) -> bool {
+    matches!(ty, Type::Object)
+        || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
+}
+
 // ----- pre-passes -----
 
 fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<&'h Type>) {
@@ -2449,27 +2459,60 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let tramp = self.b.ins().func_addr(types::I64, tref);
                     comps.push((coff, types::I64, tramp));
                     coff += cs;
-                    // The following field is this callback's userdata: it
-                    // becomes the binding record the trampoline reads.
-                    let ud_field = class
+                    // The callback field is followed by one or two userdata
+                    // slots (§14.4). The first is required; the second is
+                    // present in a two-userdata callback-info. Both are bound
+                    // into one binding record the trampoline reads; the C
+                    // struct's first userdata slot carries the binding and any
+                    // second slot carries null (the binding is authoritative).
+                    let ud1_field = class
                         .fields
                         .get(i + 1)
                         .ok_or_else(|| internal("a callback field needs a following userdata slot"))?;
-                    let ud_lang = *layout
+                    let ud1_lang = *layout
                         .field_offsets
                         .get(i + 1)
                         .ok_or_else(|| internal("userdata field offset"))?
                         as i32;
-                    let (uds, uda) = self.boundary_c_field(&ud_field.ty)?;
-                    coff = round_up(coff, uda);
-                    struct_align = struct_align.max(uda);
-                    let ud = self.b.ins().load(types::I64, flags(), addr, ud_lang);
+                    let ud1 = self.b.ins().load(types::I64, flags(), addr, ud1_lang);
+                    let has_ud2 = class
+                        .fields
+                        .get(i + 2)
+                        .map(|f| is_userdata_slot(&f.ty))
+                        .unwrap_or(false);
+                    let ud2 = if has_ud2 {
+                        let ud2_lang = *layout
+                            .field_offsets
+                            .get(i + 2)
+                            .ok_or_else(|| internal("second userdata field offset"))?
+                            as i32;
+                        self.b.ins().load(types::I64, flags(), addr, ud2_lang)
+                    } else {
+                        self.iconst(types::I64, 0)
+                    };
                     let record = self
-                        .call_rt(self.ml.rt.cb_bind, &[self.ctx_v, code, env, ud], false)?
+                        .call_rt(self.ml.rt.cb_bind, &[self.ctx_v, code, env, ud1, ud2], false)?
                         .ok_or_else(|| internal("cb_bind result"))?;
+                    // First userdata C slot → the binding.
+                    let (uds1, uda1) = self.boundary_c_field(&ud1_field.ty)?;
+                    coff = round_up(coff, uda1);
+                    struct_align = struct_align.max(uda1);
                     comps.push((coff, types::I64, record));
-                    coff += uds;
-                    i += 2;
+                    coff += uds1;
+                    if has_ud2 {
+                        // Second userdata C slot → null (the binding carries
+                        // the real second userdata).
+                        let ud2_field = &class.fields[i + 2];
+                        let (uds2, uda2) = self.boundary_c_field(&ud2_field.ty)?;
+                        coff = round_up(coff, uda2);
+                        struct_align = struct_align.max(uda2);
+                        let nullv = self.iconst(types::I64, 0);
+                        comps.push((coff, types::I64, nullv));
+                        coff += uds2;
+                        i += 3;
+                    } else {
+                        i += 2;
+                    }
                 }
                 Type::Array(_) => {
                     // Descriptor-embedded (count, pointer) array field
