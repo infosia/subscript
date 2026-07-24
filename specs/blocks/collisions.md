@@ -214,7 +214,9 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q22 (`Array` methods)** — the checker accepts the `stdlib.md` §9
   subset on `T[]`. Element equality follows JS `===` per element
   kind (scalars by value, strings by content, `Date` by millis,
-  reference classes by identity). Callback arities are fixed (no
+  reference classes by identity) — including `includes`, which in JS
+  uses SameValueZero (JS finds `NaN`; this language never does — one
+  equality rule for all three searches). Callback arities are fixed (no
   optional index/array parameters); `reduce` requires `init` (the
   lib's arity-overloaded no-init form changes meaning silently);
   `sort` requires a comparator (the lib's default sort coerces to
