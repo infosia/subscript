@@ -350,3 +350,61 @@ the correct golden in dev (retained bytes, no trap) yet corrupt in ship —
 a class of latent bug the corpus differential gate cannot see for
 ship-only. This is the intended two-tier split (AOT use-after-delete is
 undefined, Q6), stated once here so the testability cost is on record.
+
+## P8 — ship-tier arena allocator (§8.1b): COMPLETE (2026-07-24)
+
+The slab/free-list allocator the §8.1a record named as the unscheduled
+next step. Measured motivation (scratch attribution bench, 30×131071
+alloc/delete pairs of 16-byte payloads): the per-allocation `HashMap`
+plus its bookkeeping was ~75% of the ship tier's allocation overhead;
+the 32-byte-zeroed-with-header allocation shape itself was ~+17% over
+bare `malloc`/`free`.
+
+Mechanism (runtime/src/context.rs, ship Context only; dev tier's map +
+retain-and-poison + traps unchanged; no `sub_rt_*` ABI change): 8
+power-of-two size classes (32..4096 B total block) carved from 64 KiB
+per-class chunks by bump pointer; `delete` pushes the block onto its
+class's LIFO free list (link threaded through the freed payload's first
+word); above 4096 B an individual `LargeAlloc` record. Membership is
+exact per §8.1b — chunk binary search + block grid + bump watermark +
+live header, all four. `collect()` marks via a header `MARK_STATE`
+magic (restored on sweep) and sweeps by chunk-grid walk plus the large
+records. `Drop` frees chunks and records wholesale. Payload zeroed on
+every alloc path including free-list reuse (full class capacity).
+
+Exit criteria (§8.1b, pre-registered) — all met:
+
+1. Ship `tree` **1.37× C** (target ≤2.0×, from 5.11×), arm64 reference
+   machine, standard runner; no other ship row regressed (sort
+   1.79→1.77, particles 3.06→3.07, compute-bound rows within noise).
+   Ship now leads LuaJIT on every workload including `tree` (2.20×).
+2. Standing gate byte-exact on every corpus entry, both tiers, incl.
+   a16 collect (the gate's AOT binaries run the arena end to end).
+3. Runtime unit tests 274→281: free-list reuse without chunk growth
+   (same-address over 10k cycles), zeroed reuse, Drop releases every
+   chunk/large record (test-only ArenaStats balance), arena collect
+   rooted/unreachable/transitive, large-path membership/trace/delete,
+   exact-membership negatives; dev-tier trap tests unchanged.
+4. `is_live`/`live_count` functional on both tiers.
+
+Phase Review (2026-07-24, fresh no-context): 0 CRITICAL, 0 MAJOR, 3
+MINOR. Executed probes all passed: array-grow+collect (data block
+reached through the ArrayHeader payload word, both tiers); 100k-op
+seeded torture across all classes + large threshold with periodic
+collect vs a shadow model (zero divergence); interning under
+collect/delete churn; the tree pattern (iterations 2–30 reuse only
+iteration-1 addresses — no chunk growth); zeroing incl. partial-capacity
+reuse; membership negatives (chunk base, header address, payload
+interior, above-watermark, chunk end, cross-class) all rejected;
+retired-block + stale-root + double collect leaves the free list
+duplicate-free. MINOR 1 (commit the benchmark evidence + this entry;
+regenerated README cited the spec commit's hash — re-run at the
+implementation commit, now cites 821170e) resolved with this commit.
+MINOR 2 (clippy doc_lazy_continuation in a test doc comment) and
+MINOR 3 (pre-existing P5.2b `vec_box` on `callbacks` — the Box is
+load-bearing: `bind_callback` returns a stable interior pointer; wants
+a justifying `#[allow]` comment) recorded as cosmetic follow-ups.
+
+Residual ship `tree` gap (1.37×): the `sub_rt` call boundary, header
+writes, and full-capacity re-zeroing on reuse — not the map (gone).
+Not scheduled; §8.1b's target is met.

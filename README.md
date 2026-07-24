@@ -164,14 +164,14 @@ table with absolute times, methodology, and machine/runtime versions is in
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
-| mandelbrot | 1.00× | **1.00×** | 1.04× | 2.79× | 1.00× | 1.00× |
-| queen | 1.00× | **0.99×** | 1.46× | 1.52× | 1.21× | 1.75× |
-| primes | 1.00× | **0.96×** | 1.44× | 2.11× | 0.91× | 1.69× |
-| fib-recursive | 1.00× | 0.97× | 1.76× | 1.48× | 1.17× | 2.13× |
-| fib-loop | 1.00× | 1.02× | 2.00× | 1.49× | 1.09× | 1.57× |
-| sort | 1.00× | 1.79× | 3.73× | 2.31× | 1.49× | 1.84× |
-| particles | 1.00× | 3.06× | 10.30× | 3.83× | 1.91× | 3.57× |
-| tree | 1.00× | 5.11× | 10.61× | 2.25× | 0.33× | 0.47× |
+| mandelbrot | 1.00× | **1.00×** | 1.05× | 2.78× | 1.00× | 1.01× |
+| queen | 1.00× | **0.99×** | 1.48× | 1.54× | 1.23× | 1.76× |
+| primes | 1.00× | **0.96×** | 1.44× | 2.06× | 0.92× | 1.69× |
+| fib-recursive | 1.00× | 0.99× | 1.67× | 1.49× | 1.14× | 2.02× |
+| fib-loop | 1.00× | 1.02× | 2.01× | 1.50× | 1.09× | 1.58× |
+| tree | 1.00× | 1.37× | 10.42× | 2.20× | 0.33× | 0.47× |
+| sort | 1.00× | 1.77× | 3.70× | 2.28× | 1.45× | 1.83× |
+| particles | 1.00× | 3.07× | 10.35× | 3.84× | 1.90× | 3.58× |
 
 What the numbers show, honestly:
 
@@ -180,14 +180,16 @@ What the numbers show, honestly:
   within a few percent. The shipping tier *is* the emitted C compiled by
   the same `clang -O2`, and pure-numeric code has no array bounds checks to
   pay for, so it lands on C.
-- **The cost is allocation and checked array traffic** — `tree` (per-node
-  allocate/free) at 5×, `particles` (value-struct arrays) at 3×, `sort`
-  (bounds-checked growable arrays) at 1.8×. These are the language's real
-  costs — manual per-node allocation, value-copy semantics, an emitted
-  bounds check per element — not a measurement artifact.
-- **Against the JITs**, the shipping tier is at or ahead of LuaJIT, JSC,
-  and V8 on the compute-bound rows and behind them where garbage-collected
-  bump allocation wins (`tree`, where JSC/V8 beat C itself). The
+- **The cost is value-copy and checked array traffic** — `particles`
+  (value-struct arrays) at 3×, `sort` (bounds-checked growable arrays) at
+  1.8×, `tree` (per-node allocate/free through the Context's size-class
+  arena) at 1.4×. These are the language's real costs — value-copy
+  semantics, an emitted bounds check per element, a 16-byte allocation
+  header — not a measurement artifact.
+- **Against the JITs**, the shipping tier is at or ahead of LuaJIT on
+  every row and level with JSC/V8 on the compute-bound rows; JSC leads on
+  `sort` and `particles`, and JSC/V8 lead on `tree`, where
+  garbage-collected bump allocation beats even C. The
   development-tier JIT (Cranelift, tuned for compile speed and hot reload,
   not peak codegen) is uniformly slower — the honest price of the
   fast-iteration tier.
