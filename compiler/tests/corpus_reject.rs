@@ -41,6 +41,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     // tsc accepts `Date === Date`, so r24 lives only in the reject
     // corpus (excluded from tsconfig like every r-entry).
     ("r24-date-compare.ts", RuleCode::S014, 11),
+    ("r25-string-substring.ts", RuleCode::S014, 10),
+    ("r26-string-localecompare.ts", RuleCode::S014, 10),
+    ("r27-string-match.ts", RuleCode::S014, 10),
+    ("r28-string-tolocaleupper.ts", RuleCode::S014, 11),
 ];
 
 #[test]

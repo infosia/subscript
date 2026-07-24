@@ -1979,6 +1979,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos),
             hir::Callee::Math(f) => self.eval_math(*f, args),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos),
+            hir::Callee::Str(f) => self.eval_str(*f, args, pos),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -2714,6 +2715,35 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal(format!("Date accessor {} result", accessor.name())))
             }
         }
+    }
+
+    /// Lowers a `String` method intrinsic (stdlib.md §8) to its opaque
+    /// `sub_rt_str_*` runtime call. The receiver is the first HIR
+    /// argument and every value is a scalar (string handles and `i32`
+    /// byte measures); a trailing `pos_id` and a trap check follow
+    /// exactly when the symbol is fault-capable
+    /// ([`hir::StrFn::takes_pos_id`]). A `boolean` result arrives as
+    /// `i32` 0/1 and is narrowed here.
+    fn eval_str(&mut self, f: hir::StrFn, args: &[hir::Expr], pos: &Pos) -> Result<RV, String> {
+        if args.len() != 1 + f.params().len() {
+            return Err(internal(format!("{} arity (checker normalizes)", f.name())));
+        }
+        let mut argv = vec![self.ctx_v];
+        for a in args {
+            let rv = self.eval(a)?;
+            argv.push(self.expect_s(rv)?);
+        }
+        let traps = f.takes_pos_id();
+        if traps {
+            let pid = self.pos_id(pos);
+            argv.push(self.iconst(types::I32, pid));
+        }
+        let res = self.call_rt(self.ml.rt.str_ops[f as usize], &argv, traps)?;
+        let res = res.ok_or_else(|| internal(format!("{} result", f.name())))?;
+        Ok(RV::S(match f.ret() {
+            hir::StrRet::Bool => self.b.ins().icmp_imm(IntCC::NotEqual, res, 0),
+            _ => res,
+        }))
     }
 
     fn eval_ambient(

@@ -133,6 +133,37 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_math_random", ffi::sub_rt_math_random as *const u8),
         // Date intrinsics (stdlib.md §3): same opaque-symbol rule; the
         // ship tier resolves these from the runtime static library.
+        // String method intrinsics (stdlib.md §8): one opaque symbol
+        // per accepted method, StrFn::ALL order.
+        ("sub_rt_str_index_of", ffi::sub_rt_str_index_of as *const u8),
+        (
+            "sub_rt_str_last_index_of",
+            ffi::sub_rt_str_last_index_of as *const u8,
+        ),
+        ("sub_rt_str_includes", ffi::sub_rt_str_includes as *const u8),
+        (
+            "sub_rt_str_starts_with",
+            ffi::sub_rt_str_starts_with as *const u8,
+        ),
+        ("sub_rt_str_ends_with", ffi::sub_rt_str_ends_with as *const u8),
+        (
+            "sub_rt_str_char_code_at",
+            ffi::sub_rt_str_char_code_at as *const u8,
+        ),
+        ("sub_rt_str_split", ffi::sub_rt_str_split as *const u8),
+        ("sub_rt_str_trim", ffi::sub_rt_str_trim as *const u8),
+        ("sub_rt_str_trim_start", ffi::sub_rt_str_trim_start as *const u8),
+        ("sub_rt_str_trim_end", ffi::sub_rt_str_trim_end as *const u8),
+        ("sub_rt_str_repeat", ffi::sub_rt_str_repeat as *const u8),
+        ("sub_rt_str_pad_start", ffi::sub_rt_str_pad_start as *const u8),
+        ("sub_rt_str_pad_end", ffi::sub_rt_str_pad_end as *const u8),
+        ("sub_rt_str_to_upper", ffi::sub_rt_str_to_upper as *const u8),
+        ("sub_rt_str_to_lower", ffi::sub_rt_str_to_lower as *const u8),
+        ("sub_rt_str_replace", ffi::sub_rt_str_replace as *const u8),
+        (
+            "sub_rt_str_replace_all",
+            ffi::sub_rt_str_replace_all as *const u8,
+        ),
         ("sub_rt_date_utc", ffi::sub_rt_date_utc as *const u8),
         ("sub_rt_date_new", ffi::sub_rt_date_new as *const u8),
         ("sub_rt_date_now", ffi::sub_rt_date_now as *const u8),

@@ -216,12 +216,108 @@ mod tests {
 
     #[test]
     fn nonwhitelisted_string_member_is_s100_naming_the_member() {
+        // A member outside both the accepted §8 surface and the named
+        // Q21 rejected set stays the generic S100 surface diagnostic
+        // (`toUpperCase`, this test's former subject, joined the
+        // accepted surface in P10).
         let err = check_one(
-            "export function main(): void {\n  const s: string = \"a\";\n  print(s.toUpperCase());\n}\n",
+            "export function main(): void {\n  const s: string = \"a\";\n  print(s.reverse());\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
-        assert!(err[0].message.contains("toUpperCase"));
+        assert!(err[0].message.contains("reverse"));
+    }
+
+    #[test]
+    fn string_methods_type_and_normalize_optional_arguments() {
+        // stdlib.md §8: every accepted method resolves to a Callee::Str
+        // intrinsic with the receiver first; the optional arguments are
+        // normalized at check time (`from` → 0, `pad` → " ") so each
+        // runtime symbol has a fixed arity.
+        let module = check_one(
+            "export function main(): void {\n  const s: string = \"ab\";\n  const i: i32 = s.indexOf(\"a\");\n  const b: boolean = s.includes(\"a\", 1);\n  const p: string = s.padStart(5);\n  const parts: string[] = s.split(\"a\");\n  const c: i32 = s.charCodeAt(0);\n  print(`${i}${b}${p}${parts.length}${c}`);\n}\n",
+        )
+        .expect("clean check");
+        let mut found = Vec::new();
+        fn walk(e: &hir::Expr, found: &mut Vec<(hir::StrFn, usize)>) {
+            if let hir::ExprKind::Call { callee, args } = &e.kind {
+                if let hir::Callee::Str(f) = callee {
+                    found.push((*f, args.len()));
+                }
+                for a in args {
+                    walk(a, found);
+                }
+            }
+        }
+        for s in &module.functions[0].body {
+            match s {
+                hir::Stmt::Let { init, .. } => walk(init, &mut found),
+                hir::Stmt::Expr(e) => walk(e, &mut found),
+                _ => {}
+            }
+        }
+        for f in [
+            hir::StrFn::IndexOf,
+            hir::StrFn::Includes,
+            hir::StrFn::PadStart,
+            hir::StrFn::Split,
+            hir::StrFn::CharCodeAt,
+        ] {
+            let (_, arity) = found
+                .iter()
+                .find(|(g, _)| *g == f)
+                .unwrap_or_else(|| panic!("no Callee::Str({}) call", f.name()));
+            assert_eq!(*arity, 1 + f.params().len(), "arity of {}", f.name());
+        }
+    }
+
+    #[test]
+    fn rejected_string_member_is_s014_naming_the_member() {
+        for (member, call) in [
+            ("substring", "s.substring(0, 1)"),
+            ("charAt", "s.charAt(0)"),
+            ("codePointAt", "s.codePointAt(0)"),
+            ("normalize", "s.normalize()"),
+            ("localeCompare", "s.localeCompare(s)"),
+            ("toLocaleLowerCase", "s.toLocaleLowerCase()"),
+            ("matchAll", "s.matchAll(s)"),
+            ("search", "s.search(s)"),
+            ("concat", "s.concat(s)"),
+        ] {
+            let err = check_one(&format!(
+                "export function main(): void {{\n  const s: string = \"a\";\n  {call};\n}}\n"
+            ))
+            .unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{member}");
+            assert!(err[0].message.contains(member), "{member}: {}", err[0].message);
+            assert!(err[0].message.contains("Q21"), "{member}: {}", err[0].message);
+        }
+    }
+
+    #[test]
+    fn string_method_read_as_a_value_is_rejected() {
+        let err = check_one(
+            "export function main(): void {\n  const s: string = \"a\";\n  s.indexOf;\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("only be called"));
+    }
+
+    #[test]
+    fn string_as_a_global_value_or_constructor_is_rejected() {
+        // stdlib.md §8: `String` is not an accepted global. It resolves
+        // nowhere, so each use fails on the standing unknown-name /
+        // unsupported-construct paths — no dedicated S-code needed.
+        for src in [
+            "export function main(): void {\n  print(String(3));\n}\n",
+            "export function main(): void {\n  print(String.fromCharCode(65));\n}\n",
+            "export function main(): void {\n  print(String.raw`x`);\n}\n",
+            "export function main(): void {\n  const s = new String(\"a\");\n  print(\"x\");\n}\n",
+        ] {
+            let err = check_one(src).unwrap_err();
+            assert!(!err.is_empty(), "{src} was accepted");
+        }
     }
 
     #[test]

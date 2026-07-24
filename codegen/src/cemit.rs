@@ -1959,6 +1959,27 @@ impl<'m> Emitter<'m> {
                     }
                 }
             }
+            // A String method intrinsic (stdlib.md §8) calls its opaque
+            // runtime symbol: `(ctx, recv, params…[, pos_id])`, the
+            // receiver being the first HIR argument. A boolean result
+            // arrives as int32_t 0/1 and is narrowed here.
+            hir::Callee::Str(f) => {
+                use subscript_compiler::hir::StrRet;
+                if args.len() != 1 + f.params().len() {
+                    return Err(format!("{} arity (checker normalizes)", f.name()));
+                }
+                let argv = self.eval_list(args, out, depth)?;
+                let call = if f.takes_pos_id() {
+                    let pid = self.pos_id(pos);
+                    format!("{}(ctx, {argv}, {pid}u)", f.symbol())
+                } else {
+                    format!("{}(ctx, {argv})", f.symbol())
+                };
+                Ok(match f.ret() {
+                    StrRet::Bool => format!("({call} != 0)"),
+                    _ => call,
+                })
+            }
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
     }
@@ -3136,6 +3157,28 @@ extern const void* sub_rt_str_data(void* ctx, const void* s);
 extern const void* sub_rt_array_data(void* ctx, const void* a);
 extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata1, void* userdata2);
 
+/* String method intrinsics (stdlib.md 8, Q21): byte measures over the
+ * immutable UTF-8 string payloads; one opaque runtime symbol per
+ * accepted method, shared with the dev tier. Fault-capable entries
+ * carry a trailing pos_id; the pure search predicates take none. */
+extern int32_t sub_rt_str_index_of(void* ctx, const void* s, const void* needle, int32_t from);
+extern int32_t sub_rt_str_last_index_of(void* ctx, const void* s, const void* needle);
+extern int32_t sub_rt_str_includes(void* ctx, const void* s, const void* needle, int32_t from);
+extern int32_t sub_rt_str_starts_with(void* ctx, const void* s, const void* needle);
+extern int32_t sub_rt_str_ends_with(void* ctx, const void* s, const void* needle);
+extern int32_t sub_rt_str_char_code_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
+extern void* sub_rt_str_split(void* ctx, const void* s, const void* sep, uint32_t pos_id);
+extern void* sub_rt_str_trim(void* ctx, const void* s, uint32_t pos_id);
+extern void* sub_rt_str_trim_start(void* ctx, const void* s, uint32_t pos_id);
+extern void* sub_rt_str_trim_end(void* ctx, const void* s, uint32_t pos_id);
+extern void* sub_rt_str_repeat(void* ctx, const void* s, int32_t n, uint32_t pos_id);
+extern void* sub_rt_str_pad_start(void* ctx, const void* s, int32_t len, const void* pad, uint32_t pos_id);
+extern void* sub_rt_str_pad_end(void* ctx, const void* s, int32_t len, const void* pad, uint32_t pos_id);
+extern void* sub_rt_str_to_upper(void* ctx, const void* s, uint32_t pos_id);
+extern void* sub_rt_str_to_lower(void* ctx, const void* s, uint32_t pos_id);
+extern void* sub_rt_str_replace(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
+extern void* sub_rt_str_replace_all(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
+
 /* Math intrinsics (stdlib.md 1): opaque runtime symbols, never bare
  * libm calls — clang constant-folds recognized libm calls at -O2, a
  * silent dev-JIT != ship-C divergence hazard (stdlib.md 0.2). */
@@ -3337,6 +3380,34 @@ mod tests {
         let c = emit("export function main(): void {\n  const xs: i32[] = [];\n  xs.push(7);\n  print(`${xs[0]}`);\n}\n");
         assert!(c.contains("ss_arr_at"));
         assert!(c.contains("sub_rt_array_push"));
+    }
+
+    #[test]
+    fn string_methods_call_the_opaque_runtime_symbols() {
+        // stdlib.md §8: one opaque symbol per method, receiver first,
+        // pos_id only on the fault-capable entries, boolean results
+        // narrowed from the runtime's int32_t.
+        let c = emit(
+            "export function main(): void {\n  const s: string = \"ab\";\n  print(`${s.indexOf(\"b\")}`);\n  print(`${s.includes(\"b\", 1)}`);\n  print(s.padStart(4));\n  print(s.trim());\n  print(`${s.split(\"a\").length}`);\n}\n",
+        );
+        // The checker-normalized defaults are visible in the emitted
+        // call: indexOf's `from` 0 and padStart's " " pad literal.
+        assert!(c.contains("sub_rt_str_index_of(ctx, "), "{c}");
+        assert!(c.contains(", 0)"), "normalized indexOf from: {c}");
+        assert!(c.contains("(sub_rt_str_includes(ctx, "), "{c}");
+        assert!(c.contains(" != 0)"), "boolean narrowing: {c}");
+        assert!(c.contains("sub_rt_str_pad_start(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_str_trim(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_str_split(ctx, "), "{c}");
+        // The pure predicates carry no pos_id (no `u)` suffix scan
+        // needed: the signature in the preamble is the contract).
+        for f in hir::StrFn::ALL {
+            assert!(
+                PREAMBLE.contains(&format!("{}(void* ctx", f.symbol())),
+                "preamble lacks the {} declaration",
+                f.symbol()
+            );
+        }
     }
 
     #[test]

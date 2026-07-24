@@ -113,6 +113,11 @@ pub(crate) struct RtFns {
     pub date_get: FuncId,
     /// `sub_rt_date_to_iso`: (ms, pos id) → string handle.
     pub date_to_iso: FuncId,
+    /// `sub_rt_str_*` method imports (stdlib.md §8), indexed by
+    /// `hir::StrFn as usize` (the [`hir::StrFn::ALL`] order). Each
+    /// signature is `(ctx, recv, params…[, pos_id])` per
+    /// [`hir::StrFn::params`] / [`hir::StrFn::takes_pos_id`].
+    pub str_ops: [FuncId; hir::StrFn::ALL.len()],
 }
 
 /// Parameters of the shared lowering.
@@ -413,6 +418,37 @@ fn declare_rt<M: Module>(
     let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
         .try_into()
         .map_err(|_| internal("math import table size"))?;
+    // String method imports (stdlib.md §8): one opaque symbol per
+    // accepted method, `(ctx, recv, params…[, pos_id])`, in StrFn::ALL
+    // order so `f as usize` indexes the table. The signature is built
+    // from the StrFn tables the checker normalized against, so the two
+    // sides cannot drift independently.
+    let mut str_ids: Vec<FuncId> = Vec::with_capacity(hir::StrFn::ALL.len());
+    for f in hir::StrFn::ALL {
+        let mut params = vec![I64, I64]; // ctx, receiver handle
+        for p in f.params() {
+            params.push(match p {
+                hir::StrParam::Str => I64,
+                hir::StrParam::I32 => I32,
+                // `StrParam` is #[non_exhaustive]; a variant this crate
+                // does not know is a compiler/codegen version skew.
+                other => return Err(internal(format!("unknown StrParam {other:?}"))),
+            });
+        }
+        if f.takes_pos_id() {
+            params.push(I32);
+        }
+        let ret = match f.ret() {
+            hir::StrRet::I32 | hir::StrRet::Bool => I32,
+            hir::StrRet::Str | hir::StrRet::StrArray => I64,
+            // See the StrParam arm above.
+            other => return Err(internal(format!("unknown StrRet {other:?}"))),
+        };
+        str_ids.push(mk(f.symbol(), &params, Some(ret))?);
+    }
+    let str_ops: [FuncId; hir::StrFn::ALL.len()] = str_ids
+        .try_into()
+        .map_err(|_| internal("string import table size"))?;
     Ok(RtFns {
         print: mk("sub_rt_print", &[I64, I64], None)?,
         collect: mk("sub_rt_collect", &[I64], None)?,
@@ -461,6 +497,7 @@ fn declare_rt<M: Module>(
         date_now: mk("sub_rt_date_now", &[I64], Some(I64))?,
         date_get: mk("sub_rt_date_get", &[I64, I64, I32], Some(I32))?,
         date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
+        str_ops,
     })
 }
 

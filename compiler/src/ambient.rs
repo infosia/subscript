@@ -4,7 +4,7 @@
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
 
-use crate::hir::{AmbientFn, DateFn, MathFn};
+use crate::hir::{AmbientFn, DateFn, MathFn, StrFn};
 use crate::types::Type;
 
 /// Maps a sized-numeric alias name to its type.
@@ -80,6 +80,13 @@ pub(crate) fn date_method(name: &str) -> Option<DateFn> {
     })
 }
 
+/// Maps a `String` method name to its intrinsic (stdlib.md §8, Q21).
+/// `slice` is not here — it predates the §8 surface and stays on the
+/// `Callee::Method` path; the out-of-subset members resolve to nothing.
+pub(crate) fn str_method(name: &str) -> Option<StrFn> {
+    StrFn::ALL.iter().copied().find(|f| f.name() == name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +151,25 @@ mod tests {
         // Statics are namespace members, not instance methods.
         assert_eq!(date_method("UTC"), None);
         assert_eq!(date_method("now"), None);
+    }
+
+    #[test]
+    fn str_method_lookup_covers_the_subset_and_nothing_else() {
+        assert_eq!(str_method("indexOf"), Some(StrFn::IndexOf));
+        assert_eq!(str_method("charCodeAt"), Some(StrFn::CharCodeAt));
+        assert_eq!(str_method("replaceAll"), Some(StrFn::ReplaceAll));
+        // Every declared method round-trips through its name.
+        for f in StrFn::ALL {
+            assert_eq!(str_method(f.name()), Some(f));
+        }
+        // `slice` stays on the standing Callee::Method path.
+        assert_eq!(str_method("slice"), None);
+        // Out-of-subset members resolve to nothing (Q21).
+        assert_eq!(str_method("substring"), None);
+        assert_eq!(str_method("localeCompare"), None);
+        assert_eq!(str_method("match"), None);
+        assert_eq!(str_method("toLocaleUpperCase"), None);
+        assert_eq!(str_method("concat"), None);
     }
 
     #[test]

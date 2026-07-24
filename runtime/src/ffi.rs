@@ -273,6 +273,509 @@ pub unsafe extern "C" fn sub_rt_str_eq(ctx: *mut Context, a: *const u8, b: *cons
     i32::from(equal)
 }
 
+// ----- String methods (stdlib.md §8, Q21) -----
+//
+// Byte-measure operations over the immutable UTF-8 string payloads;
+// the pure logic lives in [`crate::strops`], these wrappers add the
+// Context (bytes in, traps, fresh allocations out). Convention: the
+// receiver handle follows `ctx`; entries that can trap or allocate
+// carry a trailing `pos_id`, the five pure search predicates take
+// none. Every string/array result is a **fresh** Context allocation —
+// including the pad no-ops that return the receiver's bytes unchanged.
+
+/// `indexOf(needle, from)`: first byte index or −1 (Q21). `from` is
+/// clamped to `[0, length]`; an empty needle returns the clamped
+/// `from`. The checker supplies the defaulted `from` (0).
+///
+/// # Safety
+///
+/// Shared contract; `s` and `needle` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_index_of(
+    ctx: *mut Context,
+    s: *const u8,
+    needle: *const u8,
+    from: i32,
+) -> i32 {
+    if s.is_null() || needle.is_null() {
+        return -1;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &*ctx };
+    // SAFETY: live string handles.
+    unsafe { crate::strops::index_of(ctx.str_bytes(s), ctx.str_bytes(needle), from) }
+}
+
+/// `lastIndexOf(needle)`: last byte index or −1; an empty needle
+/// returns the length (Q21).
+///
+/// # Safety
+///
+/// Shared contract; `s` and `needle` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_last_index_of(
+    ctx: *mut Context,
+    s: *const u8,
+    needle: *const u8,
+) -> i32 {
+    if s.is_null() || needle.is_null() {
+        return -1;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &*ctx };
+    // SAFETY: live string handles.
+    unsafe { crate::strops::last_index_of(ctx.str_bytes(s), ctx.str_bytes(needle)) }
+}
+
+/// `includes(needle, from)`: 1 when found, else 0. The checker supplies
+/// the defaulted `from` (0); an empty needle is included.
+///
+/// # Safety
+///
+/// Shared contract; `s` and `needle` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_includes(
+    ctx: *mut Context,
+    s: *const u8,
+    needle: *const u8,
+    from: i32,
+) -> i32 {
+    // SAFETY: shared contract (forwarded).
+    i32::from(unsafe { sub_rt_str_index_of(ctx, s, needle, from) } >= 0)
+}
+
+/// `startsWith(needle)`: 1 when `s` begins with `needle`'s bytes.
+///
+/// # Safety
+///
+/// Shared contract; `s` and `needle` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_starts_with(
+    ctx: *mut Context,
+    s: *const u8,
+    needle: *const u8,
+) -> i32 {
+    if s.is_null() || needle.is_null() {
+        return 0;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &*ctx };
+    // SAFETY: live string handles.
+    let starts = unsafe { ctx.str_bytes(s).starts_with(ctx.str_bytes(needle)) };
+    i32::from(starts)
+}
+
+/// `endsWith(needle)`: 1 when `s` ends with `needle`'s bytes.
+///
+/// # Safety
+///
+/// Shared contract; `s` and `needle` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_ends_with(
+    ctx: *mut Context,
+    s: *const u8,
+    needle: *const u8,
+) -> i32 {
+    if s.is_null() || needle.is_null() {
+        return 0;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &*ctx };
+    // SAFETY: live string handles.
+    let ends = unsafe { ctx.str_bytes(s).ends_with(ctx.str_bytes(needle)) };
+    i32::from(ends)
+}
+
+/// `charCodeAt(i)`: the byte value 0–255 (Q21; JS returns the UTF-16
+/// unit). Out of range traps (JS returns NaN) and returns 0.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_char_code_at(
+    ctx: *mut Context,
+    s: *const u8,
+    i: i32,
+    pos_id: u32,
+) -> i32 {
+    if s.is_null() {
+        return 0;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handle. Copied out so the borrow does not
+    // overlap the mutable trap call below.
+    let (len, byte) = {
+        // SAFETY: live string handle.
+        let bytes = unsafe { ctx.str_bytes(s) };
+        let byte = usize::try_from(i).ok().and_then(|i| bytes.get(i).copied());
+        (bytes.len(), byte)
+    };
+    match byte {
+        Some(b) => i32::from(b),
+        None => {
+            ctx.trap(
+                TrapKind::StrRange,
+                format!("charCodeAt({i}) out of range for string length {len}"),
+                pos_id,
+            );
+            0
+        }
+    }
+}
+
+/// `split(sep)`: a fresh `string[]` of the pieces between separator
+/// matches (JS piece order; no match → `[whole]`). An empty separator
+/// traps (Q21: byte-splitting would fracture UTF-8 code points) and
+/// returns null. The elements are string handles stored as 8-byte
+/// values, exactly as a `string[]` literal stores them.
+///
+/// # Safety
+///
+/// Shared contract; `s` and `sep` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_split(
+    ctx: *mut Context,
+    s: *const u8,
+    sep: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() || sep.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handles. Copied out so the borrows do not
+    // overlap the mutable trap/alloc calls below.
+    let hay: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    // SAFETY: live string handles.
+    let sep: Vec<u8> = unsafe { ctx.str_bytes(sep) }.to_vec();
+    if sep.is_empty() {
+        ctx.trap(
+            TrapKind::StrRange,
+            "split(\"\"): an empty separator is not accepted",
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    let arr = ctx.array_new(8, pos_id);
+    if arr.is_null() {
+        return std::ptr::null_mut();
+    }
+    for piece in crate::strops::split(&hay, &sep) {
+        let handle = ctx.alloc_str(piece, pos_id);
+        if handle.is_null() {
+            return std::ptr::null_mut();
+        }
+        let word = handle as u64;
+        // SAFETY: `arr` is a live 8-byte-element array of this context;
+        // `word` is readable for 8 bytes.
+        if unsafe { ctx.array_push(arr, (&word as *const u64).cast(), pos_id) } < 0 {
+            return std::ptr::null_mut();
+        }
+    }
+    arr
+}
+
+/// Shared body of the `trim` family: selects the strip via `strip`,
+/// allocates the fresh result.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+unsafe fn str_trim_with(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+    strip: fn(&[u8]) -> &[u8],
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handle. Copied out so the borrow does not
+    // overlap the mutable alloc call below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    ctx.alloc_str(strip(&bytes), pos_id)
+}
+
+/// `trim()`: strips ASCII whitespace (space `\t` `\n` `\r` `\f` `\v`,
+/// Q21) from both ends; an all-whitespace string becomes `""`.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_trim(ctx: *mut Context, s: *const u8, pos_id: u32) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_trim_with(ctx, s, pos_id, crate::strops::trim) }
+}
+
+/// `trimStart()`: strips leading ASCII whitespace (Q21).
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_trim_start(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_trim_with(ctx, s, pos_id, crate::strops::trim_start) }
+}
+
+/// `trimEnd()`: strips trailing ASCII whitespace (Q21).
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_trim_end(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_trim_with(ctx, s, pos_id, crate::strops::trim_end) }
+}
+
+/// `repeat(n)`: `n` copies; `repeat(0)` is `""`. A negative `n` traps
+/// (Q21; JS throws RangeError) and returns null.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_repeat(
+    ctx: *mut Context,
+    s: *const u8,
+    n: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if n < 0 {
+        ctx.trap(
+            TrapKind::StrRange,
+            format!("repeat({n}): the count must be non-negative"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    // SAFETY: live string handle. Copied out so the borrow does not
+    // overlap the mutable alloc call below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    ctx.alloc_str(&crate::strops::repeat(&bytes, n), pos_id)
+}
+
+/// Shared body of `padStart`/`padEnd` (Q21 byte lengths): pads with
+/// cyclic copies of `pad`, the final repeat truncated to the target
+/// length. An already-long-enough receiver returns a **fresh copy**
+/// with unchanged bytes (§8: documented choice — every §8 string
+/// result is a fresh Context allocation). An empty `pad` with
+/// `target > length` traps (Q21; JS silently returns the string
+/// unchanged, which hides bugs) and returns null.
+///
+/// # Safety
+///
+/// Shared contract; `s` and `pad` are live string handles.
+unsafe fn str_pad(
+    ctx: *mut Context,
+    s: *const u8,
+    target: i32,
+    pad: *const u8,
+    at_start: bool,
+    name: &str,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() || pad.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handles. Copied out so the borrows do not
+    // overlap the mutable trap/alloc calls below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    // SAFETY: live string handles.
+    let pad_bytes: Vec<u8> = unsafe { ctx.str_bytes(pad) }.to_vec();
+    if pad_bytes.is_empty() && (target.max(0) as usize) > bytes.len() {
+        ctx.trap(
+            TrapKind::StrRange,
+            format!(
+                "{name}({target}): an empty pad cannot reach the target length \
+                 (string length {})",
+                bytes.len()
+            ),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(&crate::strops::pad(&bytes, target, &pad_bytes, at_start), pos_id)
+}
+
+/// `padStart(len, pad)` — see [`str_pad`]. The checker supplies the
+/// defaulted `pad` (`" "`).
+///
+/// # Safety
+///
+/// Shared contract; `s` and `pad` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_pad_start(
+    ctx: *mut Context,
+    s: *const u8,
+    target: i32,
+    pad: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_pad(ctx, s, target, pad, true, "padStart", pos_id) }
+}
+
+/// `padEnd(len, pad)` — see [`str_pad`]. The checker supplies the
+/// defaulted `pad` (`" "`).
+///
+/// # Safety
+///
+/// Shared contract; `s` and `pad` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_pad_end(
+    ctx: *mut Context,
+    s: *const u8,
+    target: i32,
+    pad: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_pad(ctx, s, target, pad, false, "padEnd", pos_id) }
+}
+
+/// Shared body of the case mappings: maps via `map`, allocates the
+/// fresh result.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+unsafe fn str_case_with(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+    map: fn(&[u8]) -> Vec<u8>,
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handle. Copied out so the borrow does not
+    // overlap the mutable alloc call below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    ctx.alloc_str(&map(&bytes), pos_id)
+}
+
+/// `toUpperCase()`: ASCII `a–z` only (Q21).
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_to_upper(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_case_with(ctx, s, pos_id, crate::strops::to_upper) }
+}
+
+/// `toLowerCase()`: ASCII `A–Z` only (Q21).
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_to_lower(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract (forwarded).
+    unsafe { str_case_with(ctx, s, pos_id, crate::strops::to_lower) }
+}
+
+/// `replace(pat, repl)`: first occurrence, literal (`$` substitution
+/// patterns are not interpreted, Q21).
+///
+/// # Safety
+///
+/// Shared contract; `s`, `pat`, and `repl` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_replace(
+    ctx: *mut Context,
+    s: *const u8,
+    pat: *const u8,
+    repl: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() || pat.is_null() || repl.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handles. Copied out so the borrows do not
+    // overlap the mutable alloc call below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    // SAFETY: live string handles.
+    let pat: Vec<u8> = unsafe { ctx.str_bytes(pat) }.to_vec();
+    // SAFETY: live string handles.
+    let repl: Vec<u8> = unsafe { ctx.str_bytes(repl) }.to_vec();
+    ctx.alloc_str(&crate::strops::replace_first(&bytes, &pat, &repl), pos_id)
+}
+
+/// `replaceAll(pat, repl)`: every occurrence in one left-to-right pass
+/// (a replacement is never rescanned), literal (Q21). An empty `pat`
+/// traps (JS inserts between every unit) and returns null.
+///
+/// # Safety
+///
+/// Shared contract; `s`, `pat`, and `repl` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_replace_all(
+    ctx: *mut Context,
+    s: *const u8,
+    pat: *const u8,
+    repl: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() || pat.is_null() || repl.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handles. Copied out so the borrows do not
+    // overlap the mutable trap/alloc calls below.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    // SAFETY: live string handles.
+    let pat: Vec<u8> = unsafe { ctx.str_bytes(pat) }.to_vec();
+    // SAFETY: live string handles.
+    let repl: Vec<u8> = unsafe { ctx.str_bytes(repl) }.to_vec();
+    if pat.is_empty() {
+        ctx.trap(
+            TrapKind::StrRange,
+            "replaceAll(\"\", ...): an empty pattern is not accepted",
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(&crate::strops::replace_all(&bytes, &pat, &repl), pos_id)
+}
+
 // ----- Q14 formatting -----
 
 /// Formats an `i32` (Q14).
@@ -996,6 +1499,190 @@ mod tests {
         let r = ctx.trap_record().expect("trap");
         assert_eq!(r.kind, TrapKind::StringSlice);
         assert_eq!(r.pos_id, 42);
+    }
+
+    #[test]
+    fn ffi_str_search_predicates() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        static S: &[u8] = b"hello world";
+        // SAFETY: valid context; literal data is 'static.
+        unsafe {
+            let s = sub_rt_str_lit(p, S.as_ptr(), S.len() as u64, 0);
+            let o = sub_rt_str_lit(p, b"o".as_ptr(), 1, 0);
+            let empty = sub_rt_str_lit(p, b"".as_ptr(), 0, 0);
+            let world = sub_rt_str_lit(p, b"world".as_ptr(), 5, 0);
+            assert_eq!(sub_rt_str_index_of(p, s, o, 0), 4);
+            assert_eq!(sub_rt_str_index_of(p, s, o, 5), 7);
+            assert_eq!(sub_rt_str_index_of(p, s, o, -3), 4);
+            assert_eq!(sub_rt_str_index_of(p, s, o, 99), -1);
+            assert_eq!(sub_rt_str_index_of(p, s, empty, 99), 11);
+            assert_eq!(sub_rt_str_last_index_of(p, s, o), 7);
+            assert_eq!(sub_rt_str_last_index_of(p, s, empty), 11);
+            assert_eq!(sub_rt_str_includes(p, s, world, 0), 1);
+            assert_eq!(sub_rt_str_includes(p, s, world, 7), 0);
+            assert_eq!(sub_rt_str_includes(p, s, empty, 0), 1);
+            assert_eq!(sub_rt_str_starts_with(p, s, world), 0);
+            assert_eq!(sub_rt_str_ends_with(p, s, world), 1);
+            assert_eq!(sub_rt_str_char_code_at(p, s, 0, 0), 104);
+        }
+        // The predicates never trap.
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_str_char_code_at_out_of_range_traps() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context; literal data is 'static.
+        unsafe {
+            let s = sub_rt_str_lit(p, b"abc".as_ptr(), 3, 0);
+            assert_eq!(sub_rt_str_char_code_at(p, s, 3, 17), 0);
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::StrRange);
+        assert_eq!(r.pos_id, 17);
+        assert!(r.message.contains("charCodeAt(3)"));
+    }
+
+    #[test]
+    fn ffi_str_split_builds_a_string_array_of_handles() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        static S: &[u8] = b",a,";
+        // SAFETY: valid context; handles are live; elements are 8-byte
+        // string handles read back through array_data.
+        unsafe {
+            let s = sub_rt_str_lit(p, S.as_ptr(), S.len() as u64, 0);
+            let comma = sub_rt_str_lit(p, b",".as_ptr(), 1, 0);
+            let arr = sub_rt_str_split(p, s, comma, 0);
+            assert!(!arr.is_null());
+            assert_eq!(sub_rt_array_len(p, arr), 3);
+            let data = sub_rt_array_data(p, arr) as *const u64;
+            let expected: [&[u8]; 3] = [b"", b"a", b""];
+            for (i, want) in expected.iter().enumerate() {
+                let h = data.add(i).read() as *const u8;
+                assert_eq!(ctx.str_bytes(h), *want, "piece {i}");
+            }
+        }
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_str_split_empty_separator_traps() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context; literal data is 'static.
+        unsafe {
+            let s = sub_rt_str_lit(p, b"ab".as_ptr(), 2, 0);
+            let empty = sub_rt_str_lit(p, b"".as_ptr(), 0, 0);
+            assert!(sub_rt_str_split(p, s, empty, 23).is_null());
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::StrRange);
+        assert_eq!(r.pos_id, 23);
+    }
+
+    #[test]
+    fn ffi_str_trim_family_and_case_allocate_fresh_strings() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        static S: &[u8] = b"  x\t";
+        // SAFETY: valid context; handles are live.
+        unsafe {
+            let s = sub_rt_str_lit(p, S.as_ptr(), S.len() as u64, 0);
+            let t = sub_rt_str_trim(p, s, 0);
+            assert_eq!(ctx.str_bytes(t), b"x");
+            let ts = sub_rt_str_trim_start(p, s, 0);
+            assert_eq!(ctx.str_bytes(ts), b"x\t");
+            let te = sub_rt_str_trim_end(p, s, 0);
+            assert_eq!(ctx.str_bytes(te), b"  x");
+            let mixed = sub_rt_str_lit(p, b"mIx 3!".as_ptr(), 6, 0);
+            let up = sub_rt_str_to_upper(p, mixed, 0);
+            assert_eq!(ctx.str_bytes(up), b"MIX 3!");
+            let low = sub_rt_str_to_lower(p, up, 0);
+            assert_eq!(ctx.str_bytes(low), b"mix 3!");
+            // Fresh allocations, not the receiver handle.
+            assert_ne!(te, s as *mut u8);
+        }
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_str_repeat_and_negative_count_trap() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context; handles are live.
+        unsafe {
+            let s = sub_rt_str_lit(p, b"ab".as_ptr(), 2, 0);
+            let three = sub_rt_str_repeat(p, s, 3, 0);
+            assert_eq!(ctx.str_bytes(three), b"ababab");
+            let zero = sub_rt_str_repeat(p, s, 0, 0);
+            assert_eq!(ctx.str_bytes(zero), b"");
+            assert!(ctx.trap_record().is_none());
+            assert!(sub_rt_str_repeat(p, s, -1, 31).is_null());
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::StrRange);
+        assert_eq!(r.pos_id, 31);
+    }
+
+    #[test]
+    fn ffi_str_pad_truncation_no_op_copy_and_empty_pad_trap() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context; handles are live.
+        unsafe {
+            let s = sub_rt_str_lit(p, b"ab".as_ptr(), 2, 0);
+            let xy = sub_rt_str_lit(p, b"xy".as_ptr(), 2, 0);
+            // The pinned JS truncation rule: "ab" to 5 with "xy".
+            let start = sub_rt_str_pad_start(p, s, 5, xy, 0);
+            assert_eq!(ctx.str_bytes(start), b"xyxab");
+            let end = sub_rt_str_pad_end(p, s, 5, xy, 0);
+            assert_eq!(ctx.str_bytes(end), b"abxyx");
+            // Already long enough: unchanged bytes, fresh allocation.
+            let same = sub_rt_str_pad_start(p, s, 2, xy, 0);
+            assert_eq!(ctx.str_bytes(same), b"ab");
+            assert_ne!(same, s as *mut u8);
+            // Empty pad with no fill needed is the documented no-op.
+            let empty = sub_rt_str_lit(p, b"".as_ptr(), 0, 0);
+            let noop = sub_rt_str_pad_end(p, s, 2, empty, 0);
+            assert_eq!(ctx.str_bytes(noop), b"ab");
+            assert!(ctx.trap_record().is_none());
+            // Empty pad that must fill traps (Q21).
+            assert!(sub_rt_str_pad_start(p, s, 5, empty, 37).is_null());
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::StrRange);
+        assert_eq!(r.pos_id, 37);
+        assert!(r.message.contains("padStart"));
+    }
+
+    #[test]
+    fn ffi_str_replace_first_all_and_empty_pattern_trap() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context; handles are live.
+        unsafe {
+            let s = sub_rt_str_lit(p, b"abcabc".as_ptr(), 6, 0);
+            let bc = sub_rt_str_lit(p, b"bc".as_ptr(), 2, 0);
+            let x = sub_rt_str_lit(p, b"X".as_ptr(), 1, 0);
+            let first = sub_rt_str_replace(p, s, bc, x, 0);
+            assert_eq!(ctx.str_bytes(first), b"aXabc");
+            let all = sub_rt_str_replace_all(p, s, bc, x, 0);
+            assert_eq!(ctx.str_bytes(all), b"aXaX");
+            assert!(ctx.trap_record().is_none());
+            let empty = sub_rt_str_lit(p, b"".as_ptr(), 0, 0);
+            // replace accepts an empty pattern (match at 0)...
+            let prefixed = sub_rt_str_replace(p, s, empty, x, 0);
+            assert_eq!(ctx.str_bytes(prefixed), b"Xabcabc");
+            assert!(ctx.trap_record().is_none());
+            // ...replaceAll traps on it (Q21).
+            assert!(sub_rt_str_replace_all(p, s, empty, x, 41).is_null());
+        }
+        let r = ctx.trap_record().expect("trap");
+        assert_eq!(r.kind, TrapKind::StrRange);
+        assert_eq!(r.pos_id, 41);
     }
 
     #[test]

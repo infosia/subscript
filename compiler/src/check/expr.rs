@@ -6,7 +6,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
-use crate::hir::{self, AmbientFn, BinOp, Callee, DateFn, ExprKind, MathFn, TplPart, UnOp};
+use crate::hir::{self, AmbientFn, BinOp, Callee, DateFn, ExprKind, MathFn, StrFn, TplPart, UnOp};
 use crate::types::{FuncType, Type};
 
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
@@ -1509,6 +1509,126 @@ impl<'p> Checker<'p> {
         self.error(RuleCode::S014, why, pos);
     }
 
+    /// A `String` method intrinsic call on a string receiver
+    /// (stdlib.md §8, Q21). Optional arguments are normalized here —
+    /// `from` defaults to `0`, `pad` to `" "` — so every runtime symbol
+    /// has a fixed arity and both tiers lower the identical call (the
+    /// Date.UTC technique, §3). The receiver becomes the call's first
+    /// argument.
+    fn check_str_method(
+        &mut self,
+        recv: hir::Expr,
+        f: StrFn,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let optional_from = matches!(f, StrFn::IndexOf | StrFn::Includes);
+        let optional_pad = matches!(f, StrFn::PadStart | StrFn::PadEnd);
+        let params: Vec<ParamSig> = f
+            .params()
+            .iter()
+            .enumerate()
+            .map(|(i, p)| ParamSig {
+                name: String::new(),
+                ty: match p {
+                    hir::StrParam::Str => Type::Str,
+                    hir::StrParam::I32 => Type::I32,
+                },
+                has_default: i == 1 && (optional_from || optional_pad),
+            })
+            .collect();
+        let mut args = self.check_args(&params, &c.args, fx, &pos, f.name());
+        if args.len() + 1 == params.len() {
+            if optional_from {
+                args.push(hir::Expr {
+                    kind: ExprKind::Int(0),
+                    ty: Type::I32,
+                    pos: pos.clone(),
+                });
+            } else if optional_pad {
+                args.push(hir::Expr {
+                    kind: ExprKind::Str(" ".to_string()),
+                    ty: Type::Str,
+                    pos: pos.clone(),
+                });
+            }
+        }
+        let ty = match f.ret() {
+            hir::StrRet::I32 => Type::I32,
+            hir::StrRet::Bool => Type::Bool,
+            hir::StrRet::Str => Type::Str,
+            hir::StrRet::StrArray => Type::Array(Box::new(Type::Str)),
+        };
+        let mut all = Vec::with_capacity(1 + args.len());
+        all.push(recv);
+        all.extend(args);
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Str(f),
+                args: all,
+            },
+            ty,
+            pos,
+        }
+    }
+
+    /// Emits the Q21 rejection for a known out-of-subset `String`
+    /// member, naming the member and pointing at the accepted spelling;
+    /// returns `false` when `name` is not in the rejected set (the
+    /// caller then falls back to the generic surface diagnostic).
+    fn str_subset_rejection(&mut self, name: &str, pos: Pos) -> bool {
+        const REDUNDANT_WITH_SLICE: &[&str] = &["substring", "substr", "at", "charAt"];
+        const LOCALE_OR_UNICODE: &[&str] = &[
+            "localeCompare",
+            "toLocaleUpperCase",
+            "toLocaleLowerCase",
+            "normalize",
+        ];
+        const REGEX: &[&str] = &["match", "matchAll", "search"];
+        let why = if REDUNDANT_WITH_SLICE.contains(&name) {
+            format!(
+                "`{}` is redundant with the byte-measure `slice`; out of the \
+                 accepted String subset (Q21)",
+                name
+            )
+        } else if LOCALE_OR_UNICODE.contains(&name) {
+            format!(
+                "`{}` is locale- or Unicode-table-dependent; the accepted String \
+                 subset is ASCII/byte-based (Q21)",
+                name
+            )
+        } else if REGEX.contains(&name) {
+            format!("`{}` requires RegExp, a stdlib non-goal (Q21)", name)
+        } else if name == "concat" {
+            "`concat` is redundant with `+` concatenation; out of the accepted \
+             String subset (Q21)"
+                .to_string()
+        } else if name == "codePointAt" {
+            "`codePointAt` is outside the accepted String subset; `charCodeAt` \
+             reads byte values (Q21)"
+                .to_string()
+        } else {
+            return false;
+        };
+        self.error(RuleCode::S014, why, pos);
+        true
+    }
+
+    /// The generic out-of-surface diagnostic for a string member that is
+    /// neither accepted nor in the named Q21 rejected set.
+    fn str_surface_error(&mut self, name: &str, pos: Pos) {
+        self.error(
+            RuleCode::S100,
+            format!(
+                "`{}` is outside the string surface (length, slice, `+` \
+                 concatenation, `===`/`!==`, and the Q21 String methods)",
+                name
+            ),
+            pos,
+        );
+    }
+
     fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
         let pos = self.pos(m.span);
         match &m.prop {
@@ -1669,15 +1789,20 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
-                self.error(
-                    RuleCode::S100,
-                    format!(
-                        "`{}` is outside the string surface (length, slice, `+` \
-                         concatenation, `===`/`!==`)",
-                        name
-                    ),
-                    prop_pos.clone(),
-                );
+                // A member on a string outside a call position
+                // (stdlib.md §8): the accepted members beyond `length`
+                // are all methods.
+                if !for_write
+                    && (name == "slice" || crate::ambient::str_method(name).is_some())
+                {
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{}` may only be called, not read as a value", name),
+                        prop_pos.clone(),
+                    );
+                } else if !self.str_subset_rejection(name, prop_pos.clone()) {
+                    self.str_surface_error(name, prop_pos.clone());
+                }
                 self.err_expr(prop_pos)
             }
             Type::IterResult(v) => {
@@ -2318,15 +2443,13 @@ impl<'p> Checker<'p> {
                     mk(recv, args, Type::Str, pos)
                 }
                 other => {
-                    self.error(
-                        RuleCode::S100,
-                        format!(
-                            "`{}` is outside the string surface (length, slice, `+` \
-                             concatenation, `===`/`!==`)",
-                            other
-                        ),
-                        prop_pos.clone(),
-                    );
+                    // The §8 method intrinsics (stdlib.md §8, Q21).
+                    if let Some(f) = crate::ambient::str_method(other) {
+                        return self.check_str_method(recv, f, c, fx, pos);
+                    }
+                    if !self.str_subset_rejection(other, prop_pos.clone()) {
+                        self.str_surface_error(other, prop_pos.clone());
+                    }
                     self.err_expr(pos)
                 }
             },

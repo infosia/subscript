@@ -567,6 +567,201 @@ impl DateFn {
     }
 }
 
+/// `String` intrinsic methods (stdlib.md §8): the accepted Q21 subset,
+/// lowered by both tiers to opaque `sub_rt_str_*` runtime symbols. Every
+/// index, length, and code unit is a **byte** measure (Q21); case
+/// mapping and whitespace are ASCII-only; range and argument errors
+/// trap. The receiver is always the call's first argument. The checker
+/// normalizes the optional arguments (`from` → 0, `pad` → `" "`) at
+/// check time, so every runtime symbol has a fixed arity (the Date.UTC
+/// technique, §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum StrFn {
+    /// `indexOf(needle, from)` — byte index or −1; `from` clamped to
+    /// `[0, length]`; an empty needle returns the clamped `from`.
+    IndexOf,
+    /// `lastIndexOf(needle)` — last byte index or −1; an empty needle
+    /// returns the length.
+    LastIndexOf,
+    /// `includes(needle, from)`.
+    Includes,
+    /// `startsWith(needle)`.
+    StartsWith,
+    /// `endsWith(needle)`.
+    EndsWith,
+    /// `charCodeAt(i)` — the byte value 0–255; out of range traps.
+    CharCodeAt,
+    /// `split(sep)` — `string[]`; an empty separator traps.
+    Split,
+    /// `trim()` — ASCII whitespace only.
+    Trim,
+    /// `trimStart()`.
+    TrimStart,
+    /// `trimEnd()`.
+    TrimEnd,
+    /// `repeat(n)` — `n < 0` traps; `repeat(0)` is `""`.
+    Repeat,
+    /// `padStart(len, pad)` — an empty `pad` with `len > length` traps.
+    PadStart,
+    /// `padEnd(len, pad)` — same trap rule as `padStart`.
+    PadEnd,
+    /// `toUpperCase()` — ASCII a–z only.
+    ToUpperCase,
+    /// `toLowerCase()` — ASCII A–Z only.
+    ToLowerCase,
+    /// `replace(pat, repl)` — first occurrence, literal (`$` is not
+    /// interpreted, Q21).
+    Replace,
+    /// `replaceAll(pat, repl)` — all occurrences, literal; an empty
+    /// `pat` traps.
+    ReplaceAll,
+}
+
+/// Argument spelling of one [`StrFn`] parameter after the receiver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StrParam {
+    /// A string handle.
+    Str,
+    /// An `i32` byte index / count / length.
+    I32,
+}
+
+/// Result spelling of a [`StrFn`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StrRet {
+    /// `i32` (byte index or byte value).
+    I32,
+    /// `boolean` (the runtime symbol returns `i32` 0/1).
+    Bool,
+    /// A freshly allocated string handle.
+    Str,
+    /// A freshly allocated `string[]` handle.
+    StrArray,
+}
+
+impl StrFn {
+    /// Every accepted `String` method, in declaration order; the index
+    /// of each variant equals its discriminant, so `f as usize` indexes
+    /// tables built from this list.
+    pub const ALL: [StrFn; 17] = [
+        StrFn::IndexOf,
+        StrFn::LastIndexOf,
+        StrFn::Includes,
+        StrFn::StartsWith,
+        StrFn::EndsWith,
+        StrFn::CharCodeAt,
+        StrFn::Split,
+        StrFn::Trim,
+        StrFn::TrimStart,
+        StrFn::TrimEnd,
+        StrFn::Repeat,
+        StrFn::PadStart,
+        StrFn::PadEnd,
+        StrFn::ToUpperCase,
+        StrFn::ToLowerCase,
+        StrFn::Replace,
+        StrFn::ReplaceAll,
+    ];
+
+    /// The lib member name (the checker's lookup and diagnostics).
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            StrFn::IndexOf => "indexOf",
+            StrFn::LastIndexOf => "lastIndexOf",
+            StrFn::Includes => "includes",
+            StrFn::StartsWith => "startsWith",
+            StrFn::EndsWith => "endsWith",
+            StrFn::CharCodeAt => "charCodeAt",
+            StrFn::Split => "split",
+            StrFn::Trim => "trim",
+            StrFn::TrimStart => "trimStart",
+            StrFn::TrimEnd => "trimEnd",
+            StrFn::Repeat => "repeat",
+            StrFn::PadStart => "padStart",
+            StrFn::PadEnd => "padEnd",
+            StrFn::ToUpperCase => "toUpperCase",
+            StrFn::ToLowerCase => "toLowerCase",
+            StrFn::Replace => "replace",
+            StrFn::ReplaceAll => "replaceAll",
+        }
+    }
+
+    /// The opaque runtime symbol both tiers call.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            StrFn::IndexOf => "sub_rt_str_index_of",
+            StrFn::LastIndexOf => "sub_rt_str_last_index_of",
+            StrFn::Includes => "sub_rt_str_includes",
+            StrFn::StartsWith => "sub_rt_str_starts_with",
+            StrFn::EndsWith => "sub_rt_str_ends_with",
+            StrFn::CharCodeAt => "sub_rt_str_char_code_at",
+            StrFn::Split => "sub_rt_str_split",
+            StrFn::Trim => "sub_rt_str_trim",
+            StrFn::TrimStart => "sub_rt_str_trim_start",
+            StrFn::TrimEnd => "sub_rt_str_trim_end",
+            StrFn::Repeat => "sub_rt_str_repeat",
+            StrFn::PadStart => "sub_rt_str_pad_start",
+            StrFn::PadEnd => "sub_rt_str_pad_end",
+            StrFn::ToUpperCase => "sub_rt_str_to_upper",
+            StrFn::ToLowerCase => "sub_rt_str_to_lower",
+            StrFn::Replace => "sub_rt_str_replace",
+            StrFn::ReplaceAll => "sub_rt_str_replace_all",
+        }
+    }
+
+    /// Parameter spellings after the receiver, post-normalization (the
+    /// checker has already supplied the defaulted `from`/`pad`).
+    #[must_use]
+    pub fn params(self) -> &'static [StrParam] {
+        match self {
+            StrFn::IndexOf | StrFn::Includes => &[StrParam::Str, StrParam::I32],
+            StrFn::LastIndexOf | StrFn::StartsWith | StrFn::EndsWith | StrFn::Split => {
+                &[StrParam::Str]
+            }
+            StrFn::CharCodeAt | StrFn::Repeat => &[StrParam::I32],
+            StrFn::Trim
+            | StrFn::TrimStart
+            | StrFn::TrimEnd
+            | StrFn::ToUpperCase
+            | StrFn::ToLowerCase => &[],
+            StrFn::PadStart | StrFn::PadEnd => &[StrParam::I32, StrParam::Str],
+            StrFn::Replace | StrFn::ReplaceAll => &[StrParam::Str, StrParam::Str],
+        }
+    }
+
+    /// Result spelling.
+    #[must_use]
+    pub fn ret(self) -> StrRet {
+        match self {
+            StrFn::IndexOf | StrFn::LastIndexOf | StrFn::CharCodeAt => StrRet::I32,
+            StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => StrRet::Bool,
+            StrFn::Split => StrRet::StrArray,
+            _ => StrRet::Str,
+        }
+    }
+
+    /// Whether the runtime symbol takes a trailing `pos_id`: true for
+    /// every operation that can trap — a Q21 range/argument fault or a
+    /// Context allocation (every string/array-returning method
+    /// allocates). The pure search predicates take none.
+    #[must_use]
+    pub fn takes_pos_id(self) -> bool {
+        !matches!(
+            self,
+            StrFn::IndexOf
+                | StrFn::LastIndexOf
+                | StrFn::Includes
+                | StrFn::StartsWith
+                | StrFn::EndsWith
+        )
+    }
+}
+
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -584,6 +779,10 @@ pub enum Callee {
     /// / `Date.now` statics, the UTC accessors, and `toISOString`. For
     /// the instance operations the receiver is the first argument.
     Date(DateFn),
+    /// A `String` method intrinsic (stdlib.md §8, Q21). The receiver is
+    /// the first argument; optional arguments were normalized at check
+    /// time, so the arity is `1 + f.params().len()` exactly.
+    Str(StrFn),
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members
@@ -789,6 +988,56 @@ mod tests {
         }
         assert_eq!(DateFn::ToIso.name(), "toISOString");
         assert_eq!(DateFn::Utc.name(), "UTC");
+    }
+
+    #[test]
+    fn str_fn_all_is_indexed_by_discriminant() {
+        // Runtime-import tables index by `f as usize`; the ALL order
+        // must therefore equal declaration order.
+        for (i, f) in StrFn::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, i, "StrFn::ALL out of order at {i}");
+        }
+    }
+
+    #[test]
+    fn str_fn_shapes_match_the_section_8_contract() {
+        use StrParam as P;
+        // Post-normalization parameter spellings (stdlib.md §8).
+        assert_eq!(StrFn::IndexOf.params(), &[P::Str, P::I32]);
+        assert_eq!(StrFn::Includes.params(), &[P::Str, P::I32]);
+        assert_eq!(StrFn::LastIndexOf.params(), &[P::Str]);
+        assert_eq!(StrFn::CharCodeAt.params(), &[P::I32]);
+        assert_eq!(StrFn::Trim.params(), &[] as &[P]);
+        assert_eq!(StrFn::PadStart.params(), &[P::I32, P::Str]);
+        assert_eq!(StrFn::ReplaceAll.params(), &[P::Str, P::Str]);
+        // Result spellings.
+        assert_eq!(StrFn::IndexOf.ret(), StrRet::I32);
+        assert_eq!(StrFn::CharCodeAt.ret(), StrRet::I32);
+        assert_eq!(StrFn::Includes.ret(), StrRet::Bool);
+        assert_eq!(StrFn::EndsWith.ret(), StrRet::Bool);
+        assert_eq!(StrFn::Split.ret(), StrRet::StrArray);
+        assert_eq!(StrFn::Trim.ret(), StrRet::Str);
+        assert_eq!(StrFn::ReplaceAll.ret(), StrRet::Str);
+        // pos_id: only the five pure search predicates take none.
+        for f in StrFn::ALL {
+            let pure = matches!(
+                f,
+                StrFn::IndexOf
+                    | StrFn::LastIndexOf
+                    | StrFn::Includes
+                    | StrFn::StartsWith
+                    | StrFn::EndsWith
+            );
+            assert_eq!(f.takes_pos_id(), !pure, "pos_id of {}", f.name());
+        }
+        // Symbols follow the sub_rt_str_* convention, distinctly.
+        let mut symbols: Vec<&str> = StrFn::ALL.iter().map(|f| f.symbol()).collect();
+        symbols.sort_unstable();
+        symbols.dedup();
+        assert_eq!(symbols.len(), StrFn::ALL.len());
+        assert!(StrFn::ALL.iter().all(|f| f.symbol().starts_with("sub_rt_str_")));
+        assert_eq!(StrFn::ToUpperCase.symbol(), "sub_rt_str_to_upper");
+        assert_eq!(StrFn::CharCodeAt.name(), "charCodeAt");
     }
 
     #[test]

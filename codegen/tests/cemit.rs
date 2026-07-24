@@ -146,6 +146,78 @@ fn ship_c_aot_reports_a_to_iso_year_range_trap() {
     }
 }
 
+/// Asserts both tiers trap with [`TrapKind::StrRange`] at `line` and
+/// with **identical** kind/message/position (stdlib.md §8: the four Q21
+/// trap paths report identically across tiers; the message text itself
+/// comes from the one shared runtime, so equality here pins that no
+/// tier adds its own wording).
+fn assert_str_range_trap_identical(src: &str, line: u32) {
+    let files = [SourceFile::new("test.ts", src)];
+    let mut reports = Vec::new();
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::StrRange, "{tier}");
+                assert_eq!(t.pos.file, "test.ts", "{tier}");
+                assert_eq!(t.pos.line, line, "{tier}");
+                reports.push((t.rule, t.message, t.pos));
+            }
+            other => panic!("{tier}: expected a StrRange trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
+fn string_char_code_at_out_of_range_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  const s: string = \"abc\";\n  print(`${s.charCodeAt(3)}`);\n}\n",
+        3,
+    );
+}
+
+#[test]
+fn string_repeat_negative_count_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  print(\"ab\".repeat(-1));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn string_split_empty_separator_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  const parts: string[] = \"ab\".split(\"\");\n  print(`${parts.length}`);\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn string_replace_all_empty_pattern_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  print(\"ab\".replaceAll(\"\", \"x\"));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn string_empty_pad_that_must_fill_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  print(\"ab\".padEnd(5, \"\"));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn string_methods_match_across_tiers_without_a_golden() {
+    // The committed a43 golden pins the full battery; this pins
+    // cross-tier agreement for a compact slice with computed (non-
+    // literal) receivers and arguments.
+    assert_tiers_agree(
+        "function part(xs: string[], i: i32): string {\n  return xs[i];\n}\nexport function main(): void {\n  const s: string = \"a\" + \"b,cb\";\n  const ps: string[] = s.split(\",\");\n  print(`${ps.length} ${part(ps, 0)} ${part(ps, 1)}`);\n  print(`${s.indexOf(part(ps, 1))} ${s.lastIndexOf(\"b\")} ${s.includes(\"b,\")}`);\n  print(s.toUpperCase().padStart(s.length + 2, \"_\").replaceAll(\"B\", \"x\"));\n}\n",
+    );
+}
+
 /// The a22 corpus entry and its frozen golden, compiled into the test so
 /// the measured program is exactly the committed file.
 const A22_SOURCE: &str = include_str!("../../corpus/accept/a22-matrix-propagation.ts");

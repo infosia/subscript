@@ -22,6 +22,7 @@ pub mod date;
 pub mod ffi;
 pub mod fmt;
 pub mod math;
+pub mod strops;
 pub mod trap;
 
 pub use context::Context;

@@ -1,0 +1,42 @@
+iof 4
+iofmiss -1
+ioffrom 7
+iofneg 4
+iofbeyond -1
+iofempty 0
+iofemptyfrom 11
+liof 7
+liofmiss -1
+liofempty 11
+inc true
+incfrom false
+incempty true
+starts true
+startsnot false
+ends true
+endsnot false
+cca 65
+ccalast 100
+split 4 a b [] c
+splitnone 1 ab
+splitedge 3 [] a []
+trim [x]
+trimstart [x	]
+trimend [  x]
+trimall []
+rep0 []
+rep1 ab
+rep3 ababab
+pads [  7]
+pade [7  ]
+padexact abc
+padlong abcd
+padtrunc xyxab
+padtrunce abxyx
+up MIX 3D!
+low mix 3d!
+rep baa
+repall aXaX
+repgrow aaaa
+repmiss abc
+repdollar x=$&

@@ -48,6 +48,12 @@ pub enum TrapKind {
     /// value beyond the ECMA TimeClip bound, or `toISOString` on a year
     /// outside 0000–9999. There is no Invalid-Date value.
     DateRange = 13,
+    /// A `String` method range or argument error (stdlib.md §8, Q21):
+    /// `charCodeAt` out of range, a negative `repeat` count, an empty
+    /// `split` separator, an empty `replaceAll` pattern, or an empty
+    /// pad that cannot reach the target length. JS returns NaN or a
+    /// silent no-op in these cases; the language traps.
+    StrRange = 14,
 }
 
 impl TrapKind {
@@ -68,6 +74,7 @@ impl TrapKind {
             11 => TrapKind::Internal,
             12 => TrapKind::StaleCoroutine,
             13 => TrapKind::DateRange,
+            14 => TrapKind::StrRange,
             _ => return None,
         })
     }
@@ -89,6 +96,7 @@ impl TrapKind {
             TrapKind::Internal => "internal",
             TrapKind::StaleCoroutine => "stale-coroutine-after-reload",
             TrapKind::DateRange => "date-range",
+            TrapKind::StrRange => "string-range",
         }
     }
 }
@@ -130,7 +138,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=13u32 {
+        for v in 1..=14u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
