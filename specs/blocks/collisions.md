@@ -186,6 +186,20 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q17** — decided in C2. **Q18** — `|`, `&`, `^`, `~`, shifts on `i64`/
   `u64` are true 64-bit operations (JS 32-bit truncation is not imported);
   on 32-bit types they match C. Mixed-width bitwise operands require `as`.
+- **Q19 (`Math`)** — the checker accepts a deterministic subset of the
+  lib's `Math` with `f64` signatures and ECMA result semantics
+  (`stdlib.md` §1). Rejected: `imul`/`clz32`/`fround` (JS-number ops;
+  the language has sized integers), variadic `max`/`min`/`hypot` (two
+  arguments only). `Math.random` diverges from JS: Context-seeded
+  deterministic PRNG, host-reseedable (`stdlib.md` §2).
+- **Q20 (`Date`)** — the checker accepts the UTC-deterministic subset
+  only, as an immutable value erasing to `i64` epoch millis
+  (`stdlib.md` §3); on that subset semantics equal JS on a UTC host.
+  Rejected: local-time accessors, setters, `parse`, `toString`
+  family, the multi-argument constructor (lib semantics are local
+  time — accepting it as UTC would silently change meaning), `Date`
+  in template literals. Out-of-range times trap; there is no
+  Invalid-Date value.
 
 ## 3. Open items carried forward
 
