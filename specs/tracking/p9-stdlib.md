@@ -131,3 +131,49 @@ folded constant (`Math.PI(1)` reports S100 — P9.1 MINOR 1); integer
 `Math.abs`/`min`/`max` overloads; further areas (`String` methods,
 `JSON`, `Array` methods beyond push/pop) each need their own
 contract + corpus before implementation.
+
+## P10 — `String` methods: COMPLETE (2026-07-25)
+
+17 byte-measure methods on `Type::Str` (stdlib.md §8, Q21):
+indexOf/lastIndexOf/includes/startsWith/endsWith/charCodeAt/split/
+trim×3/repeat/padStart/padEnd/toUpperCase/toLowerCase/replace/
+replaceAll. `StrFn` intrinsics; check-time optional-arg normalization
+(from→0, pad→" "); one runtime implementation (`strops.rs`) behind
+opaque `sub_rt_str_*` on both tiers; every string result is a fresh
+Context allocation (no interior pointers into the receiver); split
+builds `string[]` through the array machinery, element-identical to
+literal arrays on both tiers (FFI + cross-tier tests). Four Q21 trap
+paths + empty-pad: `TrapKind::StrRange`, kind/message/position
+identical across tiers (5 cemit tests). S014 rejects the
+out-of-subset lib members; `String` as global/constructor rejected
+via the standing unknown-name paths (pinned by unit test).
+
+Corpus a43 (42 lines; golden authored from a JS mirror on the Q21 ≡
+JS-on-ASCII rule, except the pinned `$`-literal divergence line) +
+r25–r28. Tests 344→376; golden floor 43; tsc clean.
+
+Phase Review (2026-07-25, fresh no-context): 0 CRITICAL, 1 MAJOR,
+4 MINOR. Probed 594 edge/randomized ASCII cases against node — zero
+divergence beyond the two Q21-pinned ones; non-ASCII bytes pass
+through case/trim untouched; every user i32 input clamp/try_from-
+guarded (no negative→usize bug); `String` shadowing safe in all
+scope forms (dispatch is on the receiver type — the P9.2 Date-shadow
+class does not recur).
+
+- MAJOR 1 (this entry): §5.5 benchmark at `58c0a1a` — ship rows
+  unchanged (tree 1.37×, sort 1.77×, particles 3.07×, compute-bound
+  0.93–1.05×; run noise only).
+- MINOR 1: this tracking entry.
+- MINOR 2 (fixed with this commit): §8 wording aligned — `String`
+  as value/constructor is S100 via standing paths, not S014.
+- MINOR 3 (follow-up, recorded): a >2 GiB string constructed via
+  `repeat`/`pad*` wraps i32 byte-length measures (pre-existing Q5
+  i32 convention; P10 adds the first easy constructors). Close by
+  trapping StrRange when a result would exceed i32::MAX bytes.
+- MINOR 4 (recorded): host-heap OOM in the strops intermediate Vecs
+  aborts (the documented FFI-boundary exception); Context-side
+  allocation failure traps.
+
+## P10 follow-ups (not scheduled)
+- StrRange trap for results > i32::MAX bytes (MINOR 3).
+- Dedicated S014 for `String` as global if S100 proves confusing.

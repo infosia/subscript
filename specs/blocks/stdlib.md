@@ -210,8 +210,10 @@ returning a string allocates via the Context):
 Rejected (S014, Q21): `substring`/`substr`/`at`/`charAt` (redundant
 with `slice`), `codePointAt`, `normalize`, `localeCompare`,
 `toLocaleUpperCase`/`LowerCase`, `match`/`matchAll`/`search` (regex),
-`concat` (redundant with `+`), `String.fromCharCode`/`raw` and `String`
-as a value or constructor (follow-up if needed).
+`concat` (redundant with `+`). `String.fromCharCode`/`raw` and `String`
+as a value or constructor are rejected through the standing
+unknown-name paths (S100; behavior pinned by unit test — a dedicated
+S014 is a follow-up if the diagnostic proves confusing).
 
 Corpus: `a43` string battery — every accepted member incl. the edges:
 `indexOf` miss −1 / empty needle 0 / `from` clamp; `lastIndexOf`;
