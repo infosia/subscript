@@ -350,3 +350,62 @@ deliverable.
 Next: P6.2 — descriptor-embedded `(count,pointer)` arrays, flag typedefs
 end-to-end, untyped-data facade; plus the emit.rs fail-loud/builtin
 mapping above.
+
+## P6.2 — production-C binding shapes: COMPLETE (2026-07-24)
+
+Three shapes a production header uses that the P5 fixture lacked, each a
+both-tier corpus entry with a committed golden (dev-JIT ≡ ship-C-AOT ≡
+golden, byte-exact):
+
+- **Descriptor-embedded `(count,pointer)` arrays** (a32, golden `105`):
+  a `size_t <n>Count` field immediately followed by a `const T* <n>`
+  field (count-first, contiguous — §13.2) maps the pointer to `T[]`,
+  count elided; both tiers fill (count@i, ptr@i+8) from one `T[]`,
+  byte-exact against the real C `offsetof`.
+- **Flag typedefs end-to-end** (a33, golden `1\n0`): `typedef uint64_t X;
+  static const X X_A = …;` → `type X = u64;` + folded `declare const`
+  members; combined with `|` (Q18 true 64-bit), passed to a foreign
+  bit-check.
+- **Untyped bulk-data facade** (a34, golden `1691665087`): a
+  `const void* data, size_t size` API + a typed slice facade (count→bytes)
+  binding a `f32[]` zero-copy — the writeBuffer-shape path.
+
+**Emitter hardened** (`bindgen/src/emit.rs`, `Result`-threaded): raw LP64
+builtins mapped (`int`→i32, `unsigned int`→u32, `long long`→i64,
+`unsigned long long`→u64; `float`/`double`); any base that is neither a
+mapped scalar/builtin nor a registered named type **fails loud** (`Err`,
+never a literal) — verified by probe (anonymous struct, `T**`, bare
+`char`, lone scalar pointer, `long`, `unsigned long` all error cleanly).
+`interop.h` regenerates byte-identical.
+
+Phase Review (2026-07-24): 0 CRITICAL, 1 MAJOR, 3 MINOR. Committed corpus
+sound and fully gated on both tiers. Fixed:
+
+- MAJOR M1: the embedded-array recognizer paired count/pointer by name
+  *anywhere* in a struct, but both lowerings reconstruct
+  count-first-immediately-before-pointer — so a pointer-first or
+  non-adjacent-count header regenerated a byte-identical mirror yet
+  mismarshaled on both tiers with no fail-loud. Recognizer narrowed to
+  the exact count-first-adjacent shape (§13.2 narrowed to match);
+  everything else leaves the pointer unmapped → fails loud. Verified: a
+  3-field ptr-before-count and a non-adjacent-count struct now `Err`
+  cleanly; count-first-adjacent and the standalone 2-field descriptor
+  unchanged.
+- MINOR m1: `long`/`unsigned long` (LP64-ambiguous; 32-bit on Windows
+  LLP64) dropped from the builtin map → bare `long` fails loud, so a
+  header must use `int64_t`/`long long`.
+- MINOR m2: a flag `static const` value > 2^53−1 (unrepresentable via the
+  f64 literal channel, C3 open item) now fails loud at bindgen instead of
+  silently truncating.
+- MINOR m3 (no change): ambient-literal→u64 folding is scoped to `.dts`
+  mirror files only; ordinary program `const` unaffected (confirmed by
+  the code path + suite).
+
+Verification (orchestrator): `cargo test --offline` 260/0, zero
+warnings; goldens unchanged; regen byte-identical; full-repo reference
+sweep clean; every fail-loud case reproduced independently. **P6.2
+COMPLETE.**
+
+Next: P6.3 — async callback model (§13.3), scaled offsetof over a
+production-shape fixture (§13.4), generic `--header` CLI + local
+real-header capability demo (§13.5).
