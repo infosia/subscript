@@ -5,7 +5,7 @@ subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
 
-## Purpose and honesty rules
+## Purpose and reporting rules
 
 - Report measured numbers, whatever they are. No subject is tuned to
   flatter subscript; no baseline is weakened.

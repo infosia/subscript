@@ -603,7 +603,8 @@ convention — `libsubscript_runtime.a` on Unix, `subscript_runtime.lib` on
 `*-pc-windows-msvc` (`SUBSCRIPT_RUNTIME_STATICLIB` overrides resolution
 entirely).
 
-Two more Windows-only link/output details keep the byte-exact gate honest.
+Two more Windows-only link/output details are required for the byte-exact
+gate.
 (1) A manual clang link of the runtime staticlib must add the Windows system
 import libraries `rustc` supplies automatically (`kernel32`, `ntdll`,
 `userenv`, `ws2_32`, `dbghelp` for the current toolchain — matched to

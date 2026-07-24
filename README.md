@@ -173,7 +173,7 @@ table with absolute times, methodology, and machine/runtime versions is in
 | sort | 1.00× | 1.77× | 3.70× | 2.28× | 1.45× | 1.83× |
 | particles | 1.00× | 3.07× | 10.35× | 3.84× | 1.90× | 3.58× |
 
-What the numbers show, honestly:
+What the numbers show:
 
 - **On compute-bound work the shipping tier reaches hand-written C** —
   mandelbrot and queen at 1.00×, primes at 0.97×, the fibonacci loops
@@ -191,7 +191,7 @@ What the numbers show, honestly:
   `sort` and `particles`, and JSC/V8 lead on `tree`, where
   garbage-collected bump allocation beats even C. The
   development-tier JIT (Cranelift, tuned for compile speed and hot reload,
-  not peak codegen) is uniformly slower — the honest price of the
+  not peak codegen) is uniformly slower — the price of the
   fast-iteration tier.
 
 This is one benchmark set on one machine; treat the ratios as indicative,
