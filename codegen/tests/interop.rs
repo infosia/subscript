@@ -186,6 +186,42 @@ fn chain_slot_address_of_via_assignment() {
     assert_eq!(both_tiers(&prog), b"7\n");
 }
 
+/// P6.3 async model: a completion callback is REGISTERED (subDeviceOnComplete)
+/// but not fired; intervening work runs; a host-driven pump (subDevicePump)
+/// fires it AFTER the registering call returned. The sink is 0 at
+/// registration and after the intervening submit, then nonzero after the
+/// pump — proving the deferred fire and that the userdata (and the
+/// Context-held callback binding behind it) outlived the registration.
+#[test]
+fn deferred_completion_callback_fires_on_pump() {
+    let prog = format!(
+        "{SINK}export function main(): void {{
+  const device: SubDevice = subDeviceCreate(null);
+  const sink: LogSink = new LogSink();
+  const info: SubCompletionInfo = new SubCompletionInfo(
+    (message, userdata) => {{
+      if (userdata !== null) {{
+        const s = userdata as LogSink;
+        s.count = s.count + message.length;
+      }}
+    }},
+    sink,
+  );
+  subDeviceOnComplete(device, info);
+  print(`${{sink.count}}`);
+  const commands: u32[] = [10, 20, 30];
+  subDeviceSubmit(device, commands);
+  print(`${{sink.count}}`);
+  subDevicePump(device);
+  print(`${{sink.count}}`);
+}}
+"
+    );
+    // Registered but not fired (0), still not fired after submit (0), fired by
+    // the pump with message length = submit sum (60) + chain depth (0) = 60.
+    assert_eq!(both_tiers(&prog), b"0\n0\n60\n");
+}
+
 /// All five patterns composed in one program (the P5.3 "compose all five"
 /// shape): chain + handle + string + (ptr,count) + callback with userdata.
 #[test]

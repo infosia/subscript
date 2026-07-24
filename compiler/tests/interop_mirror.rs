@@ -64,6 +64,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subDrawListTotal",
             "subBulkConsume",
             "subBulkConsumeF32",
+            // P6.3 async model: deferred-fire register + host pump; plus a
+            // production-scale embedded-array consumer.
+            "subDeviceOnComplete",
+            "subDevicePump",
+            "subCommandBufferTotal",
         ]
     );
 

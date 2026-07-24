@@ -125,6 +125,9 @@ extern "C" {
     fn subAccessMatches();
     fn subBulkConsume();
     fn subBulkConsumeF32();
+    fn subDeviceOnComplete();
+    fn subDevicePump();
+    fn subCommandBufferTotal();
 }
 
 /// Registers the foreign C-header symbols (`corpus/interop/interop.c`,
@@ -147,6 +150,9 @@ pub(crate) fn register_interop(builder: &mut JITBuilder) {
         ("subAccessMatches", subAccessMatches as *const u8),
         ("subBulkConsume", subBulkConsume as *const u8),
         ("subBulkConsumeF32", subBulkConsumeF32 as *const u8),
+        ("subDeviceOnComplete", subDeviceOnComplete as *const u8),
+        ("subDevicePump", subDevicePump as *const u8),
+        ("subCommandBufferTotal", subCommandBufferTotal as *const u8),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);

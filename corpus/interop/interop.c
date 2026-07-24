@@ -44,6 +44,11 @@ struct SubDevice_T {
     void *cb_userdata;
     size_t label_len;
     char label[128];
+    /* Deferred completion callback: STORED by subDeviceOnComplete, FIRED
+     * later by subDevicePump (P6.3 async model). Separate slots from the
+     * synchronous logger above so a device can carry both. */
+    SubLogCallback completion_cb;
+    void *completion_userdata;
 };
 
 /* Deterministic scratch used to synthesize a callback message of a given
@@ -207,4 +212,52 @@ int32_t subBulkConsume(const void *data, size_t size) {
  * The documented path for `void*`+byte-size APIs. */
 int32_t subBulkConsumeF32(SubSliceF32 data) {
     return subBulkConsume(data.items, data.count * sizeof(float));
+}
+
+/* ==== P6.3 async callback model (compiler.md §13.3) =================== */
+
+/* Registration: STORE the callback + userdata; return WITHOUT firing. This
+ * is the deferred model — unlike subDeviceSetLogger, which fires inside the
+ * registering call. The stored userdata is the runtime callback binding; it
+ * is Context-held and outlives this call (the Q13 lifetime rule), so a later
+ * pump can read it back. */
+void subDeviceOnComplete(SubDevice device, SubCompletionInfo info) {
+    if (device == NULL) {
+        return;
+    }
+    device->completion_cb = info.callback;
+    device->completion_userdata = info.userdata;
+}
+
+/* Host driver: fire the stored completion callback AFTER the registering
+ * call returned. The message length reports the device's accumulated work
+ * (submit sum + chain depth), so the callback observes work performed
+ * between registration and this fire. A no-op when nothing is registered. */
+void subDevicePump(SubDevice device) {
+    if (device == NULL || device->completion_cb == NULL) {
+        return;
+    }
+    long long n = device->acc + (long long)device->chain_depth;
+    if (n < 0) {
+        n = 0;
+    }
+    if (n > (long long)sizeof(sub_msgbuf)) {
+        n = (long long)sizeof(sub_msgbuf);
+    }
+    memset(sub_msgbuf, 'x', (size_t)n);
+    SubStringView msg;
+    msg.data = sub_msgbuf;
+    msg.len = (size_t)n;
+    device->completion_cb(msg, device->completion_userdata);
+}
+
+/* Descriptor-embedded (count, pointer) array at production scale: sum
+ * `queue` plus every command, reading the borrowed run zero-copy (as
+ * subDrawListTotal does for SubDrawList). */
+int32_t subCommandBufferTotal(SubCommandBuffer buf) {
+    long long sum = (long long)buf.queue;
+    for (size_t i = 0; i < buf.commandsCount; i++) {
+        sum += (long long)buf.commands[i];
+    }
+    return (int32_t)sum;
 }

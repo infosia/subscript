@@ -90,6 +90,170 @@ declare function subDrawListTotal(list: SubDrawList): i32;
 declare function subBulkConsume(data: object | null, size: u64): i32;
 declare function subBulkConsumeF32(data: f32[]): i32;
 
+declare class SubCompletionInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null);
+}
+
+declare function subDeviceOnComplete(device: SubDevice, info: SubCompletionInfo): void;
+declare function subDevicePump(device: SubDevice): void;
+
+declare class SubVec2 {
+  x: f32;
+  y: f32;
+  constructor(x: f32, y: f32);
+}
+
+declare class SubVec3 {
+  x: f32;
+  y: f32;
+  z: f32;
+  constructor(x: f32, y: f32, z: f32);
+}
+
+declare class SubVec4 {
+  x: f32;
+  y: f32;
+  z: f32;
+  w: f32;
+  constructor(x: f32, y: f32, z: f32, w: f32);
+}
+
+declare class SubRect {
+  x: i32;
+  y: i32;
+  width: u32;
+  height: u32;
+  constructor(x: i32, y: i32, width: u32, height: u32);
+}
+
+declare class SubRange {
+  offset: u64;
+  size: u64;
+  constructor(offset: u64, size: u64);
+}
+
+declare class SubColor {
+  r: f32;
+  g: f32;
+  b: f32;
+  a: f32;
+  constructor(r: f32, g: f32, b: f32, a: f32);
+}
+
+declare class SubTimings {
+  cpu: f64;
+  gpu: f64;
+  frame: i32;
+  constructor(cpu: f64, gpu: f64, frame: i32);
+}
+
+declare class SubMixed {
+  enabled: boolean;
+  id: i64;
+  visible: boolean;
+  ratio: f32;
+  constructor(enabled: boolean, id: i64, visible: boolean, ratio: f32);
+}
+
+declare class SubPadB {
+  head: i32;
+  mid: boolean;
+  tail: f64;
+  constructor(head: i32, mid: boolean, tail: f64);
+}
+
+declare class SubExtent {
+  width: u32;
+  height: u32;
+  depth: u32;
+  constructor(width: u32, height: u32, depth: u32);
+}
+
+declare class SubImageInfo {
+  extent: SubExtent;
+  mipLevels: u32;
+  usage: SubAccess;
+  constructor(extent: SubExtent, mipLevels: u32, usage: SubAccess);
+}
+
+declare class SubBounds {
+  min: SubVec3;
+  max: SubVec3;
+  constructor(min: SubVec3, max: SubVec3);
+}
+
+declare class SubViewport {
+  rect: SubRect;
+  depth: SubRange;
+  constructor(rect: SubRect, depth: SubRange);
+}
+
+declare class SubNodeInfo {
+  bounds: SubBounds;
+  id: u32;
+  tint: SubColor;
+  constructor(bounds: SubBounds, id: u32, tint: SubColor);
+}
+
+declare class SubChainExtC {
+  header: SubChainHeader;
+  offset: SubVec3;
+  flags: u32;
+  constructor(header: SubChainHeader, offset: SubVec3, flags: u32);
+}
+
+declare class SubChainExtD {
+  header: SubChainHeader;
+  scale: f64;
+  level: i64;
+  active: boolean;
+  constructor(header: SubChainHeader, scale: f64, level: i64, active: boolean);
+}
+
+declare class SubEventHeader {
+  kind: i32;
+  next: SubEventHeader | null;
+  constructor(kind: i32, next: SubEventHeader | null);
+}
+
+declare class SubEventKey {
+  header: SubEventHeader;
+  code: u32;
+  pressed: boolean;
+  constructor(header: SubEventHeader, code: u32, pressed: boolean);
+}
+
+declare class SubEventMove {
+  header: SubEventHeader;
+  dx: f32;
+  dy: f32;
+  constructor(header: SubEventHeader, dx: f32, dy: f32);
+}
+
+declare class SubPassInfo {
+  access: SubAccess;
+  width: u32;
+  height: u32;
+  constructor(access: SubAccess, width: u32, height: u32);
+}
+
+declare class SubResourceDesc {
+  usage: SubAccess;
+  range: SubRange;
+  count: u32;
+  constructor(usage: SubAccess, range: SubRange, count: u32);
+}
+
+declare class SubCommandBuffer {
+  queue: u32;
+  commands: u32[];
+  constructor(queue: u32, commands: u32[]);
+}
+
+declare function subCommandBufferTotal(buf: SubCommandBuffer): i32;
+
 type SubAccess = u64;
 declare const SUB_ACCESS_NONE = 0;
 declare const SUB_ACCESS_READ = 1;

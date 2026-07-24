@@ -29,10 +29,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // no edit here. The floor is the committed count, so deleting a
     // golden fails this test instead of silently shrinking the gate
     // (compiler.md §2 — goldens are never deleted). The floor is the
-    // run set (a01–a24) plus the P5 interop entries (a25–a31).
+    // run set (a01–a24) plus the interop entries (a25–a34 P5/P6.2, a35
+    // P6.3 async).
     assert!(
-        golden_ids.len() >= 34,
-        "expected at least the 34 committed goldens (a01–a24 run set + a25–a34 interop), found {}",
+        golden_ids.len() >= 35,
+        "expected at least the 35 committed goldens (a01–a24 run set + a25–a35 interop), found {}",
         golden_ids.len()
     );
 

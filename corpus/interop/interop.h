@@ -226,4 +226,192 @@ int32_t subDrawListTotal(SubDrawList list);
 int32_t subBulkConsume(const void *data, size_t size);
 int32_t subBulkConsumeF32(SubSliceF32 data);
 
+/* ==== P6.3 async callback model (compiler.md §13.3) =================== *
+ *
+ * Production callbacks register a callback-info NOW and fire it LATER,
+ * host-driven, unlike P5's synchronous single fire (a28 / subDeviceSetLogger,
+ * which fires inside the registering call). subDeviceOnComplete STORES the
+ * callback + userdata in the device and returns without firing;
+ * subDevicePump is the host driver that fires the stored callback AFTER the
+ * registering call returned. The userdata-lifetime rule (Q13: userdata must
+ * outlive the registration) is what makes the deferred fire correct — the
+ * runtime's callback binding is Context-held (lives for the whole run), so
+ * the binding stored at registration is still valid when a later pump reads
+ * it back. The message pump fires carries a length derived from the device's
+ * accumulated work (subDeviceSubmit's running sum plus chain depth), so the
+ * callback observes work that happened BETWEEN registration and fire. */
+
+typedef struct SubCompletionInfo {
+    SubLogCallback callback;
+    void *userdata;
+} SubCompletionInfo;
+
+void subDeviceOnComplete(SubDevice device, SubCompletionInfo info);
+void subDevicePump(SubDevice device);
+
+/* ==== P6.3 production-scale layout fixture (compiler.md §13.4) ======== *
+ *
+ * The P5 offsetof proof (§12.3) covered ~8 structs. These carry it to
+ * production scale/complexity — dozens of structs mixing varied
+ * scalar/padding layouts, nested by-value structs, flag-typedef fields,
+ * intrusive chains, and descriptor-embedded arrays — so the offsetof suite
+ * proves the C-ABI layout identity (invariant 1) holds at that scale. All
+ * neutral and `Sub`-prefixed; no external API is named. Only C
+ * structs/enums/pointers here (no unions, no bitfields — §12.1). The
+ * two-field `{ const T*; size_t }` slice descriptors above (SubSlice*) are
+ * also layout-proven; the offsetof suite mirrors them by their raw pair
+ * layout. */
+
+/* Varied scalar / padding layouts. */
+typedef struct SubVec2 {
+    float x;
+    float y;
+} SubVec2;
+
+typedef struct SubVec3 {
+    float x;
+    float y;
+    float z;
+} SubVec3;
+
+typedef struct SubVec4 {
+    float x;
+    float y;
+    float z;
+    float w;
+} SubVec4;
+
+typedef struct SubRect {
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+} SubRect;
+
+typedef struct SubRange {
+    uint64_t offset;
+    uint64_t size;
+} SubRange;
+
+typedef struct SubColor {
+    float r;
+    float g;
+    float b;
+    float a;
+} SubColor;
+
+/* f64/f64/i32 forces trailing padding to an 8-byte size multiple. */
+typedef struct SubTimings {
+    double cpu;
+    double gpu;
+    int32_t frame;
+} SubTimings;
+
+/* bool/i64/bool/f32 forces two interior leading gaps. */
+typedef struct SubMixed {
+    bool enabled;
+    int64_t id;
+    bool visible;
+    float ratio;
+} SubMixed;
+
+/* i32/bool/f64: a bool between a 4- and an 8-aligned field. */
+typedef struct SubPadB {
+    int32_t head;
+    bool mid;
+    double tail;
+} SubPadB;
+
+/* Nested by-value structs. */
+typedef struct SubExtent {
+    uint32_t width;
+    uint32_t height;
+    uint32_t depth;
+} SubExtent;
+
+/* Nested struct + a flag-typedef field (SubAccess is the §13.2 uint64 flag
+ * alias declared above). The 12-byte extent then a u32 then an 8-aligned
+ * flag field exercises interior padding around a nested aggregate. */
+typedef struct SubImageInfo {
+    SubExtent extent;
+    uint32_t mipLevels;
+    SubAccess usage;
+} SubImageInfo;
+
+typedef struct SubBounds {
+    SubVec3 min;
+    SubVec3 max;
+} SubBounds;
+
+typedef struct SubViewport {
+    SubRect rect;
+    SubRange depth;
+} SubViewport;
+
+/* Two levels of nesting: SubNodeInfo -> SubBounds -> SubVec3. */
+typedef struct SubNodeInfo {
+    SubBounds bounds;
+    uint32_t id;
+    SubColor tint;
+} SubNodeInfo;
+
+/* Intrusive-chain extensions: the common SubChainHeader embedded first,
+ * followed by differently sized/aligned payloads (adds to SubChainExtA/B). */
+typedef struct SubChainExtC {
+    SubChainHeader header;
+    SubVec3 offset;
+    uint32_t flags;
+} SubChainExtC;
+
+typedef struct SubChainExtD {
+    SubChainHeader header;
+    double scale;
+    int64_t level;
+    bool active;
+} SubChainExtD;
+
+/* A second, independent intrusive chain with its own header type. */
+typedef struct SubEventHeader {
+    int32_t kind;
+    struct SubEventHeader *next;
+} SubEventHeader;
+
+typedef struct SubEventKey {
+    SubEventHeader header;
+    uint32_t code;
+    bool pressed;
+} SubEventKey;
+
+typedef struct SubEventMove {
+    SubEventHeader header;
+    float dx;
+    float dy;
+} SubEventMove;
+
+/* Flag-typedef fields leading a struct (SubAccess is 8-aligned). */
+typedef struct SubPassInfo {
+    SubAccess access;
+    uint32_t width;
+    uint32_t height;
+} SubPassInfo;
+
+typedef struct SubResourceDesc {
+    SubAccess usage;
+    SubRange range;
+    uint32_t count;
+} SubResourceDesc;
+
+/* Descriptor-embedded (count, pointer) array inside a larger struct: the
+ * mirror collapses `commandsCount`+`commands` to `u32[]`, but the raw C
+ * layout (three fields) is what both tiers marshal, so the offsetof suite
+ * proves that raw layout is what the language computes (as it does for
+ * SubDrawList above). */
+typedef struct SubCommandBuffer {
+    uint32_t queue;
+    size_t commandsCount;
+    const uint32_t *commands;
+} SubCommandBuffer;
+
+int32_t subCommandBufferTotal(SubCommandBuffer buf);
+
 #endif /* SUBSCRIPT_INTEROP_H */

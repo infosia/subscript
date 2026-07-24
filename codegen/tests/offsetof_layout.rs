@@ -1,6 +1,6 @@
-//! The `offsetof` layout proof (`specs/blocks/compiler.md` §12.3):
-//! design invariant 1 (C-ABI-identical struct layout) is machine-verified
-//! here, not asserted.
+//! The `offsetof` layout proof (`specs/blocks/compiler.md` §12.3, scaled to
+//! production complexity at §13.4): design invariant 1 (C-ABI-identical
+//! struct layout) is machine-verified here, not asserted.
 //!
 //! For every struct in the synthetic header (`corpus/interop/interop.h`)
 //! that has a language `@value class` equivalent, this test compares the
@@ -8,16 +8,20 @@
 //! field's byte offset, via the public [`value_class_layouts`] API —
 //! against the platform C compiler's `sizeof` / `_Alignof` / `offsetof`
 //! for the real C struct. A mismatch on any field, size, or alignment
-//! fails the test.
+//! fails the test. The set spans dozens of structs (§13.4) mixing varied
+//! scalar/padding, nested by-value structs, flag-typedef fields, intrusive
+//! chains, string-view / array-pair descriptors, and descriptor-embedded
+//! arrays — the production-scale discharge of the C-ABI-identity claim.
 //!
-//! The language-side value classes below are **hand-authored for P5.1**;
-//! at P5.2 they are replaced by the mirror generator's output (§12.2).
-//! Pointer-shaped C fields (raw pointers, `size_t`, opaque handles,
-//! function pointers) are modeled here as `u64`, the sized numeric with
-//! the same 8-byte size and alignment on every dev target; P5.2's
+//! The language-side value classes below are **hand-authored**. Pointer-
+//! shaped C fields (raw pointers, `size_t`, opaque handles, function
+//! pointers, flag typedefs) are modeled here as `u64`, the sized numeric
+//! with the same 8-byte size and alignment on every dev target; the
 //! generated mirror substitutes the boundary forms (`X | null`, branded
-//! handles, `string`) whose lowered layout is identical, so this proof
-//! carries over unchanged.
+//! handles, `string`, flag aliases) whose lowered layout is identical, so
+//! this proof carries over unchanged. A descriptor-embedded `(count,
+//! pointer)` array is modeled by its raw C pair layout — the layout both
+//! tiers marshal — since the mirror collapses it to a single `T[]` field.
 //!
 //! A missing C compiler is a **failure, not a skip**, consistent with the
 //! standing gate's discipline (§11): the gate machine is the development
@@ -98,6 +102,214 @@ class SubSample {
   d: f32;
 }
 
+// ---- P6.3 production-scale additions (compiler.md §13.4) --------------
+// Dozens of structs mixing varied scalar/padding, nested by-value structs,
+// flag-typedef fields (SubAccess -> u64), intrusive chains, string-view /
+// array-pair descriptors, and descriptor-embedded arrays. Pointer / size_t
+// / flag / callback fields are modeled as u64 (identical 8/8 layout); a
+// descriptor-embedded array is modeled by its RAW C pair layout (count then
+// pointer), the layout both tiers marshal. Nested structs are declared
+// before their users.
+
+// Typed (pointer, count) slice descriptors (a31): each a 16-byte pair.
+@value
+class SubSliceF32 {
+  items: u64;
+  count: u64;
+}
+
+@value
+class SubSliceI32 {
+  items: u64;
+  count: u64;
+}
+
+@value
+class SubSliceF64 {
+  items: u64;
+  count: u64;
+}
+
+@value
+class SubSliceI64 {
+  items: u64;
+  count: u64;
+}
+
+// Varied scalar / padding layouts.
+@value
+class SubVec2 {
+  x: f32;
+  y: f32;
+}
+
+@value
+class SubVec3 {
+  x: f32;
+  y: f32;
+  z: f32;
+}
+
+@value
+class SubVec4 {
+  x: f32;
+  y: f32;
+  z: f32;
+  w: f32;
+}
+
+@value
+class SubRect {
+  x: i32;
+  y: i32;
+  width: u32;
+  height: u32;
+}
+
+@value
+class SubRange {
+  offset: u64;
+  size: u64;
+}
+
+@value
+class SubColor {
+  r: f32;
+  g: f32;
+  b: f32;
+  a: f32;
+}
+
+@value
+class SubTimings {
+  cpu: f64;
+  gpu: f64;
+  frame: i32;
+}
+
+@value
+class SubMixed {
+  enabled: boolean;
+  id: i64;
+  visible: boolean;
+  ratio: f32;
+}
+
+@value
+class SubPadB {
+  head: i32;
+  mid: boolean;
+  tail: f64;
+}
+
+// Nested by-value structs.
+@value
+class SubExtent {
+  width: u32;
+  height: u32;
+  depth: u32;
+}
+
+@value
+class SubImageInfo {
+  extent: SubExtent;
+  mipLevels: u32;
+  usage: u64;
+}
+
+@value
+class SubBounds {
+  min: SubVec3;
+  max: SubVec3;
+}
+
+@value
+class SubViewport {
+  rect: SubRect;
+  depth: SubRange;
+}
+
+@value
+class SubNodeInfo {
+  bounds: SubBounds;
+  id: u32;
+  tint: SubColor;
+}
+
+// Intrusive chains: the common header embedded first.
+@value
+class SubChainExtC {
+  header: SubChainHeader;
+  offset: SubVec3;
+  flags: u32;
+}
+
+@value
+class SubChainExtD {
+  header: SubChainHeader;
+  scale: f64;
+  level: i64;
+  active: boolean;
+}
+
+@value
+class SubEventHeader {
+  kind: i32;
+  next: u64;
+}
+
+@value
+class SubEventKey {
+  header: SubEventHeader;
+  code: u32;
+  pressed: boolean;
+}
+
+@value
+class SubEventMove {
+  header: SubEventHeader;
+  dx: f32;
+  dy: f32;
+}
+
+// Flag-typedef fields (SubAccess -> u64).
+@value
+class SubPassInfo {
+  access: u64;
+  width: u32;
+  height: u32;
+}
+
+@value
+class SubResourceDesc {
+  usage: u64;
+  range: SubRange;
+  count: u32;
+}
+
+// Descriptor-embedded (count, pointer) arrays — modeled by their raw C pair
+// layout (the mirror collapses them to `T[]`, but both tiers marshal this).
+@value
+class SubDrawList {
+  layer: u32;
+  drawsCount: u64;
+  draws: u64;
+}
+
+@value
+class SubCommandBuffer {
+  queue: u32;
+  commandsCount: u64;
+  commands: u64;
+}
+
+// Callback-info (fn pointer + userdata) — two 8-byte pointer slots.
+@value
+class SubCompletionInfo {
+  callback: u64;
+  userdata: u64;
+}
+
 export function main(): void {}
 "#;
 
@@ -114,6 +326,35 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubCallbackInfo", vec!["callback", "userdata", "userparam"]),
         ("SubTransform", vec!["basis", "bone", "weight", "visible"]),
         ("SubSample", vec!["a", "b", "c", "d"]),
+        // P6.3 production-scale additions (§13.4).
+        ("SubSliceF32", vec!["items", "count"]),
+        ("SubSliceI32", vec!["items", "count"]),
+        ("SubSliceF64", vec!["items", "count"]),
+        ("SubSliceI64", vec!["items", "count"]),
+        ("SubVec2", vec!["x", "y"]),
+        ("SubVec3", vec!["x", "y", "z"]),
+        ("SubVec4", vec!["x", "y", "z", "w"]),
+        ("SubRect", vec!["x", "y", "width", "height"]),
+        ("SubRange", vec!["offset", "size"]),
+        ("SubColor", vec!["r", "g", "b", "a"]),
+        ("SubTimings", vec!["cpu", "gpu", "frame"]),
+        ("SubMixed", vec!["enabled", "id", "visible", "ratio"]),
+        ("SubPadB", vec!["head", "mid", "tail"]),
+        ("SubExtent", vec!["width", "height", "depth"]),
+        ("SubImageInfo", vec!["extent", "mipLevels", "usage"]),
+        ("SubBounds", vec!["min", "max"]),
+        ("SubViewport", vec!["rect", "depth"]),
+        ("SubNodeInfo", vec!["bounds", "id", "tint"]),
+        ("SubChainExtC", vec!["header", "offset", "flags"]),
+        ("SubChainExtD", vec!["header", "scale", "level", "active"]),
+        ("SubEventHeader", vec!["kind", "next"]),
+        ("SubEventKey", vec!["header", "code", "pressed"]),
+        ("SubEventMove", vec!["header", "dx", "dy"]),
+        ("SubPassInfo", vec!["access", "width", "height"]),
+        ("SubResourceDesc", vec!["usage", "range", "count"]),
+        ("SubDrawList", vec!["layer", "drawsCount", "draws"]),
+        ("SubCommandBuffer", vec!["queue", "commandsCount", "commands"]),
+        ("SubCompletionInfo", vec!["callback", "userdata"]),
     ]
 }
 
