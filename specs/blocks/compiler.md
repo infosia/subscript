@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 14, 2026-07-24 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 15, 2026-07-24 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -727,3 +727,99 @@ compiler's, the new shapes (embedded arrays, flags, facade, async) each
 have a passing both-tier corpus entry with a committed golden, and the
 generic CLI binds an arbitrary header path. Reference sweep clean (no
 external-API names in tracked files); invariant 4 intact.
+
+## 14. P7 — async/Future model and remaining production shapes
+
+Owner decision 2026-07-24. P6 binds a production C header's structure;
+P7 closes the incremental interop gaps needed for the **common
+main-thread-driven async / Future model** a production GPU C API uses,
+and the remaining scalar/return/out shapes. Host-agnostic (invariant 4):
+proven on a neutral synthetic fixture; no external API named or
+committed; reference sweep stays zero.
+
+The model P7 targets (as a real production GPU C API spells it): an async
+op **returns a future** (a small by-value `{u64 id}` struct), taking a
+**callback-info** value `{ mode; callback; userdata1; userdata2 }`; the
+host later drives completion with a **wait/process-events** call that
+takes an **out-array** of `{ future; bool completed }` the callee writes.
+The callback fires on the pump/wait thread (synchronous, same thread) —
+which is the a35 deferred-fire mechanism, already proven.
+
+### 14.1 Chained integer/flag aliases
+
+The emitter follows a `typedef → typedef → integer` chain to the
+underlying sized type: `typedef uint32_t B; typedef B X;` → `type X =
+u32` (and the flag-alias + `declare const` form when members exist). P6.2
+handled one-level aliases and **fails loud** on two-level; P7.1 resolves
+the chain (production headers, incl. WebGPU-class ones, spell flags as a
+two-level alias). Still fail loud if the chain does not bottom out in a
+mapped integer.
+
+### 14.2 By-value boundary-struct return
+
+A foreign function may **return a boundary value class by value** (e.g.
+`SubFuture { u64 id }`). Both tiers marshal the struct return per the C
+ABI (small structs in registers, larger via `sret`), subject to the
+§12.3a arch-gate for the by-value aggregate ABI. Today foreign returns
+are scalar/handle only (`lower/func.rs` rejects a non-scalar boundary
+return); P7.2 adds the struct-return path. The returned value class is
+then an ordinary in-language value (its fields readable, e.g. the future
+id).
+
+### 14.3 Out / mutable array and out fields
+
+A foreign function may take a **mutable `T[]`** (or a boundary struct with
+a callee-written field) that the callee writes back; the script reads the
+written values after the call. Rule: the array/struct storage is the
+caller's; the callee borrows it mutably for the call's duration and may
+write; the caller observes the writes after return (no copy back — the
+callee wrote the caller's own storage). Both tiers pass the same
+`(ptr,count)` / pointer and the writes land in the language array/struct.
+This is distinct from the const-borrow of a26/a31 (state the surface
+spelling that marks an out/mutable array parameter).
+
+### 14.4 Two userdata slots
+
+The callback trampoline and the runtime `CallbackBinding` carry
+**two** `void*` userdata slots (`userdata1`, `userdata2`), both delivered
+to the language callback (each `object | null`, narrowed with `as`). P5.2b
+carried one; P7.2 extends it. The Context-held-binding lifetime rule
+(§13.3) is unchanged.
+
+### 14.5 Composed Future-shape async (capstone)
+
+A neutral fixture reproduces the whole model: an async op returns a
+future (14.2), taking a callback-info `{ mode; callback; userdata1;
+userdata2 }` (14.4); a host wait/process-events call takes an out-array
+of `{ future; bool completed }` (14.3) and fires the registered callback
+on the calling thread with both userdata. A corpus entry (a36+) drives it
+end-to-end with a committed golden, byte-exact on both tiers.
+
+### 14.6 Permanent non-goal — spontaneous (arbitrary-thread) callbacks
+
+A production async model's *spontaneous* mode fires a callback on an
+arbitrary thread at an arbitrary time. This is **permanently out of
+scope**: the Context and the callback trampoline are single-threaded by
+design (P5.2b soundness relies on same-thread synchronous invocation
+under one Context; scripts are single-threaded, invariant 6). The
+supported model is the **main-thread wait/process-events** path (14.5),
+which fires synchronously on the caller thread. Binding a header that
+offers a spontaneous mode is fine — a program simply must not select it;
+the toolchain need not enforce this (trusted scripts).
+
+### 14.7 Staging and gate
+
+- **P7.1** — §14.1 chained aliases, §14.2 by-value struct return, §14.3
+  out/mutable arrays: each a neutral fixture shape + both-tier corpus
+  entry + golden; new structs pass the offsetof suite.
+- **P7.2** — §14.4 two userdata + §14.5 the composed Future-shape async
+  capstone: corpus entry, both-tier golden.
+- **P7.3 (optional)** — re-run the generic `--header` CLI locally on a
+  real production GPU C API header and report the coverage gain (how far
+  the mirror gets now, what still fails loud), by scale/shape only, not
+  committed.
+
+Gate: each shape has a passing both-tier corpus entry with a committed
+golden; the composed async entry passes both tiers; the mirror
+regenerates byte-identically; still-unmapped constructs fail loud;
+reference sweep clean; §14.6 documented as a permanent non-goal.
