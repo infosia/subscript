@@ -7,7 +7,7 @@
 //! IEEE counterpart disagrees with ECMA are implemented explicitly and
 //! pinned by tests: `round` (half-toward-+∞), `sign` (±0 preserved),
 //! `max`/`min` (NaN propagation, zero ordering), `pow` (±1 to an
-//! infinite exponent is NaN).
+//! infinite exponent is NaN; a NaN exponent is NaN even for base 1).
 //!
 //! `Math.random` (§2) draws from [`Rng`], a xoshiro256++ generator
 //! seeded by splitmix64 expansion; the state is owned by the Context so
@@ -204,10 +204,15 @@ pub fn hypot(a: f64, b: f64) -> f64 {
 }
 
 /// `Math.pow(base, exp)`: ECMA semantics — `pow(x, ±0) === 1` for every
-/// `x` including `NaN` (as IEEE `pow` does), and `pow(±1, ±Infinity)`
-/// is `NaN` (where IEEE `pow` returns 1).
+/// `x` including `NaN` (as IEEE `pow` does), `pow(x, NaN)` is `NaN` for
+/// every `x` including `1` (where IEEE `pow(1, NaN)` returns 1), and
+/// `pow(±1, ±Infinity)` is `NaN` (where IEEE `pow` returns 1).
 #[must_use]
 pub fn pow(base: f64, exp: f64) -> f64 {
+    // A NaN exponent is never ±0, so this cannot shadow `pow(x, ±0) = 1`.
+    if exp.is_nan() {
+        return f64::NAN;
+    }
     if exp.is_infinite() && (base == 1.0 || base == -1.0) {
         return f64::NAN;
     }
@@ -383,6 +388,17 @@ mod tests {
         assert_eq!(pow(2.0, 10.0), 1024.0);
         assert!(pow(1.0, f64::INFINITY).is_nan());
         assert!(pow(-1.0, f64::NEG_INFINITY).is_nan());
+    }
+
+    #[test]
+    fn pow_nan_exponent_is_nan_even_for_base_one() {
+        // ECMA-262 Number::exponentiate step 1: NaN exponent yields NaN
+        // with no exception for base 1 (IEEE pow(1, NaN) returns 1).
+        assert!(pow(1.0, f64::NAN).is_nan());
+        assert!(pow(-1.0, f64::NAN).is_nan());
+        assert!(pow(0.0, f64::NAN).is_nan());
+        // The ±0-exponent rule stays ahead of the NaN-exponent rule.
+        assert_eq!(pow(f64::NAN, 0.0), 1.0);
     }
 
     #[test]

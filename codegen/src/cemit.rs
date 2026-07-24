@@ -3298,8 +3298,29 @@ mod tests {
         assert!(c.contains("sub_rt_math_floor(ctx, 1.5)"));
         assert!(c.contains("sub_rt_math_pow(ctx, 2.0, 10.0)"));
         assert!(c.contains("sub_rt_math_random(ctx)"));
-        assert!(!c.contains(" floor("), "bare libm floor call emitted");
-        assert!(!c.contains(" pow("), "bare libm pow call emitted");
+        // Token-boundary scan: a bare `<name>(` whose preceding character
+        // is not part of an identifier is a libm call regardless of the
+        // surrounding punctuation (`=floor(`, `(pow(`, line-start, ...);
+        // `sub_rt_math_<name>(` never matches because `_` precedes the name.
+        fn has_bare_call(c: &str, name: &str) -> bool {
+            let needle = format!("{name}(");
+            let mut from = 0;
+            while let Some(pos) = c[from..].find(&needle) {
+                let at = from + pos;
+                let boundary = match c[..at].chars().next_back() {
+                    None => true,
+                    Some(prev) => !(prev.is_ascii_alphanumeric() || prev == '_'),
+                };
+                if boundary {
+                    return true;
+                }
+                from = at + 1;
+            }
+            false
+        }
+        assert!(!has_bare_call(&c, "floor"), "bare libm floor call emitted");
+        assert!(!has_bare_call(&c, "pow"), "bare libm pow call emitted");
+        assert!(!has_bare_call(&c, "random"), "bare random call emitted");
     }
 
     #[test]

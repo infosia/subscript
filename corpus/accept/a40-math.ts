@@ -63,6 +63,7 @@ export function main(): void {
   print(`min(0,-0) ${Math.min(0, -0)}`);
   print(`pow(NaN,0) ${Math.pow(nan, 0)}`);
   print(`pow(1,Inf) ${Math.pow(1, inf)}`);
+  print(`pow(1,NaN) ${Math.pow(1, nan)}`);
   print(`abs(-0) ${Math.abs(-0)}`);
   print(`sqrt(-1) ${Math.sqrt(-1)}`);
 }
