@@ -327,7 +327,26 @@ design (still retains-and-poisons to trap use-after-delete), so dev-JIT
 `particles` (value-struct AoS, no `unsafeDelete`) unchanged, confirming
 scope. The residual ship 4.46× is the per-allocation `HashMap`-op cost
 versus C `malloc`; closing it needs a slab/free-list allocator (§8.1a
-"why it matters"; a larger change, not scheduled). Verification: full
-workspace `cargo test` green incl. `golden.rs` (JIT≡AOT≡golden) and the
-new ship-mode runtime unit tests (`ship_mode_delete_frees_and_removes_the
-_entry`, `ship_mode_collect_frees_and_removes_unreachable`).
+"why it matters"; a larger change, not scheduled).
+
+Release policy covers **all three** allocation-retire sites, not just
+`delete`: `unsafeDelete`, the `collect` sweep, and the `array_push`
+capacity-doubling retire of the old data block (a review found the last
+site initially still poison-and-retained, which would have re-grown the
+table for array-push-heavy ship programs; now fixed — ship frees the
+retired block, dev still poisons it). So "bounded at the live set" holds
+for arrays too. Verification: full workspace `cargo test` green incl.
+`golden.rs` (JIT≡AOT≡golden byte-exact) and the ship-mode runtime unit
+tests (`ship_mode_delete_frees_and_removes_the_entry`,
+`ship_mode_collect_frees_and_removes_unreachable`,
+`ship_mode_array_growth_frees_retired_blocks`).
+
+Recorded design consequence of §8.1a (review MINOR 2, not a defect): the
+ship tier's free-on-delete removes the dev tier's property of turning a
+codegen shadow-rooting gap or an unguarded use-after-delete into
+deterministic, gate-catchable behavior. The string read path
+(`print`/`str_bytes`) emits no `live_check`, so a rooting gap would print
+the correct golden in dev (retained bytes, no trap) yet corrupt in ship —
+a class of latent bug the corpus differential gate cannot see for
+ship-only. This is the intended two-tier split (AOT use-after-delete is
+undefined, Q6), stated once here so the testability cost is on record.

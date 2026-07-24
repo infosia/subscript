@@ -708,10 +708,23 @@ impl Context {
                 }
                 let old = h.data as usize;
                 // Retire the old storage (internal, so not a trap path).
-                if let Some(a) = self.allocations.get_mut(&old) {
-                    a.live = false;
-                    // SAFETY: poisons the retained header, as in `delete`.
-                    unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+                if self.release_on_delete {
+                    // Ship tier (§8.1a): free and remove, as in `delete`,
+                    // so array growth does not accumulate retained-dead
+                    // entries.
+                    if let Some(a) = self.allocations.remove(&old) {
+                        // SAFETY: `base`/`layout` came from `alloc_zeroed`
+                        // in `alloc`; the entry was just removed so this
+                        // frees it exactly once.
+                        unsafe { dealloc(a.base, a.layout) };
+                    }
+                } else {
+                    if let Some(a) = self.allocations.get_mut(&old) {
+                        a.live = false;
+                        // SAFETY: poisons the retained header, as in
+                        // `delete`.
+                        unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+                    }
                 }
             }
             // SAFETY: as above.
@@ -1159,5 +1172,46 @@ mod tests {
         ctx.collect();
         assert!(ctx.is_live(h as usize));
         assert!(ctx.is_live(inner as usize), "element reached via data pointer");
+    }
+
+    // §8.1a: array growth in the ship tier frees each retired data block
+    // instead of retaining it poisoned, so allocation_count does not grow
+    // with the number of capacity doublings. The dev tier retains them.
+    #[test]
+    fn ship_mode_array_growth_frees_retired_blocks() {
+        // Push enough u32 elements to force several capacity doublings
+        // (cap: 0 -> 4 -> 8 -> 16 -> 32), retiring the old data block each
+        // time (4 retires for 20 pushes).
+        let pushes = 20u32;
+
+        let mut ship = Context::new_releasing();
+        let sh = ship.array_new(4, 0);
+        for v in 0..pushes {
+            // SAFETY: sh is a live u32 array handle; src is a valid u32.
+            let n = unsafe { ship.array_push(sh, &v as *const u32 as *const u8, 0) };
+            assert!(n > 0);
+        }
+        // Header + current live data block only; retired blocks are freed
+        // and removed, so the map holds a small constant, not 1 + N.
+        let ship_count = ship.allocation_count();
+        assert!(
+            ship_count <= 2,
+            "ship tier should hold header + live data only, got {ship_count}"
+        );
+
+        let mut dev = Context::new();
+        let dh = dev.array_new(4, 0);
+        for v in 0..pushes {
+            // SAFETY: dh is a live u32 array handle; src is a valid u32.
+            let n = unsafe { dev.array_push(dh, &v as *const u32 as *const u8, 0) };
+            assert!(n > 0);
+        }
+        // Dev tier retains every retired block poisoned, so the map is
+        // strictly larger.
+        let dev_count = dev.allocation_count();
+        assert!(
+            dev_count > ship_count,
+            "dev tier retains retired blocks: dev {dev_count} vs ship {ship_count}"
+        );
     }
 }
