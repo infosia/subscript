@@ -18,6 +18,15 @@
 //! use-after-delete *trap* instead of being undefined: a stale handle
 //! still points at owned memory whose header says `DEAD_STATE`.
 //!
+//! Ship-tier policy (§8.1b): no per-allocation map. Blocks up to the
+//! largest size class are carved from Context-owned per-class chunks by
+//! bump pointer; `unsafeDelete` pushes a block onto its class's LIFO
+//! free list (threaded through the freed payload's first word) and the
+//! next same-class `alloc` pops it, zeroed. Larger allocations are
+//! individual system allocations with their own record. Double delete
+//! and use-after-delete are undefined here (Q6, trusted scripts); the
+//! dev tier is the diagnosing tier.
+//!
 //! # Collection
 //!
 //! `collect()` never runs unbidden (design invariant 2). Roots are the
@@ -54,6 +63,62 @@ pub const CLASS_ARRAY: u32 = 0xFFFF_FF02;
 pub const CLASS_ARRAY_DATA: u32 = 0xFFFF_FF03;
 /// Class id used for coroutine frames.
 pub const CLASS_GENERATOR: u32 = 0xFFFF_FF04;
+
+// ----- ship-tier arena (§8.1b) -----
+
+// Header state word for a block reached by the current `collect()` mark
+// phase (ship tier only). Lives only between mark and sweep — no script
+// code runs during `collect`, and sweep restores survivors to
+// `LIVE_STATE` — so generated code never observes it.
+const MARK_STATE: u64 = 0x5355_4253_4D41_524B; // "SUBSMARK"
+
+// Total block size (header + payload capacity) of the smallest size
+// class: fits the 16-byte header plus a 16-byte payload (the `tree`
+// benchmark's node) exactly.
+const SMALLEST_BLOCK: usize = 32;
+// Total block size of the largest class; anything needing more is an
+// individual system allocation with a `LargeAlloc` record.
+const LARGEST_BLOCK: usize = 4096;
+// Classes are power-of-two block sizes: 32, 64, ..., 4096.
+const NUM_CLASSES: usize =
+    (LARGEST_BLOCK.trailing_zeros() - SMALLEST_BLOCK.trailing_zeros() + 1) as usize;
+// Bytes per chunk; every chunk serves a single size class, so its block
+// grid is uniform and membership is computable (§8.1b).
+const CHUNK_SIZE: usize = 64 * 1024;
+
+/// One ship-tier arena chunk: a system allocation carved into
+/// equal-size blocks of one size class. `base` is 16-aligned and every
+/// block size is a multiple of 16, so payloads keep 16-byte alignment.
+struct Chunk {
+    base: *mut u8,
+    layout: Layout,
+    /// Total block size (header + payload capacity); the grid pitch.
+    block_size: usize,
+    /// Size-class index (selects the free list).
+    class: usize,
+    /// Blocks handed out so far; the membership/sweep watermark.
+    bump: usize,
+}
+
+/// A ship-tier allocation above `LARGEST_BLOCK` (§8.1b): an individual
+/// system allocation, keyed by payload address in `Context::large` so
+/// it stays enumerable. Presence in the map means live (records are
+/// removed when freed); the block still carries the 16-byte header for
+/// generated code and for the collect mark state.
+struct LargeAlloc {
+    base: *mut u8,
+    layout: Layout,
+    payload_size: usize,
+}
+
+/// Test-only balance of arena resources a Context holds, shared out via
+/// `Arc` so a test can observe that `Drop` released everything.
+#[cfg(test)]
+#[derive(Default)]
+struct ArenaStats {
+    chunks: std::sync::atomic::AtomicUsize,
+    large: std::sync::atomic::AtomicUsize,
+}
 
 /// Payload layout of a dynamic array (Q4): length, capacity, element
 /// size, and a pointer to a separate `CLASS_ARRAY_DATA` allocation.
@@ -137,6 +202,22 @@ pub struct Context {
     // and forget immediately; when false (dev tier), they retain and
     // poison so use-after-delete/double-delete trap.
     release_on_delete: bool,
+    // ----- ship-tier arena state (§8.1b); empty on the dev tier -----
+    // Every chunk, in creation order.
+    chunks: Vec<Chunk>,
+    // (chunk base address, index into `chunks`), sorted by base: the
+    // membership lookup (binary search for the covering chunk).
+    chunk_map: Vec<(usize, usize)>,
+    // Per-class LIFO free list head: a freed payload address, 0 when
+    // empty; the next link is the freed payload's first word.
+    free_heads: [usize; NUM_CLASSES],
+    // Per-class chunk currently being bump-allocated (index into
+    // `chunks`), if any.
+    open: [Option<usize>; NUM_CLASSES],
+    // Allocations above LARGEST_BLOCK, keyed by payload address.
+    large: HashMap<usize, LargeAlloc>,
+    #[cfg(test)]
+    stats: std::sync::Arc<ArenaStats>,
 }
 
 impl Context {
@@ -148,31 +229,22 @@ impl Context {
     /// [`Context::new_releasing`].
     #[must_use]
     pub fn new() -> Box<Context> {
-        Box::new(Context {
-            trap_flag: 0,
-            reload_epoch: 0,
-            fn_table: std::ptr::null(),
-            globals: std::ptr::null_mut(),
-            script_depth: 0,
-            allocations: HashMap::new(),
-            stdout: Vec::new(),
-            trap: None,
-            interned: HashMap::new(),
-            shadow: Vec::new(),
-            roots: Vec::new(),
-            callbacks: Vec::new(),
-            release_on_delete: false,
-        })
+        Self::with_policy(false)
     }
 
-    /// Creates an empty ship-tier context (§8.1a). Unlike
+    /// Creates an empty ship-tier context (§8.1a/§8.1b). Unlike
     /// [`Context::new`]'s retain-and-poison dev policy, `unsafeDelete` and
-    /// `collect` here **free immediately**: the backing storage is
-    /// deallocated and the map entry removed. Use-after-delete and double
-    /// delete are undefined (per Q6/§8.1a), not trapped. The AOT host
+    /// `collect` here **release immediately**: a size-classed block goes
+    /// back to its arena free list and a large allocation is freed
+    /// outright — no per-allocation table is kept. Use-after-delete and
+    /// double delete are undefined (Q6/§8.1b), not trapped. The AOT host
     /// entry ([`crate::ffi::sub_rt_ctx_new`]) builds its Context this way.
     #[must_use]
     pub fn new_releasing() -> Box<Context> {
+        Self::with_policy(true)
+    }
+
+    fn with_policy(release_on_delete: bool) -> Box<Context> {
         Box::new(Context {
             trap_flag: 0,
             reload_epoch: 0,
@@ -186,7 +258,14 @@ impl Context {
             shadow: Vec::new(),
             roots: Vec::new(),
             callbacks: Vec::new(),
-            release_on_delete: true,
+            release_on_delete,
+            chunks: Vec::new(),
+            chunk_map: Vec::new(),
+            free_heads: [0; NUM_CLASSES],
+            open: [None; NUM_CLASSES],
+            large: HashMap::new(),
+            #[cfg(test)]
+            stats: Default::default(),
         })
     }
 
@@ -339,8 +418,13 @@ impl Context {
 
     /// Allocates `size` payload bytes tagged `class_id`; returns the
     /// zeroed payload pointer, or null after recording an
-    /// allocation-failure trap.
+    /// allocation-failure trap. Dev tier: an individual system
+    /// allocation tracked in the map. Ship tier: served from the arena
+    /// (§8.1b).
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
+        if self.release_on_delete {
+            return self.arena_alloc(size, class_id, pos_id);
+        }
         let total = HEADER_SIZE.saturating_add(size.max(1));
         let Ok(layout) = Layout::from_size_align(total, 16) else {
             self.trap(
@@ -381,27 +465,234 @@ impl Context {
         payload
     }
 
+    // ----- ship-tier arena internals (§8.1b) -----
+
+    /// Size-class index for a total block size `need`
+    /// (`need <= LARGEST_BLOCK`): the smallest power-of-two block that
+    /// holds it, `SMALLEST_BLOCK` at minimum.
+    #[inline]
+    fn size_class(need: usize) -> usize {
+        let rounded = need.next_power_of_two().max(SMALLEST_BLOCK);
+        (rounded.trailing_zeros() - SMALLEST_BLOCK.trailing_zeros()) as usize
+    }
+
+    /// Ship-tier `alloc`: free-list pop, else bump from the class's open
+    /// chunk, else a new chunk; above the largest class, an individual
+    /// system allocation with a `LargeAlloc` record. The payload is
+    /// zeroed in every case (§8.1b: conservative tracing and language
+    /// zero-init rely on it).
+    fn arena_alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
+        let need = HEADER_SIZE.saturating_add(size.max(1));
+        if need > LARGEST_BLOCK {
+            return self.arena_alloc_large(size, class_id, pos_id);
+        }
+        let class = Self::size_class(need);
+        let block_size = SMALLEST_BLOCK << class;
+
+        let head = self.free_heads[class];
+        if head != 0 {
+            let payload = head as *mut u8;
+            // SAFETY: `head` is a payload address this arena free-listed:
+            // its block (header + `block_size - HEADER_SIZE` payload
+            // capacity) is inside an owned chunk. The next link occupies
+            // the payload's first word; after unlinking, the whole
+            // capacity is re-zeroed and the header re-armed.
+            unsafe {
+                self.free_heads[class] = (payload as *const usize).read();
+                std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
+                let base = payload.sub(HEADER_SIZE);
+                (base as *mut u64).write(LIVE_STATE);
+                (base.add(8) as *mut u32).write(class_id);
+                (base.add(12) as *mut u32).write(size as u32);
+            }
+            return payload;
+        }
+
+        let blocks_per_chunk = CHUNK_SIZE / block_size;
+        let ci = match self.open[class] {
+            Some(i) if self.chunks[i].bump < blocks_per_chunk => i,
+            _ => match self.arena_new_chunk(class, pos_id) {
+                Some(i) => i,
+                None => return std::ptr::null_mut(),
+            },
+        };
+        let chunk = &mut self.chunks[ci];
+        // SAFETY: `bump < blocks_per_chunk`, so the block lies inside the
+        // chunk. The chunk came from `alloc_zeroed` and this block was
+        // never handed out, so its payload is already zero; only the
+        // header needs writing.
+        let payload = unsafe {
+            let base = chunk.base.add(chunk.bump * block_size);
+            (base as *mut u64).write(LIVE_STATE);
+            (base.add(8) as *mut u32).write(class_id);
+            (base.add(12) as *mut u32).write(size as u32);
+            base.add(HEADER_SIZE)
+        };
+        chunk.bump += 1;
+        payload
+    }
+
+    /// Allocates and registers a fresh chunk for `class`; returns its
+    /// index in `chunks`, or `None` after an allocation-failure trap.
+    fn arena_new_chunk(&mut self, class: usize, pos_id: u32) -> Option<usize> {
+        let Ok(layout) = Layout::from_size_align(CHUNK_SIZE, 16) else {
+            self.trap(
+                TrapKind::AllocationFailure,
+                "arena chunk layout is not representable",
+                pos_id,
+            );
+            return None;
+        };
+        // SAFETY: `layout` has non-zero size (CHUNK_SIZE).
+        let base = unsafe { alloc_zeroed(layout) };
+        if base.is_null() {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("arena chunk allocation of {CHUNK_SIZE} bytes failed"),
+                pos_id,
+            );
+            return None;
+        }
+        let idx = self.chunks.len();
+        self.chunks.push(Chunk {
+            base,
+            layout,
+            block_size: SMALLEST_BLOCK << class,
+            class,
+            bump: 0,
+        });
+        // Keep the membership index sorted by base address.
+        let pos = self
+            .chunk_map
+            .partition_point(|&(b, _)| b < base as usize);
+        self.chunk_map.insert(pos, (base as usize, idx));
+        self.open[class] = Some(idx);
+        #[cfg(test)]
+        self.stats
+            .chunks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Some(idx)
+    }
+
+    /// Large-allocation path: an individual system allocation recorded in
+    /// `large`. The header carries state and class id for generated code;
+    /// the payload size lives in the record (the spare header word stays
+    /// zero — a large payload may exceed `u32`).
+    fn arena_alloc_large(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
+        let total = HEADER_SIZE.saturating_add(size.max(1));
+        let Ok(layout) = Layout::from_size_align(total, 16) else {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("allocation of {size} bytes is not representable"),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        };
+        // SAFETY: `layout` has non-zero size (>= HEADER_SIZE + 1).
+        let base = unsafe { alloc_zeroed(layout) };
+        if base.is_null() {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("allocation of {size} bytes failed"),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        }
+        // SAFETY: `base` is a fresh allocation of at least HEADER_SIZE
+        // bytes; the header writes stay inside it.
+        let payload = unsafe {
+            (base as *mut u64).write(LIVE_STATE);
+            (base.add(8) as *mut u32).write(class_id);
+            base.add(HEADER_SIZE)
+        };
+        self.large.insert(
+            payload as usize,
+            LargeAlloc {
+                base,
+                layout,
+                payload_size: size,
+            },
+        );
+        #[cfg(test)]
+        self.stats
+            .large
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        payload
+    }
+
+    /// The exact membership test's chunk half (§8.1b): `addr` is a
+    /// classed block's payload only if it falls inside a known chunk, on
+    /// that chunk's block grid, below the chunk's bump watermark. Returns
+    /// the block base and size class; the caller still checks the header
+    /// state (the fourth condition) — a hit here may be a free-listed
+    /// (dead) block.
+    fn arena_lookup_block(&self, addr: usize) -> Option<(*mut u8, usize)> {
+        let i = self.chunk_map.partition_point(|&(b, _)| b <= addr);
+        if i == 0 {
+            return None;
+        }
+        let (cbase, ci) = self.chunk_map[i - 1];
+        if addr < cbase + HEADER_SIZE || addr >= cbase + CHUNK_SIZE {
+            return None;
+        }
+        let chunk = &self.chunks[ci];
+        let off = addr - cbase - HEADER_SIZE;
+        // Block sizes are powers of two: mask/shift are the grid checks.
+        if off & (chunk.block_size - 1) != 0 {
+            return None;
+        }
+        let bi = off >> chunk.block_size.trailing_zeros();
+        if bi >= chunk.bump {
+            return None;
+        }
+        // SAFETY: `bi < bump <= blocks_per_chunk`, so the block base is
+        // inside the owned chunk.
+        Some((unsafe { chunk.base.add(bi * chunk.block_size) }, chunk.class))
+    }
+
+    /// Ship-tier release: a live classed block goes to its class's free
+    /// list; a large record is freed and dropped. Anything else — dead,
+    /// free-listed, or unknown — is undefined per Q6/§8.1b and handled
+    /// as a no-op (never a trap, never relied upon).
+    fn arena_release(&mut self, payload: usize) {
+        if let Some((block, class)) = self.arena_lookup_block(payload) {
+            // SAFETY: `block` heads a block inside an owned chunk; the
+            // state word and the payload's first word (the free-list
+            // link) stay inside it.
+            unsafe {
+                if (block as *const u64).read() == LIVE_STATE {
+                    (block as *mut u64).write(DEAD_STATE);
+                    (payload as *mut usize).write(self.free_heads[class]);
+                    self.free_heads[class] = payload;
+                }
+            }
+            return;
+        }
+        if let Some(a) = self.large.remove(&payload) {
+            // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+            // `arena_alloc_large`; the record was just removed so this
+            // frees it exactly once.
+            unsafe { dealloc(a.base, a.layout) };
+            #[cfg(test)]
+            self.stats
+                .large
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
     /// Frees or marks the allocation at `payload` dead, per tier policy.
     ///
     /// Development tier ([`Context::new`]): the bytes are retained
     /// (poisoned) so stale handles trap; double delete and unknown
     /// pointers trap (Q6).
     ///
-    /// Ship tier ([`Context::new_releasing`], §8.1a): the backing storage
-    /// is freed and the map entry removed. A double delete or unknown
-    /// pointer is undefined (Q6/§8.1a); it presents as an absent entry and
-    /// is a silent no-op (no trap).
+    /// Ship tier ([`Context::new_releasing`], §8.1b): a classed block is
+    /// pushed onto its arena free list; a large allocation is freed and
+    /// its record dropped. A double delete or unknown pointer is
+    /// undefined (Q6/§8.1b) and handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
         if self.release_on_delete {
-            if let Some(a) = self.allocations.remove(&payload) {
-                // SAFETY: `base`/`layout` came from `alloc_zeroed` in
-                // `alloc`; the entry was just removed so this frees it
-                // exactly once. No DEAD_STATE poisoning: the memory is
-                // gone.
-                unsafe { dealloc(a.base, a.layout) };
-            }
-            // Absent entry (unknown or already-freed pointer): undefined
-            // per the contract, handled as a no-op.
+            self.arena_release(payload);
             return;
         }
         match self.allocations.get_mut(&payload) {
@@ -430,14 +721,40 @@ impl Context {
     }
 
     /// True when `payload` is a live allocation (test/inspection aid).
+    /// Ship tier: the exact membership test — chunk range, block grid,
+    /// bump watermark, live header — or a large record (§8.1b).
     #[must_use]
     pub fn is_live(&self, payload: usize) -> bool {
+        if self.release_on_delete {
+            if let Some((block, _)) = self.arena_lookup_block(payload) {
+                // SAFETY: `block` heads a block inside an owned chunk.
+                return unsafe { (block as *const u64).read() } == LIVE_STATE;
+            }
+            return self.large.contains_key(&payload);
+        }
         self.allocations.get(&payload).is_some_and(|a| a.live)
     }
 
-    /// Number of live allocations (test/inspection aid).
+    /// Number of live allocations (test/inspection aid). Ship tier: a
+    /// chunk walk (live blocks below each watermark) plus the large
+    /// records.
     #[must_use]
     pub fn live_count(&self) -> usize {
+        if self.release_on_delete {
+            let mut n = self.large.len();
+            for chunk in &self.chunks {
+                for bi in 0..chunk.bump {
+                    // SAFETY: `bi < bump`, so the block is inside the
+                    // owned chunk; only its state word is read.
+                    let state =
+                        unsafe { (chunk.base.add(bi * chunk.block_size) as *const u64).read() };
+                    if state == LIVE_STATE {
+                        n += 1;
+                    }
+                }
+            }
+            return n;
+        }
         self.allocations.values().filter(|a| a.live).count()
     }
 
@@ -484,6 +801,15 @@ impl Context {
         }
         work.extend(self.interned.values().copied());
 
+        if self.release_on_delete {
+            // Ship tier (§8.1b): mark state lives in the block header
+            // (MARK_STATE), not in a map; sweep walks the chunk grids and
+            // the large records.
+            self.arena_mark(&mut work);
+            self.arena_sweep();
+            return;
+        }
+
         while let Some(addr) = work.pop() {
             let Some(a) = self.allocations.get_mut(&addr) else {
                 continue;
@@ -502,36 +828,111 @@ impl Context {
             }
         }
 
-        if self.release_on_delete {
-            // Ship tier (§8.1a): free unreached-live entries. Cannot
-            // `remove`+`dealloc` while iterating, so collect the payload
-            // addresses to sweep first.
-            let sweep: Vec<usize> = self
-                .allocations
-                .iter()
-                .filter(|(_, a)| a.live && !a.marked)
-                .map(|(&addr, _)| addr)
-                .collect();
-            for addr in sweep {
-                if let Some(a) = self.allocations.remove(&addr) {
-                    // SAFETY: `base`/`layout` came from `alloc_zeroed` in
-                    // `alloc`; the entry was just removed so this frees it
-                    // exactly once.
-                    unsafe { dealloc(a.base, a.layout) };
+        for a in self.allocations.values_mut() {
+            if a.live && !a.marked {
+                a.live = false;
+                // SAFETY: as in `delete`: poison the retained header.
+                unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+            }
+            a.marked = false;
+        }
+    }
+
+    /// Ship-tier mark phase (§8.1b): drains the conservative work list.
+    /// A word is treated as a managed payload only under the exact
+    /// membership test ([`Context::arena_lookup_block`] plus a live
+    /// header, or an exact large-record match); a reached block's header
+    /// is stamped `MARK_STATE` and its payload words are pushed.
+    fn arena_mark(&mut self, work: &mut Vec<usize>) {
+        while let Some(addr) = work.pop() {
+            let (block, payload_size) = if let Some((block, _)) = self.arena_lookup_block(addr) {
+                // SAFETY: `block` heads a block inside an owned chunk;
+                // the header reads stay inside it.
+                let state = unsafe { (block as *const u64).read() };
+                if state != LIVE_STATE {
+                    // Dead, free-listed, or already marked.
+                    continue;
+                }
+                // Classed blocks carry their exact payload size in the
+                // spare header word.
+                // SAFETY: as above.
+                let size = unsafe { (block.add(12) as *const u32).read() } as usize;
+                (block, size)
+            } else if let Some(a) = self.large.get(&addr) {
+                // SAFETY: `base` heads an owned large allocation.
+                let state = unsafe { (a.base as *const u64).read() };
+                if state != LIVE_STATE {
+                    // Already marked.
+                    continue;
+                }
+                (a.base, a.payload_size)
+            } else {
+                continue;
+            };
+            // SAFETY: `block` heads an owned allocation whose payload is
+            // at least `payload_size` bytes; all accesses stay inside it.
+            unsafe {
+                (block as *mut u64).write(MARK_STATE);
+                let payload = block.add(HEADER_SIZE);
+                for i in 0..payload_size / 8 {
+                    work.push((payload.add(i * 8) as *const usize).read_unaligned());
                 }
             }
-            // Reset the mark on the survivors.
-            for a in self.allocations.values_mut() {
-                a.marked = false;
-            }
-        } else {
-            for a in self.allocations.values_mut() {
-                if a.live && !a.marked {
-                    a.live = false;
-                    // SAFETY: as in `delete`: poison the retained header.
-                    unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+        }
+    }
+
+    /// Ship-tier sweep (§8.1b): walk every chunk's grid up to its bump
+    /// watermark — unreached live blocks join their class free list,
+    /// marked survivors are restored to `LIVE_STATE` — then free every
+    /// unreached large record and restore the marked ones.
+    fn arena_sweep(&mut self) {
+        for ci in 0..self.chunks.len() {
+            let (cbase, block_size, class, bump) = {
+                let c = &self.chunks[ci];
+                (c.base, c.block_size, c.class, c.bump)
+            };
+            for bi in 0..bump {
+                // SAFETY: `bi < bump`, so the block is inside the owned
+                // chunk; the state word and the payload's first word (the
+                // free-list link) stay inside it.
+                unsafe {
+                    let block = cbase.add(bi * block_size);
+                    match (block as *const u64).read() {
+                        MARK_STATE => (block as *mut u64).write(LIVE_STATE),
+                        LIVE_STATE => {
+                            (block as *mut u64).write(DEAD_STATE);
+                            let payload = block.add(HEADER_SIZE);
+                            (payload as *mut usize).write(self.free_heads[class]);
+                            self.free_heads[class] = payload as usize;
+                        }
+                        // DEAD_STATE: already on the free list.
+                        _ => {}
+                    }
                 }
-                a.marked = false;
+            }
+        }
+        // Cannot `remove`+`dealloc` while iterating, so collect the
+        // unreached payload addresses first.
+        let mut freed: Vec<usize> = Vec::new();
+        for (&addr, a) in &self.large {
+            // SAFETY: `base` heads an owned large allocation.
+            unsafe {
+                match (a.base as *const u64).read() {
+                    MARK_STATE => (a.base as *mut u64).write(LIVE_STATE),
+                    _ => freed.push(addr),
+                }
+            }
+        }
+        for addr in freed {
+            if let Some(a) = self.large.remove(&addr) {
+                // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+                // `arena_alloc_large`; the record was just removed so
+                // this frees it exactly once.
+                unsafe { dealloc(a.base, a.layout) };
+                #[cfg(test)]
+                self.stats
+                    .large
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             }
         }
     }
@@ -709,15 +1110,10 @@ impl Context {
                 let old = h.data as usize;
                 // Retire the old storage (internal, so not a trap path).
                 if self.release_on_delete {
-                    // Ship tier (§8.1a): free and remove, as in `delete`,
-                    // so array growth does not accumulate retained-dead
-                    // entries.
-                    if let Some(a) = self.allocations.remove(&old) {
-                        // SAFETY: `base`/`layout` came from `alloc_zeroed`
-                        // in `alloc`; the entry was just removed so this
-                        // frees it exactly once.
-                        unsafe { dealloc(a.base, a.layout) };
-                    }
+                    // Ship tier (§8.1b): retired data blocks flow through
+                    // the same free-list/large-record release path as
+                    // `delete`, so array growth does not accumulate.
+                    self.arena_release(old);
                 } else {
                     if let Some(a) = self.allocations.get_mut(&old) {
                         a.live = false;
@@ -796,6 +1192,27 @@ impl Drop for Context {
             // `Context::alloc` and are freed exactly once, here.
             unsafe { dealloc(a.base, a.layout) };
         }
+        // Ship-tier arena (§8.1b): chunks and large records are freed
+        // wholesale — Context-scoped memory.
+        for c in &self.chunks {
+            // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+            // `arena_new_chunk` and are freed exactly once, here.
+            unsafe { dealloc(c.base, c.layout) };
+        }
+        for a in self.large.values() {
+            // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+            // `arena_alloc_large` and are freed exactly once, here.
+            unsafe { dealloc(a.base, a.layout) };
+        }
+        #[cfg(test)]
+        {
+            self.stats
+                .chunks
+                .fetch_sub(self.chunks.len(), std::sync::atomic::Ordering::SeqCst);
+            self.stats
+                .large
+                .fetch_sub(self.large.len(), std::sync::atomic::Ordering::SeqCst);
+        }
     }
 }
 
@@ -814,11 +1231,29 @@ mod tests {
     use super::*;
 
     impl Context {
-        /// Total map length (live + retained-dead). Distinguishes the dev
-        /// tier's retain-and-poison (entry kept) from the ship tier's
-        /// free-and-remove (entry gone).
+        /// Enumerable allocation count. Dev tier: total map length (live
+        /// + retained-dead), distinguishing retain-and-poison (entry
+        /// kept) from release (entry gone). Ship tier (§8.1b): there is
+        /// no per-allocation table; the enumerable set is the live
+        /// blocks plus large records, i.e. `live_count` — a released
+        /// block leaves nothing behind.
         fn allocation_count(&self) -> usize {
-            self.allocations.len()
+            if self.release_on_delete {
+                self.live_count()
+            } else {
+                self.allocations.len()
+            }
+        }
+
+        /// Number of arena chunks currently owned (ship tier).
+        fn chunk_count(&self) -> usize {
+            self.chunks.len()
+        }
+
+        /// Shared handle to the arena resource balance, observable after
+        /// the Context is dropped.
+        fn test_stats(&self) -> std::sync::Arc<ArenaStats> {
+            std::sync::Arc::clone(&self.stats)
         }
     }
 
@@ -939,19 +1374,23 @@ mod tests {
 
         ctx.delete(a as usize, 0);
         assert_eq!(ctx.live_count(), 1);
-        // The entry is gone, not merely marked dead.
+        // The block is released, not merely marked dead.
         assert!(!ctx.is_live(a as usize));
-        assert_eq!(ctx.allocation_count(), 1, "ship mode removes the map entry");
+        assert_eq!(ctx.allocation_count(), 1, "ship mode leaves no entry behind");
+
+        // A second delete of the now-released pointer does NOT trap
+        // (undefined-but-safe no-op, §8.1b), unlike the dev-mode
+        // double-delete trap covered by
+        // `delete_poisons_and_double_delete_traps`. (Checked before the
+        // next alloc: the arena's LIFO free list would hand `a`'s block
+        // back, making a later delete of `a` a live delete.)
+        ctx.delete(a as usize, 9);
+        assert!(!ctx.trapped());
+
         // A fresh allocation still succeeds after the release.
         let c = ctx.alloc(8, 1, 0);
         assert!(!c.is_null());
         assert!(ctx.is_live(c as usize));
-
-        // A second delete of the now-absent pointer does NOT trap
-        // (undefined-but-safe no-op), unlike the dev-mode double-delete
-        // trap covered by `delete_poisons_and_double_delete_traps`.
-        ctx.delete(a as usize, 9);
-        assert!(!ctx.trapped());
 
         // Contrast: an equivalent dev-mode delete retains the entry.
         let mut dev = Context::new();
@@ -1055,8 +1494,8 @@ mod tests {
         ctx.root_add(&mut slot as *mut usize as usize, 1);
         ctx.collect();
         assert!(ctx.is_live(kept as usize));
-        // The unreachable entry is freed and removed, not poisoned.
-        assert_eq!(ctx.allocation_count(), 1, "ship mode removes swept entries");
+        // The unreachable block is released, not poisoned.
+        assert_eq!(ctx.allocation_count(), 1, "ship mode releases swept blocks");
         assert_eq!(ctx.live_count(), 1);
     }
 
@@ -1213,5 +1652,213 @@ mod tests {
             dev_count > ship_count,
             "dev tier retains retired blocks: dev {dev_count} vs ship {ship_count}"
         );
+    }
+
+    // ----- ship-tier arena (§8.1b) -----
+
+    // alloc→delete→alloc of the same class pops the free-listed block
+    // (LIFO: the same address comes back) and never grows a chunk.
+    #[test]
+    fn ship_arena_reuses_free_listed_block_without_chunk_growth() {
+        let mut ctx = Context::new_releasing();
+        let first = ctx.alloc(16, 1, 0);
+        assert!(!first.is_null());
+        assert_eq!(ctx.chunk_count(), 1);
+        for _ in 0..10_000 {
+            ctx.delete(first as usize, 0);
+            let again = ctx.alloc(16, 1, 0);
+            assert_eq!(again, first, "LIFO free list returns the same block");
+        }
+        assert_eq!(ctx.chunk_count(), 1, "reuse cycles must not grow chunks");
+        assert_eq!(ctx.live_count(), 1);
+    }
+
+    // Free-list reuse must return a zeroed payload (§8.1b): the free-list
+    // link occupies the payload's first word and the previous contents
+    // the rest, so both must be scrubbed.
+    #[test]
+    fn ship_arena_free_list_reuse_returns_zeroed_payload() {
+        let mut ctx = Context::new_releasing();
+        let p = ctx.alloc(16, 1, 0);
+        // SAFETY: p is a live 16-byte payload.
+        unsafe { std::ptr::write_bytes(p, 0xAB, 16) };
+        ctx.delete(p as usize, 0);
+        let q = ctx.alloc(16, 1, 0);
+        assert_eq!(q, p, "the dirtied block is the one reused");
+        // SAFETY: q is a live 16-byte payload.
+        unsafe {
+            for i in 0..16 {
+                assert_eq!(q.add(i).read(), 0, "byte {i} not zeroed on reuse");
+            }
+        }
+    }
+
+    // Context drop frees every chunk and large record (no leak), observed
+    // through the test-only resource balance that outlives the Context.
+    #[test]
+    fn ship_context_drop_frees_all_chunks_and_large_records() {
+        let mut ctx = Context::new_releasing();
+        // Several classes, enough small blocks for a real chunk, and two
+        // large records (one deleted before the drop).
+        for _ in 0..100 {
+            assert!(!ctx.alloc(16, 1, 0).is_null());
+            assert!(!ctx.alloc(200, 1, 0).is_null());
+        }
+        let big = ctx.alloc(LARGEST_BLOCK + 1, 2, 0);
+        let big2 = ctx.alloc(64 * 1024, 2, 0);
+        assert!(!big.is_null() && !big2.is_null());
+        ctx.delete(big2 as usize, 0);
+        let stats = ctx.test_stats();
+        use std::sync::atomic::Ordering::SeqCst;
+        assert!(stats.chunks.load(SeqCst) >= 2, "distinct classes use distinct chunks");
+        assert_eq!(stats.large.load(SeqCst), 1);
+        drop(ctx);
+        assert_eq!(stats.chunks.load(SeqCst), 0, "drop must free every chunk");
+        assert_eq!(stats.large.load(SeqCst), 0, "drop must free every large record");
+    }
+
+    // Arena edition of the collect tests: unreachable classed blocks are
+    // released (live_count drops, storage is reusable), rooted ones
+    // survive with their header restored to LIVE_STATE.
+    #[test]
+    fn ship_collect_releases_unreachable_and_keeps_rooted() {
+        let mut ctx = Context::new_releasing();
+        let kept = ctx.alloc(16, 1, 0);
+        let dropped = ctx.alloc(16, 1, 0);
+        let dropped2 = ctx.alloc(16, 1, 0);
+        // kept.field0 = inner: reached transitively through the
+        // header-recorded payload size.
+        let inner = ctx.alloc(16, 1, 0);
+        // SAFETY: kept payload is 16 writable bytes.
+        unsafe { (kept as *mut usize).write(inner as usize) };
+        let mut slot: usize = kept as usize;
+        let slot_ptr: *mut usize = &mut slot;
+        ctx.root_add(slot_ptr as usize, 1);
+        assert_eq!(ctx.live_count(), 4);
+        ctx.collect();
+        assert!(ctx.is_live(kept as usize));
+        assert!(ctx.is_live(inner as usize), "traced through payload words");
+        assert!(!ctx.is_live(dropped as usize));
+        assert!(!ctx.is_live(dropped2 as usize));
+        assert_eq!(ctx.live_count(), 2);
+        // Survivor headers are LIVE again (mark state fully restored).
+        // SAFETY: kept is a live payload with a 16-byte header.
+        unsafe {
+            assert_eq!(
+                (kept.offset(STATE_OFFSET as isize) as *const u64).read(),
+                LIVE_STATE
+            );
+        }
+        // Swept blocks are on the free list: the next same-class alloc
+        // reuses one instead of bumping.
+        let chunks = ctx.chunk_count();
+        let reused = ctx.alloc(16, 1, 0);
+        assert!(reused == dropped || reused == dropped2);
+        assert_eq!(ctx.chunk_count(), chunks);
+        // Unrooting frees the rest on the next collect.
+        // SAFETY: `slot` is alive for the whole test.
+        unsafe { slot_ptr.write(0) };
+        ctx.collect();
+        assert!(!ctx.is_live(kept as usize));
+        assert!(!ctx.is_live(inner as usize));
+    }
+
+    // The large-record path (§8.1b): membership is an exact address
+    // match, tracing uses the record's payload size, collect frees an
+    // unreached record, and delete frees immediately.
+    #[test]
+    fn ship_large_allocations_membership_trace_collect_and_delete() {
+        let mut ctx = Context::new_releasing();
+        let big = ctx.alloc(2 * LARGEST_BLOCK, 1, 0);
+        assert!(!big.is_null());
+        assert!(ctx.is_live(big as usize));
+        assert!(!ctx.is_live(big as usize + 8), "interior address is not a payload");
+        assert_eq!(ctx.live_count(), 1);
+        // A classed block referenced from the large payload's interior
+        // survives collect: the record's size drives the trace.
+        let inner = ctx.alloc(16, 1, 0);
+        // SAFETY: big is a live payload of 2*LARGEST_BLOCK bytes.
+        unsafe { (big.add(LARGEST_BLOCK) as *mut usize).write(inner as usize) };
+        let mut slot: usize = big as usize;
+        let slot_ptr: *mut usize = &mut slot;
+        ctx.root_add(slot_ptr as usize, 1);
+        ctx.collect();
+        assert!(ctx.is_live(big as usize));
+        assert!(ctx.is_live(inner as usize), "traced through the large payload");
+        // Unrooted, collect frees the record (and the inner block).
+        // SAFETY: `slot` is alive for the whole test.
+        unsafe { slot_ptr.write(0) };
+        ctx.collect();
+        assert!(!ctx.is_live(big as usize));
+        assert_eq!(ctx.live_count(), 0);
+        use std::sync::atomic::Ordering::SeqCst;
+        assert_eq!(ctx.test_stats().large.load(SeqCst), 0);
+        // Direct delete of a large allocation frees it too.
+        let big3 = ctx.alloc(LARGEST_BLOCK + 100, 1, 0);
+        assert_eq!(ctx.test_stats().large.load(SeqCst), 1);
+        ctx.delete(big3 as usize, 0);
+        assert!(!ctx.is_live(big3 as usize));
+        assert_eq!(ctx.test_stats().large.load(SeqCst), 0);
+    }
+
+    // The exact membership test (§8.1b): chunk range, block grid, bump
+    // watermark, live header — all four. Near-miss addresses are not
+    // blocks: is_live says no and delete is a no-op that never traps and
+    // never corrupts the free list.
+    #[test]
+    fn ship_membership_rejects_off_grid_and_above_watermark_addresses() {
+        let mut ctx = Context::new_releasing();
+        let p = ctx.alloc(16, 1, 0);
+        let q = ctx.alloc(16, 1, 0);
+        assert_eq!(ctx.live_count(), 2);
+        // Off-grid: interior of a live payload.
+        assert!(!ctx.is_live(p as usize + 8));
+        ctx.delete(p as usize + 8, 0);
+        // In-chunk but above the bump watermark (the next grid slot).
+        let next_slot = q as usize + SMALLEST_BLOCK;
+        assert!(!ctx.is_live(next_slot));
+        ctx.delete(next_slot, 0);
+        // Outside any chunk.
+        assert!(!ctx.is_live(0x1000));
+        ctx.delete(0x1000, 0);
+        assert!(!ctx.trapped(), "ship-tier delete never traps");
+        assert_eq!(ctx.live_count(), 2, "no-ops must not release live blocks");
+        assert!(ctx.is_live(p as usize) && ctx.is_live(q as usize));
+        // The allocator still works: both blocks delete and reuse cleanly.
+        ctx.delete(p as usize, 0);
+        ctx.delete(q as usize, 0);
+        let r = ctx.alloc(16, 1, 0);
+        assert_eq!(r, q, "free list intact after the no-op deletes");
+    }
+
+    // Ship-tier interning and array retirement ride the arena: interned
+    // strings survive collect (roots), and retired array data blocks land
+    // on free lists without growing the live set.
+    #[test]
+    fn ship_interned_strings_and_arrays_work_on_the_arena() {
+        let mut ctx = Context::new_releasing();
+        static LIT: &[u8] = b"arena-lit";
+        // SAFETY: LIT is 'static.
+        let a = unsafe { ctx.intern_literal(LIT.as_ptr(), LIT.len(), 0) };
+        // SAFETY: as above.
+        let b = unsafe { ctx.intern_literal(LIT.as_ptr(), LIT.len(), 0) };
+        assert_eq!(a, b);
+        ctx.collect();
+        assert!(ctx.is_live(a as usize), "interned literal is a root");
+        // SAFETY: a is a live string handle of this context.
+        unsafe { assert_eq!(ctx.str_bytes(a), b"arena-lit") };
+
+        let h = ctx.array_new(4, 0);
+        for v in 0..20u32 {
+            // SAFETY: h is a live u32 array handle; src is a valid u32.
+            let n = unsafe { ctx.array_push(h, &v as *const u32 as *const u8, 0) };
+            assert!(n > 0);
+        }
+        // SAFETY: h is a live array handle.
+        unsafe {
+            assert_eq!(ctx.array_len(h), 20);
+            let p7 = ctx.array_elem_ptr(h, 7, 0);
+            assert_eq!((p7 as *const u32).read(), 7);
+        }
     }
 }
