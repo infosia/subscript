@@ -255,6 +255,19 @@ fn round_up(v: u32, a: u32) -> u32 {
     (v + a - 1) & !(a - 1)
 }
 
+/// True when a struct return's flattened leaf scalars form a pure
+/// Homogeneous Floating-point Aggregate (AAPCS 6.4.2 / Win64): 1 to 4
+/// members, **all** of the same fundamental float type (all `f32`, or all
+/// `f64`). Such aggregates are returned in SIMD registers, so the integer-
+/// register return path must not marshal them (§14.2 HFA guard). All-
+/// integer, mixed integer+float, and >4-member returns are not HFAs.
+fn is_pure_hfa_leaves(leaves: &[types::Type]) -> bool {
+    if !matches!(leaves.len(), 1..=4) {
+        return false;
+    }
+    leaves.iter().all(|t| *t == types::F32) || leaves.iter().all(|t| *t == types::F64)
+}
+
 // ----- pre-passes -----
 
 fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<&'h Type>) {
@@ -2072,8 +2085,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// in registers (declared in `sig.returns`); a large one via `sret` (a
     /// hidden result pointer to a caller slot).
     ///
-    /// - **AAPCS64**: ≤ 16 bytes → returned in general registers as
-    ///   `ceil(size/8)` eightbyte integer chunks; larger → `sret`.
+    /// A pure Homogeneous Floating-point Aggregate (all-`f32`/all-`f64`,
+    /// 1–4 members) is returned in SIMD registers on both ABIs and is
+    /// **rejected loud** here — the general-register paths below would read
+    /// the wrong registers (a silent mismatch). Non-HFA returns:
+    ///
+    /// - **AAPCS64**: ≤ 16 bytes → general registers as `ceil(size/8)`
+    ///   eightbyte integer chunks; larger → `sret`.
     /// - **Win64**: exactly 1/2/4/8 bytes → one integer register of that
     ///   width; every other size → `sret`.
     fn plan_foreign_struct_return(
@@ -2097,6 +2115,27 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         // input-only marshaling idioms; a foreign function does not return
         // them by value.
         self.assert_returnable_struct(ret)?;
+        // Pure Homogeneous Floating-point Aggregates (1–4 members all of the
+        // same fundamental float type — all f32 or all f64) are returned in
+        // SIMD registers (AAPCS64 v0–v3; Win64 XMM0), NOT the general
+        // registers the paths below model. Marshaling them as integer
+        // eightbytes would read the wrong registers — a silent dev-JIT ≠
+        // ship-C mismatch. Both ABIs fail loud here (§12.3a: never a silent
+        // mis-marshal); HFA returns are unsupported until the return path
+        // models the SIMD registers. Non-HFA returns — all-integer, mixed
+        // integer+float (returned in general registers), and non-homogeneous
+        // or >4-member aggregates (returned via sret) — are unaffected.
+        let leaves = self.return_leaf_clifs(ret)?;
+        if is_pure_hfa_leaves(&leaves) {
+            return Err(internal(format!(
+                "foreign call returning a homogeneous floating-point aggregate \
+                 (all-{} struct) by value is not supported in the dev JIT: AAPCS64/\
+                 Win64 return it in SIMD registers, which the register-return path \
+                 does not yet model (compiler.md §12.3a — fail loud, never a silent \
+                 mis-marshal) (at {pos})",
+                if leaves.first() == Some(&types::F32) { "f32" } else { "f64" }
+            )));
+        }
         if self.is_win64() {
             let width = match size {
                 1 => Some(types::I8),
@@ -2164,6 +2203,45 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 _ => {}
             }
+        }
+        Ok(())
+    }
+
+    /// Flattens a return type into the CLIF types of its leaf scalars, in
+    /// order (nested value structs and fixed arrays expanded), for the pure-
+    /// HFA test. A non-scalar leaf (never reached for a returnable struct —
+    /// callback/array fields are already rejected) contributes a non-float
+    /// sentinel so the aggregate is not misread as an HFA.
+    fn return_leaf_clifs(&self, ty: &Type) -> Result<Vec<types::Type>, String> {
+        let mut out = Vec::new();
+        self.collect_leaf_clifs(ty, &mut out)?;
+        Ok(out)
+    }
+
+    fn collect_leaf_clifs(&self, ty: &Type, out: &mut Vec<types::Type>) -> Result<(), String> {
+        match ty {
+            Type::Class(id) if self.is_value_class_ty(ty) => {
+                let class = self
+                    .ml
+                    .hir
+                    .classes
+                    .get(id.0)
+                    .ok_or_else(|| internal("hfa leaf class id out of range"))?;
+                for f in &class.fields {
+                    self.collect_leaf_clifs(&f.ty, out)?;
+                }
+            }
+            Type::FixedArray(elem, n) => {
+                for _ in 0..*n {
+                    self.collect_leaf_clifs(elem, out)?;
+                }
+            }
+            other => out.push(match self.ml.layouts.repr(other)? {
+                Repr::Scalar(t) => t,
+                // A non-scalar leaf is not a float; the I64 sentinel makes
+                // the aggregate non-homogeneous-float (not an HFA).
+                _ => types::I64,
+            }),
         }
         Ok(())
     }
@@ -3953,4 +4031,44 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
         .map_err(|e| internal(format!("define init: {e}")))?;
     ml.module.clear_context(&mut cctx);
     Ok(())
+}
+
+#[cfg(test)]
+mod hfa_tests {
+    use super::is_pure_hfa_leaves;
+    use cranelift_codegen::ir::types;
+
+    #[test]
+    fn pure_float_aggregates_are_hfas() {
+        // 1–4 members, all the same fundamental float type.
+        assert!(is_pure_hfa_leaves(&[types::F32]));
+        assert!(is_pure_hfa_leaves(&[types::F64]));
+        assert!(is_pure_hfa_leaves(&[types::F32, types::F32]));
+        assert!(is_pure_hfa_leaves(&[types::F64, types::F64]));
+        assert!(is_pure_hfa_leaves(&[
+            types::F32,
+            types::F32,
+            types::F32,
+            types::F32
+        ]));
+    }
+
+    #[test]
+    fn non_hfa_returns_are_not_rejected() {
+        // All-integer (a37's shapes), mixed integer+float, mixed float
+        // widths, empty, and >4 members are NOT pure HFAs — the register/
+        // sret integer path handles them and must keep working.
+        assert!(!is_pure_hfa_leaves(&[types::I64])); // {u64}
+        assert!(!is_pure_hfa_leaves(&[types::I64, types::I64])); // {u64,u64}
+        assert!(!is_pure_hfa_leaves(&[types::I64, types::F64])); // mixed {u64,double}
+        assert!(!is_pure_hfa_leaves(&[types::F32, types::F64])); // mixed float widths
+        assert!(!is_pure_hfa_leaves(&[])); // no leaves
+        assert!(!is_pure_hfa_leaves(&[
+            types::F32,
+            types::F32,
+            types::F32,
+            types::F32,
+            types::F32
+        ])); // 5 floats — not an HFA (>4 members)
+    }
 }

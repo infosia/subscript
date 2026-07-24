@@ -255,3 +255,35 @@ fn all_patterns_composed() {
     // total 19.
     assert_eq!(both_tiers(&prog), b"19\n");
 }
+
+/// §14.2 HFA guard: a foreign call returning a pure Homogeneous
+/// Floating-point Aggregate by value (all-f32 / all-f64, 1–4 members) is
+/// returned in SIMD registers, which the dev-JIT register-return path does
+/// not model. It must fail LOUD at lowering rather than silently mis-marshal
+/// against ship-C (compiler.md §12.3a / §2). Verified on the AAPCS64 gate
+/// machine (a supported by-value-aggregate ABI, so the arch-gate is passed
+/// and the HFA guard is what fires).
+#[test]
+fn hfa_float_struct_return_fails_loud() {
+    const HFA_MIRROR: &str = "\
+declare class SubVec2f {
+  x: f32;
+  y: f32;
+  constructor(x: f32, y: f32);
+}
+declare function subVec2Make(seed: u32): SubVec2f;
+";
+    let files = vec![
+        SourceFile::ambient("hfa.d.ts", HFA_MIRROR),
+        SourceFile::new(
+            "prog.ts",
+            "export function main(): void {\n  const v: SubVec2f = subVec2Make(1);\n  print(`${v.x}`);\n}\n",
+        ),
+    ];
+    let err = run_jit(&files).expect_err("HFA return must fail loud, not silently mis-marshal");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("homogeneous floating-point aggregate"),
+        "expected the HFA guard to fire; got: {msg}"
+    );
+}
