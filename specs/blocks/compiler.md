@@ -661,10 +661,18 @@ neutral fixture carrying the production-C features above.
 
 - **Descriptor-embedded `(count, pointer)` arrays.** Production headers
   spell arrays as adjacent fields *inside* a larger struct
-  (`size_t <n>Count; const T* <n>;` in either order), not as a standalone
-  two-field descriptor. The mirror generator recognizes the embedded
-  pair and maps the pointer field to `T[]` with the count elided;
-  zero-copy lowering as in §12 / a26 / a31.
+  (`size_t <n>Count; const T* <n>;`), not as a standalone two-field
+  descriptor. The mirror generator recognizes the embedded pair **only in
+  the exact layout the lowering can reconstruct: the `size_t` count field
+  immediately precedes the `const T*` pointer field (count-first,
+  contiguous)**, and maps the pointer field to `T[]` with the count
+  elided; zero-copy lowering as in §12 / a26 / a31. Any other spelling
+  (pointer-first, or a non-adjacent count) is **not** recognized as an
+  embedded array — the bare `const T*` field is then an unmapped boundary
+  type and the mirror generator **fails loud** (never a silently
+  wrong-marshaled mirror). The recognizer accepts exactly what both tiers
+  fill; the mirror discards C field offsets, so it must not accept a
+  layout the lowering cannot honor.
 - **Flag typedefs.** `typedef <intN> XFlags;` + `static const XFlags
   X_A = …;` → a `uXX` alias plus `declare const` members, combinable with
   `|` (Q18), proven end-to-end (declare, combine, pass to a foreign call,
