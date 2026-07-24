@@ -211,6 +211,16 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   `replaceAll("", …)`, empty-`pad` padding — JS returns NaN or silent
   no-ops there). `replace`/`replaceAll` are literal: `$` substitution
   patterns are not interpreted. Rejected members: `stdlib.md` §8.
+- **Q22 (`Array` methods)** — the checker accepts the `stdlib.md` §9
+  subset on `T[]`. Element equality follows JS `===` per element
+  kind (scalars by value, strings by content, `Date` by millis,
+  reference classes by identity). Callback arities are fixed (no
+  optional index/array parameters); `reduce` requires `init` (the
+  lib's arity-overloaded no-init form changes meaning silently);
+  `sort` requires a comparator (the lib's default sort coerces to
+  strings); `find` is rejected (no miss value for scalar element
+  types — use `findIndex`). Callbacks are non-escaping (C5) by
+  construction; a callback trap aborts the iteration.
 
 ## 3. Open items carried forward
 

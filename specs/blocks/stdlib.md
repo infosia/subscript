@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -155,7 +155,7 @@ detailed contract lands in this file before its implementation opens.
 | Phase | Area | New machinery | Status |
 |---|---|---|---|
 | P10 | `String` methods (§8) | none (extends the Str member surface) | contract below |
-| P11 | `Array` methods | runtime→script comparator/predicate calls (non-escaping closures, C5) | contract before open |
+| P11 | `Array` methods (§9) | runtime→script comparator/predicate calls (non-escaping closures, C5) | contract below |
 | P12 | `Number` statics + `parseInt`/`parseFloat`/`toFixed` | none | contract before open |
 | P13 | `JSON` | typed serialization over layout descriptors (RTTI) — needs its own design | contract before open |
 
@@ -230,3 +230,66 @@ Gate (pre-registered): standing differential gate byte-exact incl.
 under lib ES2022); reject entries at pinned S014 positions; trap
 identity across tiers for the four trap paths; §5.5 benchmarks — no
 ship-row regression.
+
+## 9. P11 — `Array` methods (Q22)
+
+**New machinery: runtime→script closure invocation.** A language
+closure is a `(code, env)` pair (C5, non-escaping). Array methods
+pass it to the runtime, which calls it synchronously per element
+through the language calling convention `(ctx, env, args…)` — the
+same shape the P5.2b callback trampoline already invokes. Non-escape
+holds by construction (the closure is only called during the method
+call). After every callback return the runtime checks the Context
+trap flag and stops immediately if set (the trap surfaces through
+the standing per-call check in generated code; kind/message/position
+identical across tiers — a trapping-callback cross-tier test is part
+of the gate).
+
+Accepted members on `T[]` (checker: `ArrFn` intrinsics; runtime
+`sub_rt_arr_*`, one implementation, both tiers):
+
+Without closures —
+- `indexOf(x)/lastIndexOf(x)/includes(x)`: scalars by value, strings
+  by content (`str_eq`), `Date` by millis, reference classes by
+  identity (JS `===` semantics per kind)
+- `join(sep?): string` — `sep` defaults `","`; elements formatted by
+  the Q14 rules (the `${…}` formatting)
+- `slice(start?, end?): T[]` — JS negative/clamp rules; fresh array
+- `fill(x, start?, end?)`, `reverse()` — in place; return the
+  receiver
+- `concat(other: T[]): T[]` — exactly one array argument
+
+With closures (callback arities fixed — the lib's optional
+index/array parameters are not accepted, Q22) —
+- `forEach(f: (v: T) => void): void`
+- `map(f: (v: T) => U): U[]` — `U` inferred from the closure return
+- `filter(f: (v: T) => boolean): T[]`
+- `reduce(f: (acc: U, v: T) => U, init: U): U` — **`init` is
+  required** (the lib's no-init overload changes meaning by arity;
+  rejected, Q22)
+- `some/every(f: (v: T) => boolean): boolean`
+- `findIndex(f: (v: T) => boolean): i32` — −1 on miss
+- `sort(cmp: (a: T, b: T) => i32)` — **comparator required** (the
+  lib's no-argument sort coerces elements to strings — rejected,
+  Q22); stable (runtime merge sort); in place; returns the receiver
+
+Rejected (S014, Q22): no-argument `sort`, no-init `reduce`,
+`reduceRight`, `find`/`findLast` (a scalar `T[]` has no miss value —
+`T | null` does not cover scalars; use `findIndex`), `splice`,
+`shift`/`unshift`, `flat`/`flatMap`, `copyWithin`, `entries`/`keys`/
+`values`, `forEach`/`map`/… callbacks declaring the index/array
+parameters, `every`-family on `FixedArray` (v1 is `T[]` only).
+
+Corpus: `a44` no-closure battery (equality per element kind, join
+formatting, slice negatives, fill/reverse/concat); `a45` closure
+battery (map type change f64→string, filter, reduce with init,
+some/every short-circuit order, findIndex, sort stability — equal
+keys keep input order, pinned). Rejects: no-arg `sort`, `find`,
+no-init `reduce`, `splice` — S014 each. Trapping-callback cross-tier
+test (a callback that traps mid-`map`: identical trap tuple both
+tiers) in cemit tests, not corpus.
+
+Gate (pre-registered): standing gate byte-exact incl. a44/a45; `tsc`
+zero errors unchanged config; sort-stability pinned; the
+trapping-callback tuple identical across tiers; reject entries at
+pinned S014 positions; §5.5 benchmarks — no ship-row regression.
