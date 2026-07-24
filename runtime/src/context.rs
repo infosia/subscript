@@ -133,10 +133,19 @@ pub struct Context {
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
     callbacks: Vec<Box<CallbackBinding>>,
+    // Ship-tier policy flag (§8.1a): when true, `delete`/`collect` free
+    // and forget immediately; when false (dev tier), they retain and
+    // poison so use-after-delete/double-delete trap.
+    release_on_delete: bool,
 }
 
 impl Context {
     /// Creates an empty context.
+    ///
+    /// Development-tier policy: `unsafeDelete`/`collect` retain and poison
+    /// (double delete and use-after-delete trap). The dev-JIT builds its
+    /// Context this way. For the AOT/ship tier use
+    /// [`Context::new_releasing`].
     #[must_use]
     pub fn new() -> Box<Context> {
         Box::new(Context {
@@ -152,6 +161,32 @@ impl Context {
             shadow: Vec::new(),
             roots: Vec::new(),
             callbacks: Vec::new(),
+            release_on_delete: false,
+        })
+    }
+
+    /// Creates an empty ship-tier context (§8.1a). Unlike
+    /// [`Context::new`]'s retain-and-poison dev policy, `unsafeDelete` and
+    /// `collect` here **free immediately**: the backing storage is
+    /// deallocated and the map entry removed. Use-after-delete and double
+    /// delete are undefined (per Q6/§8.1a), not trapped. The AOT host
+    /// entry ([`crate::ffi::sub_rt_ctx_new`]) builds its Context this way.
+    #[must_use]
+    pub fn new_releasing() -> Box<Context> {
+        Box::new(Context {
+            trap_flag: 0,
+            reload_epoch: 0,
+            fn_table: std::ptr::null(),
+            globals: std::ptr::null_mut(),
+            script_depth: 0,
+            allocations: HashMap::new(),
+            stdout: Vec::new(),
+            trap: None,
+            interned: HashMap::new(),
+            shadow: Vec::new(),
+            roots: Vec::new(),
+            callbacks: Vec::new(),
+            release_on_delete: true,
         })
     }
 
@@ -346,11 +381,29 @@ impl Context {
         payload
     }
 
-    /// Marks the allocation at `payload` dead. Development-tier
-    /// semantics of `unsafeDelete` (Q6): double delete and unknown
-    /// pointers trap; the bytes are retained (poisoned) so stale
-    /// handles trap instead of reading freed memory.
+    /// Frees or marks the allocation at `payload` dead, per tier policy.
+    ///
+    /// Development tier ([`Context::new`]): the bytes are retained
+    /// (poisoned) so stale handles trap; double delete and unknown
+    /// pointers trap (Q6).
+    ///
+    /// Ship tier ([`Context::new_releasing`], §8.1a): the backing storage
+    /// is freed and the map entry removed. A double delete or unknown
+    /// pointer is undefined (Q6/§8.1a); it presents as an absent entry and
+    /// is a silent no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
+        if self.release_on_delete {
+            if let Some(a) = self.allocations.remove(&payload) {
+                // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+                // `alloc`; the entry was just removed so this frees it
+                // exactly once. No DEAD_STATE poisoning: the memory is
+                // gone.
+                unsafe { dealloc(a.base, a.layout) };
+            }
+            // Absent entry (unknown or already-freed pointer): undefined
+            // per the contract, handled as a no-op.
+            return;
+        }
         match self.allocations.get_mut(&payload) {
             None => {
                 self.trap(
@@ -449,13 +502,37 @@ impl Context {
             }
         }
 
-        for a in self.allocations.values_mut() {
-            if a.live && !a.marked {
-                a.live = false;
-                // SAFETY: as in `delete`: poison the retained header.
-                unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+        if self.release_on_delete {
+            // Ship tier (§8.1a): free unreached-live entries. Cannot
+            // `remove`+`dealloc` while iterating, so collect the payload
+            // addresses to sweep first.
+            let sweep: Vec<usize> = self
+                .allocations
+                .iter()
+                .filter(|(_, a)| a.live && !a.marked)
+                .map(|(&addr, _)| addr)
+                .collect();
+            for addr in sweep {
+                if let Some(a) = self.allocations.remove(&addr) {
+                    // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+                    // `alloc`; the entry was just removed so this frees it
+                    // exactly once.
+                    unsafe { dealloc(a.base, a.layout) };
+                }
             }
-            a.marked = false;
+            // Reset the mark on the survivors.
+            for a in self.allocations.values_mut() {
+                a.marked = false;
+            }
+        } else {
+            for a in self.allocations.values_mut() {
+                if a.live && !a.marked {
+                    a.live = false;
+                    // SAFETY: as in `delete`: poison the retained header.
+                    unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+                }
+                a.marked = false;
+            }
         }
     }
 
@@ -723,6 +800,15 @@ impl std::fmt::Debug for Context {
 mod tests {
     use super::*;
 
+    impl Context {
+        /// Total map length (live + retained-dead). Distinguishes the dev
+        /// tier's retain-and-poison (entry kept) from the ship tier's
+        /// free-and-remove (entry gone).
+        fn allocation_count(&self) -> usize {
+            self.allocations.len()
+        }
+    }
+
     // The emitted-C SsArrayHeader (codegen/src/cemit.rs, §10a) mirrors this
     // layout; a reorder here is caught by this test.
     #[test]
@@ -831,6 +917,45 @@ mod tests {
     }
 
     #[test]
+    fn ship_mode_delete_frees_and_removes_the_entry() {
+        let mut ctx = Context::new_releasing();
+        let a = ctx.alloc(8, 1, 0);
+        let b = ctx.alloc(8, 1, 0);
+        assert_eq!(ctx.live_count(), 2);
+        assert_eq!(ctx.allocation_count(), 2);
+
+        ctx.delete(a as usize, 0);
+        assert_eq!(ctx.live_count(), 1);
+        // The entry is gone, not merely marked dead.
+        assert!(!ctx.is_live(a as usize));
+        assert_eq!(ctx.allocation_count(), 1, "ship mode removes the map entry");
+        // A fresh allocation still succeeds after the release.
+        let c = ctx.alloc(8, 1, 0);
+        assert!(!c.is_null());
+        assert!(ctx.is_live(c as usize));
+
+        // A second delete of the now-absent pointer does NOT trap
+        // (undefined-but-safe no-op), unlike the dev-mode double-delete
+        // trap covered by `delete_poisons_and_double_delete_traps`.
+        ctx.delete(a as usize, 9);
+        assert!(!ctx.trapped());
+
+        // Contrast: an equivalent dev-mode delete retains the entry.
+        let mut dev = Context::new();
+        let d0 = dev.alloc(8, 1, 0);
+        let _d1 = dev.alloc(8, 1, 0);
+        assert_eq!(dev.allocation_count(), 2);
+        dev.delete(d0 as usize, 0);
+        assert_eq!(
+            dev.allocation_count(),
+            2,
+            "dev mode retains the poisoned entry"
+        );
+        // `b` and `c` keep the ship context's live set non-trivial.
+        assert!(ctx.is_live(b as usize));
+    }
+
+    #[test]
     fn delete_of_unowned_pointer_traps() {
         let mut ctx = Context::new();
         ctx.delete(0x1000, 1);
@@ -905,6 +1030,21 @@ mod tests {
         unsafe { slot_ptr.write(0) };
         ctx.collect();
         assert!(!ctx.is_live(kept as usize));
+    }
+
+    #[test]
+    fn ship_mode_collect_frees_and_removes_unreachable() {
+        let mut ctx = Context::new_releasing();
+        let kept = ctx.alloc(8, 1, 0);
+        let _dropped = ctx.alloc(8, 1, 0);
+        assert_eq!(ctx.allocation_count(), 2);
+        let mut slot: usize = kept as usize;
+        ctx.root_add(&mut slot as *mut usize as usize, 1);
+        ctx.collect();
+        assert!(ctx.is_live(kept as usize));
+        // The unreachable entry is freed and removed, not poisoned.
+        assert_eq!(ctx.allocation_count(), 1, "ship mode removes swept entries");
+        assert_eq!(ctx.live_count(), 1);
     }
 
     #[test]

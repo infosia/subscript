@@ -298,3 +298,36 @@ entry), `benchmarks/aot-entry.c`, `benchmarks/src/bin/perf-gate.rs` (harness cra
 `cargo run --offline --release -p subscript-benchmarks --bin perf-gate --
 --warmup 30 --timed 11`. Release is enforced. No build products are
 written inside the repository.
+
+## Follow-up — `tree` allocation cost: ship-tier release (§8.1a)
+
+The cross-language `tree` workload (30 full binary trees, depth 16 —
+131,071 reference-class nodes each, built then `unsafeDelete`d in
+sequence) was the suite's worst subject: ship 6.72×, dev-JIT 7.98× the C
+baseline on x86_64 windows-msvc (clang 22.1.6). Root cause, isolated by a
+controlled experiment (DEPTH=16 fixed, COUNT swept 5→30 so the live set is
+constant and only the retained-dead count grows):
+
+| COUNT | nodes | C ns/node | ship ns/node (retain) | ship ns/node (release) |
+|---|---|---|---|---|
+| 5 | 655,355 | 49.4 | 233 | 175 |
+| 10 | 1,310,710 | 47.2 | 254 | 173 |
+| 20 | 2,621,420 | 47.4 | 335 | 190 |
+| 30 | 3,932,130 | 46.5 | 365 | 210 |
+
+C is flat; the retain policy rose +57% across the range. Cause:
+`Context::delete` marked the allocation dead and kept it in the
+`allocations` table for the whole run, so the table grew monotonically to
+3.9M entries (cache-hostile inserts). The fix is §8.1a: the ship tier
+frees and removes on `unsafeDelete`/`collect`, bounding the table at the
+live set. Ship-tier `tree` 6.72×→4.46× at COUNT=30; per-node rise cut from
++57% to +20% (the superlinear term removed). The dev tier is unchanged by
+design (still retains-and-poisons to trap use-after-delete), so dev-JIT
+`tree` stays ~8× — the dev tier's trap guarantee, not a ship concern.
+`particles` (value-struct AoS, no `unsafeDelete`) unchanged, confirming
+scope. The residual ship 4.46× is the per-allocation `HashMap`-op cost
+versus C `malloc`; closing it needs a slab/free-list allocator (§8.1a
+"why it matters"; a larger change, not scheduled). Verification: full
+workspace `cargo test` green incl. `golden.rs` (JIT≡AOT≡golden) and the
+new ship-mode runtime unit tests (`ship_mode_delete_frees_and_removes_the
+_entry`, `ship_mode_collect_frees_and_removes_unreachable`).

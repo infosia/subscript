@@ -568,9 +568,13 @@ pub unsafe extern "C" fn sub_rt_cb_trampoline(
 
 /// Creates a Context and transfers ownership to the caller, who must
 /// return it with [`sub_rt_ctx_release`]. Never null.
+///
+/// The returned Context is a ship-tier (releasing) Context (§8.1a): its
+/// `unsafeDelete`/`collect` free the backing storage immediately rather
+/// than retaining and poisoning (built via [`Context::new_releasing`]).
 #[no_mangle]
 pub extern "C" fn sub_rt_ctx_new() -> *mut Context {
-    Box::into_raw(Context::new())
+    Box::into_raw(Context::new_releasing())
 }
 
 /// Destroys a Context created by [`sub_rt_ctx_new`], freeing every
