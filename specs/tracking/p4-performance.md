@@ -408,3 +408,18 @@ a justifying `#[allow]` comment) recorded as cosmetic follow-ups.
 Residual ship `tree` gap (1.37×): the `sub_rt` call boundary, header
 writes, and full-capacity re-zeroing on reuse — not the map (gone).
 Not scheduled; §8.1b's target is met.
+
+Second-platform confirmation (x86_64 / Windows, clang 22.1.6, 20 logical
+cores, same 20 warm-up / 21 timed schedule, snapshot @3dc3695 in
+`benchmarks/`): ship `tree` 5.33× → **0.81×** C, i.e. below the C
+baseline, reproduced at 0.87× in a second `--only tree` run. The
+baseline there is the MSVC UCRT `malloc`/`free`, which is slower than
+the arm64 platform allocator, so the ratio is not comparable to arm64's
+1.37× — what carries across is that the size-class arena removed the
+allocation-count-dependent growth on both platforms. Other ship rows
+unchanged within this machine's spread (sort 1.91→1.84, particles
+2.24→2.36, compute-bound rows 0.99–1.03×). The dev-JIT rows are
+unaffected by §8.1b by construction (one `release_on_delete` branch;
+the dev path is the unchanged map + retain-and-poison) and their
+movement is run-to-run noise: the same binary produced 1470 ms and
+1267 ms for `tree`/subscript-jit on two consecutive runs.

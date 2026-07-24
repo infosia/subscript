@@ -10,7 +10,7 @@
   },
   "versions": {
     "C": "clang version 22.1.6 (https://github.com/llvm/llvm-project fc4aad7b5db3fff421df9a9637605b9ca5667881)",
-    "subscript": "subscript @ 69c3739 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "subscript": "subscript @ 3dc3695 (dev-JIT: Cranelift; ship: HIR->C->clang)",
     "LuaJIT": "absent",
     "JSC": "absent",
     "V8 (Node.js)": "Node.js v24.16.0"
@@ -23,12 +23,12 @@
       "checksum": 1346269,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.002386700,
-        "subscript-ship": 0.002382400,
-        "subscript-jit": 0.003672000,
+        "C": 0.002363000,
+        "subscript-ship": 0.002442500,
+        "subscript-jit": 0.003648200,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.006824100
+        "V8 (Node.js)": 0.006800100
       }
     },
     {
@@ -37,12 +37,12 @@
       "checksum": 973132000,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.021719400,
-        "subscript-ship": 0.021487300,
-        "subscript-jit": 0.048627200,
+        "C": 0.021757700,
+        "subscript-ship": 0.021865500,
+        "subscript-jit": 0.050347400,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.036668100
+        "V8 (Node.js)": 0.036866600
       }
     },
     {
@@ -51,12 +51,12 @@
       "checksum": 43027996,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.078508700,
-        "subscript-ship": 0.078679000,
-        "subscript-jit": 0.078703800,
+        "C": 0.079207800,
+        "subscript-ship": 0.079819100,
+        "subscript-jit": 0.080191100,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.077679700
+        "V8 (Node.js)": 0.078566000
       }
     },
     {
@@ -65,12 +65,12 @@
       "checksum": 41538,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.033026400,
-        "subscript-ship": 0.033146800,
-        "subscript-jit": 0.033699800,
+        "C": 0.034292900,
+        "subscript-ship": 0.033786300,
+        "subscript-jit": 0.033418800,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.033962200
+        "V8 (Node.js)": 0.033410700
       }
     },
     {
@@ -79,12 +79,12 @@
       "checksum": 3672124540,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.014061800,
-        "subscript-ship": 0.026796300,
-        "subscript-jit": 0.043752800,
+        "C": 0.014434400,
+        "subscript-ship": 0.026551100,
+        "subscript-jit": 0.049965700,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.024280700
+        "V8 (Node.js)": 0.024814200
       }
     },
     {
@@ -93,12 +93,12 @@
       "checksum": 3932130,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.103142400,
-        "subscript-ship": 0.549398800,
-        "subscript-jit": 1.144333100,
+        "C": 0.117662300,
+        "subscript-ship": 0.095081100,
+        "subscript-jit": 1.470042500,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.062921600
+        "V8 (Node.js)": 0.070510100
       }
     },
     {
@@ -107,12 +107,12 @@
       "checksum": 73712,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.022955700,
-        "subscript-ship": 0.021856100,
-        "subscript-jit": 0.037833300,
+        "C": 0.022901700,
+        "subscript-ship": 0.022671000,
+        "subscript-jit": 0.038222800,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.030886000
+        "V8 (Node.js)": 0.030682800
       }
     },
     {
@@ -121,12 +121,12 @@
       "checksum": 1712845248,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.039754800,
-        "subscript-ship": 0.089121300,
-        "subscript-jit": 0.314892400,
+        "C": 0.039806400,
+        "subscript-ship": 0.093980000,
+        "subscript-jit": 0.321079000,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.107025200
+        "V8 (Node.js)": 0.112950800
       }
     }
   ]
