@@ -194,14 +194,10 @@ What the numbers show, honestly:
 
 This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. The table above is the arm64 / Apple M2 snapshot (the
-shipping target) captured at commit `50326f7`, after the ship-tier
-**free-on-`delete`** change (compiler block §8.1a): ship `tree` dropped
-from 10.07× to 5.11× as the change removed the allocation-table growth that
-dominated per-node-allocation workloads. The dev-JIT `tree` row (10.61×) is
-unchanged — §8.1a is a ship-tier change. A current x86_64 / Windows
-snapshot — four subjects, since LuaJIT and JSC are not built there — is in
-[`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md)
-(post-§8.1a ship `tree` 5.33× there). Re-run either yourself with
+shipping target). A x86_64 / Windows snapshot — four subjects, since LuaJIT
+and JSC are not built there — is in
+[`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md).
+Re-run either yourself with
 `cargo run --release -p subscript-benchmarks --bin cross-language`.
 
 ## How it works
