@@ -185,8 +185,10 @@ Observable obligations only; internal design is the implementer's.
 - **Runtime semantics** (the run set exercises all of these):
   - Context memory: reference classes, arrays, strings, coroutine
     frames are Context allocations. `unsafeDelete` frees immediately;
-    double delete / use-after-delete trap in the dev tier. `collect()`
-    frees unreachable allocations and never runs unbidden.
+    double delete / use-after-delete trap in the dev tier (the dev tier
+    retains the freed bytes poisoned so the trap can fire — the ship tier
+    releases instead, §8.1a). `collect()` frees unreachable allocations
+    and never runs unbidden.
   - Strings: immutable UTF-8 `(ptr, len)`; `length` = byte length
     (`i32`); `slice(start, end)` byte offsets, traps off a UTF-8
     boundary; `+`/template concatenation; `===`/`!==` by content.
@@ -233,6 +235,48 @@ Observable obligations only; internal design is the implementer's.
 - Cross-tier determinism: the AOT binary's stdout bytes must equal the
   JIT's for every run-set entry. Where they differ, the language rule
   decides which side is wrong (§2), never the golden.
+
+### 8.1a Ship-tier manual memory is released, not retained
+
+The dev tier realizes `unsafeDelete`/`collect` (Q6/Q7) by
+**retain-and-poison**: the freed allocation's bytes stay owned by the
+Context and its header is stamped dead, so a stale handle *traps* instead
+of reading reused memory (§7). That retention is the price of the dev
+tier's trap-on-use-after-delete guarantee.
+
+The **ship tier does not owe that guarantee** — in AOT, double delete and
+use-after-delete are undefined (Q6; invariant 6, trusted scripts). So the
+ship tier **returns the allocation to the system allocator immediately**:
+`unsafeDelete` (and a `collect` sweep) free the backing storage and drop
+the Context's bookkeeping entry for it, rather than retaining a poisoned
+corpse.
+
+- **Soundness / gate-safety.** For a *correct* program — one that never
+  reads a handle after its `unsafeDelete`, and never deletes twice — the
+  released and retained policies are observationally identical: the only
+  difference is the state of memory the program has promised not to touch.
+  Every `corpus/accept` entry is such a program by construction, so
+  **dev-JIT bytes ≡ AOT bytes ≡ golden** (§8.3) is unaffected. The reject
+  corpus's use-after-delete / double-delete entries are dev-tier
+  diagnostics and are not run under AOT.
+- **Mechanism.** The tier is identified by the Context constructor, with
+  no generated-code and no C-entry change: the dev-JIT driver builds its
+  Context in Rust (retaining), and the AOT host entry builds its Context
+  through the runtime's C constructor (releasing). One lowering, one
+  runtime; only the allocation-lifetime policy differs, selected at
+  Context creation.
+- **Why it matters (measurable).** Retention makes the Context's
+  allocation table grow monotonically for the whole run: a program that
+  builds and frees N reference-class instances in sequence leaves N dead
+  entries behind, so each later allocation works against an ever-larger
+  table (cache-hostile, superlinear). Release bounds the table at the live
+  set. Exit criterion: (1) §8.3 stays byte-exact on the reference-class
+  entries (including `a16` collect); (2) a runtime unit test asserts that
+  in ship mode a deleted allocation leaves **no** table entry (live count
+  and table size both drop), where the dev-mode test still observes the
+  poisoned-corpse trap. The `tree` benchmark's per-allocation cost, flat
+  in C and superlinear under retention, is the informal corroboration, not
+  a gate.
 
 ### 8.2 Hot reload (dev tier)
 
