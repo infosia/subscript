@@ -20,6 +20,7 @@
 pub mod context;
 pub mod ffi;
 pub mod fmt;
+pub mod math;
 pub mod trap;
 
 pub use context::Context;

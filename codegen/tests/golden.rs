@@ -31,10 +31,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // (compiler.md §2 — goldens are never deleted). The floor is the
     // run set (a01–a24) plus the interop entries (a25–a34 P5/P6.2, a35
     // P6.3 async, a36–a38 P7.1 async/Future shapes, a39 P7.2 composed
-    // async capstone).
+    // async capstone) plus the P9.1 stdlib entries (a40 Math battery,
+    // a41 Math.random sequence).
     assert!(
-        golden_ids.len() >= 39,
-        "expected at least the 39 committed goldens (a01–a24 run set + a25–a39 interop), found {}",
+        golden_ids.len() >= 41,
+        "expected at least the 41 committed goldens (a01–a24 run set + a25–a39 interop \
+         + a40–a41 stdlib), found {}",
         golden_ids.len()
     );
 

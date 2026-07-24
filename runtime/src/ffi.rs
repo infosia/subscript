@@ -352,6 +352,138 @@ pub unsafe extern "C" fn sub_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id: u32)
     unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_bool(v != 0).as_bytes(), pos_id)
 }
 
+// ----- Math (stdlib.md §1/§2) -----
+//
+// One uniform signature convention: every `sub_rt_math_*` symbol takes
+// the Context pointer first (`sub_rt_math_<fn>(ctx, args…) -> f64`,
+// stdlib.md §1), so both tiers emit every Math call identically. The
+// pure entries ignore `ctx` (and are safe: nothing is dereferenced);
+// only `random` reads Context state. Both tiers must call these opaque
+// symbols — never a direct libm call, which clang constant-folds at
+// `-O2` (stdlib.md §0.2).
+
+/// Declares the C entry of a pure unary `Math` member: `f(ctx, x)`
+/// forwarding to [`crate::math`].
+macro_rules! math_ffi_unary {
+    ($( $(#[$doc:meta])* $sym:ident => $imp:ident ),* $(,)?) => {
+        $(
+            $(#[$doc])*
+            #[no_mangle]
+            pub extern "C" fn $sym(ctx: *mut Context, x: f64) -> f64 {
+                let _ = ctx; // uniform signature; the operation is pure
+                crate::math::$imp(x)
+            }
+        )*
+    };
+}
+
+/// Declares the C entry of a pure binary `Math` member: `f(ctx, a, b)`
+/// forwarding to [`crate::math`].
+macro_rules! math_ffi_binary {
+    ($( $(#[$doc:meta])* $sym:ident => $imp:ident ),* $(,)?) => {
+        $(
+            $(#[$doc])*
+            #[no_mangle]
+            pub extern "C" fn $sym(ctx: *mut Context, a: f64, b: f64) -> f64 {
+                let _ = ctx; // uniform signature; the operation is pure
+                crate::math::$imp(a, b)
+            }
+        )*
+    };
+}
+
+math_ffi_unary! {
+    /// `Math.abs`.
+    sub_rt_math_abs => abs,
+    /// `Math.acos`.
+    sub_rt_math_acos => acos,
+    /// `Math.acosh`.
+    sub_rt_math_acosh => acosh,
+    /// `Math.asin`.
+    sub_rt_math_asin => asin,
+    /// `Math.asinh`.
+    sub_rt_math_asinh => asinh,
+    /// `Math.atan`.
+    sub_rt_math_atan => atan,
+    /// `Math.atanh`.
+    sub_rt_math_atanh => atanh,
+    /// `Math.cbrt`.
+    sub_rt_math_cbrt => cbrt,
+    /// `Math.ceil`.
+    sub_rt_math_ceil => ceil,
+    /// `Math.cos`.
+    sub_rt_math_cos => cos,
+    /// `Math.cosh`.
+    sub_rt_math_cosh => cosh,
+    /// `Math.exp`.
+    sub_rt_math_exp => exp,
+    /// `Math.expm1`.
+    sub_rt_math_expm1 => expm1,
+    /// `Math.floor`.
+    sub_rt_math_floor => floor,
+    /// `Math.log`.
+    sub_rt_math_log => log,
+    /// `Math.log1p`.
+    sub_rt_math_log1p => log1p,
+    /// `Math.log10`.
+    sub_rt_math_log10 => log10,
+    /// `Math.log2`.
+    sub_rt_math_log2 => log2,
+    /// `Math.round` (ECMA half-toward-+∞).
+    sub_rt_math_round => round,
+    /// `Math.sign` (±0/±1/NaN).
+    sub_rt_math_sign => sign,
+    /// `Math.sin`.
+    sub_rt_math_sin => sin,
+    /// `Math.sinh`.
+    sub_rt_math_sinh => sinh,
+    /// `Math.sqrt`.
+    sub_rt_math_sqrt => sqrt,
+    /// `Math.tan`.
+    sub_rt_math_tan => tan,
+    /// `Math.tanh`.
+    sub_rt_math_tanh => tanh,
+    /// `Math.trunc`.
+    sub_rt_math_trunc => trunc,
+}
+
+math_ffi_binary! {
+    /// `Math.atan2(y, x)`.
+    sub_rt_math_atan2 => atan2,
+    /// `Math.hypot(a, b)` (two arguments, Q19).
+    sub_rt_math_hypot => hypot,
+    /// `Math.pow(base, exp)` (ECMA edges).
+    sub_rt_math_pow => pow,
+    /// `Math.max(a, b)` (NaN propagation, zero ordering).
+    sub_rt_math_max => max,
+    /// `Math.min(a, b)` (NaN propagation, zero ordering).
+    sub_rt_math_min => min,
+}
+
+/// `Math.random()` (stdlib.md §2): the next deterministic draw from the
+/// Context-owned xoshiro256++ stream.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_math_random(ctx: *mut Context) -> f64 {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.random_f64()
+}
+
+/// Reseeds the Context's `Math.random` stream by re-expanding `seed`
+/// (stdlib.md §2, host replay control).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_seed_random(ctx: *mut Context, seed: u64) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.seed_random(seed);
+}
+
 // ----- arrays (Q4) -----
 
 /// Allocates an empty dynamic array of `elem_size`-byte elements.
@@ -779,6 +911,66 @@ mod tests {
         let r = ctx.trap_record().expect("trap");
         assert_eq!(r.kind, TrapKind::Internal);
         assert_eq!(r.pos_id, 3);
+    }
+
+    #[test]
+    fn ffi_math_entries_forward_to_the_math_module() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // One spot value per exported symbol; the semantics themselves
+        // are pinned by `crate::math`'s tests.
+        assert_eq!(sub_rt_math_abs(p, -3.5), 3.5);
+        assert_eq!(sub_rt_math_acos(p, 1.0), 0.0);
+        assert_eq!(sub_rt_math_acosh(p, 1.0), 0.0);
+        assert_eq!(sub_rt_math_asin(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_asinh(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_atan(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_atanh(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_cbrt(p, 27.0), 3.0);
+        assert_eq!(sub_rt_math_ceil(p, 1.2), 2.0);
+        assert_eq!(sub_rt_math_cos(p, 0.0), 1.0);
+        assert_eq!(sub_rt_math_cosh(p, 0.0), 1.0);
+        assert_eq!(sub_rt_math_exp(p, 0.0), 1.0);
+        assert_eq!(sub_rt_math_expm1(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_floor(p, 1.8), 1.0);
+        assert_eq!(sub_rt_math_log(p, 1.0), 0.0);
+        assert_eq!(sub_rt_math_log1p(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_log10(p, 1000.0), 3.0);
+        assert_eq!(sub_rt_math_log2(p, 8.0), 3.0);
+        assert_eq!(sub_rt_math_round(p, -2.5), -2.0);
+        assert_eq!(sub_rt_math_sign(p, -7.5), -1.0);
+        assert_eq!(sub_rt_math_sin(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_sinh(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_sqrt(p, 9.0), 3.0);
+        assert_eq!(sub_rt_math_tan(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_tanh(p, 0.0), 0.0);
+        assert_eq!(sub_rt_math_trunc(p, -1.7), -1.0);
+        assert_eq!(sub_rt_math_atan2(p, 0.0, 1.0), 0.0);
+        assert_eq!(sub_rt_math_hypot(p, 3.0, 4.0), 5.0);
+        assert_eq!(sub_rt_math_pow(p, 2.0, 10.0), 1024.0);
+        assert_eq!(sub_rt_math_max(p, 2.5, 7.0), 7.0);
+        assert_eq!(sub_rt_math_min(p, 2.5, 7.0), 2.5);
+    }
+
+    #[test]
+    fn ffi_random_draws_the_context_stream_and_reseeds() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let mut reference = crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED);
+        // SAFETY: valid context.
+        unsafe {
+            for _ in 0..4 {
+                assert_eq!(
+                    sub_rt_math_random(p).to_bits(),
+                    reference.next_f64().to_bits()
+                );
+            }
+            sub_rt_ctx_seed_random(p, 99);
+            let a = sub_rt_math_random(p);
+            sub_rt_ctx_seed_random(p, 99);
+            let b = sub_rt_math_random(p);
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
     }
 
     #[test]

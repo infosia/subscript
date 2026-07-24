@@ -101,8 +101,9 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        38,
-        "expected 38 single-file accept entries (23 run set + a25–a39 interop) plus a19-modules"
+        40,
+        "expected 40 single-file accept entries (23 run set + a25–a39 interop \
+         + a40–a41 stdlib) plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
@@ -125,6 +126,75 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     ]);
     assert!(find_fn(&module, "main").exported);
     assert!(find_fn(&module, "triangular").exported);
+}
+
+#[test]
+fn a40_math_calls_are_intrinsics_and_constants_fold_to_literals() {
+    let accept = corpus_dir().join("accept");
+    let module = check_entry(&[("a40-math.ts", accept.join("a40-math.ts"))]);
+    let main = find_fn(&module, "main");
+
+    fn walk_expr(e: &hir::Expr, maths: &mut Vec<hir::MathFn>, floats: &mut Vec<u64>) {
+        match &e.kind {
+            hir::ExprKind::Float(v) => floats.push(v.to_bits()),
+            hir::ExprKind::Call { callee, args } => {
+                if let hir::Callee::Math(f) = callee {
+                    maths.push(*f);
+                }
+                for a in args {
+                    walk_expr(a, maths, floats);
+                }
+            }
+            hir::ExprKind::Template(parts) => {
+                for p in parts {
+                    if let hir::TplPart::Expr(e) = p {
+                        walk_expr(e, maths, floats);
+                    }
+                }
+            }
+            hir::ExprKind::Unary { operand, .. } => walk_expr(operand, maths, floats),
+            hir::ExprKind::Binary { left, right, .. } => {
+                walk_expr(left, maths, floats);
+                walk_expr(right, maths, floats);
+            }
+            _ => {}
+        }
+    }
+    let mut maths = Vec::new();
+    let mut floats = Vec::new();
+    for s in &main.body {
+        match s {
+            hir::Stmt::Expr(e) => walk_expr(e, &mut maths, &mut floats),
+            hir::Stmt::Let { init, .. } => walk_expr(init, &mut maths, &mut floats),
+            _ => {}
+        }
+    }
+    // Every §1 function is exercised at least once, as an intrinsic
+    // call — never the foreign or method path.
+    for f in hir::MathFn::ALL {
+        if f == hir::MathFn::Random {
+            continue; // a41's entry
+        }
+        assert!(maths.contains(&f), "a40 lacks a Math.{} intrinsic call", f.name());
+    }
+    // The 8 constants folded to f64 literals with the exact
+    // std::f64::consts bit patterns (stdlib.md §1).
+    use std::f64::consts;
+    for (name, v) in [
+        ("E", consts::E),
+        ("LN2", consts::LN_2),
+        ("LN10", consts::LN_10),
+        ("LOG2E", consts::LOG2_E),
+        ("LOG10E", consts::LOG10_E),
+        ("PI", consts::PI),
+        ("SQRT1_2", consts::FRAC_1_SQRT_2),
+        ("SQRT2", consts::SQRT_2),
+    ] {
+        assert!(
+            floats.contains(&v.to_bits()),
+            "Math.{name} did not fold to its literal"
+        );
+    }
 }
 
 #[test]

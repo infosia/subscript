@@ -6,7 +6,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
-use crate::hir::{self, AmbientFn, BinOp, Callee, ExprKind, TplPart, UnOp};
+use crate::hir::{self, AmbientFn, BinOp, Callee, ExprKind, MathFn, TplPart, UnOp};
 use crate::types::{FuncType, Type};
 
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
@@ -380,6 +380,15 @@ impl<'p> Checker<'p> {
                     self.error(
                         RuleCode::S002,
                         "no dynamic code evaluation",
+                        pos.clone(),
+                    );
+                } else if name == "Math" {
+                    // The ambient namespace is not a value (Q19): it
+                    // cannot be assigned, passed, or stored.
+                    self.error(
+                        RuleCode::S014,
+                        "`Math` is an ambient namespace, not a value; \
+                         only `Math.<member>` is accepted (Q19)",
                         pos.clone(),
                     );
                 } else if crate::ambient::ambient_fn(&name).is_some() {
@@ -1036,14 +1045,16 @@ impl<'p> Checker<'p> {
     }
 
     /// Resolves `obj` in `obj.prop` when `obj` is a type name used as a
-    /// namespace (enums, class statics, `Object.setPrototypeOf`).
-    /// Returns `Some` when handled.
+    /// namespace (enums, class statics, `Object.setPrototypeOf`, the
+    /// ambient `Math` of stdlib.md §1). Returns `Some` when handled.
+    /// `for_write` marks an assignment-target position.
     fn check_namespace_member(
         &mut self,
         obj: &ast::Expr,
         prop: &str,
         prop_pos: Pos,
         fx: &mut FnCtx,
+        for_write: bool,
     ) -> Option<hir::Expr> {
         let ast::Expr::Ident(id) = obj else { return None };
         let name = id.sym.to_string();
@@ -1055,6 +1066,14 @@ impl<'p> Checker<'p> {
             .any(|s| s.vars.contains_key(&name));
         if is_local {
             return None;
+        }
+        // `Math.<member>` (stdlib.md §1): the ambient namespace applies
+        // only when no program declaration shadows the name. Function
+        // members are intercepted by `check_method_call` before this
+        // point; here a member is a constant fold, a rejected
+        // un-called function, or an out-of-subset rejection.
+        if name == "Math" && self.scope_item(&name).is_none() {
+            return Some(self.check_math_member(prop, prop_pos, for_write));
         }
         match self.scope_item(&name) {
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
@@ -1103,6 +1122,107 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// True when `obj` is the ambient `Math` namespace (stdlib.md §1):
+    /// the identifier `Math` with no local binding and no program
+    /// declaration shadowing it.
+    fn is_math_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+        let ast::Expr::Ident(id) = obj else {
+            return false;
+        };
+        if id.sym.as_ref() != "Math" {
+            return false;
+        }
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|s| s.vars.contains_key("Math"));
+        !shadowed && self.scope_item("Math").is_none()
+    }
+
+    /// A `Math` member outside a call position (stdlib.md §1): a
+    /// constant folds to its `f64` literal; anything else is rejected
+    /// with the Q19 subset code.
+    fn check_math_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
+        if for_write {
+            self.error(
+                RuleCode::S014,
+                format!("`Math.{}` is read-only (Q19)", prop),
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
+        if let Some(value) = crate::ambient::math_const(prop) {
+            return hir::Expr {
+                kind: ExprKind::Float(value),
+                ty: Type::F64,
+                pos: prop_pos,
+            };
+        }
+        if crate::ambient::math_fn(prop).is_some() {
+            self.error(
+                RuleCode::S014,
+                format!("`Math.{}` may only be called, not read as a value", prop),
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
+        let why = match prop {
+            "imul" | "clz32" | "fround" => {
+                format!(
+                    "`Math.{}`: JS-number op; the language has sized integers (Q19)",
+                    prop
+                )
+            }
+            _ => format!("`Math.{}` is outside the accepted Math subset (Q19)", prop),
+        };
+        self.error(RuleCode::S014, why, prop_pos.clone());
+        self.err_expr(prop_pos)
+    }
+
+    /// A `Math.<fn>(…)` intrinsic call (stdlib.md §1): exact arity
+    /// (Q19 — the lib's variadic `max`/`min`/`hypot` beyond two are out
+    /// of subset), every argument `f64`, result `f64`.
+    fn check_math_call(
+        &mut self,
+        f: MathFn,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let arity = f.arity();
+        if c.args.len() != arity {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`Math.{}` takes exactly {} f64 argument(s), got {} \
+                     (Q19: the lib's variadic forms are out of subset)",
+                    f.name(),
+                    arity,
+                    c.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        let params: Vec<ParamSig> = (0..arity)
+            .map(|_| ParamSig {
+                name: String::new(),
+                ty: Type::F64,
+                has_default: false,
+            })
+            .collect();
+        let args = self.check_args(&params, &c.args, fx, &pos, &format!("Math.{}", f.name()));
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Math(f),
+                args,
+            },
+            ty: Type::F64,
+            pos,
+        }
+    }
+
     fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
         let pos = self.pos(m.span);
         match &m.prop {
@@ -1114,7 +1234,8 @@ impl<'p> Checker<'p> {
             ast::MemberProp::Ident(prop) => {
                 let name = prop.sym.to_string();
                 let prop_pos = self.pos(prop.span);
-                if let Some(handled) = self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx)
+                if let Some(handled) =
+                    self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
                 {
                     return handled;
                 }
@@ -1502,7 +1623,8 @@ impl<'p> Checker<'p> {
             ast::MemberProp::Ident(prop) => {
                 let name = prop.sym.to_string();
                 let prop_pos = self.pos(prop.span);
-                if let Some(handled) = self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx)
+                if let Some(handled) =
+                    self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, true)
                 {
                     return handled;
                 }
@@ -1795,7 +1917,18 @@ impl<'p> Checker<'p> {
         };
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
-        if let Some(handled) = self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx) {
+        // `Math.<fn>(…)` (stdlib.md §1): an ambient-namespace intrinsic
+        // call, resolved before the generic namespace-member path (which
+        // treats a function member read as an error). Constants and
+        // out-of-subset members fall through to that path.
+        if self.is_math_namespace(&m.obj, fx) {
+            if let Some(f) = crate::ambient::math_fn(&name) {
+                return self.check_math_call(f, c, fx, pos);
+            }
+        }
+        if let Some(handled) =
+            self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
+        {
             // Enum members are values, not callables.
             if matches!(handled.ty, Type::Error) {
                 return handled;

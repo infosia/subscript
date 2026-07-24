@@ -202,6 +202,9 @@ pub struct Context {
     // and forget immediately; when false (dev tier), they retain and
     // poison so use-after-delete/double-delete trap.
     release_on_delete: bool,
+    // The `Math.random` PRNG (stdlib.md §2), default-seeded on every
+    // construction path so dev and ship draw the same contract stream.
+    rng: crate::math::Rng,
     // ----- ship-tier arena state (§8.1b); empty on the dev tier -----
     // Every chunk, in creation order.
     chunks: Vec<Chunk>,
@@ -259,6 +262,7 @@ impl Context {
             roots: Vec::new(),
             callbacks: Vec::new(),
             release_on_delete,
+            rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             chunks: Vec::new(),
             chunk_map: Vec::new(),
             free_heads: [0; NUM_CLASSES],
@@ -345,6 +349,20 @@ impl Context {
     #[must_use]
     pub fn script_depth(&self) -> u32 {
         self.script_depth
+    }
+
+    // ----- Math.random state (stdlib.md §2) -----
+
+    /// Draws the next `Math.random()` value from the Context-owned
+    /// xoshiro256++ stream.
+    pub fn random_f64(&mut self) -> f64 {
+        self.rng.next_f64()
+    }
+
+    /// Reseeds the `Math.random` stream by re-expanding `seed` (host
+    /// replay control; [`crate::ffi::sub_rt_ctx_seed_random`]).
+    pub fn seed_random(&mut self, seed: u64) {
+        self.rng.reseed(seed);
     }
 
     // ----- trap state -----
@@ -1266,6 +1284,32 @@ mod tests {
         assert_eq!(core::mem::offset_of!(ArrayHeader, elem_size), 16);
         assert_eq!(core::mem::offset_of!(ArrayHeader, data), 24);
         assert_eq!(core::mem::size_of::<ArrayHeader>(), 32);
+    }
+
+    #[test]
+    fn random_stream_is_default_seeded_on_both_construction_paths() {
+        // Dev (`new`) and ship (`new_releasing`) Contexts draw the same
+        // contract stream (stdlib.md §2).
+        let mut dev = Context::new();
+        let mut ship = Context::new_releasing();
+        let reference: Vec<u64> = {
+            let mut r = crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED);
+            (0..8).map(|_| r.next_f64().to_bits()).collect()
+        };
+        let dev_draws: Vec<u64> = (0..8).map(|_| dev.random_f64().to_bits()).collect();
+        let ship_draws: Vec<u64> = (0..8).map(|_| ship.random_f64().to_bits()).collect();
+        assert_eq!(dev_draws, reference);
+        assert_eq!(ship_draws, reference);
+    }
+
+    #[test]
+    fn seed_random_restarts_the_stream() {
+        let mut ctx = Context::new();
+        ctx.seed_random(7);
+        let first: Vec<u64> = (0..4).map(|_| ctx.random_f64().to_bits()).collect();
+        ctx.seed_random(7);
+        let again: Vec<u64> = (0..4).map(|_| ctx.random_f64().to_bits()).collect();
+        assert_eq!(first, again);
     }
 
     #[test]

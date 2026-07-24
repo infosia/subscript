@@ -1977,6 +1977,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.shape_results(&ret, &res, sret)
             }
             hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos),
+            hir::Callee::Math(f) => self.eval_math(*f, args),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -2622,6 +2623,25 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             self.push_abi(sig, argv, types::I64, slot);
         }
+    }
+
+    /// Lowers a `Math.<fn>` intrinsic (stdlib.md §1) to its opaque
+    /// `sub_rt_math_*` runtime call, `(ctx, f64 args…) -> f64`. No trap
+    /// check follows: the runtime entries never trap (pure, or a PRNG
+    /// state advance). Constants never reach here — they folded to
+    /// literals at check time.
+    fn eval_math(&mut self, f: hir::MathFn, args: &[hir::Expr]) -> Result<RV, String> {
+        if args.len() != f.arity() {
+            return Err(internal(format!("Math.{} arity", f.name())));
+        }
+        let mut argv = vec![self.ctx_v];
+        for a in args {
+            let rv = self.eval(a)?;
+            argv.push(self.expect_s(rv)?);
+        }
+        let res = self.call_rt(self.ml.rt.math[f as usize], &argv, false)?;
+        res.map(RV::S)
+            .ok_or_else(|| internal(format!("Math.{} result", f.name())))
     }
 
     fn eval_ambient(

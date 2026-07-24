@@ -321,6 +321,172 @@ pub enum AmbientFn {
     UnsafeDelete,
 }
 
+/// `Math` intrinsic functions (stdlib.md §1): ambient-namespace member
+/// calls typed `f64` in and out, lowered by both tiers to the opaque
+/// runtime symbol `sub_rt_math_<name>` — never the foreign-call path
+/// and never a direct libm emission (stdlib.md §0.2). The constants
+/// (`Math.PI`, …) are not represented here: a constant member read
+/// folds to an [`ExprKind::Float`] literal at check time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum MathFn {
+    /// `Math.abs(x)`.
+    Abs,
+    /// `Math.acos(x)`.
+    Acos,
+    /// `Math.acosh(x)`.
+    Acosh,
+    /// `Math.asin(x)`.
+    Asin,
+    /// `Math.asinh(x)`.
+    Asinh,
+    /// `Math.atan(x)`.
+    Atan,
+    /// `Math.atanh(x)`.
+    Atanh,
+    /// `Math.cbrt(x)`.
+    Cbrt,
+    /// `Math.ceil(x)`.
+    Ceil,
+    /// `Math.cos(x)`.
+    Cos,
+    /// `Math.cosh(x)`.
+    Cosh,
+    /// `Math.exp(x)`.
+    Exp,
+    /// `Math.expm1(x)`.
+    Expm1,
+    /// `Math.floor(x)`.
+    Floor,
+    /// `Math.log(x)`.
+    Log,
+    /// `Math.log1p(x)`.
+    Log1p,
+    /// `Math.log10(x)`.
+    Log10,
+    /// `Math.log2(x)`.
+    Log2,
+    /// `Math.round(x)` (ECMA half-toward-+∞).
+    Round,
+    /// `Math.sign(x)` (±0/±1/NaN).
+    Sign,
+    /// `Math.sin(x)`.
+    Sin,
+    /// `Math.sinh(x)`.
+    Sinh,
+    /// `Math.sqrt(x)`.
+    Sqrt,
+    /// `Math.tan(x)`.
+    Tan,
+    /// `Math.tanh(x)`.
+    Tanh,
+    /// `Math.trunc(x)`.
+    Trunc,
+    /// `Math.atan2(y, x)`.
+    Atan2,
+    /// `Math.hypot(a, b)` (exactly two arguments, Q19).
+    Hypot,
+    /// `Math.pow(base, exp)`.
+    Pow,
+    /// `Math.max(a, b)` (exactly two arguments, Q19).
+    Max,
+    /// `Math.min(a, b)` (exactly two arguments, Q19).
+    Min,
+    /// `Math.random()` (stdlib.md §2: Context-seeded deterministic).
+    Random,
+}
+
+impl MathFn {
+    /// Every accepted `Math` function, in declaration order; the index
+    /// of each variant equals its discriminant, so `f as usize` indexes
+    /// tables built from this list.
+    pub const ALL: [MathFn; 32] = [
+        MathFn::Abs,
+        MathFn::Acos,
+        MathFn::Acosh,
+        MathFn::Asin,
+        MathFn::Asinh,
+        MathFn::Atan,
+        MathFn::Atanh,
+        MathFn::Cbrt,
+        MathFn::Ceil,
+        MathFn::Cos,
+        MathFn::Cosh,
+        MathFn::Exp,
+        MathFn::Expm1,
+        MathFn::Floor,
+        MathFn::Log,
+        MathFn::Log1p,
+        MathFn::Log10,
+        MathFn::Log2,
+        MathFn::Round,
+        MathFn::Sign,
+        MathFn::Sin,
+        MathFn::Sinh,
+        MathFn::Sqrt,
+        MathFn::Tan,
+        MathFn::Tanh,
+        MathFn::Trunc,
+        MathFn::Atan2,
+        MathFn::Hypot,
+        MathFn::Pow,
+        MathFn::Max,
+        MathFn::Min,
+        MathFn::Random,
+    ];
+
+    /// The member name, which is also the runtime symbol suffix
+    /// (`sub_rt_math_<name>`).
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            MathFn::Abs => "abs",
+            MathFn::Acos => "acos",
+            MathFn::Acosh => "acosh",
+            MathFn::Asin => "asin",
+            MathFn::Asinh => "asinh",
+            MathFn::Atan => "atan",
+            MathFn::Atanh => "atanh",
+            MathFn::Cbrt => "cbrt",
+            MathFn::Ceil => "ceil",
+            MathFn::Cos => "cos",
+            MathFn::Cosh => "cosh",
+            MathFn::Exp => "exp",
+            MathFn::Expm1 => "expm1",
+            MathFn::Floor => "floor",
+            MathFn::Log => "log",
+            MathFn::Log1p => "log1p",
+            MathFn::Log10 => "log10",
+            MathFn::Log2 => "log2",
+            MathFn::Round => "round",
+            MathFn::Sign => "sign",
+            MathFn::Sin => "sin",
+            MathFn::Sinh => "sinh",
+            MathFn::Sqrt => "sqrt",
+            MathFn::Tan => "tan",
+            MathFn::Tanh => "tanh",
+            MathFn::Trunc => "trunc",
+            MathFn::Atan2 => "atan2",
+            MathFn::Hypot => "hypot",
+            MathFn::Pow => "pow",
+            MathFn::Max => "max",
+            MathFn::Min => "min",
+            MathFn::Random => "random",
+        }
+    }
+
+    /// Number of `f64` arguments (exact; the lib's variadic forms are
+    /// out of subset, Q19).
+    #[must_use]
+    pub fn arity(self) -> usize {
+        match self {
+            MathFn::Random => 0,
+            MathFn::Atan2 | MathFn::Hypot | MathFn::Pow | MathFn::Max | MathFn::Min => 2,
+            _ => 1,
+        }
+    }
+}
+
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -332,6 +498,8 @@ pub enum Callee {
     Foreign(String),
     /// An ambient prelude function.
     Ambient(AmbientFn),
+    /// A `Math.<fn>` ambient-namespace intrinsic (stdlib.md §1).
+    Math(MathFn),
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members
@@ -490,6 +658,28 @@ mod tests {
         };
         assert_eq!(e.ty, Type::I32);
         assert_eq!(e.pos.line, 1);
+    }
+
+    #[test]
+    fn math_fn_all_is_indexed_by_discriminant() {
+        // Runtime-import tables index by `f as usize`; the ALL order
+        // must therefore equal declaration order.
+        for (i, f) in MathFn::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, i, "MathFn::ALL out of order at {i}");
+        }
+    }
+
+    #[test]
+    fn math_fn_arity_matches_the_contract() {
+        assert_eq!(MathFn::Abs.arity(), 1);
+        assert_eq!(MathFn::Atan2.arity(), 2);
+        assert_eq!(MathFn::Hypot.arity(), 2);
+        assert_eq!(MathFn::Pow.arity(), 2);
+        assert_eq!(MathFn::Max.arity(), 2);
+        assert_eq!(MathFn::Min.arity(), 2);
+        assert_eq!(MathFn::Random.arity(), 0);
+        assert_eq!(MathFn::Random.name(), "random");
+        assert_eq!(MathFn::Log1p.name(), "log1p");
     }
 
     #[test]

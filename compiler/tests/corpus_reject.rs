@@ -29,6 +29,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r12-general-union.ts", RuleCode::S011, 8),
     ("r13-undefined.ts", RuleCode::S012, 7),
     ("r14-async.ts", RuleCode::S013, 7),
+    ("r15-math-imul.ts", RuleCode::S014, 8),
+    ("r16-math-variadic-max.ts", RuleCode::S014, 8),
+    ("r17-math-fround.ts", RuleCode::S014, 9),
+    ("r18-math-value.ts", RuleCode::S014, 9),
 ];
 
 #[test]

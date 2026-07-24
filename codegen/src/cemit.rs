@@ -1910,6 +1910,15 @@ impl<'m> Emitter<'m> {
             }
             hir::Callee::Method { recv, name } => self.eval_method(recv, name, args, ret_ty, pos, out, depth),
             hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, out, depth),
+            // A Math intrinsic (stdlib.md §1) calls its opaque runtime
+            // symbol — never a bare libm call, which clang would
+            // constant-fold at -O2 (stdlib.md §0.2). Constants never
+            // reach here: they folded to Float literals at check time.
+            hir::Callee::Math(f) => {
+                let argv = self.eval_list(args, out, depth)?;
+                let sep = if argv.is_empty() { "" } else { ", " };
+                Ok(format!("sub_rt_math_{}(ctx{sep}{argv})", f.name()))
+            }
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
     }
@@ -3087,6 +3096,42 @@ extern const void* sub_rt_str_data(void* ctx, const void* s);
 extern const void* sub_rt_array_data(void* ctx, const void* a);
 extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata1, void* userdata2);
 
+/* Math intrinsics (stdlib.md 1): opaque runtime symbols, never bare
+ * libm calls — clang constant-folds recognized libm calls at -O2, a
+ * silent dev-JIT != ship-C divergence hazard (stdlib.md 0.2). */
+extern double sub_rt_math_abs(void* ctx, double x);
+extern double sub_rt_math_acos(void* ctx, double x);
+extern double sub_rt_math_acosh(void* ctx, double x);
+extern double sub_rt_math_asin(void* ctx, double x);
+extern double sub_rt_math_asinh(void* ctx, double x);
+extern double sub_rt_math_atan(void* ctx, double x);
+extern double sub_rt_math_atanh(void* ctx, double x);
+extern double sub_rt_math_cbrt(void* ctx, double x);
+extern double sub_rt_math_ceil(void* ctx, double x);
+extern double sub_rt_math_cos(void* ctx, double x);
+extern double sub_rt_math_cosh(void* ctx, double x);
+extern double sub_rt_math_exp(void* ctx, double x);
+extern double sub_rt_math_expm1(void* ctx, double x);
+extern double sub_rt_math_floor(void* ctx, double x);
+extern double sub_rt_math_log(void* ctx, double x);
+extern double sub_rt_math_log1p(void* ctx, double x);
+extern double sub_rt_math_log10(void* ctx, double x);
+extern double sub_rt_math_log2(void* ctx, double x);
+extern double sub_rt_math_round(void* ctx, double x);
+extern double sub_rt_math_sign(void* ctx, double x);
+extern double sub_rt_math_sin(void* ctx, double x);
+extern double sub_rt_math_sinh(void* ctx, double x);
+extern double sub_rt_math_sqrt(void* ctx, double x);
+extern double sub_rt_math_tan(void* ctx, double x);
+extern double sub_rt_math_tanh(void* ctx, double x);
+extern double sub_rt_math_trunc(void* ctx, double x);
+extern double sub_rt_math_atan2(void* ctx, double y, double x);
+extern double sub_rt_math_hypot(void* ctx, double a, double b);
+extern double sub_rt_math_pow(void* ctx, double base, double exp);
+extern double sub_rt_math_max(void* ctx, double a, double b);
+extern double sub_rt_math_min(void* ctx, double a, double b);
+extern double sub_rt_math_random(void* ctx);
+
 /* Trap kinds (runtime/src/trap.rs). */
 enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };
 
@@ -3243,6 +3288,40 @@ mod tests {
         let c = emit("export function main(): void {\n  const xs: i32[] = [];\n  xs.push(7);\n  print(`${xs[0]}`);\n}\n");
         assert!(c.contains("ss_arr_at"));
         assert!(c.contains("sub_rt_array_push"));
+    }
+
+    #[test]
+    fn math_calls_use_the_opaque_runtime_symbol_never_libm() {
+        // stdlib.md §0.2: a bare libm call would be constant-folded by
+        // clang at -O2 — the emitted call must be the sub_rt symbol.
+        let c = emit("export function main(): void {\n  print(`${Math.floor(1.5)}`);\n  print(`${Math.pow(2.0, 10.0)}`);\n  print(`${Math.random()}`);\n}\n");
+        assert!(c.contains("sub_rt_math_floor(ctx, 1.5)"));
+        assert!(c.contains("sub_rt_math_pow(ctx, 2.0, 10.0)"));
+        assert!(c.contains("sub_rt_math_random(ctx)"));
+        assert!(!c.contains(" floor("), "bare libm floor call emitted");
+        assert!(!c.contains(" pow("), "bare libm pow call emitted");
+    }
+
+    #[test]
+    fn math_constants_fold_to_literals_not_symbols() {
+        // stdlib.md §1: `Math.<CONST>` never reaches codegen as a
+        // member read; the emitted C carries the f64 literal.
+        let c = emit("export function main(): void {\n  print(`${Math.PI}`);\n  print(`${Math.SQRT1_2}`);\n}\n");
+        assert!(c.contains("3.141592653589793"));
+        assert!(c.contains("0.7071067811865476"));
+        assert!(!c.contains("sub_rt_math_PI"));
+        // No math runtime call is emitted for a constant read (the
+        // preamble's extern declarations spell `(void* ctx`, a call
+        // spells `(ctx`).
+        assert!(!c.contains("sub_rt_math_pi"));
+        for line in c.lines() {
+            if line.contains("sub_rt_math_") {
+                assert!(
+                    line.starts_with("extern double sub_rt_math_"),
+                    "unexpected math reference: {line}"
+                );
+            }
+        }
     }
 }
 

@@ -39,6 +39,10 @@ pub enum RuleCode {
     /// No `async` / `await` / `Promise`; coroutines are the only
     /// suspension mechanism (C8).
     S013,
+    /// Out-of-subset standard-library member, arity, or namespace use
+    /// (`Math`, Q19): JS-number ops, variadic forms, unknown members,
+    /// and the namespace used as a value.
+    S014,
     /// Catch-all: construct outside the decided language surface.
     S100,
 }
@@ -61,6 +65,7 @@ impl RuleCode {
             RuleCode::S011 => "S011",
             RuleCode::S012 => "S012",
             RuleCode::S013 => "S013",
+            RuleCode::S014 => "S014",
             RuleCode::S100 => "S100",
         }
     }

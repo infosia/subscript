@@ -100,6 +100,9 @@ pub(crate) struct RtFns {
     pub array_data: FuncId,
     pub cb_bind: FuncId,
     pub cb_trampoline: FuncId,
+    /// `sub_rt_math_*` imports (stdlib.md §1), indexed by
+    /// `hir::MathFn as usize` (the [`hir::MathFn::ALL`] order).
+    pub math: [FuncId; hir::MathFn::ALL.len()],
 }
 
 /// Parameters of the shared lowering.
@@ -388,6 +391,18 @@ fn declare_rt<M: Module>(
             .map_err(|e| internal(format!("declare {name}: {e}")))
     };
     use types::{F32, F64, I32, I64};
+    // Math intrinsic imports (stdlib.md §1): one opaque symbol per
+    // accepted function, `(ctx, f64 args…) -> f64`, in MathFn::ALL
+    // order so `f as usize` indexes the table.
+    let mut math_ids: Vec<FuncId> = Vec::with_capacity(hir::MathFn::ALL.len());
+    for f in hir::MathFn::ALL {
+        let mut params = vec![I64];
+        params.extend(std::iter::repeat(F64).take(f.arity()));
+        math_ids.push(mk(&format!("sub_rt_math_{}", f.name()), &params, Some(F64))?);
+    }
+    let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
+        .try_into()
+        .map_err(|_| internal("math import table size"))?;
     Ok(RtFns {
         print: mk("sub_rt_print", &[I64, I64], None)?,
         collect: mk("sub_rt_collect", &[I64], None)?,
@@ -425,6 +440,7 @@ fn declare_rt<M: Module>(
         // struct's function-pointer slot; the declared signature (message
         // as two words, then the two userdata slots) is unused.
         cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
+        math,
     })
 }
 
