@@ -197,9 +197,11 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   (`stdlib.md` §3); on that subset semantics equal JS on a UTC host.
   Rejected: local-time accessors, setters, `parse`, `toString`
   family, the multi-argument constructor (lib semantics are local
-  time — accepting it as UTC would silently change meaning), `Date`
-  in template literals. Out-of-range times trap; there is no
-  Invalid-Date value.
+  time — accepting it as UTC would silently change meaning), the
+  zero-argument constructor (nondeterministic current time — write
+  `new Date(Date.now())`), `Date` in template literals, and direct
+  `Date` comparison (`===`, `<`, … — compare `getTime()` values).
+  Out-of-range times trap; there is no Invalid-Date value.
 
 ## 3. Open items carried forward
 
