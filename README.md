@@ -164,14 +164,14 @@ table with absolute times, methodology, and machine/runtime versions is in
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
-| mandelbrot | 1.00× | **1.00×** | 1.05× | 2.78× | 1.00× | 1.01× |
-| queen | 1.00× | **1.00×** | 1.47× | 1.51× | 1.22× | 1.76× |
-| primes | 1.00× | **0.97×** | 1.44× | 2.08× | 0.92× | 1.69× |
-| fib-recursive | 1.00× | 1.00× | 2.15× | 1.84× | 1.49× | 2.64× |
-| fib-loop | 1.00× | 1.03× | 1.99× | 1.48× | 1.09× | 1.58× |
-| sort | 1.00× | 1.78× | 3.73× | 2.30× | 1.45× | 1.84× |
-| particles | 1.00× | 3.06× | 10.29× | 3.84× | 1.90× | 3.58× |
-| tree | 1.00× | 10.07× | 10.28× | 2.19× | 0.30× | 0.47× |
+| mandelbrot | 1.00× | **1.00×** | 1.04× | 2.79× | 1.00× | 1.00× |
+| queen | 1.00× | **0.99×** | 1.46× | 1.52× | 1.21× | 1.75× |
+| primes | 1.00× | **0.96×** | 1.44× | 2.11× | 0.91× | 1.69× |
+| fib-recursive | 1.00× | 0.97× | 1.76× | 1.48× | 1.17× | 2.13× |
+| fib-loop | 1.00× | 1.02× | 2.00× | 1.49× | 1.09× | 1.57× |
+| sort | 1.00× | 1.79× | 3.73× | 2.31× | 1.49× | 1.84× |
+| particles | 1.00× | 3.06× | 10.30× | 3.83× | 1.91× | 3.57× |
+| tree | 1.00× | 5.11× | 10.61× | 2.25× | 0.33× | 0.47× |
 
 What the numbers show, honestly:
 
@@ -181,7 +181,7 @@ What the numbers show, honestly:
   the same `clang -O2`, and pure-numeric code has no array bounds checks to
   pay for, so it lands on C.
 - **The cost is allocation and checked array traffic** — `tree` (per-node
-  allocate/free) at 10×, `particles` (value-struct arrays) at 3×, `sort`
+  allocate/free) at 5×, `particles` (value-struct arrays) at 3×, `sort`
   (bounds-checked growable arrays) at 1.8×. These are the language's real
   costs — manual per-node allocation, value-copy semantics, an emitted
   bounds check per element — not a measurement artifact.
@@ -194,15 +194,14 @@ What the numbers show, honestly:
 
 This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. The table above is the arm64 / Apple M2 snapshot (the
-shipping target) captured at commit `4ba01f9`; its `tree` and `particles`
-rows predate the ship-tier **free-on-`delete`** change (compiler block
-§8.1a), which removed the allocation-table growth that dominated
-per-node-allocation workloads, so an arm64 re-measurement is pending. A
-current x86_64 / Windows snapshot — four subjects, since LuaJIT and JSC are
-not built there — is in
-[`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md);
-on it, post-§8.1a ship `tree` measures 5.33× (down from the prior retain
-policy's superlinear growth). Re-run either yourself with
+shipping target) captured at commit `50326f7`, after the ship-tier
+**free-on-`delete`** change (compiler block §8.1a): ship `tree` dropped
+from 10.07× to 5.11× as the change removed the allocation-table growth that
+dominated per-node-allocation workloads. The dev-JIT `tree` row (10.61×) is
+unchanged — §8.1a is a ship-tier change. A current x86_64 / Windows
+snapshot — four subjects, since LuaJIT and JSC are not built there — is in
+[`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md)
+(post-§8.1a ship `tree` 5.33× there). Re-run either yourself with
 `cargo run --release -p subscript-benchmarks --bin cross-language`.
 
 ## How it works

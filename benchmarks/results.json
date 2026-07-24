@@ -1,16 +1,16 @@
 {
-  "generated": "2026-07-23",
-  "procedure": "20 warm-up runs discarded, 21 timed runs, median reported",
+  "generated": "2026-07-24",
+  "procedure": "3 warm-up runs discarded, 11 timed runs, median reported",
   "machine": {
     "arch": "aarch64",
     "os": "macos",
-    "cpu": "Apple M2",
+    "cpu": "aarch64",
     "cores": "8",
     "power": "AC Power"
   },
   "versions": {
     "C": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
-    "subscript": "subscript @ 4ba01f9 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "subscript": "subscript @ 50326f7 (dev-JIT: Cranelift; ship: HIR->C->clang)",
     "LuaJIT": "LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/",
     "JSC": "JavaScriptCore (macOS 26.5.2)",
     "V8 (Node.js)": "Node.js v24.18.0"
@@ -23,12 +23,12 @@
       "checksum": 1346269,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.003638000,
-        "subscript-ship": 0.003636000,
-        "subscript-jit": 0.007831834,
-        "LuaJIT": 0.006708000,
-        "JSC": 0.005420000,
-        "V8 (Node.js)": 0.009619083
+        "C": 0.004665000,
+        "subscript-ship": 0.004548000,
+        "subscript-jit": 0.008229417,
+        "LuaJIT": 0.006889000,
+        "JSC": 0.005460000,
+        "V8 (Node.js)": 0.009920750
       }
     },
     {
@@ -37,12 +37,12 @@
       "checksum": 973132000,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.029393000,
-        "subscript-ship": 0.030162000,
-        "subscript-jit": 0.058468750,
-        "LuaJIT": 0.043392000,
-        "JSC": 0.032080000,
-        "V8 (Node.js)": 0.046400958
+        "C": 0.030105000,
+        "subscript-ship": 0.030690000,
+        "subscript-jit": 0.060218750,
+        "LuaJIT": 0.044799000,
+        "JSC": 0.032820000,
+        "V8 (Node.js)": 0.047364250
       }
     },
     {
@@ -51,12 +51,12 @@
       "checksum": 43027996,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.124325000,
-        "subscript-ship": 0.124399000,
-        "subscript-jit": 0.131097000,
-        "LuaJIT": 0.345399000,
-        "JSC": 0.124620000,
-        "V8 (Node.js)": 0.125335375
+        "C": 0.126902000,
+        "subscript-ship": 0.126464000,
+        "subscript-jit": 0.132220000,
+        "LuaJIT": 0.354211000,
+        "JSC": 0.127020000,
+        "V8 (Node.js)": 0.127193833
       }
     },
     {
@@ -65,12 +65,12 @@
       "checksum": 41538,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.021940000,
-        "subscript-ship": 0.021320000,
-        "subscript-jit": 0.031678416,
-        "LuaJIT": 0.045619000,
-        "JSC": 0.020140000,
-        "V8 (Node.js)": 0.037186875
+        "C": 0.022424000,
+        "subscript-ship": 0.021515000,
+        "subscript-jit": 0.032283167,
+        "LuaJIT": 0.047424000,
+        "JSC": 0.020480000,
+        "V8 (Node.js)": 0.037793833
       }
     },
     {
@@ -79,12 +79,12 @@
       "checksum": 3672124540,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.015247000,
-        "subscript-ship": 0.027133000,
-        "subscript-jit": 0.056887375,
-        "LuaJIT": 0.035048000,
-        "JSC": 0.022180000,
-        "V8 (Node.js)": 0.028000666
+        "C": 0.015457000,
+        "subscript-ship": 0.027722000,
+        "subscript-jit": 0.057693125,
+        "LuaJIT": 0.035654000,
+        "JSC": 0.023060000,
+        "V8 (Node.js)": 0.028404333
       }
     },
     {
@@ -93,12 +93,12 @@
       "checksum": 3932130,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.065349000,
-        "subscript-ship": 0.657756000,
-        "subscript-jit": 0.671581209,
-        "LuaJIT": 0.142825000,
-        "JSC": 0.019860000,
-        "V8 (Node.js)": 0.030977958
+        "C": 0.066290000,
+        "subscript-ship": 0.338930000,
+        "subscript-jit": 0.703201625,
+        "LuaJIT": 0.149086000,
+        "JSC": 0.021880000,
+        "V8 (Node.js)": 0.031462750
       }
     },
     {
@@ -107,12 +107,12 @@
       "checksum": 73712,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.023720000,
-        "subscript-ship": 0.023645000,
-        "subscript-jit": 0.034951500,
-        "LuaJIT": 0.035921000,
-        "JSC": 0.029020000,
-        "V8 (Node.js)": 0.041679208
+        "C": 0.024225000,
+        "subscript-ship": 0.024061000,
+        "subscript-jit": 0.035456958,
+        "LuaJIT": 0.036928000,
+        "JSC": 0.029340000,
+        "V8 (Node.js)": 0.042279208
       }
     },
     {
@@ -121,12 +121,12 @@
       "checksum": 1712845248,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.038742000,
-        "subscript-ship": 0.118677000,
-        "subscript-jit": 0.398566166,
-        "LuaJIT": 0.148733000,
-        "JSC": 0.073780000,
-        "V8 (Node.js)": 0.138713625
+        "C": 0.039351000,
+        "subscript-ship": 0.120259000,
+        "subscript-jit": 0.405206625,
+        "LuaJIT": 0.150582000,
+        "JSC": 0.075120000,
+        "V8 (Node.js)": 0.140501542
       }
     }
   ]
