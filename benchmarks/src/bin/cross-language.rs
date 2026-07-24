@@ -614,12 +614,35 @@ struct Tools {
 impl Tools {
     fn resolve() -> Tools {
         Tools {
-            cc: env_or_path("CC", "clang"),
+            cc: resolve_clang(),
             node: env_or_path("NODE", "node"),
             luajit: env_or_path("LUAJIT", "luajit"),
             jsc: resolve_jsc(),
         }
     }
+}
+
+/// Resolves clang: `$CC` verbatim, else `clang` on `PATH`, else — on
+/// Windows only — the standard LLVM install
+/// (`%ProgramFiles%\LLVM\bin\clang.exe`). `None` when none is found
+/// (reported as `-`, mirroring `codegen::aot::host_c_compiler` but
+/// without that function's fail-loud bare-name fallback, since an
+/// absent compiler here is a skipped subject, not an error).
+fn resolve_clang() -> Option<PathBuf> {
+    if let Some(v) = std::env::var_os("CC") {
+        return Some(PathBuf::from(v));
+    }
+    if let Some(p) = find_on_path("clang") {
+        return Some(p);
+    }
+    #[cfg(windows)]
+    if let Some(pf) = std::env::var_os("ProgramFiles") {
+        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
+        if llvm.is_file() {
+            return Some(llvm);
+        }
+    }
+    None
 }
 
 /// `$VAR` verbatim if set, else `name` on `PATH`, else `None`.
@@ -731,6 +754,12 @@ impl Machine {
 fn cpu_brand() -> String {
     sysctl("machdep.cpu.brand_string")
         .or_else(|| sysctl("hw.model"))
+        .or_else(|| {
+            std::env::var("PROCESSOR_IDENTIFIER")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
         .unwrap_or_else(|| std::env::consts::ARCH.to_string())
 }
 
