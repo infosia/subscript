@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 0, 2026-07-24. P9: `Math` and `Date` v1. Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -144,3 +144,87 @@ Every accept entry stays `tsc`-clean (lib-typed) — the standing gate.
 P9.1 `Math` (ambient-namespace checker machinery + runtime + a40/a41 +
 rejects); P9.2 `Date` (ambient nominal value type + calendar runtime +
 a42 + rejects). Phase Review per stage.
+
+## 7. Roadmap — the rest of the standard library (Rev 1)
+
+Ordered by value to game scripts and by machinery dependency; each
+phase follows the standing pattern (§0) and the workflow loop
+(contract → corpus Red → implement → gate → review). A phase's
+detailed contract lands in this file before its implementation opens.
+
+| Phase | Area | New machinery | Status |
+|---|---|---|---|
+| P10 | `String` methods (§8) | none (extends the Str member surface) | contract below |
+| P11 | `Array` methods | runtime→script comparator/predicate calls (non-escaping closures, C5) | contract before open |
+| P12 | `Number` statics + `parseInt`/`parseFloat`/`toFixed` | none | contract before open |
+| P13 | `JSON` | typed serialization over layout descriptors (RTTI) — needs its own design | contract before open |
+
+**Stdlib non-goals** (permanent unless revised with evidence):
+`RegExp`, `Intl`/locale- and Unicode-table-dependent behavior
+(collation, full case folding — Q21 is ASCII), `Promise` (C8:
+coroutines), `Map`/`Set` (needs general generics; `T[]`/`FixedArray`
+are the containers), `console` (the language has `print`), `Symbol`,
+`Proxy`/`Reflect`, `eval`/`Function`, `BigInt` (`i64`/`u64` exist).
+
+## 8. P10 — `String` methods
+
+Semantics rule (**Q21**): the language's strings are immutable UTF-8
+byte strings; every index, length, and code unit in the accepted
+subset is a **byte** measure — the standing meaning of the existing
+`length`/`slice`. ASCII-only programs behave exactly as JS; on
+non-ASCII text the values diverge from JS's UTF-16 units (recorded,
+not hidden). Case mapping and whitespace are ASCII-only. Range and
+argument errors **trap** (no NaN/RangeError values).
+
+Accepted members (checker: intrinsic member calls on `Type::Str`;
+runtime `sub_rt_str_*`, one implementation, both tiers; every method
+returning a string allocates via the Context):
+
+- `indexOf(needle: string, from?: i32): i32` — byte index or −1;
+  `from` defaults 0, clamped to `[0, length]` (negative → 0)
+- `lastIndexOf(needle: string): i32`
+- `includes(needle: string, from?: i32): boolean`
+- `startsWith(needle: string): boolean`, `endsWith(needle: string):
+  boolean` (the lib's optional position arguments are not accepted)
+- `charCodeAt(i: i32): i32` — the byte value 0–255 (Q21; JS returns
+  the UTF-16 unit); out of range traps (JS returns NaN)
+- `split(sep: string): string[]` — no-match → `[whole]`; adjacent
+  separators produce empty strings (JS semantics); an **empty
+  separator traps** (byte-splitting would fracture UTF-8 code points)
+- `trim/trimStart/trimEnd(): string` — ASCII whitespace
+  (space, `\t`, `\n`, `\r`, `\f`, `\v`) only (Q21)
+- `repeat(n: i32): string` — `n < 0` traps; `repeat(0)` is `""`
+- `padStart(len: i32, pad?: string): string`, `padEnd` — `pad`
+  defaults `" "`; byte lengths; already-long-enough → unchanged;
+  an empty `pad` with `len > length` traps (JS returns the string
+  unchanged for empty pad — divergence recorded in Q21: silent
+  non-padding hides bugs)
+- `toUpperCase(): string`, `toLowerCase(): string` — ASCII A–Z/a–z
+  only (Q21)
+- `replace(pat: string, repl: string): string` — first occurrence,
+  literal (no regex; `$` in the replacement is **not** interpreted —
+  Q21; JS substitutes `$$`/`$&`)
+- `replaceAll(pat: string, repl: string): string` — all occurrences,
+  literal; empty `pat` traps (JS inserts between every unit)
+
+Rejected (S014, Q21): `substring`/`substr`/`at`/`charAt` (redundant
+with `slice`), `codePointAt`, `normalize`, `localeCompare`,
+`toLocaleUpperCase`/`LowerCase`, `match`/`matchAll`/`search` (regex),
+`concat` (redundant with `+`), `String.fromCharCode`/`raw` and `String`
+as a value or constructor (follow-up if needed).
+
+Corpus: `a43` string battery — every accepted member incl. the edges:
+`indexOf` miss −1 / empty needle 0 / `from` clamp; `lastIndexOf`;
+`split` no-match, adjacent separators, trailing separator; `trim`
+family boundaries; `repeat(0)`; `pad*` exact/longer/shorter and
+two-arg; case round-trip; `replace` vs `replaceAll` multiplicity;
+literal `$` in replacement. Rejects: `substring`, `localeCompare`,
+`match`, `toLocaleUpperCase` — each S014. Trap paths (`charCodeAt`
+OOB, `repeat(-1)`, `split("")`, `replaceAll("", …)`) are cross-tier
+cemit tests (identical kind/message/position), not corpus entries.
+
+Gate (pre-registered): standing differential gate byte-exact incl.
+`a43`; `tsc` zero errors unchanged config (every accepted call types
+under lib ES2022); reject entries at pinned S014 positions; trap
+identity across tiers for the four trap paths; §5.5 benchmarks — no
+ship-row regression.

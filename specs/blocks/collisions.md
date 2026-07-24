@@ -202,6 +202,15 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   `new Date(Date.now())`), `Date` in template literals, and direct
   `Date` comparison (`===`, `<`, … — compare `getTime()` values).
   Out-of-range times trap; there is no Invalid-Date value.
+- **Q21 (`String` methods)** — strings are immutable UTF-8 byte
+  strings; every accepted index/length/code-unit measure is a **byte**
+  (the standing meaning of `length`/`slice`). ASCII programs behave as
+  JS; non-ASCII values diverge from UTF-16 units (recorded, not
+  hidden). Case mapping and whitespace are ASCII-only. Range/argument
+  errors trap (`charCodeAt` OOB, `repeat(-1)`, `split("")`,
+  `replaceAll("", …)`, empty-`pad` padding — JS returns NaN or silent
+  no-ops there). `replace`/`replaceAll` are literal: `$` substitution
+  patterns are not interpreted. Rejected members: `stdlib.md` §8.
 
 ## 3. Open items carried forward
 
