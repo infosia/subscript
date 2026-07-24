@@ -38,6 +38,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r21-date-multiarg-ctor.ts", RuleCode::S014, 10),
     ("r22-date-template.ts", RuleCode::S014, 11),
     ("r23-date-zero-arg-ctor.ts", RuleCode::S014, 9),
+    // tsc accepts `Date === Date`, so r24 lives only in the reject
+    // corpus (excluded from tsconfig like every r-entry).
+    ("r24-date-compare.ts", RuleCode::S014, 11),
 ];
 
 #[test]

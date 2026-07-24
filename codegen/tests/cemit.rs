@@ -165,6 +165,116 @@ fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
 }
 
 #[test]
+fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
+    // stdlib.md §3: `Date.now()` is Context-owned and pinnable — the
+    // ship-tier half of the both-tier pinned-clock check. The dev-tier
+    // half is `jit.rs` (unit test
+    // `date_now_reads_the_pinned_context_clock_in_the_dev_tier`): the
+    // same program, the same pinned ms, and the same expected bytes.
+    // Two tests rather than one because the dev tier's pinnable Context
+    // is reachable only inside the crate; the shared expected bytes are
+    // the cross-tier assertion.
+    //
+    // `run_c_aot` links the standing harness entry, which never pins
+    // the clock, so this test drives the same pipeline itself with the
+    // one difference: an entry derived from `AOT_ENTRY_C` that calls
+    // `sub_rt_ctx_set_now(ctx, PINNED_MS)` before any program code
+    // runs. The harness's own entry is untouched.
+    use std::path::PathBuf;
+    use std::process::Command;
+    use subscript_codegen::{emit_c, runtime_staticlib_path, AOT_ENTRY_C};
+    use subscript_compiler::check_program;
+
+    const PINNED_MS: i64 = 1_592_224_496_789;
+    const PROGRAM: &str = "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n";
+    const EXPECTED: &[u8] = b"1592224496789\n2020-06-15T12:34:56.789Z\n";
+
+    let hir = check_program(&[SourceFile::new("test.ts", PROGRAM)]).expect("checks clean");
+    let program = emit_c(&hir).expect("ship C emission");
+    let staticlib = runtime_staticlib_path().expect("runtime staticlib");
+
+    let decl_anchor = "extern void ss_init(void *ctx);";
+    let call_anchor = "    ss_init(ctx);";
+    assert!(
+        AOT_ENTRY_C.contains(decl_anchor) && AOT_ENTRY_C.contains(call_anchor),
+        "AOT_ENTRY_C anchors moved; update this test's entry derivation"
+    );
+    let entry = AOT_ENTRY_C
+        .replace(
+            decl_anchor,
+            "extern void sub_rt_ctx_set_now(void *ctx, int64_t ms);\nextern void ss_init(void *ctx);",
+        )
+        .replace(
+            call_anchor,
+            &format!("    sub_rt_ctx_set_now(ctx, {PINNED_MS});\n    ss_init(ctx);"),
+        );
+
+    // Temp dir removed on every exit path, including assertion panics.
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "subscript-cemit-pinned-now-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let _cleanup = Cleanup(dir.clone());
+
+    let src_path = dir.join("program.c");
+    let entry_path = dir.join("entry.c");
+    let exe_path = dir.join(format!("program{}", std::env::consts::EXE_SUFFIX));
+    std::fs::write(&src_path, program.source.as_bytes()).expect("write program.c");
+    std::fs::write(&entry_path, entry.as_bytes()).expect("write entry.c");
+
+    // Same compile line as `run_c_aot` (§11): clang, -std=c11 -O2
+    // -fwrapv -ffp-contract=off, interop header/impl, runtime staticlib.
+    let interop = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
+    let cc = std::env::var_os("CC").unwrap_or_else(|| "clang".into());
+    #[cfg(all(windows, target_env = "msvc"))]
+    let system_libs: &[&str] = &["-lkernel32", "-lntdll", "-luserenv", "-lws2_32", "-ldbghelp"];
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    let system_libs: &[&str] = &[];
+    let compile = Command::new(&cc)
+        .arg("-std=c11")
+        .arg("-O2")
+        .arg("-fwrapv")
+        .arg("-ffp-contract=off")
+        .arg("-I")
+        .arg(&interop)
+        .arg(&src_path)
+        .arg(&entry_path)
+        .arg(interop.join("interop.c"))
+        .arg(&staticlib)
+        .args(system_libs)
+        .arg("-o")
+        .arg(&exe_path)
+        .output()
+        .expect("run the C compiler (clang; set $CC)");
+    assert!(
+        compile.status.success(),
+        "compiling/linking the emitted C failed:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&exe_path).output().expect("run linked program");
+    assert!(
+        run.status.success(),
+        "linked program exited with {}: {}",
+        run.status,
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        EXPECTED,
+        "ship tier printed {:?} for pinned ms {PINNED_MS}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+}
+
+#[test]
 fn ship_c_aot_reports_an_out_of_bounds_trap_with_its_position() {
     // The index is a parameter — the FixedArray bounds analysis cannot
     // prove it in range, so the check stays and fires at the indexing

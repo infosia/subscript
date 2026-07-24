@@ -1264,6 +1264,20 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// True when the name `Date` still resolves to the ambient
+    /// namespace/constructor (stdlib.md §3): no function-local binding
+    /// and no program declaration shadows it (same rule as `Math`).
+    /// Consulted by both member access and `new Date(…)` so shadowing
+    /// behaves identically in every position.
+    fn date_is_ambient(&self, fx: &FnCtx) -> bool {
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|s| s.vars.contains_key("Date"));
+        !shadowed && self.scope_item("Date").is_none()
+    }
+
     /// True when `obj` is the ambient `Date` namespace (stdlib.md §3):
     /// the identifier `Date` with no local binding and no program
     /// declaration shadowing it (same rule as `Math`).
@@ -1271,15 +1285,7 @@ impl<'p> Checker<'p> {
         let ast::Expr::Ident(id) = obj else {
             return false;
         };
-        if id.sym.as_ref() != "Date" {
-            return false;
-        }
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|s| s.vars.contains_key("Date"));
-        !shadowed && self.scope_item("Date").is_none()
+        id.sym.as_ref() == "Date" && self.date_is_ambient(fx)
     }
 
     /// A `Date` namespace member outside a call position (stdlib.md §3):
@@ -2444,8 +2450,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         // `new Date(ms)` (stdlib.md §3): the ambient constructor applies
-        // only when no program declaration shadows the name.
-        if name == "Date" && self.scope_item(&name).is_none() {
+        // only when neither a program declaration nor a function-local
+        // binding shadows the name (same resolution as member access).
+        if name == "Date" && self.date_is_ambient(fx) {
             return self.check_date_new(n, fx, pos);
         }
         let class_id = match self.scope_item(&name) {

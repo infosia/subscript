@@ -443,7 +443,10 @@ mod tests {
         // public `run_jit` builds its own Context, so this drives the
         // compiled entries directly on a Context whose clock is pinned.
         // Both tiers call the identical `sub_rt_date_now` symbol; the
-        // ship tier's link resolves it from the same runtime.
+        // ship tier's link resolves it from the same runtime. The
+        // ship-tier half of the both-tier check is
+        // `tests/cemit.rs::date_now_reads_the_pinned_context_clock_in_the_ship_tier`
+        // — the same program, pinned ms, and expected bytes.
         let (module, lowered) = compile_jit(&sources(
             "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n",
         ))

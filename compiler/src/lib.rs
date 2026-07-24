@@ -656,6 +656,54 @@ mod tests {
     }
 
     #[test]
+    fn a_function_local_const_named_date_shadows_the_builtin_ctor() {
+        // Stock tsc rejects this (TS2351: the local i32 is not
+        // constructable); the ambient constructor must not apply once a
+        // function-local binding shadows the name.
+        let err = check_one(
+            "export function main(): void {\n  const Date: i32 = 5;\n  const d = new Date(1);\n  print(`${Date}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(
+            err[0].message.contains("unknown class"),
+            "message: {}",
+            err[0].message
+        );
+        assert_eq!(err[0].pos.line, 3);
+    }
+
+    #[test]
+    fn a_function_local_let_named_date_shadows_the_builtin_ctor() {
+        let err = check_one(
+            "export function main(): void {\n  let Date: i32 = 5;\n  Date += 1;\n  const d = new Date(1);\n  print(`${Date}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(
+            err[0].message.contains("unknown class"),
+            "message: {}",
+            err[0].message
+        );
+        assert_eq!(err[0].pos.line, 4);
+    }
+
+    #[test]
+    fn a_parameter_named_date_shadows_the_builtin_ctor() {
+        let err = check_one(
+            "function f(Date: i32): i32 {\n  const d = new Date(1);\n  return Date;\n}\nexport function main(): void {\n  print(`${f(1)}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(
+            err[0].message.contains("unknown class"),
+            "message: {}",
+            err[0].message
+        );
+        assert_eq!(err[0].pos.line, 2);
+    }
+
+    #[test]
     fn same_shaped_classes_do_not_substitute() {
         let err = check_one(
             "class A { x: i32 = 1; }\nclass B { x: i32 = 1; }\nfunction f(a: A): i32 { return a.x; }\nexport function main(): void {\n  const b: B = new B();\n  print(`${f(b)}`);\n}\n",
