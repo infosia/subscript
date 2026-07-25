@@ -178,9 +178,25 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q14 (numeric formatting)** — template-literal interpolation of sized
   numerics is defined by the language runtime, not the host libc:
   integers in decimal; `f32`/`f64` by shortest round-trip (Ryu class
-  algorithm), with integral values printed without a decimal point or
-  exponent (`7`, never `7.0` or `7E0`); `-0`, `NaN`, `Infinity` spelled
-  `-0`, `NaN`, `Infinity`.
+  algorithm), with integral values in the ordinary range printed without
+  a decimal point or exponent (`7`, never `7.0` or `7E0`); `-0`, `NaN`,
+  `Infinity` spelled `-0`, `NaN`, `Infinity`.
+  **Exponent thresholds (owner decision 2026-07-25, correcting the
+  original rule):** a magnitude outside `[1e-6, 1e21)` is printed in
+  exponential form, exactly as ECMA's `Number::toString` does — `1e-7`,
+  `5e-324`, `1e+21`, `1e+300`. The rule as first written said "without
+  … exponent" without qualification, which was aimed at `7` rather than
+  `7.0`; taken literally it also banned exponents at the extremes, so
+  `${5e-324}` produced a **751-character** string and `${1e21}` diverged
+  from every JS engine. That was a consequence, not a decision: §0.4 of
+  `stdlib.md` makes ECMA the default and no divergence was recorded for
+  it. Adopting ECMA's thresholds restores agreement with the surface
+  language, removes the pathological output, and makes `toFixed`'s
+  ECMA-specified fallback above 1e21 coherent (Q25) instead of
+  contradicting the interpolation form for the same value. Consequence:
+  one frozen golden moves (`a49`'s f16 subnormal, `0.000…5960464477539063`
+  → `5.960464477539063e-8`) under the `compiler.md` §2 golden-change
+  procedure.
   Both tiers share one implementation; byte-identical output is a
   standing differential-gate assertion (plan P3).
 - **Q17** — decided in C2. **Q18** — `|`, `&`, `^`, `~`, shifts on `i64`/
