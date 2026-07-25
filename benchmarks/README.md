@@ -1,6 +1,6 @@
 # Cross-language benchmarks — captured results
 
-Snapshot captured 2026-07-24. Measured live by the runner (`benchmarks/src/bin/cross-language.rs`), never hardcoded; re-run with `cargo run --offline --release -p subscript-benchmarks --bin cross-language`. Contract: `specs/blocks/benchmarks.md`.
+Snapshot captured 2026-07-25. Measured live by the runner (`benchmarks/src/bin/cross-language.rs`), never hardcoded; re-run with `cargo run --offline --release -p subscript-benchmarks --bin cross-language`. Contract: `specs/blocks/benchmarks.md`.
 
 ## Machine
 
@@ -11,7 +11,7 @@ Snapshot captured 2026-07-24. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: Apple clang version 21.0.0 (clang-2100.1.1.101)
-- **subscript**: subscript @ d42133e (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ 568293b (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/
 - **JSC**: JavaScriptCore (macOS 26.5.2)
 - **V8 (Node.js)**: Node.js v24.18.0
@@ -26,14 +26,14 @@ All six subjects run the same schedule: 3 warm-up runs discarded, 11 timed runs,
 
 | Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|---|
-| fib-recursive | 1346269 | 1.00x (4.153 ms) | 1.15x (4.756 ms) | 1.92x (7.956 ms) | 1.71x (7.084 ms) | 1.31x (5.420 ms) | 2.34x (9.697 ms) |
-| fib-loop | 973132000 | 1.00x (29.902 ms) | 1.02x (30.555 ms) | 2.00x (59.764 ms) | 1.47x (43.849 ms) | 1.08x (32.400 ms) | 1.57x (46.830 ms) |
-| mandelbrot | 43027996 | 1.00x (125.721 ms) | 1.00x (125.696 ms) | 1.05x (131.698 ms) | 2.78x (349.534 ms) | 1.00x (125.800 ms) | 1.01x (126.464 ms) |
-| primes | 41538 | 1.00x (22.065 ms) | 0.97x (21.447 ms) | 1.45x (31.940 ms) | 2.09x (46.086 ms) | 0.92x (20.320 ms) | 1.70x (37.549 ms) |
-| sort | 3672124540 | 1.00x (16.186 ms) | 1.69x (27.355 ms) | 3.54x (57.239 ms) | 2.18x (35.269 ms) | 1.42x (22.960 ms) | 1.75x (28.283 ms) |
-| tree | 3932130 | 1.00x (66.013 ms) | 1.36x (89.869 ms) | 10.40x (686.345 ms) | 2.25x (148.537 ms) | 0.32x (21.320 ms) | 0.48x (31.569 ms) |
-| queen | 73712 | 1.00x (23.999 ms) | 0.98x (23.579 ms) | 1.48x (35.477 ms) | 1.45x (34.882 ms) | 1.22x (29.380 ms) | 1.75x (41.934 ms) |
-| particles | 1712845248 | 1.00x (38.987 ms) | 3.07x (119.819 ms) | 10.43x (406.735 ms) | 3.84x (149.824 ms) | 1.91x (74.480 ms) | 3.59x (139.909 ms) |
+| fib-recursive | 1346269 | 1.00x (4.713 ms) | 1.02x (4.801 ms) | 1.71x (8.056 ms) | 1.54x (7.272 ms) | 1.16x (5.460 ms) | 2.03x (9.586 ms) |
+| fib-loop | 973132000 | 1.00x (30.110 ms) | 1.01x (30.379 ms) | 2.01x (60.500 ms) | 1.48x (44.672 ms) | 1.07x (32.220 ms) | 1.59x (47.805 ms) |
+| mandelbrot | 43027996 | 1.00x (124.875 ms) | 1.00x (125.009 ms) | 1.05x (131.101 ms) | 2.83x (353.946 ms) | 1.00x (125.400 ms) | 1.01x (125.976 ms) |
+| primes | 41538 | 1.00x (22.309 ms) | 0.96x (21.339 ms) | 1.42x (31.710 ms) | 2.11x (46.986 ms) | 0.90x (20.140 ms) | 1.72x (38.311 ms) |
+| sort | 3672124540 | 1.00x (15.646 ms) | 1.77x (27.731 ms) | 3.61x (56.553 ms) | 2.25x (35.150 ms) | 1.46x (22.880 ms) | 1.80x (28.130 ms) |
+| tree | 3932130 | 1.00x (65.447 ms) | 1.37x (89.338 ms) | 10.40x (680.660 ms) | 2.24x (146.357 ms) | 0.33x (21.360 ms) | 0.48x (31.209 ms) |
+| queen | 73712 | 1.00x (23.806 ms) | 1.00x (23.698 ms) | 1.48x (35.326 ms) | 1.50x (35.698 ms) | 1.22x (29.080 ms) | 1.77x (42.044 ms) |
+| particles | 1712845248 | 1.00x (38.961 ms) | 3.06x (119.150 ms) | 10.29x (401.089 ms) | 3.83x (149.135 ms) | 1.90x (73.900 ms) | 3.60x (140.148 ms) |
 
 ## Workload parameters
 
@@ -46,4 +46,4 @@ All six subjects run the same schedule: 3 warm-up runs discarded, 11 timed runs,
 - **queen** — count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)
 - **particles** — 100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.
 
-Noise: wider than +/-20% spread for fib-recursive/subscript-ship (45%) — treat those rows as indicative.
+Noise: wider than +/-20% spread for fib-recursive/subscript-ship (46%) — treat those rows as indicative.
