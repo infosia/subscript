@@ -7,10 +7,14 @@ disagrees with either, fix both.
 
 ## What this project is
 
-**subscript** is a statically-typed, AOT-compilable scripting language for
-native game engines: a C-compatible execution and memory model wearing a
-TypeScript-subset syntax. It is a language project, not a JS runtime and
-not a JS binding.
+**subscript** is a statically-typed, AOT-compilable **embedded** scripting
+language for native host applications: a C-compatible execution and memory
+model wearing a TypeScript-subset syntax. The host owns its main loop and
+exposes a C ABI; subscript supplies the user-authored logic. Game engines
+are the archetype and the origin of the design, not its boundary — the
+same shape fits real-time audio/DSP, creative and graphics tools,
+simulation, and embedded control. It is a language project, not a JS
+runtime and not a JS binding.
 
 ## Roles (read first)
 
@@ -40,17 +44,17 @@ commit.
    AOT-only is incomplete, not lean.
 4. **Host interop crosses a C ABI only.** The host presents C headers; the
    language binds those. No specific host header is privileged by the
-   language. If host engine data must become script-visible, the host
-   grows a C facade — the language never binds C++ directly.
+   language. If host data must become script-visible, the host grows a C
+   facade — the language never binds C++ directly.
 5. **The syntax is a valid-TypeScript subset.** Every accepted program must
    type-check under stock `tsc` with this project's ambient `.d.ts`
    prelude; this project's compiler then narrows semantics (soundness,
    integer types, value types). Editor tooling (tsserver) comes for free
    and is a primary reason TS syntax was chosen — a syntax extension that
    breaks `tsc` acceptance defeats it. (AssemblyScript's proven approach.)
-6. **Scripts are trusted.** First-party game logic, not a sandbox. Spend no
-   effort on adversarial hardening; spend it on clear, early errors for
-   honest mistakes.
+6. **Scripts are trusted.** First-party application logic, not a sandbox.
+   Spend no effort on adversarial hardening; spend it on clear, early
+   errors for honest mistakes.
 
 ## Non-goals (permanent unless the plan is revised with evidence)
 
@@ -60,16 +64,28 @@ commit.
 - **JS semantics.** No `any`, no prototype mutation, no `eval`. The subset
   is defined by the collision table (`specs/blocks/collisions.md`), not by
   JS's spec.
-- **Being a general-purpose language.** The design target is game scripting
-  against a C-ABI host.
+- **Being a standalone program runtime.** subscript is embedded by
+  construction: the host owns the main loop and calls exported functions,
+  and platform capabilities (files, sockets, devices, threads) are the
+  host's to expose through its C ABI, not the language's to provide. The
+  standard library grows in computation (`specs/blocks/stdlib.md`); reach
+  into the outside world does not. This is a division of responsibility,
+  not a capability ceiling — and not a statement about how broad the
+  language's own surface may become.
 
 ## Compiler and oracle
 
-subscript builds its own compiler and runtime: Cranelift for both tiers
-(dev JIT; ship AOT objects), with C emission as the pre-registered ship
-fallback (`specs/blocks/compiler.md`). The oracle is the committed golden
-corpus outputs plus the `tsc`-clean gate. No external implementation
-serves as oracle, baseline, or cross-check.
+subscript builds its own compiler and runtime. **Dev tier:** Cranelift JIT
+with hot reload. **Ship tier:** C emission handed to the platform C
+compiler — adopted at P4 on measured evidence (Cranelift AOT was 23× a
+hand-written C baseline; emitted C is 1.05×), superseding the original
+Cranelift-AOT ship tier, which is retained only as a cross-check
+(`specs/blocks/compiler.md` §11; plan §8 Rev 2). The two tiers are
+separate lowerings, so their agreement is established **by verification** —
+the standing gate is dev-JIT ≡ ship-C-AOT ≡ golden, byte-exact, on every
+corpus entry. The oracle is the committed golden corpus outputs plus the
+`tsc`-clean gate. No external implementation serves as oracle, baseline,
+or cross-check.
 
 ## Language
 

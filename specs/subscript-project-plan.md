@@ -15,8 +15,9 @@ marked *(docs)* where they appear.
 
 ## 1. What is being built
 
-A statically-typed, AOT-compilable scripting language for native game
-engines:
+A statically-typed, AOT-compilable embedded scripting language for native
+host applications that own their main loop and expose a C ABI (game
+engines are the archetype, not the boundary — see `CLAUDE.md`):
 
 - **Execution and memory model:** C-compatible data layout; Context-scoped
   memory with manual `delete` and explicitly-invoked collection only; a

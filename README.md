@@ -1,22 +1,32 @@
 # subscript
 
-A statically-typed, AOT-compilable scripting language for native game
-engines: a **C-compatible execution and memory model wearing a
-TypeScript-subset syntax**. Because the syntax is a subset of TypeScript,
-standard TypeScript editor tooling works against it; the compiler adds
-sound static types, C-ABI data layout, deterministic memory, and
-zero-marshaling C interop.
+A statically-typed, AOT-compilable **embedded scripting language for
+native applications**: a **C-compatible execution and memory model
+wearing a TypeScript-subset syntax**. Because the syntax is a subset of
+TypeScript, standard TypeScript editor tooling works against it; the
+compiler adds sound static types, C-ABI data layout, deterministic
+memory, and zero-marshaling C interop.
+
+It is built for a host that **owns its main loop and exposes a C ABI**,
+and that wants user-authored logic to be fast to iterate on and
+predictable at run time. Game engines are the archetype and the origin of
+the design; the same shape fits real-time audio and DSP plugins, creative
+and graphics tools, simulation, and embedded control loops. What the
+project measures is the language's properties (see the benchmarks and the
+layout proof below); the fit beyond games follows from those properties
+rather than from demonstrated adoption in each domain.
 
 subscript is a language project — not a JavaScript runtime, not a
 JavaScript binding.
 
 ## Why it exists
 
-Game scripting usually forces a choice:
+Embedding a scripting language in a native application usually forces a
+choice:
 
 - A **dynamic embedded language** (Lua, JS) — fast iteration and good
   tooling, but boxed values, garbage-collector pauses you do not control,
-  and a marshaling layer between the script and the engine's C structs.
+  and a marshaling layer between the script and the host's C structs.
 - **Native C/C++** — no marshaling and full control, but slow iteration
   (recompile-and-relaunch) and no safety net when the code is wrong.
 
@@ -27,11 +37,13 @@ the source position.
 
 ## Who it's for
 
-Game and engine developers writing gameplay, simulation, or tools logic
-**against a native, C-ABI host**, who want:
+Developers writing application, simulation, or tools logic **against a
+native, C-ABI host that owns the loop** — gameplay code in an engine, a
+DSP block in an audio plugin, a tool script in a content pipeline, a
+control step in an embedded system — who want:
 
 - **Fast iteration** — a hot-reload development tier (edit a function
-  body, see it swap at the next frame boundary) without giving up native
+  body, see it swap at the next loop boundary) without giving up native
   performance when shipping.
 - **Native ship performance** — the shipping tier compiles to a native
   binary that, on the project's matrix-propagation benchmark, runs within
@@ -52,7 +64,8 @@ Game and engine developers writing gameplay, simulation, or tools logic
   the boundary.
 - **Deterministic memory** — Context-scoped allocation, manual `delete`,
   and collection only when you ask for it. No collector runs unbidden, so
-  there are no surprise pauses in the frame loop.
+  there is no pause the host did not ask for — the property a frame loop,
+  an audio callback, or a control step all need.
 
 ### Who it's *not* for
 
@@ -65,8 +78,16 @@ gaps to be closed later:
 - **No JavaScript semantics.** No `any`, no prototype mutation, no `eval`,
   no implicit `f64` `number`. The accepted subset is defined by an
   executable corpus, not by JavaScript's spec.
-- **Not a general-purpose language.** The design target is game scripting
-  against a C-ABI host.
+- **Not a standalone program runtime.** subscript is embedded: the host
+  owns the main loop and calls exported functions, and platform
+  capabilities (files, sockets, devices, threads) come from the host
+  through its C ABI rather than from the language. The standard library
+  grows in *computation* — numbers, strings, collections — while access to
+  the outside world stays the host's to grant. That is a division of
+  responsibility, not a capability ceiling.
+- **Not a sandbox.** Scripts are first-party, trusted code. The compiler
+  spends its effort on early, precise diagnostics for honest mistakes, not
+  on containing hostile ones.
 
 ## What you get
 
@@ -126,7 +147,7 @@ header and emits the ambient `.d.ts` mirror, and the compiler calls the C
 functions directly — struct-by-value, `(pointer, count)` array pairs,
 length-carrying string views, callbacks with `void* userdata`, and opaque
 handles all cross the boundary with no conversion. No specific host header
-is privileged by the language; if engine data must become script-visible,
+is privileged by the language; if host data must become script-visible,
 the host grows a C facade.
 
 ### No implicit GC
@@ -136,6 +157,24 @@ call `collect()` explicitly when you want unreachable allocations
 reclaimed. Nothing collects unbidden — a program that never collects is
 correct, merely larger — so there are no collector pauses in the frame
 loop.
+
+### A deterministic standard library
+
+The `tsc` side is the ES2022 standard library, so the editor already knows
+`Math`, `Date`, `String` and `Array`; subscript accepts a **deterministic
+subset** of them with sized-type signatures and rejects the rest with a
+clear diagnostic — `tsc` accepts more than the language does, never less.
+What is in so far: `Math` (ECMA edge semantics, plus a seeded PRNG so
+`Math.random` is replayable), a UTC-only `Date` that erases to `i64`
+millis, 17 `String` methods, 16 `Array` methods including
+`map`/`filter`/`reduce`/`sort` with real closures, and `Map`/`Set` in
+progress. Every operation with a runtime component is implemented **once**
+and called by both tiers through an opaque symbol, so the two tiers cannot
+drift apart — and every accepted operation is deterministic given the
+Context, which is what makes replay and the golden corpus possible.
+Anything whose result would depend on a locale table, a random seed the
+program cannot control, or the host's libc is either rejected or made
+explicit.
 
 ### Two execution tiers, checked against each other
 
