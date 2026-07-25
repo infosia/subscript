@@ -1506,11 +1506,19 @@ impl<'m> Emitter<'m> {
                     }
                     Some(bin) => {
                         let v = self.eval(value, out, depth)?;
-                        let sym = binop_sym(bin)?;
-                        let _ = writeln!(
-                            out,
-                            "{ind}{{ {ect} _v = {v}; {ect}* _p = ({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u); *_p = *_p {sym} _v; }}"
-                        );
+                        if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
+                            let shifted = shift_expr(bin, elem, "*_p", "_v")?;
+                            let _ = writeln!(
+                                out,
+                                "{ind}{{ {ect} _v = {v}; {ect}* _p = ({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u); *_p = {shifted}; }}"
+                            );
+                        } else {
+                            let sym = binop_sym(bin)?;
+                            let _ = writeln!(
+                                out,
+                                "{ind}{{ {ect} _v = {v}; {ect}* _p = ({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u); *_p = *_p {sym} _v; }}"
+                            );
+                        }
                     }
                 }
                 return Ok(());
@@ -1544,6 +1552,10 @@ impl<'m> Emitter<'m> {
                     let helper = divrem_helper(&target.ty, bin == hir::BinOp::Div)?;
                     let pid = self.pos_id(&target.pos);
                     let _ = writeln!(out, "{ind}{place} = {helper}(ctx, {place}, {v}, {pid}u);");
+                } else if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
+                    let v = self.eval(value, out, depth)?;
+                    let shifted = shift_expr(bin, &target.ty, &place, &v)?;
+                    let _ = writeln!(out, "{ind}{place} = {shifted};");
                 } else {
                     let sym = binop_sym(bin)?;
                     let v = self.eval(value, out, depth)?;
@@ -1870,12 +1882,8 @@ impl<'m> Emitter<'m> {
             _ => {}
         }
         let sym = binop_sym(op)?;
-        let expr = if op == B::UShr {
-            let unsigned = unsigned_ctype(&operand_ty)?;
-            format!("((({unsigned})({l})) >> ({r}))")
-        } else if op == B::Shl && is_narrow_integer(&operand_ty) {
-            let unsigned = unsigned_ctype(&operand_ty)?;
-            format!("((({unsigned})({l})) << ({r}))")
+        let expr = if matches!(op, B::Shl | B::Shr | B::UShr) {
+            shift_expr(op, &operand_ty, l, r)?
         } else {
             format!("({l} {sym} {r})")
         };
@@ -1908,8 +1916,13 @@ impl<'m> Emitter<'m> {
         match op {
             None => Ok(format!("({place} = {v})")),
             Some(bin) => {
-                let sym = binop_sym(bin)?;
-                Ok(format!("({place} = {place} {sym} {v})"))
+                if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
+                    let shifted = shift_expr(bin, &target.ty, &place, &v)?;
+                    Ok(format!("({place} = {shifted})"))
+                } else {
+                    let sym = binop_sym(bin)?;
+                    Ok(format!("({place} = {place} {sym} {v})"))
+                }
             }
         }
     }
@@ -3458,6 +3471,49 @@ fn unsigned_ctype(ty: &Type) -> Result<&'static str, String> {
     })
 }
 
+fn integer_ctype(ty: &Type) -> Result<&'static str, String> {
+    Ok(match ty {
+        Type::I8 => "int8_t",
+        Type::U8 => "uint8_t",
+        Type::I16 => "int16_t",
+        Type::U16 => "uint16_t",
+        Type::I32 => "int32_t",
+        Type::U32 => "uint32_t",
+        Type::I64 => "int64_t",
+        Type::U64 => "uint64_t",
+        other => return Err(format!("integer carrier for {other:?}")),
+    })
+}
+
+fn integer_width(ty: &Type) -> Result<u32, String> {
+    Ok(match ty {
+        Type::I8 | Type::U8 => 8,
+        Type::I16 | Type::U16 => 16,
+        Type::I32 | Type::U32 => 32,
+        Type::I64 | Type::U64 => 64,
+        other => return Err(format!("shift width for {other:?}")),
+    })
+}
+
+/// Emits Q18's total shift operation. The explicit amount mask is
+/// required even for narrow types because C promotes them to `int`
+/// before shifting. Left shift and logical right shift use an unsigned
+/// carrier, avoiding signed-left-shift overflow as well as over-shift UB.
+fn shift_expr(op: hir::BinOp, ty: &Type, left: &str, right: &str) -> Result<String, String> {
+    let width = integer_width(ty)?;
+    let amount = format!("(({right}) & {}u)", width - 1);
+    let carrier = match op {
+        hir::BinOp::Shl | hir::BinOp::UShr => unsigned_ctype(ty)?,
+        hir::BinOp::Shr => integer_ctype(ty)?,
+        other => return Err(format!("shift expression for {other:?}")),
+    };
+    let sym = if op == hir::BinOp::Shl { "<<" } else { ">>" };
+    Ok(format!(
+        "(({})((({carrier})({left})) {sym} {amount}))",
+        integer_ctype(ty)?
+    ))
+}
+
 /// Sanitizes an HIR identifier (which may carry `<...>` from
 /// monomorphization) into a C identifier fragment.
 fn sanitize(name: &str) -> String {
@@ -4002,6 +4058,31 @@ mod tests {
             .collect();
         assert!(!non_comment_lines.contains("_Float16"), "{c}");
         assert!(!non_comment_lines.contains("__fp16"), "{c}");
+    }
+
+    #[test]
+    fn shifts_emit_explicit_operand_width_masks() {
+        let c = emit(
+            "export function main(): void {\n\
+               const narrow: u8 = 255;\n\
+               const narrowAmount: u8 = 9;\n\
+               const wide: i64 = -2;\n\
+               const wideAmount: i64 = 65;\n\
+               print(`${narrow << narrowAmount} ${wide << wideAmount} ${wide >> wideAmount}`);\n\
+             }\n",
+        );
+        assert!(
+            c.contains("((uint8_t)(narrow)) << ((narrowAmount) & 7u)"),
+            "{c}"
+        );
+        assert!(
+            c.contains("((uint64_t)(wide)) << ((wideAmount) & 63u)"),
+            "{c}"
+        );
+        assert!(
+            c.contains("((int64_t)(wide)) >> ((wideAmount) & 63u)"),
+            "{c}"
+        );
     }
 
     #[test]

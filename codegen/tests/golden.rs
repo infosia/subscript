@@ -29,6 +29,7 @@ fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
         "a47-narrow-layout",
         "a48-interop-narrow-slices",
         "a49-f16-conversions",
+        "a50-narrow-callbacks-shifts",
     ] {
         let sources = corpus::entry_sources(&accept, id);
         let jit = run_jit(&sources).unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
@@ -57,11 +58,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // P6.3 async, a36–a38 P7.1 async/Future shapes, a39 P7.2 composed
     // async capstone) plus the stdlib entries (a40 Math battery, a41
     // Math.random sequence, a42 Date battery, a43 P10 String battery,
-    // a44/a45 P11 Array batteries) and P14 narrow numerics (a46–a49).
+    // a44/a45 P11 Array batteries) and P14/review narrow numerics
+    // (a46–a50).
     assert!(
-        golden_ids.len() >= 49,
-        "expected at least the 49 committed goldens (a01–a24 run set + a25–a39 interop \
-         + a40–a45 stdlib + a46–a49 narrow numerics), found {}",
+        golden_ids.len() >= 50,
+        "expected at least the 50 committed goldens (a01–a24 run set + a25–a39 interop \
+         + a40–a45 stdlib + a46–a50 narrow numerics), found {}",
         golden_ids.len()
     );
 

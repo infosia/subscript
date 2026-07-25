@@ -9,7 +9,7 @@
 //! fixed signature. Values the runtime *passes to a script callback*
 //! travel by value under the language calling convention
 //! `(ctx, env, args…)`; the concrete C-ABI class is dispatched here
-//! from an [`ElemKind`] tag plus the element byte width, so a type
+//! from an [`ElemKind`] signedness/kind tag plus the element byte width, so a type
 //! whose width differs between tiers (`boolean`: 1 byte under the dev
 //! JIT, 4 under the ship-C emitter) stays correct on both — each tier's
 //! arrays and callbacks are internally consistent, and this module
@@ -44,8 +44,12 @@ use crate::trap::TrapKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ElemKind {
-    /// Bitwise integer equality at the element width; integer register.
+    /// Bitwise integer equality at the element width; zero-extending
+    /// integer register.
     Int,
+    /// Bitwise integer equality at the element width; sign-extending
+    /// integer register.
+    SignedInt,
     /// IEEE `f32` equality; float register.
     F32,
     /// IEEE `f64` equality; float register.
@@ -67,6 +71,7 @@ impl ElemKind {
             2 => ElemKind::F64,
             3 => ElemKind::Str,
             4 => ElemKind::F16,
+            5 => ElemKind::SignedInt,
             _ => return None,
         })
     }
@@ -133,8 +138,12 @@ impl FmtKind {
 /// The concrete C-ABI class a value crosses the callback boundary as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Abi {
-    I8,
-    I16,
+    U8,
+    U16,
+    U32,
+    U64,
+    S8,
+    S16,
     I32,
     I64,
     F32,
@@ -147,10 +156,17 @@ fn abi_of(kind: ElemKind, size: usize) -> Option<Abi> {
     match kind {
         ElemKind::F32 => (size == 4).then_some(Abi::F32),
         ElemKind::F64 => (size == 8).then_some(Abi::F64),
-        ElemKind::F16 => (size == 2).then_some(Abi::I16),
+        ElemKind::F16 => (size == 2).then_some(Abi::U16),
         ElemKind::Int | ElemKind::Str => match size {
-            1 => Some(Abi::I8),
-            2 => Some(Abi::I16),
+            1 => Some(Abi::U8),
+            2 => Some(Abi::U16),
+            4 => Some(Abi::U32),
+            8 => Some(Abi::U64),
+            _ => None,
+        },
+        ElemKind::SignedInt => match size {
+            1 => Some(Abi::S8),
+            2 => Some(Abi::S16),
             4 => Some(Abi::I32),
             8 => Some(Abi::I64),
             _ => None,
@@ -177,20 +193,36 @@ unsafe fn abi_or_trap(ctx: *mut Context, kind: ElemKind, size: usize) -> Option<
 macro_rules! with_abi {
     ($abi:expr, $T:ident, $body:block) => {
         match $abi {
-            Abi::I8 => {
+            Abi::U8 => {
                 type $T = u8;
+                $body
+            }
+            Abi::S8 => {
+                type $T = i8;
                 $body
             }
             Abi::I32 => {
                 type $T = i32;
                 $body
             }
-            Abi::I16 => {
+            Abi::U16 => {
                 type $T = u16;
+                $body
+            }
+            Abi::S16 => {
+                type $T = i16;
+                $body
+            }
+            Abi::U32 => {
+                type $T = u32;
                 $body
             }
             Abi::I64 => {
                 type $T = i64;
+                $body
+            }
+            Abi::U64 => {
+                type $T = u64;
                 $body
             }
             Abi::F32 => {
@@ -301,7 +333,7 @@ unsafe fn read_uint(p: *const u8, size: usize) -> u64 {
 /// `ctx` (or null).
 unsafe fn elem_eq(ctx: *mut Context, kind: ElemKind, size: usize, p: *const u8, x: *const u8) -> bool {
     match kind {
-        ElemKind::Int => {
+        ElemKind::Int | ElemKind::SignedInt => {
             // SAFETY: caller contract.
             unsafe { read_uint(p, size) == read_uint(x, size) }
         }
@@ -313,6 +345,7 @@ unsafe fn elem_eq(ctx: *mut Context, kind: ElemKind, size: usize, p: *const u8, 
         ElemKind::F64 => unsafe {
             p.cast::<f64>().read_unaligned() == x.cast::<f64>().read_unaligned()
         },
+        // SAFETY: caller contract (2 readable bytes).
         ElemKind::F16 => unsafe {
             let a = crate::half::to_f64(p.cast::<u16>().read_unaligned());
             let b = crate::half::to_f64(x.cast::<u16>().read_unaligned());
@@ -1204,6 +1237,7 @@ mod tests {
             (2, ElemKind::F64),
             (3, ElemKind::Str),
             (4, ElemKind::F16),
+            (5, ElemKind::SignedInt),
         ] {
             assert_eq!(ElemKind::from_u32(v), Some(k));
         }
@@ -1230,12 +1264,16 @@ mod tests {
 
     #[test]
     fn abi_dispatch_is_kind_plus_width() {
-        assert_eq!(abi_of(ElemKind::Int, 1), Some(Abi::I8));
-        assert_eq!(abi_of(ElemKind::Int, 2), Some(Abi::I16));
-        assert_eq!(abi_of(ElemKind::Int, 4), Some(Abi::I32));
-        assert_eq!(abi_of(ElemKind::Int, 8), Some(Abi::I64));
-        assert_eq!(abi_of(ElemKind::Str, 8), Some(Abi::I64));
-        assert_eq!(abi_of(ElemKind::F16, 2), Some(Abi::I16));
+        assert_eq!(abi_of(ElemKind::Int, 1), Some(Abi::U8));
+        assert_eq!(abi_of(ElemKind::Int, 2), Some(Abi::U16));
+        assert_eq!(abi_of(ElemKind::Int, 4), Some(Abi::U32));
+        assert_eq!(abi_of(ElemKind::Int, 8), Some(Abi::U64));
+        assert_eq!(abi_of(ElemKind::SignedInt, 1), Some(Abi::S8));
+        assert_eq!(abi_of(ElemKind::SignedInt, 2), Some(Abi::S16));
+        assert_eq!(abi_of(ElemKind::SignedInt, 4), Some(Abi::I32));
+        assert_eq!(abi_of(ElemKind::SignedInt, 8), Some(Abi::I64));
+        assert_eq!(abi_of(ElemKind::Str, 8), Some(Abi::U64));
+        assert_eq!(abi_of(ElemKind::F16, 2), Some(Abi::U16));
         assert_eq!(abi_of(ElemKind::F32, 4), Some(Abi::F32));
         assert_eq!(abi_of(ElemKind::F64, 8), Some(Abi::F64));
         assert_eq!(abi_of(ElemKind::Int, 3), None);

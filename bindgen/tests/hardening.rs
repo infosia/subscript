@@ -2,8 +2,9 @@
 //! (`specs/blocks/compiler.md` §13.2, the P6.1 review's carried-in
 //! requirement). Raw C builtins map to the sized numerics on the LP64
 //! target; any base spelling that is neither a mapped scalar/builtin nor a
-//! registered named type makes `generate()` return an `Err` naming the
-//! offending type — never a literal in the mirror, never a panic.
+//! registered named type, or a record layout the language cannot reproduce,
+//! makes `generate()` return an `Err` naming the offending construct —
+//! never a literal in the mirror, never a panic.
 
 use subscript_bindgen::generate;
 
@@ -54,11 +55,20 @@ fn anonymous_inline_struct_field_fails_loud() {
 }
 
 #[test]
-fn narrow_c_scalars_and_target_resolved_plain_char_map() {
+fn narrow_c_scalars_map_but_plain_char_fails_without_an_explicit_target() {
     let header = "#include <stdint.h>\ntypedef struct W { int8_t a; uint8_t b; signed char c; \
                   unsigned char d; int16_t e; uint16_t f; short g; \
                   unsigned short h; char target_char; _Float16 half; } W;";
-    let mirror = generate(header).expect("narrow scalars map");
+    let err = generate(header).expect_err("plain char must not follow the host target");
+    assert_eq!(
+        err.to_string(),
+        "bindgen: plain `char` has target-dependent signedness; bindgen does not infer it from the host, so use an explicit `signed char` or `unsigned char` spelling"
+    );
+
+    let header = "#include <stdint.h>\ntypedef struct W { int8_t a; uint8_t b; signed char c; \
+                  unsigned char d; int16_t e; uint16_t f; short g; \
+                  unsigned short h; _Float16 half; } W;";
+    let mirror = generate(header).expect("unambiguous narrow scalars map");
     for expected in [
         "a: i8;",
         "b: u8;",
@@ -72,10 +82,6 @@ fn narrow_c_scalars_and_target_resolved_plain_char_map() {
     ] {
         assert!(mirror.contains(expected), "missing `{expected}` in:\n{mirror}");
     }
-    assert!(
-        mirror.contains("target_char: i8;") || mirror.contains("target_char: u8;"),
-        "plain char follows libclang's known target signedness:\n{mirror}"
-    );
 }
 
 #[test]
@@ -85,4 +91,44 @@ fn typedefed_binary16_float_maps_to_f16() {
     let mirror = generate(header).expect("typedefed binary16 maps");
     assert!(mirror.contains("type SubHalf = f16;"), "{mirror}");
     assert!(mirror.contains("half: SubHalf;"), "{mirror}");
+}
+
+#[test]
+fn bitfield_record_fails_loud() {
+    let header = "#include <stdint.h>\ntypedef struct W { uint8_t a : 3; uint8_t b : 5; } W;";
+    let err = generate(header).expect_err("bitfields cannot be mirrored");
+    assert_eq!(
+        err.to_string(),
+        "bindgen: record `W` contains bitfield member `a`; the language cannot reproduce bitfield layout"
+    );
+}
+
+#[test]
+fn union_record_fails_loud() {
+    let header = "#include <stdint.h>\ntypedef union U { uint8_t a; uint16_t b; } U;";
+    let err = generate(header).expect_err("unions cannot be mirrored");
+    assert_eq!(
+        err.to_string(),
+        "bindgen: record `U` is a union; the language cannot reproduce union layout"
+    );
+}
+
+#[test]
+fn packed_record_fails_loud() {
+    let header = "#include <stdint.h>\ntypedef struct __attribute__((packed)) P { uint8_t a; _Float16 h; } P;";
+    let err = generate(header).expect_err("packed records cannot be mirrored");
+    assert_eq!(
+        err.to_string(),
+        "bindgen: record `P` uses packed layout; the language cannot reproduce its field offsets"
+    );
+}
+
+#[test]
+fn over_aligned_record_fails_loud() {
+    let header = "#include <stdint.h>\ntypedef struct __attribute__((aligned(16))) A { uint8_t a; } A;";
+    let err = generate(header).expect_err("over-aligned records cannot be mirrored");
+    assert_eq!(
+        err.to_string(),
+        "bindgen: record `A` is explicitly aligned to 16 bytes; the language cannot reproduce that alignment"
+    );
 }

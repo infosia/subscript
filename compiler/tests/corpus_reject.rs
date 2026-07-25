@@ -53,6 +53,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r34-narrow-mixed-arithmetic.ts", RuleCode::S007, 9),
     ("r35-narrow-mixed-bitwise.ts", RuleCode::S007, 9),
     ("r36-f16-arithmetic.ts", RuleCode::S014, 9),
+    ("r37-literal-overshift.ts", RuleCode::S008, 8),
 ];
 
 #[test]

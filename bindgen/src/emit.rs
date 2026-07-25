@@ -404,6 +404,20 @@ fn map_element(base: &str, reg: &HashMap<String, Kind>) -> Result<String, ParseE
 
 /// The fail-loud error for a boundary use site naming an unmapped C type.
 fn unmapped(base: &str) -> ParseError {
+    if base == "char" {
+        return ParseError(
+            "plain `char` has target-dependent signedness; bindgen does not infer it \
+             from the host, so use an explicit `signed char` or `unsigned char` spelling"
+                .to_string(),
+        );
+    }
+    if base == "__fp16" {
+        return ParseError(
+            "`__fp16` has a target-dependent half format; use `_Float16` for \
+             unambiguous IEEE binary16"
+                .to_string(),
+        );
+    }
     ParseError(format!(
         "unmapped C type `{base}` at a boundary use site: it is neither a mapped \
          scalar/builtin nor a registered named type (struct/enum/handle/alias/\
@@ -412,16 +426,12 @@ fn unmapped(base: &str) -> ParseError {
     ))
 }
 
-/// True when `base` is plain `char`, including the target-signed markers.
+/// True when `base` is plain `char`.
 ///
 /// A `const char *` string view is byte-oriented and does not depend on
-/// scalar signedness. Only scalar mapping requires one of the resolved
-/// markers; [`lang_scalar`] deliberately leaves literal `char` unmapped.
+/// scalar signedness. Scalar mapping deliberately leaves `char` unmapped.
 fn is_plain_char(base: &str) -> bool {
-    matches!(
-        base,
-        "char" | "__sub_plain_char_signed" | "__sub_plain_char_unsigned"
-    )
+    base == "char"
 }
 
 /// Language spelling of a C scalar or raw builtin, or `None` for a named
@@ -432,9 +442,10 @@ fn is_plain_char(base: &str) -> bool {
 /// - `long`/`unsigned long` — 64-bit on LP64 (Unix) but 32-bit on LLP64
 ///   (Windows); an ABI-stable header must spell a 64-bit int
 ///   `int64_t`/`long long`, so a bare `long` is unmapped.
-/// - unresolved plain `char` — mapped only after the libclang frontend
-///   resolves target signedness into one of the internal spellings below;
-///   a direct emitter input that only says `char` still fails loud.
+/// - plain `char` — target-dependent signedness is never inferred from
+///   the generator host.
+/// - `__fp16` — ARM's alternative half format is not IEEE binary16;
+///   `_Float16` is the unambiguous spelling.
 ///
 /// `int`/`unsigned int` (32-bit on every supported target) and `long
 /// long`/`unsigned long long` (64-bit everywhere) are width-stable and
@@ -444,13 +455,11 @@ fn lang_scalar(base: &str) -> Option<&'static str> {
         "bool" => "boolean",
         "float" => "f32",
         "double" => "f64",
-        "_Float16" | "__fp16" => "f16",
+        "_Float16" => "f16",
         "int8_t" | "signed char" => "i8",
         "uint8_t" | "unsigned char" => "u8",
         "int16_t" | "short" | "short int" | "signed short" | "signed short int" => "i16",
         "uint16_t" | "unsigned short" | "unsigned short int" => "u16",
-        "__sub_plain_char_signed" => "i8",
-        "__sub_plain_char_unsigned" => "u8",
         "int32_t" => "i32",
         "uint32_t" => "u32",
         "int64_t" => "i64",
@@ -530,7 +539,7 @@ mod tests {
                 field("short", false, false, "c"),
                 field("uint16_t", false, false, "d"),
                 field("_Float16", false, false, "e"),
-                field("__sub_plain_char_signed", false, false, "f"),
+                field("signed char", false, false, "f"),
             ],
         }];
         let m = emit(&parsed_with(decls)).expect("narrow scalars map");
@@ -544,6 +553,19 @@ mod tests {
         ] {
             assert!(m.contains(expected), "{m}");
         }
+    }
+
+    #[test]
+    fn fp16_without_a_known_format_fails_loud() {
+        let decls = vec![Decl::Struct {
+            name: "SubHalf".into(),
+            fields: vec![field("__fp16", false, false, "value")],
+        }];
+        let err = emit(&parsed_with(decls)).expect_err("__fp16 must not guess a format");
+        assert_eq!(
+            err.0,
+            "`__fp16` has a target-dependent half format; use `_Float16` for unambiguous IEEE binary16"
+        );
     }
 
     #[test]

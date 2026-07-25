@@ -944,10 +944,14 @@ impl ArrFn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ArrElemKind {
-    /// Bitwise integer equality at the element width; passed in an
-    /// integer register. Covers the sized integers, `boolean`, enums,
-    /// `Date` (millis), and reference handles (identity).
+    /// Bitwise integer equality at the element width; passed in a
+    /// zero-extending integer register. Covers unsigned sized integers,
+    /// `boolean`, and reference handles (identity).
     Int,
+    /// Bitwise integer equality at the element width; passed in a
+    /// sign-extending integer register. Covers signed sized integers,
+    /// enums, and `Date` (millis).
+    SignedInt,
     /// IEEE `f32` equality (`NaN` never equal); float register.
     F32,
     /// IEEE `f64` equality; float register.
@@ -969,6 +973,7 @@ impl ArrElemKind {
             ArrElemKind::F64 => 2,
             ArrElemKind::Str => 3,
             ArrElemKind::F16 => 4,
+            ArrElemKind::SignedInt => 5,
         }
     }
 
@@ -981,18 +986,18 @@ impl ArrElemKind {
     pub fn of(ty: &Type, is_value_class: &dyn Fn(ClassId) -> bool) -> Option<ArrElemKind> {
         Some(match ty {
             Type::Bool
-            | Type::I8
             | Type::U8
-            | Type::I16
             | Type::U16
-            | Type::I32
             | Type::U32
-            | Type::I64
             | Type::U64
-            | Type::Enum(_)
-            | Type::Date
             | Type::Object
             | Type::Array(_) => ArrElemKind::Int,
+            Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::Enum(_)
+            | Type::Date => ArrElemKind::SignedInt,
             Type::Class(id) if !is_value_class(*id) => ArrElemKind::Int,
             Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
             Type::F32 => ArrElemKind::F32,
@@ -1428,22 +1433,26 @@ mod tests {
         let of = |ty: &Type| ArrElemKind::of(ty, &value_class);
         for ty in [
             Type::Bool,
-            Type::I8,
             Type::U8,
-            Type::I16,
             Type::U16,
-            Type::I32,
             Type::U32,
-            Type::I64,
             Type::U64,
-            Type::Date,
-            Type::Enum(EnumId(0)),
             Type::Object,
             Type::Class(ClassId(1)),
             Type::Nullable(Box::new(Type::Class(ClassId(1)))),
             Type::Array(Box::new(Type::I32)),
         ] {
             assert_eq!(of(&ty), Some(ArrElemKind::Int), "{ty:?}");
+        }
+        for ty in [
+            Type::I8,
+            Type::I16,
+            Type::I32,
+            Type::I64,
+            Type::Date,
+            Type::Enum(EnumId(0)),
+        ] {
+            assert_eq!(of(&ty), Some(ArrElemKind::SignedInt), "{ty:?}");
         }
         assert_eq!(of(&Type::F32), Some(ArrElemKind::F32));
         assert_eq!(of(&Type::F64), Some(ArrElemKind::F64));
@@ -1465,6 +1474,7 @@ mod tests {
         assert_eq!(ArrElemKind::F64.code(), 2);
         assert_eq!(ArrElemKind::Str.code(), 3);
         assert_eq!(ArrElemKind::F16.code(), 4);
+        assert_eq!(ArrElemKind::SignedInt.code(), 5);
     }
 
     #[test]

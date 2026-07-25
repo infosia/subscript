@@ -139,11 +139,13 @@ mod tests {
             "const x: u8 = -1;\n",
             "const x: i16 = 32768;\n",
             "const x: u16 = 65536;\n",
-            "const x: f16 = 65505.0;\n",
+            "const x: f16 = 65520.0;\n",
         ] {
             let err = check_one(src).unwrap_err();
             assert_eq!(err[0].code, RuleCode::S008, "{src}");
         }
+        check_one("const x: f16 = 65505.0;\nexport function main(): void {}\n")
+            .expect("a finite-rounding f16 literal is accepted");
     }
 
     #[test]
@@ -662,11 +664,29 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S007);
+        assert!(err[0].message.contains("mixed-type bitwise"));
+        assert!(!err[0].message.contains("arithmetic"));
 
         check_one(
             "export function main(): void {\n  const a: u64 = 1;\n  const b: u32 = 2;\n  const c: u64 = a | (b as u64);\n  print(`${c}`);\n}\n",
         )
         .expect("same-width bitwise after `as` is legal");
+    }
+
+    #[test]
+    fn literal_overshift_is_s008_but_nonliteral_is_accepted() {
+        let err = check_one(
+            "export function main(): void {\n  const one: u8 = 1;\n  const x: u8 = one << 8;\n  print(`${x}`);\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S008);
+        assert!(err[0].message.contains("shift amount 8"));
+        assert!(err[0].message.contains("`u8` width 8"));
+
+        check_one(
+            "export function main(): void {\n  const one: u8 = 1;\n  const amount: u8 = 8;\n  const x: u8 = one << amount;\n  print(`${x}`);\n}\n",
+        )
+        .expect("nonliteral shift amounts are masked at runtime");
     }
 
     #[test]

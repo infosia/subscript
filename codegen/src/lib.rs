@@ -106,6 +106,7 @@ mod tests {
             (ArrElemKind::F64, ElemKind::F64),
             (ArrElemKind::Str, ElemKind::Str),
             (ArrElemKind::F16, ElemKind::F16),
+            (ArrElemKind::SignedInt, ElemKind::SignedInt),
         ] {
             assert_eq!(
                 ElemKind::from_u32(compiler.code()),

@@ -232,6 +232,16 @@ fn flags() -> MemFlags {
     MemFlags::trusted()
 }
 
+fn shift_mask(ty: &Type) -> Result<i64, String> {
+    Ok(match ty {
+        Type::I8 | Type::U8 => 7,
+        Type::I16 | Type::U16 => 15,
+        Type::I32 | Type::U32 => 31,
+        Type::I64 | Type::U64 => 63,
+        other => return Err(internal(format!("shift width for {other:?}"))),
+    })
+}
+
 /// Frame offset of the reload epoch a coroutine frame was created in
 /// (`LowerOptions::reload` only; the word is unused otherwise).
 const GEN_EPOCH_OFF: i32 = 4;
@@ -1444,6 +1454,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
         let float = operand_ty.is_float();
         let unsigned = is_unsigned(&operand_ty);
+        let r = if matches!(op, B::Shl | B::Shr | B::UShr) {
+            self.b.ins().band_imm(r, shift_mask(&operand_ty)?)
+        } else {
+            r
+        };
         let out = match op {
             B::Add => {
                 if float {
@@ -1877,6 +1892,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         use hir::BinOp as B;
         let float = ty.is_float();
         let unsigned = is_unsigned(ty);
+        let r = if matches!(op, B::Shl | B::Shr | B::UShr) {
+            self.b.ins().band_imm(r, shift_mask(ty)?)
+        } else {
+            r
+        };
         Ok(match op {
             B::Add => {
                 if *ty == Type::Str {

@@ -52,6 +52,16 @@ fn int_range(ty: &Type) -> Option<(i64, i64)> {
     }
 }
 
+fn integer_width(ty: &Type) -> Option<i64> {
+    Some(match ty {
+        Type::I8 | Type::U8 => 8,
+        Type::I16 | Type::U16 => 16,
+        Type::I32 | Type::U32 => 32,
+        Type::I64 | Type::U64 => 64,
+        _ => return None,
+    })
+}
+
 impl<'p> Checker<'p> {
     pub(crate) fn err_expr(&self, pos: Pos) -> hir::Expr {
         hir::Expr {
@@ -215,7 +225,9 @@ impl<'p> Checker<'p> {
             }
         };
         if target.is_float() {
-            if target == Type::F16 && value.is_finite() && value.abs() > 65_504.0 {
+            // Round-to-nearest-even first overflows binary16 at the
+            // midpoint 65520: values below it still round to 65504.
+            if target == Type::F16 && value.abs() >= 65_520.0 {
                 self.error(
                     RuleCode::S008,
                     format!("numeric literal {} out of range for `f16`", raw),
@@ -812,6 +824,26 @@ impl<'p> Checker<'p> {
             }
             _ => (BinOp::Add, Type::Error, err),
         };
+        if ok
+            && matches!(op, B::LShift | B::RShift | B::ZeroFillRShift)
+            && matches!(&right.kind, ExprKind::Int(amount) if *amount >= integer_width(&lt).unwrap_or(i64::MAX))
+        {
+            let amount = match &right.kind {
+                ExprKind::Int(amount) => *amount,
+                _ => 0,
+            };
+            let width = integer_width(&lt).unwrap_or(0);
+            let name = self.type_name(&lt);
+            self.error(
+                RuleCode::S008,
+                format!(
+                    "literal shift amount {} is out of range for `{}` width {}",
+                    amount, name, width
+                ),
+                right.pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         if ok || err {
             return mk(hop, if err { Type::Error } else { ty });
         }
@@ -835,11 +867,19 @@ impl<'p> Checker<'p> {
         let ln = self.type_name(&lt);
         let rn = self.type_name(&rt);
         if mixed_numeric {
+            let family = if matches!(
+                op,
+                B::BitAnd | B::BitOr | B::BitXor | B::LShift | B::RShift | B::ZeroFillRShift
+            ) {
+                "bitwise"
+            } else {
+                "arithmetic"
+            };
             self.error(
                 RuleCode::S007,
                 format!(
-                    "mixed-type arithmetic (`{}` and `{}`) requires an explicit `as` conversion",
-                    ln, rn
+                    "mixed-type {} (`{}` and `{}`) requires an explicit `as` conversion",
+                    family, ln, rn
                 ),
                 pos.clone(),
             );
@@ -2547,6 +2587,28 @@ impl<'p> Checker<'p> {
                     RuleCode::S100,
                     format!("compound assignment is not defined for `{}`", name),
                     pos.clone(),
+                );
+            }
+            if matches!(bin, BinOp::Shl | BinOp::Shr | BinOp::UShr)
+                && matches!(
+                    &value.kind,
+                    ExprKind::Int(amount)
+                        if *amount >= integer_width(&target_ty).unwrap_or(i64::MAX)
+                )
+            {
+                let amount = match &value.kind {
+                    ExprKind::Int(amount) => *amount,
+                    _ => 0,
+                };
+                let width = integer_width(&target_ty).unwrap_or(0);
+                let name = self.type_name(&target_ty);
+                self.error(
+                    RuleCode::S008,
+                    format!(
+                        "literal shift amount {} is out of range for `{}` width {}",
+                        amount, name, width
+                    ),
+                    value.pos.clone(),
                 );
             }
         }

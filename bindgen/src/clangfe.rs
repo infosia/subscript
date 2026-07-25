@@ -273,6 +273,7 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
         CXType_Record => {
             record_doc(cursor, &name, parsed);
             let decl = clang_getTypeDeclaration(canon);
+            validate_record_layout(&name, cursor, canon, decl)?;
             let fields = struct_fields(decl);
             parsed.decls.push(Decl::Struct { name, fields });
         }
@@ -281,6 +282,8 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
             match pointee.kind {
                 // `typedef struct X_T *X;` — opaque handle.
                 CXType_Record => {
+                    let decl = clang_getTypeDeclaration(pointee);
+                    validate_record_layout(&name, cursor, pointee, decl)?;
                     record_doc(cursor, &name, parsed);
                     parsed.decls.push(Decl::Handle { name });
                 }
@@ -345,6 +348,78 @@ unsafe fn enum_members(decl: CXCursor) -> Vec<(String, i64)> {
         }
     }
     members
+}
+
+/// Rejects records whose C layout the language cannot reproduce.
+unsafe fn validate_record_layout(
+    name: &str,
+    typedef_cursor: CXCursor,
+    record_ty: CXType,
+    decl: CXCursor,
+) -> Result<(), ParseError> {
+    if clang_getCursorKind(decl) == CXCursor_UnionDecl {
+        return Err(ParseError(format!(
+            "record `{name}` is a union; the language cannot reproduce union layout"
+        )));
+    }
+
+    let decl_children = children(decl);
+    if children(typedef_cursor)
+        .iter()
+        .chain(decl_children.iter())
+        .any(|child| clang_getCursorKind(*child) == CXCursor_PackedAttr)
+    {
+        return Err(ParseError(format!(
+            "record `{name}` uses packed layout; the language cannot reproduce its field offsets"
+        )));
+    }
+    if children(typedef_cursor)
+        .iter()
+        .chain(decl_children.iter())
+        .any(|child| clang_getCursorKind(*child) == CXCursor_AlignedAttr)
+    {
+        let align = clang_Type_getAlignOf(record_ty);
+        return Err(ParseError(format!(
+            "record `{name}` is explicitly aligned to {align} bytes; the language cannot reproduce that alignment"
+        )));
+    }
+
+    let mut natural_align = 1i64;
+    for child in &decl_children {
+        if clang_getCursorKind(*child) != CXCursor_FieldDecl {
+            continue;
+        }
+        let field_name = cursor_spelling(*child);
+        if clang_Cursor_isBitField(*child) != 0 {
+            return Err(ParseError(format!(
+                "record `{name}` contains bitfield member `{field_name}`; the language cannot reproduce bitfield layout"
+            )));
+        }
+        if children(*child)
+            .iter()
+            .any(|attr| clang_getCursorKind(*attr) == CXCursor_AlignedAttr)
+        {
+            return Err(ParseError(format!(
+                "record `{name}` contains explicitly aligned member `{field_name}`; the language cannot reproduce its field offsets"
+            )));
+        }
+        let align = clang_Type_getAlignOf(clang_getCursorType(*child));
+        if align > 0 {
+            natural_align = natural_align.max(align);
+        }
+    }
+    let record_align = clang_Type_getAlignOf(record_ty);
+    if record_align > 0 && record_align < natural_align {
+        return Err(ParseError(format!(
+            "record `{name}` uses packed layout; the language cannot reproduce its field offsets"
+        )));
+    }
+    if record_align > natural_align {
+        return Err(ParseError(format!(
+            "record `{name}` is over-aligned to {record_align} bytes; the language cannot reproduce that alignment"
+        )));
+    }
+    Ok(())
 }
 
 /// Reads the fields of a struct declaration, in order.
@@ -428,12 +503,10 @@ unsafe fn base_spelling(t: CXType) -> String {
         // scalar table keys on `bool`.
         CXType_Bool => return "bool".to_string(),
         CXType_Void => return "void".to_string(),
-        // Preserve that this was *plain* `char`, while carrying the
-        // signedness libclang resolved for its concrete target. The
-        // emitter maps these internal spellings but deliberately does not
-        // map unresolved `"char"` (compiler.md §16.1).
-        CXType_Char_S => return "__sub_plain_char_signed".to_string(),
-        CXType_Char_U => return "__sub_plain_char_unsigned".to_string(),
+        // Plain `char` is target-dependent. Preserve the ambiguous source
+        // spelling instead of importing libclang's host-default target
+        // signedness (compiler.md §16.1).
+        CXType_Char_S | CXType_Char_U => return "char".to_string(),
         _ => {}
     }
     let mut s = type_spelling(t);
