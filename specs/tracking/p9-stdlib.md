@@ -915,3 +915,43 @@ The emitted-C figure still needs an idle-machine re-measurement
 (1.87x observed against 1.05x recorded for arm64). This session cannot
 supply it — the run above is direct evidence that the machine is not
 quiet enough.
+
+## P13 stage 1 — `JSON.stringify` (2026-07-26)
+
+Implemented. `JSON.parse` is stage 2 and untouched.
+
+Call-site monomorphized serializers, **no RTTI and no layout
+descriptors** — §13.1's premise held under implementation, which was
+the thing most worth checking, since the roadmap had named RTTI as
+this phase's new machinery. One shared `sub_rt_json_*` runtime serves
+both tiers.
+
+Static cycle analysis emits two shapes as §13.2 requires: **no
+tracking operations at all** for a type whose field graph cannot reach
+a reference class from itself, and active-path tracking with a cycle
+trap for one that can.
+
+Corpus `a69-json-stringify`, golden generated from node v24.18.0 and
+**re-verified independently by the orchestrator** on a hand-written
+equivalent — matched (451 bytes). No pre-existing `.expected` moved.
+Four pinned S014 rejections (`Map`, `Set`, `object`, function type)
+and the `NaN`/`Infinity`/cycle traps.
+
+`NaN` and `Infinity` appear as divergence witnesses in the generated
+API reference. The P16 witness comparison is `Value(stdout) | Trap`
+and a trap never agrees with a value, so trap-versus-`null` is
+demonstrable — which is why §13.5 could require these as traps rather
+than goldens.
+
+### Contract correction: the escape set
+
+§13.5 pre-registered "control characters as `\u00XX`". Measured on
+node v24.18.0, that is wrong in two ways: five control characters take
+**short escapes** (`\b \t \n \f \r` for U+0008/0009/000A/000C/000D),
+and the rest of U+0000–001F take **lowercase** `\u00xx`. U+007F,
+U+0080, U+2028, U+2029 and `/` all pass through unescaped. Recorded as
+§13.2a.
+
+This is the same failure the P18 review named five times: a
+pre-registration asserting something no measurement had checked. The
+contract now carries the measured set and says so.

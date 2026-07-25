@@ -914,6 +914,27 @@ which is what `JSON.stringify` already does for finite values.
 
 `Date` serializes as its `toISOString()` string, matching JS.
 
+#### 13.2a String escaping — measured, not assumed
+
+*(Corrected 2026-07-26. §13.5 originally pre-registered "control
+characters as `\u00XX`", which was wrong twice over: it missed the
+five short escapes, and the hex is lowercase. The P13 stage-1
+implementer measured it. The pattern is the one the P18 review already
+recorded — a pre-registration is not a measurement.)*
+
+Measured on node v24.18.0 and matched here:
+
+- `"` → `\"`, `\` → `\\`
+- **Five short escapes**: U+0008 `\b`, U+0009 `\t`, U+000A `\n`,
+  U+000C `\f`, U+000D `\r`
+- Every other character in U+0000–U+001F → **lowercase** `\u00xx`
+  (so U+000B is `\u000b`, not `\u000B` and not `\v`)
+- **Passed through unescaped**: `/`, U+007F, U+0080, U+2028, U+2029
+
+Strings here are valid UTF-8 by construction (Q5), so an unpaired
+UTF-16 surrogate cannot exist and JS's lone-surrogate escaping has no
+analogue.
+
 **Cycles.** A reference-class graph can cycle. Because the serializer
 is monomorphized, the checker knows statically whether `T`'s field
 graph can reach a reference class from itself. If it cannot, the
@@ -976,8 +997,8 @@ contextual type is S014: the checker has nothing to monomorphize.
 ### 13.5 Corpus and gate (pre-registered)
 
 Accept (continue `aNN`): a `stringify` battery over each serializable
-kind — scalars, `string` with the escape set (`"`, `\`, control
-characters as `\u00XX`), `boolean`, `Date`, nested `T[]`,
+kind — scalars, `string` with the escape set (§13.2a), `boolean`,
+`Date`, nested `T[]`,
 `FixedArray`, a `@CStruct`, a reference class, and `Ref | null` with
 both a value and `null` — with the golden generated from node and
 `cmp`-verified; a round-trip entry (`parse(stringify(x))` equal to
