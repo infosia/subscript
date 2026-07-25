@@ -252,7 +252,24 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   strings; every accepted index/length/code-unit measure is a **byte**
   (the standing meaning of `length`/`slice`). ASCII programs behave as
   JS; non-ASCII values diverge from UTF-16 units (recorded, not
-  hidden). Case mapping and whitespace are ASCII-only. Range/argument
+  hidden).
+  **Case mapping and `trim` whitespace are full Unicode** (revised
+  2026-07-25; both were ASCII-only, and the Boa audit —
+  `specs/tracking/js-alignment-audit.md` — found the limit unnecessary).
+  `toUpperCase`/`toLowerCase` follow the Unicode Default Case
+  Conversion, matching JS including the special-casing table
+  (`ß`→`SS`, `ﬄ`→`FFL`, final sigma, `ᾀ`→`ἈΙ`): Rust's standard library
+  already implements it, which is what Boa's non-locale path uses; ICU
+  is needed only for the locale-sensitive `toLocale*` variants, which
+  stay rejected. `trim`/`trimStart`/`trimEnd` use ECMA's WhiteSpace +
+  LineTerminator set, which is an explicit ~15-codepoint predicate, not
+  a table — Rust's own `trim` is **not** equivalent (it uses
+  `\p{White_Space}`, which adds U+0085 and omits U+FEFF), so the
+  predicate is written out, as Boa writes it out.
+  Byte-measured `length`/`slice` are unaffected and still diverge from
+  JS's UTF-16 units on non-ASCII input — that is Q5's representation
+  choice, not a limit that was lifted here.
+  Range/argument
   errors trap (`charCodeAt` OOB, `repeat(-1)`, `split("")`,
   `replaceAll("", …)`, empty-`pad` padding — JS returns NaN or silent
   no-ops there). `replace`/`replaceAll` are literal: `$` substitution

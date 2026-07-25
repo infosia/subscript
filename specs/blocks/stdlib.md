@@ -184,7 +184,7 @@ policy under the no-implicit-GC memory model.
 
 **Stdlib non-goals** (permanent unless revised with evidence):
 `RegExp`, `Intl`/locale- and Unicode-table-dependent behavior
-(collation, full case folding — Q21 is ASCII), `Promise` (C8:
+(collation, locale-sensitive case — Q21 covers non-locale case), `Promise` (C8:
 coroutines), `console` (the language has `print`), `Symbol`,
 `Proxy`/`Reflect`, `eval`/`Function`, `BigInt` (`i64`/`u64` exist).
 
@@ -193,9 +193,9 @@ coroutines), `console` (the language has `print`), `Symbol`,
 Semantics rule (**Q21**): the language's strings are immutable UTF-8
 byte strings; every index, length, and code unit in the accepted
 subset is a **byte** measure — the standing meaning of the existing
-`length`/`slice`. ASCII-only programs behave exactly as JS; on
+`length`/`slice`. Programs whose indices stay in ASCII behave exactly as JS; on
 non-ASCII text the values diverge from JS's UTF-16 units (recorded,
-not hidden). Case mapping and whitespace are ASCII-only. Range and
+not hidden). Case mapping and `trim` whitespace are full Unicode (Q21). Range and
 argument errors **trap** (no NaN/RangeError values).
 
 Accepted members (checker: intrinsic member calls on `Type::Str`;
@@ -213,7 +213,7 @@ returning a string allocates via the Context):
 - `split(sep: string): string[]` — no-match → `[whole]`; adjacent
   separators produce empty strings (JS semantics); an **empty
   separator traps** (byte-splitting would fracture UTF-8 code points)
-- `trim/trimStart/trimEnd(): string` — ASCII whitespace
+- `trim/trimStart/trimEnd(): string` — ECMA WhiteSpace + LineTerminator (Q21)
   (space, `\t`, `\n`, `\r`, `\f`, `\v`) only (Q21)
 - `repeat(n: i32): string` — `n < 0` traps; `repeat(0)` is `""`
 - `padStart(len: i32, pad?: string): string`, `padEnd` — `pad`
@@ -221,7 +221,7 @@ returning a string allocates via the Context):
   an empty `pad` with `len > length` traps (JS returns the string
   unchanged for empty pad — divergence recorded in Q21: silent
   non-padding hides bugs)
-- `toUpperCase(): string`, `toLowerCase(): string` — ASCII A–Z/a–z
+- `toUpperCase(): string`, `toLowerCase(): string` — Unicode Default Case Conversion (Q21)
   only (Q21)
 - `replace(pat: string, repl: string): string` — first occurrence,
   literal (no regex; `$` in the replacement is **not** interpreted —
