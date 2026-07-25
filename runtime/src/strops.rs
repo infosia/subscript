@@ -4,7 +4,8 @@
 //! Every measure is a **byte** measure over the language's immutable
 //! UTF-8 strings: ASCII programs behave exactly as JS; on non-ASCII
 //! text the values diverge from JS's UTF-16 units (recorded in Q21,
-//! not hidden). Case mapping and whitespace are ASCII-only.
+//! not hidden). Case mapping uses Unicode Default Case Conversion, and
+//! trimming uses ECMA's explicit WhiteSpace + LineTerminator set.
 //!
 //! These functions are pure and total — no panics, no traps. The Q21
 //! argument errors (`repeat(-1)`, `split("")`, `replaceAll("", …)`,
@@ -13,11 +14,29 @@
 //! documents a harmless total fallback instead of a panic (CLAUDE.md
 //! core principle 5).
 
-/// True for the six ASCII whitespace bytes the `trim` family strips
-/// (Q21): space, `\t`, `\n`, `\r`, `\f` (0x0C), `\v` (0x0B).
+/// True for exactly ECMA's WhiteSpace + LineTerminator code points
+/// (Q21). This intentionally includes U+FEFF and excludes U+0085,
+/// unlike Rust's [`char::is_whitespace`].
 #[must_use]
-pub fn is_ascii_ws(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0C | 0x0B)
+pub fn is_ecma_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0009}'
+            | '\u{000A}'
+            | '\u{000B}'
+            | '\u{000C}'
+            | '\u{000D}'
+            | '\u{0020}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200A}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202F}'
+            | '\u{205F}'
+            | '\u{3000}'
+            | '\u{FEFF}'
+    )
 }
 
 /// First byte index of `needle` in `hay` at or after byte `at`;
@@ -88,18 +107,26 @@ pub fn split<'a>(hay: &'a [u8], sep: &[u8]) -> Vec<&'a [u8]> {
     out
 }
 
-/// `trimStart()`: strips leading ASCII whitespace (Q21).
+/// `trimStart()`: strips leading ECMA WhiteSpace + LineTerminator
+/// code points (Q21). Invalid UTF-8 is returned unchanged as a total
+/// fallback; language strings are always valid UTF-8.
 #[must_use]
 pub fn trim_start(s: &[u8]) -> &[u8] {
-    let from = s.iter().position(|&b| !is_ascii_ws(b)).unwrap_or(s.len());
-    &s[from..]
+    match std::str::from_utf8(s) {
+        Ok(text) => text.trim_start_matches(is_ecma_whitespace).as_bytes(),
+        Err(_) => s,
+    }
 }
 
-/// `trimEnd()`: strips trailing ASCII whitespace (Q21).
+/// `trimEnd()`: strips trailing ECMA WhiteSpace + LineTerminator code
+/// points (Q21). Invalid UTF-8 is returned unchanged as a total
+/// fallback; language strings are always valid UTF-8.
 #[must_use]
 pub fn trim_end(s: &[u8]) -> &[u8] {
-    let to = s.iter().rposition(|&b| !is_ascii_ws(b)).map_or(0, |i| i + 1);
-    &s[..to]
+    match std::str::from_utf8(s) {
+        Ok(text) => text.trim_end_matches(is_ecma_whitespace).as_bytes(),
+        Err(_) => s,
+    }
 }
 
 /// `trim()`: strips both ends; an all-whitespace string becomes `""`.
@@ -142,18 +169,26 @@ pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Vec<u8> {
     out
 }
 
-/// `toUpperCase()`: maps ASCII `a–z` only (Q21); every other byte is
-/// untouched.
+/// `toUpperCase()`: Unicode Default Case Conversion (Q21). Invalid
+/// UTF-8 is returned unchanged as a total fallback; language strings
+/// are always valid UTF-8.
 #[must_use]
 pub fn to_upper(s: &[u8]) -> Vec<u8> {
-    s.iter().map(|b| b.to_ascii_uppercase()).collect()
+    match std::str::from_utf8(s) {
+        Ok(text) => text.to_uppercase().into_bytes(),
+        Err(_) => s.to_vec(),
+    }
 }
 
-/// `toLowerCase()`: maps ASCII `A–Z` only (Q21); every other byte is
-/// untouched.
+/// `toLowerCase()`: Unicode Default Case Conversion (Q21). Invalid
+/// UTF-8 is returned unchanged as a total fallback; language strings
+/// are always valid UTF-8.
 #[must_use]
 pub fn to_lower(s: &[u8]) -> Vec<u8> {
-    s.iter().map(|b| b.to_ascii_lowercase()).collect()
+    match std::str::from_utf8(s) {
+        Ok(text) => text.to_lowercase().into_bytes(),
+        Err(_) => s.to_vec(),
+    }
 }
 
 /// `replace(pat, repl)`: replaces the first occurrence, literally —
@@ -250,18 +285,31 @@ mod tests {
     }
 
     #[test]
-    fn trim_family_strips_the_six_ascii_whitespace_bytes() {
+    fn trim_family_strips_exactly_ecma_whitespace() {
         let s = b"  x\t";
         assert_eq!(trim(s), b"x");
         assert_eq!(trim_start(s), b"x\t");
         assert_eq!(trim_end(s), b"  x");
-        // All six whitespace bytes; an all-ws string trims to "".
-        assert_eq!(trim(b" \t\n\r\x0C\x0B "), b"");
+        // Every ECMA WhiteSpace + LineTerminator code point.
+        let all = "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\
+                   \u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\
+                   \u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\
+                   \u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\
+                   \u{FEFF}";
+        assert_eq!(trim(all.as_bytes()), b"");
         assert_eq!(trim(b""), b"");
         // Interior whitespace is untouched.
-        assert_eq!(trim(b" a b "), b"a b");
-        // Non-ASCII bytes are never whitespace (Q21: no Unicode table).
-        assert_eq!(trim("\u{a0}x\u{a0}".as_bytes()), "\u{a0}x\u{a0}".as_bytes());
+        assert_eq!(
+            trim("\u{3000}a\u{00A0}b\u{FEFF}".as_bytes()),
+            "a\u{00A0}b".as_bytes()
+        );
+        // U+0085 is Unicode White_Space but not ECMA whitespace.
+        assert_eq!(
+            trim("\u{0085}x\u{0085}".as_bytes()),
+            "\u{0085}x\u{0085}".as_bytes()
+        );
+        // Total fallback for bytes outside the language's UTF-8 contract.
+        assert_eq!(trim(&[0xFF, b' ']), &[0xFF, b' ']);
     }
 
     #[test]
@@ -292,14 +340,17 @@ mod tests {
     }
 
     #[test]
-    fn case_mapping_is_ascii_only() {
+    fn case_mapping_uses_unicode_default_conversion() {
         assert_eq!(to_upper(b"mix 3d!"), b"MIX 3D!");
         assert_eq!(to_lower(b"MIX 3D!"), b"mix 3d!");
         // Round trip over the letters; digits/punctuation untouched.
         assert_eq!(to_lower(&to_upper(b"aZ09_")), b"az09_");
-        // Non-ASCII bytes are untouched (Q21: no case folding table).
-        let e_acute = "é".as_bytes();
-        assert_eq!(to_upper(e_acute), e_acute);
+        assert_eq!(to_upper("ß ﬄ ΣΣς ı".as_bytes()), "SS FFL ΣΣΣ I".as_bytes());
+        assert_eq!(to_lower("ΣΣς İ".as_bytes()), "σσς i\u{0307}".as_bytes());
+        // U+0130 expands from two UTF-8 bytes to three.
+        assert_eq!(to_lower("İ".as_bytes()).len(), 3);
+        // Total fallback for bytes outside the language's UTF-8 contract.
+        assert_eq!(to_upper(&[0xFF, b'a']), &[0xFF, b'a']);
     }
 
     #[test]
@@ -324,10 +375,29 @@ mod tests {
     }
 
     #[test]
-    fn ascii_ws_is_exactly_the_six_q21_bytes() {
-        for b in 0u8..=255 {
-            let expected = matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0B | 0x0C);
-            assert_eq!(is_ascii_ws(b), expected, "byte {b:#x}");
+    fn ecma_whitespace_predicate_includes_and_excludes_the_differences() {
+        for ch in [
+            '\u{0009}',
+            '\u{000A}',
+            '\u{000B}',
+            '\u{000C}',
+            '\u{000D}',
+            '\u{0020}',
+            '\u{00A0}',
+            '\u{1680}',
+            '\u{2000}',
+            '\u{200A}',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{202F}',
+            '\u{205F}',
+            '\u{3000}',
+            '\u{FEFF}',
+        ] {
+            assert!(is_ecma_whitespace(ch), "{ch:?}");
+        }
+        for ch in ['\u{0000}', '\u{0085}', '\u{180E}', '\u{200B}', 'x'] {
+            assert!(!is_ecma_whitespace(ch), "{ch:?}");
         }
     }
 }

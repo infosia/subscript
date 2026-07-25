@@ -1,0 +1,11 @@
+upper-sharp SS
+upper-ligature FFL
+sigma-word ος
+sigma-pair ΣΣΣ σσς
+dotted-lower [i̇]
+dotless-upper I
+case-lengths 2 3
+trim [Unicode]
+trim-start true
+trim-end true
+nel-kept true

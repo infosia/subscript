@@ -34,29 +34,8 @@ pub fn is_safe_integer(value: f64) -> bool {
     is_integer(value) && value.abs() <= MAX_SAFE_INTEGER
 }
 
-fn is_ecma_whitespace(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{0009}'
-            | '\u{000B}'
-            | '\u{000C}'
-            | '\u{0020}'
-            | '\u{00A0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200A}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202F}'
-            | '\u{205F}'
-            | '\u{3000}'
-            | '\u{FEFF}'
-            | '\n'
-            | '\r'
-    )
-}
-
 fn trim_start_ecma(value: &str) -> &str {
-    value.trim_start_matches(is_ecma_whitespace)
+    value.trim_start_matches(crate::strops::is_ecma_whitespace)
 }
 
 fn digit_value(byte: u8) -> Option<u32> {

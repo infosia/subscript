@@ -866,8 +866,8 @@ unsafe fn str_trim_with(
     ctx.alloc_str(strip(&bytes), pos_id)
 }
 
-/// `trim()`: strips ASCII whitespace (space `\t` `\n` `\r` `\f` `\v`,
-/// Q21) from both ends; an all-whitespace string becomes `""`.
+/// `trim()`: strips ECMA WhiteSpace + LineTerminator code points (Q21)
+/// from both ends; an all-whitespace string becomes `""`.
 ///
 /// # Safety
 ///
@@ -878,7 +878,8 @@ pub unsafe extern "C" fn sub_rt_str_trim(ctx: *mut Context, s: *const u8, pos_id
     unsafe { str_trim_with(ctx, s, pos_id, crate::strops::trim) }
 }
 
-/// `trimStart()`: strips leading ASCII whitespace (Q21).
+/// `trimStart()`: strips leading ECMA WhiteSpace + LineTerminator code
+/// points (Q21).
 ///
 /// # Safety
 ///
@@ -893,7 +894,8 @@ pub unsafe extern "C" fn sub_rt_str_trim_start(
     unsafe { str_trim_with(ctx, s, pos_id, crate::strops::trim_start) }
 }
 
-/// `trimEnd()`: strips trailing ASCII whitespace (Q21).
+/// `trimEnd()`: strips trailing ECMA WhiteSpace + LineTerminator code
+/// points (Q21).
 ///
 /// # Safety
 ///
@@ -1044,7 +1046,7 @@ unsafe fn str_case_with(
     ctx.alloc_str(&map(&bytes), pos_id)
 }
 
-/// `toUpperCase()`: ASCII `a–z` only (Q21).
+/// `toUpperCase()`: Unicode Default Case Conversion (Q21).
 ///
 /// # Safety
 ///
@@ -1059,7 +1061,7 @@ pub unsafe extern "C" fn sub_rt_str_to_upper(
     unsafe { str_case_with(ctx, s, pos_id, crate::strops::to_upper) }
 }
 
-/// `toLowerCase()`: ASCII `A–Z` only (Q21).
+/// `toLowerCase()`: Unicode Default Case Conversion (Q21).
 ///
 /// # Safety
 ///
@@ -2491,21 +2493,28 @@ mod tests {
     fn ffi_str_trim_family_and_case_allocate_fresh_strings() {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
-        static S: &[u8] = b"  x\t";
+        static S: &[u8] = "\u{3000}\u{FEFF}x\u{00A0}".as_bytes();
         // SAFETY: valid context; handles are live.
         unsafe {
             let s = sub_rt_str_lit(p, S.as_ptr(), S.len() as u64, 0);
             let t = sub_rt_str_trim(p, s, 0);
             assert_eq!(ctx.str_bytes(t), b"x");
             let ts = sub_rt_str_trim_start(p, s, 0);
-            assert_eq!(ctx.str_bytes(ts), b"x\t");
+            assert_eq!(ctx.str_bytes(ts), "x\u{00A0}".as_bytes());
             let te = sub_rt_str_trim_end(p, s, 0);
-            assert_eq!(ctx.str_bytes(te), b"  x");
-            let mixed = sub_rt_str_lit(p, b"mIx 3!".as_ptr(), 6, 0);
+            assert_eq!(ctx.str_bytes(te), "\u{3000}\u{FEFF}x".as_bytes());
+            let mixed_bytes = "ß ﬄ ΣΣς İ ı".as_bytes();
+            let mixed = sub_rt_str_lit(p, mixed_bytes.as_ptr(), mixed_bytes.len() as u64, 0);
             let up = sub_rt_str_to_upper(p, mixed, 0);
-            assert_eq!(ctx.str_bytes(up), b"MIX 3!");
+            assert_eq!(ctx.str_bytes(up), "SS FFL ΣΣΣ İ I".as_bytes());
             let low = sub_rt_str_to_lower(p, up, 0);
-            assert_eq!(ctx.str_bytes(low), b"mix 3!");
+            assert_eq!(ctx.str_bytes(low), "ss ffl σσς i\u{0307} i".as_bytes());
+            let dotted_i_bytes = "İ".as_bytes();
+            let dotted_i =
+                sub_rt_str_lit(p, dotted_i_bytes.as_ptr(), dotted_i_bytes.len() as u64, 0);
+            let dotted_i_low = sub_rt_str_to_lower(p, dotted_i, 0);
+            assert_eq!(ctx.str_bytes(dotted_i_low), "i\u{0307}".as_bytes());
+            assert_eq!(sub_rt_str_len(p, dotted_i_low), 3);
             // Fresh allocations, not the receiver handle.
             assert_ne!(te, s as *mut u8);
         }

@@ -1,6 +1,6 @@
 // corpus: accept/a43-string
 // purpose: Exercises the accepted String method subset of stdlib.md §8
-//          (Q21: byte measures, ASCII-only case mapping and whitespace):
+//          (Q21: byte measures, Unicode case mapping and ECMA whitespace):
 //          indexOf/lastIndexOf (incl. empty needle and from-clamping),
 //          includes/startsWith/endsWith, charCodeAt byte values, split
 //          (multi, no-match, adjacent, leading/trailing separators), the
@@ -45,7 +45,7 @@ export function main(): void {
   print(`splitnone ${whole.length} ${whole[0]}`);
   const edged: string[] = ",a,".split(",");
   print(`splitedge ${edged.length} [${edged[0]}] ${edged[1]} [${edged[2]}]`);
-  // trim family: ASCII whitespace only (space \t \n \r \f \v).
+  // trim family: the ASCII members of ECMA whitespace.
   const padded: string = "  x\t";
   print(`trim [${padded.trim()}]`);
   print(`trimstart [${padded.trimStart()}]`);
@@ -64,7 +64,7 @@ export function main(): void {
   print(`padlong ${"abcd".padStart(2, "x")}`);
   print(`padtrunc ${"ab".padStart(5, "xy")}`);
   print(`padtrunce ${"ab".padEnd(5, "xy")}`);
-  // ASCII case mapping round-trip; non-letters untouched.
+  // ASCII cases within Unicode Default Case Conversion.
   print(`up ${"mix 3d!".toUpperCase()}`);
   print(`low ${"MIX 3D!".toLowerCase()}`);
   // replace: first occurrence only; replaceAll: every occurrence, one

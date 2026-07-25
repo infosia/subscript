@@ -213,8 +213,12 @@ returning a string allocates via the Context):
 - `split(sep: string): string[]` — no-match → `[whole]`; adjacent
   separators produce empty strings (JS semantics); an **empty
   separator traps** (byte-splitting would fracture UTF-8 code points)
-- `trim/trimStart/trimEnd(): string` — ECMA WhiteSpace + LineTerminator (Q21)
-  (space, `\t`, `\n`, `\r`, `\f`, `\v`) only (Q21)
+- `trim/trimStart/trimEnd(): string` — ECMA WhiteSpace + LineTerminator
+  (Q21): `U+0009`, `U+000A`, `U+000B`, `U+000C`, `U+000D`, `U+0020`,
+  `U+00A0`, `U+1680`, `U+2000`–`U+200A`, `U+2028`, `U+2029`, `U+202F`,
+  `U+205F`, `U+3000`, `U+FEFF`. Note `U+0085` (NEL) is **not** in the
+  set — Rust's own `trim` would remove it, so the predicate is written
+  out rather than delegated
 - `repeat(n: i32): string` — `n < 0` traps; `repeat(0)` is `""`
 - `padStart(len: i32, pad?: string): string`, `padEnd` — `pad`
   defaults `" "`; byte lengths; already-long-enough → unchanged;

@@ -654,11 +654,11 @@ impl DateFn {
 /// `String` intrinsic methods (stdlib.md §8): the accepted Q21 subset,
 /// lowered by both tiers to opaque `sub_rt_str_*` runtime symbols. Every
 /// index, length, and code unit is a **byte** measure (Q21); case
-/// mapping and whitespace are ASCII-only; range and argument errors
-/// trap. The receiver is always the call's first argument. The checker
-/// normalizes the optional arguments (`from` → 0, `pad` → `" "`) at
-/// check time, so every runtime symbol has a fixed arity (the Date.UTC
-/// technique, §3).
+/// mapping uses Unicode Default Case Conversion and trimming uses ECMA
+/// whitespace; range and argument errors trap. The receiver is always
+/// the call's first argument. The checker normalizes the optional
+/// arguments (`from` → 0, `pad` → `" "`) at check time, so every runtime
+/// symbol has a fixed arity (the Date.UTC technique, §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum StrFn {
@@ -678,7 +678,7 @@ pub enum StrFn {
     CharCodeAt,
     /// `split(sep)` — `string[]`; an empty separator traps.
     Split,
-    /// `trim()` — ASCII whitespace only.
+    /// `trim()` — ECMA WhiteSpace + LineTerminator code points.
     Trim,
     /// `trimStart()`.
     TrimStart,
@@ -690,9 +690,9 @@ pub enum StrFn {
     PadStart,
     /// `padEnd(len, pad)` — same trap rule as `padStart`.
     PadEnd,
-    /// `toUpperCase()` — ASCII a–z only.
+    /// `toUpperCase()` — Unicode Default Case Conversion.
     ToUpperCase,
-    /// `toLowerCase()` — ASCII A–Z only.
+    /// `toLowerCase()` — Unicode Default Case Conversion.
     ToLowerCase,
     /// `replace(pat, repl)` — first occurrence, literal (`$` is not
     /// interpreted, Q21).

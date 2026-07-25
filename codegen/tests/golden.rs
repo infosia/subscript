@@ -22,6 +22,23 @@ mod corpus;
 use subscript_codegen::{run_aot, run_c_aot, run_jit};
 
 #[test]
+fn unicode_string_entry_matches_across_tiers_before_golden_comparison() {
+    let accept = corpus::corpus_accept();
+    let id = "a60-string-unicode";
+    let sources = corpus::entry_sources(&accept, id);
+    let jit = run_jit(&sources).unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
+    let ship = run_c_aot(&sources).unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
+    assert_eq!(
+        jit,
+        ship,
+        "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
+        String::from_utf8_lossy(&jit),
+        String::from_utf8_lossy(&ship)
+    );
+    println!("{id}: {:?}", String::from_utf8_lossy(&jit));
+}
+
+#[test]
 fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -60,12 +77,13 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // Math.random sequence, a42 Date battery, a43 P10 String battery,
     // a44/a45 P11 Array batteries), P14/review narrow numerics
     // (a46–a50), and P15 Map/Set plus aggregate-callback coverage
-    // (a51–a56), and P12 Number/parsing/toFixed (a57–a59).
+    // (a51–a56), P12 Number/parsing/toFixed (a57–a59), and Unicode
+    // String case/trim coverage (a60).
     assert!(
-        golden_ids.len() >= 59,
-        "expected at least the 59 committed goldens (a01–a24 run set + a25–a39 interop \
+        golden_ids.len() >= 60,
+        "expected at least the 60 committed goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
-         + a57–a59 Number), found {}",
+         + a57–a59 Number + a60 Unicode String), found {}",
         golden_ids.len()
     );
 
