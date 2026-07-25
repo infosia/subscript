@@ -11,7 +11,7 @@ Snapshot captured 2026-07-25. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: Apple clang version 21.0.0 (clang-2100.1.1.101)
-- **subscript**: subscript @ 4164fe3 (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ 4da1040 (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/
 - **JSC**: JavaScriptCore (macOS 26.5.2)
 - **V8 (Node.js)**: Node.js v24.18.0
@@ -26,14 +26,14 @@ All six subjects run the same schedule: 3 warm-up runs discarded, 11 timed runs,
 
 | Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|---|
-| fib-recursive | 1346269 | 1.00x (4.809 ms) | 0.97x (4.656 ms) | 1.68x (8.059 ms) | 1.39x (6.707 ms) | 1.13x (5.440 ms) | 2.00x (9.598 ms) |
-| fib-loop | 973132000 | 1.00x (29.325 ms) | 1.03x (30.241 ms) | 2.09x (61.164 ms) | 1.52x (44.695 ms) | 1.12x (32.900 ms) | 1.63x (47.882 ms) |
-| mandelbrot | 43027996 | 1.00x (125.365 ms) | 1.00x (124.951 ms) | 1.06x (133.161 ms) | 2.84x (356.196 ms) | 1.00x (125.520 ms) | 1.01x (126.373 ms) |
-| primes | 41538 | 1.00x (22.037 ms) | 0.97x (21.345 ms) | 1.44x (31.795 ms) | 2.13x (46.904 ms) | 0.94x (20.680 ms) | 1.74x (38.381 ms) |
-| sort | 3672124540 | 1.00x (15.691 ms) | 1.77x (27.839 ms) | 3.64x (57.062 ms) | 2.24x (35.093 ms) | 1.47x (23.020 ms) | 1.79x (28.137 ms) |
-| tree | 3932130 | 1.00x (65.578 ms) | 1.39x (91.217 ms) | 10.45x (685.010 ms) | 2.25x (147.395 ms) | 0.32x (21.020 ms) | 0.47x (30.797 ms) |
-| queen | 73712 | 1.00x (23.772 ms) | 1.00x (23.678 ms) | 1.48x (35.128 ms) | 1.49x (35.427 ms) | 1.22x (29.080 ms) | 1.76x (41.928 ms) |
-| particles | 1712845248 | 1.00x (38.872 ms) | 3.08x (119.624 ms) | 10.32x (400.984 ms) | 3.83x (148.991 ms) | 1.90x (73.920 ms) | 3.58x (139.354 ms) |
+| fib-recursive | 1346269 | 1.00x (4.832 ms) | 0.96x (4.658 ms) | 1.68x (8.126 ms) | 1.47x (7.091 ms) | 1.13x (5.460 ms) | 1.99x (9.607 ms) |
+| fib-loop | 973132000 | 1.00x (29.326 ms) | 1.03x (30.261 ms) | 2.08x (60.931 ms) | 1.52x (44.545 ms) | 1.11x (32.580 ms) | 1.63x (47.807 ms) |
+| mandelbrot | 43027996 | 1.00x (124.793 ms) | 1.00x (124.792 ms) | 1.06x (131.659 ms) | 2.85x (355.624 ms) | 1.01x (125.800 ms) | 1.01x (126.050 ms) |
+| primes | 41538 | 1.00x (21.995 ms) | 0.97x (21.320 ms) | 1.44x (31.750 ms) | 2.13x (46.860 ms) | 0.92x (20.160 ms) | 1.74x (38.317 ms) |
+| sort | 3672124540 | 1.00x (15.670 ms) | 1.78x (27.838 ms) | 3.64x (57.110 ms) | 2.24x (35.161 ms) | 1.46x (22.920 ms) | 1.79x (28.036 ms) |
+| tree | 3932130 | 1.00x (65.444 ms) | 1.39x (90.941 ms) | 10.42x (681.911 ms) | 2.23x (146.037 ms) | 0.32x (20.760 ms) | 0.47x (30.815 ms) |
+| queen | 73712 | 1.00x (23.861 ms) | 0.99x (23.706 ms) | 1.47x (35.156 ms) | 1.48x (35.317 ms) | 1.22x (29.160 ms) | 1.76x (41.968 ms) |
+| particles | 1712845248 | 1.00x (38.852 ms) | 3.06x (119.007 ms) | 10.30x (400.208 ms) | 3.83x (148.692 ms) | 1.90x (73.920 ms) | 3.58x (138.965 ms) |
 
 ## Workload parameters
 
@@ -46,4 +46,4 @@ All six subjects run the same schedule: 3 warm-up runs discarded, 11 timed runs,
 - **queen** — count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)
 - **particles** — 100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.
 
-Noise: wider than +/-20% spread for fib-recursive/subscript-ship (36%) — treat those rows as indicative.
+Noise: wider than +/-20% spread for fib-recursive/subscript-ship (34%) — treat those rows as indicative.
