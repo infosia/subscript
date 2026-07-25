@@ -7,65 +7,13 @@
 //! without a decimal point (`7`, never `7.0`); specials are spelled
 //! `-0`, `NaN`, `Infinity`, `-Infinity`.
 //!
-//! Rust's std `{}` float display is shortest-round-trip, prints
-//! integral values without `.0`, and preserves the sign of `-0`.
-//! Unlike ECMA, it keeps finite values in fixed notation at every
-//! magnitude, so this module moves the same shortest digits into
-//! exponential notation at Q14's thresholds. Rust's `inf` spellings
-//! are mapped separately. Both execution tiers share this implementation.
+//! `ryu-js` provides the ECMA shortest-round-trip digits, notation
+//! thresholds, and special-value spellings. Q14 deliberately preserves
+//! the sign of negative zero on top. Both execution tiers share this
+//! implementation.
 
-const EXP_LOWER: f64 = 1e-6;
-const EXP_UPPER: f64 = 1e21;
-
-fn fixed_to_exponential(fixed: &str) -> String {
-    let (sign, magnitude) = fixed
-        .strip_prefix('-')
-        .map_or(("", fixed), |rest| ("-", rest));
-    let (integer, fraction) = magnitude.split_once('.').unwrap_or((magnitude, ""));
-
-    let (mut digits, exponent) = if integer == "0" {
-        let first = fraction
-            .bytes()
-            .position(|digit| digit != b'0')
-            .unwrap_or(fraction.len());
-        (fraction[first..].to_string(), -((first as i32) + 1))
-    } else {
-        (
-            format!("{integer}{fraction}"),
-            i32::try_from(integer.len()).unwrap_or(i32::MAX) - 1,
-        )
-    };
-    while digits.len() > 1 && digits.ends_with('0') {
-        digits.pop();
-    }
-    let Some(first_digit) = digits.as_bytes().first().copied() else {
-        return fixed.to_string();
-    };
-
-    let mut result = String::with_capacity(fixed.len() + 3);
-    result.push_str(sign);
-    result.push(char::from(first_digit));
-    if digits.len() > 1 {
-        result.push('.');
-        result.push_str(&digits[1..]);
-    }
-    result.push('e');
-    if exponent >= 0 {
-        result.push('+');
-    }
-    result.push_str(&exponent.to_string());
-    result
-}
-
-fn fmt_finite(fixed: String, magnitude: f64) -> String {
-    if magnitude.is_finite()
-        && magnitude != 0.0
-        && !(EXP_LOWER..EXP_UPPER).contains(&magnitude)
-    {
-        fixed_to_exponential(&fixed)
-    } else {
-        fixed
-    }
+fn fmt_float<F: ryu_js::Float>(v: F) -> String {
+    ryu_js::Buffer::new().format(v).to_owned()
 }
 
 /// Formats an `i32` in decimal.
@@ -95,20 +43,19 @@ pub fn fmt_u64(v: u64) -> String {
 /// Formats an `f32` by shortest round-trip at f32 precision (Q14).
 #[must_use]
 pub fn fmt_f32(v: f32) -> String {
-    if v.is_infinite() {
-        return if v > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    if v == 0.0 && v.is_sign_negative() {
+        return "-0".to_string();
     }
-    // NaN, -0, and finite values already match the Q14 spellings.
-    fmt_finite(format!("{v}"), f64::from(v.abs()))
+    fmt_float(v)
 }
 
 /// Formats an `f64` by shortest round-trip (Q14).
 #[must_use]
 pub fn fmt_f64(v: f64) -> String {
-    if v.is_infinite() {
-        return if v > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    if v == 0.0 && v.is_sign_negative() {
+        return "-0".to_string();
     }
-    fmt_finite(format!("{v}"), v.abs())
+    fmt_float(v)
 }
 
 /// Formats a boolean as `true` / `false`.
@@ -134,6 +81,12 @@ mod tests {
         assert_eq!(fmt_f64(0.1), "0.1");
         assert_eq!(fmt_f64(1.5), "1.5");
         assert_eq!(fmt_f64(3.75), "3.75");
+    }
+
+    #[test]
+    fn exact_decimal_ties_round_to_even() {
+        assert_eq!(fmt_f64(2_205_594_957_347_911.25), "2205594957347911.2");
+        assert_eq!(fmt_f32(2_261_740.25), "2261740.2");
     }
 
     #[test]

@@ -3,8 +3,8 @@
 //! These functions implement the accepted ECMA surface once in Rust;
 //! the dev-JIT and ship-C tiers both reach them through opaque
 //! `sub_rt_num_*` symbols. Parsing never coerces non-strings. `toFixed`
-//! rounds the exact stored IEEE-754 value with integer arithmetic, so it
-//! does not inherit a host libc's decimal formatting or rounding.
+//! uses `ryu-js`, so it does not inherit a host libc's decimal formatting
+//! or rounding.
 
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -160,31 +160,6 @@ pub fn parse_float(value: &str) -> f64 {
     }
 }
 
-fn rounded_scaled_integer(value: f64, digits: u32) -> BigUint {
-    let bits = value.to_bits() & !(1u64 << 63);
-    let exponent = ((bits >> 52) & 0x7ff) as i32;
-    let fraction = bits & ((1u64 << 52) - 1);
-    let (significand, binary_exponent) = if exponent == 0 {
-        (fraction, -1074)
-    } else {
-        ((1u64 << 52) | fraction, exponent - 1023 - 52)
-    };
-
-    let mut scaled = BigUint::from(significand) * BigUint::from(5u8).pow(digits);
-    let shift = binary_exponent + i32::try_from(digits).unwrap_or(i32::MAX);
-    if shift >= 0 {
-        scaled <<= usize::try_from(shift).unwrap_or(usize::MAX);
-        return scaled;
-    }
-
-    let right = usize::try_from(-shift).unwrap_or(usize::MAX);
-    // The exact scaled value is `scaled / 2^right`. Adding half the
-    // denominator before the shift implements nearest, with exact ties
-    // rounded upward as ECMA requires.
-    scaled += BigUint::from(1u8) << (right - 1);
-    scaled >> right
-}
-
 /// ECMA `Number::toFixed` for a validated `digits` count (0–100).
 ///
 /// Values with magnitude at least `1e21` use Q14 `Number::toString`,
@@ -192,25 +167,10 @@ fn rounded_scaled_integer(value: f64, digits: u32) -> BigUint {
 /// nonzero value retains its sign even when it rounds to zero.
 #[must_use]
 pub fn to_fixed(value: f64, digits: u32) -> String {
-    if !value.is_finite() || value.abs() >= 1e21 {
-        return crate::fmt::fmt_f64(value);
-    }
-
-    let negative = value.is_sign_negative() && value != 0.0;
-    let mut decimal = rounded_scaled_integer(value, digits).to_str_radix(10);
-    if digits > 0 {
-        let digits = usize::try_from(digits).unwrap_or(usize::MAX);
-        if decimal.len() <= digits {
-            let zeros = digits + 1 - decimal.len();
-            decimal.insert_str(0, &"0".repeat(zeros));
-        }
-        let point = decimal.len() - digits;
-        decimal.insert(point, '.');
-    }
-    if negative {
-        decimal.insert(0, '-');
-    }
-    decimal
+    let digits = u8::try_from(digits).unwrap_or(100);
+    ryu_js::Buffer::new()
+        .format_to_fixed(value, digits)
+        .to_owned()
 }
 
 #[cfg(test)]
