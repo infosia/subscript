@@ -69,6 +69,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r53-set-algebra-nonset.ts", RuleCode::S014, 9),
     ("r54-map-groupby-key.ts", RuleCode::S014, 8),
     ("r55-array-callback-container.ts", RuleCode::S014, 10),
+    ("r56-json-stringify-map.ts", RuleCode::S014, 8),
+    ("r57-json-stringify-set.ts", RuleCode::S014, 8),
+    ("r58-json-stringify-object.ts", RuleCode::S014, 11),
+    ("r59-json-stringify-function.ts", RuleCode::S014, 12),
 ];
 
 #[test]

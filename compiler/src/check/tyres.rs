@@ -74,7 +74,7 @@ impl<'p> Checker<'p> {
                 // declarations may not spell it. The ambient
                 // `unsafeDelete(value: object)` signature is hardcoded and
                 // unaffected.
-                if self.in_boundary || self.in_assoc_key {
+                if self.in_boundary || self.in_assoc_key || self.in_json_argument {
                     Type::Object
                 } else {
                     self.error(

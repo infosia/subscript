@@ -8,6 +8,7 @@
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
 mod expr;
+mod json;
 mod stmt;
 mod tyres;
 
@@ -229,6 +230,11 @@ pub(crate) struct Checker<'p> {
     /// `T | null`) long enough to emit the Q24-specific S014 diagnostic
     /// instead of an unrelated general type diagnostic.
     pub in_assoc_key: bool,
+    /// True only while checking the argument expression of
+    /// `JSON.stringify`. Like `in_assoc_key`, it preserves a banned
+    /// `object` assertion long enough for the Q28 call to issue its
+    /// required S014 instead of an unrelated general-type diagnostic.
+    pub in_json_argument: bool,
     /// Mirror flag members: an ambient `declare const X = <int literal>;`
     /// (§13.2) folds to its C `static const` value at each reference, so
     /// both tiers emit an immediate rather than reading a runtime global.
@@ -266,6 +272,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         type_aliases: HashMap::new(),
         in_boundary: false,
         in_assoc_key: false,
+        in_json_argument: false,
         ambient_int_consts: HashMap::new(),
     };
 

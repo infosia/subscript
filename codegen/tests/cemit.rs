@@ -328,6 +328,69 @@ fn to_fixed_out_of_range_digits_trap_identically() {
     );
 }
 
+/// Asserts a P13 JSON trap has a tuple-identical report on both lowering
+/// tiers.
+fn assert_json_trap_identical(src: &str, kind: TrapKind, line: u32) {
+    let files = [SourceFile::new("test.ts", src)];
+    let mut reports = Vec::new();
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
+        match result {
+            Err(RunError::Trap(report)) => {
+                assert_eq!(report.rule, kind, "{tier}");
+                assert_eq!(report.pos.file, "test.ts", "{tier}");
+                assert_eq!(report.pos.line, line, "{tier}");
+                reports.push((report.rule, report.message, report.pos));
+            }
+            other => panic!("{tier}: expected a {kind} trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
+fn json_stringify_nan_traps_identically() {
+    assert_json_trap_identical(
+        "export function main(): void {\n  print(JSON.stringify(NaN));\n}\n",
+        TrapKind::JsonNumber,
+        2,
+    );
+}
+
+#[test]
+fn json_stringify_infinity_traps_identically() {
+    assert_json_trap_identical(
+        "export function main(): void {\n  print(JSON.stringify(Number.POSITIVE_INFINITY));\n}\n",
+        TrapKind::JsonNumber,
+        2,
+    );
+}
+
+#[test]
+fn json_stringify_cyclic_reference_graph_traps_identically() {
+    assert_json_trap_identical(
+        "class Node {\n  next: Node | null;\n  constructor() { this.next = null; }\n}\nexport function main(): void {\n  const node: Node = new Node();\n  node.next = node;\n  print(JSON.stringify(node));\n}\n",
+        TrapKind::JsonCycle,
+        8,
+    );
+}
+
+#[test]
+fn acyclic_json_serializer_emits_no_tracking_operations() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "class Box {\n  value: i32;\n  constructor(value: i32) { this.value = value; }\n}\nexport function main(): void {\n  print(JSON.stringify(new Box(7)));\n}\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emit C").source;
+    assert!(c.contains("sub_rt_json_begin(ctx,"), "{c}");
+    assert!(!c.contains("sub_rt_json_begin_tracked(ctx,"), "{c}");
+    assert!(!c.contains("sub_rt_json_visit(ctx,"), "{c}");
+    assert!(!c.contains("sub_rt_json_leave(ctx,"), "{c}");
+}
+
 #[test]
 fn to_string_out_of_range_radix_traps_identically() {
     assert_number_range_trap_identical(

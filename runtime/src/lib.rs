@@ -24,6 +24,7 @@ pub mod date;
 pub mod ffi;
 pub mod fmt;
 mod half;
+pub mod json;
 pub mod math;
 pub mod num;
 pub mod strops;

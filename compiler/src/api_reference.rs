@@ -78,6 +78,34 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
         javascript_outcome: WitnessOutcome::Value("0|0|0|0\n"),
     },
     DivergenceWitness {
+        id: "q28-json-nan",
+        surface: "`JSON.stringify(NaN)`",
+        q_rule: "Q28",
+        summary: "subscript traps rather than silently serializing NaN as JSON null.",
+        subscript: r#"export function main(): void {
+  print(JSON.stringify(NaN));
+}
+"#,
+        javascript: r#"console.log(JSON.stringify(NaN));
+"#,
+        subscript_outcome: WitnessOutcome::Trap,
+        javascript_outcome: WitnessOutcome::Value("null\n"),
+    },
+    DivergenceWitness {
+        id: "q28-json-infinity",
+        surface: "`JSON.stringify(Infinity)`",
+        q_rule: "Q28",
+        summary: "subscript traps rather than silently serializing infinity as JSON null.",
+        subscript: r#"export function main(): void {
+  print(JSON.stringify(Number.POSITIVE_INFINITY));
+}
+"#,
+        javascript: r#"console.log(JSON.stringify(Infinity));
+"#,
+        subscript_outcome: WitnessOutcome::Trap,
+        javascript_outcome: WitnessOutcome::Value("null\n"),
+    },
+    DivergenceWitness {
         id: "q5-string-length",
         surface: "`string.length`",
         q_rule: "Q5",
@@ -749,6 +777,26 @@ mod tests {
             }
             ("Object", "groupBy") => {
                 "export function main(): void {\n  Object.groupBy([1], (value: i32): string => `${value}`);\n}\n"
+                    .to_string()
+            }
+            ("JSON", "stringify(Map<K, V>)") => {
+                "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  JSON.stringify(value);\n}\n"
+                    .to_string()
+            }
+            ("JSON", "stringify(Set<K>)") => {
+                "export function main(): void {\n  const value: Set<i32> = new Set<i32>();\n  JSON.stringify(value);\n}\n"
+                    .to_string()
+            }
+            ("JSON", "stringify(object)") => {
+                "class Box { constructor() {} }\nexport function main(): void {\n  JSON.stringify(new Box() as object);\n}\n"
+                    .to_string()
+            }
+            ("JSON", "stringify(function)") => {
+                "function identity(value: i32): i32 { return value; }\nexport function main(): void {\n  const value: (value: i32) => i32 = identity;\n  JSON.stringify(value);\n}\n"
+                    .to_string()
+            }
+            ("JSON", "stringify(f16)") => {
+                "export function main(): void {\n  const value: f16 = 1.0 as f16;\n  JSON.stringify(value);\n}\n"
                     .to_string()
             }
             _ => panic!(

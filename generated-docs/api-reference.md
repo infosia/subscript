@@ -251,6 +251,12 @@
 | `isSupersetOf(other: Set<K>): boolean` | Tests whether every argument key is in the receiver. |
 | `isDisjointFrom(other: Set<K>): boolean` | Tests whether the sets have no common key. |
 
+### JSON
+
+| subscript signature | Behavior |
+|---|---|
+| `stringify<T>(value: T): string` | Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle. |
+
 ### Generator<T>
 
 | subscript signature | Behavior |
@@ -310,6 +316,11 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Set<K> | `keys` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
 | Set<K> | `values` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
 | Set<K> | `entries` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
+| JSON | `stringify(Map<K, V>)` | S014 | Q28 | — | Map is rejected rather than silently serialized as an empty object. | `r56-json-stringify-map.ts` |
+| JSON | `stringify(Set<K>)` | S014 | Q28 | — | Set is rejected rather than silently serialized as an empty object. | `r57-json-stringify-set.ts` |
+| JSON | `stringify(object)` | S014 | Q28 | — | The boundary-opaque object type has no static field shape to serialize. | `r58-json-stringify-object.ts` |
+| JSON | `stringify(function)` | S014 | Q28 | — | Function values are not JSON data. | `r59-json-stringify-function.ts` |
+| JSON | `stringify(f16)` | S014 | Q28 | — | f16 is a storage-only type with no arithmetic/formatting domain. | — |
 | global | `isNaN(value)` | S014 | Q25 | `Number.isNaN` | The global form coerces its argument. | `r46-number-global-isnan.ts` |
 | global | `isFinite(value)` | S014 | Q25 | `Number.isFinite` | The global form coerces its argument. | — |
 | global | `parseInt(value)` | S014 | Q25 | `parseInt(value, radix)` | The radix is a required `i32` argument. | `r50-parse-int-no-radix.ts` |
@@ -365,6 +376,48 @@ console.log(`${-0}|${[-0].join(",")}|${Math.fround(-0).toString(10)}|${(-0).toSt
 
 - subscript result: `-0|-0|-0|-0\n`
 - Node result: `0|0|0|0\n`
+
+### `JSON.stringify(NaN)` — Q28
+
+subscript traps rather than silently serializing NaN as JSON null.
+
+subscript:
+
+```ts
+export function main(): void {
+  print(JSON.stringify(NaN));
+}
+```
+
+Node:
+
+```js
+console.log(JSON.stringify(NaN));
+```
+
+- subscript result: `Trap`
+- Node result: `null\n`
+
+### `JSON.stringify(Infinity)` — Q28
+
+subscript traps rather than silently serializing infinity as JSON null.
+
+subscript:
+
+```ts
+export function main(): void {
+  print(JSON.stringify(Number.POSITIVE_INFINITY));
+}
+```
+
+Node:
+
+```js
+console.log(JSON.stringify(Infinity));
+```
+
+- subscript result: `Trap`
+- Node result: `null\n`
 
 ### `string.length` — Q5
 

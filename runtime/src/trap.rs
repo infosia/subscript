@@ -58,6 +58,12 @@ pub enum TrapKind {
     /// (stdlib.md §11, Q25): a `parseInt` radix outside 2–36 or a
     /// `toFixed` digit count outside 0–100.
     NumberRange = 15,
+    /// `JSON.stringify` received NaN or either infinity (stdlib.md
+    /// §13.3): unlike JavaScript's lossy `null`, the language traps.
+    JsonNumber = 16,
+    /// `JSON.stringify` revisited a reference already on the active
+    /// serialization path, proving a cyclic object graph.
+    JsonCycle = 17,
 }
 
 impl TrapKind {
@@ -80,6 +86,8 @@ impl TrapKind {
             13 => TrapKind::DateRange,
             14 => TrapKind::StrRange,
             15 => TrapKind::NumberRange,
+            16 => TrapKind::JsonNumber,
+            17 => TrapKind::JsonCycle,
             _ => return None,
         })
     }
@@ -103,6 +111,8 @@ impl TrapKind {
             TrapKind::DateRange => "date-range",
             TrapKind::StrRange => "string-range",
             TrapKind::NumberRange => "number-range",
+            TrapKind::JsonNumber => "json-non-finite-number",
+            TrapKind::JsonCycle => "json-cycle",
         }
     }
 }

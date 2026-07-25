@@ -1596,6 +1596,323 @@ pub unsafe extern "C" fn sub_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id: u32)
     unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_bool(v != 0).as_bytes(), pos_id)
 }
 
+// ----- JSON.stringify (stdlib.md §13, Q28) -----
+
+fn json_builder_result(ctx: &mut Context, ok: bool, operation: &str, pos_id: u32) {
+    if !ok {
+        ctx.trap(
+            TrapKind::Internal,
+            format!("unknown JSON builder in {operation}"),
+            pos_id,
+        );
+    }
+}
+
+/// Starts an untracked JSON output builder.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_begin(ctx: *mut Context, pos_id: u32) -> u64 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_builders().begin(false) {
+        Some(id) => id,
+        None => {
+            ctx.trap(
+                TrapKind::Internal,
+                "JSON builder id space exhausted",
+                pos_id,
+            );
+            0
+        }
+    }
+}
+
+/// Starts a JSON output builder with an active-reference set.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_begin_tracked(ctx: *mut Context, pos_id: u32) -> u64 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_builders().begin(true) {
+        Some(id) => id,
+        None => {
+            ctx.trap(
+                TrapKind::Internal,
+                "JSON builder id space exhausted",
+                pos_id,
+            );
+            0
+        }
+    }
+}
+
+/// Completes a JSON builder and allocates its immutable language string.
+///
+/// # Safety
+///
+/// Shared contract; `builder` was returned by one of the begin entries.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_finish(
+    ctx: *mut Context,
+    builder: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_builders().finish(builder) {
+        Some(bytes) => ctx.alloc_str(&bytes, pos_id),
+        None => {
+            ctx.trap(
+                TrapKind::Internal,
+                "unknown JSON builder in finish",
+                pos_id,
+            );
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Appends punctuation or another already-shaped JSON byte sequence.
+///
+/// # Safety
+///
+/// Shared contract; `value` is a live language string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_raw(
+    ctx: *mut Context,
+    builder: u64,
+    value: *const u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let bytes = unsafe { ctx.str_bytes(value) }.to_vec();
+    let ok = ctx.json_builders().raw(builder, &bytes);
+    json_builder_result(ctx, ok, "raw append", pos_id);
+}
+
+/// Appends one quoted and escaped UTF-8 language string.
+///
+/// # Safety
+///
+/// Shared contract; `value` is a live language string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_str(
+    ctx: *mut Context,
+    builder: u64,
+    value: *const u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let bytes = unsafe { ctx.str_bytes(value) }.to_vec();
+    let ok = ctx.json_builders().string(builder, &bytes);
+    json_builder_result(ctx, ok, "string append", pos_id);
+}
+
+macro_rules! json_integer {
+    ($name:ident, $ty:ty, $method:ident) => {
+        #[doc = concat!("Appends one JSON integer through the shared Q14 formatter.")]
+        ///
+        /// # Safety
+        ///
+        /// Shared contract; `builder` is live.
+        #[no_mangle]
+        pub unsafe extern "C" fn $name(
+            ctx: *mut Context,
+            builder: u64,
+            value: $ty,
+            pos_id: u32,
+        ) {
+            // SAFETY: shared contract.
+            let ctx = unsafe { &mut *ctx };
+            let ok = ctx.json_builders().$method(builder, value);
+            json_builder_result(ctx, ok, stringify!($name), pos_id);
+        }
+    };
+}
+
+json_integer!(sub_rt_json_i32, i32, i32);
+json_integer!(sub_rt_json_u32, u32, u32);
+json_integer!(sub_rt_json_i64, i64, i64);
+json_integer!(sub_rt_json_u64, u64, u64);
+
+/// Appends one finite JSON `f32`, trapping on NaN or infinity.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_f32(
+    ctx: *mut Context,
+    builder: u64,
+    value: f32,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if !value.is_finite() {
+        ctx.trap(
+            TrapKind::JsonNumber,
+            "JSON.stringify cannot serialize a non-finite number",
+            pos_id,
+        );
+        return;
+    }
+    let ok = ctx.json_builders().f32(builder, value);
+    json_builder_result(ctx, ok, "f32 append", pos_id);
+}
+
+/// Appends one finite JSON `f64`, trapping on NaN or infinity.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_f64(
+    ctx: *mut Context,
+    builder: u64,
+    value: f64,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if !value.is_finite() {
+        ctx.trap(
+            TrapKind::JsonNumber,
+            "JSON.stringify cannot serialize a non-finite number",
+            pos_id,
+        );
+        return;
+    }
+    let ok = ctx.json_builders().f64(builder, value);
+    json_builder_result(ctx, ok, "f64 append", pos_id);
+}
+
+/// Appends a JSON boolean.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_bool(
+    ctx: *mut Context,
+    builder: u64,
+    value: u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let bytes: &[u8] = if value == 0 { b"false" } else { b"true" };
+    let ok = ctx.json_builders().raw(builder, bytes);
+    json_builder_result(ctx, ok, "boolean append", pos_id);
+}
+
+/// Appends a Date as its quoted `toISOString()` result.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_date(
+    ctx: *mut Context,
+    builder: u64,
+    value: i64,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Some(iso) = crate::date::to_iso(value) else {
+        ctx.trap(
+            TrapKind::DateRange,
+            "JSON.stringify Date year is outside 0000..9999",
+            pos_id,
+        );
+        return;
+    };
+    let ok = ctx.json_builders().string(builder, iso.as_bytes());
+    json_builder_result(ctx, ok, "Date append", pos_id);
+}
+
+/// Appends JSON `null`.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_null(
+    ctx: *mut Context,
+    builder: u64,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let ok = ctx.json_builders().raw(builder, b"null");
+    json_builder_result(ctx, ok, "null append", pos_id);
+}
+
+/// Adds a reference to the tracked serializer's active path. A revisit
+/// records the P13 cycle trap and returns zero.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is tracked and `reference` is a live
+/// reference-class handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_visit(
+    ctx: *mut Context,
+    builder: u64,
+    reference: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_builders().visit(builder, reference as usize) {
+        crate::json::Visit::Inserted => 1,
+        crate::json::Visit::Cycle => {
+            ctx.trap(
+                TrapKind::JsonCycle,
+                "JSON.stringify encountered a cyclic reference",
+                pos_id,
+            );
+            0
+        }
+        crate::json::Visit::InvalidBuilder => {
+            ctx.trap(
+                TrapKind::Internal,
+                "unknown or untracked JSON builder in visit",
+                pos_id,
+            );
+            0
+        }
+    }
+}
+
+/// Removes a completed reference from the tracked serializer's active
+/// path.
+///
+/// # Safety
+///
+/// Shared contract; `builder` is tracked and `reference` was visited.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_leave(
+    ctx: *mut Context,
+    builder: u64,
+    reference: *const u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let ok = ctx.json_builders().leave(builder, reference as usize);
+    json_builder_result(ctx, ok, "leave", pos_id);
+}
+
 // ----- Number and parsing intrinsics (stdlib.md §11, Q25/Q26) -----
 //
 // All operations stay behind opaque symbols so both tiers execute the

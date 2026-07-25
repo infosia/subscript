@@ -2090,6 +2090,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Math(f) => self.eval_math(*f, args),
             hir::Callee::Num(f) => self.eval_num(*f, args, pos),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos),
+            hir::Callee::Json(f) => self.eval_json(*f, args, pos),
             hir::Callee::Str(f) => self.eval_str(*f, args, pos),
             hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos),
             hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos),
@@ -2803,6 +2804,58 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         } else {
             result
         }))
+    }
+
+    /// Lowers one leaf of the checker-generated `JSON.stringify<T>`
+    /// serializer graph. The graph itself is ordinary typed HIR; both
+    /// tiers share these opaque builder, formatter, escaping, and
+    /// active-reference operations in the runtime.
+    fn eval_json(
+        &mut self,
+        f: hir::JsonFn,
+        args: &[hir::Expr],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        use hir::JsonFn as J;
+        let expected = match f {
+            J::Begin | J::BeginTracked => 0,
+            J::Finish | J::Null => 1,
+            J::Raw
+            | J::Str
+            | J::I32
+            | J::U32
+            | J::I64
+            | J::U64
+            | J::F32
+            | J::F64
+            | J::Bool
+            | J::Date
+            | J::Visit
+            | J::Leave => 2,
+            other => return Err(internal(format!("unknown JsonFn {other:?}"))),
+        };
+        if args.len() != expected {
+            return Err(internal(format!("JSON {} arity", f.symbol())));
+        }
+        let mut argv = vec![self.ctx_v];
+        for arg in args {
+            let value = self.eval(arg)?;
+            argv.push(self.expect_s(value)?);
+        }
+        let pid = self.pos_id(pos);
+        argv.push(self.iconst(types::I32, pid));
+        let result = self.call_rt(self.ml.rt.json[f as usize], &argv, true)?;
+        Ok(match f {
+            J::Begin | J::BeginTracked | J::Finish => {
+                RV::S(result.ok_or_else(|| internal(format!("{} result", f.symbol())))?)
+            }
+            J::Visit => {
+                let value =
+                    result.ok_or_else(|| internal("sub_rt_json_visit result"))?;
+                RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, value, 0))
+            }
+            _ => RV::None,
+        })
     }
 
     /// Lowers a `Date` intrinsic (stdlib.md §3) to its opaque

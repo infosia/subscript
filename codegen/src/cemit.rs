@@ -2201,6 +2201,24 @@ impl<'m> Emitter<'m> {
                     }
                 }
             }
+            // Leaves of the checker-generated, call-site-monomorphized
+            // JSON serializer graph. Traversal is ordinary HIR; escaping,
+            // number formatting, building, and cycle state live once in
+            // the shared runtime.
+            hir::Callee::Json(f) => {
+                let argv = self.eval_list(args, out, depth)?;
+                let pid = self.pos_id(pos);
+                let call = if argv.is_empty() {
+                    format!("{}(ctx, {pid}u)", f.symbol())
+                } else {
+                    format!("{}(ctx, {argv}, {pid}u)", f.symbol())
+                };
+                Ok(if f.returns_bool() {
+                    format!("({call} != 0)")
+                } else {
+                    call
+                })
+            }
             // A String method intrinsic (stdlib.md §8) calls its opaque
             // runtime symbol: `(ctx, recv, params…[, pos_id])`, the
             // receiver being the first HIR argument. A boolean result
@@ -4060,6 +4078,24 @@ extern void* sub_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
 extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
 extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
 extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
+/* P13 JSON.stringify builder leaves. The checker emits traversal helpers
+ * for one exact static T; these runtime entries contain no RTTI. */
+extern uint64_t sub_rt_json_begin(void* ctx, uint32_t pos_id);
+extern uint64_t sub_rt_json_begin_tracked(void* ctx, uint32_t pos_id);
+extern void* sub_rt_json_finish(void* ctx, uint64_t builder, uint32_t pos_id);
+extern void sub_rt_json_raw(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern void sub_rt_json_str(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern void sub_rt_json_i32(void* ctx, uint64_t builder, int32_t value, uint32_t pos_id);
+extern void sub_rt_json_u32(void* ctx, uint64_t builder, uint32_t value, uint32_t pos_id);
+extern void sub_rt_json_i64(void* ctx, uint64_t builder, int64_t value, uint32_t pos_id);
+extern void sub_rt_json_u64(void* ctx, uint64_t builder, uint64_t value, uint32_t pos_id);
+extern void sub_rt_json_f32(void* ctx, uint64_t builder, float value, uint32_t pos_id);
+extern void sub_rt_json_f64(void* ctx, uint64_t builder, double value, uint32_t pos_id);
+extern void sub_rt_json_bool(void* ctx, uint64_t builder, uint8_t value, uint32_t pos_id);
+extern void sub_rt_json_date(void* ctx, uint64_t builder, int64_t value, uint32_t pos_id);
+extern void sub_rt_json_null(void* ctx, uint64_t builder, uint32_t pos_id);
+extern int32_t sub_rt_json_visit(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern void sub_rt_json_leave(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
 /* Number and parsing intrinsics (stdlib.md 11, Q25/Q26).
  * Trap-capable entries carry source positions. */
 extern int32_t sub_rt_num_is_nan(void* ctx, double value);

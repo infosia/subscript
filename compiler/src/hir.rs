@@ -730,6 +730,101 @@ impl NumFn {
     }
 }
 
+/// Internal operations used by the checker-generated, monomorphized
+/// `JSON.stringify<T>` serializers (stdlib.md §13, Q28). These are not
+/// independently callable source members: the checker expands one
+/// accepted call into ordinary typed helper functions whose only special
+/// leaves are these opaque runtime calls. Both execution tiers therefore
+/// lower the same finite HIR serializer graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum JsonFn {
+    /// Starts an output builder with no cycle-tracking state.
+    Begin,
+    /// Starts an output builder and its active-reference set.
+    BeginTracked,
+    /// Completes a builder and returns the immutable string.
+    Finish,
+    /// Appends an already-JSON-shaped string's bytes.
+    Raw,
+    /// Appends one language string with JSON quoting and escaping.
+    Str,
+    /// Appends a signed 32-bit integer.
+    I32,
+    /// Appends an unsigned 32-bit integer.
+    U32,
+    /// Appends a signed 64-bit integer.
+    I64,
+    /// Appends an unsigned 64-bit integer.
+    U64,
+    /// Appends a finite `f32`, trapping on NaN or infinity.
+    F32,
+    /// Appends a finite `f64`, trapping on NaN or infinity.
+    F64,
+    /// Appends a boolean.
+    Bool,
+    /// Appends a Date as a quoted ISO string.
+    Date,
+    /// Appends JSON `null`.
+    Null,
+    /// Inserts a reference in the active-path set; false means a cycle
+    /// was found and a trap was recorded.
+    Visit,
+    /// Removes a reference from the active-path set.
+    Leave,
+}
+
+impl JsonFn {
+    /// Every internal JSON runtime leaf in discriminant order.
+    pub const ALL: [JsonFn; 16] = [
+        JsonFn::Begin,
+        JsonFn::BeginTracked,
+        JsonFn::Finish,
+        JsonFn::Raw,
+        JsonFn::Str,
+        JsonFn::I32,
+        JsonFn::U32,
+        JsonFn::I64,
+        JsonFn::U64,
+        JsonFn::F32,
+        JsonFn::F64,
+        JsonFn::Bool,
+        JsonFn::Date,
+        JsonFn::Null,
+        JsonFn::Visit,
+        JsonFn::Leave,
+    ];
+
+    /// Opaque runtime symbol shared by dev-JIT and ship-C-AOT.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            JsonFn::Begin => "sub_rt_json_begin",
+            JsonFn::BeginTracked => "sub_rt_json_begin_tracked",
+            JsonFn::Finish => "sub_rt_json_finish",
+            JsonFn::Raw => "sub_rt_json_raw",
+            JsonFn::Str => "sub_rt_json_str",
+            JsonFn::I32 => "sub_rt_json_i32",
+            JsonFn::U32 => "sub_rt_json_u32",
+            JsonFn::I64 => "sub_rt_json_i64",
+            JsonFn::U64 => "sub_rt_json_u64",
+            JsonFn::F32 => "sub_rt_json_f32",
+            JsonFn::F64 => "sub_rt_json_f64",
+            JsonFn::Bool => "sub_rt_json_bool",
+            JsonFn::Date => "sub_rt_json_date",
+            JsonFn::Null => "sub_rt_json_null",
+            JsonFn::Visit => "sub_rt_json_visit",
+            JsonFn::Leave => "sub_rt_json_leave",
+        }
+    }
+
+    /// Whether the runtime result is the language boolean representation.
+    #[must_use]
+    pub fn returns_bool(self) -> bool {
+        self == JsonFn::Visit
+    }
+}
+
 /// `Date` intrinsic operations (stdlib.md §3): the accepted
 /// UTC-deterministic subset, lowered by both tiers to the opaque
 /// `sub_rt_date_*` runtime symbols. A `Date` value is `i64` epoch
@@ -2001,6 +2096,9 @@ pub enum Callee {
     /// / `Date.now` statics, the UTC accessors, and `toISOString`. For
     /// the instance operations the receiver is the first argument.
     Date(DateFn),
+    /// One internal leaf of a checker-generated `JSON.stringify<T>`
+    /// serializer (stdlib.md §13, Q28).
+    Json(JsonFn),
     /// A `String` method intrinsic (stdlib.md §8, Q21). The receiver is
     /// the first argument; optional arguments were normalized at check
     /// time, so the arity is `1 + f.params().len()` exactly.

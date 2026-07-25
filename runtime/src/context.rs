@@ -208,6 +208,9 @@ pub struct Context {
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
     callbacks: Vec<Box<CallbackBinding>>,
+    // Transient P13 JSON output builders. Untracked serializers create
+    // no active-reference set; tracked ones do so explicitly.
+    json_builders: crate::json::JsonBuilders,
     // Ship-tier policy flag (§8.1a): when true, `delete`/`collect` free
     // and forget immediately; when false (dev tier), they retain and
     // poison so use-after-delete/double-delete trap.
@@ -274,6 +277,7 @@ impl Context {
             shadow: Vec::new(),
             roots: Vec::new(),
             callbacks: Vec::new(),
+            json_builders: crate::json::JsonBuilders::default(),
             release_on_delete,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             now_override: None,
@@ -428,12 +432,12 @@ impl Context {
     /// (`specs/blocks/compiler.md` §8.2: a trap does not end the dev
     /// session).
     ///
-    /// Only trap *reporting* state is touched. Allocations, globals,
-    /// roots, the stdout sink, and the reload epoch are all untouched,
-    /// so nothing a trap protected against becomes reachable again: a
-    /// deleted allocation stays poisoned and a stale coroutine stays
-    /// stale (its frame epoch still differs, so resuming it traps
-    /// again).
+    /// Only trap *reporting* state and unfinished transient JSON builders
+    /// are touched. Allocations, globals, roots, the stdout sink, and the
+    /// reload epoch are all untouched, so nothing a trap protected
+    /// against becomes reachable again: a deleted allocation stays
+    /// poisoned and a stale coroutine stays stale (its frame epoch still
+    /// differs, so resuming it traps again).
     ///
     /// The caller must be at a host↔script boundary — no generated
     /// code on the stack. Generated code reads the flag after every
@@ -443,6 +447,17 @@ impl Context {
     pub fn clear_trap(&mut self) {
         self.trap = None;
         self.trap_flag = 0;
+        // A trapping JSON serializer unwinds before its Finish leaf on
+        // the dev tier. Its builder is transient implementation state,
+        // not language-visible state, and is discarded at this safe host
+        // boundary before the next call.
+        self.json_builders.clear();
+    }
+
+    // ----- JSON.stringify transient builders (stdlib.md §13) -----
+
+    pub(crate) fn json_builders(&mut self) -> &mut crate::json::JsonBuilders {
+        &mut self.json_builders
     }
 
     /// True when a trap is pending.

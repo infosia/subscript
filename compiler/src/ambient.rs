@@ -471,6 +471,49 @@ const SET_REJECTIONS: &[ApiRejection] = &[
     ),
 ];
 
+const JSON_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "JSON",
+        "stringify(Map<K, V>)",
+        "Q28",
+        None,
+        "Map is rejected rather than silently serialized as an empty object.",
+        Some("r56-json-stringify-map.ts"),
+    ),
+    rejection(
+        "JSON",
+        "stringify(Set<K>)",
+        "Q28",
+        None,
+        "Set is rejected rather than silently serialized as an empty object.",
+        Some("r57-json-stringify-set.ts"),
+    ),
+    rejection(
+        "JSON",
+        "stringify(object)",
+        "Q28",
+        None,
+        "The boundary-opaque object type has no static field shape to serialize.",
+        Some("r58-json-stringify-object.ts"),
+    ),
+    rejection(
+        "JSON",
+        "stringify(function)",
+        "Q28",
+        None,
+        "Function values are not JSON data.",
+        Some("r59-json-stringify-function.ts"),
+    ),
+    rejection(
+        "JSON",
+        "stringify(f16)",
+        "Q28",
+        None,
+        "f16 is a storage-only type with no arithmetic/formatting domain.",
+        None,
+    ),
+];
+
 const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("global", "isNaN(value)", "Q25", Some("Number.isNaN"), "The global form coerces its argument.", Some("r46-number-global-isnan.ts")),
     rejection("global", "isFinite(value)", "Q25", Some("Number.isFinite"), "The global form coerces its argument.", None),
@@ -804,6 +847,11 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             summary: f.api_summary(),
         });
     }
+    out.push(ApiItem {
+        group: "JSON",
+        signature: "stringify<T>(value: T): string".to_string(),
+        summary: "Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle.",
+    });
     out.extend([
         ApiItem {
             group: "Generator<T>",
@@ -834,6 +882,7 @@ pub(crate) fn rejected_api() -> Vec<ApiRejection> {
         DATE_STRING_REJECTIONS,
         MAP_REJECTIONS,
         SET_REJECTIONS,
+        JSON_REJECTIONS,
         FORM_REJECTIONS,
     ]
     .into_iter()
@@ -883,6 +932,22 @@ pub(crate) fn map_rejection(name: &str) -> Option<ApiRejection> {
 /// Named Set rejection.
 pub(crate) fn set_rejection(name: &str) -> Option<ApiRejection> {
     SET_REJECTIONS.iter().copied().find(|r| r.surface == name)
+}
+
+/// Named JSON.stringify rejection selected from the checked static type.
+pub(crate) fn json_rejection(ty: &Type) -> Option<ApiRejection> {
+    let surface = match ty {
+        Type::Map(..) => "stringify(Map<K, V>)",
+        Type::Set(_) => "stringify(Set<K>)",
+        Type::Object => "stringify(object)",
+        Type::Func(_) => "stringify(function)",
+        Type::F16 => "stringify(f16)",
+        _ => return None,
+    };
+    JSON_REJECTIONS
+        .iter()
+        .copied()
+        .find(|rejection| rejection.surface == surface)
 }
 
 /// Checker-owned rejection for a non-member call or source form.
@@ -1158,6 +1223,7 @@ mod tests {
             ("T[]", "push(value: T): i32"),
             ("T[]", "pop(): T"),
             ("FixedArray<T, N>", "length: i32"),
+            ("JSON", "stringify<T>(value: T): string"),
             ("Generator<T>", "next(): IteratorResult<T>"),
             ("IteratorResult<T>", "done: boolean"),
             ("IteratorResult<T>", "value: T"),
@@ -1186,7 +1252,7 @@ mod tests {
                 .count()
             + MapFn::ALL.len()
             + SetFn::ALL.len()
-            + 3;
+            + 4;
         assert_eq!(
             rows.len(),
             expected,

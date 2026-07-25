@@ -459,6 +459,14 @@ impl<'p> Checker<'p> {
                         pos.clone(),
                     );
                     self.err_expr(pos)
+                } else if name == "JSON" {
+                    self.error(
+                        RuleCode::S014,
+                        "`JSON` is an ambient namespace, not a value; use `JSON.stringify(value)` \
+                         (Q28)",
+                        pos.clone(),
+                    );
+                    self.err_expr(pos)
                 } else if name == "Date" {
                     // The ambient Date surface is a type and a namespace,
                     // never a value (Q20).
@@ -1058,7 +1066,10 @@ impl<'p> Checker<'p> {
             || (matches!(src, Type::Enum(_)) && target.is_integer())
             || (matches!(src, Type::Object) && self.is_reference_class(&target))
             || (matches!(&src, Type::Nullable(inner) if **inner == Type::Object)
-                && self.is_reference_class(&target));
+                && self.is_reference_class(&target))
+            || (self.in_json_argument
+                && target == Type::Object
+                && self.is_reference_class(&src));
         if !ok {
             let from_n = self.type_name(&src);
             let to_n = self.type_name(&target);
@@ -1275,6 +1286,19 @@ impl<'p> Checker<'p> {
         // every other read/write receives the subset diagnostic.
         if name == "Number" && self.scope_item(&name).is_none() {
             return Some(self.check_number_member(prop, prop_pos, for_write));
+        }
+        // `JSON.<member>` (stdlib.md §13, Q28): `stringify` is
+        // intercepted in call position; namespace members are not values.
+        if name == "JSON" && self.scope_item(&name).is_none() {
+            let detail = if prop == "stringify" {
+                "`JSON.stringify` may only be called, not read as a value (Q28)".to_string()
+            } else {
+                format!(
+                    "`JSON.{prop}` is outside P13 stage 1; only `JSON.stringify` is implemented"
+                )
+            };
+            self.error(RuleCode::S014, detail, prop_pos.clone());
+            return Some(self.err_expr(prop_pos));
         }
         // `Date.<member>` (stdlib.md §3): the static function members
         // (`UTC`, `now`) are intercepted by `check_method_call` before
@@ -4198,6 +4222,11 @@ impl<'p> Checker<'p> {
                     self.check_number_predicate_call(f, c, fx, pos)
                 };
             }
+        }
+        // `JSON.stringify<T>(value)` is checked from the argument's
+        // static type and expanded into a call-site serializer graph.
+        if self.is_json_namespace(&m.obj, fx) {
+            return self.check_json_call(&name, c, fx, pos, prop_pos);
         }
         // `Date.UTC(…)` / `Date.now()` (stdlib.md §3): static intrinsic
         // calls, resolved before the generic namespace-member path.

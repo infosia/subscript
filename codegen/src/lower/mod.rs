@@ -119,6 +119,9 @@ pub(crate) struct RtFns {
     pub date_get: FuncId,
     /// `sub_rt_date_to_iso`: (ms, pos id) → string handle.
     pub date_to_iso: FuncId,
+    /// Checker-generated JSON serializer leaves (stdlib.md §13), indexed
+    /// by [`hir::JsonFn::ALL`] discriminant order.
+    pub json: [FuncId; hir::JsonFn::ALL.len()],
     /// `sub_rt_str_*` method imports (stdlib.md §8), indexed by
     /// `hir::StrFn as usize` (the [`hir::StrFn::ALL`] order). Each
     /// signature is `(ctx, recv, params…[, pos_id])` per
@@ -425,7 +428,7 @@ fn declare_rt<M: Module>(
             .declare_function(name, Linkage::Import, &sig)
             .map_err(|e| internal(format!("declare {name}: {e}")))
     };
-    use types::{F32, F64, I16, I32, I64};
+    use types::{F32, F64, I16, I32, I64, I8};
     // Math intrinsic imports (stdlib.md §1): one opaque symbol per
     // accepted function, in MathFn::ALL order so `f as usize` indexes
     // the table. `clz32` is `(ctx, u32) -> i32`, `imul` is
@@ -470,6 +473,30 @@ fn declare_rt<M: Module>(
     let num: [FuncId; hir::NumFn::ALL.len()] = num_ids
         .try_into()
         .map_err(|_| internal("Number import table size"))?;
+    // JSON builder leaves (stdlib.md §13). The checker emits a typed
+    // serializer graph; these are its only runtime-specific operations.
+    let mut json_ids: Vec<FuncId> = Vec::with_capacity(hir::JsonFn::ALL.len());
+    for f in hir::JsonFn::ALL {
+        use hir::JsonFn as J;
+        let (params, ret): (&[types::Type], Option<types::Type>) = match f {
+            J::Begin | J::BeginTracked => (&[I64, I32], Some(I64)),
+            J::Finish => (&[I64, I64, I32], Some(I64)),
+            J::Raw | J::Str => (&[I64, I64, I64, I32], None),
+            J::I32 | J::U32 => (&[I64, I64, I32, I32], None),
+            J::I64 | J::U64 | J::Date => (&[I64, I64, I64, I32], None),
+            J::F32 => (&[I64, I64, F32, I32], None),
+            J::F64 => (&[I64, I64, F64, I32], None),
+            J::Bool => (&[I64, I64, I8, I32], None),
+            J::Null => (&[I64, I64, I32], None),
+            J::Visit => (&[I64, I64, I64, I32], Some(I32)),
+            J::Leave => (&[I64, I64, I64, I32], None),
+            other => return Err(internal(format!("unknown JsonFn {other:?}"))),
+        };
+        json_ids.push(mk(f.symbol(), params, ret)?);
+    }
+    let json: [FuncId; hir::JsonFn::ALL.len()] = json_ids
+        .try_into()
+        .map_err(|_| internal("JSON import table size"))?;
     // String method imports (stdlib.md §8): one opaque symbol per
     // accepted method, `(ctx, recv, params…[, pos_id])`, in StrFn::ALL
     // order so `f as usize` indexes the table. The signature is built
@@ -702,6 +729,7 @@ fn declare_rt<M: Module>(
         date_now: mk("sub_rt_date_now", &[I64], Some(I64))?,
         date_get: mk("sub_rt_date_get", &[I64, I64, I32], Some(I32))?,
         date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
+        json,
         str_ops,
         arr_ops,
         fixed_arr_ops,
