@@ -78,6 +78,7 @@ int main(int argc, char **argv) {
     int mid = timed / 2;
     double median = (timed % 2 == 1) ? times[mid] : (times[mid - 1] + times[mid]) / 2.0;
     printf("%d %.9f\n", checksum, median);
+    fprintf(stderr, "spread %.9f %.9f\n", times[0], times[timed - 1]);
     free(times);
     return 0;
 }

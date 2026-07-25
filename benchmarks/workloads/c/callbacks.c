@@ -1,24 +1,58 @@
-/* benchmark: fib-recursive (C baseline)
- * Naive recursive Fibonacci, fib(31) = 1346269.
- * Self-timed: >=3 warm-up + >=11 timed runs, prints "<checksum> <median_seconds>".
+/* benchmark: callbacks (C baseline)
+ * Loop spelling of the indexed map/filter/reduce pipeline over 1000000 signed
+ * i32 values from the fixed LCG, repeated 20 times. The filter removes exactly
+ * 250000 values per round. All signed arithmetic wraps under -fwrapv.
+ * Checksum: the i32-wrapping sum of each round's reduce result.
  */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
 
-static int32_t fib(int32_t n) {
-    if (n < 2) {
-        return n;
-    }
-    return fib(n - 1) + fib(n - 2);
-}
+enum { COUNT = 1000000, ROUNDS = 20 };
 
 static int32_t workload(void) {
-    /* volatile defeats constant-folding of fib(31) to 1346269, so the
-     * recursion is actually evaluated (matching every other subject). */
-    volatile int32_t n = 31;
-    return fib(n);
+    int32_t *input = (int32_t *)malloc((size_t)COUNT * sizeof(int32_t));
+    int32_t *mapped = (int32_t *)malloc((size_t)COUNT * sizeof(int32_t));
+    int32_t *filtered = (int32_t *)malloc((size_t)COUNT * sizeof(int32_t));
+    if (input == NULL || mapped == NULL || filtered == NULL) {
+        free(filtered);
+        free(mapped);
+        free(input);
+        return 0;
+    }
+
+    int32_t state = (int32_t)0x12345678u;
+    for (int32_t i = 0; i < COUNT; i++) {
+        state = state * 1664525 + 1013904223;
+        input[i] = state;
+    }
+
+    int32_t checksum = 0;
+    for (int32_t round = 0; round < ROUNDS; round++) {
+        for (int32_t i = 0; i < COUNT; i++) {
+            mapped[i] = input[i] + i;
+        }
+        int32_t kept = 0;
+        for (int32_t i = 0; i < COUNT; i++) {
+            int32_t value = mapped[i];
+            if (((value ^ i) & 3) != 0) {
+                filtered[kept] = value;
+                kept++;
+            }
+        }
+        int32_t reduced = 0;
+        for (int32_t i = 0; i < kept; i++) {
+            reduced = reduced + filtered[i];
+            reduced = reduced + i;
+        }
+        checksum = checksum + reduced;
+    }
+
+    free(filtered);
+    free(mapped);
+    free(input);
+    return checksum;
 }
 
 #if defined(_WIN32)

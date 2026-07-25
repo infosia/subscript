@@ -25,7 +25,7 @@ gate); this is a published comparison. Lives in `benchmarks/`.
 
 | Subject | What it is | How timed |
 |---|---|---|
-| C | hand-written C, `clang -O2 -ffp-contract=off` | self-timed (monotonic clock), prints median |
+| C | hand-written C, `clang -O2 -fwrapv -ffp-contract=off` | self-timed (monotonic clock), prints median |
 | subscript-ship | HIR → C → `clang -std=c11 -O2 -fwrapv -ffp-contract=off` (the ship tier, `compiler.md` §11) | externally timed by the runner (AOT entry loops the exported workload fn) |
 | subscript-jit | HIR → Cranelift JIT (the dev tier) | externally timed by the runner (`jit_bench`) |
 | LuaJIT | [luajit.org](https://luajit.org) 2.1 | self-timed (`os.clock`), prints median |
@@ -57,7 +57,9 @@ eight rather than a standing constraint. They stay sqrt-free — the
 checksums are frozen — and the ninth, `callbacks`, is added below.)*
 
 Each workload's parameters are sized
-so the C baseline runs in roughly 10–500 ms, and each produces an exact
+so the C baseline runs in roughly 10–500 ms (a target, not a checked
+invariant — `fib-recursive` measures about 3.6 ms on the arm64 dev
+machine), and each produces an exact
 **integer** checksum every subject must reproduce.
 
 | Id | Workload | Integer checksum |
@@ -103,7 +105,7 @@ others are read.
 
 The implementer pins the exact N/M/K/loop counts and the precise checksum
 formula per workload, identically across all six subjects, and records
-them in `benchmarks/README.md`. The LCG (for `sort`) is a fixed 32-bit
+them in `benchmarks/README.md`. The LCG (for `sort` and `callbacks`) is a fixed 32-bit
 `state = state*1664525 + 1013904223`, shared by every subject so the
 input array is identical.
 

@@ -855,3 +855,63 @@ are carried forward:
 2. **The emitted-C figure needs an idle-machine re-measurement.**
    1.87x observed against 1.05x recorded for arm64; unattributable to
    P18, since a22 does not execute P18's code.
+
+## Carried item 1 closed — the `callbacks` benchmark (2026-07-26)
+
+The P18 review's coverage gap is closed: `benchmarks.md` Rev 1 adds a
+ninth cross-language workload, `callbacks`, and it is implemented for
+all six subjects. Q27's per-element branch in `call_value`/
+`call_reduce` is now executed by a benchmark, so a regression there is
+visible as a move in the `subscript-ship` row.
+
+Parameters: N = 1 000 000, K = 20 rounds, seed `0x12345678`, the same
+LCG `sort` uses. `filter` removes 250 000 elements per round, so the
+pipeline is not a fixed-shape loop in disguise. Checksum
+**−662567840**, identical across all six subjects — confirmed
+independently by the orchestrator running node on the JS subject.
+
+### First measurement (baseline, not a regression signal)
+
+100 warm-up / 11 timed. Every subject within ±20% of its median.
+
+| Subject | ×C | median |
+|---|---:|---:|
+| C | 1.00 | 13.072 ms |
+| JSC | 5.38 | 70.280 ms |
+| LuaJIT | 9.62 | 125.815 ms |
+| **subscript-ship** | **20.84** | 272.433 ms |
+| subscript-jit | 26.06 | 340.633 ms |
+| V8 (Node.js) | 29.76 | 389.078 ms |
+
+**How to read it, beyond what the contract already requires.** The C
+subject writes loops over three buffers it allocates **once**;
+subscript and the JS subjects call `map`/`filter`, each of which
+returns a **fresh array every round** — 20 allocations of a million
+elements per operation against C's one. So the ratio blends two
+distinct costs, per-element call overhead and per-round allocation,
+and attributing it to either without separating them would be wrong.
+subscript-ship is faster than V8 here and slower than JSC and LuaJIT.
+
+The implementer confirmed the generated ship C passes `indexed=1` to
+the runtime for all three calls and that both tiers reach the
+`arrops` helpers — the runtime is a static library taking `indexed` as
+an external argument and the final link is without LTO, so the branch
+under measurement is not specialized away. That check mattered: a
+workload whose hot path the compiler had specialized out would have
+measured nothing while appearing to pass.
+
+### Run validity
+
+Earlier attempts at 8/15, 20/11 and 30/11 were **discarded for spread
+exceeding ±20%** — this machine has been compiling continuously all
+session. At 100/11 the `callbacks` row is valid, but the runner still
+invalidated three *other* C rows (`fib-loop`, `mandelbrot`, `primes`)
+on OS-scheduling outliers and exited non-zero. Those rows are not
+republished here; only `callbacks` is, and only because it passed.
+
+### Carried item 2 remains open
+
+The emitted-C figure still needs an idle-machine re-measurement
+(1.87x observed against 1.05x recorded for arm64). This session cannot
+supply it — the run above is direct evidence that the machine is not
+quiet enough.

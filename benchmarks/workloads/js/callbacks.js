@@ -1,27 +1,39 @@
-// benchmark: primes (JS: runs under both jsc and node)
-// Count primes up to 500000 by trial division (j*j <= n, no sqrt).
+// benchmark: callbacks (JS: runs under both jsc and node)
+// Indexed map/filter/reduce over 1000000 signed i32 LCG values, repeated 20
+// times. Every arithmetic step is forced to i32 with |0. The filter removes
+// exactly 250000 values per round. Checksum: i32 sum of the reduce results.
 "use strict";
 
-function isPrime(n) {
-  if (n < 2) {
-    return false;
-  }
-  for (var j = 2; j * j <= n; j++) {
-    if (n % j === 0) {
-      return false;
-    }
-  }
-  return true;
+function mapValue(value, index) {
+  return (value + index) | 0;
+}
+
+function keepValue(value, index) {
+  return ((value ^ index) & 3) !== 0;
+}
+
+function reduceValue(acc, value, index) {
+  acc = (acc + value) | 0;
+  return (acc + index) | 0;
 }
 
 function workload() {
-  var count = 0;
-  for (var n = 2; n <= 500000; n++) {
-    if (isPrime(n)) {
-      count++;
-    }
+  var COUNT = 1000000, ROUNDS = 20;
+  var state = 0x12345678 | 0;
+  var input = new Array(COUNT);
+  for (var i = 0; i < COUNT; i++) {
+    state = (Math.imul(state, 1664525) + 1013904223) | 0;
+    input[i] = state;
   }
-  return count;
+
+  var checksum = 0;
+  for (var round = 0; round < ROUNDS; round++) {
+    var mapped = input.map(mapValue);
+    var filtered = mapped.filter(keepValue);
+    var reduced = filtered.reduce(reduceValue, 0);
+    checksum = (checksum + reduced) | 0;
+  }
+  return checksum;
 }
 
 var emit = (typeof print === "function") ? print : console.log;

@@ -52,3 +52,4 @@ else
   median = (times[mid] + times[mid + 1]) / 2
 end
 io.write(string.format("%d %.9f\n", checksum, median))
+io.stderr:write(string.format("spread %.9f %.9f\n", times[1], times[TIMED]))

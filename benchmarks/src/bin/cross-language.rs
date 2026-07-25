@@ -1,7 +1,7 @@
 #![warn(missing_docs)]
 //! Cross-language benchmark runner (`specs/blocks/benchmarks.md`).
 //!
-//! Measures six subjects on eight workloads in one session and writes
+//! Measures six subjects on nine workloads in one session and writes
 //! `benchmarks/results.json` and `benchmarks/README.md`:
 //!
 //! - **C** — the hand-written baseline (`benchmarks/workloads/c/<id>.c`), compiled
@@ -37,8 +37,8 @@ use subscript_compiler::{check_program, SourceFile};
 /// A failure that stops one measurement; the runner never panics.
 type Fail = String;
 
-/// The eight workload ids, in report order.
-const WORKLOADS: [&str; 8] = [
+/// The nine workload ids, in report order.
+const WORKLOADS: [&str; 9] = [
     "fib-recursive",
     "fib-loop",
     "mandelbrot",
@@ -47,6 +47,7 @@ const WORKLOADS: [&str; 8] = [
     "tree",
     "queen",
     "particles",
+    "callbacks",
 ];
 
 /// One-line parameter/checksum description per workload, rendered into the
@@ -61,6 +62,7 @@ fn workload_params(id: &str) -> &'static str {
         "tree" => "30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + unsafeDelete; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130",
         "queen" => "count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)",
         "particles" => "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.",
+        "callbacks" => "i32[1000000] from LCG state=state*1664525+1013904223 (seed 0x12345678), K=20 rounds; map(value,index)=(value+index) i32; filter(value,index)=((value^index)&3)!=0 (removes exactly 250000 elements per round); reduce(acc,value,index)=(acc+value+index) i32 from 0; checksum=checksum+round_result (i32 wrap)",
         _ => "",
     }
 }
@@ -71,7 +73,7 @@ fn workload_params(id: &str) -> &'static str {
 const AOT_BENCH_ENTRY_C: &str = include_str!("../../aot-entry.c");
 
 /// C baseline flags (`benchmarks.md` Subjects table).
-const BASELINE_CFLAGS: [&str; 2] = ["-O2", "-ffp-contract=off"];
+const BASELINE_CFLAGS: [&str; 3] = ["-O2", "-fwrapv", "-ffp-contract=off"];
 
 /// Default discarded warm-up runs (methodology floor is 3).
 const DEFAULT_WARMUP: usize = 3;
@@ -100,6 +102,19 @@ struct Measured {
     /// Min/max of the timed samples, in seconds (for the noise note); `None`
     /// for a self-timed subject that reports only its median.
     spread: Option<(f64, f64)>,
+}
+
+impl Measured {
+    /// Whether min/max extend beyond the valid +/-20% band around the median.
+    fn noisy(&self) -> bool {
+        let Some((min, max)) = self.spread else {
+            return false;
+        };
+        self.median_s > 0.0
+            && ((max - self.median_s) / self.median_s)
+                .max((self.median_s - min) / self.median_s)
+                > NOISE_LIMIT
+    }
 }
 
 /// A subject's outcome for one workload: measured, absent runtime, or error.
@@ -296,6 +311,9 @@ fn run() -> Result<ExitCode, Fail> {
     if any_mismatch {
         eprintln!("benchmarks: at least one workload's subjects disagreed on the checksum; its timings are withheld.");
         Ok(ExitCode::from(1))
+    } else if rows.iter().any(WorkloadResult::has_noise) {
+        eprintln!("benchmarks: at least one subject exceeded the +/-20% spread limit; its timing is invalid and withheld.");
+        Ok(ExitCode::from(1))
     } else {
         Ok(ExitCode::SUCCESS)
     }
@@ -340,8 +358,29 @@ impl WorkloadResult {
             return None;
         }
         self.outcomes.iter().find_map(|(n, o)| match o {
+            Outcome::Ok(m) if n == subject && !m.noisy() => Some(m),
+            _ => None,
+        })
+    }
+
+    /// The raw measurement, including one invalidated by excessive spread.
+    fn sampled(&self, subject: &str) -> Option<&Measured> {
+        self.outcomes.iter().find_map(|(n, o)| match o {
             Outcome::Ok(m) if n == subject => Some(m),
             _ => None,
+        })
+    }
+
+    /// Whether this subject's sample set exceeds the spread limit.
+    fn noisy(&self, subject: &str) -> bool {
+        self.sampled(subject).is_some_and(Measured::noisy)
+    }
+
+    /// Whether any subject's sample set exceeds the spread limit.
+    fn has_noise(&self) -> bool {
+        self.outcomes.iter().any(|(_, outcome)| match outcome {
+            Outcome::Ok(measured) => measured.noisy(),
+            _ => false,
         })
     }
 
@@ -538,10 +577,30 @@ fn run_self_timed(exe: &Path, args: &[std::ffi::OsString]) -> Outcome {
         Ok(v) => v,
         Err(_) => return Outcome::Error(format!("median `{md}` is not a number")),
     };
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let spread = if stderr.trim().is_empty() {
+        None
+    } else {
+        let mut fields = stderr.split_whitespace();
+        let (Some("spread"), Some(min), Some(max), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            return Outcome::Error(format!("unparseable stderr `{}`", stderr.trim()));
+        };
+        let min: f64 = match min.parse() {
+            Ok(v) => v,
+            Err(_) => return Outcome::Error(format!("minimum `{min}` is not a number")),
+        };
+        let max: f64 = match max.parse() {
+            Ok(v) => v,
+            Err(_) => return Outcome::Error(format!("maximum `{max}` is not a number")),
+        };
+        Some((min, max))
+    };
     Outcome::Ok(Measured {
         checksum,
         median_s,
-        spread: None,
+        spread,
     })
 }
 
@@ -893,6 +952,8 @@ fn cell(row: &WorkloadResult, subject: &str, baseline: Option<f64>) -> String {
         }
     } else if row.absent(subject) {
         "-".to_string()
+    } else if row.noisy(subject) {
+        "invalid (noise)".to_string()
     } else if !row.matched {
         "withheld".to_string()
     } else {
@@ -985,6 +1046,14 @@ fn render_readme(
             cell(row, "V8 (Node.js)", baseline),
         );
     }
+    if rows.iter().any(|row| row.id == "callbacks") {
+        let _ = writeln!(
+            s,
+            "\n**callbacks interpretation.** This workload measures what the \
+             idiomatic callback spelling costs against a hand-written loop, \
+             not a codegen deficit."
+        );
+    }
     let _ = writeln!(s);
     let _ = writeln!(s, "## Workload parameters\n");
     for id in WORKLOADS {
@@ -992,11 +1061,11 @@ fn render_readme(
             let _ = writeln!(s, "- **{id}** — {}", workload_params(id));
         }
     }
-    // Noise note for the subscript tiers, whose samples the runner holds.
+    // Noise note for every subject whose min/max samples the runner holds.
     let mut noisy: Vec<String> = Vec::new();
     for row in rows {
-        for subject in ["subscript-ship", "subscript-jit"] {
-            if let Some(m) = row.measured(subject) {
+        for subject in SUBJECTS {
+            if let Some(m) = row.sampled(subject) {
                 if let Some((min, max)) = m.spread {
                     if m.median_s > 0.0 {
                         let spread = ((max - m.median_s) / m.median_s)
@@ -1013,13 +1082,13 @@ fn render_readme(
     if noisy.is_empty() {
         let _ = writeln!(
             s,
-            "Noise: every subscript-tier sample set is within +/-{:.0}% of its median.",
+            "Noise: every recorded sample set is within +/-{:.0}% of its median.",
             NOISE_LIMIT * 100.0
         );
     } else {
         let _ = writeln!(
             s,
-            "Noise: wider than +/-{:.0}% spread for {} — treat those rows as indicative.",
+            "Noise: wider than +/-{:.0}% spread for {} — those timings are invalid and withheld.",
             NOISE_LIMIT * 100.0,
             noisy.join(", ")
         );
@@ -1080,6 +1149,17 @@ fn render_json(
             } else {
                 "null".to_string()
             };
+            let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
+        }
+        let _ = writeln!(s, "      }},");
+        let _ = writeln!(s, "      \"ranges_s\": {{");
+        for (si, subject) in subs.iter().enumerate() {
+            let comma = if si + 1 < subs.len() { "," } else { "" };
+            let value = row
+                .sampled(subject)
+                .and_then(|m| m.spread)
+                .map(|(min, max)| format!("[{min:.9}, {max:.9}]"))
+                .unwrap_or_else(|| "null".to_string());
             let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
         }
         let _ = writeln!(s, "      }}");

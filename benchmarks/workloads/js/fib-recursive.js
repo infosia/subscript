@@ -16,6 +16,7 @@ function workload() {
 }
 
 var emit = (typeof print === "function") ? print : console.log;
+var emitError = (typeof printErr === "function") ? printErr : console.error;
 function nowMs() { return performance.now(); }
 // Warm-up and timed counts come from argv (node: process.argv; jsc: the
 // top-level arguments passed after `--`), defaulting to the 3/11 floor, so the
@@ -39,4 +40,6 @@ var __argv = (typeof process !== "undefined" && process.argv) ? process.argv.sli
   var mid = TIMED >> 1;
   var median = (TIMED % 2 === 1) ? times[mid] : (times[mid - 1] + times[mid]) / 2;
   emit(String(checksum) + " " + (median / 1000).toFixed(9));
+  emitError("spread " + (times[0] / 1000).toFixed(9) + " "
+    + (times[TIMED - 1] / 1000).toFixed(9));
 })(__argv);
