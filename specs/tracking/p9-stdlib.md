@@ -596,3 +596,55 @@ machinery** — one callback accepted at two arities. Corrected.
 Zero build warnings; `cargo test` clean including the standing
 dev-JIT ≡ ship-C-AOT ≡ golden gate, the P16 structural and witness
 tests; `tsc` exit 0; `git diff --check` clean.
+
+## P18 stage 4 — Q27 `Map`/`Set` (2026-07-26)
+
+Implemented: `Map.groupBy` and the ES2024 set algebra (`union`,
+`intersection`, `difference`, `symmetricDifference`, `isSubsetOf`,
+`isSupersetOf`, `isDisjointFrom`). Stage 5 (callback arity) untouched.
+
+Corpus `a66-q27-map-set`, golden generated from node v24.18.0 and
+**re-verified independently by the orchestrator** — matched. No
+pre-existing `.expected` moved.
+
+`T[]` is a reference shape, so §10.5 permits `Map<K, T[]>.get`; the
+entry uses it rather than `getOr`.
+
+Aggregate ownership was handled explicitly, the P15 defect class being
+the reason: group arrays and set results are fresh storage, aggregates
+are copied before the callback sees them, and inputs and outputs are
+GC roots for the duration. `a66` demonstrates it — mutating
+`s1.union(s2)` afterwards leaves `s1` and the source array unchanged.
+
+### Contract correction: `intersection` is not receiver-ordered
+
+Q27 and §10.4 both stated that all four set-algebra operations produce
+**receiver order first**. That is wrong for `intersection`, which
+iterates the **smaller** set, ties going to the receiver.
+
+The error is instructive: the claim was generalized from a single
+measurement, `{1,2,3}` against `{3,4}` yielding `3` — a case where
+both candidate rules give the same answer, so it could not
+discriminate. Measured with a case that can:
+
+```
+{5,4,3,2,1}.intersection({1,3})  ->  1,3     (receiver-first would be 3,1)
+{9,8,7}.intersection({7,8,9})    ->  9,8,7   (equal sizes: receiver wins)
+```
+
+Consequence worth stating: `intersection`'s output order depends on
+the operands' relative sizes. Still deterministic — sizes are — so
+§0.3 holds, but it is not what the other three do. `a66` pins both
+directions and a smaller-argument case.
+
+### Contract correction: §10.6's allocation list
+
+§10.6 said "a `set`/`add` may allocate, nothing else does". Q27 added
+operations that produce fresh containers, so the list is now
+`set`/`add`, `Map.groupBy`, and the four algebra operations.
+
+### Gate
+
+Zero build warnings; `cargo test` clean including the standing
+dev-JIT ≡ ship-C-AOT ≡ golden gate and the P16 structural and witness
+tests; `tsc` exit 0; `git diff --check` clean.

@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 stages 1-3 as implemented and corrects two §12 pre-registrations — no-golden-moves, and which stages touch the checker). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 stages 1-4 as implemented and corrects four contract claims the implementations disproved — §12's no-golden-moves and which-stages-touch-the-checker, §10.4's intersection ordering, and §10.6's allocation list). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -479,10 +479,27 @@ Added by Q27 (2026-07-25):
   `isSubsetOf`, `isSupersetOf`, `isDisjointFrom` returning `boolean`.
   The argument is a `Set<K>`, not JS's "set-like" duck type, which
   would need a protocol the language does not have. **Result order is
-  normative**, as §10.3 requires of all traversal, and is node's:
-  receiver order first, then the argument's contribution — `{1,2,3}`
-  against `{3,4}` gives union `1,2,3,4`, intersection `3`, difference
-  `1,2`, symmetric difference `1,2,4`
+  normative**, as §10.3 requires of all traversal, and is ECMA's.
+
+  Three of the four are **receiver order first, then the argument's
+  contribution**: `{1,2,3}` against `{3,4}` gives union `1,2,3,4`,
+  difference `1,2`, symmetric difference `1,2,4`.
+
+  **`intersection` is the exception: it iterates the *smaller* set,
+  with a tie going to the receiver.** *(Corrected 2026-07-26. This
+  entry originally said all four were receiver-first. The measurement
+  it was written from — `{1,2,3}` against `{3,4}`, yielding `3` —
+  cannot distinguish the two rules, and the generalization was wrong.)*
+  A discriminating case, measured on node v24.18.0:
+  `{5,4,3,2,1}.intersection({1,3})` is `1,3`, which is the argument's
+  order because the argument is smaller; receiver-first would give
+  `3,1`. At equal sizes the receiver wins:
+  `{9,8,7}.intersection({7,8,9})` is `9,8,7`.
+
+  The consequence is that `intersection`'s output order depends on the
+  operands' relative sizes. That is still deterministic — sizes are —
+  so §0.3 holds, but it is worth stating because it is not what the
+  other three do
 
 Rejected (S014, Q24): the iterator protocol (`keys`/`values`/
 `entries`/`for…of`/spread — `forEach` is the traversal) and
@@ -517,8 +534,16 @@ behaviour:
   seed-free (a per-Context random seed would break the golden corpus
   and replays — §0.3). It is not exposed to script.
 - Growth allocates from Context memory and **never runs unbidden**
-  (invariant 2): a `set`/`add` may allocate, nothing else does. There
-  is no incremental rehash triggered by an unrelated operation.
+  (invariant 2). There is no incremental rehash triggered by an
+  unrelated operation. *(Corrected 2026-07-26: this said "a `set`/`add`
+  may allocate, nothing else does", which stopped being true when Q27
+  added operations that produce fresh containers.)* The operations
+  that allocate are `set`/`add`, `Map.groupBy` (the result `Map` and
+  each group's `T[]`), and the four set-algebra operations (the result
+  `Set`). Each of those **owns its storage** and never aliases an
+  operand's — the P15 review found the opposite defect in aggregate
+  `Map.forEach`, where a raw pointer into live entry storage made the
+  two tiers disagree.
 - A key's hash is a pure function of its value/identity, so the same
   program produces the same iteration order and the same output on
   both tiers — the standing gate checks that byte-for-byte.
@@ -722,12 +747,12 @@ no ship-row regression.
 
 ## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
 
-**Status: stages 1, 2 and 3 implemented** (`Math`/`Number`, `String`,
-`Array`). Stages 4 and 5 — `Map`/`Set` and the callback index
-parameter — are still contract only, and the checker still rejects
-those members. `generated-docs/api-reference.md` reports the checker,
-not this contract (`compiler.md` §17.1), so the two agree on stages
-1–3 and disagree on 4–5 by design while P18 is open.
+**Status: stages 1–4 implemented** (`Math`/`Number`, `String`,
+`Array`, `Map`/`Set`). Stage 5 — the callback index parameter — is
+still contract only, and the checker still rejects the two-parameter
+form. `generated-docs/api-reference.md` reports the checker, not this
+contract (`compiler.md` §17.1), so the two agree on stages 1–4 and
+disagree on 5 by design while P18 is open.
 
 Q27 spans five sections, so its corpus is registered here rather than
 split across them. Staged in the order below; each stage is a Phase

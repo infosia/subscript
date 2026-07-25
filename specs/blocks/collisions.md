@@ -472,11 +472,11 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
     not a cost question.
 
 - **Q27 (the rejection sweep — thirteen groups reinstated)** —
-  **contract written 2026-07-25; stages 1–3 implemented 2026-07-26.**
-  `Math.imul`/`fround`, `Number.parseInt`/`parseFloat`, the whole
-  `String` group and the `Array` group are live; the `Map`/`Set` and
-  callback-arity groups are still contract only, and the checker
-  rejects those members. `generated-docs/api-reference.md` reports the
+  **contract written 2026-07-25; stages 1–4 implemented 2026-07-26.**
+  `Math.imul`/`fround`, `Number.parseInt`/`parseFloat`, the `String`,
+  `Array` and `Map`/`Set` groups are live; only the callback-arity
+  group is still contract only, and the checker rejects the
+  two-parameter callback form. `generated-docs/api-reference.md` reports the
   checker rather than the contract (`compiler.md` §17.1), so it is the
   present tense wherever the two differ.
   Accepted per `stdlib.md` §1, §8, §9, §10 and §11. The 2026-07-25 sweep
@@ -528,10 +528,16 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 
   `Set` algebra takes a `Set<K>`, not JS's "set-like" duck type, which
   would need a protocol the language does not have. Result order is
-  **normative**, as Q24 requires of all `Map`/`Set` traversal, and is
-  what node produces: receiver order first, then the argument's
-  contribution — `{1,2,3}` against `{3,4}` gives union `1,2,3,4`,
-  intersection `3`, difference `1,2`, symmetric difference `1,2,4`.
+  **normative**, as Q24 requires of all `Map`/`Set` traversal.
+  `union`, `difference` and `symmetricDifference` are receiver order
+  first, then the argument's contribution; **`intersection` iterates
+  the smaller set, ties going to the receiver** — so its output order
+  depends on the operands' relative sizes, which is deterministic but
+  unlike the other three. *(Corrected 2026-07-26: this entry claimed
+  all four were receiver-first, generalized from `{1,2,3}` against
+  `{3,4}`, a case where both rules give the same answer. Measured:
+  `{5,4,3,2,1}.intersection({1,3})` is `1,3`, not `3,1`.)* Full detail
+  and the discriminating cases are in `stdlib.md` §10.4.
 
   **`$` substitution closes a recorded Q21 divergence** rather than
   opening one. `$$`, `$&`, `` $` `` and `$'` are substituted; `$1`–`$9`
