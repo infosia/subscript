@@ -2147,6 +2147,23 @@ impl<'m> Emitter<'m> {
                 let sep = if argv.is_empty() { "" } else { ", " };
                 Ok(format!("sub_rt_math_{}(ctx{sep}{argv})", f.name()))
             }
+            // Q25 Number predicates, parsers, and toFixed all call the
+            // shared opaque runtime. The range-trapping entries carry
+            // the source position assigned by this emitter.
+            hir::Callee::Num(f) => {
+                let argv = self.eval_list(args, out, depth)?;
+                let call = if f.takes_pos_id() {
+                    let pid = self.pos_id(pos);
+                    format!("{}(ctx, {argv}, {pid}u)", f.symbol())
+                } else {
+                    format!("{}(ctx, {argv})", f.symbol())
+                };
+                Ok(if f.returns_bool() {
+                    format!("({call} != 0)")
+                } else {
+                    call
+                })
+            }
             // A Date intrinsic (stdlib.md §3) calls its opaque runtime
             // symbol; the value is its int64_t millisecond form. The
             // trapping entries carry a position id; `getTime` never
@@ -3880,6 +3897,16 @@ extern void* sub_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
 extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
 extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
 extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
+/* Number predicates, parsing, and fixed-decimal formatting
+ * (stdlib.md 11, Q25). parseInt and toFixed carry source positions for
+ * their programmer-error range traps. */
+extern int32_t sub_rt_num_is_nan(void* ctx, double value);
+extern int32_t sub_rt_num_is_finite(void* ctx, double value);
+extern int32_t sub_rt_num_is_integer(void* ctx, double value);
+extern int32_t sub_rt_num_is_safe_integer(void* ctx, double value);
+extern double sub_rt_num_parse_int(void* ctx, const void* s, int32_t radix, uint32_t pos_id);
+extern double sub_rt_num_parse_float(void* ctx, const void* s);
+extern void* sub_rt_num_to_fixed(void* ctx, double value, int32_t digits, uint32_t pos_id);
 /* IEEE binary16 is raw uint16_t storage in emitted C. All conversion is
  * behind these opaque runtime symbols; no _Float16/__fp16 operation is
  * emitted (compiler.md 16.2). */
@@ -4277,6 +4304,28 @@ mod tests {
         assert!(!has_bare_call(&c, "floor"), "bare libm floor call emitted");
         assert!(!has_bare_call(&c, "pow"), "bare libm pow call emitted");
         assert!(!has_bare_call(&c, "random"), "bare random call emitted");
+    }
+
+    #[test]
+    fn number_calls_use_the_opaque_runtime_symbols() {
+        let c = emit(
+            "export function main(): void {\n\
+               const parsed: f64 = parseInt(\"ff\", 16);\n\
+               print(`${Number.isFinite(parsed)}`);\n\
+               print(parseFloat(\"1.5x\").toFixed(2));\n\
+             }\n",
+        );
+        assert!(c.contains("sub_rt_num_parse_int(ctx, "), "{c}");
+        assert!(c.contains("(sub_rt_num_is_finite(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_num_parse_float(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_num_to_fixed(ctx, "), "{c}");
+        for f in hir::NumFn::ALL {
+            assert!(
+                PREAMBLE.contains(&format!("{}(void* ctx", f.symbol())),
+                "preamble lacks the {} declaration",
+                f.symbol()
+            );
+        }
     }
 
     #[test]

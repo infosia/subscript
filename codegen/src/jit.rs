@@ -133,6 +133,32 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_math_max", ffi::sub_rt_math_max as *const u8),
         ("sub_rt_math_min", ffi::sub_rt_math_min as *const u8),
         ("sub_rt_math_random", ffi::sub_rt_math_random as *const u8),
+        // Number predicates, parsing, and toFixed (stdlib.md §11, Q25).
+        ("sub_rt_num_is_nan", ffi::sub_rt_num_is_nan as *const u8),
+        (
+            "sub_rt_num_is_finite",
+            ffi::sub_rt_num_is_finite as *const u8,
+        ),
+        (
+            "sub_rt_num_is_integer",
+            ffi::sub_rt_num_is_integer as *const u8,
+        ),
+        (
+            "sub_rt_num_is_safe_integer",
+            ffi::sub_rt_num_is_safe_integer as *const u8,
+        ),
+        (
+            "sub_rt_num_parse_int",
+            ffi::sub_rt_num_parse_int as *const u8,
+        ),
+        (
+            "sub_rt_num_parse_float",
+            ffi::sub_rt_num_parse_float as *const u8,
+        ),
+        (
+            "sub_rt_num_to_fixed",
+            ffi::sub_rt_num_to_fixed as *const u8,
+        ),
         // Date intrinsics (stdlib.md §3): same opaque-symbol rule; the
         // ship tier resolves these from the runtime static library.
         // String method intrinsics (stdlib.md §8): one opaque symbol

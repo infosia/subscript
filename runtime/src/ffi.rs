@@ -1220,6 +1220,153 @@ pub unsafe extern "C" fn sub_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id: u32)
     unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_bool(v != 0).as_bytes(), pos_id)
 }
 
+// ----- Number / parsing / toFixed (stdlib.md §11, Q25) -----
+//
+// All operations stay behind opaque symbols so both tiers execute the
+// same Rust implementation. The predicates are pure; parseInt and
+// toFixed carry a position because their programmer-error ranges trap.
+
+/// `Number.isNaN(value)`.
+///
+/// # Safety
+///
+/// Shared contract; `ctx` is intentionally unused.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_is_nan(_ctx: *mut Context, value: f64) -> i32 {
+    i32::from(crate::num::is_nan(value))
+}
+
+/// `Number.isFinite(value)`.
+///
+/// # Safety
+///
+/// Shared contract; `ctx` is intentionally unused.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_is_finite(_ctx: *mut Context, value: f64) -> i32 {
+    i32::from(crate::num::is_finite(value))
+}
+
+/// `Number.isInteger(value)`.
+///
+/// # Safety
+///
+/// Shared contract; `ctx` is intentionally unused.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_is_integer(_ctx: *mut Context, value: f64) -> i32 {
+    i32::from(crate::num::is_integer(value))
+}
+
+/// `Number.isSafeInteger(value)`.
+///
+/// # Safety
+///
+/// Shared contract; `ctx` is intentionally unused.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_is_safe_integer(
+    _ctx: *mut Context,
+    value: f64,
+) -> i32 {
+    i32::from(crate::num::is_safe_integer(value))
+}
+
+/// `parseInt(s, radix)`: explicit radix 2–36, otherwise a Q25 trap.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live UTF-8 string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_parse_int(
+    ctx: *mut Context,
+    s: *const u8,
+    radix: i32,
+    pos_id: u32,
+) -> f64 {
+    if s.is_null() {
+        return f64::NAN;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if !(2..=36).contains(&radix) {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("parseInt radix must be in 2..=36, got {radix}"),
+            pos_id,
+        );
+        return f64::NAN;
+    }
+    // SAFETY: live string handle. Copy out before any mutable Context
+    // operation, keeping the borrow boundary explicit.
+    let bytes = unsafe { ctx.str_bytes(s) }.to_vec();
+    let Ok(value) = std::str::from_utf8(&bytes) else {
+        ctx.trap(
+            TrapKind::Internal,
+            "parseInt received a non-UTF-8 language string",
+            pos_id,
+        );
+        return f64::NAN;
+    };
+    crate::num::parse_int(value, radix as u32)
+}
+
+/// `parseFloat(s)`: ECMA longest-prefix parsing.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live UTF-8 string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_parse_float(ctx: *mut Context, s: *const u8) -> f64 {
+    if s.is_null() {
+        return f64::NAN;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handle.
+    let bytes = unsafe { ctx.str_bytes(s) }.to_vec();
+    let Ok(value) = std::str::from_utf8(&bytes) else {
+        ctx.trap(
+            TrapKind::Internal,
+            "parseFloat received a non-UTF-8 language string",
+            0,
+        );
+        return f64::NAN;
+    };
+    crate::num::parse_float(value)
+}
+
+/// `value.toFixed(digits)`: exact ECMA decimal rounding for digits
+/// 0–100, otherwise a Q25 trap.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_to_fixed(
+    ctx: *mut Context,
+    value: f64,
+    digits: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Ok(digits) = u32::try_from(digits) else {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toFixed digits must be in 0..=100, got {digits}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    if digits > 100 {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toFixed digits must be in 0..=100, got {digits}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(crate::num::to_fixed(value, digits).as_bytes(), pos_id)
+}
+
 // ----- Math (stdlib.md §1/§2) -----
 //
 // One uniform signature convention: every `sub_rt_math_*` symbol takes
@@ -2450,6 +2597,43 @@ mod tests {
             sub_rt_print(p, t);
         }
         assert_eq!(ctx.take_stdout(), b"3.75\ntrue\n");
+    }
+
+    #[test]
+    fn ffi_number_entries_forward_and_trap_ranges() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context; all string handles remain live.
+        unsafe {
+            assert_eq!(sub_rt_num_is_nan(p, f64::NAN), 1);
+            assert_eq!(sub_rt_num_is_finite(p, f64::INFINITY), 0);
+            assert_eq!(sub_rt_num_is_integer(p, 7.0), 1);
+            assert_eq!(
+                sub_rt_num_is_safe_integer(p, 9_007_199_254_740_992.0),
+                0
+            );
+            let int_s = sub_rt_str_lit(p, b"fftail".as_ptr(), 6, 0);
+            assert_eq!(sub_rt_num_parse_int(p, int_s, 16, 19), 255.0);
+            let float_s = sub_rt_str_lit(p, b"1.5tail".as_ptr(), 7, 0);
+            assert_eq!(sub_rt_num_parse_float(p, float_s), 1.5);
+            let fixed = sub_rt_num_to_fixed(p, 1.005, 2, 20);
+            assert_eq!(ctx.str_bytes(fixed), b"1.00");
+            assert!(sub_rt_num_to_fixed(p, 1.0, 101, 21).is_null());
+        }
+        let report = ctx.trap_record().expect("toFixed range trap");
+        assert_eq!(report.kind, TrapKind::NumberRange);
+        assert_eq!(report.pos_id, 21);
+
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context and live literal string handle.
+        unsafe {
+            let s = sub_rt_str_lit(p, b"10".as_ptr(), 2, 0);
+            assert!(sub_rt_num_parse_int(p, s, 1, 22).is_nan());
+        }
+        let report = ctx.trap_record().expect("parseInt radix trap");
+        assert_eq!(report.kind, TrapKind::NumberRange);
+        assert_eq!(report.pos_id, 22);
     }
 
     #[test]

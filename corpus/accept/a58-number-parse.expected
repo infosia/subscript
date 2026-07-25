@@ -1,0 +1,8 @@
+radix 5 -15 35
+space-sign 42 -11
+large 900719925474099300
+int-fail true true
+float 1.5 -125 0.5
+float-prefix 1 Infinity -Infinity
+float-fail true
+cast 127

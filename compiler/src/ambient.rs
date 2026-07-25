@@ -4,7 +4,7 @@
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
 
-use crate::hir::{AmbientFn, ArrFn, DateFn, MathFn, StrFn};
+use crate::hir::{AmbientFn, ArrFn, DateFn, MathFn, NumFn, StrFn};
 use crate::types::Type;
 
 /// Maps a sized-numeric alias name to its type.
@@ -64,6 +64,41 @@ pub(crate) fn math_const(name: &str) -> Option<f64> {
         "SQRT2" => Some(consts::SQRT_2),
         _ => None,
     }
+}
+
+/// Folded `f64` value of a `Number` constant (stdlib.md §11.1).
+pub(crate) fn number_const(name: &str) -> Option<f64> {
+    Some(match name {
+        "MAX_SAFE_INTEGER" => 9_007_199_254_740_991.0,
+        "MIN_SAFE_INTEGER" => -9_007_199_254_740_991.0,
+        "EPSILON" => f64::EPSILON,
+        "MAX_VALUE" => f64::MAX,
+        "MIN_VALUE" => f64::from_bits(1),
+        "POSITIVE_INFINITY" => f64::INFINITY,
+        "NEGATIVE_INFINITY" => f64::NEG_INFINITY,
+        "NaN" => f64::NAN,
+        _ => return None,
+    })
+}
+
+/// Accepted `Number.is*` predicate member.
+pub(crate) fn number_predicate(name: &str) -> Option<NumFn> {
+    Some(match name {
+        "isNaN" => NumFn::IsNaN,
+        "isFinite" => NumFn::IsFinite,
+        "isInteger" => NumFn::IsInteger,
+        "isSafeInteger" => NumFn::IsSafeInteger,
+        _ => return None,
+    })
+}
+
+/// Accepted global parser name.
+pub(crate) fn number_global(name: &str) -> Option<NumFn> {
+    Some(match name {
+        "parseInt" => NumFn::ParseInt,
+        "parseFloat" => NumFn::ParseFloat,
+        _ => return None,
+    })
 }
 
 /// Maps a `Date` instance-method name to its intrinsic (stdlib.md §3):
@@ -151,6 +186,19 @@ mod tests {
         }
         assert_eq!(math_const("EPSILON"), None);
         assert_eq!(math_const("floor"), None);
+    }
+
+    #[test]
+    fn number_surface_lookups_cover_q25() {
+        assert_eq!(number_const("MAX_SAFE_INTEGER"), Some(9_007_199_254_740_991.0));
+        assert_eq!(number_const("MIN_VALUE").map(f64::to_bits), Some(1));
+        assert!(number_const("NaN").is_some_and(f64::is_nan));
+        assert_eq!(number_predicate("isNaN"), Some(NumFn::IsNaN));
+        assert_eq!(number_predicate("isSafeInteger"), Some(NumFn::IsSafeInteger));
+        assert_eq!(number_predicate("parseInt"), None);
+        assert_eq!(number_global("parseInt"), Some(NumFn::ParseInt));
+        assert_eq!(number_global("parseFloat"), Some(NumFn::ParseFloat));
+        assert_eq!(number_global("isNaN"), None);
     }
 
     #[test]

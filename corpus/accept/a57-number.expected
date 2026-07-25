@@ -1,0 +1,7 @@
+safe constants 9007199254740991 -9007199254740991
+float constants 2.220446049250313e-16 1.7976931348623157e+308 5e-324
+infinities Infinity -Infinity NaN
+isNaN true false
+isFinite true false
+isInteger true true false false
+isSafeInteger true false false

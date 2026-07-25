@@ -329,6 +329,15 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   half-way, `±0`, `>= 1e21`, `NaN` and infinity cases are pinned by
   golden, and it is one runtime implementation on both tiers rather
   than the host libc, whose rounding is platform-dependent.
+  **Divergence — `(-0).toFixed(d)` keeps the sign** (`-0.00`), where
+  ECMA and node drop it (`0.00`): ECMA takes the sign only when
+  `x < 0`, which is false for `-0`. This language already spells
+  negative zero `-0` in Q14 — itself a recorded divergence, since JS's
+  `String(-0)` is `"0"` — so dropping the sign here would make `${-0}`
+  and `(-0).toFixed(2)` disagree about whether the value is signed.
+  Keeping it is also the more uniform rule: node itself prints
+  `(-0.001).toFixed(2)` as `"-0.00"`, so only exactly `-0` is special
+  there, and here it is not.
 
 ## 3. Open items carried forward
 

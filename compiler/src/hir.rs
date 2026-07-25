@@ -487,6 +487,87 @@ impl MathFn {
     }
 }
 
+/// `Number`, parsing, and `toFixed` intrinsics (stdlib.md §11, Q25).
+/// Constants fold to [`ExprKind::Float`] at check time; every operation
+/// represented here calls one opaque `sub_rt_num_*` runtime symbol on
+/// both execution tiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum NumFn {
+    /// `Number.isNaN(value)`.
+    IsNaN,
+    /// `Number.isFinite(value)`.
+    IsFinite,
+    /// `Number.isInteger(value)`.
+    IsInteger,
+    /// `Number.isSafeInteger(value)`.
+    IsSafeInteger,
+    /// Global `parseInt(s, radix)`; the radix is required.
+    ParseInt,
+    /// Global `parseFloat(s)`.
+    ParseFloat,
+    /// `value.toFixed(digits)` after an `f32` receiver is widened
+    /// exactly to `f64` by the checker.
+    ToFixed,
+}
+
+impl NumFn {
+    /// Every Q25 runtime operation in discriminant order.
+    pub const ALL: [NumFn; 7] = [
+        NumFn::IsNaN,
+        NumFn::IsFinite,
+        NumFn::IsInteger,
+        NumFn::IsSafeInteger,
+        NumFn::ParseInt,
+        NumFn::ParseFloat,
+        NumFn::ToFixed,
+    ];
+
+    /// Surface member/global name.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            NumFn::IsNaN => "isNaN",
+            NumFn::IsFinite => "isFinite",
+            NumFn::IsInteger => "isInteger",
+            NumFn::IsSafeInteger => "isSafeInteger",
+            NumFn::ParseInt => "parseInt",
+            NumFn::ParseFloat => "parseFloat",
+            NumFn::ToFixed => "toFixed",
+        }
+    }
+
+    /// Opaque runtime symbol shared by both tiers.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            NumFn::IsNaN => "sub_rt_num_is_nan",
+            NumFn::IsFinite => "sub_rt_num_is_finite",
+            NumFn::IsInteger => "sub_rt_num_is_integer",
+            NumFn::IsSafeInteger => "sub_rt_num_is_safe_integer",
+            NumFn::ParseInt => "sub_rt_num_parse_int",
+            NumFn::ParseFloat => "sub_rt_num_parse_float",
+            NumFn::ToFixed => "sub_rt_num_to_fixed",
+        }
+    }
+
+    /// Whether the runtime signature carries a trailing `pos_id` and
+    /// may trap for an out-of-range programmer argument.
+    #[must_use]
+    pub fn takes_pos_id(self) -> bool {
+        matches!(self, NumFn::ParseInt | NumFn::ToFixed)
+    }
+
+    /// Whether the result is an `i32` boolean representation.
+    #[must_use]
+    pub fn returns_bool(self) -> bool {
+        matches!(
+            self,
+            NumFn::IsNaN | NumFn::IsFinite | NumFn::IsInteger | NumFn::IsSafeInteger
+        )
+    }
+}
+
 /// `Date` intrinsic operations (stdlib.md §3): the accepted
 /// UTC-deterministic subset, lowered by both tiers to the opaque
 /// `sub_rt_date_*` runtime symbols. A `Date` value is `i64` epoch
@@ -1322,6 +1403,9 @@ pub enum Callee {
     Ambient(AmbientFn),
     /// A `Math.<fn>` ambient-namespace intrinsic (stdlib.md §1).
     Math(MathFn),
+    /// A `Number`, parsing, or `toFixed` intrinsic (stdlib.md §11,
+    /// Q25). `toFixed` carries its receiver as the first argument.
+    Num(NumFn),
     /// A `Date` intrinsic (stdlib.md §3): `new Date(ms)`, the `Date.UTC`
     /// / `Date.now` statics, the UTC accessors, and `toISOString`. For
     /// the instance operations the receiver is the first argument.
@@ -1519,6 +1603,19 @@ mod tests {
         assert_eq!(MathFn::Random.arity(), 0);
         assert_eq!(MathFn::Random.name(), "random");
         assert_eq!(MathFn::Log1p.name(), "log1p");
+    }
+
+    #[test]
+    fn num_fn_table_matches_the_section_11_contract() {
+        for (index, f) in NumFn::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, index, "NumFn::ALL out of order at {index}");
+            assert!(f.symbol().starts_with("sub_rt_num_"));
+        }
+        assert!(NumFn::IsNaN.returns_bool());
+        assert!(!NumFn::ParseFloat.returns_bool());
+        assert!(NumFn::ParseInt.takes_pos_id());
+        assert!(NumFn::ToFixed.takes_pos_id());
+        assert!(!NumFn::IsFinite.takes_pos_id());
     }
 
     #[test]

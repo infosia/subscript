@@ -25,6 +25,7 @@ pub mod ffi;
 pub mod fmt;
 mod half;
 pub mod math;
+pub mod num;
 pub mod strops;
 pub mod trap;
 

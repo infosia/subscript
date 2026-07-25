@@ -62,6 +62,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r43-map-iterable-constructor.ts", RuleCode::S014, 8),
     ("r44-map-container-key.ts", RuleCode::S014, 8),
     ("r45-map-nested-object-value.ts", RuleCode::S011, 8),
+    ("r46-number-global-isnan.ts", RuleCode::S014, 8),
+    ("r47-number-coercion.ts", RuleCode::S014, 8),
+    ("r48-number-to-precision.ts", RuleCode::S014, 9),
+    ("r49-number-to-string-radix.ts", RuleCode::S014, 9),
+    ("r50-parse-int-no-radix.ts", RuleCode::S014, 8),
 ];
 
 #[test]

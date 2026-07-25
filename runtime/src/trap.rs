@@ -54,6 +54,10 @@ pub enum TrapKind {
     /// pad that cannot reach the target length. JS returns NaN or a
     /// silent no-op in these cases; the language traps.
     StrRange = 14,
+    /// A `Number` operation received a programmer-error range
+    /// (stdlib.md §11, Q25): a `parseInt` radix outside 2–36 or a
+    /// `toFixed` digit count outside 0–100.
+    NumberRange = 15,
 }
 
 impl TrapKind {
@@ -75,6 +79,7 @@ impl TrapKind {
             12 => TrapKind::StaleCoroutine,
             13 => TrapKind::DateRange,
             14 => TrapKind::StrRange,
+            15 => TrapKind::NumberRange,
             _ => return None,
         })
     }
@@ -97,6 +102,7 @@ impl TrapKind {
             TrapKind::StaleCoroutine => "stale-coroutine-after-reload",
             TrapKind::DateRange => "date-range",
             TrapKind::StrRange => "string-range",
+            TrapKind::NumberRange => "number-range",
         }
     }
 }
@@ -138,7 +144,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=14u32 {
+        for v in 1..=15u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

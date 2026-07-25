@@ -7,8 +7,8 @@ use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
-    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, SetFn, StrFn,
-    TplPart, UnOp,
+    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, NumFn, SetFn,
+    StrFn, TplPart, UnOp,
 };
 use crate::types::{FuncType, Type};
 
@@ -445,6 +445,13 @@ impl<'p> Checker<'p> {
                          only `Math.<member>` is accepted (Q19)",
                         pos.clone(),
                     );
+                } else if name == "Number" {
+                    self.error(
+                        RuleCode::S014,
+                        "`Number` is an ambient namespace, not a value or coercion; \
+                         use `Number.<member>` (Q25)",
+                        pos.clone(),
+                    );
                 } else if name == "Date" {
                     // The ambient Date surface is a type and a namespace,
                     // never a value (Q20).
@@ -467,6 +474,20 @@ impl<'p> Checker<'p> {
                     self.error(
                         RuleCode::S100,
                         format!("ambient function `{}` may only be called", name),
+                        pos.clone(),
+                    );
+                } else if crate::ambient::number_global(&name).is_some() {
+                    self.error(
+                        RuleCode::S014,
+                        format!("`{name}` may only be called, not read as a value (Q25)"),
+                        pos.clone(),
+                    );
+                } else if name == "isNaN" || name == "isFinite" {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "the coercing global `{name}` is rejected; use `Number.{name}` (Q25)"
+                        ),
                         pos.clone(),
                     );
                 } else {
@@ -1237,6 +1258,12 @@ impl<'p> Checker<'p> {
         if name == "Math" && self.scope_item(&name).is_none() {
             return Some(self.check_math_member(prop, prop_pos, for_write));
         }
+        // `Number.<member>` (stdlib.md §11, Q25): predicate calls are
+        // intercepted by `check_method_call`; here constants fold and
+        // every other read/write receives the subset diagnostic.
+        if name == "Number" && self.scope_item(&name).is_none() {
+            return Some(self.check_number_member(prop, prop_pos, for_write));
+        }
         // `Date.<member>` (stdlib.md §3): the static function members
         // (`UTC`, `now`) are intercepted by `check_method_call` before
         // this point; here every member read is a rejection.
@@ -1395,6 +1422,162 @@ impl<'p> Checker<'p> {
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Math(f),
+                args,
+            },
+            ty: Type::F64,
+            pos,
+        }
+    }
+
+    /// True when `obj` is the unshadowed ambient `Number` namespace.
+    fn is_number_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+        let ast::Expr::Ident(id) = obj else {
+            return false;
+        };
+        if id.sym.as_ref() != "Number" {
+            return false;
+        }
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.vars.contains_key("Number"));
+        !shadowed && self.scope_item("Number").is_none()
+    }
+
+    /// A `Number` namespace member outside a call position: constants
+    /// fold to f64 literals; predicates are call-only; aliases and all
+    /// other members are rejected under Q25.
+    fn check_number_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
+        if for_write {
+            self.error(
+                RuleCode::S014,
+                format!("`Number.{prop}` is read-only (Q25)"),
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
+        if let Some(value) = crate::ambient::number_const(prop) {
+            return hir::Expr {
+                kind: ExprKind::Float(value),
+                ty: Type::F64,
+                pos: prop_pos,
+            };
+        }
+        if crate::ambient::number_predicate(prop).is_some() {
+            self.error(
+                RuleCode::S014,
+                format!("`Number.{prop}` may only be called, not read as a value (Q25)"),
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
+        let why = match prop {
+            "parseInt" | "parseFloat" => format!(
+                "`Number.{prop}` is rejected; use the global `{prop}` spelling (Q25)"
+            ),
+            _ => format!("`Number.{prop}` is outside the accepted Number subset (Q25)"),
+        };
+        self.error(RuleCode::S014, why, prop_pos.clone());
+        self.err_expr(prop_pos)
+    }
+
+    /// A `Number.is*` predicate call: exactly one `f64`, returning
+    /// boolean through the shared Q25 runtime.
+    fn check_number_predicate_call(
+        &mut self,
+        f: NumFn,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        if c.args.len() != 1 {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`Number.{}` takes exactly 1 f64 argument, got {} (Q25)",
+                    f.name(),
+                    c.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        let args = self.check_args(
+            &[ParamSig {
+                name: String::new(),
+                ty: Type::F64,
+                has_default: false,
+            }],
+            &c.args,
+            fx,
+            &pos,
+            &format!("Number.{}", f.name()),
+        );
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Num(f),
+                args,
+            },
+            ty: Type::Bool,
+            pos,
+        }
+    }
+
+    /// Global `parseInt` / `parseFloat` calls. Their arity is part of
+    /// Q25: in particular, parseInt's radix is required.
+    fn check_number_global_call(
+        &mut self,
+        f: NumFn,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let params: Vec<ParamSig> = match f {
+            NumFn::ParseInt => vec![
+                ParamSig {
+                    name: String::new(),
+                    ty: Type::Str,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: String::new(),
+                    ty: Type::I32,
+                    has_default: false,
+                },
+            ],
+            NumFn::ParseFloat => vec![ParamSig {
+                name: String::new(),
+                ty: Type::Str,
+                has_default: false,
+            }],
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    "internal Q25 parser identity mismatch",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+        };
+        if c.args.len() != params.len() {
+            let why = if f == NumFn::ParseInt && c.args.len() == 1 {
+                "`parseInt` requires an explicit radix (2–36, Q25)".to_string()
+            } else {
+                format!(
+                    "`{}` takes exactly {} argument(s), got {} (Q25)",
+                    f.name(),
+                    params.len(),
+                    c.args.len()
+                )
+            };
+            self.error(RuleCode::S014, why, pos.clone());
+            return self.err_expr(pos);
+        }
+        let args = self.check_args(&params, &c.args, fx, &pos, f.name());
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Num(f),
                 args,
             },
             ty: Type::F64,
@@ -1656,6 +1839,95 @@ impl<'p> Checker<'p> {
             format!("`{}` is outside the accepted Date subset (Q20)", name)
         };
         self.error(RuleCode::S014, why, pos);
+    }
+
+    /// A Q25 numeric receiver method. `toFixed` is accepted on
+    /// `f32`/`f64`; an f32 receiver is widened exactly in HIR so the
+    /// shared runtime has one f64 entry. Other Number formatting
+    /// methods and integer receivers are rejected.
+    fn check_number_method(
+        &mut self,
+        recv: hir::Expr,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        if name == "toFixed" {
+            if !matches!(&recv.ty, Type::F32 | Type::F64) {
+                self.error(
+                    RuleCode::S014,
+                    "`toFixed` is accepted only on `f32`/`f64` (Q25)",
+                    prop_pos,
+                );
+                return self.err_expr(pos);
+            }
+            if c.args.len() != 1 {
+                self.error(
+                    RuleCode::S014,
+                    format!(
+                        "`toFixed` takes exactly 1 i32 digit count, got {} (Q25)",
+                        c.args.len()
+                    ),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let digits = self.check_args(
+                &[ParamSig {
+                    name: String::new(),
+                    ty: Type::I32,
+                    has_default: false,
+                }],
+                &c.args,
+                fx,
+                &pos,
+                "toFixed",
+            );
+            let recv_pos = recv.pos.clone();
+            let recv = if recv.ty == Type::F32 {
+                hir::Expr {
+                    kind: ExprKind::Cast(Box::new(recv)),
+                    ty: Type::F64,
+                    pos: recv_pos,
+                }
+            } else {
+                recv
+            };
+            let mut args = Vec::with_capacity(2);
+            args.push(recv);
+            args.extend(digits);
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Num(NumFn::ToFixed),
+                    args,
+                },
+                ty: Type::Str,
+                pos,
+            };
+        }
+        if matches!(
+            name,
+            "toPrecision" | "toExponential" | "toLocaleString" | "toString"
+        ) {
+            let why = if name == "toString" {
+                "`toString(radix)` is rejected; use Q14 template interpolation \
+                 for base 10 (Q25)"
+                    .to_string()
+            } else {
+                format!("`{name}` is outside the accepted Number formatting subset (Q25)")
+            };
+            self.error(RuleCode::S014, why, prop_pos);
+            return self.err_expr(pos);
+        }
+        let type_name = self.type_name(&recv.ty);
+        self.error(
+            RuleCode::S100,
+            format!("`{type_name}` has no method `{name}`"),
+            prop_pos,
+        );
+        self.err_expr(pos)
     }
 
     /// A `String` method intrinsic call on a string receiver
@@ -2966,6 +3238,33 @@ impl<'p> Checker<'p> {
                 }
                 self.err_expr(prop_pos)
             }
+            ty if ty.is_numeric() => {
+                let known = matches!(
+                    name,
+                    "toFixed"
+                        | "toPrecision"
+                        | "toExponential"
+                        | "toLocaleString"
+                        | "toString"
+                );
+                if known {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "numeric method `{name}` may only appear in an accepted call \
+                             (`toFixed` on f32/f64; Q25)"
+                        ),
+                        prop_pos.clone(),
+                    );
+                } else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{}` has no member `{name}`", self.type_name(&ty)),
+                        prop_pos.clone(),
+                    );
+                }
+                self.err_expr(prop_pos)
+            }
             Type::Object => {
                 self.error(
                     RuleCode::S100,
@@ -3328,6 +3627,27 @@ impl<'p> Checker<'p> {
                     self.error(RuleCode::S002, "no dynamic code evaluation", pos.clone());
                     return self.err_expr(pos);
                 }
+                if let Some(f) = crate::ambient::number_global(&name) {
+                    return self.check_number_global_call(f, c, fx, pos);
+                }
+                if name == "Number" {
+                    self.error(
+                        RuleCode::S014,
+                        "`Number(x)` coercion is rejected; use explicit `as` conversion (Q25)",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if name == "isNaN" || name == "isFinite" {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "the coercing global `{name}` is rejected; use `Number.{name}` (Q25)"
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
                 if let Some(ambient) = crate::ambient::ambient_fn(&name) {
                     return self.check_ambient_call(ambient, c, fx, pos);
                 }
@@ -3493,6 +3813,13 @@ impl<'p> Checker<'p> {
                 return self.check_math_call(f, c, fx, pos);
             }
         }
+        // `Number.is*` (stdlib.md §11.1): accepted predicates are
+        // resolved before generic namespace-member handling.
+        if self.is_number_namespace(&m.obj, fx) {
+            if let Some(f) = crate::ambient::number_predicate(&name) {
+                return self.check_number_predicate_call(f, c, fx, pos);
+            }
+        }
         // `Date.UTC(…)` / `Date.now()` (stdlib.md §3): static intrinsic
         // calls, resolved before the generic namespace-member path.
         if self.is_date_namespace(&m.obj, fx) {
@@ -3523,6 +3850,9 @@ impl<'p> Checker<'p> {
         };
         match recv.ty.clone() {
             Type::Error => self.err_expr(pos),
+            ty if ty.is_numeric() => {
+                self.check_number_method(recv, &name, c, fx, pos, prop_pos)
+            }
             Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
                 self.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
@@ -3725,6 +4055,15 @@ impl<'p> Checker<'p> {
             self.error(
                 RuleCode::S013,
                 "`Promise` requires an event loop; the language has none",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        if name == "Number" && self.is_number_namespace(callee, fx) {
+            self.error(
+                RuleCode::S014,
+                "`new Number(x)` boxing/coercion is rejected; use an explicit sized \
+                 numeric type and `as` conversion (Q25)",
                 pos.clone(),
             );
             return self.err_expr(pos);

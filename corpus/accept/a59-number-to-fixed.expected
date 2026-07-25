@@ -1,0 +1,7 @@
+stored-half 1.00
+ties 3 -3
+signs 0.00 -0.00 -12.340
+padding 12.3400 0.500
+fallback 1e+21
+specials NaN Infinity -Infinity
+f32 1.3

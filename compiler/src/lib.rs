@@ -647,6 +647,39 @@ mod tests {
     }
 
     #[test]
+    fn number_q25_surface_types_and_rejections() {
+        check_one(
+            "export function main(): void {\n\
+               const parsed: f64 = parseInt(\"ff\", 16);\n\
+               const decimal: f64 = parseFloat(\"1.5tail\");\n\
+               const f: f32 = 1.25;\n\
+               print(`${Number.MAX_SAFE_INTEGER} ${Number.isNaN(Number.NaN)} \
+                        ${Number.isFinite(parsed)} ${Number.isInteger(decimal)} \
+                        ${Number.isSafeInteger(parsed)}`);\n\
+               print(f.toFixed(1));\n\
+             }\n",
+        )
+        .expect("accepted Q25 surface");
+
+        for body in [
+            "isNaN(1.0);",
+            "isFinite(1.0);",
+            "Number(1.0);",
+            "Number.parseInt(\"1\", 10);",
+            "(1.0 as f64).toPrecision(2);",
+            "(1.0 as f64).toString(16);",
+            "parseInt(\"1\");",
+        ] {
+            let err = check_one(&format!(
+                "export function main(): void {{\n  {body}\n}}\n"
+            ))
+            .unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
+            assert!(err[0].message.contains("Q25"), "{body}: {}", err[0].message);
+        }
+    }
+
+    #[test]
     fn map_get_is_nullable_only_for_reference_values() {
         let module = check_one(
             "class C { x: i32; constructor() { this.x = 1; } }\n\

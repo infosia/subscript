@@ -266,6 +266,44 @@ fn string_methods_match_across_tiers_without_a_golden() {
     );
 }
 
+/// Asserts a Q25 programmer-error range trap has the same
+/// kind/message/position tuple on the dev-JIT and ship-C-AOT tiers.
+fn assert_number_range_trap_identical(src: &str, line: u32) {
+    let files = [SourceFile::new("test.ts", src)];
+    let mut reports = Vec::new();
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
+        match result {
+            Err(RunError::Trap(report)) => {
+                assert_eq!(report.rule, TrapKind::NumberRange, "{tier}");
+                assert_eq!(report.pos.file, "test.ts", "{tier}");
+                assert_eq!(report.pos.line, line, "{tier}");
+                reports.push((report.rule, report.message, report.pos));
+            }
+            other => panic!("{tier}: expected a NumberRange trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
+fn parse_int_out_of_range_radix_traps_identically() {
+    assert_number_range_trap_identical(
+        "export function main(): void {\n  print(`${parseInt(\"10\", 1)}`);\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn to_fixed_out_of_range_digits_trap_identically() {
+    assert_number_range_trap_identical(
+        "export function main(): void {\n  print((1.0).toFixed(101));\n}\n",
+        2,
+    );
+}
+
 #[test]
 fn array_trapping_map_callback_reports_identically_across_tiers() {
     // stdlib.md §9 gate: a callback that traps mid-`map` (an OOB index

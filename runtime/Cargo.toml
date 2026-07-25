@@ -9,3 +9,5 @@ description = "The subscript runtime shared by both execution tiers: Context mem
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+num-bigint = "0.4.8"
+num-traits = "0.2.19"

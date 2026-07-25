@@ -2088,6 +2088,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos),
             hir::Callee::Math(f) => self.eval_math(*f, args),
+            hir::Callee::Num(f) => self.eval_num(*f, args, pos),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos),
             hir::Callee::Str(f) => self.eval_str(*f, args, pos),
             hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos),
@@ -2759,6 +2760,44 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let res = self.call_rt(self.ml.rt.math[f as usize], &argv, false)?;
         res.map(RV::S)
             .ok_or_else(|| internal(format!("Math.{} result", f.name())))
+    }
+
+    /// Lowers a Q25 Number/parser/toFixed intrinsic to its opaque
+    /// runtime symbol. The checker fixes every arity and widens an f32
+    /// toFixed receiver to f64 before this point.
+    fn eval_num(
+        &mut self,
+        f: hir::NumFn,
+        args: &[hir::Expr],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        use hir::NumFn as N;
+        let expected = match f {
+            N::IsNaN | N::IsFinite | N::IsInteger | N::IsSafeInteger | N::ParseFloat => 1,
+            N::ParseInt | N::ToFixed => 2,
+            other => return Err(internal(format!("unknown NumFn {other:?}"))),
+        };
+        if args.len() != expected {
+            return Err(internal(format!("{} arity", f.name())));
+        }
+        let mut argv = vec![self.ctx_v];
+        for arg in args {
+            let value = self.eval(arg)?;
+            argv.push(self.expect_s(value)?);
+        }
+        if f.takes_pos_id() {
+            let pid = self.pos_id(pos);
+            argv.push(self.iconst(types::I32, pid));
+        }
+        let traps = f.takes_pos_id();
+        let result = self
+            .call_rt(self.ml.rt.num[f as usize], &argv, traps)?
+            .ok_or_else(|| internal(format!("{} result", f.name())))?;
+        Ok(RV::S(if f.returns_bool() {
+            self.b.ins().icmp_imm(IntCC::NotEqual, result, 0)
+        } else {
+            result
+        }))
     }
 
     /// Lowers a `Date` intrinsic (stdlib.md §3) to its opaque

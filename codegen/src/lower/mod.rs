@@ -107,6 +107,9 @@ pub(crate) struct RtFns {
     /// `sub_rt_math_*` imports (stdlib.md §1), indexed by
     /// `hir::MathFn as usize` (the [`hir::MathFn::ALL`] order).
     pub math: [FuncId; hir::MathFn::ALL.len()],
+    /// `sub_rt_num_*` imports (stdlib.md §11, Q25), indexed by
+    /// [`hir::NumFn::ALL`] discriminant order.
+    pub num: [FuncId; hir::NumFn::ALL.len()],
     /// `sub_rt_date_utc` (stdlib.md §3): 7 `i32` components + pos id → i64.
     pub date_utc: FuncId,
     /// `sub_rt_date_new`: ms + pos id → range-checked ms.
@@ -433,6 +436,25 @@ fn declare_rt<M: Module>(
     let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
         .try_into()
         .map_err(|_| internal("math import table size"))?;
+    // Number predicates, parsers, and toFixed (stdlib.md §11, Q25).
+    // Every import starts with Context and is opaque to both tiers.
+    let mut num_ids: Vec<FuncId> = Vec::with_capacity(hir::NumFn::ALL.len());
+    for f in hir::NumFn::ALL {
+        use hir::NumFn as N;
+        let (params, ret): (&[types::Type], Option<types::Type>) = match f {
+            N::IsNaN | N::IsFinite | N::IsInteger | N::IsSafeInteger => {
+                (&[I64, F64], Some(I32))
+            }
+            N::ParseInt => (&[I64, I64, I32, I32], Some(F64)),
+            N::ParseFloat => (&[I64, I64], Some(F64)),
+            N::ToFixed => (&[I64, F64, I32, I32], Some(I64)),
+            other => return Err(internal(format!("unknown NumFn {other:?}"))),
+        };
+        num_ids.push(mk(f.symbol(), params, ret)?);
+    }
+    let num: [FuncId; hir::NumFn::ALL.len()] = num_ids
+        .try_into()
+        .map_err(|_| internal("Number import table size"))?;
     // String method imports (stdlib.md §8): one opaque symbol per
     // accepted method, `(ctx, recv, params…[, pos_id])`, in StrFn::ALL
     // order so `f as usize` indexes the table. The signature is built
@@ -587,6 +609,7 @@ fn declare_rt<M: Module>(
         // as two words, then the two userdata slots) is unused.
         cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
         math,
+        num,
         // Date intrinsics (stdlib.md §3): opaque symbols on both tiers.
         date_utc: mk(
             "sub_rt_date_utc",

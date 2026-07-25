@@ -976,6 +976,10 @@ dependencies = [
 [[package]]
 name = "subscript-runtime"
 version = "0.1.0"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+]
 
 [[package]]
 name = "subscript-runtime-stub"
