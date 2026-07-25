@@ -932,6 +932,222 @@ impl ArrFn {
     }
 }
 
+/// The hash/equality kind of a monomorphized `Map` / `Set` key (Q24).
+///
+/// The stable codes are an ABI contract with
+/// `runtime::assocops::KeyKind`; concrete byte width is supplied
+/// separately by each codegen tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AssocKeyKind {
+    /// Sized integer, boolean, enum, or `Date` bits.
+    Bits,
+    /// IEEE `f32` (`===`; `NaN` never matches).
+    F32,
+    /// IEEE `f64` (`===`; `NaN` never matches).
+    F64,
+    /// String content over UTF-8 bytes.
+    Str,
+    /// Reference-class identity.
+    Ref,
+}
+
+impl AssocKeyKind {
+    /// Stable runtime ABI code.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            AssocKeyKind::Bits => 0,
+            AssocKeyKind::F32 => 1,
+            AssocKeyKind::F64 => 2,
+            AssocKeyKind::Str => 3,
+            AssocKeyKind::Ref => 4,
+        }
+    }
+
+    /// Returns the Q24 key kind of `ty`, or `None` when it is outside
+    /// the whitelist. `is_value_class` supplies the program's nominal
+    /// class-kind lookup.
+    #[must_use]
+    pub fn of(ty: &Type, is_value_class: &dyn Fn(ClassId) -> bool) -> Option<AssocKeyKind> {
+        Some(match ty {
+            Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::I32
+            | Type::U32
+            | Type::I64
+            | Type::U64
+            | Type::Bool
+            | Type::Enum(_)
+            | Type::Date => AssocKeyKind::Bits,
+            Type::F32 => AssocKeyKind::F32,
+            Type::F64 => AssocKeyKind::F64,
+            Type::Str => AssocKeyKind::Str,
+            Type::Class(id) if !is_value_class(*id) => AssocKeyKind::Ref,
+            Type::Map(..) | Type::Set(_) => AssocKeyKind::Ref,
+            _ => return None,
+        })
+    }
+}
+
+/// `Map<K, V>` intrinsic operations (stdlib.md §10, Q24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum MapFn {
+    /// `new Map<K, V>()`.
+    New,
+    /// `size`.
+    Size,
+    /// `get(k)`.
+    Get,
+    /// `getOr(k, fallback)`.
+    GetOr,
+    /// `set(k, v)`.
+    Set,
+    /// `has(k)`.
+    Has,
+    /// `delete(k)`.
+    Delete,
+    /// `clear()`.
+    Clear,
+    /// `forEach(f)`.
+    ForEach,
+}
+
+impl MapFn {
+    /// Every accepted operation, in discriminant order.
+    pub const ALL: [MapFn; 9] = [
+        MapFn::New,
+        MapFn::Size,
+        MapFn::Get,
+        MapFn::GetOr,
+        MapFn::Set,
+        MapFn::Has,
+        MapFn::Delete,
+        MapFn::Clear,
+        MapFn::ForEach,
+    ];
+
+    /// Surface spelling.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            MapFn::New => "Map",
+            MapFn::Size => "size",
+            MapFn::Get => "get",
+            MapFn::GetOr => "getOr",
+            MapFn::Set => "set",
+            MapFn::Has => "has",
+            MapFn::Delete => "delete",
+            MapFn::Clear => "clear",
+            MapFn::ForEach => "forEach",
+        }
+    }
+
+    /// Opaque runtime symbol.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            MapFn::New => "sub_rt_map_new",
+            MapFn::Size => "sub_rt_map_size",
+            MapFn::Get => "sub_rt_map_get",
+            MapFn::GetOr => "sub_rt_map_get_or",
+            MapFn::Set => "sub_rt_map_set",
+            MapFn::Has => "sub_rt_map_has",
+            MapFn::Delete => "sub_rt_map_delete",
+            MapFn::Clear => "sub_rt_map_clear",
+            MapFn::ForEach => "sub_rt_map_for_each",
+        }
+    }
+
+    /// True when the operation may allocate Context memory.
+    #[must_use]
+    pub fn allocates(self) -> bool {
+        matches!(self, MapFn::New | MapFn::Set)
+    }
+
+    /// True when generated code must check the trap flag afterward.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        self.allocates() || self == MapFn::ForEach
+    }
+}
+
+/// `Set<K>` intrinsic operations (stdlib.md §10, Q24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SetFn {
+    /// `new Set<K>()`.
+    New,
+    /// `size`.
+    Size,
+    /// `add(k)`.
+    Add,
+    /// `has(k)`.
+    Has,
+    /// `delete(k)`.
+    Delete,
+    /// `clear()`.
+    Clear,
+    /// `forEach(f)`.
+    ForEach,
+}
+
+impl SetFn {
+    /// Every accepted operation, in discriminant order.
+    pub const ALL: [SetFn; 7] = [
+        SetFn::New,
+        SetFn::Size,
+        SetFn::Add,
+        SetFn::Has,
+        SetFn::Delete,
+        SetFn::Clear,
+        SetFn::ForEach,
+    ];
+
+    /// Surface spelling.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            SetFn::New => "Set",
+            SetFn::Size => "size",
+            SetFn::Add => "add",
+            SetFn::Has => "has",
+            SetFn::Delete => "delete",
+            SetFn::Clear => "clear",
+            SetFn::ForEach => "forEach",
+        }
+    }
+
+    /// Opaque runtime symbol.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            SetFn::New => "sub_rt_set_new",
+            SetFn::Size => "sub_rt_set_size",
+            SetFn::Add => "sub_rt_set_add",
+            SetFn::Has => "sub_rt_set_has",
+            SetFn::Delete => "sub_rt_set_delete",
+            SetFn::Clear => "sub_rt_set_clear",
+            SetFn::ForEach => "sub_rt_set_for_each",
+        }
+    }
+
+    /// True when the operation may allocate Context memory.
+    #[must_use]
+    pub fn allocates(self) -> bool {
+        matches!(self, SetFn::New | SetFn::Add)
+    }
+
+    /// True when generated code must check the trap flag afterward.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        self.allocates() || self == SetFn::ForEach
+    }
+}
+
 /// The marshaling kind of an array element type (stdlib.md §9): what
 /// the runtime needs to (a) compare two elements under `===` semantics
 /// and (b) pass one element by value to a script callback. The byte
@@ -991,7 +1207,9 @@ impl ArrElemKind {
             | Type::U32
             | Type::U64
             | Type::Object
-            | Type::Array(_) => ArrElemKind::Int,
+            | Type::Array(_)
+            | Type::Map(..)
+            | Type::Set(_) => ArrElemKind::Int,
             Type::I8
             | Type::I16
             | Type::I32
@@ -1118,6 +1336,10 @@ pub enum Callee {
     /// time (`join` separator, `slice`/`fill` range). For `reduce` the
     /// argument order is `[receiver, callback, init]`.
     Arr(ArrFn),
+    /// A `Map<K, V>` operation intrinsic (stdlib.md §10, Q24).
+    Map(MapFn),
+    /// A `Set<K>` operation intrinsic (stdlib.md §10, Q24).
+    Set(SetFn),
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members

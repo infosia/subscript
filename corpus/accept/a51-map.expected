@@ -1,0 +1,7 @@
+set receiver true
+numbers 2 true 11 -1
+delete true false 1
+get false true
+vector 3,4 true
+clear 0 false
+collected

@@ -573,6 +573,111 @@ mod tests {
     }
 
     #[test]
+    fn map_set_key_whitelist_rejections_name_q24() {
+        for key in [
+            "f16",
+            "i32[]",
+            "FixedArray<i32, 2>",
+            "object",
+            "(x: i32) => i32",
+            "C | null",
+            "void",
+        ] {
+            let src = format!(
+                "class C {{ x: i32; constructor() {{ this.x = 1; }} }}\n\
+                 export function main(): void {{\n\
+                   const map: Map<{key}, i32> = new Map<{key}, i32>();\n\
+                   print(`${{map.size}}`);\n\
+                 }}\n"
+            );
+            let err = check_one(&src).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{key}: {err:?}");
+            assert!(err[0].message.contains("Q24"), "{key}: {}", err[0].message);
+        }
+        let err = check_one(
+            "@CStruct\nclass V { x: i32; constructor() { this.x = 1; } }\n\
+             export function main(): void {\n\
+               const set: Set<V> = new Set<V>();\n\
+               print(`${set.size}`);\n\
+             }\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("Q24"));
+    }
+
+    #[test]
+    fn literal_nan_key_is_rejected_but_computed_nan_is_accepted() {
+        let err = check_one(
+            "export function main(): void {\n\
+               const map: Map<f64, i32> = new Map<f64, i32>();\n\
+               map.set(NaN, 1);\n\
+               print(`${map.size}`);\n\
+             }\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("Q24"));
+        check_one(
+            "export function main(): void {\n\
+               const map: Map<f64, i32> = new Map<f64, i32>();\n\
+               const zero: f64 = 0.0;\n\
+               const nan: f64 = zero / zero;\n\
+               map.set(nan, 1);\n\
+               print(`${map.has(nan)} ${map.size}`);\n\
+             }\n",
+        )
+        .expect("computed NaN key is accepted");
+    }
+
+    #[test]
+    fn map_get_is_nullable_only_for_reference_values() {
+        let module = check_one(
+            "class C { x: i32; constructor() { this.x = 1; } }\n\
+             export function main(): void {\n\
+               const map: Map<string, C> = new Map<string, C>();\n\
+               const value = map.get(\"x\");\n\
+               print(`${value === null}`);\n\
+             }\n",
+        )
+        .expect("reference-valued get checks");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Let { ty, .. } = &main.body[1] else {
+            panic!("expected get binding");
+        };
+        assert!(matches!(ty, Type::Nullable(inner) if matches!(**inner, Type::Class(_))));
+
+        let err = check_one(
+            "export function main(): void {\n\
+               const map: Map<i32, i32> = new Map<i32, i32>();\n\
+               print(`${map.get(1)}`);\n\
+             }\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("getOr"));
+    }
+
+    #[test]
+    fn map_set_iterator_and_es2024_surfaces_are_s014_q24() {
+        for body in [
+            "const map: Map<i32, i32> = new Map<i32, i32>();\n  for (const pair of map) {}",
+            "const set: Set<i32> = new Set<i32>();\n  const values: Set<i32>[] = [...set];",
+            "const set: Set<i32> = new Set<i32>();\n  set.union(set);",
+            "Map.groupBy([1], (value: i32): i32 => value);",
+        ] {
+            let src = format!("export function main(): void {{\n  {body}\n}}\n");
+            let err = check_one(&src).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
+            assert!(err[0].message.contains("Q24"), "{body}: {}", err[0].message);
+        }
+    }
+
+    #[test]
     fn capturing_lambda_may_not_capture_mutable_locals() {
         let err = check_one(
             "export function main(): void {\n  let n: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + n;\n  print(`${f(1)}`);\n}\n",

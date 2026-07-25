@@ -63,6 +63,14 @@ pub const CLASS_ARRAY: u32 = 0xFFFF_FF02;
 pub const CLASS_ARRAY_DATA: u32 = 0xFFFF_FF03;
 /// Class id used for coroutine frames.
 pub const CLASS_GENERATOR: u32 = 0xFFFF_FF04;
+/// Class id used for `Map` headers.
+pub const CLASS_MAP: u32 = 0xFFFF_FF05;
+/// Class id used for `Set` headers.
+pub const CLASS_SET: u32 = 0xFFFF_FF06;
+/// Class id used for insertion-ordered Map/Set entry storage.
+pub const CLASS_MAP_DATA: u32 = 0xFFFF_FF07;
+/// Class id used for Map/Set open-addressed bucket storage.
+pub const CLASS_MAP_INDEX: u32 = 0xFFFF_FF08;
 
 // ----- ship-tier arena (§8.1b) -----
 
@@ -739,6 +747,42 @@ impl Context {
     /// its record dropped. A double delete or unknown pointer is
     /// undefined (Q6/§8.1b) and handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
+        // Map/Set own separate Context allocations for their ordered
+        // entries and bucket index. Retire those eagerly before the
+        // header itself, matching clear()/unsafeDelete (§10.7). Resolve
+        // the class only through the tier's exact live-membership data;
+        // never inspect an unknown pointer.
+        let class_id = if self.release_on_delete {
+            if let Some((block, _)) = self.arena_lookup_block(payload) {
+                // SAFETY: `block` is an owned live-grid block; read the
+                // class id only when its state says live.
+                unsafe {
+                    ((block as *const u64).read() == LIVE_STATE)
+                        .then(|| (block.add(8) as *const u32).read())
+                }
+            } else {
+                self.large.get(&payload).and_then(|a| {
+                    // SAFETY: `a.base` heads an owned large allocation.
+                    unsafe {
+                        ((a.base as *const u64).read() == LIVE_STATE)
+                            .then(|| (a.base.add(8) as *const u32).read())
+                    }
+                })
+            }
+        } else {
+            self.allocations.get(&payload).and_then(|a| {
+                if !a.live {
+                    return None;
+                }
+                // SAFETY: a live allocation owns its header.
+                Some(unsafe { (a.base.add(8) as *const u32).read() })
+            })
+        };
+        if matches!(class_id, Some(CLASS_MAP | CLASS_SET)) {
+            // SAFETY: the live class-id check above proves this payload is
+            // an AssocHeader of this Context.
+            unsafe { crate::assocops::clear(self, payload as *mut u8) };
+        }
         if self.release_on_delete {
             self.arena_release(payload);
             return;

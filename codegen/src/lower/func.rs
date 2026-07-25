@@ -2091,6 +2091,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Date(f) => self.eval_date(*f, args, pos),
             hir::Callee::Str(f) => self.eval_str(*f, args, pos),
             hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos),
+            hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos),
+            hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -3008,6 +3010,227 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.load_val(ret_ty, slot, 0)
             }
             other => Err(internal(format!("unknown ArrFn {other:?}"))),
+        }
+    }
+
+    /// Lowers one monomorphized `Map<K, V>` operation (Q24). Concrete
+    /// widths and key kind reach the runtime on construction; ordinary
+    /// values cross the opaque ABI by pointer.
+    fn eval_map(
+        &mut self,
+        f: hir::MapFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        use hir::MapFn as F;
+        let (key, value) = match f {
+            F::New => match ret_ty {
+                Type::Map(key, value) => ((**key).clone(), (**value).clone()),
+                other => return Err(internal(format!("Map constructor result {other:?}"))),
+            },
+            _ => match args.first().map(|arg| &arg.ty) {
+                Some(Type::Map(key, value)) => ((**key).clone(), (**value).clone()),
+                other => return Err(internal(format!("Map receiver {other:?}"))),
+            },
+        };
+        let rt = self.ml.rt.map_ops[f as usize];
+        let checked = f.can_trap();
+        if f == F::New {
+            let (key_size, _) = self.ml.layouts.size_align(&key)?;
+            let (value_size, _) = self.ml.layouts.size_align(&value)?;
+            let kind = crate::layout::assoc_key_kind(self.ml.hir, &key)?;
+            let pos_id = self.pos_id(pos);
+            let argv = [
+                self.ctx_v,
+                self.iconst(types::I64, i64::from(key_size)),
+                self.iconst(types::I64, i64::from(value_size)),
+                self.iconst(types::I32, i64::from(kind.code())),
+                self.iconst(types::I32, i64::from(pos_id)),
+            ];
+            let result = self.call_rt(rt, &argv, checked)?;
+            return result
+                .map(RV::S)
+                .ok_or_else(|| internal("Map constructor result"));
+        }
+        let recv = args
+            .first()
+            .ok_or_else(|| internal("Map operation receiver"))?;
+        let recv_rv = self.eval(recv)?;
+        let handle = self.expect_s(recv_rv)?;
+        let arg = |index: usize| {
+            args.get(index)
+                .ok_or_else(|| internal(format!("Map.{} arity", f.name())))
+        };
+        match f {
+            F::Size => {
+                let result = self.call_rt(rt, &[handle], false)?;
+                result.map(RV::S).ok_or_else(|| internal("Map.size result"))
+            }
+            F::Get => {
+                let key_rv = self.eval(arg(1)?)?;
+                let key_ptr = self.materialize(key_rv, &key)?;
+                let (size, align) = self.ml.layouts.size_align(&value)?;
+                let out = self.temp_slot(size.max(8), align.max(8));
+                self.zero_bytes(out, size.max(8), align.max(8));
+                self.call_rt(rt, &[self.ctx_v, handle, key_ptr, out], false)?;
+                self.load_val(&value, out, 0)
+            }
+            F::GetOr => {
+                let key_rv = self.eval(arg(1)?)?;
+                let key_ptr = self.materialize(key_rv, &key)?;
+                let fallback_rv = self.eval(arg(2)?)?;
+                let fallback = self.materialize(fallback_rv, &value)?;
+                let (size, align) = self.ml.layouts.size_align(&value)?;
+                let out = self.temp_slot(size.max(8), align.max(8));
+                self.call_rt(
+                    rt,
+                    &[self.ctx_v, handle, key_ptr, fallback, out],
+                    false,
+                )?;
+                self.load_val(&value, out, 0)
+            }
+            F::Set => {
+                let key_rv = self.eval(arg(1)?)?;
+                let key_ptr = self.materialize(key_rv, &key)?;
+                let value_rv = self.eval(arg(2)?)?;
+                let value_ptr = self.materialize(value_rv, &value)?;
+                let pos_id = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, i64::from(pos_id));
+                self.call_rt(
+                    rt,
+                    &[self.ctx_v, handle, key_ptr, value_ptr, pos_v],
+                    checked,
+                )?;
+                Ok(RV::S(handle))
+            }
+            F::Has | F::Delete => {
+                let key_rv = self.eval(arg(1)?)?;
+                let key_ptr = self.materialize(key_rv, &key)?;
+                let result =
+                    self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
+                let result =
+                    result.ok_or_else(|| internal(format!("Map.{} result", f.name())))?;
+                Ok(RV::S(
+                    self.b.ins().icmp_imm(IntCC::NotEqual, result, 0),
+                ))
+            }
+            F::Clear => {
+                self.call_rt(rt, &[self.ctx_v, handle], false)?;
+                Ok(RV::None)
+            }
+            F::ForEach => {
+                let callback = self.eval(arg(1)?)?;
+                let (code, env) = self.expect_p(callback)?;
+                let bridge_id = define_assoc_bridge(self.ml, &key, Some(&value))?;
+                let bridge_ref = self
+                    .ml
+                    .module
+                    .declare_func_in_func(bridge_id, self.b.func);
+                let bridge = self.b.ins().func_addr(types::I64, bridge_ref);
+                self.call_rt(
+                    rt,
+                    &[self.ctx_v, handle, code, env, bridge],
+                    checked,
+                )?;
+                Ok(RV::None)
+            }
+            F::New => Err(internal("Map.New reached receiver lowering")),
+            other => Err(internal(format!("unknown MapFn {other:?}"))),
+        }
+    }
+
+    /// Lowers one monomorphized `Set<K>` operation (Q24).
+    fn eval_set(
+        &mut self,
+        f: hir::SetFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        use hir::SetFn as F;
+        let key = match f {
+            F::New => match ret_ty {
+                Type::Set(key) => (**key).clone(),
+                other => return Err(internal(format!("Set constructor result {other:?}"))),
+            },
+            _ => match args.first().map(|arg| &arg.ty) {
+                Some(Type::Set(key)) => (**key).clone(),
+                other => return Err(internal(format!("Set receiver {other:?}"))),
+            },
+        };
+        let rt = self.ml.rt.set_ops[f as usize];
+        let checked = f.can_trap();
+        if f == F::New {
+            let (key_size, _) = self.ml.layouts.size_align(&key)?;
+            let kind = crate::layout::assoc_key_kind(self.ml.hir, &key)?;
+            let pos_id = self.pos_id(pos);
+            let argv = [
+                self.ctx_v,
+                self.iconst(types::I64, i64::from(key_size)),
+                self.iconst(types::I32, i64::from(kind.code())),
+                self.iconst(types::I32, i64::from(pos_id)),
+            ];
+            let result = self.call_rt(rt, &argv, checked)?;
+            return result
+                .map(RV::S)
+                .ok_or_else(|| internal("Set constructor result"));
+        }
+        let recv = args
+            .first()
+            .ok_or_else(|| internal("Set operation receiver"))?;
+        let recv_rv = self.eval(recv)?;
+        let handle = self.expect_s(recv_rv)?;
+        let arg = |index: usize| {
+            args.get(index)
+                .ok_or_else(|| internal(format!("Set.{} arity", f.name())))
+        };
+        match f {
+            F::Size => {
+                let result = self.call_rt(rt, &[handle], false)?;
+                result.map(RV::S).ok_or_else(|| internal("Set.size result"))
+            }
+            F::Add => {
+                let key_rv = self.eval(arg(1)?)?;
+                let key_ptr = self.materialize(key_rv, &key)?;
+                let pos_id = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, i64::from(pos_id));
+                self.call_rt(rt, &[self.ctx_v, handle, key_ptr, pos_v], checked)?;
+                Ok(RV::S(handle))
+            }
+            F::Has | F::Delete => {
+                let key_rv = self.eval(arg(1)?)?;
+                let key_ptr = self.materialize(key_rv, &key)?;
+                let result =
+                    self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
+                let result =
+                    result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
+                Ok(RV::S(
+                    self.b.ins().icmp_imm(IntCC::NotEqual, result, 0),
+                ))
+            }
+            F::Clear => {
+                self.call_rt(rt, &[self.ctx_v, handle], false)?;
+                Ok(RV::None)
+            }
+            F::ForEach => {
+                let callback = self.eval(arg(1)?)?;
+                let (code, env) = self.expect_p(callback)?;
+                let bridge_id = define_assoc_bridge(self.ml, &key, None)?;
+                let bridge_ref = self
+                    .ml
+                    .module
+                    .declare_func_in_func(bridge_id, self.b.func);
+                let bridge = self.b.ins().func_addr(types::I64, bridge_ref);
+                self.call_rt(
+                    rt,
+                    &[self.ctx_v, handle, code, env, bridge],
+                    checked,
+                )?;
+                Ok(RV::None)
+            }
+            F::New => Err(internal("Set.New reached receiver lowering")),
+            other => Err(internal(format!("unknown SetFn {other:?}"))),
         }
     }
 
@@ -4140,6 +4363,75 @@ fn define_lambda<M: Module>(
         }
         body.lower_stmts(stmts)?;
         body.finish()?;
+    }
+    ml.module
+        .define_function(id, &mut cctx)
+        .map_err(|e| internal(format!("define {name}: {e}")))?;
+    ml.module.clear_context(&mut cctx);
+    Ok(id)
+}
+
+/// Defines a fixed-ABI runtime→script bridge for one Map/Set forEach
+/// call. The runtime always supplies pointers to stored bytes; this
+/// bridge loads the concrete monomorphized values and invokes the actual
+/// `(ctx, env, value, key)` / `(ctx, env, key)` script callback.
+fn define_assoc_bridge<M: Module>(
+    ml: &mut ModLower<M>,
+    key: &Type,
+    value: Option<&Type>,
+) -> Result<cranelift_module::FuncId, String> {
+    let mut bridge_sig = Signature::new(ml.call_conv);
+    let fixed_params = if value.is_some() { 5 } else { 4 };
+    for _ in 0..fixed_params {
+        bridge_sig.params.push(AbiParam::new(types::I64));
+    }
+    let name = format!("ss_assoc_bridge{}", ml.lambda_count);
+    ml.lambda_count += 1;
+    let id = ml
+        .module
+        .declare_function(&name, cranelift_module::Linkage::Local, &bridge_sig)
+        .map_err(|e| internal(format!("declare {name}: {e}")))?;
+    let script_params = match value {
+        Some(value) => vec![value.clone(), key.clone()],
+        None => vec![key.clone()],
+    };
+    let script_sig = ml.make_sig(&script_params, &Type::Void, true, false)?;
+    let mut cctx = ml.module.make_context();
+    cctx.func.signature = bridge_sig;
+    let mut fbx = FunctionBuilderContext::new();
+    {
+        let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+        let entry = b.create_block();
+        b.append_block_params_for_function_params(entry);
+        b.switch_to_block(entry);
+        let fixed = b.block_params(entry).to_vec();
+        let ctx = fixed[0];
+        let code = fixed[1];
+        let env = fixed[2];
+        let pointers: Vec<Value> = if value.is_some() {
+            vec![fixed[3], fixed[4]]
+        } else {
+            vec![fixed[3]]
+        };
+        let mut argv = vec![ctx, env];
+        for (ty, pointer) in script_params.iter().zip(pointers) {
+            match ml.layouts.repr(ty)? {
+                Repr::None => {}
+                Repr::Scalar(repr) => {
+                    argv.push(b.ins().load(repr, flags(), pointer, 0));
+                }
+                Repr::Pair => {
+                    argv.push(b.ins().load(types::I64, flags(), pointer, 0));
+                    argv.push(b.ins().load(types::I64, flags(), pointer, 8));
+                }
+                Repr::Agg { .. } => argv.push(pointer),
+            }
+        }
+        let sigref = b.import_signature(script_sig);
+        b.ins().call_indirect(sigref, code, &argv);
+        b.ins().return_(&[]);
+        b.seal_all_blocks();
+        b.finalize();
     }
     ml.module
         .define_function(id, &mut cctx)

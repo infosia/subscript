@@ -359,6 +359,60 @@ fn array_callback_growth_during_iteration_is_defined_on_both_tiers() {
 }
 
 #[test]
+fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
+    let accept =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
+    for id in [
+        "a51-map",
+        "a52-map-order",
+        "a53-set",
+        "a54-map-reference-key",
+        "a55-map-set-foreach",
+    ] {
+        let path = accept.join(format!("{id}.ts"));
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let sources = [SourceFile::new(format!("{id}.ts"), source)];
+        let jit = run_jit(&sources).unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
+        let ship =
+            run_c_aot(&sources).unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
+        assert_eq!(
+            jit,
+            ship,
+            "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
+            String::from_utf8_lossy(&jit),
+            String::from_utf8_lossy(&ship)
+        );
+    }
+}
+
+#[test]
+fn map_and_set_trapping_foreach_callbacks_report_identically() {
+    for src in [
+        "export function main(): void {\n  const probe: i32[] = [7];\n  const map: Map<i32, i32> = new Map<i32, i32>();\n  map.set(1, 1);\n  map.forEach((value: i32, key: i32): void => { print(`${probe[value + key]}`); });\n}\n",
+        "export function main(): void {\n  const probe: i32[] = [7];\n  const set: Set<i32> = new Set<i32>();\n  set.add(1);\n  set.forEach((key: i32): void => { print(`${probe[key + 1]}`); });\n}\n",
+    ] {
+        let files = [SourceFile::new("test.ts", src)];
+        let mut reports = Vec::new();
+        for (tier, result) in [
+            ("dev-JIT", run_jit(&files)),
+            ("ship-C-AOT", run_c_aot(&files)),
+        ] {
+            match result {
+                Err(RunError::Trap(t)) => {
+                    assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
+                    assert_eq!(t.pos.file, "test.ts", "{tier}");
+                    assert_eq!(t.pos.line, 5, "{tier}");
+                    reports.push((t.rule, t.message, t.pos));
+                }
+                other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
+            }
+        }
+        assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    }
+}
+
+#[test]
 fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
     // stdlib.md §9: the in-place methods return the receiver. Mutating
     // through the returned handle must be visible through the original

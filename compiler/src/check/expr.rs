@@ -7,7 +7,8 @@ use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
-    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MathFn, StrFn, TplPart, UnOp,
+    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, SetFn, StrFn,
+    TplPart, UnOp,
 };
 use crate::types::{FuncType, Type};
 
@@ -31,6 +32,24 @@ fn literalish(e: &ast::Expr) -> bool {
         ast::Expr::Lit(ast::Lit::Num(_)) => true,
         ast::Expr::Paren(p) => literalish(&p.expr),
         ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => literalish(&u.arg),
+        _ => false,
+    }
+}
+
+/// True for the ambient literal spelling `NaN` (including
+/// `Number.NaN`), ignoring parentheses. Q24 rejects this spelling as a
+/// float key while accepting computed NaN values.
+fn is_literal_nan(e: &ast::Expr) -> bool {
+    match e {
+        ast::Expr::Ident(id) => id.sym.as_ref() == "NaN",
+        ast::Expr::Member(member) => {
+            matches!(
+                (&*member.obj, &member.prop),
+                (ast::Expr::Ident(obj), ast::MemberProp::Ident(prop))
+                    if obj.sym.as_ref() == "Number" && prop.sym.as_ref() == "NaN"
+            )
+        }
+        ast::Expr::Paren(paren) => is_literal_nan(&paren.expr),
         _ => false,
     }
 }
@@ -433,6 +452,15 @@ impl<'p> Checker<'p> {
                         RuleCode::S014,
                         "`Date` is not a value; only `new Date(ms)`, `Date.UTC(…)`, \
                          and `Date.now()` are accepted (Q20)",
+                        pos.clone(),
+                    );
+                } else if name == "Map" || name == "Set" {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`{name}` is a generic reference class, not a value; \
+                             construct it with explicit type arguments (Q24)"
+                        ),
                         pos.clone(),
                     );
                 } else if crate::ambient::ambient_fn(&name).is_some() {
@@ -1032,7 +1060,17 @@ impl<'p> Checker<'p> {
                 Some(e) if e.spread.is_none() => elems.push(e),
                 Some(e) => {
                     let p = self.pos(e.spread.unwrap_or(a.span));
-                    self.error(RuleCode::S100, "spread elements are not decided", p);
+                    let spread = self.check_expr(&e.expr, None, fx);
+                    if matches!(spread.ty, Type::Map(..) | Type::Set(_)) {
+                        self.error(
+                            RuleCode::S014,
+                            "spreading Map/Set requires the rejected iterator \
+                             protocol; use `forEach` (Q24)",
+                            p,
+                        );
+                    } else {
+                        self.error(RuleCode::S100, "spread elements are not decided", p);
+                    }
                 }
                 None => {
                     self.error(
@@ -1205,6 +1243,17 @@ impl<'p> Checker<'p> {
         if name == "Date" && self.scope_item(&name).is_none() {
             return Some(self.check_date_member(prop, prop_pos, for_write));
         }
+        if (name == "Map" || name == "Set") && self.scope_item(&name).is_none() {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`{name}.{prop}` is outside the accepted Map/Set subset; \
+                     static `groupBy` and iterator-based APIs are rejected (Q24)"
+                ),
+                prop_pos.clone(),
+            );
+            return Some(self.err_expr(prop_pos));
+        }
         match self.scope_item(&name) {
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
                 if prop == "prototype" {
@@ -1365,6 +1414,17 @@ impl<'p> Checker<'p> {
             .rev()
             .any(|s| s.vars.contains_key("Date"));
         !shadowed && self.scope_item("Date").is_none()
+    }
+
+    /// True when `Map` / `Set` resolves to the ambient generic reference
+    /// class rather than a local or program declaration.
+    fn assoc_is_ambient(&self, name: &str, fx: &FnCtx) -> bool {
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.vars.contains_key(name));
+        !shadowed && self.scope_item(name).is_none()
     }
 
     /// True when `obj` is the ambient `Date` namespace (stdlib.md §3):
@@ -2066,6 +2126,311 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Rejects the literal spelling `NaN` in a float key position
+    /// without first resolving it as an ordinary identifier. Computed
+    /// NaN expressions continue through normal checking (Q24).
+    fn reject_literal_nan_key(&mut self, key: &Type, c: &ast::CallExpr) -> bool {
+        if !matches!(key, Type::F32 | Type::F64) {
+            return false;
+        }
+        let Some(first) = c.args.first() else {
+            return false;
+        };
+        if first.spread.is_some() || !is_literal_nan(&first.expr) {
+            return false;
+        }
+        let pos = self.pos(first.expr.span());
+        self.error(
+            RuleCode::S014,
+            "a literal `NaN` is not a reachable Map/Set key; compute it \
+             explicitly only when the intentionally-unmatchable Q24 behavior is wanted",
+            pos,
+        );
+        true
+    }
+
+    /// True when `V` can carry `get`'s null miss: a reference class or
+    /// opaque handle (including the built-in reference containers), or
+    /// an already-nullable form of one.
+    fn map_get_value_ok(&self, value: &Type) -> bool {
+        self.is_reference_class(value)
+            || matches!(value, Type::Nullable(inner) if self.is_reference_class(inner))
+    }
+
+    /// Checks a `Map<K, V>` intrinsic method (stdlib.md §10, Q24).
+    fn check_map_method(
+        &mut self,
+        recv: hir::Expr,
+        key: Type,
+        value: Type,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        let map_ty = Type::Map(Box::new(key.clone()), Box::new(value.clone()));
+        let mk = |f: MapFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Map(f),
+                args,
+            },
+            ty,
+            pos,
+        };
+        let keyed = matches!(name, "get" | "getOr" | "set" | "has" | "delete");
+        if keyed && self.reject_literal_nan_key(&key, c) {
+            return self.err_expr(pos);
+        }
+        match name {
+            "get" => {
+                if !self.map_get_value_ok(&value) {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`get` cannot report a miss for scalar-valued `{}`; \
+                             use `has` plus `getOr` (Q24)",
+                            self.type_name(&map_ty)
+                        ),
+                        prop_pos,
+                    );
+                    return self.err_expr(pos);
+                }
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: key,
+                    has_default: false,
+                }];
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.get"));
+                let ty = if matches!(value, Type::Nullable(_)) {
+                    value
+                } else {
+                    Type::Nullable(Box::new(value))
+                };
+                mk(MapFn::Get, args, ty, pos)
+            }
+            "getOr" => {
+                let params = [
+                    ParamSig {
+                        name: String::new(),
+                        ty: key,
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: value.clone(),
+                        has_default: false,
+                    },
+                ];
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.getOr"));
+                mk(MapFn::GetOr, args, value, pos)
+            }
+            "set" => {
+                let params = [
+                    ParamSig {
+                        name: String::new(),
+                        ty: key,
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: value,
+                        has_default: false,
+                    },
+                ];
+                let checked = self.check_args(&params, &c.args, fx, &pos, "Map.set");
+                if checked
+                    .get(1)
+                    .is_some_and(|argument| self.is_capturing_value(argument, fx))
+                {
+                    let value_pos = checked[1].pos.clone();
+                    self.error(
+                        RuleCode::S009,
+                        "capturing lambdas may not escape: `Map.set` stores its value",
+                        value_pos,
+                    );
+                }
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(MapFn::Set, args, map_ty, pos)
+            }
+            "has" | "delete" => {
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: key,
+                    has_default: false,
+                }];
+                let mut args = vec![recv];
+                args.extend(self.check_args(
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    if name == "has" {
+                        "Map.has"
+                    } else {
+                        "Map.delete"
+                    },
+                ));
+                mk(
+                    if name == "has" {
+                        MapFn::Has
+                    } else {
+                        MapFn::Delete
+                    },
+                    args,
+                    Type::Bool,
+                    pos,
+                )
+            }
+            "clear" => {
+                let checked = self.check_args(&[], &c.args, fx, &pos, "Map.clear");
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(MapFn::Clear, args, Type::Void, pos)
+            }
+            "forEach" => {
+                if c.args.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`Map.forEach` expects exactly 1 callback, got {}",
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let callback = self.check_arr_callback(
+                    &c.args[0],
+                    vec![value, key],
+                    Some(Type::Void),
+                    fx,
+                    "Map.forEach",
+                );
+                mk(MapFn::ForEach, vec![recv, callback], Type::Void, pos)
+            }
+            "keys" | "values" | "entries" => {
+                self.error(
+                    RuleCode::S014,
+                    format!("`Map.{name}` requires the iterator protocol; use `forEach` (Q24)"),
+                    prop_pos,
+                );
+                self.err_expr(pos)
+            }
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    format!("`Map` has no accepted method `{name}` (Q24)"),
+                    prop_pos,
+                );
+                self.err_expr(pos)
+            }
+        }
+    }
+
+    /// Checks a `Set<K>` intrinsic method (stdlib.md §10, Q24).
+    fn check_set_method(
+        &mut self,
+        recv: hir::Expr,
+        key: Type,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        let set_ty = Type::Set(Box::new(key.clone()));
+        let mk = |f: SetFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Set(f),
+                args,
+            },
+            ty,
+            pos,
+        };
+        if matches!(name, "add" | "has" | "delete") && self.reject_literal_nan_key(&key, c) {
+            return self.err_expr(pos);
+        }
+        match name {
+            "add" | "has" | "delete" => {
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: key,
+                    has_default: false,
+                }];
+                let mut args = vec![recv];
+                args.extend(self.check_args(
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    &format!("Set.{name}"),
+                ));
+                let (f, ty) = match name {
+                    "add" => (SetFn::Add, set_ty),
+                    "has" => (SetFn::Has, Type::Bool),
+                    _ => (SetFn::Delete, Type::Bool),
+                };
+                mk(f, args, ty, pos)
+            }
+            "clear" => {
+                let checked = self.check_args(&[], &c.args, fx, &pos, "Set.clear");
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(SetFn::Clear, args, Type::Void, pos)
+            }
+            "forEach" => {
+                if c.args.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`Set.forEach` expects exactly 1 callback, got {}",
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let callback = self.check_arr_callback(
+                    &c.args[0],
+                    vec![key],
+                    Some(Type::Void),
+                    fx,
+                    "Set.forEach",
+                );
+                mk(SetFn::ForEach, vec![recv, callback], Type::Void, pos)
+            }
+            "keys"
+            | "values"
+            | "entries"
+            | "union"
+            | "intersection"
+            | "difference"
+            | "symmetricDifference"
+            | "isSubsetOf"
+            | "isSupersetOf"
+            | "isDisjointFrom" => {
+                self.error(
+                    RuleCode::S014,
+                    format!("`Set.{name}` is outside the accepted Q24 subset"),
+                    prop_pos,
+                );
+                self.err_expr(pos)
+            }
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    format!("`Set` has no accepted method `{name}` (Q24)"),
+                    prop_pos,
+                );
+                self.err_expr(pos)
+            }
+        }
+    }
+
     /// The accumulator type `U` a `reduce` callback spells, if any — the
     /// contextual type for `init` (C4).
     ///
@@ -2130,14 +2495,22 @@ impl<'p> Checker<'p> {
         if let ast::Expr::Arrow(a) = expr {
             let a_pos = self.pos(a.span);
             if a.params.len() != params.len() {
+                let q24 = method.starts_with("Map.") || method.starts_with("Set.");
                 self.error(
                     RuleCode::S014,
-                    format!(
-                        "`{}` callbacks take exactly {} parameter(s); the lib's \
-                         optional index/array parameters are not accepted (Q22)",
-                        method,
-                        params.len()
-                    ),
+                    if q24 {
+                        format!(
+                            "`{method}` callbacks take exactly {} parameter(s); \
+                             extra lib callback parameters are not accepted (Q24)",
+                            params.len()
+                        )
+                    } else {
+                        format!(
+                            "`{method}` callbacks take exactly {} parameter(s); the \
+                             lib's optional index/array parameters are not accepted (Q22)",
+                            params.len()
+                        )
+                    },
                     a_pos.clone(),
                 );
                 return self.err_expr(a_pos);
@@ -2416,6 +2789,94 @@ impl<'p> Checker<'p> {
                             "`{}` is outside the FixedArray surface (length, indexing)",
                             name
                         ),
+                        prop_pos.clone(),
+                    );
+                }
+                self.err_expr(prop_pos)
+            }
+            Type::Map(_, _) => {
+                if name == "size" && !for_write {
+                    return hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Map(MapFn::Size),
+                            args: vec![obj],
+                        },
+                        ty: Type::I32,
+                        pos: prop_pos,
+                    };
+                }
+                if !for_write
+                    && matches!(
+                        name,
+                        "get" | "getOr" | "set" | "has" | "delete" | "clear" | "forEach"
+                    )
+                {
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{name}` may only be called, not read as a value"),
+                        prop_pos.clone(),
+                    );
+                } else if matches!(name, "keys" | "values" | "entries") {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`{name}` requires the iterator protocol; use `forEach` (Q24)"
+                        ),
+                        prop_pos.clone(),
+                    );
+                } else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`Map` has no accepted member `{name}` (Q24)"),
+                        prop_pos.clone(),
+                    );
+                }
+                self.err_expr(prop_pos)
+            }
+            Type::Set(_) => {
+                if name == "size" && !for_write {
+                    return hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Set(SetFn::Size),
+                            args: vec![obj],
+                        },
+                        ty: Type::I32,
+                        pos: prop_pos,
+                    };
+                }
+                if !for_write
+                    && matches!(name, "add" | "has" | "delete" | "clear" | "forEach")
+                {
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{name}` may only be called, not read as a value"),
+                        prop_pos.clone(),
+                    );
+                } else if matches!(
+                    name,
+                    "keys"
+                        | "values"
+                        | "entries"
+                        | "union"
+                        | "intersection"
+                        | "difference"
+                        | "symmetricDifference"
+                        | "isSubsetOf"
+                        | "isSupersetOf"
+                        | "isDisjointFrom"
+                ) {
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`{name}` is outside the accepted Set subset; use `forEach` \
+                             for traversal (Q24)"
+                        ),
+                        prop_pos.clone(),
+                    );
+                } else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`Set` has no accepted member `{name}` (Q24)"),
                         prop_pos.clone(),
                     );
                 }
@@ -3063,6 +3524,12 @@ impl<'p> Checker<'p> {
         match recv.ty.clone() {
             Type::Error => self.err_expr(pos),
             Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
+            Type::Map(key, value) => {
+                self.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
+            }
+            Type::Set(key) => {
+                self.check_set_method(recv, *key, &name, c, fx, pos, prop_pos)
+            }
             Type::Array(elem) => match name.as_str() {
                 "push" => {
                     let params = [ParamSig {
@@ -3267,6 +3734,70 @@ impl<'p> Checker<'p> {
         // binding shadows the name (same resolution as member access).
         if name == "Date" && self.date_is_ambient(fx) {
             return self.check_date_new(n, fx, pos);
+        }
+        if (name == "Map" || name == "Set") && self.assoc_is_ambient(&name, fx) {
+            let Some(type_args) = &n.type_args else {
+                self.error(
+                    RuleCode::S100,
+                    format!("`new {name}` requires explicit type arguments (Q24)"),
+                    ident_pos.clone(),
+                );
+                return self.err_expr(pos);
+            };
+            let expected = if name == "Map" { 2 } else { 1 };
+            if type_args.params.len() != expected {
+                self.error(
+                    RuleCode::S100,
+                    format!("`new {name}` takes exactly {expected} type argument(s)"),
+                    ident_pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            if n.args.as_ref().is_some_and(|args| !args.is_empty()) {
+                self.error(
+                    RuleCode::S014,
+                    format!(
+                        "`new {name}(iterable)` is rejected; iterable construction \
+                         requires the iterator protocol (Q24)"
+                    ),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let saved = self.in_assoc_key;
+            self.in_assoc_key = true;
+            let key = self.resolve_type(&type_args.params[0]);
+            self.in_assoc_key = saved;
+            if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
+                let key_pos = self.pos(type_args.params[0].span());
+                let key_name = self.type_name(&key);
+                self.error(
+                    RuleCode::S014,
+                    format!("`{key_name}` is not a permitted Map/Set key kind (Q24)"),
+                    key_pos,
+                );
+            }
+            if name == "Map" {
+                let value = self.resolve_type(&type_args.params[1]);
+                let ty = Type::Map(Box::new(key), Box::new(value));
+                return hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Map(MapFn::New),
+                        args: Vec::new(),
+                    },
+                    ty,
+                    pos,
+                };
+            }
+            let ty = Type::Set(Box::new(key));
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Set(SetFn::New),
+                    args: Vec::new(),
+                },
+                ty,
+                pos,
+            };
         }
         let class_id = match self.scope_item(&name) {
             Some(ScopeItem::Class(class_id)) => {

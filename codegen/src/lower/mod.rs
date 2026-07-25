@@ -127,6 +127,12 @@ pub(crate) struct RtFns {
     /// signature starts `(ctx, recv, …)`; element values travel by
     /// pointer, callbacks as `(code, env)`, kind tags as `u32`.
     pub arr_ops: [FuncId; hir::ArrFn::ALL.len()],
+    /// `sub_rt_map_*` imports (stdlib.md §10), indexed by
+    /// [`hir::MapFn::ALL`] discriminant order.
+    pub map_ops: [FuncId; hir::MapFn::ALL.len()],
+    /// `sub_rt_set_*` imports (stdlib.md §10), indexed by
+    /// [`hir::SetFn::ALL`] discriminant order.
+    pub set_ops: [FuncId; hir::SetFn::ALL.len()],
 }
 
 /// Parameters of the shared lowering.
@@ -502,6 +508,45 @@ fn declare_rt<M: Module>(
     let arr_ops: [FuncId; hir::ArrFn::ALL.len()] = arr_ids
         .try_into()
         .map_err(|_| internal("array import table size"))?;
+    // Map/Set operations (stdlib.md §10). Keys, values, and fallbacks
+    // travel by pointer; new receives the concrete monomorphized widths
+    // and key-kind tag. forEach receives a generated fixed-ABI bridge.
+    let mut map_ids: Vec<FuncId> = Vec::with_capacity(hir::MapFn::ALL.len());
+    for f in hir::MapFn::ALL {
+        use hir::MapFn as F;
+        let (params, ret): (&[types::Type], Option<types::Type>) = match f {
+            F::New => (&[I64, I64, I64, I32, I32], Some(I64)),
+            F::Size => (&[I64], Some(I32)),
+            F::Get => (&[I64, I64, I64, I64], Some(I32)),
+            F::GetOr => (&[I64, I64, I64, I64, I64], None),
+            F::Set => (&[I64, I64, I64, I64, I32], Some(I64)),
+            F::Has | F::Delete => (&[I64, I64, I64], Some(I32)),
+            F::Clear => (&[I64, I64], None),
+            F::ForEach => (&[I64, I64, I64, I64, I64], None),
+            other => return Err(internal(format!("unknown MapFn {other:?}"))),
+        };
+        map_ids.push(mk(f.symbol(), params, ret)?);
+    }
+    let map_ops: [FuncId; hir::MapFn::ALL.len()] = map_ids
+        .try_into()
+        .map_err(|_| internal("Map import table size"))?;
+    let mut set_ids: Vec<FuncId> = Vec::with_capacity(hir::SetFn::ALL.len());
+    for f in hir::SetFn::ALL {
+        use hir::SetFn as F;
+        let (params, ret): (&[types::Type], Option<types::Type>) = match f {
+            F::New => (&[I64, I64, I32, I32], Some(I64)),
+            F::Size => (&[I64], Some(I32)),
+            F::Add => (&[I64, I64, I64, I32], Some(I64)),
+            F::Has | F::Delete => (&[I64, I64, I64], Some(I32)),
+            F::Clear => (&[I64, I64], None),
+            F::ForEach => (&[I64, I64, I64, I64, I64], None),
+            other => return Err(internal(format!("unknown SetFn {other:?}"))),
+        };
+        set_ids.push(mk(f.symbol(), params, ret)?);
+    }
+    let set_ops: [FuncId; hir::SetFn::ALL.len()] = set_ids
+        .try_into()
+        .map_err(|_| internal("Set import table size"))?;
     Ok(RtFns {
         print: mk("sub_rt_print", &[I64, I64], None)?,
         collect: mk("sub_rt_collect", &[I64], None)?,
@@ -554,6 +599,8 @@ fn declare_rt<M: Module>(
         date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
         str_ops,
         arr_ops,
+        map_ops,
+        set_ops,
     })
 }
 

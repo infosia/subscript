@@ -534,6 +534,8 @@ impl<'m> Emitter<'m> {
             Type::Str
             | Type::Object
             | Type::Array(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
             | Type::Generator(_)
             | Type::Nullable(_)
             | Type::Null => "void*".to_string(),
@@ -577,7 +579,13 @@ impl<'m> Emitter<'m> {
             Type::F64 => "f64".to_string(),
             Type::Bool => "bool".to_string(),
             Type::Enum(id) => format!("enum{}", id.0),
-            Type::Str | Type::Object | Type::Array(_) | Type::Generator(_) | Type::Nullable(_)
+            Type::Str
+            | Type::Object
+            | Type::Array(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Generator(_)
+            | Type::Nullable(_)
             | Type::Null => "ptr".to_string(),
             Type::Func(_) => "fn".to_string(),
             Type::Class(id) => {
@@ -1100,7 +1108,13 @@ impl<'m> Emitter<'m> {
             | Type::Enum(_) => {
                 "0".to_string()
             }
-            Type::Str | Type::Object | Type::Array(_) | Type::Generator(_) | Type::Nullable(_)
+            Type::Str
+            | Type::Object
+            | Type::Array(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Generator(_)
+            | Type::Nullable(_)
             | Type::Null => "0".to_string(),
             Type::Class(id) if !self.is_value_class(*id)? => "0".to_string(),
             _ => format!("({}){{0}}", self.ctype(ty)?),
@@ -2199,6 +2213,11 @@ impl<'m> Emitter<'m> {
             // SubFn (code, env) halves; kind tags come from the shared
             // compiler mapping so the tiers cannot disagree.
             hir::Callee::Arr(f) => self.eval_arr_call(*f, args, ret_ty, pos, out, depth),
+            // Map/Set use the same opaque Context runtime in both tiers.
+            // The concrete monomorphized key/value widths and key-kind
+            // tag cross that boundary with construction.
+            hir::Callee::Map(f) => self.eval_map_call(*f, args, ret_ty, pos, out, depth),
+            hir::Callee::Set(f) => self.eval_set_call(*f, args, ret_ty, pos, out, depth),
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
     }
@@ -2331,6 +2350,204 @@ impl<'m> Emitter<'m> {
             }
             other => Err(format!("unknown ArrFn {other:?}")),
         }
+    }
+
+    /// Emits one monomorphized `Map<K, V>` intrinsic (stdlib.md §10).
+    fn eval_map_call(
+        &mut self,
+        f: hir::MapFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        use hir::MapFn as M;
+        let ind = indent(depth);
+        let (key, value) = match f {
+            M::New => match ret_ty {
+                Type::Map(k, v) => ((**k).clone(), (**v).clone()),
+                other => return Err(format!("Map constructor result {other:?}")),
+            },
+            _ => match args.first().map(|a| &a.ty) {
+                Some(Type::Map(k, v)) => ((**k).clone(), (**v).clone()),
+                other => return Err(format!("Map method receiver {other:?}")),
+            },
+        };
+        let key_ct = self.ctype(&key)?;
+        let value_ct = self.ctype(&value)?;
+        let key_kind = crate::layout::assoc_key_kind(self.module, &key)?.code();
+        let arg_at = |i: usize| -> Result<&hir::Expr, String> {
+            args.get(i)
+                .ok_or_else(|| format!("{} arity (checker normalizes)", f.name()))
+        };
+        if f == M::New {
+            let pid = self.pos_id(pos);
+            return Ok(format!(
+                "sub_rt_map_new(ctx, sizeof({key_ct}), sizeof({value_ct}), {key_kind}u, {pid}u)"
+            ));
+        }
+
+        let h = self.eval_pinned(arg_at(0)?, out, depth)?;
+        match f {
+            M::Size => Ok(format!("sub_rt_map_size({h})")),
+            M::Get => {
+                let key_expr = self.eval(arg_at(1)?, out, depth)?;
+                let kt = self.fresh_tmp();
+                let result = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
+                let _ = writeln!(out, "{ind}{value_ct} {result} = {{0}};");
+                let _ = writeln!(out, "{ind}(void)sub_rt_map_get(ctx, {h}, &{kt}, &{result});");
+                Ok(result)
+            }
+            M::GetOr => {
+                let key_expr = self.eval(arg_at(1)?, out, depth)?;
+                let kt = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
+                let fallback_expr = self.eval(arg_at(2)?, out, depth)?;
+                let fallback = self.fresh_tmp();
+                let result = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{value_ct} {fallback} = {fallback_expr};");
+                let _ = writeln!(out, "{ind}{value_ct} {result} = {{0}};");
+                let _ = writeln!(
+                    out,
+                    "{ind}sub_rt_map_get_or(ctx, {h}, &{kt}, &{fallback}, &{result});"
+                );
+                Ok(result)
+            }
+            M::Set => {
+                let key_expr = self.eval(arg_at(1)?, out, depth)?;
+                let kt = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
+                let value_expr = self.eval(arg_at(2)?, out, depth)?;
+                let vt = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{value_ct} {vt} = {value_expr};");
+                let pid = self.pos_id(pos);
+                let _ = writeln!(out, "{ind}sub_rt_map_set(ctx, {h}, &{kt}, &{vt}, {pid}u);");
+                Ok(h)
+            }
+            M::Has | M::Delete => {
+                let key_expr = self.eval(arg_at(1)?, out, depth)?;
+                let kt = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
+                Ok(format!("({}(ctx, {h}, &{kt}) != 0)", f.symbol()))
+            }
+            M::Clear => Ok(format!("sub_rt_map_clear(ctx, {h})")),
+            M::ForEach => {
+                let callback = self.eval(arg_at(1)?, out, depth)?;
+                let ft = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
+                let bridge = self.emit_assoc_bridge(&key, Some(&value))?;
+                Ok(format!(
+                    "sub_rt_map_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
+                ))
+            }
+            other => Err(format!("unknown MapFn {other:?}")),
+        }
+    }
+
+    /// Emits one monomorphized `Set<K>` intrinsic (stdlib.md §10).
+    fn eval_set_call(
+        &mut self,
+        f: hir::SetFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        use hir::SetFn as S;
+        let ind = indent(depth);
+        let key = match f {
+            S::New => match ret_ty {
+                Type::Set(k) => (**k).clone(),
+                other => return Err(format!("Set constructor result {other:?}")),
+            },
+            _ => match args.first().map(|a| &a.ty) {
+                Some(Type::Set(k)) => (**k).clone(),
+                other => return Err(format!("Set method receiver {other:?}")),
+            },
+        };
+        let key_ct = self.ctype(&key)?;
+        let key_kind = crate::layout::assoc_key_kind(self.module, &key)?.code();
+        let arg_at = |i: usize| -> Result<&hir::Expr, String> {
+            args.get(i)
+                .ok_or_else(|| format!("{} arity (checker normalizes)", f.name()))
+        };
+        if f == S::New {
+            let pid = self.pos_id(pos);
+            return Ok(format!(
+                "sub_rt_set_new(ctx, sizeof({key_ct}), {key_kind}u, {pid}u)"
+            ));
+        }
+
+        let h = self.eval_pinned(arg_at(0)?, out, depth)?;
+        match f {
+            S::Size => Ok(format!("sub_rt_set_size({h})")),
+            S::Add => {
+                let key_expr = self.eval(arg_at(1)?, out, depth)?;
+                let kt = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
+                let pid = self.pos_id(pos);
+                let _ = writeln!(out, "{ind}sub_rt_set_add(ctx, {h}, &{kt}, {pid}u);");
+                Ok(h)
+            }
+            S::Has | S::Delete => {
+                let key_expr = self.eval(arg_at(1)?, out, depth)?;
+                let kt = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
+                Ok(format!("({}(ctx, {h}, &{kt}) != 0)", f.symbol()))
+            }
+            S::Clear => Ok(format!("sub_rt_set_clear(ctx, {h})")),
+            S::ForEach => {
+                let callback = self.eval(arg_at(1)?, out, depth)?;
+                let ft = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
+                let bridge = self.emit_assoc_bridge(&key, None)?;
+                Ok(format!(
+                    "sub_rt_set_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
+                ))
+            }
+            other => Err(format!("unknown SetFn {other:?}")),
+        }
+    }
+
+    /// Defines the typed C callback adapter expected by the opaque
+    /// association runtime. Map callbacks receive `(value, key)` and Set
+    /// callbacks receive `(key)`; the runtime performs the post-return
+    /// trap check.
+    fn emit_assoc_bridge(
+        &mut self,
+        key: &Type,
+        value: Option<&Type>,
+    ) -> Result<String, String> {
+        let n = self.lambda;
+        self.lambda += 1;
+        let name = format!("ss_assoc_bridge{n}");
+        let key_ct = self.ctype(key)?;
+        let (sig, call) = if let Some(value) = value {
+            let value_ct = self.ctype(value)?;
+            (
+                format!(
+                    "static void {name}(void* ctx, const void* code, const void* env, const void* value, const void* key)"
+                ),
+                format!(
+                    "((void(*)(void*, void*, {value_ct}, {key_ct}))code)(ctx, (void*)env, *((const {value_ct}*)value), *((const {key_ct}*)key))"
+                ),
+            )
+        } else {
+            (
+                format!(
+                    "static void {name}(void* ctx, const void* code, const void* env, const void* key)"
+                ),
+                format!(
+                    "((void(*)(void*, void*, {key_ct}))code)(ctx, (void*)env, *((const {key_ct}*)key))"
+                ),
+            )
+        };
+        let _ = writeln!(self.protos, "{sig};");
+        let _ = writeln!(self.helpers, "{sig} {{ {call}; }}");
+        Ok(name)
     }
 
     /// A `Struct | null` boundary pointer slot (a nullable value class):
@@ -3199,7 +3416,13 @@ fn collect_aggr_ty(ty: &Type, set: &mut Vec<Type>) {
             push_unique(set, ty);
             collect_aggr_ty(v, set);
         }
-        Type::Array(e) | Type::Nullable(e) | Type::Generator(e) => collect_aggr_ty(e, set),
+        Type::Array(e) | Type::Set(e) | Type::Nullable(e) | Type::Generator(e) => {
+            collect_aggr_ty(e, set);
+        }
+        Type::Map(k, v) => {
+            collect_aggr_ty(k, set);
+            collect_aggr_ty(v, set);
+        }
         Type::Func(ft) => {
             for p in &ft.params {
                 collect_aggr_ty(p, set);
@@ -3717,6 +3940,26 @@ extern int32_t sub_rt_arr_some(void* ctx, void* a, const void* code, const void*
 extern int32_t sub_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
 extern int32_t sub_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
 extern void sub_rt_arr_sort(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+
+/* Map/Set intrinsics (stdlib.md 10, Q24): ordered entry storage and its
+ * deterministic hash index live behind these shared runtime symbols.
+ * Construction supplies monomorphized widths and the key-kind tag. */
+extern void* sub_rt_map_new(void* ctx, uint64_t key_size, uint64_t value_size, uint32_t key_kind, uint32_t pos_id);
+extern void* sub_rt_set_new(void* ctx, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
+extern int32_t sub_rt_map_size(void* map);
+extern int32_t sub_rt_set_size(void* set);
+extern void* sub_rt_map_set(void* ctx, void* map, const void* key, const void* value, uint32_t pos_id);
+extern void* sub_rt_set_add(void* ctx, void* set, const void* key, uint32_t pos_id);
+extern int32_t sub_rt_map_get(void* ctx, void* map, const void* key, void* out);
+extern void sub_rt_map_get_or(void* ctx, void* map, const void* key, const void* fallback, void* out);
+extern int32_t sub_rt_map_has(void* ctx, void* map, const void* key);
+extern int32_t sub_rt_set_has(void* ctx, void* set, const void* key);
+extern int32_t sub_rt_map_delete(void* ctx, void* map, const void* key);
+extern int32_t sub_rt_set_delete(void* ctx, void* set, const void* key);
+extern void sub_rt_map_clear(void* ctx, void* map);
+extern void sub_rt_set_clear(void* ctx, void* set);
+extern void sub_rt_map_for_each(void* ctx, void* map, const void* code, const void* env, const void* bridge);
+extern void sub_rt_set_for_each(void* ctx, void* set, const void* code, const void* env, const void* bridge);
 
 /* Math intrinsics (stdlib.md 1): opaque runtime symbols, never bare
  * libm calls — clang constant-folds recognized libm calls at -O2, a

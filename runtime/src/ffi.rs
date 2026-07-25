@@ -165,6 +165,282 @@ pub unsafe extern "C" fn sub_rt_shadow_pop(ctx: *mut Context) {
     unsafe { &mut *ctx }.shadow_pop();
 }
 
+// ----- Map / Set (stdlib.md §10, Q24) -----
+
+/// Allocates an empty monomorphized `Map<K, V>`.
+///
+/// `key_size` / `value_size` are the calling tier's concrete storage
+/// widths and `key_kind` is the compiler/runtime ABI tag. Backing entry
+/// and index storage stays unallocated until `set`.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_new(
+    ctx: *mut Context,
+    key_size: u64,
+    value_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Some(kind) = crate::assocops::KeyKind::from_u32(key_kind) else {
+        ctx.trap(
+            TrapKind::Internal,
+            format!("unknown Map key-kind code {key_kind}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    crate::assocops::new(
+        ctx,
+        key_size as usize,
+        value_size as usize,
+        kind,
+        false,
+        pos_id,
+    )
+}
+
+/// Allocates an empty monomorphized `Set<K>`.
+///
+/// # Safety
+///
+/// As [`sub_rt_map_new`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_new(
+    ctx: *mut Context,
+    key_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Some(kind) = crate::assocops::KeyKind::from_u32(key_kind) else {
+        ctx.trap(
+            TrapKind::Internal,
+            format!("unknown Set key-kind code {key_kind}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    crate::assocops::new(ctx, key_size as usize, 0, kind, true, pos_id)
+}
+
+/// `Map.size`.
+///
+/// # Safety
+///
+/// Shared contract; `map` is a live map handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_size(map: *const u8) -> i32 {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::len(map) }
+}
+
+/// `Set.size`.
+///
+/// # Safety
+///
+/// Shared contract; `set` is a live set handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_size(set: *const u8) -> i32 {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::len(set) }
+}
+
+/// `Map.set`: inserts or overwrites and returns the receiver.
+///
+/// # Safety
+///
+/// Shared contract; `map` is live and `key` / `value` point at values
+/// of the monomorphized widths.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_set(
+    ctx: *mut Context,
+    map: *mut u8,
+    key: *const u8,
+    value: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::insert(ctx, map, key, value, pos_id) }
+}
+
+/// `Set.add`: inserts and returns the receiver.
+///
+/// # Safety
+///
+/// Shared contract; `set` is live and `key` points at its
+/// monomorphized key value.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_add(
+    ctx: *mut Context,
+    set: *mut u8,
+    key: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: caller contract; a set has zero-width values.
+    unsafe { crate::assocops::insert(ctx, set, key, std::ptr::null(), pos_id) }
+}
+
+/// `Map.get`: copies a present value to `out`, returning 1; returns 0
+/// on a miss without writing `out`.
+///
+/// # Safety
+///
+/// Shared contract; pointers match the map's monomorphized widths.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_get(
+    ctx: *mut Context,
+    map: *mut u8,
+    key: *const u8,
+    out: *mut u8,
+) -> i32 {
+    // SAFETY: caller contract.
+    i32::from(unsafe { crate::assocops::get(ctx, map, key, out) })
+}
+
+/// `Map.getOr`: copies the present value or the supplied fallback.
+///
+/// # Safety
+///
+/// As [`sub_rt_map_get`], and `fallback` is readable for the value width.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_get_or(
+    ctx: *mut Context,
+    map: *mut u8,
+    key: *const u8,
+    fallback: *const u8,
+    out: *mut u8,
+) {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::get_or(ctx, map, key, fallback, out) };
+}
+
+/// `Map.has`.
+///
+/// # Safety
+///
+/// Shared contract; `map` and `key` match its monomorphized shape.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_has(
+    ctx: *mut Context,
+    map: *mut u8,
+    key: *const u8,
+) -> i32 {
+    // SAFETY: caller contract.
+    i32::from(unsafe { crate::assocops::has(ctx, map, key) })
+}
+
+/// `Set.has`.
+///
+/// # Safety
+///
+/// As [`sub_rt_map_has`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_has(
+    ctx: *mut Context,
+    set: *mut u8,
+    key: *const u8,
+) -> i32 {
+    // SAFETY: caller contract.
+    i32::from(unsafe { crate::assocops::has(ctx, set, key) })
+}
+
+/// `Map.delete`.
+///
+/// # Safety
+///
+/// As [`sub_rt_map_has`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_delete(
+    ctx: *mut Context,
+    map: *mut u8,
+    key: *const u8,
+) -> i32 {
+    // SAFETY: caller contract.
+    i32::from(unsafe { crate::assocops::delete(ctx, map, key) })
+}
+
+/// `Set.delete`.
+///
+/// # Safety
+///
+/// As [`sub_rt_map_has`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_delete(
+    ctx: *mut Context,
+    set: *mut u8,
+    key: *const u8,
+) -> i32 {
+    // SAFETY: caller contract.
+    i32::from(unsafe { crate::assocops::delete(ctx, set, key) })
+}
+
+/// `Map.clear`: eagerly retires its ordered and index storage.
+///
+/// # Safety
+///
+/// Shared contract; `map` is a live map handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_clear(ctx: *mut Context, map: *mut u8) {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::clear(&mut *ctx, map) };
+}
+
+/// `Set.clear`: eagerly retires its ordered and index storage.
+///
+/// # Safety
+///
+/// Shared contract; `set` is a live set handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_clear(ctx: *mut Context, set: *mut u8) {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::clear(&mut *ctx, set) };
+}
+
+/// `Map.forEach` in insertion order.
+///
+/// `bridge` is a generated fixed-ABI adapter that loads the map's
+/// concrete `V` / `K` and calls `code(ctx, env, value, key)`. The
+/// runtime checks the Context trap flag after every bridge return.
+///
+/// # Safety
+///
+/// Shared contract; handles and function pointers have the documented
+/// generated signatures.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_for_each(
+    ctx: *mut Context,
+    map: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    bridge: *const u8,
+) {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::map_for_each(ctx, map, code, env, bridge) };
+}
+
+/// `Set.forEach` in insertion order, through a generated key bridge.
+///
+/// # Safety
+///
+/// As [`sub_rt_map_for_each`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_for_each(
+    ctx: *mut Context,
+    set: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    bridge: *const u8,
+) {
+    // SAFETY: caller contract.
+    unsafe { crate::assocops::set_for_each(ctx, set, code, env, bridge) };
+}
+
 // ----- strings (Q5) -----
 
 /// Interns a string literal embedded in the module's data.

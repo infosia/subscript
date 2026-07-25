@@ -74,7 +74,7 @@ impl<'p> Checker<'p> {
                 // declarations may not spell it. The ambient
                 // `unsafeDelete(value: object)` signature is hardcoded and
                 // unaffected.
-                if self.in_boundary {
+                if self.in_boundary || self.in_assoc_key {
                     Type::Object
                 } else {
                     self.error(
@@ -203,6 +203,51 @@ impl<'p> Checker<'p> {
             _ => {}
         }
 
+        // The ES2022 lib supplies the editor declarations; the language
+        // checker resolves its accepted, monomorphized subset directly.
+        // A program declaration shadows the ambient name, as for Date.
+        if (name == "Map" || name == "Set") && self.scope_item(name).is_none() {
+            let Some(args) = &r.type_params else {
+                self.error(
+                    RuleCode::S100,
+                    format!("generic reference class `{name}` requires explicit type arguments"),
+                    pos,
+                );
+                return Type::Error;
+            };
+            let expected = if name == "Map" { 2 } else { 1 };
+            if args.params.len() != expected {
+                self.error(
+                    RuleCode::S100,
+                    format!("`{name}` takes exactly {expected} type argument(s)"),
+                    pos,
+                );
+                return Type::Error;
+            }
+            let saved = self.in_assoc_key;
+            self.in_assoc_key = true;
+            let key = self.resolve_type(&args.params[0]);
+            self.in_assoc_key = saved;
+            if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
+                let key_pos = self.pos(args.params[0].span());
+                let key_name = self.type_name(&key);
+                self.error(
+                    RuleCode::S014,
+                    format!(
+                        "`{key_name}` is not a Map/Set key kind; Q24 permits sized \
+                         integers, boolean, enum, f32/f64, string, Date, and \
+                         reference classes"
+                    ),
+                    key_pos,
+                );
+            }
+            if name == "Map" {
+                let value = self.resolve_type(&args.params[1]);
+                return Type::Map(Box::new(key), Box::new(value));
+            }
+            return Type::Set(Box::new(key));
+        }
+
         // The ambient `Date` value type (stdlib.md §3): applies only
         // when no program declaration shadows the name — a user class
         // named `Date` wins, exactly as for `Math`.
@@ -303,6 +348,9 @@ impl<'p> Checker<'p> {
                 // (`in_boundary`), the `Struct | null` form is also legal
                 // — a value-class-with-null whose `null` lowers to the
                 // zeroed struct (P5.2b). It stays rejected elsewhere.
+                if self.in_assoc_key {
+                    return Type::Nullable(Box::new(inner));
+                }
                 let ok = (inner.is_reference_shape() && !self.is_value_class(&inner))
                     || (self.in_boundary && self.is_value_class(&inner));
                 if ok {

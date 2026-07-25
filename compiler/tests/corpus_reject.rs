@@ -54,6 +54,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r35-narrow-mixed-bitwise.ts", RuleCode::S007, 9),
     ("r36-f16-arithmetic.ts", RuleCode::S014, 9),
     ("r37-literal-overshift.ts", RuleCode::S008, 8),
+    ("r38-map-f16-key.ts", RuleCode::S014, 8),
+    ("r39-map-array-key.ts", RuleCode::S014, 8),
+    ("r40-map-cstruct-key.ts", RuleCode::S014, 16),
+    ("r41-map-scalar-get.ts", RuleCode::S014, 9),
+    ("r42-map-iterator-member.ts", RuleCode::S014, 9),
+    ("r43-map-iterable-constructor.ts", RuleCode::S014, 8),
 ];
 
 #[test]

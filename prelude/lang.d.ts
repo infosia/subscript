@@ -26,4 +26,11 @@ declare interface FixedArray<T, N extends number> {
   readonly length: i32;
 }
 
+// Ambient augmentation of ES2022's Map surface; the compiler narrows
+// `get` to nullable-capable values and accepts this total accessor for
+// every storable value type.
+declare interface Map<K, V> {
+  getOr(key: K, fallback: V): V;
+}
+
 // N is deliberately unused structurally so plain array literals remain assignable.

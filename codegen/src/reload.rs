@@ -722,6 +722,33 @@ mod tests {
     }
 
     #[test]
+    fn declaration_hash_includes_map_and_set_type_arguments() {
+        let map_i32 = hash_of(
+            "let values: Map<i32, i32> = new Map<i32, i32>();\n\
+             export function main(): void { print(`${values.size}`); }\n",
+        );
+        let map_i64 = hash_of(
+            "let values: Map<i64, i32> = new Map<i64, i32>();\n\
+             export function main(): void { print(`${values.size}`); }\n",
+        );
+        assert_ne!(map_i32, map_i64);
+        assert_eq!(
+            map_i32.first_difference(&map_i64).as_deref(),
+            Some("variable values")
+        );
+
+        let set_i32 = hash_of(
+            "let values: Set<i32> = new Set<i32>();\n\
+             export function main(): void { print(`${values.size}`); }\n",
+        );
+        let set_i64 = hash_of(
+            "let values: Set<i64> = new Set<i64>();\n\
+             export function main(): void { print(`${values.size}`); }\n",
+        );
+        assert_ne!(set_i32, set_i64);
+    }
+
+    #[test]
     fn declarations_are_listed_in_declaration_order() {
         let h = hash_of("class C { x: i32; constructor() { this.x = 0; } }\nlet g: i32 = 1;\nexport function main(): void {}\n");
         assert_eq!(

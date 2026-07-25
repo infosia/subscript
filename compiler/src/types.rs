@@ -65,6 +65,10 @@ pub enum Type {
     FixedArray(Box<Type>, u32),
     /// Dynamic array `T[]` (Q4/Q15).
     Array(Box<Type>),
+    /// Monomorphized generic reference class `Map<K, V>` (Q24).
+    Map(Box<Type>, Box<Type>),
+    /// Monomorphized generic reference class `Set<K>` (Q24).
+    Set(Box<Type>),
     /// Non-capturing function type `(params) => ret`.
     Func(Box<FuncType>),
     /// `Ref | null` (C7). The inner type is a reference class, `object`,
@@ -138,7 +142,10 @@ impl Type {
     /// and function types.
     #[must_use]
     pub fn is_reference_shape(&self) -> bool {
-        matches!(self, Type::Class(_) | Type::Object | Type::Func(_))
+        matches!(
+            self,
+            Type::Class(_) | Type::Map(..) | Type::Set(_) | Type::Object | Type::Func(_)
+        )
     }
 }
 
@@ -178,6 +185,12 @@ pub fn display_type(
             n
         ),
         Type::Array(elem) => format!("{}[]", display_type(elem, class_name, enum_name)),
+        Type::Map(key, value) => format!(
+            "Map<{}, {}>",
+            display_type(key, class_name, enum_name),
+            display_type(value, class_name, enum_name)
+        ),
+        Type::Set(key) => format!("Set<{}>", display_type(key, class_name, enum_name)),
         Type::Func(f) => {
             let params: Vec<String> = f
                 .params

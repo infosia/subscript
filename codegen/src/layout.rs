@@ -52,6 +52,18 @@ pub(crate) fn arr_fmt_kind(ty: &Type) -> Result<hir::ArrFmtKind, String> {
         .ok_or_else(|| internal(format!("array element type {ty:?} has no Q14 format kind")))
 }
 
+/// The [`hir::AssocKeyKind`] of a `Map` / `Set` key under the module's
+/// class table (stdlib.md §10, Q24).
+pub(crate) fn assoc_key_kind(
+    module: &hir::Module,
+    ty: &Type,
+) -> Result<hir::AssocKeyKind, String> {
+    hir::AssocKeyKind::of(ty, &|id| {
+        module.classes.get(id.0).is_some_and(|class| class.is_value)
+    })
+    .ok_or_else(|| internal(format!("Map/Set key type {ty:?} has no Q24 key kind")))
+}
+
 /// Layout of one class.
 #[derive(Debug, Clone)]
 pub(crate) struct ClassLayout {
@@ -242,6 +254,8 @@ fn scalar_size_align(ty: &Type) -> Result<(u32, u32), String> {
         Type::Str
         | Type::Object
         | Type::Array(_)
+        | Type::Map(..)
+        | Type::Set(_)
         | Type::Generator(_)
         | Type::Nullable(_)
         | Type::Null => (8, 8),
@@ -332,6 +346,8 @@ impl Layouts {
             Type::Str
             | Type::Object
             | Type::Array(_)
+            | Type::Map(..)
+            | Type::Set(_)
             | Type::Generator(_)
             | Type::Nullable(_)
             | Type::Null => Repr::Scalar(types::I64),
@@ -363,7 +379,12 @@ impl Layouts {
 /// forms.
 pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
     Ok(match ty {
-        Type::Str | Type::Object | Type::Array(_) | Type::Generator(_) => true,
+        Type::Str
+        | Type::Object
+        | Type::Array(_)
+        | Type::Map(..)
+        | Type::Set(_)
+        | Type::Generator(_) => true,
         Type::Nullable(inner) => {
             is_managed(layouts, inner)? || matches!(**inner, Type::Func(_))
         }

@@ -360,6 +360,26 @@ impl<'p> Checker<'p> {
                 );
                 false
             }
+            ast::Stmt::ForOf(for_of) => {
+                let iterable = self.check_expr(&for_of.right, None, fx);
+                let pos = self.pos(for_of.span);
+                if matches!(iterable.ty, Type::Map(..) | Type::Set(_)) {
+                    self.error(
+                        RuleCode::S014,
+                        "`for…of` over Map/Set requires the rejected iterator \
+                         protocol; use `forEach` (Q24)",
+                        pos,
+                    );
+                } else {
+                    self.error(
+                        RuleCode::S100,
+                        "`for…of` requires the iterator protocol, which is outside \
+                         the decided surface",
+                        pos,
+                    );
+                }
+                false
+            }
             ast::Stmt::Empty(_) => false,
             other => {
                 let pos = self.pos(other.span());

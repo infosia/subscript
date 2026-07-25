@@ -224,6 +224,11 @@ pub(crate) struct Checker<'p> {
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).
     pub in_boundary: bool,
+    /// True while resolving a `Map`/`Set` key argument. It lets the
+    /// resolver preserve otherwise-banned key shapes (`object`,
+    /// `T | null`) long enough to emit the Q24-specific S014 diagnostic
+    /// instead of an unrelated general type diagnostic.
+    pub in_assoc_key: bool,
     /// Mirror flag members: an ambient `declare const X = <int literal>;`
     /// (§13.2) folds to its C `static const` value at each reference, so
     /// both tiers emit an immediate rather than reading a runtime global.
@@ -260,6 +265,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
         in_boundary: false,
+        in_assoc_key: false,
         ambient_int_consts: HashMap::new(),
     };
 
@@ -345,6 +351,15 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn is_reference_class(&self, ty: &Type) -> bool {
         matches!(ty, Type::Class(id) if !self.classes[id.0].is_value)
+            || matches!(ty, Type::Map(..) | Type::Set(_))
+    }
+
+    /// The Q24 hash/equality kind of a key, or `None` outside the
+    /// whitelist.
+    pub(crate) fn assoc_key_kind(&self, ty: &Type) -> Option<hir::AssocKeyKind> {
+        hir::AssocKeyKind::of(ty, &|id| {
+            self.classes.get(id.0).is_some_and(|class| class.is_value)
+        })
     }
 
     /// Structural assignability under nominal semantics: exact type
@@ -375,8 +390,10 @@ impl<'p> Checker<'p> {
         let from_n = self.type_name(from);
         let to_n = self.type_name(to);
         let class_like = |t: &Type| match t {
-            Type::Class(_) => true,
-            Type::Nullable(inner) => matches!(**inner, Type::Class(_)),
+            Type::Class(_) | Type::Map(..) | Type::Set(_) => true,
+            Type::Nullable(inner) => {
+                matches!(**inner, Type::Class(_) | Type::Map(..) | Type::Set(_))
+            }
             _ => false,
         };
         if class_like(from) && class_like(to) {
