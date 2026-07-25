@@ -126,6 +126,8 @@ struct LargeAlloc {
 struct ArenaStats {
     chunks: std::sync::atomic::AtomicUsize,
     large: std::sync::atomic::AtomicUsize,
+    membership_lookups: std::sync::atomic::AtomicUsize,
+    container_delete_entries: std::sync::atomic::AtomicUsize,
 }
 
 /// Payload layout of a dynamic array (Q4): length, capacity, element
@@ -683,6 +685,10 @@ impl Context {
     /// state (the fourth condition) — a hit here may be a free-listed
     /// (dead) block.
     fn arena_lookup_block(&self, addr: usize) -> Option<(*mut u8, usize)> {
+        #[cfg(test)]
+        self.stats
+            .membership_lookups
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let i = self.chunk_map.partition_point(|&(b, _)| b <= addr);
         if i == 0 {
             return None;
@@ -706,28 +712,62 @@ impl Context {
         Some((unsafe { chunk.base.add(bi * chunk.block_size) }, chunk.class))
     }
 
+    /// Clears the separately allocated storage owned by a Map/Set before
+    /// its header is retired.
+    ///
+    /// `payload` must be a live Map/Set header owned by this Context.
+    fn clear_container_on_delete(&mut self, payload: usize) {
+        #[cfg(test)]
+        self.stats
+            .container_delete_entries
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // SAFETY: callers reach this helper only after exact membership,
+        // liveness, and Map/Set class-id checks.
+        unsafe { crate::assocops::clear(self, payload as *mut u8) };
+    }
+
     /// Ship-tier release: a live classed block goes to its class's free
-    /// list; a large record is freed and dropped. Anything else — dead,
-    /// free-listed, or unknown — is undefined per Q6/§8.1b and handled
-    /// as a no-op (never a trap, never relied upon).
+    /// list; a large record is freed and dropped. Map/Set storage is
+    /// cleared after the same membership/header read that release already
+    /// requires, avoiding a container-specific lookup before every
+    /// ordinary delete. Anything else — dead, free-listed, or unknown —
+    /// is undefined per Q6/§8.1b and handled as a no-op (never a trap,
+    /// never relied upon).
     fn arena_release(&mut self, payload: usize) {
         if let Some((block, class)) = self.arena_lookup_block(payload) {
-            // SAFETY: `block` heads a block inside an owned chunk; the
-            // state word and the payload's first word (the free-list
-            // link) stay inside it.
-            unsafe {
-                if (block as *const u64).read() == LIVE_STATE {
-                    (block as *mut u64).write(DEAD_STATE);
-                    (payload as *mut usize).write(self.free_heads[class]);
-                    self.free_heads[class] = payload;
+            // SAFETY: `block` heads a block inside an owned chunk; both
+            // header reads stay inside it.
+            let class_id = unsafe {
+                if (block as *const u64).read() != LIVE_STATE {
+                    return;
                 }
+                (block.add(8) as *const u32).read()
+            };
+            if matches!(class_id, CLASS_MAP | CLASS_SET) {
+                self.clear_container_on_delete(payload);
+            }
+            // SAFETY: the live-grid check above proves `block` is still
+            // owned. Container clearing only retires its separate child
+            // allocations, so the state word and payload free-list link
+            // remain valid.
+            unsafe {
+                (block as *mut u64).write(DEAD_STATE);
+                (payload as *mut usize).write(self.free_heads[class]);
+                self.free_heads[class] = payload;
             }
             return;
         }
         if let Some(a) = self.large.remove(&payload) {
+            // SAFETY: removing the exact live record proves `a.base`
+            // heads an owned allocation whose class-id word is readable.
+            let class_id = unsafe { (a.base.add(8) as *const u32).read() };
+            if matches!(class_id, CLASS_MAP | CLASS_SET) {
+                self.clear_container_on_delete(payload);
+            }
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
-            // frees it exactly once.
+            // frees it exactly once. Container clearing only retired
+            // separate child allocations.
             unsafe { dealloc(a.base, a.layout) };
             #[cfg(test)]
             self.stats
@@ -747,42 +787,6 @@ impl Context {
     /// its record dropped. A double delete or unknown pointer is
     /// undefined (Q6/§8.1b) and handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
-        // Map/Set own separate Context allocations for their ordered
-        // entries and bucket index. Retire those eagerly before the
-        // header itself, matching clear()/unsafeDelete (§10.7). Resolve
-        // the class only through the tier's exact live-membership data;
-        // never inspect an unknown pointer.
-        let class_id = if self.release_on_delete {
-            if let Some((block, _)) = self.arena_lookup_block(payload) {
-                // SAFETY: `block` is an owned live-grid block; read the
-                // class id only when its state says live.
-                unsafe {
-                    ((block as *const u64).read() == LIVE_STATE)
-                        .then(|| (block.add(8) as *const u32).read())
-                }
-            } else {
-                self.large.get(&payload).and_then(|a| {
-                    // SAFETY: `a.base` heads an owned large allocation.
-                    unsafe {
-                        ((a.base as *const u64).read() == LIVE_STATE)
-                            .then(|| (a.base.add(8) as *const u32).read())
-                    }
-                })
-            }
-        } else {
-            self.allocations.get(&payload).and_then(|a| {
-                if !a.live {
-                    return None;
-                }
-                // SAFETY: a live allocation owns its header.
-                Some(unsafe { (a.base.add(8) as *const u32).read() })
-            })
-        };
-        if matches!(class_id, Some(CLASS_MAP | CLASS_SET)) {
-            // SAFETY: the live class-id check above proves this payload is
-            // an AssocHeader of this Context.
-            unsafe { crate::assocops::clear(self, payload as *mut u8) };
-        }
         if self.release_on_delete {
             self.arena_release(payload);
             return;
@@ -794,6 +798,7 @@ impl Context {
                     "unsafeDelete of a pointer the Context does not own",
                     pos_id,
                 );
+                return;
             }
             Some(a) if !a.live => {
                 self.trap(
@@ -801,14 +806,39 @@ impl Context {
                     "unsafeDelete of an already-deleted allocation",
                     pos_id,
                 );
+                return;
             }
             Some(a) => {
-                a.live = false;
-                // SAFETY: `base` is owned by this context and at least
-                // HEADER_SIZE bytes; poisoning the state word makes the
-                // emitted use-after-delete checks fire.
-                unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+                // SAFETY: exact map membership and `a.live` prove the
+                // allocation owns a readable header.
+                let class_id = unsafe { (a.base.add(8) as *const u32).read() };
+                if matches!(class_id, CLASS_MAP | CLASS_SET) {
+                    // End the allocation-table borrow before clearing:
+                    // backing storage is retired through recursive
+                    // `delete` calls on this Context.
+                } else {
+                    a.live = false;
+                    // SAFETY: `base` is owned by this context and at
+                    // least HEADER_SIZE bytes; poisoning the state word
+                    // makes the emitted use-after-delete checks fire.
+                    unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+                    return;
+                }
             }
+        }
+        self.clear_container_on_delete(payload);
+        if let Some(a) = self.allocations.get_mut(&payload) {
+            a.live = false;
+            // SAFETY: `base` is owned by this context and at least
+            // HEADER_SIZE bytes; poisoning the state word makes the
+            // emitted use-after-delete checks fire.
+            unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+        } else {
+            self.trap(
+                TrapKind::Internal,
+                "Map/Set header disappeared while deleting its storage",
+                pos_id,
+            );
         }
     }
 
@@ -1530,6 +1560,41 @@ mod tests {
         let r = ctx.trap_record().expect("trap recorded");
         assert_eq!(r.kind, TrapKind::DoubleDelete);
         assert_eq!(r.pos_id, 6);
+    }
+
+    #[test]
+    fn ordinary_delete_skips_container_path_and_ship_has_one_membership_lookup() {
+        use std::sync::atomic::Ordering::SeqCst;
+
+        for mut ctx in [Context::new(), Context::new_releasing()] {
+            let releasing = ctx.release_on_delete;
+            let ordinary = ctx.alloc(16, 1, 0);
+            let stats = ctx.test_stats();
+            let lookups_before = stats.membership_lookups.load(SeqCst);
+            let container_entries_before = stats.container_delete_entries.load(SeqCst);
+
+            ctx.delete(ordinary as usize, 0);
+
+            assert_eq!(
+                stats.container_delete_entries.load(SeqCst),
+                container_entries_before,
+                "an ordinary allocation must not enter the Map/Set delete path"
+            );
+            assert_eq!(
+                stats.membership_lookups.load(SeqCst) - lookups_before,
+                usize::from(releasing),
+                "ship delete must combine class resolution with its one release lookup"
+            );
+
+            // Prove the path counter is live, not a vacuous zero.
+            let map =
+                crate::assocops::new(&mut ctx, 4, 4, crate::assocops::KeyKind::Bits, false, 0);
+            ctx.delete(map as usize, 0);
+            assert_eq!(
+                stats.container_delete_entries.load(SeqCst),
+                container_entries_before + 1
+            );
+        }
     }
 
     #[test]
