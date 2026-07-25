@@ -1283,17 +1283,19 @@ impl<'p> Checker<'p> {
             return Some(self.check_date_member(prop, prop_pos, for_write));
         }
         if (name == "Map" || name == "Set") && self.scope_item(&name).is_none() {
-            if name == "Map"
-                && prop == "groupBy"
-                && self.reject_api_form("Map", "groupBy", "Map.groupBy", prop_pos.clone())
-            {
+            if name == "Map" && prop == "groupBy" {
+                self.error(
+                    RuleCode::S014,
+                    "`Map.groupBy` may only be called, not read as a value (Q27)",
+                    prop_pos.clone(),
+                );
                 return Some(self.err_expr(prop_pos));
             }
             self.error(
                 RuleCode::S014,
                 format!(
                     "`{name}.{prop}` is outside the accepted Map/Set subset; \
-                     static `groupBy` and iterator-based APIs are rejected (Q24)"
+                     iterator-based APIs are rejected (Q24)"
                 ),
                 prop_pos.clone(),
             );
@@ -1337,9 +1339,20 @@ impl<'p> Checker<'p> {
             Some(ScopeItem::Global(_)) | Some(ScopeItem::Func(_))
             | Some(ScopeItem::GenericFunc(_)) | Some(ScopeItem::Foreign(_)) => None,
             None => {
-                if name == "Object" && prop == "setPrototypeOf" {
-                    self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
-                    return Some(self.err_expr(prop_pos));
+                if name == "Object" {
+                    if prop == "setPrototypeOf" {
+                        self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
+                        return Some(self.err_expr(prop_pos));
+                    }
+                    if prop == "groupBy" {
+                        self.reject_api_form(
+                            "Object",
+                            "groupBy",
+                            "Object.groupBy",
+                            prop_pos.clone(),
+                        );
+                        return Some(self.err_expr(prop_pos));
+                    }
                 }
                 None
             }
@@ -2576,7 +2589,92 @@ impl<'p> Checker<'p> {
     /// an already-nullable form of one.
     fn map_get_value_ok(&self, value: &Type) -> bool {
         self.is_reference_class(value)
+            || matches!(value, Type::Array(_))
             || matches!(value, Type::Nullable(inner) if self.is_reference_class(inner))
+    }
+
+    /// Checks the Q27 static `Map.groupBy` intrinsic. Both generic
+    /// arguments are inferred from the array and callback return, as for
+    /// `Array.map`; the key result must be in the Q24 whitelist.
+    fn check_map_group_by(
+        &mut self,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        if c.args.len() != 2 {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "`Map.groupBy` expects an array and a callback, got {} argument(s)",
+                    c.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        let items = self.check_expr(&c.args[0].expr, None, fx);
+        let elem = match &items.ty {
+            Type::Array(elem) => (**elem).clone(),
+            Type::Error => return self.err_expr(pos),
+            other => {
+                let actual = self.type_name(other);
+                self.error(
+                    RuleCode::S100,
+                    format!("`Map.groupBy` items must be a `T[]`, got `{actual}`"),
+                    items.pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+        };
+        let callback = self.check_arr_callback(
+            &c.args[1],
+            vec![elem.clone()],
+            None,
+            fx,
+            "Map.groupBy",
+        );
+        let key = match &callback.ty {
+            Type::Func(ft) if ft.ret != Type::Void => ft.ret.clone(),
+            Type::Func(_) => {
+                self.error(
+                    RuleCode::S100,
+                    "`Map.groupBy` callback must return a key",
+                    callback.pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            Type::Error => return self.err_expr(pos),
+            other => {
+                let actual = self.type_name(other);
+                self.error(
+                    RuleCode::S100,
+                    format!("`Map.groupBy` callback is not a function, got `{actual}`"),
+                    callback.pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+        };
+        if self.assoc_key_kind(&key).is_none() {
+            let key_name = self.type_name(&key);
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`Map.groupBy` callback returns `{key_name}`, which is not a \
+                     §10.2 Map/Set key kind (Q24)"
+                ),
+                callback.pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Map(MapFn::GroupBy),
+                args: vec![items, callback],
+            },
+            ty: Type::Map(Box::new(key), Box::new(Type::Array(Box::new(elem)))),
+            pos,
+        }
     }
 
     /// Checks a `Map<K, V>` intrinsic method (stdlib.md §10, Q24).
@@ -2739,7 +2837,7 @@ impl<'p> Checker<'p> {
                 );
                 mk(MapFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
-            MapFn::New | MapFn::Size => {
+            MapFn::New | MapFn::Size | MapFn::GroupBy => {
                 self.error(
                     RuleCode::S100,
                     "internal Map member-table mismatch",
@@ -2834,6 +2932,63 @@ impl<'p> Checker<'p> {
                     "Set.forEach",
                 );
                 mk(SetFn::ForEach, vec![recv, callback], Type::Void, pos)
+            }
+            SetFn::Union
+            | SetFn::Intersection
+            | SetFn::Difference
+            | SetFn::SymmetricDifference
+            | SetFn::IsSubsetOf
+            | SetFn::IsSupersetOf
+            | SetFn::IsDisjointFrom => {
+                if c.args.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`Set.{name}` expects exactly 1 Set argument, got {}",
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if c.args[0].spread.is_some() {
+                    self.error(
+                        RuleCode::S100,
+                        "spread arguments are not decided",
+                        self.pos(c.args[0].spread.unwrap_or_default()),
+                    );
+                    return self.err_expr(pos);
+                }
+                let other = self.check_expr(&c.args[0].expr, None, fx);
+                match &other.ty {
+                    Type::Set(other_key) => {
+                        self.require_assignable(
+                            other_key,
+                            &key,
+                            other.pos.clone(),
+                            "the Set argument key",
+                        );
+                    }
+                    Type::Error => return self.err_expr(pos),
+                    _ => {
+                        self.reject_api_form(
+                            "Set<K>",
+                            "algebra(non-Set)",
+                            &format!("Set.{name} non-Set argument"),
+                            other.pos.clone(),
+                        );
+                        return self.err_expr(pos);
+                    }
+                }
+                let ty = if matches!(
+                    operation,
+                    SetFn::IsSubsetOf | SetFn::IsSupersetOf | SetFn::IsDisjointFrom
+                ) {
+                    Type::Bool
+                } else {
+                    set_ty
+                };
+                mk(operation, vec![recv, other], ty, pos)
             }
             SetFn::New | SetFn::Size => {
                 self.error(
@@ -3926,6 +4081,12 @@ impl<'p> Checker<'p> {
             if let Some(handled) = self.check_date_static_call(&name, c, fx, pos.clone()) {
                 return handled;
             }
+        }
+        if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Map")
+            && self.assoc_is_ambient("Map", fx)
+            && name == "groupBy"
+        {
+            return self.check_map_group_by(c, fx, pos);
         }
         if let Some(handled) =
             self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)

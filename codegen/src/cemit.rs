@@ -2410,6 +2410,37 @@ impl<'m> Emitter<'m> {
     ) -> Result<String, String> {
         use hir::MapFn as M;
         let ind = indent(depth);
+        if f == M::GroupBy {
+            let (key, elem) = match (ret_ty, args.first().map(|arg| &arg.ty)) {
+                (Type::Map(key, value), Some(Type::Array(elem))) => match &**value {
+                    Type::Array(group_elem) if **group_elem == **elem => {
+                        ((**key).clone(), (**elem).clone())
+                    }
+                    other => return Err(format!("Map.groupBy result value {other:?}")),
+                },
+                other => return Err(format!("Map.groupBy shape {other:?}")),
+            };
+            let items = self.eval_pinned(
+                args.first().ok_or("Map.groupBy items")?,
+                out,
+                depth,
+            )?;
+            let callback = self.eval(
+                args.get(1).ok_or("Map.groupBy callback")?,
+                out,
+                depth,
+            )?;
+            let ft = self.fresh_tmp();
+            let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
+            let bridge = self.emit_group_bridge(&elem, &key)?;
+            let key_ct = self.ctype(&key)?;
+            let key_kind =
+                crate::layout::assoc_key_kind(self.module, &key)?.code();
+            let pid = self.pos_id(pos);
+            return Ok(format!(
+                "sub_rt_map_group_by(ctx, {items}, {ft}.code, {ft}.env, (const void*)&{bridge}, sizeof({key_ct}), {key_kind}u, {pid}u)"
+            ));
+        }
         let (key, value) = match f {
             M::New => match ret_ty {
                 Type::Map(k, v) => ((**k).clone(), (**v).clone()),
@@ -2488,6 +2519,7 @@ impl<'m> Emitter<'m> {
                     "sub_rt_map_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
                 ))
             }
+            M::GroupBy => Err("Map.GroupBy reached receiver lowering".to_string()),
             other => Err(format!("unknown MapFn {other:?}")),
         }
     }
@@ -2554,6 +2586,15 @@ impl<'m> Emitter<'m> {
                     "sub_rt_set_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
                 ))
             }
+            S::Union | S::Intersection | S::Difference | S::SymmetricDifference => {
+                let other = self.eval_pinned(arg_at(1)?, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("{}(ctx, {h}, {other}, {pid}u)", f.symbol()))
+            }
+            S::IsSubsetOf | S::IsSupersetOf | S::IsDisjointFrom => {
+                let other = self.eval_pinned(arg_at(1)?, out, depth)?;
+                Ok(format!("({}(ctx, {h}, {other}) != 0)", f.symbol()))
+            }
             other => Err(format!("unknown SetFn {other:?}")),
         }
     }
@@ -2591,6 +2632,29 @@ impl<'m> Emitter<'m> {
                 ),
             )
         };
+        let _ = writeln!(self.protos, "{sig};");
+        let _ = writeln!(self.helpers, "{sig} {{ {call}; }}");
+        Ok(name)
+    }
+
+    /// Defines the typed C callback adapter used by `Map.groupBy`.
+    /// The runtime supplies an owned element copy and a key result slot.
+    fn emit_group_bridge(
+        &mut self,
+        elem: &Type,
+        key: &Type,
+    ) -> Result<String, String> {
+        let n = self.lambda;
+        self.lambda += 1;
+        let name = format!("ss_group_bridge{n}");
+        let elem_ct = self.ctype(elem)?;
+        let key_ct = self.ctype(key)?;
+        let sig = format!(
+            "static void {name}(void* ctx, const void* code, const void* env, const void* element, void* key_out)"
+        );
+        let call = format!(
+            "*(({key_ct}*)key_out) = (({key_ct}(*)(void*, void*, {elem_ct}))code)(ctx, (void*)env, *((const {elem_ct}*)element))"
+        );
         let _ = writeln!(self.protos, "{sig};");
         let _ = writeln!(self.helpers, "{sig} {{ {call}; }}");
         Ok(name)
@@ -4029,6 +4093,14 @@ extern void sub_rt_map_clear(void* ctx, void* map);
 extern void sub_rt_set_clear(void* ctx, void* set);
 extern void sub_rt_map_for_each(void* ctx, void* map, const void* code, const void* env, const void* bridge);
 extern void sub_rt_set_for_each(void* ctx, void* set, const void* code, const void* env, const void* bridge);
+extern void* sub_rt_map_group_by(void* ctx, void* items, const void* code, const void* env, const void* bridge, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
+extern void* sub_rt_set_union(void* ctx, void* left, void* right, uint32_t pos_id);
+extern void* sub_rt_set_intersection(void* ctx, void* left, void* right, uint32_t pos_id);
+extern void* sub_rt_set_difference(void* ctx, void* left, void* right, uint32_t pos_id);
+extern void* sub_rt_set_symmetric_difference(void* ctx, void* left, void* right, uint32_t pos_id);
+extern int32_t sub_rt_set_is_subset_of(void* ctx, void* left, void* right);
+extern int32_t sub_rt_set_is_superset_of(void* ctx, void* left, void* right);
+extern int32_t sub_rt_set_is_disjoint_from(void* ctx, void* left, void* right);
 
 /* Math intrinsics (stdlib.md 1): opaque runtime symbols, never bare
  * libm calls — clang constant-folds recognized libm calls at -O2, a

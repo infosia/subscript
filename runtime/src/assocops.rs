@@ -885,6 +885,370 @@ type MapBridge = unsafe extern "C" fn(
 type SetBridge =
     unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8);
 
+/// Fixed ABI of a generated `Map.groupBy` callback bridge. The bridge
+/// copies/loads one array element into the script ABI and writes the
+/// callback's concrete key result to `key_out`.
+type GroupBridge = unsafe extern "C" fn(
+    *mut Context,
+    *const u8,
+    *const u8,
+    *const u8,
+    *mut u8,
+);
+
+/// Groups an array under callback-produced keys. The output map, every
+/// group array, and every stored element own fresh Context storage.
+///
+/// The current array element is copied before the callback runs. This is
+/// required both by C2 aggregate value semantics and because the callback
+/// may mutate/grow the source array, invalidating a pointer into its live
+/// element block.
+///
+/// # Safety
+///
+/// `items` is a live array; `code`/`env` are a callback `(T) -> K`;
+/// `bridge` has the [`GroupBridge`] signature and writes `key_size`
+/// bytes to its final argument.
+pub(crate) unsafe fn group_by(
+    ctx: *mut Context,
+    items: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    bridge: *const u8,
+    key_size: usize,
+    kind: KeyKind,
+    pos_id: u32,
+) -> *mut u8 {
+    if items.is_null() || code.is_null() || bridge.is_null() || unsafe { (*ctx).trapped() } {
+        return std::ptr::null_mut();
+    }
+    let out = new(
+        unsafe { &mut *ctx },
+        key_size,
+        std::mem::size_of::<*mut u8>(),
+        kind,
+        false,
+        pos_id,
+    );
+    if out.is_null() {
+        return out;
+    }
+    // Runtime-owned results are not yet visible in a generated local.
+    // Root both the input and output across callback-triggered collect().
+    let mut roots = [items as usize, out as usize];
+    unsafe { (*ctx).shadow_push(roots.as_mut_ptr() as usize, roots.len()) };
+
+    let elem_size = unsafe { (*ctx).array_elem_size(items) };
+    let initial_len = unsafe { (*ctx).array_len(items) }.max(0) as usize;
+    let mut element = vec![0u8; elem_size];
+    let call: GroupBridge = unsafe { std::mem::transmute(bridge) };
+    for index in 0..initial_len {
+        // Match the existing Array callback methods: appends after entry
+        // do not extend the visit count, while removals shorten it.
+        if unsafe { (*ctx).array_len(items) }.max(0) as usize <= index {
+            break;
+        }
+        let source = unsafe { (*ctx).array_elem_ptr(items, index as i32, pos_id) };
+        if source.is_null() {
+            break;
+        }
+        // SAFETY: source is an in-bounds element slot and `element`
+        // owns exactly the tier's element width.
+        unsafe { std::ptr::copy_nonoverlapping(source, element.as_mut_ptr(), elem_size) };
+        let mut key = [0u8; 8];
+        // SAFETY: generated bridge contract. Q24 key widths are at most
+        // eight bytes, validated by `new`.
+        unsafe { call(ctx, code, env, element.as_ptr(), key.as_mut_ptr()) };
+        if unsafe { (*ctx).trapped() } {
+            break;
+        }
+
+        let mut group = std::ptr::null_mut::<u8>();
+        if unsafe {
+            get(
+                ctx,
+                out,
+                key.as_ptr(),
+                (&mut group as *mut *mut u8).cast(),
+            )
+        } {
+            if unsafe { (*ctx).array_push(group, element.as_ptr(), pos_id) } < 0 {
+                break;
+            }
+            continue;
+        }
+
+        let created = unsafe { &mut *ctx }.array_new(elem_size, pos_id);
+        if created.is_null() {
+            break;
+        }
+        if unsafe { (*ctx).array_push(created, element.as_ptr(), pos_id) } < 0 {
+            break;
+        }
+        // `insert` copies the handle into map-owned entry storage; no
+        // script callback or collector can run before insertion.
+        unsafe {
+            insert(
+                ctx,
+                out,
+                key.as_ptr(),
+                (&created as *const *mut u8).cast(),
+                pos_id,
+            )
+        };
+        if unsafe { (*ctx).trapped() } {
+            break;
+        }
+    }
+    unsafe { (*ctx).shadow_pop() };
+    out
+}
+
+unsafe fn set_shapes_match(left: *mut u8, right: *mut u8) -> bool {
+    if left.is_null() || right.is_null() {
+        return false;
+    }
+    let (a, b) = unsafe {
+        (
+            &*left.cast::<AssocHeader>(),
+            &*right.cast::<AssocHeader>(),
+        )
+    };
+    a.value_size == 0
+        && b.value_size == 0
+        && a.key_size == b.key_size
+        && a.key_kind == b.key_kind
+}
+
+unsafe fn new_set_like(ctx: *mut Context, source: *mut u8, pos_id: u32) -> *mut u8 {
+    let (key_size, kind) = unsafe {
+        let h = &*source.cast::<AssocHeader>();
+        (
+            h.key_size as usize,
+            KeyKind::from_u32(h.key_kind as u32).unwrap_or(KeyKind::Bits),
+        )
+    };
+    new(unsafe { &mut *ctx }, key_size, 0, kind, true, pos_id)
+}
+
+unsafe fn ordered_key_copy(source: *mut u8, index: usize, out: &mut [u8; 8]) -> bool {
+    let h = unsafe { &*source.cast::<AssocHeader>() };
+    if index >= h.order_len as usize || !unsafe { entry_active(h, index) } {
+        return false;
+    }
+    let size = h.key_size as usize;
+    unsafe { std::ptr::copy_nonoverlapping(entry_key(h, index), out.as_mut_ptr(), size) };
+    true
+}
+
+unsafe fn set_order_len(source: *mut u8) -> usize {
+    unsafe { (*source.cast::<AssocHeader>()).order_len as usize }
+}
+
+unsafe fn set_insert_ordered(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *mut u8,
+    membership: Option<(*mut u8, bool)>,
+    pos_id: u32,
+) {
+    let mut key = [0u8; 8];
+    for index in 0..unsafe { set_order_len(source) } {
+        if !unsafe { ordered_key_copy(source, index, &mut key) } {
+            continue;
+        }
+        if let Some((other, wanted)) = membership {
+            if unsafe { has(ctx, other, key.as_ptr()) } != wanted {
+                continue;
+            }
+        }
+        unsafe { insert(ctx, out, key.as_ptr(), std::ptr::null(), pos_id) };
+        if unsafe { (*ctx).trapped() } {
+            break;
+        }
+    }
+}
+
+unsafe fn require_set_shapes(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> bool {
+    if unsafe { set_shapes_match(left, right) } {
+        return true;
+    }
+    unsafe { &mut *ctx }.trap(
+        TrapKind::Internal,
+        "Set operands disagree on their monomorphized key shape",
+        pos_id,
+    );
+    false
+}
+
+/// Returns a fresh union: receiver order followed by new argument keys.
+///
+/// # Safety
+///
+/// Both handles are live `Set<K>` values of the same monomorphized shape.
+pub(crate) unsafe fn set_union(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { require_set_shapes(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    let out = unsafe { new_set_like(ctx, left, pos_id) };
+    if out.is_null() {
+        return out;
+    }
+    unsafe { set_insert_ordered(ctx, out, left, None, pos_id) };
+    if !unsafe { (*ctx).trapped() } {
+        unsafe { set_insert_ordered(ctx, out, right, None, pos_id) };
+    }
+    out
+}
+
+/// Returns a fresh intersection in ES2024 order. The smaller set is
+/// traversed; ties traverse the receiver.
+///
+/// # Safety
+///
+/// As [`set_union`].
+pub(crate) unsafe fn set_intersection(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { require_set_shapes(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    let out = unsafe { new_set_like(ctx, left, pos_id) };
+    if out.is_null() {
+        return out;
+    }
+    let (source, other) = if unsafe { len(left) <= len(right) } {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    unsafe { set_insert_ordered(ctx, out, source, Some((other, true)), pos_id) };
+    out
+}
+
+/// Returns a fresh receiver-minus-argument difference in receiver order.
+///
+/// # Safety
+///
+/// As [`set_union`].
+pub(crate) unsafe fn set_difference(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { require_set_shapes(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    let out = unsafe { new_set_like(ctx, left, pos_id) };
+    if !out.is_null() {
+        unsafe { set_insert_ordered(ctx, out, left, Some((right, false)), pos_id) };
+    }
+    out
+}
+
+/// Returns a fresh symmetric difference: receiver-only keys followed by
+/// argument-only keys.
+///
+/// # Safety
+///
+/// As [`set_union`].
+pub(crate) unsafe fn set_symmetric_difference(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { require_set_shapes(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    let out = unsafe { new_set_like(ctx, left, pos_id) };
+    if out.is_null() {
+        return out;
+    }
+    unsafe { set_insert_ordered(ctx, out, left, Some((right, false)), pos_id) };
+    if !unsafe { (*ctx).trapped() } {
+        unsafe { set_insert_ordered(ctx, out, right, Some((left, false)), pos_id) };
+    }
+    out
+}
+
+unsafe fn set_all_in(ctx: *mut Context, source: *mut u8, other: *mut u8) -> bool {
+    let mut key = [0u8; 8];
+    for index in 0..unsafe { set_order_len(source) } {
+        if unsafe { ordered_key_copy(source, index, &mut key) }
+            && !unsafe { has(ctx, other, key.as_ptr()) }
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// Tests whether every receiver key occurs in the argument.
+///
+/// # Safety
+///
+/// As [`set_union`].
+pub(crate) unsafe fn set_is_subset_of(ctx: *mut Context, left: *mut u8, right: *mut u8) -> bool {
+    (unsafe { set_shapes_match(left, right) })
+        && (unsafe { len(left) <= len(right) })
+        && unsafe { set_all_in(ctx, left, right) }
+}
+
+/// Tests whether every argument key occurs in the receiver.
+///
+/// # Safety
+///
+/// As [`set_union`].
+pub(crate) unsafe fn set_is_superset_of(ctx: *mut Context, left: *mut u8, right: *mut u8) -> bool {
+    (unsafe { set_shapes_match(left, right) })
+        && (unsafe { len(left) >= len(right) })
+        && unsafe { set_all_in(ctx, right, left) }
+}
+
+/// Tests whether the operands share no key.
+///
+/// # Safety
+///
+/// As [`set_union`].
+pub(crate) unsafe fn set_is_disjoint_from(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+) -> bool {
+    if !unsafe { set_shapes_match(left, right) } {
+        return false;
+    }
+    let (source, other) = if unsafe { len(left) <= len(right) } {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let mut key = [0u8; 8];
+    for index in 0..unsafe { set_order_len(source) } {
+        if unsafe { ordered_key_copy(source, index, &mut key) }
+            && unsafe { has(ctx, other, key.as_ptr()) }
+        {
+            return false;
+        }
+    }
+    true
+}
+
 /// Iterates a map in insertion order, checking the trap flag after every
 /// callback. Mutation by a callback is observed like JS: removed entries
 /// are skipped and entries appended before completion are visited.
@@ -1003,6 +1367,63 @@ pub(crate) unsafe fn set_for_each(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Pair {
+        value: i32,
+        tag: i32,
+    }
+
+    unsafe extern "C" fn pair_group_bridge(
+        ctx: *mut Context,
+        code: *const u8,
+        env: *const u8,
+        element: *const u8,
+        key_out: *mut u8,
+    ) {
+        let callback: unsafe extern "C" fn(*mut Context, *const u8, Pair) -> i32 =
+            unsafe { std::mem::transmute(code) };
+        let value = unsafe { element.cast::<Pair>().read_unaligned() };
+        let key = unsafe { callback(ctx, env, value) };
+        unsafe { key_out.cast::<i32>().write_unaligned(key) };
+    }
+
+    unsafe extern "C" fn pair_parity_with_collect(
+        ctx: *mut Context,
+        _env: *const u8,
+        value: Pair,
+    ) -> i32 {
+        unsafe { (*ctx).collect() };
+        value.value % 2
+    }
+
+    fn i32_set(ctx: &mut Context, values: &[i32]) -> *mut u8 {
+        let set = new(ctx, 4, 0, KeyKind::Bits, true, 0);
+        for value in values {
+            unsafe {
+                insert(
+                    ctx,
+                    set,
+                    (value as *const i32).cast(),
+                    std::ptr::null(),
+                    0,
+                );
+            }
+        }
+        set
+    }
+
+    fn i32_set_keys(set: *mut u8) -> Vec<i32> {
+        let mut keys = Vec::new();
+        let mut scratch = [0u8; 8];
+        for index in 0..unsafe { set_order_len(set) } {
+            if unsafe { ordered_key_copy(set, index, &mut scratch) } {
+                keys.push(unsafe { scratch.as_ptr().cast::<i32>().read_unaligned() });
+            }
+        }
+        keys
+    }
 
     unsafe extern "C" fn map_i32_bridge(
         ctx: *mut Context,
@@ -1136,6 +1557,129 @@ mod tests {
             );
         }
         assert_eq!(seen, vec![(2, 22), (3, 30), (1, 11), (4, 40)]);
+    }
+
+    #[test]
+    fn group_by_owns_aggregate_elements_and_roots_results_during_callbacks() {
+        let mut ctx = Context::new();
+        let items = ctx.array_new(std::mem::size_of::<Pair>(), 0);
+        for value in [
+            Pair { value: 1, tag: 10 },
+            Pair { value: 2, tag: 20 },
+            Pair { value: 3, tag: 30 },
+        ] {
+            unsafe { ctx.array_push(items, (&value as *const Pair).cast(), 0) };
+        }
+        let groups = unsafe {
+            group_by(
+                &mut *ctx,
+                items,
+                pair_parity_with_collect as *const u8,
+                std::ptr::null(),
+                pair_group_bridge as *const u8,
+                4,
+                KeyKind::Bits,
+                0,
+            )
+        };
+        assert!(!groups.is_null());
+        assert_eq!(unsafe { len(groups) }, 2);
+        let header = unsafe { &*groups.cast::<AssocHeader>() };
+        assert_eq!(
+            unsafe { entry_key(header, 0).cast::<i32>().read_unaligned() },
+            1
+        );
+        assert_eq!(
+            unsafe { entry_key(header, 1).cast::<i32>().read_unaligned() },
+            0
+        );
+
+        let odd = 1i32;
+        let mut odd_group = std::ptr::null_mut::<u8>();
+        assert!(unsafe {
+            get(
+                &mut *ctx,
+                groups,
+                (&odd as *const i32).cast(),
+                (&mut odd_group as *mut *mut u8).cast(),
+            )
+        });
+        assert_eq!(unsafe { ctx.array_len(odd_group) }, 2);
+        assert_ne!(
+            unsafe { ctx.array_data(items) },
+            unsafe { ctx.array_data(odd_group) },
+            "a group must not alias the source array's element block"
+        );
+        let changed = Pair { value: 99, tag: 99 };
+        unsafe {
+            ctx.array_elem_ptr(odd_group, 0, 0)
+                .cast::<Pair>()
+                .write_unaligned(changed);
+        }
+        let original =
+            unsafe { ctx.array_elem_ptr(items, 0, 0).cast::<Pair>().read_unaligned() };
+        assert_eq!(original, Pair { value: 1, tag: 10 });
+    }
+
+    #[test]
+    fn set_algebra_is_fresh_and_matches_es2024_order_and_predicates() {
+        let mut ctx = Context::new();
+        let s1 = i32_set(&mut ctx, &[1, 2, 3]);
+        let s2 = i32_set(&mut ctx, &[3, 4]);
+        let union12 = unsafe { set_union(&mut *ctx, s1, s2, 0) };
+        let union21 = unsafe { set_union(&mut *ctx, s2, s1, 0) };
+        assert_ne!(union12, s1);
+        assert_eq!(i32_set_keys(union12), vec![1, 2, 3, 4]);
+        assert_eq!(i32_set_keys(union21), vec![3, 4, 1, 2]);
+        assert_eq!(
+            i32_set_keys(unsafe { set_intersection(&mut *ctx, s1, s2, 0) }),
+            vec![3]
+        );
+        assert_eq!(
+            i32_set_keys(unsafe { set_difference(&mut *ctx, s1, s2, 0) }),
+            vec![1, 2]
+        );
+        assert_eq!(
+            i32_set_keys(unsafe { set_difference(&mut *ctx, s2, s1, 0) }),
+            vec![4]
+        );
+        assert_eq!(
+            i32_set_keys(unsafe { set_symmetric_difference(&mut *ctx, s1, s2, 0) }),
+            vec![1, 2, 4]
+        );
+        assert_eq!(
+            i32_set_keys(unsafe { set_symmetric_difference(&mut *ctx, s2, s1, 0) }),
+            vec![4, 1, 2]
+        );
+
+        let wide = i32_set(&mut ctx, &[1, 2, 3, 4]);
+        let narrow = i32_set(&mut ctx, &[4, 2]);
+        assert_eq!(
+            i32_set_keys(unsafe { set_intersection(&mut *ctx, wide, narrow, 0) }),
+            vec![4, 2],
+            "ES2024 intersection traverses the smaller argument"
+        );
+
+        assert!(!unsafe { set_is_subset_of(&mut *ctx, s1, s2) });
+        assert!(!unsafe { set_is_superset_of(&mut *ctx, s1, s2) });
+        assert!(!unsafe { set_is_disjoint_from(&mut *ctx, s1, s2) });
+        let only_three = i32_set(&mut ctx, &[3]);
+        let outside = i32_set(&mut ctx, &[9]);
+        assert!(unsafe { set_is_subset_of(&mut *ctx, only_three, s1) });
+        assert!(unsafe { set_is_superset_of(&mut *ctx, s1, only_three) });
+        assert!(unsafe { set_is_disjoint_from(&mut *ctx, s1, outside) });
+
+        let nine = 9i32;
+        unsafe {
+            insert(
+                &mut *ctx,
+                union12,
+                (&nine as *const i32).cast(),
+                std::ptr::null(),
+                0,
+            );
+        }
+        assert!(!unsafe { has(&mut *ctx, s1, (&nine as *const i32).cast()) });
     }
 
     #[test]

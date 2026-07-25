@@ -568,6 +568,7 @@ fn declare_rt<M: Module>(
             F::Has | F::Delete => (&[I64, I64, I64], Some(I32)),
             F::Clear => (&[I64, I64], None),
             F::ForEach => (&[I64, I64, I64, I64, I64], None),
+            F::GroupBy => (&[I64, I64, I64, I64, I64, I64, I32, I32], Some(I64)),
             other => return Err(internal(format!("unknown MapFn {other:?}"))),
         };
         map_ids.push(mk(f.symbol(), params, ret)?);
@@ -585,6 +586,12 @@ fn declare_rt<M: Module>(
             F::Has | F::Delete => (&[I64, I64, I64], Some(I32)),
             F::Clear => (&[I64, I64], None),
             F::ForEach => (&[I64, I64, I64, I64, I64], None),
+            F::Union | F::Intersection | F::Difference | F::SymmetricDifference => {
+                (&[I64, I64, I64, I32], Some(I64))
+            }
+            F::IsSubsetOf | F::IsSupersetOf | F::IsDisjointFrom => {
+                (&[I64, I64, I64], Some(I32))
+            }
             other => return Err(internal(format!("unknown SetFn {other:?}"))),
         };
         set_ids.push(mk(f.symbol(), params, ret)?);

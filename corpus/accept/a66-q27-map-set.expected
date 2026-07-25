@@ -1,0 +1,17 @@
+group odd 1,3,5
+group even 2,4
+groups 2 true false
+union12 1,2,3,4
+union21 3,4,1,2
+intersection12 3
+intersection21 3
+difference12 1,2
+difference21 4
+symmetric12 1,2,4
+symmetric21 4,1,2
+intersectionSmall12 4,2
+intersectionSmall21 4,2
+pred12 false false false
+pred21 false false false
+predTrue true true true
+fresh false false 1,2,3,4,5

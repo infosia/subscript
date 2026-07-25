@@ -65,6 +65,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r49-number-to-string-radix.ts", RuleCode::S014, 9),
     ("r50-parse-int-no-radix.ts", RuleCode::S014, 8),
     ("r51-array-unshift-variadic.ts", RuleCode::S014, 10),
+    ("r52-object-groupby.ts", RuleCode::S014, 8),
+    ("r53-set-algebra-nonset.ts", RuleCode::S014, 9),
+    ("r54-map-groupby-key.ts", RuleCode::S014, 8),
 ];
 
 #[test]
@@ -126,6 +129,25 @@ fn q27_array_variadic_rejections_name_the_missing_prerequisite() {
         assert!(
             message.contains("Variadic parameters") && message.contains("missing prerequisite"),
             "{file}: diagnostic does not name the prerequisite: {message}"
+        );
+    }
+}
+
+#[test]
+fn q27_map_set_rejections_name_the_missing_language_shapes() {
+    let dir = corpus_dir().join("reject");
+    for (file, required) in [
+        ("r52-object-groupby.ts", "null-prototype object"),
+        ("r53-set-algebra-nonset.ts", "no set-like protocol"),
+    ] {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("Q27 Map/Set form must be rejected");
+        assert!(
+            diagnostics[0].message.contains(required),
+            "{file}: diagnostic does not explain the missing shape: {}",
+            diagnostics[0].message
         );
     }
 }

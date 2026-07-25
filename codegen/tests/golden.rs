@@ -80,13 +80,13 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // (a51–a56), P12 Number/parsing/toFixed (a57–a59), and Unicode
     // String case/trim coverage (a60), Q22/Q24 SameValueZero (a61),
     // Q26 Number formatting/clz32 (a62), and Q27 Math/Number, String,
-    // and Array stages 1–3 (a63–a65).
+    // Array stages 1–3, and Map/Set stage 4 (a63–a66).
     assert!(
-        golden_ids.len() >= 65,
-        "expected at least the 65 committed goldens (a01–a24 run set + a25–a39 interop \
+        golden_ids.len() >= 66,
+        "expected at least the 66 committed goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
-         + a62 Q26 Number formatting/clz32 + a63–a65 Q27 stages 1–3), found {}",
+         + a62 Q26 Number formatting/clz32 + a63–a66 Q27 stages 1–4), found {}",
         golden_ids.len()
     );
 

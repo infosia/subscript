@@ -33,4 +33,18 @@ declare interface Map<K, V> {
   getOr(key: K, fallback: V): V;
 }
 
+declare interface MapConstructor {
+  groupBy<K, T>(items: T[], callback: (value: T) => K): Map<K, T[]>;
+}
+
+declare interface Set<T> {
+  union(other: Set<T>): Set<T>;
+  intersection(other: Set<T>): Set<T>;
+  difference(other: Set<T>): Set<T>;
+  symmetricDifference(other: Set<T>): Set<T>;
+  isSubsetOf(other: Set<T>): boolean;
+  isSupersetOf(other: Set<T>): boolean;
+  isDisjointFrom(other: Set<T>): boolean;
+}
+
 // N is deliberately unused structurally so plain array literals remain assignable.

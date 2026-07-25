@@ -469,62 +469,6 @@ const SET_REJECTIONS: &[ApiRejection] = &[
         "The language has no iterator protocol.",
         None,
     ),
-    rejection(
-        "Set<K>",
-        "union",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
-    rejection(
-        "Set<K>",
-        "intersection",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
-    rejection(
-        "Set<K>",
-        "difference",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
-    rejection(
-        "Set<K>",
-        "symmetricDifference",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
-    rejection(
-        "Set<K>",
-        "isSubsetOf",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
-    rejection(
-        "Set<K>",
-        "isSupersetOf",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
-    rejection(
-        "Set<K>",
-        "isDisjointFrom",
-        "Q24",
-        None,
-        "Outside the checker-owned Set subset.",
-        None,
-    ),
 ];
 
 const FORM_REJECTIONS: &[ApiRejection] = &[
@@ -553,7 +497,8 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("FixedArray<T, N>", "T[] methods", "Q22", None, "FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays.", None),
     rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
     rejection("Map / Set", "new Map/Set(iterable)", "Q24", Some("construct empty, then add/set"), "The language has no iterator protocol.", Some("r43-map-iterable-constructor.ts")),
-    rejection("Map", "groupBy", "Q24", None, "Static Map grouping is outside the checker-owned subset.", None),
+    rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
+    rejection("Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
 ];
 
 const fn rejection(
@@ -682,7 +627,7 @@ pub(crate) fn map_method(name: &str) -> Option<MapFn> {
     MapFn::ALL
         .iter()
         .copied()
-        .filter(|f| !matches!(f, MapFn::New | MapFn::Size))
+        .filter(|f| !matches!(f, MapFn::New | MapFn::Size | MapFn::GroupBy))
         .find(|f| f.name() == name)
 }
 
@@ -834,10 +779,10 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
     });
     for f in MapFn::ALL {
         out.push(ApiItem {
-            group: if f == MapFn::New {
-                "Map constructor"
-            } else {
-                "Map<K, V>"
+            group: match f {
+                MapFn::New => "Map constructor",
+                MapFn::GroupBy => "Map",
+                _ => "Map<K, V>",
             },
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
@@ -1089,6 +1034,24 @@ mod tests {
     }
 
     #[test]
+    fn map_set_method_lookups_cover_q27_stage_four() {
+        assert_eq!(map_method("get"), Some(MapFn::Get));
+        assert_eq!(map_method("groupBy"), None);
+        for f in [
+            SetFn::Union,
+            SetFn::Intersection,
+            SetFn::Difference,
+            SetFn::SymmetricDifference,
+            SetFn::IsSubsetOf,
+            SetFn::IsSupersetOf,
+            SetFn::IsDisjointFrom,
+        ] {
+            assert_eq!(set_method(f.name()), Some(f));
+        }
+        assert_eq!(set_rejection("union"), None);
+    }
+
+    #[test]
     fn ambient_functions_have_expected_shapes() {
         assert_eq!(ambient_fn("print"), Some(AmbientFn::Print));
         assert_eq!(ambient_params(AmbientFn::Print), &[Type::Str]);
@@ -1161,10 +1124,10 @@ mod tests {
             assert!(has("T[]", f.api_signature()), "T[].{}", f.name());
         }
         for f in MapFn::ALL {
-            let group = if f == MapFn::New {
-                "Map constructor"
-            } else {
-                "Map<K, V>"
+            let group = match f {
+                MapFn::New => "Map constructor",
+                MapFn::GroupBy => "Map",
+                _ => "Map<K, V>",
             };
             assert!(has(group, f.api_signature()), "Map.{}", f.name());
         }

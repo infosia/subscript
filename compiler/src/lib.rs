@@ -737,18 +737,35 @@ mod tests {
     }
 
     #[test]
-    fn map_set_iterator_and_es2024_surfaces_are_s014_q24() {
+    fn map_set_iterator_surfaces_are_s014_q24() {
         for body in [
             "const map: Map<i32, i32> = new Map<i32, i32>();\n  for (const pair of map) {}",
             "const set: Set<i32> = new Set<i32>();\n  const values: Set<i32>[] = [...set];",
-            "const set: Set<i32> = new Set<i32>();\n  set.union(set);",
-            "Map.groupBy([1], (value: i32): i32 => value);",
         ] {
             let src = format!("export function main(): void {{\n  {body}\n}}\n");
             let err = check_one(&src).unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
             assert!(err[0].message.contains("Q24"), "{body}: {}", err[0].message);
         }
+    }
+
+    #[test]
+    fn map_group_by_and_set_algebra_are_accepted_by_q27() {
+        check_one(
+            "export function main(): void {\n\
+               const set: Set<i32> = new Set<i32>();\n\
+               const grouped: Map<i32, i32[]> = Map.groupBy(\n\
+                 [1],\n\
+                 (value: i32): i32 => value,\n\
+               );\n\
+               set.union(set);\n\
+               set.intersection(set);\n\
+               set.difference(set);\n\
+               set.symmetricDifference(set);\n\
+               print(`${grouped.size} ${set.isSubsetOf(set)} ${set.isSupersetOf(set)} ${set.isDisjointFrom(set)}`);\n\
+             }\n",
+        )
+        .expect("Q27 stage 4 Map/Set surface checks");
     }
 
     #[test]

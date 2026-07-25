@@ -1510,11 +1510,13 @@ pub enum MapFn {
     Clear,
     /// `forEach(f)`.
     ForEach,
+    /// `Map.groupBy(items, f)`.
+    GroupBy,
 }
 
 impl MapFn {
     /// Every accepted operation, in discriminant order.
-    pub const ALL: [MapFn; 9] = [
+    pub const ALL: [MapFn; 10] = [
         MapFn::New,
         MapFn::Size,
         MapFn::Get,
@@ -1524,6 +1526,7 @@ impl MapFn {
         MapFn::Delete,
         MapFn::Clear,
         MapFn::ForEach,
+        MapFn::GroupBy,
     ];
 
     /// Surface spelling.
@@ -1539,6 +1542,7 @@ impl MapFn {
             MapFn::Delete => "delete",
             MapFn::Clear => "clear",
             MapFn::ForEach => "forEach",
+            MapFn::GroupBy => "groupBy",
         }
     }
 
@@ -1555,19 +1559,20 @@ impl MapFn {
             MapFn::Delete => "sub_rt_map_delete",
             MapFn::Clear => "sub_rt_map_clear",
             MapFn::ForEach => "sub_rt_map_for_each",
+            MapFn::GroupBy => "sub_rt_map_group_by",
         }
     }
 
     /// True when the operation may allocate Context memory.
     #[must_use]
     pub fn allocates(self) -> bool {
-        matches!(self, MapFn::New | MapFn::Set)
+        matches!(self, MapFn::New | MapFn::Set | MapFn::GroupBy)
     }
 
     /// True when generated code must check the trap flag afterward.
     #[must_use]
     pub fn can_trap(self) -> bool {
-        self.allocates() || self == MapFn::ForEach
+        self.allocates() || matches!(self, MapFn::ForEach | MapFn::GroupBy)
     }
 
     /// Source-level generic subscript signature.
@@ -1583,6 +1588,7 @@ impl MapFn {
             MapFn::Delete => "delete(key: K): boolean",
             MapFn::Clear => "clear(): void",
             MapFn::ForEach => "forEach(callback: (value: V, key: K) => void): void",
+            MapFn::GroupBy => "groupBy<K, T>(items: T[], callback: (value: T) => K): Map<K, T[]>",
         }
     }
 
@@ -1599,6 +1605,7 @@ impl MapFn {
             MapFn::Delete => "Deletes a key and reports whether it was present.",
             MapFn::Clear => "Removes every entry.",
             MapFn::ForEach => "Traverses in insertion order with a fixed two-parameter callback.",
+            MapFn::GroupBy => "Groups array values under whitelisted keys in first-seen key order.",
         }
     }
 }
@@ -1621,11 +1628,25 @@ pub enum SetFn {
     Clear,
     /// `forEach(f)`.
     ForEach,
+    /// `union(other)`.
+    Union,
+    /// `intersection(other)`.
+    Intersection,
+    /// `difference(other)`.
+    Difference,
+    /// `symmetricDifference(other)`.
+    SymmetricDifference,
+    /// `isSubsetOf(other)`.
+    IsSubsetOf,
+    /// `isSupersetOf(other)`.
+    IsSupersetOf,
+    /// `isDisjointFrom(other)`.
+    IsDisjointFrom,
 }
 
 impl SetFn {
     /// Every accepted operation, in discriminant order.
-    pub const ALL: [SetFn; 7] = [
+    pub const ALL: [SetFn; 14] = [
         SetFn::New,
         SetFn::Size,
         SetFn::Add,
@@ -1633,6 +1654,13 @@ impl SetFn {
         SetFn::Delete,
         SetFn::Clear,
         SetFn::ForEach,
+        SetFn::Union,
+        SetFn::Intersection,
+        SetFn::Difference,
+        SetFn::SymmetricDifference,
+        SetFn::IsSubsetOf,
+        SetFn::IsSupersetOf,
+        SetFn::IsDisjointFrom,
     ];
 
     /// Surface spelling.
@@ -1646,6 +1674,13 @@ impl SetFn {
             SetFn::Delete => "delete",
             SetFn::Clear => "clear",
             SetFn::ForEach => "forEach",
+            SetFn::Union => "union",
+            SetFn::Intersection => "intersection",
+            SetFn::Difference => "difference",
+            SetFn::SymmetricDifference => "symmetricDifference",
+            SetFn::IsSubsetOf => "isSubsetOf",
+            SetFn::IsSupersetOf => "isSupersetOf",
+            SetFn::IsDisjointFrom => "isDisjointFrom",
         }
     }
 
@@ -1660,13 +1695,28 @@ impl SetFn {
             SetFn::Delete => "sub_rt_set_delete",
             SetFn::Clear => "sub_rt_set_clear",
             SetFn::ForEach => "sub_rt_set_for_each",
+            SetFn::Union => "sub_rt_set_union",
+            SetFn::Intersection => "sub_rt_set_intersection",
+            SetFn::Difference => "sub_rt_set_difference",
+            SetFn::SymmetricDifference => "sub_rt_set_symmetric_difference",
+            SetFn::IsSubsetOf => "sub_rt_set_is_subset_of",
+            SetFn::IsSupersetOf => "sub_rt_set_is_superset_of",
+            SetFn::IsDisjointFrom => "sub_rt_set_is_disjoint_from",
         }
     }
 
     /// True when the operation may allocate Context memory.
     #[must_use]
     pub fn allocates(self) -> bool {
-        matches!(self, SetFn::New | SetFn::Add)
+        matches!(
+            self,
+            SetFn::New
+                | SetFn::Add
+                | SetFn::Union
+                | SetFn::Intersection
+                | SetFn::Difference
+                | SetFn::SymmetricDifference
+        )
     }
 
     /// True when generated code must check the trap flag afterward.
@@ -1686,6 +1736,13 @@ impl SetFn {
             SetFn::Delete => "delete(key: K): boolean",
             SetFn::Clear => "clear(): void",
             SetFn::ForEach => "forEach(callback: (key: K) => void): void",
+            SetFn::Union => "union(other: Set<K>): Set<K>",
+            SetFn::Intersection => "intersection(other: Set<K>): Set<K>",
+            SetFn::Difference => "difference(other: Set<K>): Set<K>",
+            SetFn::SymmetricDifference => "symmetricDifference(other: Set<K>): Set<K>",
+            SetFn::IsSubsetOf => "isSubsetOf(other: Set<K>): boolean",
+            SetFn::IsSupersetOf => "isSupersetOf(other: Set<K>): boolean",
+            SetFn::IsDisjointFrom => "isDisjointFrom(other: Set<K>): boolean",
         }
     }
 
@@ -1700,6 +1757,13 @@ impl SetFn {
             SetFn::Delete => "Deletes a key and reports whether it was present.",
             SetFn::Clear => "Removes every entry.",
             SetFn::ForEach => "Traverses in insertion order with a fixed one-parameter callback.",
+            SetFn::Union => "Returns a fresh union in ES2024 result order.",
+            SetFn::Intersection => "Returns a fresh intersection in ES2024 result order.",
+            SetFn::Difference => "Returns a fresh receiver-minus-argument set.",
+            SetFn::SymmetricDifference => "Returns a fresh symmetric difference in receiver-then-argument order.",
+            SetFn::IsSubsetOf => "Tests whether every receiver key is in the argument.",
+            SetFn::IsSupersetOf => "Tests whether every argument key is in the receiver.",
+            SetFn::IsDisjointFrom => "Tests whether the sets have no common key.",
         }
     }
 }
@@ -2251,11 +2315,18 @@ mod tests {
         }
         assert!(MapFn::New.allocates());
         assert!(MapFn::Set.allocates());
+        assert!(MapFn::GroupBy.allocates());
         assert!(!MapFn::Get.allocates());
         assert!(MapFn::ForEach.can_trap());
+        assert!(MapFn::GroupBy.can_trap());
         assert!(SetFn::New.allocates());
         assert!(SetFn::Add.allocates());
+        assert!(SetFn::Union.allocates());
+        assert!(SetFn::Intersection.allocates());
+        assert!(SetFn::Difference.allocates());
+        assert!(SetFn::SymmetricDifference.allocates());
         assert!(!SetFn::Has.allocates());
+        assert!(!SetFn::IsSubsetOf.allocates());
         assert!(SetFn::ForEach.can_trap());
     }
 

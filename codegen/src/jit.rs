@@ -273,6 +273,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "sub_rt_map_for_each",
             ffi::sub_rt_map_for_each as *const u8,
         ),
+        (
+            "sub_rt_map_group_by",
+            ffi::sub_rt_map_group_by as *const u8,
+        ),
         ("sub_rt_set_new", ffi::sub_rt_set_new as *const u8),
         ("sub_rt_set_size", ffi::sub_rt_set_size as *const u8),
         ("sub_rt_set_add", ffi::sub_rt_set_add as *const u8),
@@ -282,6 +286,31 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         (
             "sub_rt_set_for_each",
             ffi::sub_rt_set_for_each as *const u8,
+        ),
+        ("sub_rt_set_union", ffi::sub_rt_set_union as *const u8),
+        (
+            "sub_rt_set_intersection",
+            ffi::sub_rt_set_intersection as *const u8,
+        ),
+        (
+            "sub_rt_set_difference",
+            ffi::sub_rt_set_difference as *const u8,
+        ),
+        (
+            "sub_rt_set_symmetric_difference",
+            ffi::sub_rt_set_symmetric_difference as *const u8,
+        ),
+        (
+            "sub_rt_set_is_subset_of",
+            ffi::sub_rt_set_is_subset_of as *const u8,
+        ),
+        (
+            "sub_rt_set_is_superset_of",
+            ffi::sub_rt_set_is_superset_of as *const u8,
+        ),
+        (
+            "sub_rt_set_is_disjoint_from",
+            ffi::sub_rt_set_is_disjoint_from as *const u8,
         ),
         ("sub_rt_date_utc", ffi::sub_rt_date_utc as *const u8),
         ("sub_rt_date_new", ffi::sub_rt_date_new as *const u8),

@@ -3108,6 +3108,56 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         pos: &Pos,
     ) -> Result<RV, String> {
         use hir::MapFn as F;
+        if f == F::GroupBy {
+            let (key, elem) = match (ret_ty, args.first().map(|arg| &arg.ty)) {
+                (Type::Map(key, value), Some(Type::Array(elem))) => match &**value {
+                    Type::Array(group_elem) if **group_elem == **elem => {
+                        ((**key).clone(), (**elem).clone())
+                    }
+                    other => {
+                        return Err(internal(format!(
+                            "Map.groupBy result value {other:?}"
+                        )))
+                    }
+                },
+                other => return Err(internal(format!("Map.groupBy shape {other:?}"))),
+            };
+            let items_expr = args
+                .first()
+                .ok_or_else(|| internal("Map.groupBy items"))?;
+            let items_rv = self.eval(items_expr)?;
+            let items = self.expect_s(items_rv)?;
+            self.live_check(items, pos)?;
+            let callback = self.eval(
+                args.get(1)
+                    .ok_or_else(|| internal("Map.groupBy callback"))?,
+            )?;
+            let (code, env) = self.expect_p(callback)?;
+            let bridge_id = define_group_bridge(self.ml, &elem, &key)?;
+            let bridge_ref = self
+                .ml
+                .module
+                .declare_func_in_func(bridge_id, self.b.func);
+            let bridge = self.b.ins().func_addr(types::I64, bridge_ref);
+            let (key_size, _) = self.ml.layouts.size_align(&key)?;
+            let kind = crate::layout::assoc_key_kind(self.ml.hir, &key)?;
+            let pos_id = self.pos_id(pos);
+            let argv = [
+                self.ctx_v,
+                items,
+                code,
+                env,
+                bridge,
+                self.iconst(types::I64, i64::from(key_size)),
+                self.iconst(types::I32, i64::from(kind.code())),
+                self.iconst(types::I32, i64::from(pos_id)),
+            ];
+            let result =
+                self.call_rt(self.ml.rt.map_ops[f as usize], &argv, true)?;
+            return result
+                .map(RV::S)
+                .ok_or_else(|| internal("Map.groupBy result"));
+        }
         let (key, value) = match f {
             F::New => match ret_ty {
                 Type::Map(key, value) => ((**key).clone(), (**value).clone()),
@@ -3227,6 +3277,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             F::New => Err(internal("Map.New reached receiver lowering")),
+            F::GroupBy => Err(internal("Map.GroupBy reached receiver lowering")),
             other => Err(internal(format!("unknown MapFn {other:?}"))),
         }
     }
@@ -3320,6 +3371,30 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     checked,
                 )?;
                 Ok(RV::None)
+            }
+            F::Union | F::Intersection | F::Difference | F::SymmetricDifference => {
+                let other_rv = self.eval(arg(1)?)?;
+                let other = self.expect_s(other_rv)?;
+                self.live_check(other, pos)?;
+                let pos_id = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, i64::from(pos_id));
+                let result =
+                    self.call_rt(rt, &[self.ctx_v, handle, other, pos_v], checked)?;
+                result
+                    .map(RV::S)
+                    .ok_or_else(|| internal(format!("Set.{} result", f.name())))
+            }
+            F::IsSubsetOf | F::IsSupersetOf | F::IsDisjointFrom => {
+                let other_rv = self.eval(arg(1)?)?;
+                let other = self.expect_s(other_rv)?;
+                self.live_check(other, pos)?;
+                let result =
+                    self.call_rt(rt, &[self.ctx_v, handle, other], false)?;
+                let result =
+                    result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
+                Ok(RV::S(
+                    self.b.ins().icmp_imm(IntCC::NotEqual, result, 0),
+                ))
             }
             F::New => Err(internal("Set.New reached receiver lowering")),
             other => Err(internal(format!("unknown SetFn {other:?}"))),
@@ -4546,6 +4621,96 @@ fn define_assoc_bridge<M: Module>(
         }
         let sigref = b.import_signature(script_sig);
         b.ins().call_indirect(sigref, code, &argv);
+        b.ins().return_(&[]);
+        b.seal_all_blocks();
+        b.finalize();
+    }
+    ml.module
+        .define_function(id, &mut cctx)
+        .map_err(|e| internal(format!("define {name}: {e}")))?;
+    ml.module.clear_context(&mut cctx);
+    Ok(id)
+}
+
+/// Defines the fixed runtime→script bridge used by `Map.groupBy`.
+/// The runtime supplies a copied element and an output slot for the
+/// callback-produced key, so neither side exposes live container
+/// storage across the callback.
+fn define_group_bridge<M: Module>(
+    ml: &mut ModLower<M>,
+    elem: &Type,
+    key: &Type,
+) -> Result<cranelift_module::FuncId, String> {
+    let Repr::Scalar(key_repr) = ml.layouts.repr(key)? else {
+        return Err(internal(format!("Map.groupBy key representation {key:?}")));
+    };
+    let mut bridge_sig = Signature::new(ml.call_conv);
+    for _ in 0..5 {
+        bridge_sig.params.push(AbiParam::new(types::I64));
+    }
+    let name = format!("ss_group_bridge{}", ml.lambda_count);
+    ml.lambda_count += 1;
+    let id = ml
+        .module
+        .declare_function(&name, cranelift_module::Linkage::Local, &bridge_sig)
+        .map_err(|e| internal(format!("declare {name}: {e}")))?;
+    let script_sig = ml.make_sig(std::slice::from_ref(elem), key, true, false)?;
+    let mut cctx = ml.module.make_context();
+    cctx.func.signature = bridge_sig;
+    let mut fbx = FunctionBuilderContext::new();
+    {
+        let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+        let entry = b.create_block();
+        b.append_block_params_for_function_params(entry);
+        b.switch_to_block(entry);
+        let fixed = b.block_params(entry).to_vec();
+        let ctx = fixed[0];
+        let code = fixed[1];
+        let env = fixed[2];
+        let element = fixed[3];
+        let key_out = fixed[4];
+        let mut argv = vec![ctx, env];
+        match ml.layouts.repr(elem)? {
+            Repr::None => {}
+            Repr::Scalar(repr) => {
+                argv.push(b.ins().load(repr, flags(), element, 0));
+            }
+            Repr::Pair => {
+                argv.push(b.ins().load(types::I64, flags(), element, 0));
+                argv.push(b.ins().load(types::I64, flags(), element, 8));
+            }
+            Repr::Agg { size, align } => {
+                let slot = b.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    size.max(1),
+                    align_shift(align.max(1)),
+                ));
+                let copy = b.ins().stack_addr(types::I64, slot, 0);
+                let config = ml.module.isa().frontend_config();
+                let access_align = 1u32 << size.max(1).trailing_zeros();
+                let copy_align = align.max(1).min(access_align);
+                b.emit_small_memory_copy(
+                    config,
+                    copy,
+                    element,
+                    u64::from(size),
+                    copy_align as u8,
+                    copy_align as u8,
+                    true,
+                    MemFlags::new(),
+                );
+                argv.push(copy);
+            }
+        }
+        let sigref = b.import_signature(script_sig);
+        let inst = b.ins().call_indirect(sigref, code, &argv);
+        let result = b
+            .inst_results(inst)
+            .first()
+            .copied()
+            .ok_or_else(|| internal("Map.groupBy callback result"))?;
+        b.ins().store(flags(), result, key_out, 0);
+        debug_assert_eq!(b.func.dfg.value_type(result), key_repr);
         b.ins().return_(&[]);
         b.seal_all_blocks();
         b.finalize();

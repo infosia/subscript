@@ -515,6 +515,185 @@ pub unsafe extern "C" fn sub_rt_set_for_each(
     unsafe { crate::assocops::set_for_each(ctx, set, code, env, bridge) };
 }
 
+/// `Map.groupBy(items, callback)`: returns a fresh insertion-ordered map
+/// whose values are fresh arrays of source elements.
+///
+/// # Safety
+///
+/// Shared contract; handles, widths, and function pointers have the
+/// generated signatures.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_map_group_by(
+    ctx: *mut Context,
+    items: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    bridge: *const u8,
+    key_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    let runtime = unsafe { &mut *ctx };
+    if !runtime.require_live_handle(items as usize, pos_id) {
+        return std::ptr::null_mut();
+    }
+    let Some(kind) = crate::assocops::KeyKind::from_u32(key_kind) else {
+        runtime.trap(
+            TrapKind::Internal,
+            format!("unknown Map.groupBy key-kind code {key_kind}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    unsafe {
+        crate::assocops::group_by(
+            ctx,
+            items,
+            code,
+            env,
+            bridge,
+            key_size as usize,
+            kind,
+            pos_id,
+        )
+    }
+}
+
+unsafe fn set_pair_is_live(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> bool {
+    let runtime = unsafe { &mut *ctx };
+    assoc_receiver_is_live(runtime, left, pos_id)
+        && assoc_receiver_is_live(runtime, right, pos_id)
+}
+
+/// `Set.union`: returns a fresh result in ES2024 order.
+///
+/// # Safety
+///
+/// Shared contract; both operands are live `Set<K>` handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_union(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { set_pair_is_live(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    unsafe { crate::assocops::set_union(ctx, left, right, pos_id) }
+}
+
+/// `Set.intersection`: returns a fresh result in ES2024 order.
+///
+/// # Safety
+///
+/// As [`sub_rt_set_union`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_intersection(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { set_pair_is_live(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    unsafe { crate::assocops::set_intersection(ctx, left, right, pos_id) }
+}
+
+/// `Set.difference`: returns a fresh receiver-minus-argument result.
+///
+/// # Safety
+///
+/// As [`sub_rt_set_union`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_difference(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { set_pair_is_live(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    unsafe { crate::assocops::set_difference(ctx, left, right, pos_id) }
+}
+
+/// `Set.symmetricDifference`: returns a fresh receiver-then-argument
+/// result.
+///
+/// # Safety
+///
+/// As [`sub_rt_set_union`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_symmetric_difference(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    if !unsafe { set_pair_is_live(ctx, left, right, pos_id) } {
+        return std::ptr::null_mut();
+    }
+    unsafe { crate::assocops::set_symmetric_difference(ctx, left, right, pos_id) }
+}
+
+/// `Set.isSubsetOf`.
+///
+/// # Safety
+///
+/// Shared contract; both operands are live `Set<K>` handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_is_subset_of(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+) -> i32 {
+    if !unsafe { set_pair_is_live(ctx, left, right, 0) } {
+        return 0;
+    }
+    i32::from(unsafe { crate::assocops::set_is_subset_of(ctx, left, right) })
+}
+
+/// `Set.isSupersetOf`.
+///
+/// # Safety
+///
+/// As [`sub_rt_set_is_subset_of`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_is_superset_of(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+) -> i32 {
+    if !unsafe { set_pair_is_live(ctx, left, right, 0) } {
+        return 0;
+    }
+    i32::from(unsafe { crate::assocops::set_is_superset_of(ctx, left, right) })
+}
+
+/// `Set.isDisjointFrom`.
+///
+/// # Safety
+///
+/// As [`sub_rt_set_is_subset_of`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_set_is_disjoint_from(
+    ctx: *mut Context,
+    left: *mut u8,
+    right: *mut u8,
+) -> i32 {
+    if !unsafe { set_pair_is_live(ctx, left, right, 0) } {
+        return 0;
+    }
+    i32::from(unsafe { crate::assocops::set_is_disjoint_from(ctx, left, right) })
+}
+
 // ----- strings (Q5) -----
 
 /// Interns a string literal embedded in the module's data.

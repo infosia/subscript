@@ -213,6 +213,12 @@
 | `clear(): void` | Removes every entry. |
 | `forEach(callback: (value: V, key: K) => void): void` | Traverses in insertion order with a fixed two-parameter callback. |
 
+### Map
+
+| subscript signature | Behavior |
+|---|---|
+| `groupBy<K, T>(items: T[], callback: (value: T) => K): Map<K, T[]>` | Groups array values under whitelisted keys in first-seen key order. |
+
 ### Set constructor
 
 | subscript signature | Behavior |
@@ -229,6 +235,13 @@
 | `delete(key: K): boolean` | Deletes a key and reports whether it was present. |
 | `clear(): void` | Removes every entry. |
 | `forEach(callback: (key: K) => void): void` | Traverses in insertion order with a fixed one-parameter callback. |
+| `union(other: Set<K>): Set<K>` | Returns a fresh union in ES2024 result order. |
+| `intersection(other: Set<K>): Set<K>` | Returns a fresh intersection in ES2024 result order. |
+| `difference(other: Set<K>): Set<K>` | Returns a fresh receiver-minus-argument set. |
+| `symmetricDifference(other: Set<K>): Set<K>` | Returns a fresh symmetric difference in receiver-then-argument order. |
+| `isSubsetOf(other: Set<K>): boolean` | Tests whether every receiver key is in the argument. |
+| `isSupersetOf(other: Set<K>): boolean` | Tests whether every argument key is in the receiver. |
+| `isDisjointFrom(other: Set<K>): boolean` | Tests whether the sets have no common key. |
 
 ### Generator<T>
 
@@ -289,13 +302,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Set<K> | `keys` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
 | Set<K> | `values` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
 | Set<K> | `entries` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
-| Set<K> | `union` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
-| Set<K> | `intersection` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
-| Set<K> | `difference` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
-| Set<K> | `symmetricDifference` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
-| Set<K> | `isSubsetOf` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
-| Set<K> | `isSupersetOf` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
-| Set<K> | `isDisjointFrom` | S014 | Q24 | — | Outside the checker-owned Set subset. | — |
 | global | `isNaN(value)` | S014 | Q25 | `Number.isNaN` | The global form coerces its argument. | `r46-number-global-isnan.ts` |
 | global | `isFinite(value)` | S014 | Q25 | `Number.isFinite` | The global form coerces its argument. | — |
 | global | `parseInt(value)` | S014 | Q25 | `parseInt(value, radix)` | The radix is a required `i32` argument. | `r50-parse-int-no-radix.ts` |
@@ -321,7 +327,8 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | FixedArray<T, N> | `T[] methods` | S014 | Q22 | — | FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays. | — |
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
 | Map / Set | `new Map/Set(iterable)` | S014 | Q24 | `construct empty, then add/set` | The language has no iterator protocol. | `r43-map-iterable-constructor.ts` |
-| Map | `groupBy` | S014 | Q24 | — | Static Map grouping is outside the checker-owned subset. | — |
+| Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
+| Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
 
 ## Divergences from ECMA
 

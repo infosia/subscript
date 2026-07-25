@@ -645,6 +645,10 @@ mod tests {
             ("Map<K, V>", member) => format!(
                 "export function main(): void {{\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  value.{member}();\n}}\n"
             ),
+            ("Set<K>", "algebra(non-Set)") => {
+                "export function main(): void {\n  const values: Set<i32> = new Set<i32>();\n  values.union([1]);\n}\n"
+                    .to_string()
+            }
             ("Set<K>", member) => format!(
                 "export function main(): void {{\n  const value: Set<i32> = new Set<i32>();\n  value.{member}();\n}}\n"
             ),
@@ -698,8 +702,8 @@ mod tests {
                 "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>([[1, 2]]);\n}\n"
                     .to_string()
             }
-            ("Map", "groupBy") => {
-                "export function main(): void {\n  Map.groupBy([1], (value: i32): i32 => value);\n}\n"
+            ("Object", "groupBy") => {
+                "export function main(): void {\n  Object.groupBy([1], (value: i32): string => `${value}`);\n}\n"
                     .to_string()
             }
             _ => panic!(
