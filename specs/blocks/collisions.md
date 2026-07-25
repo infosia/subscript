@@ -150,7 +150,9 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q5 (strings)** — `string` is an immutable UTF-8 byte view
   `(ptr, len)`; no NUL terminator assumed. `length` is the byte length
   (`i32`). `slice(start, end)` takes byte offsets and traps off a UTF-8
-  boundary (C6 trap model). Permitted surface: `length`, `slice`,
+  boundary (C6 trap model). **Out-of-range offsets clamp rather than
+  trap** (JS's negative/clamp rules) — changed by P18, recorded in
+  `stdlib.md` §8 with the reason and the cost. Permitted surface: `length`, `slice`,
   `+`/template-literal concatenation, `===`/`!==` (by content).
 - **Q6 (`unsafeDelete`)** — `declare function unsafeDelete(value: object):
   void;` frees a reference-class instance immediately. Double delete and

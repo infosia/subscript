@@ -205,13 +205,30 @@ byte strings; every index, length, and code unit in the accepted
 subset is a **byte** measure — the standing meaning of the existing
 `length`/`slice`. Programs whose indices stay in ASCII behave exactly as JS; on
 non-ASCII text the values diverge from JS's UTF-16 units (recorded,
-not hidden). Case mapping and `trim` whitespace are full Unicode (Q21). Range and
-argument errors **trap** (no NaN/RangeError values).
+not hidden). Case mapping and `trim` whitespace are full Unicode (Q21).
+Argument errors **trap** (no NaN/RangeError values) — with `slice` the
+one exception, below.
 
 Accepted members (checker: intrinsic member calls on `Type::Str`;
 runtime `sub_rt_str_*`, one implementation, both tiers; every method
 returning a string allocates via the Context):
 
+- `slice(start?: i32, end?: i32): string` — **JS negative/clamp
+  rules**: negative offsets count from the end, out-of-range offsets
+  clamp, and a reversed pair gives `""`. Off a UTF-8 boundary it still
+  **traps** (Q5, C6). *(Changed by P18 and recorded 2026-07-26. It
+  previously trapped on any out-of-range offset. The change was made
+  by the stage-2 implementer so `a64` could print `substring` and
+  `slice` on the same inputs, and it went in unrecorded — the P18
+  Phase Review found it. It is kept rather than reverted for two
+  reasons: it is what node does, and `T[].slice` already specified
+  "JS negative/clamp rules" (§9), so string `slice` trapping while
+  array `slice` clamped was an inconsistency inside one language.
+  The cost is real and is stated here rather than hidden: an
+  out-of-range `slice` used to be an early error and is now silent,
+  which is a step away from invariant 6, and it is the second
+  accepted-behaviour change P18 made — `$` substitution is the
+  other.)*
 - `indexOf(needle: string, from?: i32): i32` — byte index or −1;
   `from` defaults 0, clamped to `[0, length]` (negative → 0)
 - `lastIndexOf(needle: string): i32`

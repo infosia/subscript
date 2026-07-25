@@ -706,3 +706,102 @@ example that both candidate rules satisfy is not a measurement.
 
 **Phase Review is pending** and required before P18 is marked COMPLETE
 in the plan.
+
+## P18 Phase Review (2026-07-26) — findings and disposition
+
+Fresh no-context review of `f51d480..c1a2f5a` (P18's five stages plus
+P16). **CRITICAL: none. MAJOR: 3. MINOR: 4.** The review independently
+regenerated all five goldens `a63`–`a67` on node v24.18.0 (all match),
+regenerated `api-reference.md` (byte-identical), and confirmed the
+tracking file's claims about shared `parseInt` identity, `shift`
+reusing `pop`'s trap, `copyWithin` returning the receiver, `splice`'s
+clamped `deleteCount`, and `groupBy`/set-algebra storage ownership. It
+specifically looked for and did **not** find cross-tier divergence,
+aggregates escaping into callbacks, emitted-C UB, or a weakened corpus.
+
+### MAJOR 1 — `String.slice` changed from trapping to JS clamping, unrecorded
+
+The stage-2 implementer replaced `sub_rt_str_slice`'s out-of-range
+trap with JS's negative/clamp rules so `a64` could print `substring`
+and `slice` on the same inputs. The trap message
+`"slice(…) out of range for string length …"`, present at `f51d480`,
+no longer exists anywhere. No test covered that path, so the suite did
+not notice. Worse, this tracking file then described
+`slice(-2, 3)` as empty *as if it had always been* — the value it
+compares `substring` against was produced by the same commit.
+
+**Disposition: kept and recorded**, not reverted. It is what node does,
+and §9 already specified "JS negative/clamp rules" for `T[].slice`, so
+string `slice` trapping while array `slice` clamped was an
+inconsistency inside one language. The cost is stated in `stdlib.md`
+§8 rather than hidden: an out-of-range `slice` used to be an early
+error and is now silent, a step away from invariant 6. `collisions.md`
+Q5 amended. **This is P18's second accepted-behaviour change**, the
+first being `$` substitution.
+
+The general lesson, which the earlier `a44`/`a53` episode already
+taught once: a corpus entry that compares a new member against an
+existing one is only evidence if the existing one did not move.
+
+### MAJOR 2 — Q27 declared complete with one contracted group unimplemented
+
+`stdlib.md` §9 and `collisions.md` Q27 both list "the `every` family on
+`FixedArray`" among the thirteen reinstated groups. The checker still
+rejects it (`check/expr.rs`, any `FixedArray` receiver with an
+`arr_method` name → S014 under Q22), and `api-reference.md` correctly
+documents it as rejected. §12's five stages **never registered a corpus
+stage for it**, so the pre-registered gate could not have caught the
+omission — the same class of error as the other five §12 defects: a
+pre-registration asserting something no measurement checked.
+
+**Disposition: implement as stage 6.** The "fully implemented" claims
+in `collisions.md`, `stdlib.md` §12 and this file are withdrawn until
+it lands.
+
+### MAJOR 3 — the pre-registered benchmark gate was not run
+
+§12 pre-registered "benchmarks — no ship-row regression" and no stage
+entry reported one. Run now, twice:
+
+- First run **void by the harness's own noise check** (C's spread
+  exceeded ±20% of its median; `compiler.md` §9 requires the redo).
+- Second run, `--warmup 12 --timed 15`, noise check passed:
+  emitted-C **1.87x** of the hand-written C baseline; Cranelift
+  ship-AOT 22.76x and dev-JIT 26.17x, both the known superseded rows
+  (CLAUDE.md: Cranelift AOT was ~23x, which is why the ship tier moved
+  to C emission).
+
+**The gate does not test P18.** `perf-gate`'s only subject is
+`a22-matrix-propagation`, which uses value structs, fixed arrays and a
+hand-written loop — **no array callback method at all**. Nor does any
+`benchmarks/workloads/subscript/` entry: `sort.ts` implements
+quicksort by hand rather than calling `Array.sort`. So the code stage 5
+changed — the per-element `if indexed` branch in `call_value` and
+`call_reduce`, on every `forEach`/`map`/`filter`/`some`/`every`/
+`findIndex`/`reduce` — **is executed by no benchmark in the
+repository**. The pre-registration was satisfied formally and is
+evidence of nothing about this phase.
+
+**Two open items follow, neither blocking P18:**
+
+1. **Benchmark coverage gap.** The most-used stdlib surface has no
+   benchmark subject. A regression there is currently invisible. A
+   workload exercising array callbacks would close it.
+2. **Unattributed drift in the emitted-C figure.** 1.87x here against
+   **1.05x** recorded for arm64 in `windows-portability.md`. It cannot
+   be attributed to P18, since a22 does not execute P18's code, and
+   this machine has been under continuous compile load all session.
+   It needs an idle-machine re-measurement against a same-session
+   baseline build before anything is concluded.
+
+### MINOR 1–4
+
+Recorded and queued with the stage-6 work: `js-api-sweep.md` still
+says "implementation pending"; `Map.groupBy` hands align-1 buffers to
+generated code that does typed loads (works on supported targets, UB
+by the letter of C, unlike the neighbouring properly-typed `reduce`
+accumulator path); `Map.groupBy`'s callback-arity diagnostic cites Q24
+where the surface is Q27; the generated reference's `string.slice`
+summary no longer matches its behaviour after MAJOR 1.
+
+**P18 is NOT COMPLETE**: MAJOR 2 is open.
