@@ -42,14 +42,34 @@ independently of the implementer. `r48`/`r49` were repurposed from the
 old contract's `toPrecision`/`toString(16)` rejections to the
 required-argument S014s.
 
-## Accepted by the rule — not yet contracted
+## Accepted by the rule — contracted as Q27, implementation pending
 
 The sweep of 2026-07-25 found these fail no surviving reason: each
 exists in JS, introduces no defect, and needs no prerequisite the
-project lacks. **They are deferred only in ordering** — Q26 was already
-contracted, and the owner's decision was to close it first before
-opening more; that is now done (`86f925a`), so this table is the next
-contract to write. Nothing here is rejected.
+project lacks. Contracted as **Q27** (`f51d480`), with the corpus and
+gate staged in five in `stdlib.md` §12 (`52ed74e`). Implementation
+pending.
+
+**Writing the contract corrected the table in three places, each found
+by measuring rather than reasoning** — the entries below are the
+corrected form:
+
+- **`shift` returns `undefined` on an empty array in JS**, which looked
+  like the miss-value problem that keeps `find` and `at` out. It is
+  not: `pop` already **traps** when empty (Q4/Q15), so the same rule
+  covers `shift` and no sentinel is needed.
+- **`splice` and `unshift` are variadic in JS** (`splice(1, 2, 9, 9,
+  9)`, `unshift(a, b, c)`). The language has no variadic parameters —
+  the same missing prerequisite that keeps `Math.max` at two
+  arguments — so the accepted forms are delete-only `splice` and
+  single-element `unshift`. **A recorded subset, not parity**, and the
+  contract requires a reject entry naming the reason so a reader can
+  tell the two apart.
+- **The callback `array` parameter is not in the same class as the
+  index parameter.** `f(v, i)` passes a value and an integer; `f(v, i,
+  arr)` passes a reference to the container being iterated, which is
+  the defect the P15 review found in aggregate `Map.forEach` and
+  contradicts C5. Index accepted, array rejected.
 
 | area | API | note |
 |---|---|---|
@@ -61,8 +81,8 @@ contract to write. Nothing here is rejected.
 | `String` | the position argument of `startsWith`/`endsWith` | currently rejected as "optional arguments not accepted" |
 | `String` | `$$`/`$&` substitution in `replace`/`replaceAll` | needs no regex engine; currently a recorded Q21 divergence |
 | `Array` | `reduceRight` with a required `init` | passes the same arity rule that `reduce` passes |
-| `Array` | `splice`, `shift`, `unshift`, `copyWithin` | |
-| `Array` | **index/array parameters on callbacks** | `map((v, i) => …)`; the largest item here by real-world use, and the one that touches the checker's arity machinery |
+| `Array` | `splice` (delete-only), `shift` (traps when empty, as `pop` does), `unshift` (one element, as `push`), `copyWithin` | JS makes `splice`/`unshift` variadic; the language has no variadic parameters, so these are a recorded subset |
+| `Array` | **the index parameter on callbacks** | `map((v, i) => …)`; the largest item here by real-world use, and the one that touches the checker's arity machinery. The third `array` parameter stays **rejected** — see below |
 | `Array` | the `every` family on `FixedArray` | currently a "v1 is `T[]` only" scope rejection |
 | `Map`/`Set` | `groupBy`, ES2024 set algebra (`union`, `intersection`, `difference`, `symmetricDifference`, `isSubsetOf`, `isSupersetOf`, `isDisjointFrom`) | |
 | `Number` | `Number.parseInt`, `Number.parseFloat` | verified `=== parseInt` / `=== parseFloat` on node — pure aliases |
