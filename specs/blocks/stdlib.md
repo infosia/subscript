@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -458,3 +458,119 @@ by golden; the collector reclaims a dropped container (observable via
 a `collect()` entry that then still prints correctly); a trapping
 `forEach` callback reports an identical tuple across tiers; rejects at
 pinned S014 positions; benchmarks — no ship-row regression.
+
+## 11. P12 — `Number` statics, `parseInt`/`parseFloat`, `toFixed` (Q25)
+
+No new machinery: these extend the ambient-namespace and member
+surfaces P9/P10 already built. §0's rules apply unchanged.
+
+### 11.1 `Number` statics
+
+Constants (folded to `f64` literals at check time, like `Math`'s):
+`MAX_SAFE_INTEGER`, `MIN_SAFE_INTEGER`, `EPSILON`, `MAX_VALUE`,
+`MIN_VALUE`, `POSITIVE_INFINITY`, `NEGATIVE_INFINITY`, `NaN`.
+
+Predicates, all `(value: f64): boolean` with ECMA semantics:
+`Number.isNaN`, `Number.isFinite`, `Number.isInteger`,
+`Number.isSafeInteger`.
+
+The **global** `isNaN`/`isFinite` are rejected (S014): they coerce
+their argument, and coercion is not in this language. `Number.*` is
+the spelling.
+
+`MAX_SAFE_INTEGER` describes `f64` integer precision and stays
+meaningful as such; it is **not** a bound on `i64`/`u64`, which are
+exact 64-bit (C3). A comment in the corpus entry says so, because the
+name invites the opposite reading.
+
+### 11.2 The failure channel — why `NaN` here and not elsewhere
+
+Parsing is the first accepted operation whose failure is **data, not a
+programmer error**: a config string or a save file may legitimately not
+be a number, and the program must be able to carry on. So the trap
+model (C6) is wrong here, and so is rejecting the operation.
+
+`parseInt`/`parseFloat` therefore return **`f64`, with `NaN` as the
+failure value**, as ECMA defines (§0.4). This does not contradict the
+two earlier sentinel rejections, and the difference is the point:
+
+- **Q20 rejected Invalid-Date** because `Date` erases to `i64`, which
+  has no NaN — the sentinel would have had to be a magic in-range
+  integer, indistinguishable from a real time.
+- **Q24 rejected a zeroed `get` miss** because zero is a legitimate
+  stored value, so the sentinel collides with real data.
+- Here the sentinel is `NaN` in `f64`, where it is **representable,
+  outside the value domain of any successful parse, and checkable**
+  with `Number.isNaN`. No real result can be mistaken for it.
+
+`parseInt` returns `f64` rather than a sized integer for exactly this
+reason: no integer type can carry the failure. The program checks and
+then converts (`as i32`), which is the language's existing explicit
+conversion rule (C3), not a special case.
+
+### 11.3 `parseInt` / `parseFloat`
+
+- `parseInt(s: string, radix: i32): f64` — **the radix is required.**
+  ECMA's default is context-dependent (base 10, except a `0x` prefix
+  means 16), and Q22 already rejected two lib forms whose meaning
+  changes with arity (`reduce` without `init`, `sort` without a
+  comparator) for the same reason. Accepted radixes are 2–36; anything
+  else **traps** (it is a programmer error, not data). Otherwise ECMA:
+  leading whitespace skipped, optional sign, longest valid prefix
+  consumed, `NaN` when no digits are consumed.
+- `parseFloat(s: string): f64` — ECMA: leading whitespace skipped,
+  longest valid prefix consumed (`"1.5abc"` → `1.5`), `Infinity`
+  recognized, `NaN` when no prefix parses.
+
+Prefix parsing is kept rather than tightened: it is what ECMA
+specifies and what `tsc` types, and §0.4 makes ECMA the default. A
+program that wants strictness checks the string first.
+
+### 11.4 `toFixed`
+
+`toFixed(digits: i32): string` on `f32`/`f64`. `digits` is 0–100;
+outside that range **traps** (programmer error). Fixed-decimal output
+deliberately differs from Q14's shortest-round-trip — that is the
+point of asking for it — so Q14 is unchanged and this is the only
+place a numeric string is not shortest-round-trip.
+
+Pinned by golden, because these are exactly where implementations
+disagree: half-way cases (ECMA specifies "let n be an integer for
+which n / 10^f - x is as close to zero as possible; if there are two
+such n, pick the larger" — so `(1.005).toFixed(2)` is `"1.00"`,
+because the stored double is below the decimal 1.005), negative zero,
+values ≥ 1e21 (ECMA falls back to `ToString`, i.e. the Q14 form),
+`NaN` → `"NaN"`, `±Infinity` → `"Infinity"`/`"-Infinity"`, and a
+negative value's sign placement.
+
+One implementation behind an opaque `sub_rt_num_*` symbol on both
+tiers (§0.2) — never the host libc's `snprintf("%.*f")`, whose
+rounding is platform-dependent.
+
+### 11.5 Rejected (S014, naming Q25)
+
+`Number` as a constructor or a coercing call (`Number(x)`);
+`Number.parseInt`/`parseFloat` aliases (one spelling — the globals);
+`toPrecision`, `toExponential`, `toLocaleString`; `toString(radix)`
+(radix formatting is not in v1; the Q14 template form is the spelling
+for base 10); the global `isNaN`/`isFinite` (§11.1).
+
+### 11.6 Corpus and gate (pre-registered)
+
+Accept (continue the `aNN` numbering): a `Number` statics and
+predicates battery (including the `MAX_SAFE_INTEGER` ≠ `i64`-bound
+comment); a parse battery (success, prefix parse, whitespace, sign,
+each radix boundary 2/16/36, `NaN` failure checked with
+`Number.isNaN`, then `as i32` conversion of a success); a `toFixed`
+battery covering every §11.4 pinned case. Rejects: the global
+`isNaN`, `Number(x)`, `toPrecision`, `toString(16)`, and a `parseInt`
+without a radix — each S014 at a pinned position; plus a radix-out-of
+-range trap and a `digits`-out-of-range trap, whose tuples must be
+identical across tiers.
+
+Gate: standing gate byte-exact on both tiers including the new
+entries; `tsc` zero errors, unchanged config; the `toFixed` and parse
+goldens hand-derived from ECMA and cross-checked against node, with
+any divergence recorded in Q25 rather than absorbed; trap tuples
+identical across tiers; rejects at pinned S014 positions; benchmarks —
+no ship-row regression.

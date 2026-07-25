@@ -294,6 +294,26 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   language, so `keys`/`values`/`entries`/`for…of`/spread and
   iterable construction are rejected; `forEach` is the traversal.
 
+- **Q25 (`Number`, parsing, `toFixed`)** — accepted per `stdlib.md`
+  §11. `Number`'s constants and the four `Number.is*` predicates are
+  accepted with ECMA semantics; the **coercing** globals `isNaN`/
+  `isFinite` and `Number(x)` are rejected (coercion is not in this
+  language). `parseInt` **requires an explicit radix** (2–36; out of
+  range traps): ECMA's default is context-dependent, the same
+  arity-changes-meaning hazard Q22 rejected for `reduce`/`sort`.
+  `parseInt`/`parseFloat` return **`f64` with `NaN` as the failure
+  value** — the one place a sentinel is accepted, because parse failure
+  is *data* rather than a programmer error, and because `NaN` is
+  representable in `f64`, outside the domain of any successful parse,
+  and checkable with `Number.isNaN`. That is precisely what was absent
+  when Q20 rejected Invalid-Date (`Date` erases to `i64`, which has no
+  NaN) and when Q24 rejected a zeroed `get` miss (zero is a legitimate
+  stored value). `toFixed(digits)` is fixed-decimal and therefore the
+  only numeric string that is not Q14's shortest round-trip; its
+  half-way, `±0`, `>= 1e21`, `NaN` and infinity cases are pinned by
+  golden, and it is one runtime implementation on both tiers rather
+  than the host libc, whose rounding is platform-dependent.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided
