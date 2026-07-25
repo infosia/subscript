@@ -62,6 +62,8 @@
 | `min(left: f64, right: f64): f64` | Accepts exactly two operands; the ES variadic overload is rejected. |
 | `random(): f64` | Draws from the deterministic, Context-owned PRNG. |
 | `clz32(value: u32): i32` | Counts leading zero bits in a `u32`; zero returns 32. |
+| `imul(left: i32, right: i32): i32` | Multiplies two `i32` values with 32-bit wrapping. |
+| `fround(value: f64): f64` | Rounds an `f64` through `f32` precision. |
 
 ### Number
 
@@ -79,6 +81,8 @@
 | `isFinite(value: f64): boolean` | Tests finiteness without coercion. |
 | `isInteger(value: f64): boolean` | Tests whether an `f64` has an integral value. |
 | `isSafeInteger(value: f64): boolean` | Tests the ECMA safe-integer range. |
+| `parseInt(value: string, radix: i32): f64` | Parses the longest integer prefix; the radix is required. |
+| `parseFloat(value: string): f64` | Parses the longest decimal floating-point prefix. |
 
 ### Date constructor
 
@@ -135,8 +139,8 @@
 | `indexOf(needle: string, from?: i32): i32` | Returns the first matching byte index, or -1. |
 | `lastIndexOf(needle: string): i32` | Returns the last matching byte index, or -1. |
 | `includes(needle: string, from?: i32): boolean` | Tests for a substring from an optional byte index. |
-| `startsWith(needle: string): boolean` | Tests the string prefix. |
-| `endsWith(needle: string): boolean` | Tests the string suffix. |
+| `startsWith(needle: string, position?: i32): boolean` | Tests for a prefix at an optional byte position. |
+| `endsWith(needle: string, endPosition?: i32): boolean` | Tests for a suffix ending at an optional byte position. |
 | `charCodeAt(index: i32): i32` | Returns one UTF-8 byte value; out of range traps. |
 | `split(separator: string): string[]` | Splits on a literal non-empty string separator. |
 | `trim(): string` | Removes ECMA whitespace from both ends. |
@@ -147,8 +151,13 @@
 | `padEnd(length: i32, pad?: string): string` | Pads to a byte length on the right. |
 | `toUpperCase(): string` | Applies Unicode Default Case Conversion. |
 | `toLowerCase(): string` | Applies Unicode Default Case Conversion. |
-| `replace(pattern: string, replacement: string): string` | Replaces the first literal match; `$` has no special meaning. |
-| `replaceAll(pattern: string, replacement: string): string` | Replaces every literal match; an empty pattern traps. |
+| `replace(pattern: string, replacement: string): string` | Replaces the first literal match with ECMA `$` substitutions. |
+| `replaceAll(pattern: string, replacement: string): string` | Replaces every literal match with ECMA `$` substitutions; an empty pattern traps. |
+| `substring(start: i32, end?: i32): string` | Slices by clamped UTF-8 byte offsets, swapping a reversed pair. |
+| `substr(start: i32, length?: i32): string` | Slices by UTF-8 byte start and length; a negative start counts from the end. |
+| `charAt(index: i32): string` | Returns the code point starting at a UTF-8 byte index, or an empty string. |
+| `codePointAt(index: i32): i32` | Returns the code point starting at a UTF-8 byte index; out of range traps. |
+| `concat(other: string): string` | Returns a fresh concatenation with exactly one other string. |
 
 ### T[]
 
@@ -235,10 +244,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 
 | Receiver / form | Rejected surface | S-code | Q-rule | Replacement | Reason | Reject corpus |
 |---|---|---|---|---|---|---|
-| string | `substring` | S014 | Q21 | `slice` | Outside the checker-owned String subset. | `r25-string-substring.ts` |
-| string | `substr` | S014 | Q21 | `slice` | Outside the checker-owned String subset. | — |
 | string | `at` | S014 | Q21 | `slice` | The language has no scalar miss value. | — |
-| string | `charAt` | S014 | Q21 | `slice` | Outside the checker-owned String subset. | — |
 | string | `localeCompare` | S014 | Q21 | — | Locale-dependent collation is unavailable. | `r26-string-localecompare.ts` |
 | string | `toLocaleUpperCase` | S014 | Q21 | `toUpperCase` | Locale-sensitive case conversion is unavailable. | `r28-string-tolocaleupper.ts` |
 | string | `toLocaleLowerCase` | S014 | Q21 | `toLowerCase` | Locale-sensitive case conversion is unavailable. | — |
@@ -246,8 +252,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | string | `match` | S014 | Q21 | — | The language has no RegExp engine. | `r27-string-match.ts` |
 | string | `matchAll` | S014 | Q21 | — | The language has no RegExp engine or iterator protocol. | — |
 | string | `search` | S014 | Q21 | — | The language has no RegExp engine. | — |
-| string | `concat` | S014 | Q21 | `+` | Use the language string-concatenation operator. | — |
-| string | `codePointAt` | S014 | Q21 | `charCodeAt` | The accepted code-unit operation reads UTF-8 bytes. | — |
 | T[] | `find` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | `r30-array-find.ts` |
 | T[] | `findLast` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | — |
 | T[] | `reduceRight` | S014 | Q22 | `reduce` | Outside the checker-owned Array subset. | — |
@@ -297,14 +301,10 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | global | `parseInt(value)` | S014 | Q25 | `parseInt(value, radix)` | The radix is a required `i32` argument. | `r50-parse-int-no-radix.ts` |
 | Number | `Number(value)` | S014 | Q25 | `value as f64` | Numeric coercion is not part of the language. | `r47-number-coercion.ts` |
 | Number | `new Number(value)` | S014 | Q25 | `value as f64` | Boxed numbers and numeric coercion are unavailable. | — |
-| Number | `parseInt` | S014 | Q25 | `global parseInt` | Only the global parser spelling is accepted. | — |
-| Number | `parseFloat` | S014 | Q25 | `global parseFloat` | Only the global parser spelling is accepted. | — |
 | f32 / f64 | `toLocaleString` | S014 | Q25 | — | Locale-sensitive number formatting is unavailable. | — |
 | f32 / f64 | `toString()` | S014 | Q26 | `toString(radix)` | An explicit radix is required. | `r49-number-to-string-radix.ts` |
 | f32 / f64 | `toPrecision()` | S014 | Q26 | `toPrecision(digits)` | An explicit digit count is required. | `r48-number-to-precision.ts` |
 | sized integers | `toFixed/toString/toExponential/toPrecision` | S014 | Q25/Q26 | `convert to f32 or f64 first` | Number formatting methods are accepted only on floating-point receivers. | — |
-| Math | `imul` | S014 | Q19 | `left * right on i32` | The language already has sized integer multiplication. | `r15-math-imul.ts` |
-| Math | `fround` | S014 | Q19 | `value as f32` | The language already has explicit `f32` conversion. | `r17-math-fround.ts` |
 | Math | `max/min/hypot with more than two arguments` | S014 | Q19 | — | Variadic parameters are outside the language. | `r16-math-variadic-max.ts` |
 | Math | `Math used as a value` | S014 | Q19 | `Math.<member>` | Math is a compiler-owned namespace. | `r18-math-value.ts` |
 | Date | `Date.parse` | S014 | Q20 | `Date.UTC` | Parsing depends on timezone rules the runtime does not provide. | — |
@@ -368,28 +368,30 @@ console.log(`${"é".length}`);
 - subscript result: `2\n`
 - Node result: `1\n`
 
-### `string.slice` — Q5
+### `string.slice`, `string.substring`, and `string.substr` — Q5
 
-Slice offsets are UTF-8 byte offsets rather than UTF-16 code-unit offsets.
+String slicing offsets are UTF-8 byte offsets rather than UTF-16 code-unit offsets.
 
 subscript:
 
 ```ts
 export function main(): void {
-  print("éx".slice(0, 2));
+  const value: string = "éx";
+  print(`${value.slice(0, 2)}|${value.substring(0, 2)}|${value.substr(0, 2)}`);
 }
 ```
 
 Node:
 
 ```js
-console.log("éx".slice(0, 2));
+const value = "éx";
+console.log(`${value.slice(0, 2)}|${value.substring(0, 2)}|${value.substr(0, 2)}`);
 ```
 
-- subscript result: `é\n`
-- Node result: `éx\n`
+- subscript result: `é|é|é\n`
+- Node result: `éx|éx|éx\n`
 
-### `string.indexOf`, `string.lastIndexOf`, `string.includes` with `from` — Q5 / Q21
+### `string` search and positioned prefix/suffix methods — Q5 / Q21
 
 Search positions and returned indices use UTF-8 byte offsets.
 
@@ -398,7 +400,7 @@ subscript:
 ```ts
 export function main(): void {
   const value: string = "éx";
-  print(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}`);
+  print(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}|${value.startsWith("x", 2)}|${value.endsWith("é", 2)}`);
 }
 ```
 
@@ -406,32 +408,34 @@ Node:
 
 ```js
 const value = "éx";
-console.log(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}`);
+console.log(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}|${value.startsWith("x", 2)}|${value.endsWith("é", 2)}`);
 ```
 
-- subscript result: `2|2|true\n`
-- Node result: `1|1|false\n`
+- subscript result: `2|2|true|true|true\n`
+- Node result: `1|1|false|false|false\n`
 
-### `string.charCodeAt` — Q5 / Q21
+### `string.charCodeAt`, `string.charAt`, and `string.codePointAt` — Q5 / Q21
 
-The result is one UTF-8 byte rather than one UTF-16 code unit.
+`charCodeAt` returns one UTF-8 byte, while all three methods use UTF-8 byte indices.
 
 subscript:
 
 ```ts
 export function main(): void {
-  print(`${"é".charCodeAt(0)}`);
+  const value: string = "éx";
+  print(`${value.charCodeAt(0)}|${value.charAt(2)}|${value.codePointAt(2)}`);
 }
 ```
 
 Node:
 
 ```js
-console.log(`${"é".charCodeAt(0)}`);
+const value = "éx";
+console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointAt(2))}`);
 ```
 
-- subscript result: `195\n`
-- Node result: `233\n`
+- subscript result: `195|x|120\n`
+- Node result: `233||undefined\n`
 
 ### `string.padStart` — Q5 / Q21
 
@@ -560,26 +564,26 @@ console.log(`${"a".charCodeAt(1)}`);
 - subscript result: `Trap`
 - Node result: `NaN\n`
 
-### `string.replace` and `string.replaceAll` — Q21
+### `string.codePointAt` out of range — Q27
 
-Replacement text is literal; `$$` and `$&` are not interpreted.
+subscript traps where JS returns undefined.
 
 subscript:
 
 ```ts
 export function main(): void {
-  print(`${"x=1".replace("1", "$&")}|${"x=1".replaceAll("1", "$&")}`);
+  print(`${"a".codePointAt(1)}`);
 }
 ```
 
 Node:
 
 ```js
-console.log(`${"x=1".replace("1", "$&")}|${"x=1".replaceAll("1", "$&")}`);
+console.log(String("a".codePointAt(1)));
 ```
 
-- subscript result: `x=$&|x=$&\n`
-- Node result: `x=1|x=1\n`
+- subscript result: `Trap`
+- Node result: `undefined\n`
 
 ### `string.replaceAll` with an empty pattern — Q21
 

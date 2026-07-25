@@ -1,0 +1,10 @@
+reversed substring [ell] slice []
+negative substring [hel] slice []
+substr negative [lo]
+substr nonpositive [] []
+charAt [B] [] [é]
+codePointAt 65 233
+concat hello!
+position true true
+replace a[$][-][a][b][$1]b
+replaceAll a<$|-|a|b-c|$1>b<$|-|a-b|c|$1>c

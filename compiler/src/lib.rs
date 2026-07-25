@@ -267,10 +267,11 @@ mod tests {
     fn string_methods_type_and_normalize_optional_arguments() {
         // stdlib.md §8: every accepted method resolves to a Callee::Str
         // intrinsic with the receiver first; the optional arguments are
-        // normalized at check time (`from` → 0, `pad` → " ") so each
-        // runtime symbol has a fixed arity.
+        // normalized at check time (start positions → 0, ending
+        // positions → i32::MAX, `pad` → " ") so each runtime symbol
+        // has a fixed arity.
         let module = check_one(
-            "export function main(): void {\n  const s: string = \"ab\";\n  const i: i32 = s.indexOf(\"a\");\n  const b: boolean = s.includes(\"a\", 1);\n  const p: string = s.padStart(5);\n  const parts: string[] = s.split(\"a\");\n  const c: i32 = s.charCodeAt(0);\n  print(`${i}${b}${p}${parts.length}${c}`);\n}\n",
+            "export function main(): void {\n  const s: string = \"ab\";\n  const i: i32 = s.indexOf(\"a\");\n  const b: boolean = s.includes(\"a\", 1);\n  const p: string = s.padStart(5);\n  const parts: string[] = s.split(\"a\");\n  const c: i32 = s.charCodeAt(0);\n  const sub: string = s.substring(1);\n  const at: string = s.charAt(0);\n  const cp: i32 = s.codePointAt(0);\n  const cat: string = s.concat(at);\n  const start: boolean = s.startsWith(\"a\");\n  const end: boolean = s.endsWith(\"b\");\n  print(`${i}${b}${p}${parts.length}${c}${sub}${cp}${cat}${start}${end}`);\n}\n",
         )
         .expect("clean check");
         let mut found = Vec::new();
@@ -297,6 +298,12 @@ mod tests {
             hir::StrFn::PadStart,
             hir::StrFn::Split,
             hir::StrFn::CharCodeAt,
+            hir::StrFn::Substring,
+            hir::StrFn::CharAt,
+            hir::StrFn::CodePointAt,
+            hir::StrFn::Concat,
+            hir::StrFn::StartsWith,
+            hir::StrFn::EndsWith,
         ] {
             let (_, arity) = found
                 .iter()
@@ -309,15 +316,11 @@ mod tests {
     #[test]
     fn rejected_string_member_is_s014_naming_the_member() {
         for (member, call) in [
-            ("substring", "s.substring(0, 1)"),
-            ("charAt", "s.charAt(0)"),
-            ("codePointAt", "s.codePointAt(0)"),
             ("normalize", "s.normalize()"),
             ("localeCompare", "s.localeCompare(s)"),
             ("toLocaleLowerCase", "s.toLocaleLowerCase()"),
             ("matchAll", "s.matchAll(s)"),
             ("search", "s.search(s)"),
-            ("concat", "s.concat(s)"),
         ] {
             let err = check_one(&format!(
                 "export function main(): void {{\n  const s: string = \"a\";\n  {call};\n}}\n"
@@ -653,6 +656,8 @@ mod tests {
             "export function main(): void {\n\
                const parsed: f64 = parseInt(\"ff\", 16);\n\
                const decimal: f64 = parseFloat(\"1.5tail\");\n\
+               const parsedStatic: f64 = Number.parseInt(\"ff\", 16);\n\
+               const decimalStatic: f64 = Number.parseFloat(\"1.5tail\");\n\
                const f: f32 = 1.25;\n\
                print(`${Number.MAX_SAFE_INTEGER} ${Number.isNaN(Number.NaN)} \
                         ${Number.isFinite(parsed)} ${Number.isInteger(decimal)} \
@@ -662,7 +667,9 @@ mod tests {
                print(parsed.toExponential());\n\
                print(decimal.toPrecision(2));\n\
                const leading: i32 = Math.clz32(0 as u32);\n\
-               print(`${leading}`);\n\
+               const wrapped: i32 = Math.imul(2147483647, 2);\n\
+               const rounded: f64 = Math.fround(1.1);\n\
+               print(`${leading} ${wrapped} ${rounded} ${parsedStatic} ${decimalStatic}`);\n\
              }\n",
         )
         .expect("accepted Q25/Q26 surface");
@@ -671,8 +678,8 @@ mod tests {
             "isNaN(1.0);",
             "isFinite(1.0);",
             "Number(1.0);",
-            "Number.parseInt(\"1\", 10);",
             "parseInt(\"1\");",
+            "Number.parseInt(\"1\");",
         ] {
             let err = check_one(&format!(
                 "export function main(): void {{\n  {body}\n}}\n"

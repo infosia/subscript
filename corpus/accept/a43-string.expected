@@ -39,4 +39,4 @@ rep baa
 repall aXaX
 repgrow aaaa
 repmiss abc
-repdollar x=$&
+repdollar x=1

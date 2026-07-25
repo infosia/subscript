@@ -574,8 +574,9 @@ pub unsafe extern "C" fn sub_rt_str_concat(
     ctx.alloc_str(&bytes, pos_id)
 }
 
-/// `slice(start, end)` with byte offsets; traps when the range is
-/// invalid or off a UTF-8 boundary (Q5).
+/// `slice(start, end)` with byte offsets and ECMA's negative/clamping
+/// rules; a reversed normalized pair produces `""`. Off a UTF-8
+/// boundary traps (Q5).
 ///
 /// # Safety
 ///
@@ -597,23 +598,28 @@ pub unsafe extern "C" fn sub_rt_str_slice(
     // overlap the mutable trap/alloc calls below.
     let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
     let len = bytes.len() as i64;
-    let (lo, hi) = (i64::from(start), i64::from(end));
-    if lo < 0 || hi < lo || hi > len {
-        ctx.trap(
-            TrapKind::StringSlice,
-            format!("slice({start}, {end}) out of range for string length {len}"),
-            pos_id,
-        );
-        return std::ptr::null_mut();
-    }
+    let relative = |index: i32| {
+        let index = i64::from(index);
+        if index < 0 {
+            (len + index).max(0)
+        } else {
+            index.min(len)
+        }
+    };
+    let lo = relative(start);
+    let end_boundary = relative(end);
+    let hi = end_boundary.max(lo);
     // Strings are UTF-8 by construction (literals, concatenation, and
     // boundary-checked slices of UTF-8 strings).
     let text = std::str::from_utf8(&bytes).unwrap_or_default();
     let (lo, hi) = (lo as usize, hi as usize);
-    if !text.is_char_boundary(lo) || !text.is_char_boundary(hi) {
+    if !text.is_char_boundary(lo) || !text.is_char_boundary(end_boundary as usize) {
         ctx.trap(
             TrapKind::StringSlice,
-            format!("slice({start}, {end}) is not on a UTF-8 boundary"),
+            format!(
+                "slice({start}, {end}) normalizes to ({lo}, {end_boundary}), \
+                 which is not on a UTF-8 boundary"
+            ),
             pos_id,
         );
         return std::ptr::null_mut();
@@ -709,7 +715,8 @@ pub unsafe extern "C" fn sub_rt_str_includes(
     i32::from(unsafe { sub_rt_str_index_of(ctx, s, needle, from) } >= 0)
 }
 
-/// `startsWith(needle)`: 1 when `s` begins with `needle`'s bytes.
+/// `startsWith(needle, position)`: 1 when `needle` begins at the
+/// clamped byte position.
 ///
 /// # Safety
 ///
@@ -719,6 +726,7 @@ pub unsafe extern "C" fn sub_rt_str_starts_with(
     ctx: *mut Context,
     s: *const u8,
     needle: *const u8,
+    position: i32,
 ) -> i32 {
     if s.is_null() || needle.is_null() {
         return 0;
@@ -726,11 +734,13 @@ pub unsafe extern "C" fn sub_rt_str_starts_with(
     // SAFETY: shared contract.
     let ctx = unsafe { &*ctx };
     // SAFETY: live string handles.
-    let starts = unsafe { ctx.str_bytes(s).starts_with(ctx.str_bytes(needle)) };
+    let starts =
+        unsafe { crate::strops::starts_with(ctx.str_bytes(s), ctx.str_bytes(needle), position) };
     i32::from(starts)
 }
 
-/// `endsWith(needle)`: 1 when `s` ends with `needle`'s bytes.
+/// `endsWith(needle, endPosition)`: 1 when `needle` ends at the clamped
+/// byte position.
 ///
 /// # Safety
 ///
@@ -740,6 +750,7 @@ pub unsafe extern "C" fn sub_rt_str_ends_with(
     ctx: *mut Context,
     s: *const u8,
     needle: *const u8,
+    end_position: i32,
 ) -> i32 {
     if s.is_null() || needle.is_null() {
         return 0;
@@ -747,7 +758,8 @@ pub unsafe extern "C" fn sub_rt_str_ends_with(
     // SAFETY: shared contract.
     let ctx = unsafe { &*ctx };
     // SAFETY: live string handles.
-    let ends = unsafe { ctx.str_bytes(s).ends_with(ctx.str_bytes(needle)) };
+    let ends =
+        unsafe { crate::strops::ends_with(ctx.str_bytes(s), ctx.str_bytes(needle), end_position) };
     i32::from(ends)
 }
 
@@ -788,6 +800,188 @@ pub unsafe extern "C" fn sub_rt_str_char_code_at(
             0
         }
     }
+}
+
+/// Shared allocation and UTF-8-boundary validation for `substring` and
+/// `substr`, after their distinct byte ranges have been normalized.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+unsafe fn str_alloc_range(
+    ctx: *mut Context,
+    s: *const u8,
+    lo: usize,
+    hi: usize,
+    call: &str,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: `s` is a live string handle. Copy before trapping or
+    // allocating through the mutable Context.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    let text = std::str::from_utf8(&bytes).unwrap_or_default();
+    if !text.is_char_boundary(lo) || !text.is_char_boundary(hi) {
+        ctx.trap(
+            TrapKind::StringSlice,
+            format!("{call} range ({lo}, {hi}) is not on a UTF-8 boundary"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(&bytes[lo..hi], pos_id)
+}
+
+/// `substring(start, end)`: clamp negative arguments to zero and
+/// arguments beyond the byte length to that length, swap a reversed
+/// pair, then require UTF-8 boundaries.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_substring(
+    ctx: *mut Context,
+    s: *const u8,
+    start: i32,
+    end: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract and live string handle.
+    let len = unsafe { (&*ctx).str_bytes(s).len() };
+    let (lo, hi) = crate::strops::substring_range(len, start, end);
+    // SAFETY: forwarded shared contract.
+    unsafe { str_alloc_range(ctx, s, lo, hi, "substring", pos_id) }
+}
+
+/// `substr(start, length)`: a negative byte start counts from the end,
+/// and a non-positive length produces an empty range. The normalized
+/// boundaries must be UTF-8 code-point boundaries.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_substr(
+    ctx: *mut Context,
+    s: *const u8,
+    start: i32,
+    length: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract and live string handle.
+    let len = unsafe { (&*ctx).str_bytes(s).len() };
+    let (lo, hi) = crate::strops::substr_range(len, start, length);
+    // SAFETY: forwarded shared contract.
+    unsafe { str_alloc_range(ctx, s, lo, hi, "substr", pos_id) }
+}
+
+/// `charAt(i)`: a fresh string containing the code point beginning at
+/// byte `i`; out of range returns `""`, while an in-range continuation
+/// byte traps.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_char_at(
+    ctx: *mut Context,
+    s: *const u8,
+    i: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handle. Copy before trap/allocation.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    let Some(index) = usize::try_from(i).ok().filter(|&index| index < bytes.len()) else {
+        return ctx.alloc_str(b"", pos_id);
+    };
+    let text = std::str::from_utf8(&bytes).unwrap_or_default();
+    if !text.is_char_boundary(index) {
+        ctx.trap(
+            TrapKind::StrRange,
+            format!("charAt({i}) is not on a UTF-8 boundary"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    let width = text[index..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(0);
+    ctx.alloc_str(&bytes[index..index + width], pos_id)
+}
+
+/// `codePointAt(i)`: the Unicode scalar value beginning at byte `i`.
+/// Out-of-range and continuation-byte indices trap.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_code_point_at(
+    ctx: *mut Context,
+    s: *const u8,
+    i: i32,
+    pos_id: u32,
+) -> i32 {
+    if s.is_null() {
+        return 0;
+    }
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: live string handle. Copy before trapping.
+    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
+    let Some(index) = usize::try_from(i).ok().filter(|&index| index < bytes.len()) else {
+        ctx.trap(
+            TrapKind::StrRange,
+            format!(
+                "codePointAt({i}) out of range for string length {}",
+                bytes.len()
+            ),
+            pos_id,
+        );
+        return 0;
+    };
+    let text = std::str::from_utf8(&bytes).unwrap_or_default();
+    if !text.is_char_boundary(index) {
+        ctx.trap(
+            TrapKind::StrRange,
+            format!("codePointAt({i}) is not on a UTF-8 boundary"),
+            pos_id,
+        );
+        return 0;
+    }
+    text[index..].chars().next().map_or(0, |ch| ch as i32)
+}
+
+/// Method spelling of string concatenation. It forwards to the same
+/// implementation as `+` and template-literal concatenation.
+///
+/// # Safety
+///
+/// Shared contract; `a` and `b` are live string handles.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_method_concat(
+    ctx: *mut Context,
+    a: *const u8,
+    b: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: forwarded shared contract.
+    unsafe { sub_rt_str_concat(ctx, a, b, pos_id) }
 }
 
 /// `split(sep)`: a fresh `string[]` of the pieces between separator
@@ -1076,8 +1270,8 @@ pub unsafe extern "C" fn sub_rt_str_to_lower(
     unsafe { str_case_with(ctx, s, pos_id, crate::strops::to_lower) }
 }
 
-/// `replace(pat, repl)`: first occurrence, literal (`$` substitution
-/// patterns are not interpreted, Q21).
+/// `replace(pat, repl)`: first occurrence with ECMA string-pattern `$`
+/// substitutions (Q27).
 ///
 /// # Safety
 ///
@@ -1106,8 +1300,9 @@ pub unsafe extern "C" fn sub_rt_str_replace(
 }
 
 /// `replaceAll(pat, repl)`: every occurrence in one left-to-right pass
-/// (a replacement is never rescanned), literal (Q21). An empty `pat`
-/// traps (JS inserts between every unit) and returns null.
+/// (a replacement is never rescanned), with ECMA string-pattern `$`
+/// substitutions (Q27). An empty `pat` traps (JS inserts between every
+/// unit) and returns null.
 ///
 /// # Safety
 ///
@@ -1517,9 +1712,10 @@ pub unsafe extern "C" fn sub_rt_num_to_precision(
 //
 // Every `sub_rt_math_*` symbol takes the Context pointer first, so both
 // tiers emit every Math call identically. The f64 subset returns f64;
-// clz32 is `(ctx, u32) -> i32`. Pure entries ignore `ctx`; only
-// `random` reads Context state. Both tiers must call these opaque
-// symbols — never a direct libm/builtin operation (stdlib.md §0.2/Q26).
+// clz32 is `(ctx, u32) -> i32`, imul is `(ctx, i32, i32) -> i32`, and
+// fround is `(ctx, f64) -> f64`. Pure entries ignore `ctx`; only random
+// reads Context state. Both tiers must call these opaque symbols —
+// never a direct libm/builtin operation (stdlib.md §0.2/Q26/Q27).
 
 /// Declares the C entry of a pure unary `Math` member: `f(ctx, x)`
 /// forwarding to [`crate::math`].
@@ -1626,6 +1822,20 @@ math_ffi_binary! {
 pub extern "C" fn sub_rt_math_clz32(ctx: *mut Context, x: u32) -> i32 {
     let _ = ctx;
     crate::math::clz32(x)
+}
+
+/// `Math.imul(a, b)`: wrapping 32-bit multiplication.
+#[no_mangle]
+pub extern "C" fn sub_rt_math_imul(ctx: *mut Context, a: i32, b: i32) -> i32 {
+    let _ = ctx;
+    crate::math::imul(a, b)
+}
+
+/// `Math.fround(x)`: exact `f64 -> f32 -> f64` rounding.
+#[no_mangle]
+pub extern "C" fn sub_rt_math_fround(ctx: *mut Context, x: f64) -> f64 {
+    let _ = ctx;
+    crate::math::fround(x)
 }
 
 /// `Math.random()` (stdlib.md §2): the next deterministic draw from the
@@ -2534,6 +2744,8 @@ mod tests {
             let lit_beta = sub_rt_str_lit(p, b"beta".as_ptr(), 4, 0);
             assert_eq!(sub_rt_str_eq(p, tail, lit_beta), 1);
             assert_eq!(sub_rt_str_eq(p, s, lit_beta), 0);
+            let empty = sub_rt_str_slice(p, s, -2, 3, 0);
+            assert_eq!(ctx.str_bytes(empty), b"");
             let joined = sub_rt_str_concat(p, s, lit_beta, 0);
             assert_eq!(ctx.str_bytes(joined), b"alpha-betabeta");
         }
@@ -2575,8 +2787,10 @@ mod tests {
             assert_eq!(sub_rt_str_includes(p, s, world, 0), 1);
             assert_eq!(sub_rt_str_includes(p, s, world, 7), 0);
             assert_eq!(sub_rt_str_includes(p, s, empty, 0), 1);
-            assert_eq!(sub_rt_str_starts_with(p, s, world), 0);
-            assert_eq!(sub_rt_str_ends_with(p, s, world), 1);
+            assert_eq!(sub_rt_str_starts_with(p, s, world, 0), 0);
+            assert_eq!(sub_rt_str_starts_with(p, s, world, 6), 1);
+            assert_eq!(sub_rt_str_ends_with(p, s, world, i32::MAX), 1);
+            assert_eq!(sub_rt_str_ends_with(p, s, world, 6), 0);
             assert_eq!(sub_rt_str_char_code_at(p, s, 0, 0), 104);
         }
         // The predicates never trap.
@@ -2596,6 +2810,61 @@ mod tests {
         assert_eq!(r.kind, TrapKind::StrRange);
         assert_eq!(r.pos_id, 17);
         assert!(r.message.contains("charCodeAt(3)"));
+    }
+
+    #[test]
+    fn ffi_q27_string_ranges_code_points_and_concat() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        static TEXT: &[u8] = "héllo".as_bytes();
+        // SAFETY: valid context, static literal bytes, and live handles.
+        unsafe {
+            let s = sub_rt_str_lit(p, TEXT.as_ptr(), TEXT.len() as u64, 0);
+            let mut roots = [s];
+            sub_rt_shadow_push(p, roots.as_mut_ptr().cast(), roots.len() as u64);
+            let reversed = sub_rt_str_substring(p, s, 4, -2, 0);
+            assert_eq!(ctx.str_bytes(reversed), "hél".as_bytes());
+            let tail = sub_rt_str_substr(p, s, -3, i32::MAX, 0);
+            assert_eq!(ctx.str_bytes(tail), b"llo");
+            let empty = sub_rt_str_substr(p, s, 3, 0, 0);
+            assert_eq!(ctx.str_bytes(empty), b"");
+            let multibyte = sub_rt_str_char_at(p, s, 1, 0);
+            assert_eq!(ctx.str_bytes(multibyte), "é".as_bytes());
+            let out_of_range = sub_rt_str_char_at(p, s, 99, 0);
+            assert_eq!(ctx.str_bytes(out_of_range), b"");
+            assert_eq!(sub_rt_str_code_point_at(p, s, 1, 0), 'é' as i32);
+            let suffix = sub_rt_str_lit(p, b"!".as_ptr(), 1, 0);
+            let joined = sub_rt_str_method_concat(p, s, suffix, 0);
+            assert_eq!(ctx.str_bytes(joined), "héllo!".as_bytes());
+            sub_rt_shadow_pop(p);
+        }
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_q27_string_code_point_boundary_and_range_traps() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        static TEXT: &[u8] = "é".as_bytes();
+        // SAFETY: valid context, static literal bytes, and a live handle.
+        unsafe {
+            let s = sub_rt_str_lit(p, TEXT.as_ptr(), TEXT.len() as u64, 0);
+            assert!(sub_rt_str_char_at(p, s, 1, 31).is_null());
+        }
+        let report = ctx.trap_record().expect("charAt boundary trap");
+        assert_eq!(report.kind, TrapKind::StrRange);
+        assert_eq!(report.pos_id, 31);
+
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context, static literal bytes, and a live handle.
+        unsafe {
+            let s = sub_rt_str_lit(p, TEXT.as_ptr(), TEXT.len() as u64, 0);
+            assert_eq!(sub_rt_str_code_point_at(p, s, 2, 32), 0);
+        }
+        let report = ctx.trap_record().expect("codePointAt range trap");
+        assert_eq!(report.kind, TrapKind::StrRange);
+        assert_eq!(report.pos_id, 32);
     }
 
     #[test]
@@ -2787,6 +3056,8 @@ mod tests {
             let precision = sub_rt_num_to_precision(p, 123.456, 2, 20);
             assert_eq!(ctx.str_bytes(precision), b"1.2e+2");
             assert_eq!(sub_rt_math_clz32(p, 0), 32);
+            assert_eq!(sub_rt_math_imul(p, i32::MAX, 2), -2);
+            assert_eq!(sub_rt_math_fround(p, 1.1), 1.100_000_023_841_858);
             assert!(sub_rt_num_to_fixed(p, 1.0, 101, 21).is_null());
         }
         let report = ctx.trap_record().expect("toFixed range trap");

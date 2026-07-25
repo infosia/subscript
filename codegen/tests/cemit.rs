@@ -225,6 +225,30 @@ fn string_char_code_at_out_of_range_traps_identically() {
 }
 
 #[test]
+fn string_char_at_off_utf8_boundary_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  print(\"é\".charAt(1));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn string_code_point_at_off_utf8_boundary_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  print(`${\"é\".codePointAt(1)}`);\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn string_code_point_at_out_of_range_traps_identically() {
+    assert_str_range_trap_identical(
+        "export function main(): void {\n  print(`${\"a\".codePointAt(1)}`);\n}\n",
+        2,
+    );
+}
+
+#[test]
 fn string_repeat_negative_count_traps_identically() {
     assert_str_range_trap_identical(
         "export function main(): void {\n  print(\"ab\".repeat(-1));\n}\n",

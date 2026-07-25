@@ -93,47 +93,51 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
     },
     DivergenceWitness {
         id: "q5-string-slice",
-        surface: "`string.slice`",
+        surface: "`string.slice`, `string.substring`, and `string.substr`",
         q_rule: "Q5",
-        summary: "Slice offsets are UTF-8 byte offsets rather than UTF-16 code-unit offsets.",
+        summary: "String slicing offsets are UTF-8 byte offsets rather than UTF-16 code-unit offsets.",
         subscript: r#"export function main(): void {
-  print("éx".slice(0, 2));
+  const value: string = "éx";
+  print(`${value.slice(0, 2)}|${value.substring(0, 2)}|${value.substr(0, 2)}`);
 }
 "#,
-        javascript: r#"console.log("éx".slice(0, 2));
+        javascript: r#"const value = "éx";
+console.log(`${value.slice(0, 2)}|${value.substring(0, 2)}|${value.substr(0, 2)}`);
 "#,
-        subscript_outcome: WitnessOutcome::Value("é\n"),
-        javascript_outcome: WitnessOutcome::Value("éx\n"),
+        subscript_outcome: WitnessOutcome::Value("é|é|é\n"),
+        javascript_outcome: WitnessOutcome::Value("éx|éx|éx\n"),
     },
     DivergenceWitness {
         id: "q5-string-search-indices",
-        surface: "`string.indexOf`, `string.lastIndexOf`, `string.includes` with `from`",
+        surface: "`string` search and positioned prefix/suffix methods",
         q_rule: "Q5 / Q21",
         summary: "Search positions and returned indices use UTF-8 byte offsets.",
         subscript: r#"export function main(): void {
   const value: string = "éx";
-  print(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}`);
+  print(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}|${value.startsWith("x", 2)}|${value.endsWith("é", 2)}`);
 }
 "#,
         javascript: r#"const value = "éx";
-console.log(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}`);
+console.log(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x", 2)}|${value.startsWith("x", 2)}|${value.endsWith("é", 2)}`);
 "#,
-        subscript_outcome: WitnessOutcome::Value("2|2|true\n"),
-        javascript_outcome: WitnessOutcome::Value("1|1|false\n"),
+        subscript_outcome: WitnessOutcome::Value("2|2|true|true|true\n"),
+        javascript_outcome: WitnessOutcome::Value("1|1|false|false|false\n"),
     },
     DivergenceWitness {
         id: "q5-char-code-byte",
-        surface: "`string.charCodeAt`",
+        surface: "`string.charCodeAt`, `string.charAt`, and `string.codePointAt`",
         q_rule: "Q5 / Q21",
-        summary: "The result is one UTF-8 byte rather than one UTF-16 code unit.",
+        summary: "`charCodeAt` returns one UTF-8 byte, while all three methods use UTF-8 byte indices.",
         subscript: r#"export function main(): void {
-  print(`${"é".charCodeAt(0)}`);
+  const value: string = "éx";
+  print(`${value.charCodeAt(0)}|${value.charAt(2)}|${value.codePointAt(2)}`);
 }
 "#,
-        javascript: r#"console.log(`${"é".charCodeAt(0)}`);
+        javascript: r#"const value = "éx";
+console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointAt(2))}`);
 "#,
-        subscript_outcome: WitnessOutcome::Value("195\n"),
-        javascript_outcome: WitnessOutcome::Value("233\n"),
+        subscript_outcome: WitnessOutcome::Value("195|x|120\n"),
+        javascript_outcome: WitnessOutcome::Value("233||undefined\n"),
     },
     DivergenceWitness {
         id: "q5-pad-start-byte-length",
@@ -221,18 +225,18 @@ console.log(`${value.indexOf("x")}|${value.lastIndexOf("x")}|${value.includes("x
         javascript_outcome: WitnessOutcome::Value("NaN\n"),
     },
     DivergenceWitness {
-        id: "q21-replacement-patterns",
-        surface: "`string.replace` and `string.replaceAll`",
-        q_rule: "Q21",
-        summary: "Replacement text is literal; `$$` and `$&` are not interpreted.",
+        id: "q27-code-point-oob",
+        surface: "`string.codePointAt` out of range",
+        q_rule: "Q27",
+        summary: "subscript traps where JS returns undefined.",
         subscript: r#"export function main(): void {
-  print(`${"x=1".replace("1", "$&")}|${"x=1".replaceAll("1", "$&")}`);
+  print(`${"a".codePointAt(1)}`);
 }
 "#,
-        javascript: r#"console.log(`${"x=1".replace("1", "$&")}|${"x=1".replaceAll("1", "$&")}`);
+        javascript: r#"console.log(String("a".codePointAt(1)));
 "#,
-        subscript_outcome: WitnessOutcome::Value("x=$&|x=$&\n"),
-        javascript_outcome: WitnessOutcome::Value("x=1|x=1\n"),
+        subscript_outcome: WitnessOutcome::Trap,
+        javascript_outcome: WitnessOutcome::Value("undefined\n"),
     },
     DivergenceWitness {
         id: "q21-replace-all-empty",
@@ -632,14 +636,6 @@ mod tests {
             ("Number", "new Number(value)") => {
                 "export function main(): void {\n  const value = new Number(1);\n}\n".to_string()
             }
-            ("Number", "parseInt") => {
-                "export function main(): void {\n  print(`${Number.parseInt(\"1\", 10)}`);\n}\n"
-                    .to_string()
-            }
-            ("Number", "parseFloat") => {
-                "export function main(): void {\n  print(`${Number.parseFloat(\"1\")}`);\n}\n"
-                    .to_string()
-            }
             ("f32 / f64", "toLocaleString") => {
                 "export function main(): void {\n  print((1.0 as f64).toLocaleString());\n}\n"
                     .to_string()
@@ -655,12 +651,6 @@ mod tests {
             ("sized integers", "toFixed/toString/toExponential/toPrecision") => {
                 "export function main(): void {\n  const value: i32 = 1;\n  print(value.toFixed(2));\n}\n"
                     .to_string()
-            }
-            ("Math", "imul") => {
-                "export function main(): void {\n  print(`${Math.imul(1, 2)}`);\n}\n".to_string()
-            }
-            ("Math", "fround") => {
-                "export function main(): void {\n  print(`${Math.fround(1)}`);\n}\n".to_string()
             }
             ("Math", "max/min/hypot with more than two arguments") => {
                 "export function main(): void {\n  print(`${Math.max(1, 2, 3)}`);\n}\n"

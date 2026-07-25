@@ -101,11 +101,12 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        61,
-        "expected 61 single-file accept entries (23 run set + a25–a39 interop \
+        63,
+        "expected 63 single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
-         + a62 Q26 Number formatting/clz32) plus a19-modules"
+         + a62 Q26 Number formatting/clz32 + a63/a64 Q27 stages 1/2) \
+         plus a19-modules"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
@@ -174,8 +175,11 @@ fn a40_math_calls_are_intrinsics_and_constants_fold_to_literals() {
     // Every §1 function is exercised at least once, as an intrinsic
     // call — never the foreign or method path.
     for f in hir::MathFn::ALL {
-        if matches!(f, hir::MathFn::Random | hir::MathFn::Clz32) {
-            continue; // a41 and a62 respectively
+        if matches!(
+            f,
+            hir::MathFn::Random | hir::MathFn::Clz32 | hir::MathFn::Imul | hir::MathFn::Fround
+        ) {
+            continue; // a41, a62, and the Q27 Stage 1 entry respectively
         }
         assert!(maths.contains(&f), "a40 lacks a Math.{} intrinsic call", f.name());
     }

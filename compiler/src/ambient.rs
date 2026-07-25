@@ -136,34 +136,10 @@ const NUMBER_CONSTS: &[NamedF64] = &[
 const STRING_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "string",
-        "substring",
-        "Q21",
-        Some("slice"),
-        "Outside the checker-owned String subset.",
-        Some("r25-string-substring.ts"),
-    ),
-    rejection(
-        "string",
-        "substr",
-        "Q21",
-        Some("slice"),
-        "Outside the checker-owned String subset.",
-        None,
-    ),
-    rejection(
-        "string",
         "at",
         "Q21",
         Some("slice"),
         "The language has no scalar miss value.",
-        None,
-    ),
-    rejection(
-        "string",
-        "charAt",
-        "Q21",
-        Some("slice"),
-        "Outside the checker-owned String subset.",
         None,
     ),
     rejection(
@@ -220,22 +196,6 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
         "Q21",
         None,
         "The language has no RegExp engine.",
-        None,
-    ),
-    rejection(
-        "string",
-        "concat",
-        "Q21",
-        Some("+"),
-        "Use the language string-concatenation operator.",
-        None,
-    ),
-    rejection(
-        "string",
-        "codePointAt",
-        "Q21",
-        Some("charCodeAt"),
-        "The accepted code-unit operation reads UTF-8 bytes.",
         None,
     ),
 ];
@@ -613,14 +573,10 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("global", "parseInt(value)", "Q25", Some("parseInt(value, radix)"), "The radix is a required `i32` argument.", Some("r50-parse-int-no-radix.ts")),
     rejection("Number", "Number(value)", "Q25", Some("value as f64"), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
     rejection("Number", "new Number(value)", "Q25", Some("value as f64"), "Boxed numbers and numeric coercion are unavailable.", None),
-    rejection("Number", "parseInt", "Q25", Some("global parseInt"), "Only the global parser spelling is accepted.", None),
-    rejection("Number", "parseFloat", "Q25", Some("global parseFloat"), "Only the global parser spelling is accepted.", None),
     rejection("f32 / f64", "toLocaleString", "Q25", None, "Locale-sensitive number formatting is unavailable.", None),
     rejection("f32 / f64", "toString()", "Q26", Some("toString(radix)"), "An explicit radix is required.", Some("r49-number-to-string-radix.ts")),
     rejection("f32 / f64", "toPrecision()", "Q26", Some("toPrecision(digits)"), "An explicit digit count is required.", Some("r48-number-to-precision.ts")),
     rejection("sized integers", "toFixed/toString/toExponential/toPrecision", "Q25/Q26", Some("convert to f32 or f64 first"), "Number formatting methods are accepted only on floating-point receivers.", None),
-    rejection("Math", "imul", "Q19", Some("left * right on i32"), "The language already has sized integer multiplication.", Some("r15-math-imul.ts")),
-    rejection("Math", "fround", "Q19", Some("value as f32"), "The language already has explicit `f32` conversion.", Some("r17-math-fround.ts")),
     rejection("Math", "max/min/hypot with more than two arguments", "Q19", None, "Variadic parameters are outside the language.", Some("r16-math-variadic-max.ts")),
     rejection("Math", "Math used as a value", "Q19", Some("Math.<member>"), "Math is a compiler-owned namespace.", Some("r18-math-value.ts")),
     rejection("Date", "Date.parse", "Q20", Some("Date.UTC"), "Parsing depends on timezone rules the runtime does not provide.", None),
@@ -707,13 +663,17 @@ pub(crate) fn number_const(name: &str) -> Option<f64> {
         .map(|c| c.value)
 }
 
-/// Accepted `Number.is*` predicate member.
-pub(crate) fn number_predicate(name: &str) -> Option<NumFn> {
+/// Accepted `Number` namespace call. The parser variants are the same
+/// [`NumFn`] identities as the globals, so checker and runtime
+/// implementations cannot fork.
+pub(crate) fn number_static(name: &str) -> Option<NumFn> {
     Some(match name {
         "isNaN" => NumFn::IsNaN,
         "isFinite" => NumFn::IsFinite,
         "isInteger" => NumFn::IsInteger,
         "isSafeInteger" => NumFn::IsSafeInteger,
+        "parseInt" => NumFn::ParseInt,
+        "parseFloat" => NumFn::ParseFloat,
         _ => return None,
     })
 }
@@ -821,6 +781,8 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         NumFn::IsFinite,
         NumFn::IsInteger,
         NumFn::IsSafeInteger,
+        NumFn::ParseInt,
+        NumFn::ParseFloat,
     ] {
         out.push(ApiItem {
             group: "Number",
@@ -1054,9 +1016,8 @@ mod tests {
         assert_eq!(math_fn("atan2"), Some(MathFn::Atan2));
         assert_eq!(math_fn("random"), Some(MathFn::Random));
         assert_eq!(math_fn("clz32"), Some(MathFn::Clz32));
-        // Out-of-subset JS-number ops resolve to nothing (Q19).
-        assert_eq!(math_fn("imul"), None);
-        assert_eq!(math_fn("fround"), None);
+        assert_eq!(math_fn("imul"), Some(MathFn::Imul));
+        assert_eq!(math_fn("fround"), Some(MathFn::Fround));
         // Constants are not functions.
         assert_eq!(math_fn("PI"), None);
         // Every declared function round-trips through its name.
@@ -1094,12 +1055,10 @@ mod tests {
         );
         assert_eq!(number_const("MIN_VALUE").map(f64::to_bits), Some(1));
         assert!(number_const("NaN").is_some_and(f64::is_nan));
-        assert_eq!(number_predicate("isNaN"), Some(NumFn::IsNaN));
-        assert_eq!(
-            number_predicate("isSafeInteger"),
-            Some(NumFn::IsSafeInteger)
-        );
-        assert_eq!(number_predicate("parseInt"), None);
+        assert_eq!(number_static("isNaN"), Some(NumFn::IsNaN));
+        assert_eq!(number_static("isSafeInteger"), Some(NumFn::IsSafeInteger));
+        assert_eq!(number_static("parseInt"), Some(NumFn::ParseInt));
+        assert_eq!(number_static("parseFloat"), Some(NumFn::ParseFloat));
         assert_eq!(number_global("parseInt"), Some(NumFn::ParseInt));
         assert_eq!(number_global("parseFloat"), Some(NumFn::ParseFloat));
         assert_eq!(number_global("isNaN"), None);
@@ -1132,12 +1091,15 @@ mod tests {
         }
         // `slice` stays on the standing Callee::Method path.
         assert_eq!(str_method("slice"), None);
-        // Out-of-subset members resolve to nothing (Q21).
-        assert_eq!(str_method("substring"), None);
+        assert_eq!(str_method("substring"), Some(StrFn::Substring));
+        assert_eq!(str_method("substr"), Some(StrFn::Substr));
+        assert_eq!(str_method("charAt"), Some(StrFn::CharAt));
+        assert_eq!(str_method("codePointAt"), Some(StrFn::CodePointAt));
+        assert_eq!(str_method("concat"), Some(StrFn::Concat));
+        // Out-of-subset members resolve to nothing (Q21/Q27).
         assert_eq!(str_method("localeCompare"), None);
         assert_eq!(str_method("match"), None);
         assert_eq!(str_method("toLocaleUpperCase"), None);
-        assert_eq!(str_method("concat"), None);
     }
 
     #[test]
@@ -1200,6 +1162,8 @@ mod tests {
             NumFn::IsFinite,
             NumFn::IsInteger,
             NumFn::IsSafeInteger,
+            NumFn::ParseInt,
+            NumFn::ParseFloat,
         ] {
             assert!(has("Number", f.api_signature()), "Number.{}", f.name());
         }
@@ -1267,7 +1231,7 @@ mod tests {
             + MATH_CONSTS.len()
             + MathFn::ALL.len()
             + NUMBER_CONSTS.len()
-            + 4
+            + 6
             + DateFn::ALL.len()
             + 1
             + 8

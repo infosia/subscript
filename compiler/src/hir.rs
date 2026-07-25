@@ -435,13 +435,18 @@ pub enum MathFn {
     Random,
     /// `Math.clz32(x)` with a `u32` argument and `i32` result.
     Clz32,
+    /// `Math.imul(a, b)` with `i32` arguments and wrapping `i32` result.
+    Imul,
+    /// `Math.fround(x)` with an `f64` argument and `f32`-rounded `f64`
+    /// result.
+    Fround,
 }
 
 impl MathFn {
     /// Every accepted `Math` function, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [MathFn; 33] = [
+    pub const ALL: [MathFn; 35] = [
         MathFn::Abs,
         MathFn::Acos,
         MathFn::Acosh,
@@ -475,6 +480,8 @@ impl MathFn {
         MathFn::Min,
         MathFn::Random,
         MathFn::Clz32,
+        MathFn::Imul,
+        MathFn::Fround,
     ];
 
     /// The member name, which is also the runtime symbol suffix
@@ -515,16 +522,24 @@ impl MathFn {
             MathFn::Min => "min",
             MathFn::Random => "random",
             MathFn::Clz32 => "clz32",
+            MathFn::Imul => "imul",
+            MathFn::Fround => "fround",
         }
     }
 
     /// Number of arguments (exact; the lib's variadic forms are out of
-    /// subset, Q19). `clz32`'s one argument is `u32`; the rest are f64.
+    /// subset, Q19). `clz32` uses `u32`, `imul` uses `i32`; the rest
+    /// use `f64`.
     #[must_use]
     pub fn arity(self) -> usize {
         match self {
             MathFn::Random => 0,
-            MathFn::Atan2 | MathFn::Hypot | MathFn::Pow | MathFn::Max | MathFn::Min => 2,
+            MathFn::Atan2
+            | MathFn::Hypot
+            | MathFn::Pow
+            | MathFn::Max
+            | MathFn::Min
+            | MathFn::Imul => 2,
             _ => 1,
         }
     }
@@ -537,6 +552,12 @@ impl MathFn {
         }
         if self == MathFn::Clz32 {
             return "clz32(value: u32): i32".to_string();
+        }
+        if self == MathFn::Imul {
+            return "imul(left: i32, right: i32): i32".to_string();
+        }
+        if self == MathFn::Fround {
+            return "fround(value: f64): f64".to_string();
         }
         let params = match self.arity() {
             1 => "value: f64",
@@ -552,6 +573,8 @@ impl MathFn {
         match self {
             MathFn::Random => "Draws from the deterministic, Context-owned PRNG.",
             MathFn::Clz32 => "Counts leading zero bits in a `u32`; zero returns 32.",
+            MathFn::Imul => "Multiplies two `i32` values with 32-bit wrapping.",
+            MathFn::Fround => "Rounds an `f64` through `f32` precision.",
             MathFn::Hypot | MathFn::Max | MathFn::Min => {
                 "Accepts exactly two operands; the ES variadic overload is rejected."
             }
@@ -843,14 +866,15 @@ impl DateFn {
     }
 }
 
-/// `String` intrinsic methods (stdlib.md §8): the accepted Q21 subset,
+/// `String` intrinsic methods (stdlib.md §8): the accepted Q21/Q27 subset,
 /// lowered by both tiers to opaque `sub_rt_str_*` runtime symbols. Every
 /// index, length, and code unit is a **byte** measure (Q21); case
 /// mapping uses Unicode Default Case Conversion and trimming uses ECMA
 /// whitespace; range and argument errors trap. The receiver is always
 /// the call's first argument. The checker normalizes the optional
-/// arguments (`from` → 0, `pad` → `" "`) at check time, so every runtime
-/// symbol has a fixed arity (the Date.UTC technique, §3).
+/// arguments (positions → their ECMA defaults, `pad` → `" "`) at check
+/// time, so every runtime symbol has a fixed arity (the Date.UTC
+/// technique, §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum StrFn {
@@ -862,9 +886,9 @@ pub enum StrFn {
     LastIndexOf,
     /// `includes(needle, from)`.
     Includes,
-    /// `startsWith(needle)`.
+    /// `startsWith(needle, position)` with a byte position.
     StartsWith,
-    /// `endsWith(needle)`.
+    /// `endsWith(needle, endPosition)` with a byte position.
     EndsWith,
     /// `charCodeAt(i)` — the byte value 0–255; out of range traps.
     CharCodeAt,
@@ -886,12 +910,26 @@ pub enum StrFn {
     ToUpperCase,
     /// `toLowerCase()` — Unicode Default Case Conversion.
     ToLowerCase,
-    /// `replace(pat, repl)` — first occurrence, literal (`$` is not
-    /// interpreted, Q21).
+    /// `replace(pat, repl)` — first occurrence with ECMA string-pattern
+    /// `$` substitutions (Q27).
     Replace,
-    /// `replaceAll(pat, repl)` — all occurrences, literal; an empty
-    /// `pat` traps.
+    /// `replaceAll(pat, repl)` — all occurrences with ECMA
+    /// string-pattern `$` substitutions; an empty `pat` traps.
     ReplaceAll,
+    /// `substring(start, end)` — negative offsets clamp to zero and a
+    /// reversed pair is swapped; byte boundaries are required.
+    Substring,
+    /// `substr(start, length)` — a negative start counts from the end;
+    /// byte boundaries are required.
+    Substr,
+    /// `charAt(i)` — the code point beginning at byte `i`, or `""`
+    /// when out of range; an off-boundary index traps.
+    CharAt,
+    /// `codePointAt(i)` — the code point beginning at byte `i`; an
+    /// out-of-range or off-boundary index traps.
+    CodePointAt,
+    /// `concat(other)` — exactly one string argument.
+    Concat,
 }
 
 /// Argument spelling of one [`StrFn`] parameter after the receiver.
@@ -922,7 +960,7 @@ impl StrFn {
     /// Every accepted `String` method, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [StrFn; 17] = [
+    pub const ALL: [StrFn; 22] = [
         StrFn::IndexOf,
         StrFn::LastIndexOf,
         StrFn::Includes,
@@ -940,6 +978,11 @@ impl StrFn {
         StrFn::ToLowerCase,
         StrFn::Replace,
         StrFn::ReplaceAll,
+        StrFn::Substring,
+        StrFn::Substr,
+        StrFn::CharAt,
+        StrFn::CodePointAt,
+        StrFn::Concat,
     ];
 
     /// The lib member name (the checker's lookup and diagnostics).
@@ -963,6 +1006,11 @@ impl StrFn {
             StrFn::ToLowerCase => "toLowerCase",
             StrFn::Replace => "replace",
             StrFn::ReplaceAll => "replaceAll",
+            StrFn::Substring => "substring",
+            StrFn::Substr => "substr",
+            StrFn::CharAt => "charAt",
+            StrFn::CodePointAt => "codePointAt",
+            StrFn::Concat => "concat",
         }
     }
 
@@ -987,6 +1035,11 @@ impl StrFn {
             StrFn::ToLowerCase => "sub_rt_str_to_lower",
             StrFn::Replace => "sub_rt_str_replace",
             StrFn::ReplaceAll => "sub_rt_str_replace_all",
+            StrFn::Substring => "sub_rt_str_substring",
+            StrFn::Substr => "sub_rt_str_substr",
+            StrFn::CharAt => "sub_rt_str_char_at",
+            StrFn::CodePointAt => "sub_rt_str_code_point_at",
+            StrFn::Concat => "sub_rt_str_method_concat",
         }
     }
 
@@ -995,11 +1048,14 @@ impl StrFn {
     #[must_use]
     pub fn params(self) -> &'static [StrParam] {
         match self {
-            StrFn::IndexOf | StrFn::Includes => &[StrParam::Str, StrParam::I32],
-            StrFn::LastIndexOf | StrFn::StartsWith | StrFn::EndsWith | StrFn::Split => {
-                &[StrParam::Str]
+            StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => {
+                &[StrParam::Str, StrParam::I32]
             }
-            StrFn::CharCodeAt | StrFn::Repeat => &[StrParam::I32],
+            StrFn::LastIndexOf | StrFn::Split | StrFn::Concat => &[StrParam::Str],
+            StrFn::CharCodeAt | StrFn::Repeat | StrFn::CharAt | StrFn::CodePointAt => {
+                &[StrParam::I32]
+            }
+            StrFn::Substring | StrFn::Substr => &[StrParam::I32, StrParam::I32],
             StrFn::Trim
             | StrFn::TrimStart
             | StrFn::TrimEnd
@@ -1014,7 +1070,9 @@ impl StrFn {
     #[must_use]
     pub fn ret(self) -> StrRet {
         match self {
-            StrFn::IndexOf | StrFn::LastIndexOf | StrFn::CharCodeAt => StrRet::I32,
+            StrFn::IndexOf | StrFn::LastIndexOf | StrFn::CharCodeAt | StrFn::CodePointAt => {
+                StrRet::I32
+            }
             StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => StrRet::Bool,
             StrFn::Split => StrRet::StrArray,
             _ => StrRet::Str,
@@ -1044,8 +1102,8 @@ impl StrFn {
             StrFn::IndexOf => "indexOf(needle: string, from?: i32): i32",
             StrFn::LastIndexOf => "lastIndexOf(needle: string): i32",
             StrFn::Includes => "includes(needle: string, from?: i32): boolean",
-            StrFn::StartsWith => "startsWith(needle: string): boolean",
-            StrFn::EndsWith => "endsWith(needle: string): boolean",
+            StrFn::StartsWith => "startsWith(needle: string, position?: i32): boolean",
+            StrFn::EndsWith => "endsWith(needle: string, endPosition?: i32): boolean",
             StrFn::CharCodeAt => "charCodeAt(index: i32): i32",
             StrFn::Split => "split(separator: string): string[]",
             StrFn::Trim => "trim(): string",
@@ -1058,6 +1116,11 @@ impl StrFn {
             StrFn::ToLowerCase => "toLowerCase(): string",
             StrFn::Replace => "replace(pattern: string, replacement: string): string",
             StrFn::ReplaceAll => "replaceAll(pattern: string, replacement: string): string",
+            StrFn::Substring => "substring(start: i32, end?: i32): string",
+            StrFn::Substr => "substr(start: i32, length?: i32): string",
+            StrFn::CharAt => "charAt(index: i32): string",
+            StrFn::CodePointAt => "codePointAt(index: i32): i32",
+            StrFn::Concat => "concat(other: string): string",
         }
     }
 
@@ -1068,8 +1131,8 @@ impl StrFn {
             StrFn::IndexOf => "Returns the first matching byte index, or -1.",
             StrFn::LastIndexOf => "Returns the last matching byte index, or -1.",
             StrFn::Includes => "Tests for a substring from an optional byte index.",
-            StrFn::StartsWith => "Tests the string prefix.",
-            StrFn::EndsWith => "Tests the string suffix.",
+            StrFn::StartsWith => "Tests for a prefix at an optional byte position.",
+            StrFn::EndsWith => "Tests for a suffix ending at an optional byte position.",
             StrFn::CharCodeAt => "Returns one UTF-8 byte value; out of range traps.",
             StrFn::Split => "Splits on a literal non-empty string separator.",
             StrFn::Trim => "Removes ECMA whitespace from both ends.",
@@ -1080,10 +1143,21 @@ impl StrFn {
             StrFn::PadEnd => "Pads to a byte length on the right.",
             StrFn::ToUpperCase => "Applies Unicode Default Case Conversion.",
             StrFn::ToLowerCase => "Applies Unicode Default Case Conversion.",
-            StrFn::Replace => "Replaces the first literal match; `$` has no special meaning.",
+            StrFn::Replace => "Replaces the first literal match with ECMA `$` substitutions.",
             StrFn::ReplaceAll => {
-                "Replaces every literal match; an empty pattern traps."
+                "Replaces every literal match with ECMA `$` substitutions; an empty pattern traps."
             }
+            StrFn::Substring => "Slices by clamped UTF-8 byte offsets, swapping a reversed pair.",
+            StrFn::Substr => {
+                "Slices by UTF-8 byte start and length; a negative start counts from the end."
+            }
+            StrFn::CharAt => {
+                "Returns the code point starting at a UTF-8 byte index, or an empty string."
+            }
+            StrFn::CodePointAt => {
+                "Returns the code point starting at a UTF-8 byte index; out of range traps."
+            }
+            StrFn::Concat => "Returns a fresh concatenation with exactly one other string.",
         }
     }
 }
@@ -1953,9 +2027,13 @@ mod tests {
         assert_eq!(MathFn::Min.arity(), 2);
         assert_eq!(MathFn::Random.arity(), 0);
         assert_eq!(MathFn::Clz32.arity(), 1);
+        assert_eq!(MathFn::Imul.arity(), 2);
+        assert_eq!(MathFn::Fround.arity(), 1);
         assert_eq!(MathFn::Random.name(), "random");
         assert_eq!(MathFn::Log1p.name(), "log1p");
         assert_eq!(MathFn::Clz32.name(), "clz32");
+        assert_eq!(MathFn::Imul.name(), "imul");
+        assert_eq!(MathFn::Fround.name(), "fround");
     }
 
     #[test]

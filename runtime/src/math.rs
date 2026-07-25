@@ -10,6 +10,8 @@
 //! infinite exponent is NaN; a NaN exponent is NaN even for base 1).
 //! `clz32` uses Rust's zero-defined [`u32::leading_zeros`] behind the
 //! runtime boundary; generated C never emits `__builtin_clz`.
+//! `imul` uses [`i32::wrapping_mul`], and `fround` performs the
+//! contract's exact `f64 -> f32 -> f64` conversion.
 //!
 //! `Math.random` (§2) draws from [`Rng`], a xoshiro256++ generator
 //! seeded by splitmix64 expansion; the state is owned by the Context so
@@ -25,6 +27,19 @@ pub fn abs(x: f64) -> f64 {
 #[must_use]
 pub fn clz32(x: u32) -> i32 {
     x.leading_zeros() as i32
+}
+
+/// `Math.imul`: wrapping 32-bit signed multiplication.
+#[must_use]
+pub fn imul(a: i32, b: i32) -> i32 {
+    a.wrapping_mul(b)
+}
+
+/// `Math.fround`: round through IEEE binary32, then widen exactly back
+/// to binary64.
+#[must_use]
+pub fn fround(x: f64) -> f64 {
+    (x as f32) as f64
 }
 
 /// `Math.acos`.
@@ -421,6 +436,14 @@ mod tests {
         assert_eq!(clz32(1), 31);
         assert_eq!(clz32(1_u32 << 31), 0);
         assert_eq!(clz32(u32::MAX), 0);
+    }
+
+    #[test]
+    fn imul_wraps_and_fround_uses_binary32_precision() {
+        assert_eq!(imul(i32::MAX, 2), -2);
+        assert_eq!(imul(i32::MIN, -1), i32::MIN);
+        assert_eq!(fround(1.1), 1.100_000_023_841_858);
+        assert_eq!(fround(-0.0).to_bits(), (-0.0_f64).to_bits());
     }
 
     #[test]

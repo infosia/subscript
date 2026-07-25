@@ -87,6 +87,57 @@ pub fn last_index_of(hay: &[u8], needle: &[u8]) -> i32 {
     }
 }
 
+/// `startsWith(needle, position)`: byte-position form. `position` is
+/// clamped to `[0, hay.len()]`.
+#[must_use]
+pub fn starts_with(hay: &[u8], needle: &[u8], position: i32) -> bool {
+    let at = usize::try_from(position.max(0)).unwrap_or(0).min(hay.len());
+    hay[at..].starts_with(needle)
+}
+
+/// `endsWith(needle, endPosition)`: byte-position form. `endPosition`
+/// is clamped to `[0, hay.len()]`.
+#[must_use]
+pub fn ends_with(hay: &[u8], needle: &[u8], end_position: i32) -> bool {
+    let end = usize::try_from(end_position.max(0))
+        .unwrap_or(0)
+        .min(hay.len());
+    hay[..end].ends_with(needle)
+}
+
+/// Normalizes `substring(start, end)` against a byte length: arguments
+/// clamp to `[0, len]`, then a reversed pair is swapped.
+#[must_use]
+pub fn substring_range(len: usize, start: i32, end: i32) -> (usize, usize) {
+    let len_i64 = i64::try_from(len).unwrap_or(i64::MAX);
+    let clamp = |value: i32| i64::from(value).clamp(0, len_i64) as usize;
+    let (start, end) = (clamp(start), clamp(end));
+    if start <= end {
+        (start, end)
+    } else {
+        (end, start)
+    }
+}
+
+/// Normalizes `substr(start, length)` against a byte length. A negative
+/// start counts back from the end, a start past the end clamps to the
+/// end, and a non-positive length produces an empty range.
+#[must_use]
+pub fn substr_range(len: usize, start: i32, length: i32) -> (usize, usize) {
+    let len_i64 = i64::try_from(len).unwrap_or(i64::MAX);
+    let start = if start < 0 {
+        (len_i64 + i64::from(start)).max(0)
+    } else {
+        i64::from(start).min(len_i64)
+    };
+    let end = if length <= 0 {
+        start
+    } else {
+        (start + i64::from(length)).min(len_i64)
+    };
+    (start as usize, end as usize)
+}
+
 /// `split(sep)`: the byte pieces between non-overlapping left-to-right
 /// matches of `sep` — no match → `[hay]`; adjacent/leading/trailing
 /// separators produce empty pieces (JS semantics). `sep` must be
@@ -191,17 +242,48 @@ pub fn to_lower(s: &[u8]) -> Vec<u8> {
     }
 }
 
-/// `replace(pat, repl)`: replaces the first occurrence, literally —
-/// `$` in `repl` is not interpreted (Q21). No match returns the bytes
-/// unchanged; an empty `pat` matches at index 0 (ECMA-262: the result
-/// is `repl + s`).
+/// Appends one ECMA string-pattern replacement. With no capture groups,
+/// the recognized substitutions are `$$`, `$&`, ``$` ``, and `$'`;
+/// `$1`–`$9` and every other `$` sequence remain literal.
+fn append_replacement(
+    out: &mut Vec<u8>,
+    source: &[u8],
+    match_start: usize,
+    match_end: usize,
+    replacement: &[u8],
+) {
+    let mut at = 0usize;
+    while at < replacement.len() {
+        if replacement[at] != b'$' || at + 1 == replacement.len() {
+            out.push(replacement[at]);
+            at += 1;
+            continue;
+        }
+        match replacement[at + 1] {
+            b'$' => out.push(b'$'),
+            b'&' => out.extend_from_slice(&source[match_start..match_end]),
+            b'`' => out.extend_from_slice(&source[..match_start]),
+            b'\'' => out.extend_from_slice(&source[match_end..]),
+            _ => {
+                out.push(b'$');
+                at += 1;
+                continue;
+            }
+        }
+        at += 2;
+    }
+}
+
+/// `replace(pat, repl)`: replaces the first occurrence with ECMA's
+/// string-pattern `$` substitutions. No match returns the bytes
+/// unchanged; an empty `pat` matches at index 0.
 #[must_use]
 pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     match find_from(s, pat, 0) {
         Some(i) => {
             let mut out = Vec::with_capacity(s.len() - pat.len() + repl.len());
             out.extend_from_slice(&s[..i]);
-            out.extend_from_slice(repl);
+            append_replacement(&mut out, s, i, i + pat.len(), repl);
             out.extend_from_slice(&s[i + pat.len()..]);
             out
         }
@@ -212,10 +294,10 @@ pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
 /// `replaceAll(pat, repl)`: replaces every occurrence in one
 /// left-to-right pass over the original — a `pat` that reappears
 /// inside a replacement is **not** rescanned (JS semantics:
-/// `"aa".replaceAll("a", "aa")` is `"aaaa"`). `$` is literal (Q21).
-/// `pat` must be non-empty (the caller traps on `replaceAll("", …)`);
-/// an empty `pat` falls back to the unchanged bytes rather than
-/// looping.
+/// `"aa".replaceAll("a", "aa")` is `"aaaa"`). Each replacement uses
+/// ECMA's string-pattern `$` substitutions. `pat` must be non-empty
+/// (the caller traps on `replaceAll("", …)`); an empty `pat` falls
+/// back to the unchanged bytes rather than looping.
 #[must_use]
 pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     if pat.is_empty() {
@@ -225,7 +307,7 @@ pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     let mut at = 0usize;
     while let Some(i) = find_from(s, pat, at) {
         out.extend_from_slice(&s[at..i]);
-        out.extend_from_slice(repl);
+        append_replacement(&mut out, s, i, i + pat.len(), repl);
         at = i + pat.len();
     }
     out.extend_from_slice(&s[at..]);
@@ -266,6 +348,25 @@ mod tests {
         assert_eq!(last_index_of(s, b""), 11);
         assert_eq!(last_index_of(b"", b""), 0);
         assert_eq!(last_index_of(b"ab", b"abc"), -1);
+    }
+
+    #[test]
+    fn positioned_prefix_suffix_and_q27_ranges_use_bytes() {
+        let s = "éx".as_bytes();
+        assert!(starts_with(s, b"x", 2));
+        assert!(!starts_with(s, b"x", 1));
+        assert!(starts_with(s, b"", 99));
+        assert!(ends_with(s, "é".as_bytes(), 2));
+        assert!(!ends_with(s, "é".as_bytes(), 3));
+        assert!(ends_with(s, b"", -1));
+
+        assert_eq!(substring_range(5, -2, 3), (0, 3));
+        assert_eq!(substring_range(5, 4, 1), (1, 4));
+        assert_eq!(substring_range(5, 99, 2), (2, 5));
+        assert_eq!(substr_range(5, -2, i32::MAX), (3, 5));
+        assert_eq!(substr_range(5, -99, 2), (0, 2));
+        assert_eq!(substr_range(5, 2, 0), (2, 2));
+        assert_eq!(substr_range(5, 2, -1), (2, 2));
     }
 
     #[test]
@@ -354,13 +455,17 @@ mod tests {
     }
 
     #[test]
-    fn replace_first_is_literal_and_first_only() {
+    fn replace_first_substitutes_ecma_string_patterns() {
         assert_eq!(replace_first(b"aaa", b"a", b"b"), b"baa");
         assert_eq!(replace_first(b"abc", b"z", b"y"), b"abc");
-        // `$` is not interpreted (Q21).
-        assert_eq!(replace_first(b"x=1", b"1", b"$&"), b"x=$&");
+        assert_eq!(
+            replace_first(b"a-b", b"-", b"[$$][$&][$`][$'][$1]"),
+            b"a[$][-][a][b][$1]b"
+        );
+        assert_eq!(replace_first(b"x=1", b"1", b"$&"), b"x=1");
         // Empty pattern matches at 0 (ECMA-262): repl + s.
         assert_eq!(replace_first(b"abc", b"", b"X"), b"Xabc");
+        assert_eq!(replace_first(b"abc", b"", b"$'"), b"abcabc");
     }
 
     #[test]
@@ -369,7 +474,12 @@ mod tests {
         // The replacement contains the pattern; one pass, no rescan.
         assert_eq!(replace_all(b"aa", b"a", b"aa"), b"aaaa");
         assert_eq!(replace_all(b"abc", b"z", b"y"), b"abc");
-        assert_eq!(replace_all(b"x=1", b"1", b"$&"), b"x=$&");
+        assert_eq!(replace_all(b"x=1", b"1", b"$&"), b"x=1");
+        assert_eq!(
+            replace_all(b"a-b-c", b"-", b"<$`|$&|$'>"),
+            b"a<a|-|b-c>b<a-b|-|c>c"
+        );
+        assert_eq!(replace_all(b"a-b", b"-", b"[$1]"), b"a[$1]b");
         // The documented empty-pattern fallback (the FFI traps first).
         assert_eq!(replace_all(b"ab", b"", b"X"), b"ab");
     }

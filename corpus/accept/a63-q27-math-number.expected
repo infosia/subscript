@@ -1,0 +1,4 @@
+imul -2 -2147483648
+fround 1.100000023841858
+parseInt 127 127 true
+parseFloat -125 -125 true

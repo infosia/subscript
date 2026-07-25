@@ -134,6 +134,8 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_math_min", ffi::sub_rt_math_min as *const u8),
         ("sub_rt_math_random", ffi::sub_rt_math_random as *const u8),
         ("sub_rt_math_clz32", ffi::sub_rt_math_clz32 as *const u8),
+        ("sub_rt_math_imul", ffi::sub_rt_math_imul as *const u8),
+        ("sub_rt_math_fround", ffi::sub_rt_math_fround as *const u8),
         // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
         ("sub_rt_num_is_nan", ffi::sub_rt_num_is_nan as *const u8),
         (
@@ -208,6 +210,20 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         (
             "sub_rt_str_replace_all",
             ffi::sub_rt_str_replace_all as *const u8,
+        ),
+        (
+            "sub_rt_str_substring",
+            ffi::sub_rt_str_substring as *const u8,
+        ),
+        ("sub_rt_str_substr", ffi::sub_rt_str_substr as *const u8),
+        ("sub_rt_str_char_at", ffi::sub_rt_str_char_at as *const u8),
+        (
+            "sub_rt_str_code_point_at",
+            ffi::sub_rt_str_code_point_at as *const u8,
+        ),
+        (
+            "sub_rt_str_method_concat",
+            ffi::sub_rt_str_method_concat as *const u8,
         ),
         // Array method intrinsics (stdlib.md §9): one opaque symbol
         // per accepted method, ArrFn::ALL order.

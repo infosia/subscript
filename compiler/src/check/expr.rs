@@ -1391,11 +1391,6 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(prop_pos);
         }
-        if matches!(prop, "imul" | "fround")
-            && self.reject_api_form("Math", prop, prop, prop_pos.clone())
-        {
-            return self.err_expr(prop_pos);
-        }
         self.error(
             RuleCode::S014,
             format!("`Math.{}` is outside the accepted Math subset (Q19)", prop),
@@ -1406,8 +1401,8 @@ impl<'p> Checker<'p> {
 
     /// A `Math.<fn>(…)` intrinsic call (stdlib.md §1): exact arity
     /// (Q19 — the lib's variadic `max`/`min`/`hypot` beyond two are out
-    /// of subset). `clz32` takes `u32` and returns `i32`; every other
-    /// argument and result is `f64`.
+    /// of subset). `clz32` takes `u32` and returns `i32`; `imul` takes
+    /// and returns `i32`; every other argument and result is `f64`.
     fn check_math_call(
         &mut self,
         f: MathFn,
@@ -1428,7 +1423,11 @@ impl<'p> Checker<'p> {
             {
                 return self.err_expr(pos);
             }
-            let argument_type = if f == MathFn::Clz32 { "u32" } else { "f64" };
+            let argument_type = match f {
+                MathFn::Clz32 => "u32",
+                MathFn::Imul => "i32",
+                _ => "f64",
+            };
             self.error(
                 RuleCode::S014,
                 format!(
@@ -1443,10 +1442,10 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let param_ty = if f == MathFn::Clz32 {
-            Type::U32
-        } else {
-            Type::F64
+        let param_ty = match f {
+            MathFn::Clz32 => Type::U32,
+            MathFn::Imul => Type::I32,
+            _ => Type::F64,
         };
         let params: Vec<ParamSig> = (0..arity)
             .map(|_| ParamSig {
@@ -1461,10 +1460,9 @@ impl<'p> Checker<'p> {
                 callee: Callee::Math(f),
                 args,
             },
-            ty: if f == MathFn::Clz32 {
-                Type::I32
-            } else {
-                Type::F64
+            ty: match f {
+                MathFn::Clz32 | MathFn::Imul => Type::I32,
+                _ => Type::F64,
             },
             pos,
         }
@@ -1487,8 +1485,8 @@ impl<'p> Checker<'p> {
     }
 
     /// A `Number` namespace member outside a call position: constants
-    /// fold to f64 literals; predicates are call-only; aliases and all
-    /// other members are rejected under Q25.
+    /// fold to f64 literals; statics are call-only; all other members
+    /// are rejected under Q25/Q27.
     fn check_number_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
         if for_write {
             self.error(
@@ -1505,17 +1503,12 @@ impl<'p> Checker<'p> {
                 pos: prop_pos,
             };
         }
-        if crate::ambient::number_predicate(prop).is_some() {
+        if crate::ambient::number_static(prop).is_some() {
             self.error(
                 RuleCode::S014,
                 format!("`Number.{prop}` may only be called, not read as a value (Q25)"),
                 prop_pos.clone(),
             );
-            return self.err_expr(prop_pos);
-        }
-        if matches!(prop, "parseInt" | "parseFloat")
-            && self.reject_api_form("Number", prop, prop, prop_pos.clone())
-        {
             return self.err_expr(prop_pos);
         }
         self.error(
@@ -1568,14 +1561,17 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Global `parseInt` / `parseFloat` calls. Their arity is part of
-    /// Q25: in particular, parseInt's radix is required.
+    /// Global or `Number`-namespace `parseInt` / `parseFloat` calls.
+    /// Both spellings lower to the same [`NumFn`] identity and runtime
+    /// symbol. Their arity is part of Q25/Q27: in particular,
+    /// parseInt's radix is required.
     fn check_number_global_call(
         &mut self,
         f: NumFn,
         c: &ast::CallExpr,
         fx: &mut FnCtx,
         pos: Pos,
+        call_name: &str,
     ) -> hir::Expr {
         let params: Vec<ParamSig> = match f {
             NumFn::ParseInt => vec![
@@ -1605,7 +1601,7 @@ impl<'p> Checker<'p> {
             }
         };
         if c.args.len() != params.len() {
-            if f == NumFn::ParseInt && c.args.len() == 1 {
+            if f == NumFn::ParseInt && c.args.len() == 1 && call_name == "parseInt" {
                 self.reject_api_form(
                     "global",
                     "parseInt(value)",
@@ -1617,7 +1613,7 @@ impl<'p> Checker<'p> {
                     RuleCode::S014,
                     format!(
                         "`{}` takes exactly {} argument(s), got {} (Q25)",
-                        f.name(),
+                        call_name,
                         params.len(),
                         c.args.len()
                     ),
@@ -1626,7 +1622,7 @@ impl<'p> Checker<'p> {
             }
             return self.err_expr(pos);
         }
-        let args = self.check_args(&params, &c.args, fx, &pos, f.name());
+        let args = self.check_args(&params, &c.args, fx, &pos, call_name);
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Num(f),
@@ -1994,11 +1990,12 @@ impl<'p> Checker<'p> {
     }
 
     /// A `String` method intrinsic call on a string receiver
-    /// (stdlib.md §8, Q21). Optional arguments are normalized here —
-    /// `from` defaults to `0`, `pad` to `" "` — so every runtime symbol
-    /// has a fixed arity and both tiers lower the identical call (the
-    /// Date.UTC technique, §3). The receiver becomes the call's first
-    /// argument.
+    /// (stdlib.md §8, Q21/Q27). Optional arguments are normalized here:
+    /// starting positions default to `0`, ending positions and lengths
+    /// use `i32::MAX` as the runtime's "to the end" sentinel, and `pad`
+    /// defaults to `" "`. Every runtime symbol therefore has a fixed
+    /// arity and both tiers lower the identical call (the Date.UTC
+    /// technique, §3). The receiver becomes the call's first argument.
     fn check_str_method(
         &mut self,
         recv: hir::Expr,
@@ -2007,7 +2004,9 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        let optional_from = matches!(f, StrFn::IndexOf | StrFn::Includes);
+        let optional_zero_position =
+            matches!(f, StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith);
+        let optional_end_position = matches!(f, StrFn::EndsWith | StrFn::Substring | StrFn::Substr);
         let optional_pad = matches!(f, StrFn::PadStart | StrFn::PadEnd);
         let params: Vec<ParamSig> = f
             .params()
@@ -2019,14 +2018,21 @@ impl<'p> Checker<'p> {
                     hir::StrParam::Str => Type::Str,
                     hir::StrParam::I32 => Type::I32,
                 },
-                has_default: i == 1 && (optional_from || optional_pad),
+                has_default: i == 1
+                    && (optional_zero_position || optional_end_position || optional_pad),
             })
             .collect();
         let mut args = self.check_args(&params, &c.args, fx, &pos, f.name());
         if args.len() + 1 == params.len() {
-            if optional_from {
+            if optional_zero_position {
                 args.push(hir::Expr {
                     kind: ExprKind::Int(0),
+                    ty: Type::I32,
+                    pos: pos.clone(),
+                });
+            } else if optional_end_position {
+                args.push(hir::Expr {
+                    kind: ExprKind::Int(i64::from(i32::MAX)),
                     ty: Type::I32,
                     pos: pos.clone(),
                 });
@@ -3592,7 +3598,7 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if let Some(f) = crate::ambient::number_global(&name) {
-                    return self.check_number_global_call(f, c, fx, pos);
+                    return self.check_number_global_call(f, c, fx, pos, &name);
                 }
                 if name == "Number" {
                     self.reject_api_form("Number", "Number(value)", "Number(value)", pos.clone());
@@ -3772,11 +3778,16 @@ impl<'p> Checker<'p> {
                 return self.check_math_call(f, c, fx, pos);
             }
         }
-        // `Number.is*` (stdlib.md §11.1): accepted predicates are
-        // resolved before generic namespace-member handling.
+        // Accepted Number statics (stdlib.md §11.1/§11.3, Q27) are
+        // resolved before generic namespace-member handling. Parser
+        // spellings share the globals' NumFn/runtime identity.
         if self.is_number_namespace(&m.obj, fx) {
-            if let Some(f) = crate::ambient::number_predicate(&name) {
-                return self.check_number_predicate_call(f, c, fx, pos);
+            if let Some(f) = crate::ambient::number_static(&name) {
+                return if matches!(f, NumFn::ParseInt | NumFn::ParseFloat) {
+                    self.check_number_global_call(f, c, fx, pos, &format!("Number.{name}"))
+                } else {
+                    self.check_number_predicate_call(f, c, fx, pos)
+                };
             }
         }
         // `Date.UTC(…)` / `Date.now()` (stdlib.md §3): static intrinsic

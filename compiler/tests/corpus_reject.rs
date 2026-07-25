@@ -29,9 +29,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r12-general-union.ts", RuleCode::S011, 8),
     ("r13-undefined.ts", RuleCode::S012, 7),
     ("r14-async.ts", RuleCode::S013, 7),
-    ("r15-math-imul.ts", RuleCode::S014, 8),
     ("r16-math-variadic-max.ts", RuleCode::S014, 8),
-    ("r17-math-fround.ts", RuleCode::S014, 9),
     ("r18-math-value.ts", RuleCode::S014, 9),
     ("r19-date-local-accessor.ts", RuleCode::S014, 10),
     ("r20-date-setter.ts", RuleCode::S014, 9),
@@ -41,7 +39,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     // tsc accepts `Date === Date`, so r24 lives only in the reject
     // corpus (excluded from tsconfig like every r-entry).
     ("r24-date-compare.ts", RuleCode::S014, 11),
-    ("r25-string-substring.ts", RuleCode::S014, 10),
     ("r26-string-localecompare.ts", RuleCode::S014, 10),
     ("r27-string-match.ts", RuleCode::S014, 10),
     ("r28-string-tolocaleupper.ts", RuleCode::S014, 11),

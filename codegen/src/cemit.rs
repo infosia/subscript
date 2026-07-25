@@ -3934,8 +3934,8 @@ extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* 
 extern int32_t sub_rt_str_index_of(void* ctx, const void* s, const void* needle, int32_t from);
 extern int32_t sub_rt_str_last_index_of(void* ctx, const void* s, const void* needle);
 extern int32_t sub_rt_str_includes(void* ctx, const void* s, const void* needle, int32_t from);
-extern int32_t sub_rt_str_starts_with(void* ctx, const void* s, const void* needle);
-extern int32_t sub_rt_str_ends_with(void* ctx, const void* s, const void* needle);
+extern int32_t sub_rt_str_starts_with(void* ctx, const void* s, const void* needle, int32_t position);
+extern int32_t sub_rt_str_ends_with(void* ctx, const void* s, const void* needle, int32_t end_position);
 extern int32_t sub_rt_str_char_code_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
 extern void* sub_rt_str_split(void* ctx, const void* s, const void* sep, uint32_t pos_id);
 extern void* sub_rt_str_trim(void* ctx, const void* s, uint32_t pos_id);
@@ -3948,6 +3948,11 @@ extern void* sub_rt_str_to_upper(void* ctx, const void* s, uint32_t pos_id);
 extern void* sub_rt_str_to_lower(void* ctx, const void* s, uint32_t pos_id);
 extern void* sub_rt_str_replace(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
 extern void* sub_rt_str_replace_all(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
+extern void* sub_rt_str_substring(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);
+extern void* sub_rt_str_substr(void* ctx, const void* s, int32_t start, int32_t length, uint32_t pos_id);
+extern void* sub_rt_str_char_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
+extern int32_t sub_rt_str_code_point_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
+extern void* sub_rt_str_method_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
 
 /* Array method intrinsics (stdlib.md 9, Q22): one opaque runtime symbol
  * per accepted method, shared with the dev tier. Element values the
@@ -4027,6 +4032,8 @@ extern double sub_rt_math_max(void* ctx, double a, double b);
 extern double sub_rt_math_min(void* ctx, double a, double b);
 extern double sub_rt_math_random(void* ctx);
 extern int32_t sub_rt_math_clz32(void* ctx, uint32_t x);
+extern int32_t sub_rt_math_imul(void* ctx, int32_t a, int32_t b);
+extern double sub_rt_math_fround(void* ctx, double x);
 
 /* Date intrinsics (stdlib.md 3): a Date value is its int64_t epoch
  * milliseconds; the calendar arithmetic lives in the runtime so both
@@ -4281,11 +4288,13 @@ mod tests {
     fn math_calls_use_the_opaque_runtime_symbol_never_libm() {
         // stdlib.md §0.2: a bare libm call would be constant-folded by
         // clang at -O2 — the emitted call must be the sub_rt symbol.
-        let c = emit("export function main(): void {\n  print(`${Math.floor(1.5)}`);\n  print(`${Math.pow(2.0, 10.0)}`);\n  print(`${Math.random()}`);\n  print(`${Math.clz32(0)}`);\n}\n");
+        let c = emit("export function main(): void {\n  print(`${Math.floor(1.5)}`);\n  print(`${Math.pow(2.0, 10.0)}`);\n  print(`${Math.random()}`);\n  print(`${Math.clz32(0)}`);\n  print(`${Math.imul(2147483647, 2)}`);\n  print(`${Math.fround(1.1)}`);\n}\n");
         assert!(c.contains("sub_rt_math_floor(ctx, 1.5)"));
         assert!(c.contains("sub_rt_math_pow(ctx, 2.0, 10.0)"));
         assert!(c.contains("sub_rt_math_random(ctx)"));
         assert!(c.contains("sub_rt_math_clz32(ctx, 0u)"));
+        assert!(c.contains("sub_rt_math_imul(ctx, 2147483647, 2)"));
+        assert!(c.contains("sub_rt_math_fround(ctx, 1.1)"));
         assert!(!c.contains("__builtin_clz"));
         // Token-boundary scan: a bare `<name>(` whose preceding character
         // is not part of an identifier is a libm call regardless of the

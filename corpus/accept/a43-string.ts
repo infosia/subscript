@@ -6,7 +6,7 @@
 //          (multi, no-match, adjacent, leading/trailing separators), the
 //          trim family, repeat, padStart/padEnd (incl. multi-byte pad
 //          truncation), toUpperCase/toLowerCase round-trip, and literal
-//          replace/replaceAll (no `$` substitution patterns).
+//          replace/replaceAll (including Q27 `$` substitution).
 // exercises: string-methods, q14-formatting
 // questions: Q14, Q21
 
@@ -73,6 +73,6 @@ export function main(): void {
   print(`repall ${"abcabc".replaceAll("bc", "X")}`);
   print(`repgrow ${"aa".replaceAll("a", "aa")}`);
   print(`repmiss ${"abc".replace("z", "y")}`);
-  // `$` in the replacement is literal (Q21: no substitution patterns).
+  // Q27 closes the old Q21 divergence: `$&` expands to the match.
   print(`repdollar ${"x=1".replace("1", "$&")}`);
 }

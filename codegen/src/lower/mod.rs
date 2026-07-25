@@ -426,16 +426,19 @@ fn declare_rt<M: Module>(
     use types::{F32, F64, I16, I32, I64};
     // Math intrinsic imports (stdlib.md §1): one opaque symbol per
     // accepted function, in MathFn::ALL order so `f as usize` indexes
-    // the table. `clz32` is `(ctx, u32) -> i32`; all other arguments
-    // and results are f64.
+    // the table. `clz32` is `(ctx, u32) -> i32`, `imul` is
+    // `(ctx, i32, i32) -> i32`; all other arguments and results are
+    // f64.
     let mut math_ids: Vec<FuncId> = Vec::with_capacity(hir::MathFn::ALL.len());
     for f in hir::MathFn::ALL {
-        let (params, ret) = if f == hir::MathFn::Clz32 {
-            (vec![I64, I32], I32)
-        } else {
-            let mut params = vec![I64];
-            params.extend(std::iter::repeat_n(F64, f.arity()));
-            (params, F64)
+        let (params, ret) = match f {
+            hir::MathFn::Clz32 => (vec![I64, I32], I32),
+            hir::MathFn::Imul => (vec![I64, I32, I32], I32),
+            _ => {
+                let mut params = vec![I64];
+                params.extend(std::iter::repeat_n(F64, f.arity()));
+                (params, F64)
+            }
         };
         math_ids.push(mk(&format!("sub_rt_math_{}", f.name()), &params, Some(ret))?);
     }
