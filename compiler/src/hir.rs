@@ -1198,14 +1198,18 @@ pub enum ArrFn {
     Reverse,
     /// `concat(other)` — exactly one array argument; fresh array.
     Concat,
-    /// `forEach(f)` — `f: (v: T) => void`.
+    /// `forEach(f)` — `f: (v: T) => void` or
+    /// `f: (v: T, i: i32) => void`.
     ForEach,
-    /// `map(f)` — `f: (v: T) => U`; `U` inferred from the callback.
+    /// `map(f)` — `f: (v: T) => U` or
+    /// `f: (v: T, i: i32) => U`; `U` inferred from the callback.
     Map,
-    /// `filter(f)` — `f: (v: T) => boolean`; fresh array.
+    /// `filter(f)` — `f: (v: T) => boolean` or
+    /// `f: (v: T, i: i32) => boolean`; fresh array.
     Filter,
-    /// `reduce(f, init)` — `f: (acc: U, v: T) => U`; `init` required
-    /// (Q22). The accumulator travels by pointer (in/out).
+    /// `reduce(f, init)` — `f: (acc: U, v: T) => U` or
+    /// `f: (acc: U, v: T, i: i32) => U`; `init` required (Q22). The
+    /// accumulator travels by pointer (in/out).
     Reduce,
     /// `some(f)` — short-circuits on the first `true`.
     Some,
@@ -1341,6 +1345,24 @@ impl ArrFn {
         )
     }
 
+    /// Callback arity for the accepted form that includes the trailing
+    /// element index, or `None` when this operation has no index callback
+    /// form. `sort` is deliberately excluded: JavaScript calls its
+    /// comparator with only the two compared values.
+    #[must_use]
+    pub fn callback_index_arity(self) -> Option<usize> {
+        match self {
+            ArrFn::ForEach
+            | ArrFn::Map
+            | ArrFn::Filter
+            | ArrFn::Some
+            | ArrFn::Every
+            | ArrFn::FindIndex => Some(2),
+            ArrFn::Reduce | ArrFn::ReduceRight => Some(3),
+            _ => None,
+        }
+    }
+
     /// Whether the runtime symbol takes a trailing `pos_id`: the
     /// operations that allocate through the Context (a fresh array or
     /// string), plus `shift`, whose empty-receiver trap is at the call
@@ -1382,15 +1404,15 @@ impl ArrFn {
             ArrFn::Fill => "fill(value: T, start?: i32, end?: i32): T[]",
             ArrFn::Reverse => "reverse(): T[]",
             ArrFn::Concat => "concat(other: T[]): T[]",
-            ArrFn::ForEach => "forEach(callback: (value: T) => void): void",
-            ArrFn::Map => "map<U>(callback: (value: T) => U): U[]",
-            ArrFn::Filter => "filter(callback: (value: T) => boolean): T[]",
-            ArrFn::Reduce => "reduce<U>(callback: (acc: U, value: T) => U, init: U): U",
-            ArrFn::Some => "some(callback: (value: T) => boolean): boolean",
-            ArrFn::Every => "every(callback: (value: T) => boolean): boolean",
-            ArrFn::FindIndex => "findIndex(callback: (value: T) => boolean): i32",
+            ArrFn::ForEach => "forEach(callback: ((value: T) => void) | ((value: T, index: i32) => void)): void",
+            ArrFn::Map => "map<U>(callback: ((value: T) => U) | ((value: T, index: i32) => U)): U[]",
+            ArrFn::Filter => "filter(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T[]",
+            ArrFn::Reduce => "reduce<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U",
+            ArrFn::Some => "some(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): boolean",
+            ArrFn::Every => "every(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): boolean",
+            ArrFn::FindIndex => "findIndex(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): i32",
             ArrFn::Sort => "sort(comparator: (left: T, right: T) => i32): T[]",
-            ArrFn::ReduceRight => "reduceRight<U>(callback: (acc: U, value: T) => U, init: U): U",
+            ArrFn::ReduceRight => "reduceRight<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U",
             ArrFn::Splice => "splice(start: i32, deleteCount: i32): T[]",
             ArrFn::Shift => "shift(): T",
             ArrFn::Unshift => "unshift(value: T): i32",
@@ -1410,7 +1432,7 @@ impl ArrFn {
             ArrFn::Fill => "Stores one value across a range and returns the receiver.",
             ArrFn::Reverse => "Reverses in place and returns the receiver.",
             ArrFn::Concat => "Returns a fresh array from exactly one other array.",
-            ArrFn::ForEach => "Calls a non-escaping one-parameter callback.",
+            ArrFn::ForEach => "Calls a non-escaping callback with a value and optional index.",
             ArrFn::Map => "Maps through a non-escaping callback and infers `U`.",
             ArrFn::Filter => "Returns elements selected by a non-escaping callback.",
             ArrFn::Reduce => "Folds from a required initial accumulator.",
@@ -2279,6 +2301,23 @@ mod tests {
                 ArrFn::ReduceRight,
             ]
         );
+        for f in [
+            ArrFn::ForEach,
+            ArrFn::Map,
+            ArrFn::Filter,
+            ArrFn::Some,
+            ArrFn::Every,
+            ArrFn::FindIndex,
+        ] {
+            assert_eq!(f.callback_index_arity(), Some(2), "{}", f.name());
+            assert!(f.api_signature().contains("index: i32"), "{}", f.name());
+        }
+        for f in [ArrFn::Reduce, ArrFn::ReduceRight] {
+            assert_eq!(f.callback_index_arity(), Some(3), "{}", f.name());
+            assert!(f.api_signature().contains("index: i32"), "{}", f.name());
+        }
+        assert_eq!(ArrFn::Sort.callback_index_arity(), None);
+        assert!(!ArrFn::Sort.api_signature().contains("index"));
         // pos_id: the allocating operations plus the trapping shift.
         for f in ArrFn::ALL {
             let carries_pos = matches!(

@@ -433,16 +433,36 @@ mod tests {
     }
 
     #[test]
-    fn array_callback_with_extra_parameters_is_s014() {
-        // Q22: the lib's optional index/array callback parameters are
-        // not accepted; arities are fixed.
+    fn array_callbacks_accept_the_q27_index_arity() {
+        check_one(
+            "function indexedMap(v: i32, i: i32): i32 { return v + i; }\n\
+             export function main(): void {\n\
+               const xs: i32[] = [1, 2, 3];\n\
+               xs.forEach((v: i32, i: i32): void => { print(`${v}:${i}`); });\n\
+               const m: i32[] = xs.map(indexedMap);\n\
+               xs.filter((v: i32, i: i32): boolean => v > i);\n\
+               xs.some((v: i32, i: i32): boolean => v === i);\n\
+               xs.every((v: i32, i: i32): boolean => v > i);\n\
+               xs.findIndex((v: i32, i: i32): boolean => v === i);\n\
+               xs.reduce((acc: i32, v: i32, i: i32): i32 => acc + v + i, 0);\n\
+               xs.reduceRight((acc: i32, v: i32, i: i32): i32 => acc + v + i, 0);\n\
+               print(`${m.length}`);\n\
+             }\n",
+        )
+        .expect("Q27 indexed Array callbacks check");
+    }
+
+    #[test]
+    fn array_callback_container_parameter_is_s014_naming_c5() {
         let err = check_one(
-            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const m: i32[] = xs.map((v: i32, i: i32): i32 => v + i);\n  print(`${m.length}`);\n}\n",
+            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const m: i32[] = xs.map((v: i32, i: i32, arr: i32[]): i32 => v + i + arr.length);\n  print(`${m.length}`);\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
-        assert!(err[0].message.contains("index/array"));
-        assert!(err[0].message.contains("Q22"));
+        assert!(err[0].message.contains("container"));
+        assert!(err[0].message.contains("C5"));
+        assert!(err[0].message.contains("non-escaping-by-construction"));
+        assert!(err[0].message.contains("Q27"));
     }
 
     #[test]
@@ -766,6 +786,40 @@ mod tests {
              }\n",
         )
         .expect("Q27 stage 4 Map/Set surface checks");
+    }
+
+    #[test]
+    fn q27_array_index_arity_does_not_reach_map_or_set_callbacks() {
+        for (surface, source) in [
+            (
+                "Map.forEach",
+                "export function main(): void {\n\
+                   const map: Map<i32, i32> = new Map<i32, i32>();\n\
+                   map.forEach((value: i32, key: i32, index: i32): void => {});\n\
+                 }\n",
+            ),
+            (
+                "Set.forEach",
+                "export function main(): void {\n\
+                   const set: Set<i32> = new Set<i32>();\n\
+                   set.forEach((value: i32, index: i32): void => {});\n\
+                 }\n",
+            ),
+            (
+                "Map.groupBy",
+                "export function main(): void {\n\
+                   Map.groupBy([1], (value: i32, index: i32): i32 => value + index);\n\
+                 }\n",
+            ),
+        ] {
+            let err = check_one(source).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{surface}");
+            assert!(
+                err[0].message.contains("Q24"),
+                "{surface}: {}",
+                err[0].message
+            );
+        }
     }
 
     #[test]

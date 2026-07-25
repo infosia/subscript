@@ -2933,6 +2933,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             args.get(i)
                 .ok_or_else(|| internal(format!("{} arity (checker normalizes)", f.name())))
         };
+        let callback_indexed = |callback: &hir::Expr| -> Result<bool, String> {
+            let indexed_arity = f.callback_index_arity().ok_or_else(|| {
+                internal(format!("{} has no indexed callback shape", f.name()))
+            })?;
+            let Type::Func(ft) = &callback.ty else {
+                return Err(internal(format!("{} callback is not a function", f.name())));
+            };
+            match ft.params.len() {
+                arity if arity + 1 == indexed_arity => Ok(false),
+                arity if arity == indexed_arity => Ok(true),
+                arity => Err(internal(format!(
+                    "{} callback arity {arity} escaped the checker",
+                    f.name()
+                ))),
+            }
+        };
         let checked = f.can_trap();
         match f {
             A::IndexOf | A::LastIndexOf | A::Includes => {
@@ -3031,9 +3047,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.call_rt(rt, &[self.ctx_v, h, target, start, end], checked)?;
                 Ok(RV::S(h))
             }
-            A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex | A::Sort => {
+            A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex => {
                 let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
-                let cb = self.eval(arg_at(1)?)?;
+                let callback = arg_at(1)?;
+                let indexed = callback_indexed(callback)?;
+                let cb = self.eval(callback)?;
                 let (code, env) = self.expect_p(cb)?;
                 let kv = self.iconst(types::I32, i64::from(kind.code()));
                 let mut argv = vec![self.ctx_v, h, code, env, kv];
@@ -3041,16 +3059,24 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let pid = self.pos_id(pos);
                     argv.push(self.iconst(types::I32, pid));
                 }
+                argv.push(self.iconst(types::I32, i64::from(indexed)));
                 let res = self.call_rt(rt, &argv, checked)?;
                 Ok(match f {
                     A::ForEach => RV::None,
-                    A::Sort => RV::S(h),
                     A::Some | A::Every => {
                         let r = res.ok_or_else(|| internal("predicate result"))?;
                         RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, r, 0))
                     }
                     _ => RV::S(res.ok_or_else(|| internal(format!("{} result", f.name())))?),
                 })
+            }
+            A::Sort => {
+                let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
+                let cb = self.eval(arg_at(1)?)?;
+                let (code, env) = self.expect_p(cb)?;
+                let kv = self.iconst(types::I32, i64::from(kind.code()));
+                self.call_rt(rt, &[self.ctx_v, h, code, env, kv], checked)?;
+                Ok(RV::S(h))
             }
             A::Map => {
                 let elem_kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
@@ -3060,16 +3086,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 };
                 let ret_kind = crate::layout::arr_elem_kind(self.ml.hir, &ret_elem)?;
                 let ret_stride = self.ml.layouts.stride(&ret_elem)?;
-                let cb = self.eval(arg_at(1)?)?;
+                let callback = arg_at(1)?;
+                let indexed = callback_indexed(callback)?;
+                let cb = self.eval(callback)?;
                 let (code, env) = self.expect_p(cb)?;
                 let ekv = self.iconst(types::I32, i64::from(elem_kind.code()));
                 let rkv = self.iconst(types::I32, i64::from(ret_kind.code()));
                 let size_v = self.iconst(types::I64, i64::from(ret_stride));
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
+                let indexed_v = self.iconst(types::I32, i64::from(indexed));
                 let res = self.call_rt(
                     rt,
-                    &[self.ctx_v, h, code, env, ekv, rkv, size_v, pos_v],
+                    &[self.ctx_v, h, code, env, ekv, rkv, size_v, pos_v, indexed_v],
                     checked,
                 )?;
                 res.map(RV::S).ok_or_else(|| internal("map result"))
@@ -3078,7 +3107,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let elem_kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
                 let acc_kind = crate::layout::arr_elem_kind(self.ml.hir, ret_ty)?;
                 let acc_stride = self.ml.layouts.stride(ret_ty)?;
-                let cb = self.eval(arg_at(1)?)?;
+                let callback = arg_at(1)?;
+                let indexed = callback_indexed(callback)?;
+                let cb = self.eval(callback)?;
                 let (code, env) = self.expect_p(cb)?;
                 // The accumulator travels in/out through a caller slot.
                 let init = self.eval(arg_at(2)?)?;
@@ -3086,9 +3117,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let ekv = self.iconst(types::I32, i64::from(elem_kind.code()));
                 let akv = self.iconst(types::I32, i64::from(acc_kind.code()));
                 let size_v = self.iconst(types::I64, i64::from(acc_stride));
+                let indexed_v = self.iconst(types::I32, i64::from(indexed));
                 self.call_rt(
                     rt,
-                    &[self.ctx_v, h, code, env, ekv, akv, size_v, slot],
+                    &[self.ctx_v, h, code, env, ekv, akv, size_v, slot, indexed_v],
                     checked,
                 )?;
                 self.load_val(ret_ty, slot, 0)

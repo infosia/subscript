@@ -1,0 +1,8 @@
+forEach 34 0:4|1:7|2:10|3:13|
+map 8,14,20,26 4,8,12,16
+filter 4,10 7,13
+some true true
+every true true
+findIndex 2 3
+reduce 66
+reduceRight 3,2,1,0

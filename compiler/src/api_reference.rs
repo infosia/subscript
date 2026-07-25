@@ -549,6 +549,39 @@ mod tests {
     }
 
     #[test]
+    fn generated_reference_shows_only_array_index_callback_overloads() {
+        let markdown = render_markdown();
+        for method in [
+            "forEach(callback:",
+            "map<U>(callback:",
+            "filter(callback:",
+            "reduce<U>(callback:",
+            "some(callback:",
+            "every(callback:",
+            "findIndex(callback:",
+            "reduceRight<U>(callback:",
+        ] {
+            let row = markdown
+                .lines()
+                .find(|line| line.contains(method) && line.contains("index: i32"))
+                .unwrap_or_else(|| panic!("missing indexed callback signature for {method}"));
+            assert!(row.starts_with("| `"), "{method}: malformed accepted row");
+        }
+        assert!(markdown.contains(
+            "| `sort(comparator: (left: T, right: T) => i32): T[]` |"
+        ));
+        assert!(markdown.contains(
+            "| `forEach(callback: (value: V, key: K) => void): void` |"
+        ));
+        assert!(markdown.contains(
+            "| `groupBy<K, T>(items: T[], callback: (value: T) => K): Map<K, T[]>` |"
+        ));
+        assert!(markdown.contains(
+            "| `forEach(callback: (key: K) => void): void` |"
+        ));
+    }
+
+    #[test]
     fn documented_reject_corpus_codes_are_checker_codes() {
         let reject_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/reject");
         for rejection in ambient::rejected_api() {
@@ -603,6 +636,10 @@ mod tests {
             }
             ("T[]", "reduceRight(callback)") => {
                 "export function main(): void {\n  const values: i32[] = [1];\n  values.reduceRight((a: i32, b: i32): i32 => a + b);\n}\n"
+                    .to_string()
+            }
+            ("T[]", "callback(value, index, array)") => {
+                "export function main(): void {\n  const values: i32[] = [1];\n  values.map((value: i32, index: i32, array: i32[]): i32 => value + index + array.length);\n}\n"
                     .to_string()
             }
             ("T[]", "splice(start, deleteCount, ...items)") => {

@@ -492,6 +492,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("T[]", "sort()", "Q22", Some("sort(comparator)"), "The no-argument overload coerces elements to strings.", Some("r29-array-sort-noarg.ts")),
     rejection("T[]", "reduce(callback)", "Q22", Some("reduce(callback, init)"), "An explicit initial accumulator is required.", Some("r31-array-reduce-noinit.ts")),
     rejection("T[]", "reduceRight(callback)", "Q27", Some("reduceRight(callback, init)"), "An explicit initial accumulator is required.", None),
+    rejection("T[]", "callback(value, index, array)", "Q27", Some("callback(value, index)"), "Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule.", Some("r55-array-callback-container.ts")),
     rejection("T[]", "splice(start, deleteCount, ...items)", "Q27", None, "Variadic parameters are the missing prerequisite for insertion through `splice`.", Some("r32-array-splice.ts")),
     rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
     rejection("FixedArray<T, N>", "T[] methods", "Q22", None, "FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays.", None),

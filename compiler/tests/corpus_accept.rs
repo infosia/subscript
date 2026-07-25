@@ -101,11 +101,11 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        65,
-        "expected 65 single-file accept entries (23 run set + a25–a39 interop \
+        66,
+        "expected 66 single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
-         + a62 Q26 Number formatting/clz32 + a63–a66 Q27 stages 1–4) \
+         + a62 Q26 Number formatting/clz32 + a63–a67 Q27 stages 1–5) \
          plus a19-modules"
     );
     for name in &single_files {

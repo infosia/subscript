@@ -68,6 +68,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r52-object-groupby.ts", RuleCode::S014, 8),
     ("r53-set-algebra-nonset.ts", RuleCode::S014, 9),
     ("r54-map-groupby-key.ts", RuleCode::S014, 8),
+    ("r55-array-callback-container.ts", RuleCode::S014, 10),
 ];
 
 #[test]
@@ -148,6 +149,23 @@ fn q27_map_set_rejections_name_the_missing_language_shapes() {
             diagnostics[0].message.contains(required),
             "{file}: diagnostic does not explain the missing shape: {}",
             diagnostics[0].message
+        );
+    }
+}
+
+#[test]
+fn q27_array_callback_container_rejection_names_c5_and_the_reason() {
+    let file = "r55-array-callback-container.ts";
+    let path = corpus_dir().join("reject").join(file);
+    let source =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("the Array callback container parameter must be rejected");
+    let message = &diagnostics[0].message;
+    for required in ["C5", "container reference", "non-escaping-by-construction"] {
+        assert!(
+            message.contains(required),
+            "{file}: diagnostic does not name `{required}`: {message}"
         );
     }
 }

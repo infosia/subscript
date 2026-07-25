@@ -2259,6 +2259,22 @@ impl<'m> Emitter<'m> {
                 .cloned()
                 .ok_or_else(|| format!("{} arity (checker normalizes)", f.name()))
         };
+        let callback_indexed = |callback: &hir::Expr| -> Result<u32, String> {
+            let indexed_arity = f
+                .callback_index_arity()
+                .ok_or_else(|| format!("{} has no indexed callback shape", f.name()))?;
+            let Type::Func(ft) = &callback.ty else {
+                return Err(format!("{} callback is not a function", f.name()));
+            };
+            match ft.params.len() {
+                arity if arity + 1 == indexed_arity => Ok(0),
+                arity if arity == indexed_arity => Ok(1),
+                arity => Err(format!(
+                    "{} callback arity {arity} escaped the checker",
+                    f.name()
+                )),
+            }
+        };
         // Materializes one element value into an addressable temporary.
         let sym = f.symbol();
         match f {
@@ -2339,15 +2355,21 @@ impl<'m> Emitter<'m> {
             }
             A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex => {
                 let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
-                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let callback = arg_at(args, 1)?;
+                let indexed = callback_indexed(&callback)?;
+                let fv = self.eval(&callback, out, depth)?;
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
                 let call = match f {
                     A::Filter => {
                         let pid = self.pos_id(pos);
-                        format!("{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {pid}u)")
+                        format!(
+                            "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {pid}u, {indexed}u)"
+                        )
                     }
-                    _ => format!("{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u)"),
+                    _ => format!(
+                        "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {indexed}u)"
+                    ),
                 };
                 Ok(match f {
                     A::Some | A::Every => format!("({call} != 0)"),
@@ -2370,19 +2392,23 @@ impl<'m> Emitter<'m> {
                 };
                 let ret_kind = crate::layout::arr_elem_kind(self.module, &ret_elem)?.code();
                 let rect = self.ctype(&ret_elem)?;
-                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let callback = arg_at(args, 1)?;
+                let indexed = callback_indexed(&callback)?;
+                let fv = self.eval(&callback, out, depth)?;
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
                 let pid = self.pos_id(pos);
                 Ok(format!(
-                    "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u)"
+                    "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u, {indexed}u)"
                 ))
             }
             A::Reduce | A::ReduceRight => {
                 let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
                 let acc_kind = crate::layout::arr_elem_kind(self.module, ret_ty)?.code();
                 let acct = self.ctype(ret_ty)?;
-                let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let callback = arg_at(args, 1)?;
+                let indexed = callback_indexed(&callback)?;
+                let fv = self.eval(&callback, out, depth)?;
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
                 let init = self.eval(&arg_at(args, 2)?, out, depth)?;
@@ -2390,7 +2416,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}{acct} {acc} = {init};");
                 let _ = writeln!(
                     out,
-                    "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc});"
+                    "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc}, {indexed}u);"
                 );
                 Ok(acc)
             }
@@ -4060,15 +4086,15 @@ extern void* sub_rt_arr_slice(void* ctx, void* a, int32_t start, int32_t end, ui
 extern void sub_rt_arr_fill(void* ctx, void* a, const void* x, int32_t start, int32_t end);
 extern void sub_rt_arr_reverse(void* ctx, void* a);
 extern void* sub_rt_arr_concat(void* ctx, void* a, void* b, uint32_t pos_id);
-extern void sub_rt_arr_for_each(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
-extern void* sub_rt_arr_map(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id);
-extern void* sub_rt_arr_filter(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t pos_id);
-extern void sub_rt_arr_reduce(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc);
-extern int32_t sub_rt_arr_some(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
-extern int32_t sub_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
-extern int32_t sub_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern void sub_rt_arr_for_each(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void* sub_rt_arr_map(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id, uint32_t indexed);
+extern void* sub_rt_arr_filter(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t pos_id, uint32_t indexed);
+extern void sub_rt_arr_reduce(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
+extern int32_t sub_rt_arr_some(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t sub_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t sub_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
 extern void sub_rt_arr_sort(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
-extern void sub_rt_arr_reduce_right(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc);
+extern void sub_rt_arr_reduce_right(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
 extern void* sub_rt_arr_splice(void* ctx, void* a, int32_t start, int32_t delete_count, uint32_t pos_id);
 extern void sub_rt_arr_shift(void* ctx, void* a, void* out, uint32_t pos_id);
 extern int32_t sub_rt_arr_unshift(void* ctx, void* a, const void* x, uint32_t pos_id);

@@ -174,15 +174,15 @@
 | `fill(value: T, start?: i32, end?: i32): T[]` | Stores one value across a range and returns the receiver. |
 | `reverse(): T[]` | Reverses in place and returns the receiver. |
 | `concat(other: T[]): T[]` | Returns a fresh array from exactly one other array. |
-| `forEach(callback: (value: T) => void): void` | Calls a non-escaping one-parameter callback. |
-| `map<U>(callback: (value: T) => U): U[]` | Maps through a non-escaping callback and infers `U`. |
-| `filter(callback: (value: T) => boolean): T[]` | Returns elements selected by a non-escaping callback. |
-| `reduce<U>(callback: (acc: U, value: T) => U, init: U): U` | Folds from a required initial accumulator. |
-| `some(callback: (value: T) => boolean): boolean` | Short-circuits on the first true callback result. |
-| `every(callback: (value: T) => boolean): boolean` | Short-circuits on the first false callback result. |
-| `findIndex(callback: (value: T) => boolean): i32` | Returns the first matching callback index, or -1. |
+| `forEach(callback: ((value: T) => void) \| ((value: T, index: i32) => void)): void` | Calls a non-escaping callback with a value and optional index. |
+| `map<U>(callback: ((value: T) => U) \| ((value: T, index: i32) => U)): U[]` | Maps through a non-escaping callback and infers `U`. |
+| `filter(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T[]` | Returns elements selected by a non-escaping callback. |
+| `reduce<U>(callback: ((acc: U, value: T) => U) \| ((acc: U, value: T, index: i32) => U), init: U): U` | Folds from a required initial accumulator. |
+| `some(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): boolean` | Short-circuits on the first true callback result. |
+| `every(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): boolean` | Short-circuits on the first false callback result. |
+| `findIndex(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): i32` | Returns the first matching callback index, or -1. |
 | `sort(comparator: (left: T, right: T) => i32): T[]` | Stable-sorts in place with a required comparator. |
-| `reduceRight<U>(callback: (acc: U, value: T) => U, init: U): U` | Folds right-to-left from a required initial accumulator. |
+| `reduceRight<U>(callback: ((acc: U, value: T) => U) \| ((acc: U, value: T, index: i32) => U), init: U): U` | Folds right-to-left from a required initial accumulator. |
 | `splice(start: i32, deleteCount: i32): T[]` | Deletes a clamped range in place and returns the removed elements. |
 | `shift(): T` | Removes the first element; an empty array traps. |
 | `unshift(value: T): i32` | Prepends one element and returns the new length. |
@@ -322,6 +322,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `sort()` | S014 | Q22 | `sort(comparator)` | The no-argument overload coerces elements to strings. | `r29-array-sort-noarg.ts` |
 | T[] | `reduce(callback)` | S014 | Q22 | `reduce(callback, init)` | An explicit initial accumulator is required. | `r31-array-reduce-noinit.ts` |
 | T[] | `reduceRight(callback)` | S014 | Q27 | `reduceRight(callback, init)` | An explicit initial accumulator is required. | — |
+| T[] | `callback(value, index, array)` | S014 | Q27 | `callback(value, index)` | Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule. | `r55-array-callback-container.ts` |
 | T[] | `splice(start, deleteCount, ...items)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for insertion through `splice`. | `r32-array-splice.ts` |
 | T[] | `unshift(value, ...values)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for prepending multiple elements. | `r51-array-unshift-variadic.ts` |
 | FixedArray<T, N> | `T[] methods` | S014 | Q22 | — | FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays. | — |

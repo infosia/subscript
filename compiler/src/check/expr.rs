@@ -2425,6 +2425,7 @@ impl<'p> Checker<'p> {
                     Some(Type::I32),
                     fx,
                     "sort",
+                    false,
                 );
                 mk(vec![recv, cb], arr_ty, pos)
             }
@@ -2510,6 +2511,7 @@ impl<'p> Checker<'p> {
                         &[acc_ty.clone(), elem],
                         Some(&acc_ty),
                         f.name(),
+                        true,
                     ),
                     None => self.check_arr_callback(
                         &c.args[0],
@@ -2517,6 +2519,7 @@ impl<'p> Checker<'p> {
                         Some(acc_ty.clone()),
                         fx,
                         f.name(),
+                        true,
                     ),
                 };
                 mk(vec![recv, cb, init], acc_ty, pos)
@@ -2539,8 +2542,14 @@ impl<'p> Checker<'p> {
                     A::Map => None, // `U` inferred from the callback
                     _ => Some(Type::Bool),
                 };
-                let cb =
-                    self.check_arr_callback(&c.args[0], vec![elem], ret_ctx, fx, f.name());
+                let cb = self.check_arr_callback(
+                    &c.args[0],
+                    vec![elem],
+                    ret_ctx,
+                    fx,
+                    f.name(),
+                    true,
+                );
                 let ty = match f {
                     A::ForEach => Type::Void,
                     A::Filter => arr_ty,
@@ -2633,6 +2642,7 @@ impl<'p> Checker<'p> {
             None,
             fx,
             "Map.groupBy",
+            false,
         );
         let key = match &callback.ty {
             Type::Func(ft) if ft.ret != Type::Void => ft.ret.clone(),
@@ -2834,6 +2844,7 @@ impl<'p> Checker<'p> {
                     Some(Type::Void),
                     fx,
                     "Map.forEach",
+                    false,
                 );
                 mk(MapFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
@@ -2930,6 +2941,7 @@ impl<'p> Checker<'p> {
                     Some(Type::Void),
                     fx,
                     "Set.forEach",
+                    false,
                 );
                 mk(SetFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
@@ -3041,13 +3053,12 @@ impl<'p> Checker<'p> {
         (acc, Some(checked))
     }
 
-    /// Checks one callback argument of an `Array` method (stdlib.md §9):
-    /// a lambda is typed with the fixed parameter context (its arity
-    /// must match exactly — the lib's optional index/array parameters
-    /// are rejected, Q22); any other expression must already have the
-    /// exact function type (a named function reference or a
-    /// function-typed local, C5). `ret` is `None` when the return type
-    /// is inferred from the callback (`map`).
+    /// Checks one callback argument of an `Array`, `Map`, or `Set`
+    /// operation. Q27 Array callbacks accept the base parameter list and
+    /// the same list with one trailing `i32` index; the fixed Q24
+    /// callbacks and `sort` accept exactly the supplied list. `ret` is
+    /// `None` when the return type is inferred from the callback (`map`
+    /// and `Map.groupBy`).
     fn check_arr_callback(
         &mut self,
         arg: &ast::ExprOrSpread,
@@ -3055,6 +3066,7 @@ impl<'p> Checker<'p> {
         ret: Option<Type>,
         fx: &mut FnCtx,
         method: &str,
+        allow_index: bool,
     ) -> hir::Expr {
         if let Some(spread) = arg.spread {
             let p = self.pos(spread);
@@ -3064,46 +3076,100 @@ impl<'p> Checker<'p> {
         let expr = &*arg.expr;
         if let ast::Expr::Arrow(a) = expr {
             let a_pos = self.pos(a.span);
-            if a.params.len() != params.len() {
-                let q24 = method.starts_with("Map.") || method.starts_with("Set.");
-                self.error(
-                    RuleCode::S014,
-                    if q24 {
-                        format!(
-                            "`{method}` callbacks take exactly {} parameter(s); \
-                             extra lib callback parameters are not accepted (Q24)",
-                            params.len()
-                        )
-                    } else {
-                        format!(
-                            "`{method}` callbacks take exactly {} parameter(s); the \
-                             lib's optional index/array parameters are not accepted (Q22)",
-                            params.len()
-                        )
-                    },
-                    a_pos.clone(),
-                );
+            let Some(expected) = self.callback_params_for_arity(
+                &params,
+                a.params.len(),
+                method,
+                allow_index,
+                a_pos.clone(),
+            ) else {
                 return self.err_expr(a_pos);
-            }
-            let checked = self.check_lambda_with(a, Some(&params), ret.as_ref(), fx, a_pos);
+            };
+            let checked =
+                self.check_lambda_with(a, Some(&expected), ret.as_ref(), fx, a_pos);
             // An annotation may override the context; the resulting
-            // function type must still match the method's fixed shape
-            // (the return stays free when it is inferred, `map`).
-            return self.expect_callback_shape(checked, &params, ret.as_ref(), method);
+            // function type must still match one accepted shape (the
+            // return stays free when it is inferred).
+            return self.expect_callback_shape(
+                checked,
+                &params,
+                ret.as_ref(),
+                method,
+                allow_index,
+            );
         }
         // A function value (named reference or function-typed local).
-        let ctx_ty = ret.as_ref().map(|r| {
+        // A dual-arity Array callback has no single contextual function
+        // type; named and local function values already carry their full
+        // declared type and are validated below.
+        let ctx_ty = (!allow_index).then(|| ret.as_ref()).flatten().map(|r| {
             Type::Func(Box::new(FuncType {
                 params: params.clone(),
                 ret: r.clone(),
             }))
         });
         let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
-        self.expect_callback_shape(checked, &params, ret.as_ref(), method)
+        self.expect_callback_shape(checked, &params, ret.as_ref(), method, allow_index)
     }
 
-    /// Validates a checked callback value against the method's fixed
-    /// parameter list (and return type, when it is not inferred);
+    /// Selects the contextual parameter list for a callback's source
+    /// arity and emits the subset diagnostic when no accepted list has
+    /// that length.
+    fn callback_params_for_arity(
+        &mut self,
+        base: &[Type],
+        actual: usize,
+        method: &str,
+        allow_index: bool,
+        pos: Pos,
+    ) -> Option<Vec<Type>> {
+        if actual == base.len() {
+            return Some(base.to_vec());
+        }
+        if allow_index && actual == base.len() + 1 {
+            let mut indexed = base.to_vec();
+            indexed.push(Type::I32);
+            return Some(indexed);
+        }
+        if allow_index && actual == base.len() + 2 {
+            let actual = format!("{method} callback with the container parameter");
+            let _ = self.reject_api_form(
+                "T[]",
+                "callback(value, index, array)",
+                &actual,
+                pos,
+            );
+            return None;
+        }
+        let q24 = method.starts_with("Map.") || method.starts_with("Set.");
+        self.error(
+            RuleCode::S014,
+            if allow_index {
+                format!(
+                    "`{method}` callbacks take {} parameter(s), or {} with a trailing \
+                     `i32` index; got {actual} (Q27)",
+                    base.len(),
+                    base.len() + 1,
+                )
+            } else if q24 {
+                format!(
+                    "`{method}` callbacks take exactly {} parameter(s); \
+                     extra lib callback parameters are not accepted (Q24)",
+                    base.len()
+                )
+            } else {
+                format!(
+                    "`{method}` callbacks take exactly {} parameter(s); got {actual} (Q22)",
+                    base.len()
+                )
+            },
+            pos,
+        );
+        None
+    }
+
+    /// Validates a checked callback value against the method's accepted
+    /// parameter list or lists (and return type, when it is not inferred);
     /// returns the value unchanged on success and a poisoned expression
     /// after the mismatch diagnostic otherwise.
     fn expect_callback_shape(
@@ -3112,19 +3178,44 @@ impl<'p> Checker<'p> {
         params: &[Type],
         ret: Option<&Type>,
         method: &str,
+        allow_index: bool,
     ) -> hir::Expr {
         let ok = match &checked.ty {
             Type::Error => true,
             Type::Func(ft) => {
-                ft.params == params && ret.is_none_or(|r| ft.ret == *r)
+                let indexed = allow_index
+                    && ft.params.len() == params.len() + 1
+                    && ft.params[..params.len()] == *params
+                    && ft.params.last() == Some(&Type::I32);
+                (ft.params == params || indexed) && ret.is_none_or(|r| ft.ret == *r)
             }
             _ => false,
         };
         if ok {
             return checked;
         }
+        if let Type::Func(ft) = &checked.ty {
+            let accepted_arity = ft.params.len() == params.len()
+                || (allow_index && ft.params.len() == params.len() + 1);
+            if !accepted_arity {
+                let pos = checked.pos.clone();
+                let _ = self.callback_params_for_arity(
+                    params,
+                    ft.params.len(),
+                    method,
+                    allow_index,
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+        }
         let got = self.type_name(&checked.ty);
         let wanted: Vec<String> = params.iter().map(|t| self.type_name(t)).collect();
+        let wanted = if allow_index {
+            format!("({}) or ({}, i32)", wanted.join(", "), wanted.join(", "))
+        } else {
+            format!("({})", wanted.join(", "))
+        };
         let ret_n = match ret {
             Some(r) => self.type_name(r),
             None => "…".to_string(),
@@ -3132,9 +3223,9 @@ impl<'p> Checker<'p> {
         self.error(
             RuleCode::S100,
             format!(
-                "type mismatch: the `{}` callback expects `({}) => {}`, got `{}`",
+                "type mismatch: the `{}` callback expects `{}` => {}, got `{}`",
                 method,
-                wanted.join(", "),
+                wanted,
                 ret_n,
                 got
             ),
