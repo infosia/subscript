@@ -186,6 +186,23 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q17** — decided in C2. **Q18** — `|`, `&`, `^`, `~`, shifts on `i64`/
   `u64` are true 64-bit operations (JS 32-bit truncation is not imported);
   on 32-bit types they match C. Mixed-width bitwise operands require `as`.
+  **Shift amount ≥ the operand width (owner decision 2026-07-25):** the
+  amount is taken **modulo the operand width** — `x << k` shifts by
+  `k & (width − 1)` — for every width including the Q23 narrow types,
+  identically on both tiers. C leaves this undefined and the undefined
+  behaviour was observed: the ship tier returned different results on
+  re-runs of the same `i32` program while the dev tier (Cranelift, which
+  masks) was stable, so "match C" has no meaning here and the rule is
+  stated explicitly instead. Masking is chosen over trapping because it
+  is total, free (both ISAs mask in hardware), already what the dev tier
+  does, and what the TypeScript surface leads a reader to expect
+  (`1 << 32 === 1`). The ship tier must emit the mask explicitly: C
+  promotes a narrow operand to `int` before shifting, so an unmasked
+  emission diverges. Additionally, a **literal** shift amount ≥ the
+  operand width is rejected at compile time (S008, the out-of-range
+  literal rule) — a constant over-shift is a typo, and C4 already
+  rejects out-of-range literals rather than silently reinterpreting
+  them.
 - **Q19 (`Math`)** — the checker accepts a deterministic subset of the
   lib's `Math` with `f64` signatures and ECMA result semantics
   (`stdlib.md` §1). Rejected: `imul`/`clz32`/`fround` (JS-number ops;
