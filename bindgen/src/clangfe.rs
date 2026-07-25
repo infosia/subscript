@@ -428,6 +428,12 @@ unsafe fn base_spelling(t: CXType) -> String {
         // scalar table keys on `bool`.
         CXType_Bool => return "bool".to_string(),
         CXType_Void => return "void".to_string(),
+        // Preserve that this was *plain* `char`, while carrying the
+        // signedness libclang resolved for its concrete target. The
+        // emitter maps these internal spellings but deliberately does not
+        // map unresolved `"char"` (compiler.md §16.1).
+        CXType_Char_S => return "__sub_plain_char_signed".to_string(),
+        CXType_Char_U => return "__sub_plain_char_unsigned".to_string(),
         _ => {}
     }
     let mut s = type_spelling(t);

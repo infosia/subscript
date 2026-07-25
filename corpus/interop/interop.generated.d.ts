@@ -78,6 +78,11 @@ declare function subSliceChecksumF32(data: f32[]): i32;
 declare function subSliceChecksumI32(data: i32[]): i32;
 declare function subSliceChecksumF64(data: f64[]): i32;
 declare function subSliceChecksumI64(data: i64[]): i32;
+declare function subSliceChecksumU8(data: u8[]): i32;
+declare function subSliceChecksumI8(data: i8[]): i32;
+declare function subSliceChecksumU16(data: u16[]): i32;
+declare function subSliceChecksumI16(data: i16[]): i32;
+declare function subSliceChecksumF16(data: SubFloat16[]): i32;
 declare function subAccessMatches(mask: SubAccess, required: SubAccess): i32;
 
 declare class SubDrawList {
@@ -162,6 +167,17 @@ declare class SubPadB {
   mid: boolean;
   tail: f64;
   constructor(head: i32, mid: boolean, tail: f64);
+}
+
+declare class SubNarrowPacket {
+  kind: u8;
+  delta: i16;
+  weight: SubFloat16;
+  serial: u64;
+  bias: i8;
+  count: u16;
+  scale: f32;
+  constructor(kind: u8, delta: i16, weight: SubFloat16, serial: u64, bias: i8, count: u16, scale: f32);
 }
 
 declare class SubExtent {
@@ -286,6 +302,8 @@ declare class SubWaitEntry {
 
 declare function subDeviceKickAsync(device: SubDevice, request: u32, info: SubCallbackInfo): SubFuture;
 declare function subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;
+
+type SubFloat16 = f16;
 
 type SubAccess = u64;
 declare const SUB_ACCESS_NONE = 0;

@@ -181,6 +181,48 @@ int32_t subSliceChecksumI64(SubSliceI64 data) {
     return (int32_t)h;
 }
 
+int32_t subSliceChecksumU8(SubSliceU8 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumI8(SubSliceI8 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)(int32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumU16(SubSliceU16 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumI16(SubSliceI16 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        h = h * 31u + (uint32_t)(int32_t)data.items[i];
+    }
+    return (int32_t)h;
+}
+
+int32_t subSliceChecksumF16(SubSliceF16 data) {
+    uint32_t h = 0u;
+    for (size_t i = 0; i < data.count; i++) {
+        uint16_t bits = 0u;
+        memcpy(&bits, &data.items[i], sizeof(bits));
+        h = h * 31u + (uint32_t)bits;
+    }
+    return (int32_t)h;
+}
+
 /* ==== P6.2 production-C binding shapes (compiler.md §13.2) ============= */
 
 /* Flag bit test: 1 when every bit of `required` is set in `mask`, else 0.

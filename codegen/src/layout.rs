@@ -24,7 +24,7 @@ use crate::lower::internal;
 pub(crate) enum Repr {
     /// No value (`void`).
     None,
-    /// One CLIF scalar (`I8` boolean, `I32`, `I64`, `F32`, `F64`, or a
+    /// One CLIF scalar (`I8`, `I16`, `I32`, `I64`, `F32`, `F64`, or a
     /// pointer-sized handle).
     Scalar(types::Type),
     /// A function value: `(code pointer, environment pointer)`.
@@ -234,7 +234,8 @@ impl<'m> Builder<'m> {
 /// Size/alignment of every non-class, non-nested type.
 fn scalar_size_align(ty: &Type) -> Result<(u32, u32), String> {
     Ok(match ty {
-        Type::Bool => (1, 1),
+        Type::Bool | Type::I8 | Type::U8 => (1, 1),
+        Type::I16 | Type::U16 | Type::F16 => (2, 2),
         Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
         // Date erases to i64 epoch milliseconds (stdlib.md §3).
         Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
@@ -321,6 +322,8 @@ impl Layouts {
         Ok(match ty {
             Type::Void => Repr::None,
             Type::Bool => Repr::Scalar(types::I8),
+            Type::I8 | Type::U8 => Repr::Scalar(types::I8),
+            Type::I16 | Type::U16 | Type::F16 => Repr::Scalar(types::I16),
             Type::I32 | Type::U32 | Type::Enum(_) => Repr::Scalar(types::I32),
             // Date erases to i64 epoch milliseconds (stdlib.md §3).
             Type::I64 | Type::U64 | Type::Date => Repr::Scalar(types::I64),
@@ -403,7 +406,7 @@ pub(crate) fn managed_words(layouts: &Layouts, ty: &Type) -> Result<u32, String>
 
 /// True when the type's comparisons are unsigned.
 pub(crate) fn is_unsigned(ty: &Type) -> bool {
-    matches!(ty, Type::U32 | Type::U64)
+    matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64)
 }
 
 #[cfg(test)]
@@ -493,6 +496,9 @@ mod tests {
         let layouts = layouts_of("export function main(): void {}\n");
         let repr = |t: &Type| layouts.repr(t).expect("repr");
         assert_eq!(repr(&Type::I32), Repr::Scalar(types::I32));
+        assert_eq!(repr(&Type::I8), Repr::Scalar(types::I8));
+        assert_eq!(repr(&Type::U16), Repr::Scalar(types::I16));
+        assert_eq!(repr(&Type::F16), Repr::Scalar(types::I16));
         assert_eq!(repr(&Type::U64), Repr::Scalar(types::I64));
         assert_eq!(repr(&Type::F32), Repr::Scalar(types::F32));
         assert_eq!(repr(&Type::Bool), Repr::Scalar(types::I8));

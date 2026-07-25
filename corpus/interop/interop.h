@@ -31,6 +31,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Binary16 storage spelling. The gate compiler is clang (§11), where
+ * `_Float16` has an unambiguous IEEE binary16 representation. Do not
+ * substitute an integer fallback: bindgen must fail loud on targets
+ * without a real half-width float instead of emitting a wrong mirror.
+ * No fixture code performs arithmetic on this type. */
+typedef _Float16 SubFloat16;
+
 /* ---- Pattern 1: intrusive extension chain -------------------------- */
 
 /* Type tag identifying the concrete struct behind a chain header. */
@@ -174,10 +181,40 @@ typedef struct SubSliceI64 {
     size_t count;
 } SubSliceI64;
 
+typedef struct SubSliceU8 {
+    const uint8_t *items;
+    size_t count;
+} SubSliceU8;
+
+typedef struct SubSliceI8 {
+    const int8_t *items;
+    size_t count;
+} SubSliceI8;
+
+typedef struct SubSliceU16 {
+    const uint16_t *items;
+    size_t count;
+} SubSliceU16;
+
+typedef struct SubSliceI16 {
+    const int16_t *items;
+    size_t count;
+} SubSliceI16;
+
+typedef struct SubSliceF16 {
+    const SubFloat16 *items;
+    size_t count;
+} SubSliceF16;
+
 int32_t subSliceChecksumF32(SubSliceF32 data);
 int32_t subSliceChecksumI32(SubSliceI32 data);
 int32_t subSliceChecksumF64(SubSliceF64 data);
 int32_t subSliceChecksumI64(SubSliceI64 data);
+int32_t subSliceChecksumU8(SubSliceU8 data);
+int32_t subSliceChecksumI8(SubSliceI8 data);
+int32_t subSliceChecksumU16(SubSliceU16 data);
+int32_t subSliceChecksumI16(SubSliceI16 data);
+int32_t subSliceChecksumF16(SubSliceF16 data);
 
 /* ==== P6.2 production-C binding shapes (compiler.md §13.2) ============= */
 
@@ -322,6 +359,19 @@ typedef struct SubPadB {
     bool mid;
     double tail;
 } SubPadB;
+
+/* Production-shaped narrow payload: byte/short/binary16 fields mixed
+ * with established 32- and 64-bit scalars. This is the P14 bindgen and
+ * offsetof proof fixture. */
+typedef struct SubNarrowPacket {
+    uint8_t kind;
+    int16_t delta;
+    SubFloat16 weight;
+    uint64_t serial;
+    int8_t bias;
+    uint16_t count;
+    float scale;
+} SubNarrowPacket;
 
 /* Nested by-value structs. */
 typedef struct SubExtent {

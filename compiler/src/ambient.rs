@@ -10,12 +10,17 @@ use crate::types::Type;
 /// Maps a sized-numeric alias name to its type.
 pub(crate) fn sized_alias(name: &str) -> Option<Type> {
     match name {
+        "i8" => Some(Type::I8),
+        "u8" => Some(Type::U8),
+        "i16" => Some(Type::I16),
+        "u16" => Some(Type::U16),
         "i32" => Some(Type::I32),
         "u32" => Some(Type::U32),
         "i64" => Some(Type::I64),
         "u64" => Some(Type::U64),
         "f32" => Some(Type::F32),
         "f64" => Some(Type::F64),
+        "f16" => Some(Type::F16),
         _ => None,
     }
 }
@@ -100,10 +105,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn aliases_cover_all_six_sized_numerics() {
+    fn aliases_cover_all_sized_numerics() {
+        assert_eq!(sized_alias("i8"), Some(Type::I8));
+        assert_eq!(sized_alias("u16"), Some(Type::U16));
         assert_eq!(sized_alias("i32"), Some(Type::I32));
         assert_eq!(sized_alias("u64"), Some(Type::U64));
         assert_eq!(sized_alias("f32"), Some(Type::F32));
+        assert_eq!(sized_alias("f16"), Some(Type::F16));
         assert_eq!(sized_alias("number"), None);
     }
 

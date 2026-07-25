@@ -152,6 +152,22 @@ impl Interval {
 /// interval).
 fn int_type_range(ty: &Type) -> Option<Interval> {
     Some(match ty {
+        Type::I8 => Interval {
+            lo: i64::from(i8::MIN),
+            hi: i64::from(i8::MAX),
+        },
+        Type::U8 => Interval {
+            lo: 0,
+            hi: i64::from(u8::MAX),
+        },
+        Type::I16 => Interval {
+            lo: i64::from(i16::MIN),
+            hi: i64::from(i16::MAX),
+        },
+        Type::U16 => Interval {
+            lo: 0,
+            hi: i64::from(u16::MAX),
+        },
         Type::I32 => Interval {
             lo: i64::from(i32::MIN),
             hi: i64::from(i32::MAX),
@@ -717,6 +733,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn iconst(&mut self, t: types::Type, v: i64) -> Value {
         let v = if t == types::I32 {
             i64::from(v as i32)
+        } else if t == types::I16 {
+            i64::from(v as i16)
         } else if t == types::I8 {
             i64::from(v as i8)
         } else {
@@ -1156,11 +1174,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 };
                 Ok(RV::S(self.iconst(t, *v)))
             }
-            K::Float(v) => Ok(RV::S(if e.ty == Type::F32 {
-                self.b.ins().f32const(*v as f32)
-            } else {
-                self.b.ins().f64const(*v)
-            })),
+            K::Float(v) => {
+                if e.ty == Type::F16 {
+                    let wide = self.b.ins().f64const(*v);
+                    let raw = self
+                        .call_rt(self.ml.rt.f16_from_f64, &[wide], false)?
+                        .ok_or_else(|| internal("f16 narrowing result"))?;
+                    Ok(RV::S(raw))
+                } else if e.ty == Type::F32 {
+                    Ok(RV::S(self.b.ins().f32const(*v as f32)))
+                } else {
+                    Ok(RV::S(self.b.ins().f64const(*v)))
+                }
+            }
             K::Bool(v) => Ok(RV::S(self.iconst(types::I8, i64::from(*v)))),
             K::Str(s) => {
                 let h = self.string_literal(s.as_bytes(), &e.pos)?;
@@ -1398,6 +1424,24 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let l = self.expect_s(l)?;
         let r = self.eval(right)?;
         let r = self.expect_s(r)?;
+        if operand_ty == Type::F16 {
+            let lw = self
+                .call_rt(self.ml.rt.f16_to_f64, &[l], false)?
+                .ok_or_else(|| internal("f16 left widening result"))?;
+            let rw = self
+                .call_rt(self.ml.rt.f16_to_f64, &[r], false)?
+                .ok_or_else(|| internal("f16 right widening result"))?;
+            let cc = match op {
+                B::Eq => FloatCC::Equal,
+                B::Ne => FloatCC::NotEqual,
+                B::Lt => FloatCC::LessThan,
+                B::Le => FloatCC::LessThanOrEqual,
+                B::Gt => FloatCC::GreaterThan,
+                B::Ge => FloatCC::GreaterThanOrEqual,
+                other => return Err(internal(format!("f16 operator {other:?}"))),
+            };
+            return Ok(RV::S(self.b.ins().fcmp(cc, lw, rw)));
+        }
         let float = operand_ty.is_float();
         let unsigned = is_unsigned(&operand_ty);
         let out = match op {
@@ -1558,28 +1602,74 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         } else {
             from
         };
+        if from == to {
+            return Ok(RV::S(v));
+        }
+        if to == Type::F16 {
+            let wide = match from {
+                Type::F32 => self.b.ins().fpromote(types::F64, v),
+                Type::F64 => v,
+                other => return Err(internal(format!("cast {other:?} -> f16"))),
+            };
+            let raw = self
+                .call_rt(self.ml.rt.f16_from_f64, &[wide], false)?
+                .ok_or_else(|| internal("f16 narrowing result"))?;
+            return Ok(RV::S(raw));
+        }
+        if from == Type::F16 {
+            let wide = self
+                .call_rt(self.ml.rt.f16_to_f64, &[v], false)?
+                .ok_or_else(|| internal("f16 widening result"))?;
+            return Ok(RV::S(match to {
+                Type::F32 => self.b.ins().fdemote(types::F32, wide),
+                Type::F64 => wide,
+                other => return Err(internal(format!("cast f16 -> {other:?}"))),
+            }));
+        }
+        if from.is_integer() && to.is_integer() {
+            let from_ty = match self.ml.layouts.repr(&from)? {
+                Repr::Scalar(t) => t,
+                other => return Err(internal(format!("integer source repr {other:?}"))),
+            };
+            let to_ty = match self.ml.layouts.repr(&to)? {
+                Repr::Scalar(t) => t,
+                other => return Err(internal(format!("integer target repr {other:?}"))),
+            };
+            let out = if from_ty == to_ty {
+                v
+            } else if from_ty.bits() < to_ty.bits() {
+                if is_unsigned(&from) {
+                    self.b.ins().uextend(to_ty, v)
+                } else {
+                    self.b.ins().sextend(to_ty, v)
+                }
+            } else {
+                self.b.ins().ireduce(to_ty, v)
+            };
+            return Ok(RV::S(out));
+        }
+        if from.is_integer() && matches!(to, Type::F32 | Type::F64) {
+            let target = if to == Type::F32 { types::F32 } else { types::F64 };
+            let out = if is_unsigned(&from) {
+                self.b.ins().fcvt_from_uint(target, v)
+            } else {
+                self.b.ins().fcvt_from_sint(target, v)
+            };
+            return Ok(RV::S(out));
+        }
+        if matches!(from, Type::F32 | Type::F64) && to.is_integer() {
+            let target = match self.ml.layouts.repr(&to)? {
+                Repr::Scalar(t) => t,
+                other => return Err(internal(format!("integer target repr {other:?}"))),
+            };
+            let out = if is_unsigned(&to) {
+                self.b.ins().fcvt_to_uint_sat(target, v)
+            } else {
+                self.b.ins().fcvt_to_sint_sat(target, v)
+            };
+            return Ok(RV::S(out));
+        }
         let out = match (&from, &to) {
-            (a, b) if a == b => v,
-            // int -> int
-            (Type::I32 | Type::U32, Type::I32 | Type::U32) => v,
-            (Type::I64 | Type::U64, Type::I64 | Type::U64) => v,
-            (Type::I32, Type::I64 | Type::U64) => self.b.ins().sextend(types::I64, v),
-            (Type::U32, Type::I64 | Type::U64) => self.b.ins().uextend(types::I64, v),
-            (Type::I64 | Type::U64, Type::I32 | Type::U32) => {
-                self.b.ins().ireduce(types::I32, v)
-            }
-            // int -> float (by source signedness)
-            (Type::I32 | Type::I64, Type::F32) => self.b.ins().fcvt_from_sint(types::F32, v),
-            (Type::I32 | Type::I64, Type::F64) => self.b.ins().fcvt_from_sint(types::F64, v),
-            (Type::U32 | Type::U64, Type::F32) => self.b.ins().fcvt_from_uint(types::F32, v),
-            (Type::U32 | Type::U64, Type::F64) => self.b.ins().fcvt_from_uint(types::F64, v),
-            // float -> int (saturating, by target signedness; C leaves
-            // out-of-range conversion undefined — saturation is this
-            // dev tier's defined choice, and it cannot hardware-trap)
-            (Type::F32 | Type::F64, Type::I32) => self.b.ins().fcvt_to_sint_sat(types::I32, v),
-            (Type::F32 | Type::F64, Type::I64) => self.b.ins().fcvt_to_sint_sat(types::I64, v),
-            (Type::F32 | Type::F64, Type::U32) => self.b.ins().fcvt_to_uint_sat(types::I32, v),
-            (Type::F32 | Type::F64, Type::U64) => self.b.ins().fcvt_to_uint_sat(types::I64, v),
             // float -> float
             (Type::F32, Type::F64) => self.b.ins().fpromote(types::F64, v),
             (Type::F64, Type::F32) => self.b.ins().fdemote(types::F32, v),
@@ -2386,6 +2476,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             // A descriptor-embedded `(count, pointer)` array field (§13.2)
             // is the C pair `size_t count; const T* ptr;` — 16 bytes, align 8.
             Type::Array(_) => (16, 8),
+            Type::I8 | Type::U8 => (1, 1),
+            Type::I16 | Type::U16 | Type::F16 => (2, 2),
             Type::I64 | Type::U64 | Type::F64 => (8, 8),
             Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
             Type::Bool => (1, 1),
@@ -3275,12 +3367,26 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let pos_v = self.iconst(types::I32, pid);
         let (f, arg) = match ty {
             Type::Str => return Ok(v),
+            Type::I8 | Type::I16 => {
+                let wide = self.b.ins().sextend(types::I32, v);
+                (self.ml.rt.fmt_i32, wide)
+            }
+            Type::U8 | Type::U16 => {
+                let wide = self.b.ins().uextend(types::I32, v);
+                (self.ml.rt.fmt_u32, wide)
+            }
             Type::I32 | Type::Enum(_) => (self.ml.rt.fmt_i32, v),
             Type::U32 => (self.ml.rt.fmt_u32, v),
             Type::I64 => (self.ml.rt.fmt_i64, v),
             Type::U64 => (self.ml.rt.fmt_u64, v),
             Type::F32 => (self.ml.rt.fmt_f32, v),
             Type::F64 => (self.ml.rt.fmt_f64, v),
+            Type::F16 => {
+                let wide = self
+                    .call_rt(self.ml.rt.f16_to_f64, &[v], false)?
+                    .ok_or_else(|| internal("f16 formatting widening result"))?;
+                (self.ml.rt.fmt_f64, wide)
+            }
             Type::Bool => {
                 let wide = self.b.ins().uextend(types::I32, v);
                 (self.ml.rt.fmt_bool, wide)

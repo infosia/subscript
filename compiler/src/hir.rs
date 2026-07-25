@@ -952,6 +952,9 @@ pub enum ArrElemKind {
     F32,
     /// IEEE `f64` equality; float register.
     F64,
+    /// IEEE binary16 equality after widening through the shared runtime;
+    /// raw bits cross callback boundaries in a 16-bit integer register.
+    F16,
     /// String handle: content equality; integer (pointer) register.
     Str,
 }
@@ -965,6 +968,7 @@ impl ArrElemKind {
             ArrElemKind::F32 => 1,
             ArrElemKind::F64 => 2,
             ArrElemKind::Str => 3,
+            ArrElemKind::F16 => 4,
         }
     }
 
@@ -977,6 +981,10 @@ impl ArrElemKind {
     pub fn of(ty: &Type, is_value_class: &dyn Fn(ClassId) -> bool) -> Option<ArrElemKind> {
         Some(match ty {
             Type::Bool
+            | Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
             | Type::I32
             | Type::U32
             | Type::I64
@@ -989,6 +997,7 @@ impl ArrElemKind {
             Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
             Type::F32 => ArrElemKind::F32,
             Type::F64 => ArrElemKind::F64,
+            Type::F16 => ArrElemKind::F16,
             Type::Str => ArrElemKind::Str,
             _ => return None,
         })
@@ -1005,6 +1014,14 @@ impl ArrElemKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ArrFmtKind {
+    /// `i8` decimal.
+    I8,
+    /// `u8` decimal.
+    U8,
+    /// `i16` decimal.
+    I16,
+    /// `u16` decimal.
+    U16,
     /// `i32` decimal (also enums, which are `i32`-valued).
     I32,
     /// `u32` decimal.
@@ -1017,6 +1034,9 @@ pub enum ArrFmtKind {
     F32,
     /// `f64` shortest round-trip.
     F64,
+    /// Binary16 widened through the shared runtime, then formatted by the
+    /// `f64` Q14 implementation.
+    F16,
     /// `true` / `false`.
     Bool,
     /// String elements pass through unformatted.
@@ -1036,6 +1056,11 @@ impl ArrFmtKind {
             ArrFmtKind::F64 => 5,
             ArrFmtKind::Bool => 6,
             ArrFmtKind::Str => 7,
+            ArrFmtKind::I8 => 8,
+            ArrFmtKind::U8 => 9,
+            ArrFmtKind::I16 => 10,
+            ArrFmtKind::U16 => 11,
+            ArrFmtKind::F16 => 12,
         }
     }
 
@@ -1044,12 +1069,17 @@ impl ArrFmtKind {
     #[must_use]
     pub fn of(ty: &Type) -> Option<ArrFmtKind> {
         Some(match ty {
+            Type::I8 => ArrFmtKind::I8,
+            Type::U8 => ArrFmtKind::U8,
+            Type::I16 => ArrFmtKind::I16,
+            Type::U16 => ArrFmtKind::U16,
             Type::I32 | Type::Enum(_) => ArrFmtKind::I32,
             Type::U32 => ArrFmtKind::U32,
             Type::I64 => ArrFmtKind::I64,
             Type::U64 => ArrFmtKind::U64,
             Type::F32 => ArrFmtKind::F32,
             Type::F64 => ArrFmtKind::F64,
+            Type::F16 => ArrFmtKind::F16,
             Type::Bool => ArrFmtKind::Bool,
             Type::Str => ArrFmtKind::Str,
             _ => return None,
@@ -1398,6 +1428,10 @@ mod tests {
         let of = |ty: &Type| ArrElemKind::of(ty, &value_class);
         for ty in [
             Type::Bool,
+            Type::I8,
+            Type::U8,
+            Type::I16,
+            Type::U16,
             Type::I32,
             Type::U32,
             Type::I64,
@@ -1413,6 +1447,7 @@ mod tests {
         }
         assert_eq!(of(&Type::F32), Some(ArrElemKind::F32));
         assert_eq!(of(&Type::F64), Some(ArrElemKind::F64));
+        assert_eq!(of(&Type::F16), Some(ArrElemKind::F16));
         assert_eq!(of(&Type::Str), Some(ArrElemKind::Str));
         // Excluded: value classes, function values, FixedArray, void.
         assert_eq!(of(&Type::Class(ClassId(0))), None);
@@ -1429,17 +1464,23 @@ mod tests {
         assert_eq!(ArrElemKind::F32.code(), 1);
         assert_eq!(ArrElemKind::F64.code(), 2);
         assert_eq!(ArrElemKind::Str.code(), 3);
+        assert_eq!(ArrElemKind::F16.code(), 4);
     }
 
     #[test]
     fn arr_fmt_kind_matches_the_q14_interpolable_set() {
         assert_eq!(ArrFmtKind::of(&Type::I32), Some(ArrFmtKind::I32));
+        assert_eq!(ArrFmtKind::of(&Type::I8), Some(ArrFmtKind::I8));
+        assert_eq!(ArrFmtKind::of(&Type::U8), Some(ArrFmtKind::U8));
+        assert_eq!(ArrFmtKind::of(&Type::I16), Some(ArrFmtKind::I16));
+        assert_eq!(ArrFmtKind::of(&Type::U16), Some(ArrFmtKind::U16));
         assert_eq!(ArrFmtKind::of(&Type::Enum(EnumId(0))), Some(ArrFmtKind::I32));
         assert_eq!(ArrFmtKind::of(&Type::U32), Some(ArrFmtKind::U32));
         assert_eq!(ArrFmtKind::of(&Type::I64), Some(ArrFmtKind::I64));
         assert_eq!(ArrFmtKind::of(&Type::U64), Some(ArrFmtKind::U64));
         assert_eq!(ArrFmtKind::of(&Type::F32), Some(ArrFmtKind::F32));
         assert_eq!(ArrFmtKind::of(&Type::F64), Some(ArrFmtKind::F64));
+        assert_eq!(ArrFmtKind::of(&Type::F16), Some(ArrFmtKind::F16));
         assert_eq!(ArrFmtKind::of(&Type::Bool), Some(ArrFmtKind::Bool));
         assert_eq!(ArrFmtKind::of(&Type::Str), Some(ArrFmtKind::Str));
         // Not interpolatable (Q20 for Date; references have no Q14 form).
@@ -1456,11 +1497,16 @@ mod tests {
             ArrFmtKind::F64,
             ArrFmtKind::Bool,
             ArrFmtKind::Str,
+            ArrFmtKind::I8,
+            ArrFmtKind::U8,
+            ArrFmtKind::I16,
+            ArrFmtKind::U16,
+            ArrFmtKind::F16,
         ]
         .iter()
         .map(|k| k.code())
         .collect();
-        assert_eq!(codes, (0..8).collect::<Vec<u32>>());
+        assert_eq!(codes, (0..13).collect::<Vec<u32>>());
     }
 
     #[test]

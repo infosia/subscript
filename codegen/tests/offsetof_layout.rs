@@ -136,6 +136,36 @@ class SubSliceI64 {
   count: u64;
 }
 
+@CStruct
+class SubSliceU8 {
+  items: u64;
+  count: u64;
+}
+
+@CStruct
+class SubSliceI8 {
+  items: u64;
+  count: u64;
+}
+
+@CStruct
+class SubSliceU16 {
+  items: u64;
+  count: u64;
+}
+
+@CStruct
+class SubSliceI16 {
+  items: u64;
+  count: u64;
+}
+
+@CStruct
+class SubSliceF16 {
+  items: u64;
+  count: u64;
+}
+
 // Varied scalar / padding layouts.
 @CStruct
 class SubVec2 {
@@ -200,6 +230,17 @@ class SubPadB {
   head: i32;
   mid: boolean;
   tail: f64;
+}
+
+@CStruct
+class SubNarrowPacket {
+  kind: u8;
+  delta: i16;
+  weight: f16;
+  serial: u64;
+  bias: i8;
+  count: u16;
+  scale: f32;
 }
 
 // Nested by-value structs.
@@ -370,6 +411,11 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubSliceI32", vec!["items", "count"]),
         ("SubSliceF64", vec!["items", "count"]),
         ("SubSliceI64", vec!["items", "count"]),
+        ("SubSliceU8", vec!["items", "count"]),
+        ("SubSliceI8", vec!["items", "count"]),
+        ("SubSliceU16", vec!["items", "count"]),
+        ("SubSliceI16", vec!["items", "count"]),
+        ("SubSliceF16", vec!["items", "count"]),
         ("SubVec2", vec!["x", "y"]),
         ("SubVec3", vec!["x", "y", "z"]),
         ("SubVec4", vec!["x", "y", "z", "w"]),
@@ -379,6 +425,10 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubTimings", vec!["cpu", "gpu", "frame"]),
         ("SubMixed", vec!["enabled", "id", "visible", "ratio"]),
         ("SubPadB", vec!["head", "mid", "tail"]),
+        (
+            "SubNarrowPacket",
+            vec!["kind", "delta", "weight", "serial", "bias", "count", "scale"],
+        ),
         ("SubExtent", vec!["width", "height", "depth"]),
         ("SubImageInfo", vec!["extent", "mipLevels", "usage"]),
         ("SubBounds", vec!["min", "max"]),

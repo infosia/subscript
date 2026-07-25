@@ -1221,10 +1221,15 @@ impl<'p> Checker<'p> {
 
     fn value_field_ok(&self, ty: &Type) -> bool {
         match ty {
-            Type::I32
+            Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::I32
             | Type::U32
             | Type::I64
             | Type::U64
+            | Type::F16
             | Type::F32
             | Type::F64
             | Type::Bool

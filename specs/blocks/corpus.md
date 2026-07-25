@@ -60,7 +60,7 @@ the table stands as the corpus spelling reference.
 
 | Concept | Spelling | Q-id |
 |---|---|---|
-| Sized numerics | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` ambient type aliases | Q1 |
+| Sized numerics | `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, `f64` ambient type aliases | Q1, Q23 |
 | Bare `number` | Not used anywhere in the corpus; rejected by the compiler | Q1 |
 | Value-type struct | `@CStruct class Vec3 { x: f32; y: f32; z: f32 }` — class with ambient `@CStruct` decorator | Q2 |
 | Reference class | plain `class` (heap, manual lifetime) | Q2 |

@@ -40,6 +40,10 @@ fn int_range(ty: &Type) -> Option<(i64, i64)> {
     // spellings are out of the surface syntax (C3).
     const EXACT: i64 = 9_007_199_254_740_991; // 2^53 - 1
     match ty {
+        Type::I8 => Some((i64::from(i8::MIN), i64::from(i8::MAX))),
+        Type::U8 => Some((0, i64::from(u8::MAX))),
+        Type::I16 => Some((i64::from(i16::MIN), i64::from(i16::MAX))),
+        Type::U16 => Some((0, i64::from(u16::MAX))),
         Type::I32 => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
         Type::U32 => Some((0, i64::from(u32::MAX))),
         Type::I64 => Some((-EXACT, EXACT)),
@@ -211,6 +215,14 @@ impl<'p> Checker<'p> {
             }
         };
         if target.is_float() {
+            if target == Type::F16 && value.is_finite() && value.abs() > 65_504.0 {
+                self.error(
+                    RuleCode::S008,
+                    format!("numeric literal {} out of range for `f16`", raw),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
             return hir::Expr {
                 kind: ExprKind::Float(value),
                 ty: target,
@@ -460,6 +472,14 @@ impl<'p> Checker<'p> {
                     return self.check_num_lit(n, true, ctx, pos);
                 }
                 let operand = self.check_expr(&u.arg, ctx, fx);
+                if operand.ty == Type::F16 {
+                    self.error(
+                        RuleCode::S014,
+                        "arithmetic on `f16` is not supported; compute via `as f32`",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
                 if !operand.ty.is_numeric() && !matches!(operand.ty, Type::Error) {
                     let name = self.type_name(&operand.ty);
                     self.error(
@@ -582,6 +602,14 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        if target.ty == Type::F16 {
+            self.error(
+                RuleCode::S014,
+                "arithmetic on `f16` is not supported; compute via `as f32`",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let op = if u.op == ast::UpdateOp::PlusPlus {
             BinOp::Add
         } else {
@@ -698,6 +726,15 @@ impl<'p> Checker<'p> {
         let rt = right.ty.clone();
         let err = matches!(lt, Type::Error) || matches!(rt, Type::Error);
         let mixed_numeric = lt.is_numeric() && rt.is_numeric() && lt != rt;
+        let arithmetic = matches!(op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
+        if arithmetic && (lt == Type::F16 || rt == Type::F16) {
+            self.error(
+                RuleCode::S014,
+                "arithmetic on `f16` is not supported; compute via `as f32`",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let mk = |op: BinOp, ty: Type| hir::Expr {
             kind: ExprKind::Binary {
                 op,
@@ -906,7 +943,17 @@ impl<'p> Checker<'p> {
         let src = inner.ty.clone();
         let ok = matches!(src, Type::Error)
             || matches!(target, Type::Error)
-            || (src.is_numeric() && target.is_numeric())
+            || (src.is_numeric()
+                && target.is_numeric()
+                && if src == Type::F16 || target == Type::F16 {
+                    matches!(
+                        (&src, &target),
+                        (Type::F16, Type::F16 | Type::F32 | Type::F64)
+                            | (Type::F32 | Type::F64, Type::F16)
+                    )
+                } else {
+                    true
+                })
             || (matches!(src, Type::Enum(_)) && target.is_integer())
             || (matches!(src, Type::Object) && self.is_reference_class(&target))
             || (matches!(&src, Type::Nullable(inner) if **inner == Type::Object)
@@ -2474,6 +2521,19 @@ impl<'p> Checker<'p> {
         let value = self.check_expr(&a.right, value_ctx.as_ref(), fx);
         if let Some(bin) = op {
             // Compound assignment is same-type arithmetic on the target.
+            if target_ty == Type::F16
+                && matches!(
+                    bin,
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem
+                )
+            {
+                self.error(
+                    RuleCode::S014,
+                    "arithmetic on `f16` is not supported; compute via `as f32`",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
             let numeric_ok = match bin {
                 BinOp::Add => {
                     target_ty.is_numeric() || target_ty == Type::Str

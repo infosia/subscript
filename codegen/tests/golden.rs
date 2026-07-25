@@ -22,6 +22,30 @@ mod corpus;
 use subscript_codegen::{run_aot, run_c_aot, run_jit};
 
 #[test]
+fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
+    let accept = corpus::corpus_accept();
+    for id in [
+        "a46-narrow-numerics",
+        "a47-narrow-layout",
+        "a48-interop-narrow-slices",
+        "a49-f16-conversions",
+    ] {
+        let sources = corpus::entry_sources(&accept, id);
+        let jit = run_jit(&sources).unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
+        let ship =
+            run_c_aot(&sources).unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
+        assert_eq!(
+            jit,
+            ship,
+            "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
+            String::from_utf8_lossy(&jit),
+            String::from_utf8_lossy(&ship)
+        );
+        println!("{id}: {:?}", String::from_utf8_lossy(&jit));
+    }
+}
+
+#[test]
 fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     let accept = corpus::corpus_accept();
     let golden_ids = corpus::golden_ids(&accept);
@@ -33,11 +57,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // P6.3 async, a36–a38 P7.1 async/Future shapes, a39 P7.2 composed
     // async capstone) plus the stdlib entries (a40 Math battery, a41
     // Math.random sequence, a42 Date battery, a43 P10 String battery,
-    // a44/a45 P11 Array batteries).
+    // a44/a45 P11 Array batteries) and P14 narrow numerics (a46–a49).
     assert!(
-        golden_ids.len() >= 45,
-        "expected at least the 45 committed goldens (a01–a24 run set + a25–a39 interop \
-         + a40–a45 stdlib), found {}",
+        golden_ids.len() >= 49,
+        "expected at least the 49 committed goldens (a01–a24 run set + a25–a39 interop \
+         + a40–a45 stdlib + a46–a49 narrow numerics), found {}",
         golden_ids.len()
     );
 

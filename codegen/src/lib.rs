@@ -105,6 +105,7 @@ mod tests {
             (ArrElemKind::F32, ElemKind::F32),
             (ArrElemKind::F64, ElemKind::F64),
             (ArrElemKind::Str, ElemKind::Str),
+            (ArrElemKind::F16, ElemKind::F16),
         ] {
             assert_eq!(
                 ElemKind::from_u32(compiler.code()),
@@ -121,6 +122,11 @@ mod tests {
             (ArrFmtKind::F64, FmtKind::F64),
             (ArrFmtKind::Bool, FmtKind::Bool),
             (ArrFmtKind::Str, FmtKind::Str),
+            (ArrFmtKind::I8, FmtKind::I8),
+            (ArrFmtKind::U8, FmtKind::U8),
+            (ArrFmtKind::I16, FmtKind::I16),
+            (ArrFmtKind::U16, FmtKind::U16),
+            (ArrFmtKind::F16, FmtKind::F16),
         ] {
             assert_eq!(
                 FmtKind::from_u32(compiler.code()),

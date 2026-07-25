@@ -185,7 +185,7 @@ fn classify_struct(fields: &[CField]) -> Kind {
     {
         // Const scalar / char descriptor (const borrow, §12).
         if fields[0].is_const {
-            if fields[0].base == "char" {
+            if is_plain_char(&fields[0].base) {
                 return Kind::StringView;
             }
             if let Some(elem) = lang_scalar(&fields[0].base) {
@@ -196,7 +196,7 @@ fn classify_struct(fields: &[CField]) -> Kind {
         // element spelling is the struct's own name. `void` is not an
         // element type (an untyped bulk pointer takes the §13.2 facade).
         if lang_scalar(&fields[0].base).is_none()
-            && fields[0].base != "char"
+            && !is_plain_char(&fields[0].base)
             && fields[0].base != "void"
         {
             return Kind::ArrayPair(fields[0].base.clone());
@@ -211,7 +211,7 @@ fn flag_alias_scalar(alias: &Alias) -> Option<&'static str> {
     alias_scalar(alias)
 }
 
-/// Resolves a scalar/flag typedef alias to its language integer by
+/// Resolves a scalar typedef alias to its language sized type by
 /// following its typedef chain to the first spelling that maps (§14.1):
 /// `typedef uint32_t B; typedef B X;` resolves `X` to `u32`. A chain that
 /// never reaches a mapped integer resolves to `None` (unregistered → its
@@ -412,6 +412,18 @@ fn unmapped(base: &str) -> ParseError {
     ))
 }
 
+/// True when `base` is plain `char`, including the target-signed markers.
+///
+/// A `const char *` string view is byte-oriented and does not depend on
+/// scalar signedness. Only scalar mapping requires one of the resolved
+/// markers; [`lang_scalar`] deliberately leaves literal `char` unmapped.
+fn is_plain_char(base: &str) -> bool {
+    matches!(
+        base,
+        "char" | "__sub_plain_char_signed" | "__sub_plain_char_unsigned"
+    )
+}
+
 /// Language spelling of a C scalar or raw builtin, or `None` for a named
 /// type. The stdint typedefs and the width-stable raw builtins map to the
 /// sized numerics (`specs/blocks/compiler.md` §13.2). Two deliberate
@@ -420,8 +432,9 @@ fn unmapped(base: &str) -> ParseError {
 /// - `long`/`unsigned long` — 64-bit on LP64 (Unix) but 32-bit on LLP64
 ///   (Windows); an ABI-stable header must spell a 64-bit int
 ///   `int64_t`/`long long`, so a bare `long` is unmapped.
-/// - `char`/`signed char`/`unsigned char` — the string-view element only;
-///   a standalone `char` scalar has no language type.
+/// - unresolved plain `char` — mapped only after the libclang frontend
+///   resolves target signedness into one of the internal spellings below;
+///   a direct emitter input that only says `char` still fails loud.
 ///
 /// `int`/`unsigned int` (32-bit on every supported target) and `long
 /// long`/`unsigned long long` (64-bit everywhere) are width-stable and
@@ -431,6 +444,13 @@ fn lang_scalar(base: &str) -> Option<&'static str> {
         "bool" => "boolean",
         "float" => "f32",
         "double" => "f64",
+        "_Float16" | "__fp16" => "f16",
+        "int8_t" | "signed char" => "i8",
+        "uint8_t" | "unsigned char" => "u8",
+        "int16_t" | "short" | "short int" | "signed short" | "signed short int" => "i16",
+        "uint16_t" | "unsigned short" | "unsigned short int" => "u16",
+        "__sub_plain_char_signed" => "i8",
+        "__sub_plain_char_unsigned" => "u8",
         "int32_t" => "i32",
         "uint32_t" => "u32",
         "int64_t" => "i64",
@@ -490,14 +510,40 @@ mod tests {
 
     #[test]
     fn bare_char_scalar_field_is_a_clean_err() {
-        // A standalone `char` scalar has no language type: fail loud, do
-        // not emit a literal `char` into the mirror.
+        // Without the libclang target's signedness marker, plain `char`
+        // remains ambiguous: fail loud, never guess.
         let decls = vec![Decl::Struct {
             name: "SubHasChar".into(),
             fields: vec![field("char", false, false, "c")],
         }];
         let err = emit(&parsed_with(decls)).expect_err("bare char must fail loud");
         assert!(err.0.contains("char"), "message names the type: {}", err.0);
+    }
+
+    #[test]
+    fn narrow_scalar_spellings_map_without_guessing() {
+        let decls = vec![Decl::Struct {
+            name: "SubNarrow".into(),
+            fields: vec![
+                field("int8_t", false, false, "a"),
+                field("unsigned char", false, false, "b"),
+                field("short", false, false, "c"),
+                field("uint16_t", false, false, "d"),
+                field("_Float16", false, false, "e"),
+                field("__sub_plain_char_signed", false, false, "f"),
+            ],
+        }];
+        let m = emit(&parsed_with(decls)).expect("narrow scalars map");
+        for expected in [
+            "a: i8;",
+            "b: u8;",
+            "c: i16;",
+            "d: u16;",
+            "e: f16;",
+            "f: i8;",
+        ] {
+            assert!(m.contains(expected), "{m}");
+        }
     }
 
     #[test]

@@ -91,6 +91,10 @@ pub(crate) struct RtFns {
     pub fmt_f32: FuncId,
     pub fmt_f64: FuncId,
     pub fmt_bool: FuncId,
+    /// `f64` to raw IEEE binary16 bits (Q23).
+    pub f16_from_f64: FuncId,
+    /// Raw IEEE binary16 bits to exact `f64` (Q23).
+    pub f16_to_f64: FuncId,
     pub array_new: FuncId,
     pub array_len: FuncId,
     pub array_push: FuncId,
@@ -410,7 +414,7 @@ fn declare_rt<M: Module>(
             .declare_function(name, Linkage::Import, &sig)
             .map_err(|e| internal(format!("declare {name}: {e}")))
     };
-    use types::{F32, F64, I32, I64};
+    use types::{F32, F64, I16, I32, I64};
     // Math intrinsic imports (stdlib.md §1): one opaque symbol per
     // accepted function, `(ctx, f64 args…) -> f64`, in MathFn::ALL
     // order so `f as usize` indexes the table.
@@ -519,6 +523,8 @@ fn declare_rt<M: Module>(
         fmt_f32: mk("sub_rt_fmt_f32", &[I64, F32, I32], Some(I64))?,
         fmt_f64: mk("sub_rt_fmt_f64", &[I64, F64, I32], Some(I64))?,
         fmt_bool: mk("sub_rt_fmt_bool", &[I64, I32, I32], Some(I64))?,
+        f16_from_f64: mk("sub_rt_f16_from_f64", &[F64], Some(I16))?,
+        f16_to_f64: mk("sub_rt_f16_to_f64", &[I16], Some(F64))?,
         array_new: mk("sub_rt_array_new", &[I64, I64, I32], Some(I64))?,
         array_len: mk("sub_rt_array_len", &[I64, I64], Some(I32))?,
         array_push: mk("sub_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,

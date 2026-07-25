@@ -20,6 +20,21 @@
 use crate::context::{CallbackBinding, Context};
 use crate::trap::TrapKind;
 
+/// Narrows an `f64` to raw IEEE 754 binary16 storage bits using
+/// round-to-nearest-even. Overflow becomes infinity; subnormals, signed
+/// zero, and NaN are preserved (Q23).
+#[no_mangle]
+pub extern "C" fn sub_rt_f16_from_f64(value: f64) -> u16 {
+    crate::half::from_f64(value)
+}
+
+/// Widens raw IEEE 754 binary16 storage bits to an exactly represented
+/// `f64`, preserving signed zero, infinity, and NaN (Q23).
+#[no_mangle]
+pub extern "C" fn sub_rt_f16_to_f64(bits: u16) -> f64 {
+    crate::half::to_f64(bits)
+}
+
 /// A `(ptr, len)` string view, ABI-identical to the synthetic header's
 /// `SubStringView` (`{ const char*; size_t; }`) and to the language's
 /// own string representation (Q5). It is the by-value first argument the
@@ -1814,6 +1829,17 @@ pub unsafe extern "C" fn sub_rt_ctx_trap_message(ctx: *const Context, len: *mut 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ffi_f16_conversion_round_trips_raw_binary16_storage() {
+        let bits = sub_rt_f16_from_f64(1.0006);
+        assert_eq!(bits, 0x3c01);
+        assert_eq!(sub_rt_f16_to_f64(bits), 1.0009765625);
+        assert_eq!(
+            sub_rt_f16_to_f64(sub_rt_f16_from_f64(-0.0)).to_bits(),
+            (-0.0f64).to_bits()
+        );
+    }
 
     #[test]
     fn ffi_host_driver_round_trip() {

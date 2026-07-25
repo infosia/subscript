@@ -54,10 +54,35 @@ fn anonymous_inline_struct_field_fails_loud() {
 }
 
 #[test]
-fn bare_char_scalar_field_fails_loud() {
-    // A standalone `char` scalar has no language type (it is the
-    // string-view element only): fail loud, never emit a literal `char`.
-    let header = "typedef struct W { char c; } W;";
-    let err = generate(header).expect_err("a bare char scalar must fail loud");
-    assert!(err.to_string().contains("char"), "message names char: {err}");
+fn narrow_c_scalars_and_target_resolved_plain_char_map() {
+    let header = "#include <stdint.h>\ntypedef struct W { int8_t a; uint8_t b; signed char c; \
+                  unsigned char d; int16_t e; uint16_t f; short g; \
+                  unsigned short h; char target_char; _Float16 half; } W;";
+    let mirror = generate(header).expect("narrow scalars map");
+    for expected in [
+        "a: i8;",
+        "b: u8;",
+        "c: i8;",
+        "d: u8;",
+        "e: i16;",
+        "f: u16;",
+        "g: i16;",
+        "h: u16;",
+        "half: f16;",
+    ] {
+        assert!(mirror.contains(expected), "missing `{expected}` in:\n{mirror}");
+    }
+    assert!(
+        mirror.contains("target_char: i8;") || mirror.contains("target_char: u8;"),
+        "plain char follows libclang's known target signedness:\n{mirror}"
+    );
+}
+
+#[test]
+fn typedefed_binary16_float_maps_to_f16() {
+    let header =
+        "typedef _Float16 SubHalf; typedef struct W { SubHalf half; } W;";
+    let mirror = generate(header).expect("typedefed binary16 maps");
+    assert!(mirror.contains("type SubHalf = f16;"), "{mirror}");
+    assert!(mirror.contains("half: SubHalf;"), "{mirror}");
 }

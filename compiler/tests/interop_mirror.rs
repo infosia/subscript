@@ -58,6 +58,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subSliceChecksumI32",
             "subSliceChecksumF64",
             "subSliceChecksumI64",
+            "subSliceChecksumU8",
+            "subSliceChecksumI8",
+            "subSliceChecksumU16",
+            "subSliceChecksumI16",
+            "subSliceChecksumF16",
             // P6.2 shapes: flag bit test, embedded-array struct consumer,
             // untyped bulk API + its typed facade.
             "subAccessMatches",
@@ -90,6 +95,29 @@ fn using_program_type_checks_against_the_generated_mirror() {
     assert_eq!(f32_slice.ret, Type::I32);
     let i64_slice = module.foreign_fns.iter().find(|f| f.name == "subSliceChecksumI64").unwrap();
     assert_eq!(i64_slice.params[0].ty, Type::Array(Box::new(Type::I64)));
+    let f16_slice = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subSliceChecksumF16")
+        .unwrap();
+    assert_eq!(f16_slice.params[0].ty, Type::Array(Box::new(Type::F16)));
+    let packet = module
+        .classes
+        .iter()
+        .find(|c| c.name == "SubNarrowPacket")
+        .expect("production-shaped narrow packet");
+    assert_eq!(
+        packet.fields.iter().map(|f| f.ty.clone()).collect::<Vec<_>>(),
+        vec![
+            Type::U8,
+            Type::I16,
+            Type::F16,
+            Type::U64,
+            Type::I8,
+            Type::U16,
+            Type::F32,
+        ]
+    );
 
     // subDeviceCreate returns the branded handle (a nominal class type),
     // and its chain parameter is the `Struct | null` boundary form.

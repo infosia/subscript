@@ -45,7 +45,8 @@ impl<'p> Checker<'p> {
                 self.error(
                     RuleCode::S007,
                     "bare `number` is rejected; there is no default numeric type — \
-                     use a sized type (i32, u32, i64, u64, f32, f64)",
+                     use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, \
+                     f16, f32, f64)",
                     pos,
                 );
                 Type::Error

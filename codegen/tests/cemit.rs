@@ -46,6 +46,37 @@ fn assert_tiers_print(src: &str, expected: &str) {
     }
 }
 
+#[test]
+fn narrow_integer_operations_wrap_at_the_declared_width_on_both_tiers() {
+    assert_tiers_print(
+        "export function main(): void {\n\
+           const smin: i8 = -128;\n\
+           const negOne: i8 = -1;\n\
+           const sa: i8 = 100;\n\
+           const sb: i8 = 30;\n\
+           print(`${sa + sb},${sa - sb},${sa * sb},${smin / negOne},${smin % negOne}`);\n\
+           const ua: u8 = 250;\n\
+           const ub: u8 = 3;\n\
+           print(`${ua + ub},${ua - ub},${ua * ub},${ua / ub},${ua % ub}`);\n\
+           const wide: i16 = 30000;\n\
+           const three: i16 = 3;\n\
+           const uwide: u16 = 65000;\n\
+           const thousand: u16 = 1000;\n\
+           print(`${wide * three},${uwide + thousand}`);\n\
+           const bits: i8 = -2;\n\
+           const one: i8 = 1;\n\
+           print(`${~bits},${bits >> one},${bits >>> one}`);\n\
+           let compound: i8 = 120;\n\
+           compound += 10;\n\
+           compound *= 2;\n\
+           const two: i8 = 2;\n\
+           compound /= two;\n\
+           print(`${compound}`);\n\
+         }\n",
+        "-126,70,-72,-128,0\n253,247,238,83,1\n24464,464\n1,-1,127\n2\n",
+    );
+}
+
 // ----- P4.3 phase-review regressions (dev-JIT ≡ ship-C-AOT) -----
 
 #[test]
@@ -715,4 +746,3 @@ fn ship_c_aot_reports_a_division_by_zero_trap() {
         other => panic!("expected a division-by-zero trap, got {other:?}"),
     }
 }
-

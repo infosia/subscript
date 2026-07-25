@@ -133,6 +133,20 @@ mod tests {
     }
 
     #[test]
+    fn narrow_literal_ranges_are_checked() {
+        for src in [
+            "const x: i8 = 128;\n",
+            "const x: u8 = -1;\n",
+            "const x: i16 = 32768;\n",
+            "const x: u16 = 65536;\n",
+            "const x: f16 = 65505.0;\n",
+        ] {
+            let err = check_one(src).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S008, "{src}");
+        }
+    }
+
+    #[test]
     fn fractional_literal_in_integer_context_is_s008() {
         let err = check_one("const x: i32 = 1.5;\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S008);
@@ -146,6 +160,24 @@ mod tests {
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S007);
         assert_eq!(err[0].pos.line, 4);
+    }
+
+    #[test]
+    fn f16_arithmetic_is_s014_with_compute_via_f32_guidance() {
+        for body in [
+            "const c: f16 = a + b;",
+            "const c: f16 = a % b;",
+            "const c: f16 = -a;",
+            "a += b;",
+            "a++;",
+        ] {
+            let src = format!(
+                "export function main(): void {{\n  let a: f16 = 1.0;\n  const b: f16 = 2.0;\n  {body}\n}}\n"
+            );
+            let err = check_one(&src).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}");
+            assert!(err[0].message.contains("as f32"), "{body}");
+        }
     }
 
     #[test]

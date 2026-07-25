@@ -49,6 +49,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r30-array-find.ts", RuleCode::S014, 11),
     ("r31-array-reduce-noinit.ts", RuleCode::S014, 11),
     ("r32-array-splice.ts", RuleCode::S014, 10),
+    ("r33-narrow-literal-overflow.ts", RuleCode::S008, 7),
+    ("r34-narrow-mixed-arithmetic.ts", RuleCode::S007, 9),
+    ("r35-narrow-mixed-bitwise.ts", RuleCode::S007, 9),
+    ("r36-f16-arithmetic.ts", RuleCode::S014, 9),
 ];
 
 #[test]

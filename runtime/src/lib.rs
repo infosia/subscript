@@ -22,6 +22,7 @@ pub mod context;
 pub mod date;
 pub mod ffi;
 pub mod fmt;
+mod half;
 pub mod math;
 pub mod strops;
 pub mod trap;

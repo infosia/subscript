@@ -483,6 +483,11 @@ impl<'m> Emitter<'m> {
     /// synthetic header exactly like the scalar descriptor names.
     fn interop_array_pair_desc(&self, elem: &Type) -> Result<(String, String), String> {
         match elem {
+            Type::I8 => Ok(("SubSliceI8".to_string(), String::new())),
+            Type::U8 => Ok(("SubSliceU8".to_string(), String::new())),
+            Type::I16 => Ok(("SubSliceI16".to_string(), String::new())),
+            Type::U16 => Ok(("SubSliceU16".to_string(), String::new())),
+            Type::F16 => Ok(("SubSliceF16".to_string(), String::new())),
             Type::U32 => Ok(("SubBufferView".to_string(), String::new())),
             Type::F32 => Ok(("SubSliceF32".to_string(), String::new())),
             Type::I32 => Ok(("SubSliceI32".to_string(), String::new())),
@@ -511,6 +516,10 @@ impl<'m> Emitter<'m> {
     /// function values) get their own named struct types.
     fn ctype(&self, ty: &Type) -> Result<String, String> {
         Ok(match ty {
+            Type::I8 => "int8_t".to_string(),
+            Type::U8 => "uint8_t".to_string(),
+            Type::I16 => "int16_t".to_string(),
+            Type::U16 | Type::F16 => "uint16_t".to_string(),
             Type::I32 => "int32_t".to_string(),
             Type::U32 => "uint32_t".to_string(),
             Type::I64 => "int64_t".to_string(),
@@ -554,6 +563,11 @@ impl<'m> Emitter<'m> {
     /// aggregate typedef names.
     fn type_tag(&self, ty: &Type) -> Result<String, String> {
         Ok(match ty {
+            Type::I8 => "i8".to_string(),
+            Type::U8 => "u8".to_string(),
+            Type::I16 => "i16".to_string(),
+            Type::U16 => "u16".to_string(),
+            Type::F16 => "f16".to_string(),
             Type::I32 => "i32".to_string(),
             Type::U32 => "u32".to_string(),
             Type::I64 => "i64".to_string(),
@@ -1073,7 +1087,17 @@ impl<'m> Emitter<'m> {
             Type::Void => String::new(),
             Type::F32 => "0.0f".to_string(),
             Type::F64 => "0.0".to_string(),
-            Type::I32 | Type::U32 | Type::I64 | Type::U64 | Type::Bool | Type::Enum(_) => {
+            Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::F16
+            | Type::I32
+            | Type::U32
+            | Type::I64
+            | Type::U64
+            | Type::Bool
+            | Type::Enum(_) => {
                 "0".to_string()
             }
             Type::Str | Type::Object | Type::Array(_) | Type::Generator(_) | Type::Nullable(_)
@@ -1632,7 +1656,16 @@ impl<'m> Emitter<'m> {
         use hir::ExprKind as K;
         match &e.kind {
             K::Int(v) => Ok(int_literal(*v, &e.ty)),
-            K::Float(v) => Ok(float_literal(*v, &e.ty)),
+            K::Float(v) => {
+                if e.ty == Type::F16 {
+                    Ok(format!(
+                        "sub_rt_f16_from_f64({})",
+                        float_literal(*v, &Type::F64)
+                    ))
+                } else {
+                    Ok(float_literal(*v, &e.ty))
+                }
+            }
             K::Bool(b) => Ok(if *b { "1".to_string() } else { "0".to_string() }),
             K::Str(s) => self.string_literal(s.as_bytes(), &e.pos),
             K::Null => Ok("((void*)0)".to_string()),
@@ -1643,12 +1676,19 @@ impl<'m> Emitter<'m> {
             K::EnumMember { value, .. } => Ok(value.to_string()),
             K::Unary { op, operand } => {
                 let v = self.eval(operand, out, depth)?;
-                Ok(match op {
+                let expr = match op {
                     hir::UnOp::Neg => format!("(-({v}))"),
                     hir::UnOp::Not => format!("(!({v}))"),
                     hir::UnOp::BitNot => format!("(~({v}))"),
                     _ => return Err("unknown unary operator".to_string()),
-                })
+                };
+                if is_narrow_integer(&operand.ty)
+                    && matches!(op, hir::UnOp::Neg | hir::UnOp::BitNot)
+                {
+                    Ok(format!("(({})({expr}))", self.ctype(&operand.ty)?))
+                } else {
+                    Ok(expr)
+                }
             }
             K::Binary { op, left, right } => self.eval_binary(*op, left, right, &e.pos, out, depth),
             K::Assign { op, target, value } => self.eval_assign_expr(*op, target, value, out, depth),
@@ -1809,6 +1849,12 @@ impl<'m> Emitter<'m> {
 
         let ops = self.eval_operands(&[left, right], out, depth)?;
         let (l, r) = (&ops[0], &ops[1]);
+        if operand_ty == Type::F16 {
+            let sym = binop_sym(op)?;
+            return Ok(format!(
+                "(sub_rt_f16_to_f64({l}) {sym} sub_rt_f16_to_f64({r}))"
+            ));
+        }
         let float = operand_ty.is_float();
         match op {
             B::Div if !float => {
@@ -1824,7 +1870,33 @@ impl<'m> Emitter<'m> {
             _ => {}
         }
         let sym = binop_sym(op)?;
-        Ok(format!("({l} {sym} {r})"))
+        let expr = if op == B::UShr {
+            let unsigned = unsigned_ctype(&operand_ty)?;
+            format!("((({unsigned})({l})) >> ({r}))")
+        } else if op == B::Shl && is_narrow_integer(&operand_ty) {
+            let unsigned = unsigned_ctype(&operand_ty)?;
+            format!("((({unsigned})({l})) << ({r}))")
+        } else {
+            format!("({l} {sym} {r})")
+        };
+        if is_narrow_integer(&operand_ty)
+            && matches!(
+                op,
+                B::Add
+                    | B::Sub
+                    | B::Mul
+                    | B::BitAnd
+                    | B::BitOr
+                    | B::BitXor
+                    | B::Shl
+                    | B::Shr
+                    | B::UShr
+            )
+        {
+            Ok(format!("(({})({expr}))", self.ctype(&operand_ty)?))
+        } else {
+            Ok(expr)
+        }
     }
 
     fn eval_assign_expr(&mut self, op: Option<hir::BinOp>, target: &hir::Expr, value: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
@@ -1849,6 +1921,19 @@ impl<'m> Emitter<'m> {
         let from = if matches!(from, Type::Enum(_)) { Type::I32 } else { from.clone() };
         if from == *to {
             return Ok(format!("({v})"));
+        }
+        if *to == Type::F16 {
+            if matches!(from, Type::F32 | Type::F64) {
+                return Ok(format!("sub_rt_f16_from_f64((double)({v}))"));
+            }
+            return Err(format!("cast {from:?} -> f16"));
+        }
+        if from == Type::F16 {
+            return match to {
+                Type::F32 => Ok(format!("((float)sub_rt_f16_to_f64({v}))")),
+                Type::F64 => Ok(format!("sub_rt_f16_to_f64({v})")),
+                other => Err(format!("cast f16 -> {other:?}")),
+            };
         }
         // float -> integer: saturate to match the CLIF `fcvt_*_sat`.
         if from.is_float() && to.is_integer() {
@@ -1957,12 +2042,23 @@ impl<'m> Emitter<'m> {
         let pid = self.pos_id(pos);
         let f = match ty {
             Type::Str => return Ok(v.to_string()),
+            Type::I8 | Type::I16 => {
+                return Ok(format!("sub_rt_fmt_i32(ctx, (int32_t)({v}), {pid}u)"));
+            }
+            Type::U8 | Type::U16 => {
+                return Ok(format!("sub_rt_fmt_u32(ctx, (uint32_t)({v}), {pid}u)"));
+            }
             Type::I32 | Type::Enum(_) => "sub_rt_fmt_i32",
             Type::U32 => "sub_rt_fmt_u32",
             Type::I64 => "sub_rt_fmt_i64",
             Type::U64 => "sub_rt_fmt_u64",
             Type::F32 => "sub_rt_fmt_f32",
             Type::F64 => "sub_rt_fmt_f64",
+            Type::F16 => {
+                return Ok(format!(
+                    "sub_rt_fmt_f64(ctx, sub_rt_f16_to_f64({v}), {pid}u)"
+                ));
+            }
             Type::Bool => "sub_rt_fmt_bool",
             other => return Err(format!("interpolation of {other:?}")),
         };
@@ -3314,6 +3410,14 @@ fn binop_sym(op: hir::BinOp) -> Result<&'static str, String> {
 
 fn divrem_helper(ty: &Type, is_div: bool) -> Result<&'static str, String> {
     Ok(match (ty, is_div) {
+        (Type::I8, true) => "ss_sdiv_i8",
+        (Type::I8, false) => "ss_srem_i8",
+        (Type::U8, true) => "ss_udiv_u8",
+        (Type::U8, false) => "ss_urem_u8",
+        (Type::I16, true) => "ss_sdiv_i16",
+        (Type::I16, false) => "ss_srem_i16",
+        (Type::U16, true) => "ss_udiv_u16",
+        (Type::U16, false) => "ss_urem_u16",
         (Type::I32, true) => "ss_sdiv_i32",
         (Type::I32, false) => "ss_srem_i32",
         (Type::U32, true) => "ss_udiv_u32",
@@ -3328,11 +3432,29 @@ fn divrem_helper(ty: &Type, is_div: bool) -> Result<&'static str, String> {
 
 fn float_to_int_helper(to: &Type) -> Result<&'static str, String> {
     Ok(match to {
+        Type::I8 => "ss_f2i8",
+        Type::U8 => "ss_f2u8",
+        Type::I16 => "ss_f2i16",
+        Type::U16 => "ss_f2u16",
         Type::I32 => "ss_f2i32",
         Type::U32 => "ss_f2u32",
         Type::I64 => "ss_f2i64",
         Type::U64 => "ss_f2u64",
         other => return Err(format!("float to {other:?}")),
+    })
+}
+
+fn is_narrow_integer(ty: &Type) -> bool {
+    matches!(ty, Type::I8 | Type::U8 | Type::I16 | Type::U16)
+}
+
+fn unsigned_ctype(ty: &Type) -> Result<&'static str, String> {
+    Ok(match ty {
+        Type::I8 | Type::U8 => "uint8_t",
+        Type::I16 | Type::U16 => "uint16_t",
+        Type::I32 | Type::U32 => "uint32_t",
+        Type::I64 | Type::U64 => "uint64_t",
+        other => return Err(format!("unsigned carrier for {other:?}")),
     })
 }
 
@@ -3370,6 +3492,10 @@ fn is_c_keyword(s: &str) -> bool {
 
 fn int_literal(v: i64, ty: &Type) -> String {
     match ty {
+        Type::U8 => format!("((uint8_t){})", v as u8),
+        Type::U16 => format!("((uint16_t){})", v as u16),
+        Type::I8 => format!("((int8_t){v})"),
+        Type::I16 => format!("((int16_t){v})"),
         Type::U32 => format!("{}u", v as u32),
         Type::U64 => format!("{}ull", v as u64),
         Type::I64 => format!("{v}ll"),
@@ -3475,6 +3601,11 @@ extern void* sub_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
 extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
 extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
 extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
+/* IEEE binary16 is raw uint16_t storage in emitted C. All conversion is
+ * behind these opaque runtime symbols; no _Float16/__fp16 operation is
+ * emitted (compiler.md 16.2). */
+extern uint16_t sub_rt_f16_from_f64(double v);
+extern double sub_rt_f16_to_f64(uint16_t bits);
 extern void* sub_rt_array_new(void* ctx, uint64_t elem_size, uint32_t pos_id);
 extern int32_t sub_rt_array_len(void* ctx, const void* a);
 extern int32_t sub_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
@@ -3614,6 +3745,38 @@ static void* ss_fa_at(void* ctx, void* base, int64_t n, int32_t idx, int64_t ele
 
 /* Integer div/rem with the language's semantics: trap on a zero divisor;
  * two's-complement wrap for signed MIN / -1 and MIN % -1. */
+static int8_t ss_sdiv_i8(void* ctx, int8_t a, int8_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (int8_t)((int32_t)a / (int32_t)b);
+}
+static int8_t ss_srem_i8(void* ctx, int8_t a, int8_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (int8_t)((int32_t)a % (int32_t)b);
+}
+static uint8_t ss_udiv_u8(void* ctx, uint8_t a, uint8_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (uint8_t)((uint32_t)a / (uint32_t)b);
+}
+static uint8_t ss_urem_u8(void* ctx, uint8_t a, uint8_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (uint8_t)((uint32_t)a % (uint32_t)b);
+}
+static int16_t ss_sdiv_i16(void* ctx, int16_t a, int16_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (int16_t)((int32_t)a / (int32_t)b);
+}
+static int16_t ss_srem_i16(void* ctx, int16_t a, int16_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (int16_t)((int32_t)a % (int32_t)b);
+}
+static uint16_t ss_udiv_u16(void* ctx, uint16_t a, uint16_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (uint16_t)((uint32_t)a / (uint32_t)b);
+}
+static uint16_t ss_urem_u16(void* ctx, uint16_t a, uint16_t b, uint32_t pos) {
+    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+    return (uint16_t)((uint32_t)a % (uint32_t)b);
+}
 static int32_t ss_sdiv_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
     if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return (int32_t)(0u - (uint32_t)a);
@@ -3652,6 +3815,28 @@ static uint64_t ss_urem_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
 }
 
 /* Saturating float->int, matching the CLIF fcvt_to_*_sat choice. */
+static int8_t ss_f2i8(double v) {
+    if (v != v) return 0;
+    if (v <= -128.0) return (int8_t)-128;
+    if (v >= 127.0) return (int8_t)127;
+    return (int8_t)v;
+}
+static uint8_t ss_f2u8(double v) {
+    if (v != v || v <= 0.0) return 0;
+    if (v >= 255.0) return (uint8_t)255;
+    return (uint8_t)v;
+}
+static int16_t ss_f2i16(double v) {
+    if (v != v) return 0;
+    if (v <= -32768.0) return (int16_t)-32768;
+    if (v >= 32767.0) return (int16_t)32767;
+    return (int16_t)v;
+}
+static uint16_t ss_f2u16(double v) {
+    if (v != v || v <= 0.0) return 0;
+    if (v >= 65535.0) return (uint16_t)65535;
+    return (uint16_t)v;
+}
 static int32_t ss_f2i32(double v) {
     if (v != v) return 0;
     if (v <= -2147483648.0) return (int32_t)(-2147483647 - 1);
@@ -3796,6 +3981,30 @@ mod tests {
     }
 
     #[test]
+    fn f16_conversion_uses_opaque_runtime_symbols_never_half_operations() {
+        let c = emit(
+            "export function main(): void {\n  const h: f16 = (1.0006 as f64) as f16;\n  print(`${h as f32}`);\n}\n",
+        );
+        assert!(
+            c.contains("uint16_t h = sub_rt_f16_from_f64((double)"),
+            "{c}"
+        );
+        assert!(c.contains("sub_rt_f16_to_f64("), "{c}");
+
+        // The explanatory preamble comment names the forbidden C types;
+        // no declaration or executable line may do so.
+        let non_comment_lines: String = c
+            .lines()
+            .filter(|line| {
+                let line = line.trim_start();
+                !line.starts_with("/*") && !line.starts_with('*') && !line.starts_with("*/")
+            })
+            .collect();
+        assert!(!non_comment_lines.contains("_Float16"), "{c}");
+        assert!(!non_comment_lines.contains("__fp16"), "{c}");
+    }
+
+    #[test]
     fn math_constants_fold_to_literals_not_symbols() {
         // stdlib.md §1: `Math.<CONST>` never reaches codegen as a
         // member read; the emitted C carries the f64 literal.
@@ -3817,6 +4026,3 @@ mod tests {
         }
     }
 }
-
-
-

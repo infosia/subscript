@@ -18,6 +18,14 @@ pub struct EnumId(pub usize);
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Type {
+    /// 8-bit signed integer.
+    I8,
+    /// 8-bit unsigned integer.
+    U8,
+    /// 16-bit signed integer.
+    I16,
+    /// 16-bit unsigned integer.
+    U16,
     /// 32-bit signed integer.
     I32,
     /// 32-bit unsigned integer.
@@ -30,6 +38,9 @@ pub enum Type {
     F32,
     /// 64-bit IEEE float.
     F64,
+    /// IEEE 754 binary16 storage value. Arithmetic is rejected by the
+    /// checker (Q23); generated code carries its raw 16 bits.
+    F16,
     /// Boolean.
     Bool,
     /// Immutable UTF-8 byte view (Q5).
@@ -81,25 +92,45 @@ pub struct FuncType {
 }
 
 impl Type {
-    /// True for the six sized numeric types.
+    /// True for all sized numeric types.
     #[must_use]
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
-            Type::I32 | Type::U32 | Type::I64 | Type::U64 | Type::F32 | Type::F64
+            Type::I8
+                | Type::U8
+                | Type::I16
+                | Type::U16
+                | Type::I32
+                | Type::U32
+                | Type::I64
+                | Type::U64
+                | Type::F16
+                | Type::F32
+                | Type::F64
         )
     }
 
-    /// True for the four sized integer types.
+    /// True for all sized integer types.
     #[must_use]
     pub fn is_integer(&self) -> bool {
-        matches!(self, Type::I32 | Type::U32 | Type::I64 | Type::U64)
+        matches!(
+            self,
+            Type::I8
+                | Type::U8
+                | Type::I16
+                | Type::U16
+                | Type::I32
+                | Type::U32
+                | Type::I64
+                | Type::U64
+        )
     }
 
-    /// True for the two float types.
+    /// True for all sized float types, including storage-only `f16`.
     #[must_use]
     pub fn is_float(&self) -> bool {
-        matches!(self, Type::F32 | Type::F64)
+        matches!(self, Type::F16 | Type::F32 | Type::F64)
     }
 
     /// True when the type may appear inside `Ref | null` (C7): reference
@@ -122,12 +153,17 @@ pub fn display_type(
     enum_name: &dyn Fn(EnumId) -> String,
 ) -> String {
     match ty {
+        Type::I8 => "i8".to_string(),
+        Type::U8 => "u8".to_string(),
+        Type::I16 => "i16".to_string(),
+        Type::U16 => "u16".to_string(),
         Type::I32 => "i32".to_string(),
         Type::U32 => "u32".to_string(),
         Type::I64 => "i64".to_string(),
         Type::U64 => "u64".to_string(),
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
+        Type::F16 => "f16".to_string(),
         Type::Bool => "boolean".to_string(),
         Type::Str => "string".to_string(),
         Type::Date => "Date".to_string(),
@@ -185,10 +221,13 @@ mod tests {
 
     #[test]
     fn sized_numerics_are_distinct() {
+        assert_ne!(Type::I8, Type::U8);
+        assert_ne!(Type::I16, Type::U16);
         assert_ne!(Type::I32, Type::U32);
         assert_ne!(Type::I64, Type::U64);
         assert_ne!(Type::F32, Type::F64);
         assert!(Type::U64.is_integer());
+        assert!(Type::F16.is_float());
         assert!(Type::F32.is_float());
         assert!(!Type::Bool.is_numeric());
     }

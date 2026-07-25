@@ -52,6 +52,9 @@ pub enum ElemKind {
     F64,
     /// String handle: content equality; pointer-sized integer register.
     Str,
+    /// IEEE binary16 equality after widening through the shared conversion
+    /// implementation; raw bits use a 16-bit integer register.
+    F16,
 }
 
 impl ElemKind {
@@ -63,6 +66,7 @@ impl ElemKind {
             1 => ElemKind::F32,
             2 => ElemKind::F64,
             3 => ElemKind::Str,
+            4 => ElemKind::F16,
             _ => return None,
         })
     }
@@ -90,6 +94,17 @@ pub enum FmtKind {
     Bool,
     /// String elements pass through unformatted.
     Str,
+    /// `i8` decimal.
+    I8,
+    /// `u8` decimal.
+    U8,
+    /// `i16` decimal.
+    I16,
+    /// `u16` decimal.
+    U16,
+    /// Binary16 widened through the shared conversion implementation,
+    /// then formatted by the `f64` Q14 implementation.
+    F16,
 }
 
 impl FmtKind {
@@ -105,6 +120,11 @@ impl FmtKind {
             5 => FmtKind::F64,
             6 => FmtKind::Bool,
             7 => FmtKind::Str,
+            8 => FmtKind::I8,
+            9 => FmtKind::U8,
+            10 => FmtKind::I16,
+            11 => FmtKind::U16,
+            12 => FmtKind::F16,
             _ => return None,
         })
     }
@@ -114,6 +134,7 @@ impl FmtKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Abi {
     I8,
+    I16,
     I32,
     I64,
     F32,
@@ -126,8 +147,10 @@ fn abi_of(kind: ElemKind, size: usize) -> Option<Abi> {
     match kind {
         ElemKind::F32 => (size == 4).then_some(Abi::F32),
         ElemKind::F64 => (size == 8).then_some(Abi::F64),
+        ElemKind::F16 => (size == 2).then_some(Abi::I16),
         ElemKind::Int | ElemKind::Str => match size {
             1 => Some(Abi::I8),
+            2 => Some(Abi::I16),
             4 => Some(Abi::I32),
             8 => Some(Abi::I64),
             _ => None,
@@ -160,6 +183,10 @@ macro_rules! with_abi {
             }
             Abi::I32 => {
                 type $T = i32;
+                $body
+            }
+            Abi::I16 => {
+                type $T = u16;
                 $body
             }
             Abi::I64 => {
@@ -242,7 +269,7 @@ unsafe fn len_of(ctx: *mut Context, h: *const u8) -> usize {
     unsafe { (*ctx).array_len(h) }.max(0) as usize
 }
 
-/// Reads `size` (1/4/8) bytes at `p` zero-extended to `u64`.
+/// Reads `size` (1/2/4/8) bytes at `p` zero-extended to `u64`.
 ///
 /// # Safety
 ///
@@ -252,6 +279,7 @@ unsafe fn read_uint(p: *const u8, size: usize) -> u64 {
     unsafe {
         match size {
             1 => u64::from(p.read_unaligned()),
+            2 => u64::from(p.cast::<u16>().read_unaligned()),
             4 => u64::from(p.cast::<u32>().read_unaligned()),
             8 => p.cast::<u64>().read_unaligned(),
             _ => 0,
@@ -284,6 +312,11 @@ unsafe fn elem_eq(ctx: *mut Context, kind: ElemKind, size: usize, p: *const u8, 
         // SAFETY: caller contract.
         ElemKind::F64 => unsafe {
             p.cast::<f64>().read_unaligned() == x.cast::<f64>().read_unaligned()
+        },
+        ElemKind::F16 => unsafe {
+            let a = crate::half::to_f64(p.cast::<u16>().read_unaligned());
+            let b = crate::half::to_f64(x.cast::<u16>().read_unaligned());
+            a == b
         },
         ElemKind::Str => {
             // SAFETY: caller contract (8 readable bytes each).
@@ -418,6 +451,27 @@ pub unsafe fn join(
             ),
             FmtKind::F64 => out.extend_from_slice(
                 crate::fmt::fmt_f64(unsafe { p.cast::<f64>().read_unaligned() }).as_bytes(),
+            ),
+            FmtKind::I8 => out.extend_from_slice(
+                crate::fmt::fmt_i32(i32::from(unsafe { p.cast::<i8>().read_unaligned() }))
+                    .as_bytes(),
+            ),
+            FmtKind::U8 => out.extend_from_slice(
+                crate::fmt::fmt_u32(u32::from(unsafe { p.read_unaligned() })).as_bytes(),
+            ),
+            FmtKind::I16 => out.extend_from_slice(
+                crate::fmt::fmt_i32(i32::from(unsafe { p.cast::<i16>().read_unaligned() }))
+                    .as_bytes(),
+            ),
+            FmtKind::U16 => out.extend_from_slice(
+                crate::fmt::fmt_u32(u32::from(unsafe { p.cast::<u16>().read_unaligned() }))
+                    .as_bytes(),
+            ),
+            FmtKind::F16 => out.extend_from_slice(
+                crate::fmt::fmt_f64(crate::half::to_f64(unsafe {
+                    p.cast::<u16>().read_unaligned()
+                }))
+                .as_bytes(),
             ),
             // Booleans are 1 byte under the dev JIT and 4 under the
             // ship-C emitter; read the tier's own width.
@@ -1149,6 +1203,7 @@ mod tests {
             (1, ElemKind::F32),
             (2, ElemKind::F64),
             (3, ElemKind::Str),
+            (4, ElemKind::F16),
         ] {
             assert_eq!(ElemKind::from_u32(v), Some(k));
         }
@@ -1162,23 +1217,31 @@ mod tests {
             (5, FmtKind::F64),
             (6, FmtKind::Bool),
             (7, FmtKind::Str),
+            (8, FmtKind::I8),
+            (9, FmtKind::U8),
+            (10, FmtKind::I16),
+            (11, FmtKind::U16),
+            (12, FmtKind::F16),
         ] {
             assert_eq!(FmtKind::from_u32(v), Some(k));
         }
-        assert_eq!(FmtKind::from_u32(8), None);
+        assert_eq!(FmtKind::from_u32(13), None);
     }
 
     #[test]
     fn abi_dispatch_is_kind_plus_width() {
         assert_eq!(abi_of(ElemKind::Int, 1), Some(Abi::I8));
+        assert_eq!(abi_of(ElemKind::Int, 2), Some(Abi::I16));
         assert_eq!(abi_of(ElemKind::Int, 4), Some(Abi::I32));
         assert_eq!(abi_of(ElemKind::Int, 8), Some(Abi::I64));
         assert_eq!(abi_of(ElemKind::Str, 8), Some(Abi::I64));
+        assert_eq!(abi_of(ElemKind::F16, 2), Some(Abi::I16));
         assert_eq!(abi_of(ElemKind::F32, 4), Some(Abi::F32));
         assert_eq!(abi_of(ElemKind::F64, 8), Some(Abi::F64));
         assert_eq!(abi_of(ElemKind::Int, 3), None);
         assert_eq!(abi_of(ElemKind::F32, 8), None);
         assert_eq!(abi_of(ElemKind::F64, 4), None);
+        assert_eq!(abi_of(ElemKind::F16, 4), None);
     }
 
     #[test]

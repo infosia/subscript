@@ -78,6 +78,18 @@ fn q13_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("subBulkConsume(data: object | null, size: u64): i32;"));
     assert!(m.contains("subBulkConsumeF32(data: f32[]): i32;"));
 
+    // P14 (§16). The production-shaped packet proves the scalar blocker
+    // is removed: byte, short, and binary16 fields retain exact widths,
+    // and each narrow typed descriptor collapses to a zero-copy `T[]`.
+    assert!(m.contains("type SubFloat16 = f16;"));
+    assert!(m.contains("kind: u8;"));
+    assert!(m.contains("delta: i16;"));
+    assert!(m.contains("weight: SubFloat16;"));
+    assert!(m.contains("bias: i8;"));
+    assert!(m.contains("count: u16;"));
+    assert!(m.contains("subSliceChecksumU8(data: u8[]): i32;"));
+    assert!(m.contains("subSliceChecksumF16(data: SubFloat16[]): i32;"));
+
     // P7.2 (§14.5). Mutable (pointer, count) descriptor over a value class
     // → `SubWaitEntry[]`; the descriptor struct (SubWaitList) is absorbed,
     // never emitted as a named type.

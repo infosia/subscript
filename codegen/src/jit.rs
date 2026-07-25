@@ -88,6 +88,8 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_fmt_f32", ffi::sub_rt_fmt_f32 as *const u8),
         ("sub_rt_fmt_f64", ffi::sub_rt_fmt_f64 as *const u8),
         ("sub_rt_fmt_bool", ffi::sub_rt_fmt_bool as *const u8),
+        ("sub_rt_f16_from_f64", ffi::sub_rt_f16_from_f64 as *const u8),
+        ("sub_rt_f16_to_f64", ffi::sub_rt_f16_to_f64 as *const u8),
         ("sub_rt_array_new", ffi::sub_rt_array_new as *const u8),
         ("sub_rt_array_len", ffi::sub_rt_array_len as *const u8),
         ("sub_rt_array_push", ffi::sub_rt_array_push as *const u8),
@@ -217,6 +219,11 @@ extern "C" {
     fn subSliceChecksumI32();
     fn subSliceChecksumF64();
     fn subSliceChecksumI64();
+    fn subSliceChecksumU8();
+    fn subSliceChecksumI8();
+    fn subSliceChecksumU16();
+    fn subSliceChecksumI16();
+    fn subSliceChecksumF16();
     fn subDrawListTotal();
     fn subAccessMatches();
     fn subBulkConsume();
@@ -248,6 +255,11 @@ pub(crate) fn register_interop(builder: &mut JITBuilder) {
         ("subSliceChecksumI32", subSliceChecksumI32 as *const u8),
         ("subSliceChecksumF64", subSliceChecksumF64 as *const u8),
         ("subSliceChecksumI64", subSliceChecksumI64 as *const u8),
+        ("subSliceChecksumU8", subSliceChecksumU8 as *const u8),
+        ("subSliceChecksumI8", subSliceChecksumI8 as *const u8),
+        ("subSliceChecksumU16", subSliceChecksumU16 as *const u8),
+        ("subSliceChecksumI16", subSliceChecksumI16 as *const u8),
+        ("subSliceChecksumF16", subSliceChecksumF16 as *const u8),
         ("subDrawListTotal", subDrawListTotal as *const u8),
         ("subAccessMatches", subAccessMatches as *const u8),
         ("subBulkConsume", subBulkConsume as *const u8),
