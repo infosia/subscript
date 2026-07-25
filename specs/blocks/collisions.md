@@ -277,9 +277,18 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 - **Q22 (`Array` methods)** — the checker accepts the `stdlib.md` §9
   subset on `T[]`. Element equality follows JS `===` per element
   kind (scalars by value, strings by content, `Date` by millis,
-  reference classes by identity) — including `includes`, which in JS
-  uses SameValueZero (JS finds `NaN`; this language never does — one
-  equality rule for all three searches). Callback arities are fixed (no
+  reference classes by identity) for `indexOf`/`lastIndexOf` — which is
+  what JS uses there too.
+  **`includes` uses SameValueZero** (revised 2026-07-25), so `NaN` is
+  found, as in JS. The earlier rule put all three searches on `===` for
+  a single equality story; the cost was that `[NaN].includes(NaN)`
+  answered `false` where every JS engine answers `true`. That bought
+  internal tidiness no program can observe, and paid for it with a
+  silently wrong answer. Adopting SameValueZero imports JS's own
+  inconsistency — `indexOf` finds no `NaN`, `includes` does, same array
+  — and that is the entire cost of the change. SameValueZero differs
+  from `===` in exactly one case, `NaN`; `+0`/`-0` compare equal under
+  both. Callback arities are fixed (no
   optional index/array parameters); `reduce` requires `init` (the
   lib's arity-overloaded no-init form changes meaning silently);
   `sort` requires a comparator (the lib's default sort coerces to
@@ -323,8 +332,8 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   **generic reference classes** monomorphized on first use, so keys and
   values are stored unboxed. **Key kinds are whitelisted** to those Q22
   already defines equality for (sized integers, `boolean`, `enum`,
-  `f32`/`f64` by `===`, `string` by content, `Date` by millis,
-  reference classes by identity); `f16` (Q23 storage-only), `T[]`,
+  `f32`/`f64` by **SameValueZero**, `string` by content, `Date` by
+  millis, reference classes by identity); `f16` (Q23 storage-only), `T[]`,
   `FixedArray`, `@CStruct` value classes, `object`, function types and
   `Nullable<T>` are rejected as keys (S014). **Iteration is insertion
   order** and is normative, not incidental — §0.3 determinism and the
@@ -339,6 +348,19 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   replays non-reproducible. The iterator protocol is not in the
   language, so `keys`/`values`/`entries`/`for…of`/spread and
   iterable construction are rejected; `forEach` is the traversal.
+  - **Float keys use SameValueZero** (revised 2026-07-25), as JS does
+    for `Map`/`Set`: a `NaN` key is retrievable. The earlier rule used
+    `===`, under which a `NaN` key could be **inserted and then never
+    read back** — data loss the language itself manufactured — and it
+    forced a compile-time rejection of a literal `NaN` key for the sole
+    reason that the entry would be unreachable. **That rejection is
+    withdrawn**; its stated reason no longer exists. All `NaN` payloads
+    are one key.
+  - **A `-0` key normalizes to `+0` on insert**, as ECMA specifies, so
+    `forEach` reports `0`. Under the old `===` rule the two compared
+    and hashed equal but `-0` was *stored*, which Q14 then spelled
+    `-0` where JS prints `0` — a divergence in key traversal that the
+    equality rule alone did not remove.
 
 - **Q25 (`Number`, parsing, `toFixed`)** — accepted per `stdlib.md`
   §11. `Number`'s constants and the four `Number.is*` predicates are

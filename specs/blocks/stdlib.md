@@ -277,7 +277,9 @@ Accepted members on `T[]` (checker: `ArrFn` intrinsics; runtime
 Without closures —
 - `indexOf(x)/lastIndexOf(x)/includes(x)`: scalars by value, strings
   by content (`str_eq`), `Date` by millis, reference classes by
-  identity (JS `===` semantics per kind)
+  identity. `indexOf`/`lastIndexOf` use JS `===` per kind;
+  **`includes` uses SameValueZero** (Q22, revised 2026-07-25) and so
+  finds `NaN`, as JS does. The two rules differ in that one case only.
 - `join(sep?): string` — `sep` defaults `","`; elements formatted by
   the Q14 rules (the `${…}` formatting)
 - `slice(start?, end?): T[]` — JS negative/clamp rules; fresh array
@@ -345,13 +347,13 @@ A key type must have a defined equality **and** a defined hash. The
 whitelist is exactly the kinds Q22 already defines equality for:
 
 - sized integers (`i8`…`u64`), `boolean`, `enum` — by value
-- `f32`/`f64` — by value, with the **Q22 rule, not SameValueZero**:
-  equality is `===`, so `NaN` is never found (a `NaN` key can be
-  inserted and is then unreachable — that is the consequence of one
-  equality rule across the language, and it is why `NaN` keys are
-  **rejected at compile time when the key expression is a literal
-  `NaN`**; a computed `NaN` is accepted and simply never matches).
-  `+0` and `-0` hash and compare equal (they are `===`).
+- `f32`/`f64` — by **SameValueZero** (Q24, revised 2026-07-25), which
+  is what JS uses for `Map`/`Set` keys: `NaN` equals itself, so a `NaN`
+  key is retrievable and every `NaN` payload is the same key. A literal
+  `NaN` key is **accepted** — the earlier rejection existed only
+  because the entry would have been unreachable under `===`.
+  `+0` and `-0` are one key, and **`-0` normalizes to `+0` on insert**
+  so `forEach` reports `0` as JS does.
 - `string` — by content, hashed over the UTF-8 bytes
 - `Date` — by millis (its erased `i64`)
 - reference classes — **by identity** (the handle), never structurally

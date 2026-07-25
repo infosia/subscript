@@ -79,6 +79,44 @@ ASCII restriction.** Not yet done.
   instead of Invalid-Date) — deliberate, and Boa's unseeded behaviour is
   what we are avoiding.
 
+## Decided after the audit
+
+### `includes` / `Map` keys and `NaN` — adopted SameValueZero
+
+Was: one equality rule (`===`) everywhere, so `NaN` was never found.
+Boa implements both rules; the give-up here was never difficulty, it was
+a preference for a single equality story. Measured against node
+v24.18.0:
+
+| expression | node | this language, before |
+|---|---|---|
+| `[NaN].indexOf(NaN)` | `-1` | `-1` (already agreed) |
+| `[NaN].lastIndexOf(NaN)` | `-1` | `-1` (already agreed) |
+| `[NaN].includes(NaN)` | `true` | `false` |
+| `map.get(NaN)` after `set(NaN, v)` | `v` | miss |
+| `set.has(NaN)` after `add(NaN)` | `true` | `false` |
+| `-0` key, then `keys()` | `[0]` | `-0` stored |
+| two `NaN`s with different payloads | one entry | — |
+
+So the divergence was two methods wide, not language-wide.
+**Decision (owner, 2026-07-25): adopt.** Q22 `includes` and Q24 float
+keys move to SameValueZero; `indexOf`/`lastIndexOf` stay on `===`
+because that is what JS uses there. The cost is stated in Q22: JS's own
+`indexOf`/`includes` inconsistency is imported. It was accepted because
+the old rule produced a silently wrong `includes` answer and made a
+`NaN` `Map` key insertable but unreadable, and because it *removes* a
+rule — Q24's compile-time rejection of a literal `NaN` key existed only
+to hide the unreachable entry.
+
+Boa's own implementation is `same_value_zero` in
+`core/engine/src/value/equality.rs`. Note that Boa's `RationalHashable`
+(`core/engine/src/value/hash.rs`) compares with `Number::same_value`
+but hashes `self.0.to_bits()` — equal-but-differently-hashed values are
+possible in principle, so **this language does not copy that shape**.
+It normalizes instead: `-0` becomes `+0` at insert, and the hash
+already folds both zeros to the same bits, so plain bit hashing stays
+consistent with the equality rule.
+
 ## Open — re-examine, not yet decided
 
 - **`Math.clz32`.** Rejected as a "JS-number op", but unlike `imul` and
@@ -86,12 +124,6 @@ ASCII restriction.** Not yet done.
   count-leading-zeros primitive. The rejection reason does not hold for
   it. Candidate for addition as a bit-manipulation primitive rather
   than as a JS compatibility shim.
-- **`includes` / `Map` keys and `NaN` (Q22, Q24).** This language uses
-  one equality rule (`===`) everywhere, so `NaN` is never found; JS uses
-  SameValueZero for these. Boa implements both rules. The choice here
-  was simplicity of the language's equality story, not difficulty —
-  worth weighing against JS agreement, but it is a design call, not an
-  oversight.
 - **`Number.prototype.toPrecision` / `toExponential`, `toString(radix)`.**
   Rejected in Q25 without a difficulty claim. Boa implements all three
   (`to_js_string_radix` is ~40 lines). If they are wanted, nothing
