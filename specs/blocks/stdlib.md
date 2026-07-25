@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -54,10 +54,15 @@ because the sized aliases erase to `number`):
 runtime uses Rust's `leading_zeros()` behind an opaque symbol, because
 C's `__builtin_clz(0)` is undefined and the ship tier must not emit it.
 
-Rejected members (S-code + reject-corpus entries): `imul`, `fround` —
-each is an exact duplicate of a spelling the language already has
-(`a * b` on `i32`, `x as f32`), so they buy a second name and no
-capability; and variadic `max`/`min`/`hypot`.
+`imul(a: i32, b: i32): i32` and `fround(x: f64): f64` are accepted
+(Q27). Each is an exact duplicate of a spelling the language already
+has — `a * b` on `i32`, `x as f32` — and under the owner's rule a
+second spelling is not grounds for rejection.
+
+Rejected members (S-code + reject-corpus entries): variadic
+`max`/`min`/`hypot` beyond two arguments — the language has no
+variadic parameters, which is a missing prerequisite rather than a
+cost.
 
 ECMA edge semantics, pinned by golden: `round` is half-toward-+∞
 (`round(-2.5) === -2`); `sign(±0) === ±0`; `max`/`min` propagate `NaN`
@@ -128,7 +133,7 @@ known weekdays. Lowering: constructor/statics/methods are intrinsics →
 Accept: `a40` Math battery (functions, constants, the §1 edge pins,
 `NaN`/`-0` formatting); `a41` random sequence (default seed, first
 draws); `a42` Date battery (construction via `Date.UTC`, accessors,
-`toISOString` round-trips, leap dates, pre-1970). Reject: `imul`,
+`toISOString` round-trips, leap dates, pre-1970). Reject:
 three-argument `max`, `getFullYear`, `setTime`, multi-argument `Date`
 constructor, `Date` in a template literal — each with its S-code.
 Every accept entry stays `tsc`-clean (lib-typed) — the standing gate.
@@ -235,14 +240,43 @@ returning a string allocates via the Context):
 - `replace(pat: string, repl: string): string` — first occurrence,
   literal (no regex; `$` in the replacement is **not** interpreted —
   Q21; JS substitutes `$$`/`$&`)
-- `replaceAll(pat: string, repl: string): string` — all occurrences,
-  literal; empty `pat` traps (JS inserts between every unit)
+- `replaceAll(pat: string, repl: string): string` — all occurrences;
+  empty `pat` traps (JS inserts between every unit)
 
-Rejected (S014, Q21): `substring`/`substr`/`at`/`charAt` (redundant
-with `slice`), `codePointAt`, `normalize`, `localeCompare`,
-`toLocaleUpperCase`/`LowerCase`, `match`/`matchAll`/`search` (regex),
-`concat` (redundant with `+`). `String.fromCharCode`/`raw` and `String`
-as a value or constructor are rejected through the standing
+Added by Q27 (2026-07-25) — all byte-indexed, following Q5:
+
+- `substring(start: i32, end?: i32): string` — **not** `slice`:
+  negative arguments clamp to `0` and a reversed pair is swapped, so
+  `"hello".substring(-2, 3)` is `"hel"` where `slice(-2, 3)` is `""`
+  (measured, node v24.18.0). Off a UTF-8 boundary traps, as `slice`
+  does
+- `substr(start: i32, length?: i32): string` — negative `start` counts
+  from the end; a non-positive `length` gives `""`; boundary trap
+- `charAt(i: i32): string` — the code point **starting at byte `i`**;
+  out of range is `""`, which is JS's own answer and needs no miss
+  value; off a code-point boundary traps
+- `codePointAt(i: i32): i32` — the code point starting at byte `i`;
+  out of range **traps** (JS returns `undefined`), as `charCodeAt`
+  already does; off a boundary traps
+- `concat(other: string): string` — one argument, matching `Array`'s
+- the position argument of `startsWith(needle, position?)` and
+  `endsWith(needle, endPosition?)` — byte offsets
+
+`replace`/`replaceAll` now **interpret `$` in the replacement**,
+closing the divergence Q21 recorded: `$$` is a literal `$`, `$&` the
+match, `` $` `` the prefix, `$'` the suffix. `$1`–`$9` are **not**
+substituted — that is ECMA's behaviour for a string pattern, which has
+no capture groups, so this needs no regex engine (verified:
+`"a-b".replace("-", "[$1]")` is `"a[$1]b"`).
+
+Rejected (S014, Q21/Q27): `at` — out of range is `undefined` in JS and
+there is no miss value for it (`string | null` is itself rejected by
+S011); use `charAt`, which is total. `normalize` (Unicode
+normalization tables), `localeCompare`,
+`toLocaleUpperCase`/`LowerCase` (locale data),
+`match`/`matchAll`/`search` (a regex engine) — each a missing
+prerequisite rather than a cost. `String.fromCharCode`/`raw` and
+`String` as a value or constructor are rejected through the standing
 unknown-name paths (S100; behavior pinned by unit test — a dedicated
 S014 is a follow-up if the diagnostic proves confusing).
 
@@ -306,12 +340,37 @@ index/array parameters are not accepted, Q22) —
   lib's no-argument sort coerces elements to strings — rejected,
   Q22); stable (runtime merge sort); in place; returns the receiver
 
-Rejected (S014, Q22): no-argument `sort`, no-init `reduce`,
-`reduceRight`, `find`/`findLast` (a scalar `T[]` has no miss value —
-`T | null` does not cover scalars; use `findIndex`), `splice`,
-`shift`/`unshift`, `flat`/`flatMap`, `copyWithin`, `entries`/`keys`/
-`values`, `forEach`/`map`/… callbacks declaring the index/array
-parameters, `every`-family on `FixedArray` (v1 is `T[]` only).
+Added by Q27 (2026-07-25):
+
+- `reduceRight(f: (acc: U, v: T) => U, init: U): U` — `init` required,
+  by the same rule that requires it on `reduce`
+- `splice(start: i32, deleteCount: i32): T[]` — **delete-only**,
+  returning the removed elements as a fresh array. JS's variadic
+  insert form (`splice(1, 2, 9, 9, 9)`) needs variadic parameters,
+  which the language does not have; this is a recorded subset, not
+  parity
+- `shift(): T` — **traps when empty**, exactly as `pop` already does
+  (Q4/Q15), so JS's `undefined` never has to be represented
+- `unshift(x: T): i32` — **one element**, matching `push`; returns the
+  new length. JS's variadic form is the same missing prerequisite as
+  `splice`'s
+- `copyWithin(target: i32, start: i32, end?: i32): T[]` — JS
+  negative/clamp rules, in place, returns the receiver
+- **the index parameter on callbacks**: `f(v: T, i: i32)` is accepted
+  wherever `f(v: T)` is
+- the `every` family on `FixedArray`
+
+Rejected (S014, Q22/Q27): no-argument `sort`, no-init `reduce`
+(each changes meaning with arity); `find`/`findLast` (a scalar `T[]`
+has no miss value — `T | null` does not cover scalars; use
+`findIndex`); `at` (same reason); `flat`/`flatMap` (the depth appears
+in the result type, so a runtime depth cannot be typed — undecided
+rather than refused, `js-api-sweep.md`); `entries`/`keys`/`values`
+(the iterator protocol is not in the language); and the **`array`
+parameter on callbacks** — `f(v, i)` passes a value and an index, but
+`f(v, i, arr)` hands the callback a reference to the container being
+iterated, which is the defect the P15 review found in aggregate
+`Map.forEach` and contradicts C5's non-escaping-by-construction rule.
 
 Corpus: `a44` no-closure battery (equality per element kind, join
 formatting, slice negatives, fill/reverse/concat); `a45` closure
@@ -397,11 +456,27 @@ accepted, as Q22 fixes callback arities).
 `has(k): boolean`, `delete(k): boolean`, `clear(): void`,
 `forEach(f: (k: K) => void): void`.
 
+Added by Q27 (2026-07-25):
+
+- `Map.groupBy<K, T>(items: T[], f: (v: T) => K): Map<K, T[]>` — `K`
+  must be a §10.2 key kind. `Object.groupBy` stays rejected: it
+  returns a null-prototype object, which is not a type this language
+  has
+- ES2024 set algebra on `Set<K>`: `union`, `intersection`,
+  `difference`, `symmetricDifference` returning a fresh `Set<K>`, and
+  `isSubsetOf`, `isSupersetOf`, `isDisjointFrom` returning `boolean`.
+  The argument is a `Set<K>`, not JS's "set-like" duck type, which
+  would need a protocol the language does not have. **Result order is
+  normative**, as §10.3 requires of all traversal, and is node's:
+  receiver order first, then the argument's contribution — `{1,2,3}`
+  against `{3,4}` gives union `1,2,3,4`, intersection `3`, difference
+  `1,2`, symmetric difference `1,2,4`
+
 Rejected (S014, Q24): the iterator protocol (`keys`/`values`/
-`entries`/`for…of`/spread — the language has no iterator protocol;
-`forEach` is the traversal), construction from an iterable
-(`new Map([[k, v]])`), `groupBy`, and the ES2024 set-algebra methods
-(`union`/`intersection`/…).
+`entries`/`for…of`/spread — `forEach` is the traversal) and
+construction from an iterable (`new Map([[k, v]])`). Both wait on an
+iterator protocol, which the owner has recorded as wanted at high
+priority (`js-api-sweep.md`).
 
 ### 10.5 The miss problem — `get` on a scalar value type
 
@@ -593,11 +668,16 @@ not** — node gives `(0).toExponential(2)` as `0.00e+0`, `printf` gives
 
 ### 11.6 Rejected (S014, naming Q25)
 
+`Number.parseInt(s, radix)` and `Number.parseFloat(s)` are **accepted**
+(Q27) with the §11.3 signatures, radix still required. They were
+rejected under a one-spelling rule; measured on node, they are the same
+function objects as the globals (`Number.parseInt === parseInt`), and a
+second spelling is not grounds for rejection.
+
 `Number` as a constructor or a coercing call (`Number(x)`) and the
 global `isNaN`/`isFinite` (§11.1) — these **coerce**, which is the
 unsoundness the language exists to reject; adding them would import it,
-so the Q26 rule above does not reach them. `Number.parseInt`/
-`parseFloat` aliases (one spelling — the globals). `toLocaleString`
+so neither the Q26 nor the Q27 rule reaches them. `toLocaleString`
 (needs locale data; `js-alignment-audit.md` records that Boa needs the
 same thing, so this is a missing prerequisite, not a cost question).
 

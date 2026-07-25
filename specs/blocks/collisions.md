@@ -460,6 +460,75 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
     that Boa needs the same data, so these are a missing prerequisite,
     not a cost question.
 
+- **Q27 (the rejection sweep — thirteen groups reinstated)** — accepted
+  per `stdlib.md` §1, §8, §9, §10 and §11. The 2026-07-25 sweep
+  (`specs/tracking/js-api-sweep.md`) applied the owner's Q26 rule to
+  every rejection in the contract. These failed no surviving reason:
+
+  - `Math.imul(a: i32, b: i32): i32`, `Math.fround(x: f64): f64`.
+    Duplicate spellings of `a * b` on `i32` and `x as f32`; **being a
+    second spelling is not grounds for rejection** (owner, 2026-07-25),
+    which is the clarification that reinstated them.
+  - `String`: `substring`, `substr`, `charAt`, `concat`,
+    `codePointAt`, the position argument of `startsWith`/`endsWith`,
+    and `$` substitution in `replace`/`replaceAll`.
+  - `Array`: `reduceRight` (with a required `init`), `splice`, `shift`,
+    `unshift`, `copyWithin`, the **index parameter on callbacks**, and
+    the `every` family on `FixedArray`.
+  - `Map`/`Set`: `Map.groupBy` and the ES2024 set algebra.
+  - `Number.parseInt`/`parseFloat`.
+
+  **`substring` and `substr` are not duplicates of `slice`.** Measured
+  on node v24.18.0: `"hello".substring(-2, 3)` is `"hel"` — negative
+  arguments clamp to `0` and a reversed pair is swapped — where
+  `slice(-2, 3)` is `""`. They add behaviour, so the rule was not even
+  needed for them.
+
+  Three narrowings, each because the wider form hits a reason that
+  **does** survive the rule:
+
+  - **The `array` parameter on callbacks stays rejected** while the
+    index parameter is accepted. `f(v, i)` is a value and an integer;
+    `f(v, i, arr)` hands the callback a reference to the very container
+    being iterated. That is the defect class the P15 review found in
+    aggregate `Map.forEach` (a raw pointer into live entry storage) and
+    it contradicts C5, under which callbacks are non-escaping *by
+    construction*.
+  - **`splice` is delete-only and `unshift` takes one element.** JS
+    makes both variadic (`splice(1, 2, 9, 9, 9)`, `unshift(a, b, c)`)
+    and the language has no variadic parameters — the same missing
+    prerequisite that keeps `Math.max` at two arguments. The accepted
+    forms are `splice(start, deleteCount): T[]` and
+    `unshift(x: T): i32`, the latter matching `push`, which is already
+    single-element. This is a **recorded subset, not parity**.
+  - **`Map.groupBy` only.** `Object.groupBy` returns a null-prototype
+    object, which is not a type this language has.
+
+  **`shift` traps when empty**, which is not a new rule: `pop` already
+  traps there (Q4/Q15), so the miss-value objection that keeps `find`
+  and `at` out does not reach `shift`.
+
+  `Set` algebra takes a `Set<K>`, not JS's "set-like" duck type, which
+  would need a protocol the language does not have. Result order is
+  **normative**, as Q24 requires of all `Map`/`Set` traversal, and is
+  what node produces: receiver order first, then the argument's
+  contribution — `{1,2,3}` against `{3,4}` gives union `1,2,3,4`,
+  intersection `3`, difference `1,2`, symmetric difference `1,2,4`.
+
+  **`$` substitution closes a recorded Q21 divergence** rather than
+  opening one. `$$`, `$&`, `` $` `` and `$'` are substituted; `$1`–`$9`
+  are **not**, which is ECMA's own behaviour for a string pattern (a
+  string has no capture groups) and needs no regex engine — verified:
+  `"a-b".replace("-", "[$1]")` is `"a[$1]b"` on node.
+
+  **UTF-8 indexing follows Q5, not JS's UTF-16 units.** `charAt(i)` and
+  `codePointAt(i)` take a **byte** offset and read the code point
+  starting there, trapping off a code-point boundary exactly as `slice`
+  does. `codePointAt` out of range traps where JS returns `undefined`,
+  as `charCodeAt` already does; `charAt` out of range is `""`, which is
+  JS's own answer and needs no miss value. The UTF-16-versus-byte
+  difference is Q5's standing divergence, not a new one.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided
