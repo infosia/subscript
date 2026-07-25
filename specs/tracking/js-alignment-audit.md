@@ -196,3 +196,7 @@ decided by the owner.
 Any new recorded divergence, or any API rejected on grounds of
 difficulty, gets a line here saying what Boa does. A divergence with no
 entry has not been audited.
+
+The companion sweep of every *rejected* API, and the standing rule the
+owner gave for deciding them, is `js-api-sweep.md`. This file covers
+divergences; that one covers rejections.
