@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 stages 1-4 as implemented and corrects four contract claims the implementations disproved — §12's no-golden-moves and which-stages-touch-the-checker, §10.4's intersection ordering, and §10.6's allocation list). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -336,8 +336,10 @@ Without closures —
   receiver
 - `concat(other: T[]): T[]` — exactly one array argument
 
-With closures (callback arities fixed — the lib's optional
-index/array parameters are not accepted, Q22) —
+With closures (**two arities accepted since Q27**: every callback
+below also takes a trailing `index: i32`. The lib's third `array`
+parameter stays rejected — it hands the callback a reference to the
+container being iterated, against C5) —
 - `forEach(f: (v: T) => void): void`
 - `map(f: (v: T) => U): U[]` — `U` inferred from the closure return
 - `filter(f: (v: T) => boolean): T[]`
@@ -747,12 +749,10 @@ no ship-row regression.
 
 ## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
 
-**Status: stages 1–4 implemented** (`Math`/`Number`, `String`,
-`Array`, `Map`/`Set`). Stage 5 — the callback index parameter — is
-still contract only, and the checker still rejects the two-parameter
-form. `generated-docs/api-reference.md` reports the checker, not this
-contract (`compiler.md` §17.1), so the two agree on stages 1–4 and
-disagree on 5 by design while P18 is open.
+**Status: complete — all five stages implemented 2026-07-26.**
+`generated-docs/api-reference.md` and this contract now agree; where
+they ever differ, §17.1 makes the generated document the present
+tense.
 
 Q27 spans five sections, so its corpus is registered here rather than
 split across them. Staged in the order below; each stage is a Phase
@@ -798,10 +798,12 @@ set-algebra operations with **result order pinned**, and the three
 predicates. Reject: `Object.groupBy`, and a set operation given a
 non-`Set` argument.
 
-**Stage 5 — the callback index parameter (checker).** Accept: `forEach`,
-`map`, `filter`, `some`, `every`, `findIndex` and `sort` each called
-with both arities where the lib allows it, and `reduce`/`reduceRight`
-with the index. Reject: the three-parameter `(v, i, arr)` form, S014
+**Stage 5 — the callback index parameter (new arity machinery).**
+Accept: `forEach`, `map`, `filter`, `some`, `every` and `findIndex`
+each called with both arities, and `reduce`/`reduceRight` with the
+index. **`sort` is not in this list** *(corrected 2026-07-26: it was,
+and that was wrong — JS gives a comparator no index, verified on node:
+`arguments.length` is 2 and the third argument is `undefined`)*. Reject: the three-parameter `(v, i, arr)` form, S014
 naming C5 — this is the narrowing most likely to be read as an
 oversight, so its reject entry carries the reason.
 

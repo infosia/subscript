@@ -648,3 +648,61 @@ operations that produce fresh containers, so the list is now
 Zero build warnings; `cargo test` clean including the standing
 dev-JIT ≡ ship-C-AOT ≡ golden gate and the P16 structural and witness
 tests; `tsc` exit 0; `git diff --check` clean.
+
+## P18 stage 5 — Q27 callback index parameter (2026-07-26). P18 COMPLETE
+
+Implemented: `forEach`, `map`, `filter`, `some`, `every`, `findIndex`
+accept both `(v: T)` and `(v: T, i: i32)`; `reduce`/`reduceRight`
+accept the trailing index. The arity flag is carried from both tiers
+into the shared runtime, so one implementation serves both.
+
+Corpus `a67-q27-array-callback-index` (accept),
+`r55-array-callback-container` (reject). Golden generated from node
+v24.18.0 and **re-verified independently by the orchestrator** —
+matched. No pre-existing `.expected` moved (66/66).
+
+Every index in `a67` **affects the output**; a callback that ignored
+`i` would prove nothing. `reduceRight` prints the indices in callback
+visit order, pinning the downward count `3,2,1,0`.
+
+The three-parameter `(v, i, arr)` form is S014, and the diagnostic,
+the reject entry and the generated reference all carry the reason:
+`f(v, i)` passes a value and an integer, `f(v, i, arr)` passes a
+reference to the container being iterated, against C5 and the P15
+defect class.
+
+The generated reference renders the dual arity as a union type
+(`((value: T) => void) | ((value: T, index: i32) => void)`), so §17's
+accepted table stays honest about what the checker takes.
+
+### Scope checks the stage made, rather than assumed
+
+- **`sort` takes no index.** Verified on node: the comparator receives
+  exactly two arguments. §12 had listed `sort` in this stage's corpus,
+  which was wrong; corrected.
+- **`Map.forEach`/`Set.forEach` are unchanged.** JS's `Map.forEach` is
+  `(value, key, map)`; the accepted shape here stays the fixed
+  `(value: V, key: K) => void`, and `Set.forEach` stays `(key: K)`.
+- **`Map.groupBy`'s callback is unchanged.** node passes `(value,
+  index)`; §10.4's contract says `(value: T) => K` explicitly, so the
+  stage did not widen it. Recorded as a **known narrowing**, not an
+  oversight: if the index is wanted there, it is a contract change.
+
+### P18 outcome
+
+All five stages of Q27 are implemented. Five contract claims were
+disproved by the implementations and corrected in place: §12's
+no-golden-moves pre-registration, §12's claim that only the last stage
+touches the checker, §12's inclusion of `sort` in the index stage,
+§10.4's receiver-first ordering for `intersection`, and §10.6's
+allocation list.
+
+**The pattern is worth one line:** every one of the five was written
+before implementation and asserted something no measurement had
+discriminated. Contract-first ordering is retained — it is what makes
+the handoffs checkable — but a pre-registration is provisional until
+an implementation exercises it, and a rule generalized from a single
+example that both candidate rules satisfy is not a measurement.
+
+**Phase Review is pending** and required before P18 is marked COMPLETE
+in the plan.
