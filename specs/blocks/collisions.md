@@ -553,6 +553,54 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   JS's own answer and needs no miss value. The UTF-16-versus-byte
   difference is Q5's standing divergence, not a new one.
 
+- **Q28 (`JSON`)** — accepted per `stdlib.md` §13.
+  `JSON.stringify<T>(value: T): string` and
+  `JSON.parse<T>(text: string): JsonResult<T>`, both monomorphized at
+  the call site.
+
+  **No RTTI.** The roadmap had listed layout descriptors as P13's new
+  machinery. The language has no inheritance (`extends` is S006 on a
+  value class, S100 on a reference class), no `any`, and no
+  heterogeneous container (C7 admits `Ref | null` only), so every
+  value's static type is its dynamic type and the checked type is
+  enough. P13 adds no mechanism the language did not already have.
+
+  **`NaN` and `±Infinity` trap** where JS writes `null`. JS's answer
+  loses information silently — `0` comes back where a `NaN` went in —
+  and this is the third application of one rule, after Q20 refused
+  Invalid-Date and Q24 refused a zeroed `get` miss. **`-0` serializes
+  as `0`**, as JS does; this does not contradict Q14's `-0` spelling,
+  for the reason Q25 gave about `toFixed`: Q14 governs `${…}`, the only
+  general-purpose number-to-string path, where the sign is information
+  the program cannot otherwise see, while JSON is a specific
+  interchange format with an ECMA-defined answer.
+
+  **`parse` reports failure as data, not as a trap.** `JsonResult<T>`
+  is an ambient generic reference class — the machinery Q24 built for
+  `Map`/`Set` — carrying `ok` and `value`; the caller releases it with
+  `unsafeDelete` (Q6). Trapping was rejected because it contradicts the
+  reasoning Q25 committed to: a parse failure is **data**, which is why
+  `parseInt` may return `NaN` where Q20 and Q24 could not have a
+  sentinel. JSON reaching a script has usually crossed the host
+  boundary. The cost is one allocation per parse and a release
+  obligation, stated rather than hidden. `ok` is `false` both for
+  malformed text and for well-formed text that does not match `T`.
+
+  **`Map`/`Set` are rejected as `stringify` input**, not serialized:
+  JS gives `{}` for both, a silently empty result for a container the
+  program filled, and any other shape would be a divergence invented
+  here.
+
+  Field order is **declaration order**. JS's rule that integer-like
+  keys sort numerically first cannot arise — field names are
+  identifiers, the checker rejecting computed and non-identifier ones.
+
+  **Cycles cost nothing where they are impossible.** Monomorphization
+  lets the checker decide statically whether `T`'s field graph can
+  reach a reference class from itself; only then does the emitted
+  serializer carry a visited set, and it traps on a revisit where JS
+  throws.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided
