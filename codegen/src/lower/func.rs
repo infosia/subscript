@@ -2282,7 +2282,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         argv.push(v);
     }
 
-    /// True when `ty` is a value class (a boundary struct / `@value`).
+    /// True when `ty` is a value class (a boundary struct / `@CStruct`).
     fn is_value_class_ty(&self, ty: &Type) -> bool {
         matches!(ty, Type::Class(id)
             if self.ml.layouts.class(id.0).map(|l| l.is_value).unwrap_or(false))

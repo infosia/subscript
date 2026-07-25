@@ -11,7 +11,7 @@ declare function print(message: string): void;
 declare function collect(): void;
 declare function unsafeDelete(value: object): void;
 
-declare function value<T extends abstract new (...args: never[]) => object>(
+declare function CStruct<T extends abstract new (...args: never[]) => object>(
   target: T,
   context: ClassDecoratorContext,
 ): T;

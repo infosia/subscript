@@ -500,7 +500,7 @@ mod tests {
         // Value-class elements cannot cross the runtime->script element
         // boundary (stdlib.md §9); the checker gates them.
         let err = check_one(
-            "@value\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: V[] = [new V(1)];\n  xs.forEach((v: V): void => {});\n}\n",
+            "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: V[] = [new V(1)];\n  xs.forEach((v: V): void => {});\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
@@ -576,7 +576,7 @@ mod tests {
     #[test]
     fn value_class_is_nominal_and_marked_value() {
         let module = check_one(
-            "@value\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  print(`${v.x}`);\n}\n",
+            "@CStruct\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  print(`${v.x}`);\n}\n",
         )
         .expect("clean");
         assert_eq!(module.classes.len(), 1);
@@ -617,7 +617,7 @@ mod tests {
         assert!(err[0].message.contains("rebind"));
 
         check_one(
-            "@value\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  v.x = 2.0;\n  print(`${v.x}`);\n}\n",
+            "@CStruct\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  v.x = 2.0;\n  print(`${v.x}`);\n}\n",
         )
         .expect("field writes through const value bindings are legal");
     }
@@ -687,7 +687,7 @@ mod tests {
         .expect("reference instances cross into `object`");
 
         let err = check_one(
-            "@value\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  unsafeDelete(v);\n}\n",
+            "@CStruct\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  unsafeDelete(v);\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);

@@ -29,7 +29,7 @@
 //! optimization; where the emitted C and the CLIF path could differ the
 //! CLIF path (and the runtime) is the reference:
 //!
-//! - **C2 value-class copy semantics.** A `@value class` is a C
+//! - **C2 value-class copy semantics.** A `@CStruct class` is a C
 //!   `struct`, passed and returned by value and copied on assignment —
 //!   C's own struct-value semantics reproduce copy-on-assign/pass/return
 //!   without any explicit copy. `FixedArray<T, N>` is a `struct { T a[N];
@@ -3707,7 +3707,7 @@ mod tests {
 
     #[test]
     fn value_class_is_a_by_value_struct() {
-        let c = emit("@value\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {\n  const v: V = new V(1.0, 2.0);\n  print(`${v.x}`);\n}\n");
+        let c = emit("@CStruct\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {\n  const v: V = new V(1.0, 2.0);\n  print(`${v.x}`);\n}\n");
         assert!(c.contains("typedef struct Sub_0_V"));
         assert!(c.contains("ss_ctor0(void* ctx"));
     }

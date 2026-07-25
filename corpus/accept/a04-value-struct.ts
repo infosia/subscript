@@ -3,7 +3,7 @@
 // exercises: value-struct, field-access, copy-on-assign
 // questions: Q1, Q2, Q12, Q14, Q17
 
-@value
+@CStruct
 class Vec3 {
   x: f32;
   y: f32;

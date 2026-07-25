@@ -7,7 +7,7 @@ const ENTITY_COUNT: i32 = 128;
 const FRAME_COUNT: i32 = 60;
 const FIXED_DT: f32 = 1.0 / 60.0;
 
-@value
+@CStruct
 class Entity {
   x: f32;
   y: f32;

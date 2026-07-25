@@ -3,7 +3,7 @@
 // exercises: value-struct, fixed-array, field-layout
 // questions: Q1, Q2, Q3, Q12
 
-@value
+@CStruct
 class Matrix4 {
   elements: FixedArray<f32, 16>;
 

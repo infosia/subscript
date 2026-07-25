@@ -4,12 +4,12 @@
 // questions: none
 // expected-error: value classes do not inherit
 
-@value
+@CStruct
 class Base {
   value: i32 = 4;
 }
 
-@value
+@CStruct
 class Derived extends Base {
   extra: i32 = 5;
 }

@@ -3,7 +3,7 @@
 // exercises: result-value, checked-error, no-throw
 // questions: Q1, Q2, Q9, Q12
 
-@value
+@CStruct
 class DivisionResult {
   ok: boolean;
   value: f64;

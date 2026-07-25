@@ -695,8 +695,8 @@ mod tests {
 
     #[test]
     fn declaration_hash_changes_for_field_reordering() {
-        let a = hash_of("@value\nclass V { x: i32; y: f32; constructor(x: i32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {}\n");
-        let b = hash_of("@value\nclass V { y: f32; x: i32; constructor(x: i32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {}\n");
+        let a = hash_of("@CStruct\nclass V { x: i32; y: f32; constructor(x: i32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {}\n");
+        let b = hash_of("@CStruct\nclass V { y: f32; x: i32; constructor(x: i32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {}\n");
         assert_ne!(a, b);
     }
 

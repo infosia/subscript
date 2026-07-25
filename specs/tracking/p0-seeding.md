@@ -18,7 +18,7 @@ Status: COMPLETE, 2026-07-22.
 
 Fresh no-context review: 0 CRITICAL, 3 MAJOR, 6 MINOR. All addressed:
 
-- MAJOR: `a12` instantiated a `@value class` with a `string` field,
+- MAJOR: `a12` instantiated a `@CStruct class` with a `string` field,
   contradicting C2's field whitelist → second instantiation changed to
   `Box<f64>`.
 - MAJOR: plan provenance cited pre-founding evidence the repository

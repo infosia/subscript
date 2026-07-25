@@ -53,7 +53,7 @@ fn c1_mutating_value_method_persists_like_the_jit() {
     // A value method that mutates `this` must mutate the receiver (C2);
     // a non-mutating call on a copy must be unaffected.
     assert_tiers_agree(
-        "@value\nclass V { x: i32; constructor(x: i32) { this.x = x; } bump(): void { this.x += 100; } }\nexport function main(): void {\n  const v: V = new V(1);\n  v.bump();\n  const c: V = v;\n  c.bump();\n  print(`${v.x},${c.x}`);\n}\n",
+        "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } bump(): void { this.x += 100; } }\nexport function main(): void {\n  const v: V = new V(1);\n  v.bump();\n  const c: V = v;\n  c.bump();\n  print(`${v.x},${c.x}`);\n}\n",
     );
 }
 
@@ -453,7 +453,7 @@ fn reference_class_method_receiver_runs_before_its_argument() {
 #[test]
 fn value_class_method_receiver_runs_before_its_argument() {
     assert_order(
-        "@value\nclass P {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkP(): P {\n  note(\"P\");\n  return new P(10);\n}\nexport function main(): void {\n  const r: i32 = mkP().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "@CStruct\nclass P {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkP(): P {\n  note(\"P\");\n  return new P(10);\n}\nexport function main(): void {\n  const r: i32 = mkP().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "PR:12\n",
     );
 }

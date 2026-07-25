@@ -20,9 +20,9 @@ Accept: `a05`. Reject: `r06-structural-substitution` (passes a same-shaped
 class instance where the other nominal type is expected — `tsc`-clean by
 design).
 
-### C2. Value types (Q2) — `@value class`
+### C2. Value types (Q2) — `@CStruct class`
 
-A class marked with the ambient `@value` decorator (TC39 standard decorator
+A class marked with the ambient `@CStruct` decorator (TC39 standard decorator
 syntax, TS 5 default; no `experimentalDecorators`) is a value type:
 C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
 
@@ -37,7 +37,7 @@ C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
   through it are legal (Q17 — matches `tsc`; C-style `const struct`
   semantics are not imported).
 
-Accept: `a04`, `a21`. Reject: `r07-value-class-extends` (`@value class`
+Accept: `a04`, `a21`. Reject: `r07-value-class-extends` (`@CStruct class`
 with an `extends` clause; `tsc`-clean).
 
 ### C3. `number` and sized numerics (Q1) — bare `number` rejected
@@ -268,7 +268,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 ## 4. Prelude and gate
 
 - `prelude/lang.d.ts` — ambient declarations for §1/§2: sized-numeric
-  aliases, `print`, `collect`, `unsafeDelete`, `value` decorator
+  aliases, `print`, `collect`, `unsafeDelete`, `CStruct` decorator
   (typed against TS 5 standard `ClassDecoratorContext`), `FixedArray`.
 - `tsconfig.json` (repo root) — `strict`, `noEmit`, ES2022 target/lib,
   `types: []`; includes `prelude/**/*.d.ts` and `corpus/accept/**/*.ts`

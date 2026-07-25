@@ -482,12 +482,12 @@ impl<'p> Checker<'p> {
         let mut is_value = false;
         for dec in &class.decorators {
             match &*dec.expr {
-                ast::Expr::Ident(id) if id.sym.as_ref() == "value" => is_value = true,
+                ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct" => is_value = true,
                 _ => {
                     let pos = self.pos(dec.span);
                     self.error(
                         RuleCode::S100,
-                        "the only decided decorator is the ambient `@value`",
+                        "the only decided decorator is the ambient `@CStruct`",
                         pos,
                     );
                 }

@@ -3,7 +3,7 @@
 // exercises: nominal-identity, value-struct, same-shape-types
 // questions: Q1, Q2, Q12
 
-@value
+@CStruct
 class Metres {
   value: f32;
 
@@ -12,7 +12,7 @@ class Metres {
   }
 }
 
-@value
+@CStruct
 class Seconds {
   value: f32;
 

@@ -3,7 +3,7 @@
 // exercises: value-method, reference-method, receiver
 // questions: Q1, Q2, Q6, Q12
 
-@value
+@CStruct
 class Point {
   x: f32;
   y: f32;

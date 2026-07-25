@@ -53,7 +53,7 @@ pub struct ForeignFn {
 pub struct ClassDef {
     /// Unique name; monomorphized instances use `Name<args>` spelling.
     pub name: String,
-    /// True for `@value class` (C-layout, copy semantics — C2).
+    /// True for `@CStruct class` (C-layout, copy semantics — C2).
     pub is_value: bool,
     /// True for a mirror-ingested boundary struct (a `declare class` in a
     /// `.d.ts`, P5.2): a C-layout value type whose constructor has no
@@ -1394,7 +1394,7 @@ mod tests {
     #[test]
     fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
         use crate::types::FuncType;
-        let value_class = |id: ClassId| id.0 == 0; // class 0 is @value, class 1 is a reference
+        let value_class = |id: ClassId| id.0 == 0; // class 0 is @CStruct, class 1 is a reference
         let of = |ty: &Type| ArrElemKind::of(ty, &value_class);
         for ty in [
             Type::Bool,

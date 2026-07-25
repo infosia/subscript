@@ -1,12 +1,12 @@
 // benchmark: particles
-// 100000 @value-struct particles integrated over 1000 fixed-dt steps
+// 100000 `@CStruct` particles integrated over 1000 fixed-dt steps
 // (velocity += acc*dt; position += velocity*dt). dt = 1.0 and integer-valued
 // accelerations keep every intermediate an exact f64 integer, so all subjects
 // agree bit-for-bit without depending on FMA contraction, while the M*K tight
 // loop over array-of-value-structs is the real work.
 // Checksum: i32-wrapping sum of each final position cast to i32.
 
-@value
+@CStruct
 class Particle {
   position: f64;
   velocity: f64;

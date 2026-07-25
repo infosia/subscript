@@ -7,7 +7,7 @@ function identity<T>(value: T): T {
   return value;
 }
 
-@value
+@CStruct
 class Box<T> {
   value: T;
 

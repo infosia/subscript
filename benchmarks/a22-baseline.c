@@ -46,7 +46,7 @@ enum { ITERATION_COUNT = 100 };
 /* The one module-level variable of the corpus entry. */
 static uint32_t lcg_state = LCG_SEED;
 
-/* `@value class Matrix4 { elements: FixedArray<f32, 16>; }` */
+/* `@CStruct class Matrix4 { elements: FixedArray<f32, 16>; }` */
 typedef struct {
     float elements[16];
 } Matrix4;

@@ -112,7 +112,7 @@ export function main(): void {
 // ----- (b) rejected layout edit -----
 
 const SHAPE_V1: &str = "\
-@value
+@CStruct
 class Point {
   x: i32;
   y: i32;
@@ -130,7 +130,7 @@ export function main(): void {
 /// Same program with one field added to `Point` — a layout change, so
 /// the swap must be refused.
 const SHAPE_V2: &str = "\
-@value
+@CStruct
 class Point {
   x: i32;
   y: i32;

@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn value_class_copies_on_assign_and_pass() {
         let out = run_ok(
-            "@value\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nfunction bump(v: V): i32 {\n  v.x += 100;\n  return v.x;\n}\nexport function main(): void {\n  const a: V = new V(1);\n  const b: V = a;\n  b.x = 9;\n  print(`${a.x},${b.x},${bump(a)},${a.x}`);\n}\n",
+            "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nfunction bump(v: V): i32 {\n  v.x += 100;\n  return v.x;\n}\nexport function main(): void {\n  const a: V = new V(1);\n  const b: V = a;\n  b.x = 9;\n  print(`${a.x},${b.x},${bump(a)},${a.x}`);\n}\n",
         );
         assert_eq!(out, "1,9,101,1\n");
     }
@@ -415,7 +415,7 @@ mod tests {
         // Outer embeds Inner declared after it; the layout must be
         // computed by resolving the forward reference.
         let out = run_ok(
-            "@value\nclass Outer { inner: Inner; pad: f32;\n  constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; }\n}\n@value\nclass Inner { x: f64;\n  constructor(x: f64) { this.x = x; }\n}\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x},${o.pad}`);\n}\n",
+            "@CStruct\nclass Outer { inner: Inner; pad: f32;\n  constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; }\n}\n@CStruct\nclass Inner { x: f64;\n  constructor(x: f64) { this.x = x; }\n}\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x},${o.pad}`);\n}\n",
         );
         assert_eq!(out, "2.5,1\n");
     }
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn n2_value_class_cycle_is_an_internal_error_not_a_crash() {
         let err = run(
-            "@value\nclass S { s: S;\n  constructor(s: S) { this.s = s; }\n}\nexport function main(): void {}\n",
+            "@CStruct\nclass S { s: S;\n  constructor(s: S) { this.s = s; }\n}\nexport function main(): void {}\n",
         );
         match err {
             Err(RunError::Internal(msg)) => assert!(msg.contains("cycle"), "got: {msg}"),

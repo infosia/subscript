@@ -7,7 +7,7 @@ const NODE_COUNT: i32 = 10000;
 const ITERATION_COUNT: i32 = 100;
 let lcgState: u32 = 0x12345678;
 
-@value
+@CStruct
 class Matrix4 {
   elements: FixedArray<f32, 16>;
 

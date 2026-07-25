@@ -6,7 +6,7 @@
 const PARTICLE_COUNT: i32 = 2048;
 const STEP_COUNT: i32 = 50;
 
-@value
+@CStruct
 class Particle {
   position: f32;
   velocity: f32;

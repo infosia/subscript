@@ -18,7 +18,7 @@
  *   5. an opaque handle with create / retain / release.
  *
  * The `offsetof` proof (§12.3) mirrors every struct here that is
- * expressible as a language `@value class` and asserts byte-identical
+ * expressible as a language `@CStruct class` and asserts byte-identical
  * layout against the platform C compiler. Function declarations carry no
  * layout and exist only so P5.2/P5.3 can build the mirror generator and
  * the linked callee on top of this fixture.

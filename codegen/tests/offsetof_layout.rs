@@ -3,7 +3,7 @@
 //! struct layout) is machine-verified here, not asserted.
 //!
 //! For every struct in the synthetic header (`corpus/interop/interop.h`)
-//! that has a language `@value class` equivalent, this test compares the
+//! that has a language `@CStruct class` equivalent, this test compares the
 //! language compiler's computed layout — total `size`, `align`, and each
 //! field's byte offset, via the public [`value_class_layouts`] API —
 //! against the platform C compiler's `sizeof` / `_Alignof` / `offsetof`
@@ -47,46 +47,46 @@ enum SubChainKind {
   ExtB = 2,
 }
 
-@value
+@CStruct
 class SubChainHeader {
   sType: SubChainKind;
   next: u64;
 }
 
-@value
+@CStruct
 class SubChainExtA {
   header: SubChainHeader;
   intensity: f32;
   flags: u32;
 }
 
-@value
+@CStruct
 class SubChainExtB {
   header: SubChainHeader;
   scale: f64;
   level: i32;
 }
 
-@value
+@CStruct
 class SubBufferView {
   items: u64;
   count: u64;
 }
 
-@value
+@CStruct
 class SubStringView {
   data: u64;
   len: u64;
 }
 
-@value
+@CStruct
 class SubCallbackInfo {
   callback: u64;
   userdata: u64;
   userparam: u64;
 }
 
-@value
+@CStruct
 class SubTransform {
   basis: FixedArray<f32, 16>;
   bone: i32;
@@ -94,7 +94,7 @@ class SubTransform {
   visible: boolean;
 }
 
-@value
+@CStruct
 class SubSample {
   a: boolean;
   b: f64;
@@ -112,45 +112,45 @@ class SubSample {
 // before their users.
 
 // Typed (pointer, count) slice descriptors (a31): each a 16-byte pair.
-@value
+@CStruct
 class SubSliceF32 {
   items: u64;
   count: u64;
 }
 
-@value
+@CStruct
 class SubSliceI32 {
   items: u64;
   count: u64;
 }
 
-@value
+@CStruct
 class SubSliceF64 {
   items: u64;
   count: u64;
 }
 
-@value
+@CStruct
 class SubSliceI64 {
   items: u64;
   count: u64;
 }
 
 // Varied scalar / padding layouts.
-@value
+@CStruct
 class SubVec2 {
   x: f32;
   y: f32;
 }
 
-@value
+@CStruct
 class SubVec3 {
   x: f32;
   y: f32;
   z: f32;
 }
 
-@value
+@CStruct
 class SubVec4 {
   x: f32;
   y: f32;
@@ -158,7 +158,7 @@ class SubVec4 {
   w: f32;
 }
 
-@value
+@CStruct
 class SubRect {
   x: i32;
   y: i32;
@@ -166,13 +166,13 @@ class SubRect {
   height: u32;
 }
 
-@value
+@CStruct
 class SubRange {
   offset: u64;
   size: u64;
 }
 
-@value
+@CStruct
 class SubColor {
   r: f32;
   g: f32;
@@ -180,14 +180,14 @@ class SubColor {
   a: f32;
 }
 
-@value
+@CStruct
 class SubTimings {
   cpu: f64;
   gpu: f64;
   frame: i32;
 }
 
-@value
+@CStruct
 class SubMixed {
   enabled: boolean;
   id: i64;
@@ -195,7 +195,7 @@ class SubMixed {
   ratio: f32;
 }
 
-@value
+@CStruct
 class SubPadB {
   head: i32;
   mid: boolean;
@@ -203,33 +203,33 @@ class SubPadB {
 }
 
 // Nested by-value structs.
-@value
+@CStruct
 class SubExtent {
   width: u32;
   height: u32;
   depth: u32;
 }
 
-@value
+@CStruct
 class SubImageInfo {
   extent: SubExtent;
   mipLevels: u32;
   usage: u64;
 }
 
-@value
+@CStruct
 class SubBounds {
   min: SubVec3;
   max: SubVec3;
 }
 
-@value
+@CStruct
 class SubViewport {
   rect: SubRect;
   depth: SubRange;
 }
 
-@value
+@CStruct
 class SubNodeInfo {
   bounds: SubBounds;
   id: u32;
@@ -237,14 +237,14 @@ class SubNodeInfo {
 }
 
 // Intrusive chains: the common header embedded first.
-@value
+@CStruct
 class SubChainExtC {
   header: SubChainHeader;
   offset: SubVec3;
   flags: u32;
 }
 
-@value
+@CStruct
 class SubChainExtD {
   header: SubChainHeader;
   scale: f64;
@@ -252,20 +252,20 @@ class SubChainExtD {
   active: boolean;
 }
 
-@value
+@CStruct
 class SubEventHeader {
   kind: i32;
   next: u64;
 }
 
-@value
+@CStruct
 class SubEventKey {
   header: SubEventHeader;
   code: u32;
   pressed: boolean;
 }
 
-@value
+@CStruct
 class SubEventMove {
   header: SubEventHeader;
   dx: f32;
@@ -273,14 +273,14 @@ class SubEventMove {
 }
 
 // Flag-typedef fields (SubAccess -> u64).
-@value
+@CStruct
 class SubPassInfo {
   access: u64;
   width: u32;
   height: u32;
 }
 
-@value
+@CStruct
 class SubResourceDesc {
   usage: u64;
   range: SubRange;
@@ -289,14 +289,14 @@ class SubResourceDesc {
 
 // Descriptor-embedded (count, pointer) arrays — modeled by their raw C pair
 // layout (the mirror collapses them to `T[]`, but both tiers marshal this).
-@value
+@CStruct
 class SubDrawList {
   layer: u32;
   drawsCount: u64;
   draws: u64;
 }
 
-@value
+@CStruct
 class SubCommandBuffer {
   queue: u32;
   commandsCount: u64;
@@ -304,7 +304,7 @@ class SubCommandBuffer {
 }
 
 // Callback-info (fn pointer + userdata) — two 8-byte pointer slots.
-@value
+@CStruct
 class SubCompletionInfo {
   callback: u64;
   userdata: u64;
@@ -314,19 +314,19 @@ class SubCompletionInfo {
 // SubFuture: a small (8-byte, register-returned) by-value return. SubStats:
 // a larger (24-byte, sret-returned) by-value return. SubQueryStatus: the
 // out-field record a callee writes by reference.
-@value
+@CStruct
 class SubFuture {
   id: u64;
 }
 
-@value
+@CStruct
 class SubStats {
   submitted: u64;
   completed: u64;
   pending: u64;
 }
 
-@value
+@CStruct
 class SubQueryStatus {
   future: u64;
   completed: i32;
@@ -337,13 +337,13 @@ class SubQueryStatus {
 // then a callee-written i32). SubWaitList: the mutable (pointer, count)
 // descriptor over it, modeled by its raw C pair layout (as SubBufferView),
 // since the mirror absorbs it into `SubWaitEntry[]`.
-@value
+@CStruct
 class SubWaitEntry {
   future: SubFuture;
   completed: i32;
 }
 
-@value
+@CStruct
 class SubWaitList {
   entries: u64;
   count: u64;
