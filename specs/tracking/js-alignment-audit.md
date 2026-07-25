@@ -67,17 +67,39 @@ ASCII restriction.** Not yet done.
 
 ## Confirmed as correct language design — not give-ups
 
-- **`Math.imul` / `fround`.** Boa implements both because JS numbers are
-  `f64` and there is no other way to ask for an `i32` multiply or an
-  `f32` round. This language has `i32 * i32` and `x as f32` directly,
-  so the rejection removes a workaround rather than a capability.
-- **Sound-typing rejections** (`find` with no miss value, no-init
-  `reduce`, no-arg `sort`, the iterator protocol, `Number(x)` coercion)
-  — Boa has full JS semantics and never faces the problem; these follow
-  from this language's type system, not from difficulty.
-- **Determinism divergences** (seeded `Math.random`, `Date` trapping
-  instead of Invalid-Date) — deliberate, and Boa's unseeded behaviour is
-  what we are avoiding.
+Q26's rule (implement a JS API that exists and is affordable, whatever
+the demand) does not reach these, and the reasons are **three
+different ones**. Keeping them apart is what lets a future revisit
+reopen the weak class without reopening the strong one.
+
+**Implementing it would introduce a defect.** `Number(x)` and the
+global `isNaN`/`isFinite` coerce; no-argument `sort` string-coerces the
+elements; `reduce` without `init` changes meaning with arity; `find`
+has no miss value for a scalar element type. Each would compile and
+then answer wrongly in silence. Boa has full JS semantics and never
+faces the problem; these follow from this language's type system, not
+from difficulty. **This class is the strongest, and cost is not the
+objection.**
+
+**Implementing it costs nothing and buys nothing.** `Math.imul` is
+`a * b` on `i32`; `fround` is `x as f32`; `substring`/`substr`/`at`/
+`charAt` restate `slice` and `charCodeAt`. Boa implements `imul` and
+`fround` because JS numbers are `f64` and there is no other way to ask
+for an `i32` multiply or an `f32` round — this language has both
+directly, so rejecting them removes a workaround rather than a
+capability. Nothing breaks if they are added; there is simply a second
+spelling. **This class is the weak one** — it is held on judgement, not
+on a defect, and Q26's rule applied strictly would take it. Contrast
+`toString(radix)`, which was accepted precisely because its absence
+*did* cost a capability: hexadecimal could be read and not written.
+
+**The machinery does not exist.** The iterator protocol —
+`keys`/`values`/`entries`/`for…of`/spread — is not a rejected API but
+an absent language feature. Neither of the above reasons applies.
+
+**Determinism divergences** (seeded `Math.random`, `Date` trapping
+instead of Invalid-Date) — deliberate, and Boa's unseeded behaviour is
+what we are avoiding.
 
 ## Decided after the audit
 
@@ -117,17 +139,49 @@ It normalizes instead: `-0` becomes `+0` at insert, and the hash
 already folds both zeros to the same bits, so plain bit hashing stays
 consistent with the equality rule.
 
+### `clz32`, `toString(radix)`, `toExponential`, `toPrecision` — all accepted (Q26)
+
+The audit flagged these because their recorded rejection reasons did
+not survive reading: `clz32` was rejected as a "JS-number op" alongside
+`imul` and `fround`, but unlike those two it has **no replacement
+spelling in this language**; and the three `Number` methods were
+rejected as "not in v1", a scope statement with no cost behind it.
+
+Measured cost, from Boa's
+`core/engine/src/builtins/number/mod.rs` (934 lines total):
+
+| API | lines | dependency |
+|---|---:|---|
+| `to_exponential` | ~100, plus ~90 in the shared `flt_str_to_exp` / `round_to_precision` helpers | none |
+| `to_precision` | ~125, sharing those helpers | none |
+| `to_js_string_radix` | ~120 | none |
+| `clz32` | 1 (`leading_zeros()`) | none |
+
+About 440 lines of pure computation with no external dependency. Note
+`ryu-js` does **not** supply these — it exposes only `format`,
+`format_finite` and `format_to_fixed`, so this is code we write.
+
+**Decision (owner, 2026-07-25): implement all four**, under the
+standing rule that a JS API which exists and is implementable at
+realistic cost is implemented regardless of expected demand. Q26
+records the contract; Q19 and Q25 were amended.
+
+`imul` and `fround` stay rejected as duplicate spellings (see the
+previous section for the classification). `clz32` differs from them
+precisely because nothing in the language counts leading zeros.
+
+Two node v24.18.0 measurements became normative traps, both cases where
+the C tier's obvious lowering is wrong:
+
+- `Math.clz32(0)` is `32`; C's `__builtin_clz(0)` is undefined.
+- `(0).toExponential(2)` is `0.00e+0`; C's `%e` gives `0.00e+00`.
+
 ## Open — re-examine, not yet decided
 
-- **`Math.clz32`.** Rejected as a "JS-number op", but unlike `imul` and
-  `fround` it has **no replacement in this language** — there is no
-  count-leading-zeros primitive. The rejection reason does not hold for
-  it. Candidate for addition as a bit-manipulation primitive rather
-  than as a JS compatibility shim.
-- **`Number.prototype.toPrecision` / `toExponential`, `toString(radix)`.**
-  Rejected in Q25 without a difficulty claim. Boa implements all three
-  (`to_js_string_radix` is ~40 lines). If they are wanted, nothing
-  blocks them.
+Nothing open. Every divergence and every rejection recorded at the time
+of the audit has been either closed, confirmed as a genuine missing
+prerequisite, confirmed as language design that costs no capability, or
+decided by the owner.
 
 ## How to keep this current
 

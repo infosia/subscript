@@ -1,13 +1,11 @@
 // corpus: accept/a44-array
 // purpose: Exercises the no-closure Array method subset of stdlib.md §9
-//          (Q22): indexOf/lastIndexOf/includes with per-kind `===`
-//          equality (i32 by value, f64 IEEE — `-0` equals `0`, NaN is
-//          never found, includes too: the contract pins `===` for all
-//          three —, string by content, Date by millis, reference
-//          classes by identity), join with Q14 formatting and the ","
-//          default separator, slice with the JS negative/clamp rules,
-//          fill/reverse in place returning the receiver, and concat of
-//          exactly one array.
+//          (Q22): indexOf/lastIndexOf per-kind `===` equality (i32 by
+//          value, f64 IEEE, string by content, Date by millis, reference
+//          classes by identity), ordinary includes hits/misses, join
+//          with Q14 formatting and the "," default separator, slice
+//          with the JS negative/clamp rules, fill/reverse in place
+//          returning the receiver, and concat of exactly one array.
 // exercises: array-methods, q14-formatting
 // questions: Q14, Q22
 
@@ -25,11 +23,11 @@ export function main(): void {
   print(`liof ${xs.lastIndexOf(4)} ${xs.lastIndexOf(5)}`);
   const has7: boolean = xs.includes(7);
   print(`inc ${has7} ${xs.includes(5)}`);
-  // f64[]: IEEE equality — -0 equals 0; NaN is never found, in
-  // includes as well (Q22 pins ===; JS includes would find it).
+  // f64[]: IEEE index equality — -0 equals 0; NaN is never found.
+  // The SameValueZero includes/NaN case is isolated in a61.
   const fs: f64[] = [0, 1.5, Math.sqrt(-1)];
   print(`fiof ${fs.indexOf(-0)} ${fs.indexOf(1.5)} ${fs.indexOf(Math.sqrt(-1))}`);
-  print(`finc ${fs.includes(Math.sqrt(-1))}`);
+  print(`finc ${fs.includes(2.5)}`);
   // string[]: equality by content — split-produced strings match fresh
   // literals and concatenations (never pointer identity).
   const parts: string[] = "alpha,beta,alpha".split(",");
