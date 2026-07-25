@@ -103,6 +103,53 @@ The last four are **language features, not library gaps**. Adding any
 of them is a phase of its own and is outside this rule; recorded here
 so that "why is `for…of` rejected" has one answer.
 
+### Wanted: a regex engine and an iterator protocol
+
+**Owner, 2026-07-25: both are wanted, at high priority, to be designed
+later.** Not scheduled; recorded here with what the sweep already
+found, so the later design does not start from zero.
+
+**Iterator protocol — most of the machinery is already built.** The
+standing note that "the language has no iterator protocol" (Q24) is
+imprecise. The language has generator functions and the iterator
+*result shape* today: `corpus/accept/a20-coroutine-generator.ts`
+declares `function* sequence(limit: i32)` with `yield`, and drives it
+with `generator.next()`, reading `step.done` and `step.value`. The C
+tier lowers generators through CPS (`compiler.md` §11 coverage list).
+So suspendable functions, the `{done, value}` step shape, and both
+tiers' lowering of them exist. What is missing is the **binding**:
+
+- a way to say "this type is iterable" (JS uses `Symbol.iterator`;
+  symbols are not in the language, so this needs its own spelling)
+- `for…of` desugaring onto that binding
+- `keys`/`values`/`entries` on `Array`/`Map`/`Set` returning iterators
+- spread, and construction from an iterable (`new Map([[k, v]])`)
+
+Two constraints the design must answer, both already decided
+elsewhere: iteration order for `Map`/`Set` is **normative** insertion
+order (Q24), so the protocol inherits a fixed order rather than
+choosing one; and callbacks today are **non-escaping by construction**
+(C5), whereas an iterator is a stateful object that outlives the call
+that made it — which is a memory-model question (invariant 2, no
+implicit GC), not a syntax question.
+
+**Regex — Boa's engine is a reusable Rust crate.** Boa does not
+hand-roll one: `core/engine/Cargo.toml` depends on **`regress`**
+(pinned `0.10.4` with the `utf16` feature in Boa's workspace root), a
+regex engine written for JS semantics rather than Rust's `regex`
+crate — which matters, because JS regexes have backreferences and
+lookbehind that `regex` deliberately excludes. This is the same shape
+as the `ryu-js` finding: the expensive part is an existing crate, so
+the cost question is "does it fit the constraints", not "can we write
+one".
+
+Two constraints to check before adopting it, neither yet checked:
+`regress`'s `utf16` feature is aimed at JS's UTF-16 strings while this
+language stores UTF-8 (Q5), so the index domain has to be settled; and
+§0.2 requires one implementation behind an opaque `sub_rt_*` symbol on
+both tiers, which a crate satisfies as long as the ship tier links it
+rather than emitting anything.
+
 ## Undecided — the two that are not simple
 
 - **`flat`/`flatMap`.** The depth appears in the result type, so
