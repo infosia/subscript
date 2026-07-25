@@ -50,8 +50,16 @@ variants, behind Boa's `intl` feature.
 
 Verified: 15 hard cases against node — `ß`→`SS`, `ﬄ`→`FFL`, `ﬁ`→`FI`,
 final sigma `ΣΣς`→`ΣΣΣ`/`σσς`, `ᾀ`→`ἈΙ`, `µ`→`Μ`, `İ`, `ı`, `ǆ`, `ʼn`
-— **15/15 identical**, special casing included. **Follow-up: lift the
-ASCII restriction.** Not yet done.
+— **15/15 identical**, special casing included.
+
+**Lifted** (commit `376b5ee`): both tiers now use the Rust std path,
+`trim` uses the explicit ECMA WhiteSpace + LineTerminator predicate
+rather than Rust's `trim` (which removes `U+0085` where ECMA does not,
+and skips `U+FEFF` where ECMA does not), and `a60-string-unicode`
+matches node line-for-line. Byte-length growth is handled — a lone
+`İ` (U+0130) lowercases from 2 UTF-8 bytes to 3. `length`/`slice`/
+`charCodeAt` keep their byte semantics (Q5), which is a separate
+question this did not touch.
 
 ## Confirmed as genuine — Boa needs the same thing we lack
 
