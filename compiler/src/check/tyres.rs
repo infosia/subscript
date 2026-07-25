@@ -227,7 +227,11 @@ impl<'p> Checker<'p> {
             let saved = self.in_assoc_key;
             self.in_assoc_key = true;
             let key = self.resolve_type(&args.params[0]);
-            self.in_assoc_key = saved;
+            // Only this container's key position may temporarily admit
+            // boundary-only shapes so the Q24 whitelist can issue S014.
+            // A nested container's value is a general declaration even
+            // when the container itself appears as an outer key.
+            self.in_assoc_key = false;
             if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
                 let key_pos = self.pos(args.params[0].span());
                 let key_name = self.type_name(&key);
@@ -243,8 +247,10 @@ impl<'p> Checker<'p> {
             }
             if name == "Map" {
                 let value = self.resolve_type(&args.params[1]);
+                self.in_assoc_key = saved;
                 return Type::Map(Box::new(key), Box::new(value));
             }
+            self.in_assoc_key = saved;
             return Type::Set(Box::new(key));
         }
 

@@ -60,6 +60,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r41-map-scalar-get.ts", RuleCode::S014, 9),
     ("r42-map-iterator-member.ts", RuleCode::S014, 9),
     ("r43-map-iterable-constructor.ts", RuleCode::S014, 8),
+    ("r44-map-container-key.ts", RuleCode::S014, 8),
+    ("r45-map-nested-object-value.ts", RuleCode::S011, 8),
 ];
 
 #[test]

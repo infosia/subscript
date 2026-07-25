@@ -167,6 +167,10 @@ pub unsafe extern "C" fn sub_rt_shadow_pop(ctx: *mut Context) {
 
 // ----- Map / Set (stdlib.md §10, Q24) -----
 
+fn assoc_receiver_is_live(ctx: &mut Context, handle: *const u8, pos_id: u32) -> bool {
+    ctx.require_live_handle(handle as usize, pos_id)
+}
+
 /// Allocates an empty monomorphized `Map<K, V>`.
 ///
 /// `key_size` / `value_size` are the calling tier's concrete storage
@@ -235,7 +239,12 @@ pub unsafe extern "C" fn sub_rt_set_new(
 ///
 /// Shared contract; `map` is a live map handle.
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_map_size(map: *const u8) -> i32 {
+pub unsafe extern "C" fn sub_rt_map_size(ctx: *mut Context, map: *const u8) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(ctx, map, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::len(map) }
 }
@@ -246,7 +255,12 @@ pub unsafe extern "C" fn sub_rt_map_size(map: *const u8) -> i32 {
 ///
 /// Shared contract; `set` is a live set handle.
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_set_size(set: *const u8) -> i32 {
+pub unsafe extern "C" fn sub_rt_set_size(ctx: *mut Context, set: *const u8) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(ctx, set, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::len(set) }
 }
@@ -265,6 +279,11 @@ pub unsafe extern "C" fn sub_rt_map_set(
     value: *const u8,
     pos_id: u32,
 ) -> *mut u8 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, pos_id) {
+        return map;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::insert(ctx, map, key, value, pos_id) }
 }
@@ -282,6 +301,11 @@ pub unsafe extern "C" fn sub_rt_set_add(
     key: *const u8,
     pos_id: u32,
 ) -> *mut u8 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, set, pos_id) {
+        return set;
+    }
     // SAFETY: caller contract; a set has zero-width values.
     unsafe { crate::assocops::insert(ctx, set, key, std::ptr::null(), pos_id) }
 }
@@ -299,6 +323,11 @@ pub unsafe extern "C" fn sub_rt_map_get(
     key: *const u8,
     out: *mut u8,
 ) -> i32 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     i32::from(unsafe { crate::assocops::get(ctx, map, key, out) })
 }
@@ -316,8 +345,13 @@ pub unsafe extern "C" fn sub_rt_map_get_or(
     fallback: *const u8,
     out: *mut u8,
 ) {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return;
+    }
     // SAFETY: caller contract.
-    unsafe { crate::assocops::get_or(ctx, map, key, fallback, out) };
+    unsafe { crate::assocops::get_or(ctx, map, key, fallback, out, 0) };
 }
 
 /// `Map.has`.
@@ -331,6 +365,11 @@ pub unsafe extern "C" fn sub_rt_map_has(
     map: *mut u8,
     key: *const u8,
 ) -> i32 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     i32::from(unsafe { crate::assocops::has(ctx, map, key) })
 }
@@ -346,6 +385,11 @@ pub unsafe extern "C" fn sub_rt_set_has(
     set: *mut u8,
     key: *const u8,
 ) -> i32 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, set, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     i32::from(unsafe { crate::assocops::has(ctx, set, key) })
 }
@@ -361,6 +405,11 @@ pub unsafe extern "C" fn sub_rt_map_delete(
     map: *mut u8,
     key: *const u8,
 ) -> i32 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     i32::from(unsafe { crate::assocops::delete(ctx, map, key) })
 }
@@ -376,6 +425,11 @@ pub unsafe extern "C" fn sub_rt_set_delete(
     set: *mut u8,
     key: *const u8,
 ) -> i32 {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, set, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     i32::from(unsafe { crate::assocops::delete(ctx, set, key) })
 }
@@ -387,6 +441,11 @@ pub unsafe extern "C" fn sub_rt_set_delete(
 /// Shared contract; `map` is a live map handle.
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_map_clear(ctx: *mut Context, map: *mut u8) {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::clear(&mut *ctx, map) };
 }
@@ -398,6 +457,11 @@ pub unsafe extern "C" fn sub_rt_map_clear(ctx: *mut Context, map: *mut u8) {
 /// Shared contract; `set` is a live set handle.
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_set_clear(ctx: *mut Context, set: *mut u8) {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, set, 0) {
+        return;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::clear(&mut *ctx, set) };
 }
@@ -420,6 +484,11 @@ pub unsafe extern "C" fn sub_rt_map_for_each(
     env: *const u8,
     bridge: *const u8,
 ) {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::map_for_each(ctx, map, code, env, bridge) };
 }
@@ -437,6 +506,11 @@ pub unsafe extern "C" fn sub_rt_set_for_each(
     env: *const u8,
     bridge: *const u8,
 ) {
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, set, 0) {
+        return;
+    }
     // SAFETY: caller contract.
     unsafe { crate::assocops::set_for_each(ctx, set, code, env, bridge) };
 }
@@ -2405,6 +2479,39 @@ mod tests {
         let r = ctx.trap_record().expect("trap");
         assert_eq!(r.kind, TrapKind::UseAfterDelete);
         assert_eq!(r.pos_id, 12);
+    }
+
+    #[test]
+    fn ffi_map_set_operations_trap_on_deleted_receivers_in_development() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context and monomorphized i32 shapes.
+        unsafe {
+            let map = sub_rt_map_new(p, 4, 4, 0, 1);
+            sub_rt_delete(p, map, 2);
+            assert_eq!(sub_rt_map_size(p, map), 0);
+        }
+        assert_eq!(
+            ctx.trap_record().map(|r| (r.kind, r.pos_id)),
+            Some((TrapKind::UseAfterDelete, 0))
+        );
+
+        ctx.clear_trap();
+        // SAFETY: valid context and monomorphized i32 shape. The stale
+        // receiver is validated before the key is inspected.
+        unsafe {
+            let set = sub_rt_set_new(p, 4, 0, 3);
+            sub_rt_delete(p, set, 4);
+            let key = 9i32;
+            assert_eq!(
+                sub_rt_set_add(p, set, (&key as *const i32).cast(), 17),
+                set
+            );
+        }
+        assert_eq!(
+            ctx.trap_record().map(|r| (r.kind, r.pos_id)),
+            Some((TrapKind::UseAfterDelete, 17))
+        );
     }
 
     #[test]

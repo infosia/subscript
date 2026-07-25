@@ -3058,13 +3058,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal("Map operation receiver"))?;
         let recv_rv = self.eval(recv)?;
         let handle = self.expect_s(recv_rv)?;
+        self.live_check(handle, pos)?;
         let arg = |index: usize| {
             args.get(index)
                 .ok_or_else(|| internal(format!("Map.{} arity", f.name())))
         };
         match f {
             F::Size => {
-                let result = self.call_rt(rt, &[handle], false)?;
+                let result = self.call_rt(rt, &[self.ctx_v, handle], false)?;
                 result.map(RV::S).ok_or_else(|| internal("Map.size result"))
             }
             F::Get => {
@@ -3083,6 +3084,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let fallback = self.materialize(fallback_rv, &value)?;
                 let (size, align) = self.ml.layouts.size_align(&value)?;
                 let out = self.temp_slot(size.max(8), align.max(8));
+                // Keep the result total even if an earlier allocation
+                // failure supplied a null receiver and the pending trap
+                // makes the runtime return without writing `out`.
+                let slot_size = size.max(8);
+                let access_align = 1u32 << slot_size.trailing_zeros();
+                self.zero_bytes(out, slot_size, align.max(8).min(access_align));
                 self.call_rt(
                     rt,
                     &[self.ctx_v, handle, key_ptr, fallback, out],
@@ -3181,13 +3188,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal("Set operation receiver"))?;
         let recv_rv = self.eval(recv)?;
         let handle = self.expect_s(recv_rv)?;
+        self.live_check(handle, pos)?;
         let arg = |index: usize| {
             args.get(index)
                 .ok_or_else(|| internal(format!("Set.{} arity", f.name())))
         };
         match f {
             F::Size => {
-                let result = self.call_rt(rt, &[handle], false)?;
+                let result = self.call_rt(rt, &[self.ctx_v, handle], false)?;
                 result.map(RV::S).ok_or_else(|| internal("Set.size result"))
             }
             F::Add => {
@@ -4424,7 +4432,32 @@ fn define_assoc_bridge<M: Module>(
                     argv.push(b.ins().load(types::I64, flags(), pointer, 0));
                     argv.push(b.ins().load(types::I64, flags(), pointer, 8));
                 }
-                Repr::Agg { .. } => argv.push(pointer),
+                Repr::Agg { size, align } => {
+                    // C2: the runtime pointer addresses the container's
+                    // live inline entry. The callback must receive a
+                    // caller-owned copy, exactly like an ordinary script
+                    // call and the C bridge's by-value struct load.
+                    let slot = b.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size.max(1),
+                        align_shift(align.max(1)),
+                    ));
+                    let copy = b.ins().stack_addr(types::I64, slot, 0);
+                    let config = ml.module.isa().frontend_config();
+                    let access_align = 1u32 << size.max(1).trailing_zeros();
+                    let copy_align = align.max(1).min(access_align);
+                    b.emit_small_memory_copy(
+                        config,
+                        copy,
+                        pointer,
+                        u64::from(size),
+                        copy_align as u8,
+                        copy_align as u8,
+                        true,
+                        MemFlags::new(),
+                    );
+                    argv.push(copy);
+                }
             }
         }
         let sigref = b.import_signature(script_sig);

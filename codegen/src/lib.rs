@@ -267,6 +267,24 @@ mod tests {
     }
 
     #[test]
+    fn map_and_set_use_after_delete_trap() {
+        for (kind, src) in [
+            (
+                "Map",
+                "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  unsafeDelete(value);\n  print(`${value.size}`);\n}\n",
+            ),
+            (
+                "Set",
+                "export function main(): void {\n  const value: Set<i32> = new Set<i32>();\n  unsafeDelete(value);\n  print(`${value.size}`);\n}\n",
+            ),
+        ] {
+            let t = run_trap(src);
+            assert_eq!(t.rule, TrapKind::UseAfterDelete, "{kind}");
+            assert_eq!(t.pos.line, 4, "{kind}");
+        }
+    }
+
+    #[test]
     fn value_class_copies_on_assign_and_pass() {
         let out = run_ok(
             "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nfunction bump(v: V): i32 {\n  v.x += 100;\n  return v.x;\n}\nexport function main(): void {\n  const a: V = new V(1);\n  const b: V = a;\n  b.x = 9;\n  print(`${a.x},${b.x},${bump(a)},${a.x}`);\n}\n",

@@ -2390,7 +2390,7 @@ impl<'m> Emitter<'m> {
 
         let h = self.eval_pinned(arg_at(0)?, out, depth)?;
         match f {
-            M::Size => Ok(format!("sub_rt_map_size({h})")),
+            M::Size => Ok(format!("sub_rt_map_size(ctx, {h})")),
             M::Get => {
                 let key_expr = self.eval(arg_at(1)?, out, depth)?;
                 let kt = self.fresh_tmp();
@@ -2483,7 +2483,7 @@ impl<'m> Emitter<'m> {
 
         let h = self.eval_pinned(arg_at(0)?, out, depth)?;
         match f {
-            S::Size => Ok(format!("sub_rt_set_size({h})")),
+            S::Size => Ok(format!("sub_rt_set_size(ctx, {h})")),
             S::Add => {
                 let key_expr = self.eval(arg_at(1)?, out, depth)?;
                 let kt = self.fresh_tmp();
@@ -3946,8 +3946,8 @@ extern void sub_rt_arr_sort(void* ctx, void* a, const void* code, const void* en
  * Construction supplies monomorphized widths and the key-kind tag. */
 extern void* sub_rt_map_new(void* ctx, uint64_t key_size, uint64_t value_size, uint32_t key_kind, uint32_t pos_id);
 extern void* sub_rt_set_new(void* ctx, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
-extern int32_t sub_rt_map_size(void* map);
-extern int32_t sub_rt_set_size(void* set);
+extern int32_t sub_rt_map_size(void* ctx, void* map);
+extern int32_t sub_rt_set_size(void* ctx, void* set);
 extern void* sub_rt_map_set(void* ctx, void* map, const void* key, const void* value, uint32_t pos_id);
 extern void* sub_rt_set_add(void* ctx, void* set, const void* key, uint32_t pos_id);
 extern int32_t sub_rt_map_get(void* ctx, void* map, const void* key, void* out);

@@ -516,7 +516,7 @@ fn declare_rt<M: Module>(
         use hir::MapFn as F;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             F::New => (&[I64, I64, I64, I32, I32], Some(I64)),
-            F::Size => (&[I64], Some(I32)),
+            F::Size => (&[I64, I64], Some(I32)),
             F::Get => (&[I64, I64, I64, I64], Some(I32)),
             F::GetOr => (&[I64, I64, I64, I64, I64], None),
             F::Set => (&[I64, I64, I64, I64, I32], Some(I64)),
@@ -535,7 +535,7 @@ fn declare_rt<M: Module>(
         use hir::SetFn as F;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             F::New => (&[I64, I64, I32, I32], Some(I64)),
-            F::Size => (&[I64], Some(I32)),
+            F::Size => (&[I64, I64], Some(I32)),
             F::Add => (&[I64, I64, I64, I32], Some(I64)),
             F::Has | F::Delete => (&[I64, I64, I64], Some(I32)),
             F::Clear => (&[I64, I64], None),

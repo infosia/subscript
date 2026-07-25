@@ -77,6 +77,7 @@ pub(crate) struct AssocHeader {
     key_kind: u64,
     entries: *mut u8,
     buckets: *mut u8,
+    iteration_depth: u64,
 }
 
 fn round_word(value: usize) -> Option<usize> {
@@ -442,10 +443,96 @@ unsafe fn rehash(ctx: &mut Context, handle: *mut u8, new_cap: usize, pos_id: u32
     true
 }
 
+/// Stable-packs active entries and rebuilds the existing bucket index.
+///
+/// No allocation is needed: destinations precede their sources, and
+/// the bucket block is cleared before active entries are re-indexed.
+///
+/// # Safety
+///
+/// `handle` is a live container with valid entry and bucket storage,
+/// and no `forEach` is active.
+unsafe fn compact_entries(handle: *mut u8) -> bool {
+    // SAFETY: caller contract.
+    let h = unsafe { &mut *handle.cast::<AssocHeader>() };
+    if h.iteration_depth != 0 || h.order_len == h.len {
+        return false;
+    }
+    if h.bucket_cap == 0 || h.buckets.is_null() {
+        return false;
+    }
+
+    let old_len = h.order_len as usize;
+    let stride = h.entry_stride as usize;
+    let bucket_cap = h.bucket_cap as usize;
+    // SAFETY: the index allocation has `bucket_cap * 8` bytes.
+    unsafe { std::ptr::write_bytes(h.buckets, 0, bucket_cap * 8) };
+
+    let mut write = 0usize;
+    for read in 0..old_len {
+        // SAFETY: read is inside the ordered prefix.
+        if !unsafe { entry_active(h, read) } {
+            continue;
+        }
+        if write != read {
+            // SAFETY: distinct entry slots do not overlap. Stable packing
+            // always moves toward the front, so unread sources remain
+            // intact.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    entry_ptr(h, read),
+                    entry_ptr(h, write),
+                    stride,
+                )
+            };
+        }
+        // SAFETY: the packed entry prefix is readable.
+        let hash = unsafe { entry_hash(h, write) };
+        let mut bucket = hash as usize & (bucket_cap - 1);
+        loop {
+            // SAFETY: bucket is masked inside the zeroed index block.
+            let slot = unsafe { h.buckets.add(bucket * 8).cast::<u64>() };
+            // SAFETY: slot is readable.
+            if unsafe { slot.read_unaligned() } == EMPTY {
+                // SAFETY: slot is writable.
+                unsafe { slot.write_unaligned(write as u64 + 1) };
+                break;
+            }
+            bucket = (bucket + 1) & (bucket_cap - 1);
+        }
+        write += 1;
+    }
+
+    if write < old_len {
+        // SAFETY: the packed prefix ends at `write`; zeroing the old
+        // suffix removes duplicate managed handles left by moves.
+        unsafe {
+            std::ptr::write_bytes(
+                entry_ptr(h, write),
+                0,
+                (old_len - write) * stride,
+            )
+        };
+    }
+    h.order_len = write as u64;
+    h.tombstones = 0;
+    true
+}
+
 unsafe fn ensure_capacity(ctx: &mut Context, handle: *mut u8, pos_id: u32) -> bool {
     // Entry-vector growth is append-driven, including after deletes:
     // re-insertion must append rather than reuse a removed position.
+    // At the growth boundary, stable-pack deleted slots when no
+    // iteration is active; moving entries during forEach would skip or
+    // repeat callbacks after the loop advances its ordered index.
     // SAFETY: caller contract.
+    let h = unsafe { &*handle.cast::<AssocHeader>() };
+    if h.order_len == h.order_cap && h.iteration_depth == 0 && h.len < h.order_len {
+        // SAFETY: the container is live and no iteration is active.
+        let _ = unsafe { compact_entries(handle) };
+    }
+    // Re-borrow after possible compaction.
+    // SAFETY: container remains live.
     let h = unsafe { &*handle.cast::<AssocHeader>() };
     if h.order_len == h.order_cap {
         let new_cap = if h.order_cap == 0 {
@@ -617,22 +704,28 @@ pub(crate) unsafe fn get(
 /// # Safety
 ///
 /// As [`get`], and `fallback` is readable for the value width.
+/// `fallback_size` supplies that width when `handle` is null.
 pub(crate) unsafe fn get_or(
     ctx: *mut Context,
     handle: *mut u8,
     key: *const u8,
     fallback: *const u8,
     out: *mut u8,
+    fallback_size: usize,
 ) {
     // SAFETY: forwarded contract.
     if unsafe { get(ctx, handle, key, out) } {
         return;
     }
-    if handle.is_null() || fallback.is_null() || out.is_null() {
+    if fallback.is_null() || out.is_null() {
         return;
     }
-    // SAFETY: caller contract.
-    let size = unsafe { (*handle.cast::<AssocHeader>()).value_size as usize };
+    let size = if handle.is_null() {
+        fallback_size
+    } else {
+        // SAFETY: caller contract.
+        unsafe { (*handle.cast::<AssocHeader>()).value_size as usize }
+    };
     if size != 0 {
         // SAFETY: fallback/out cover `size` bytes.
         unsafe { std::ptr::copy_nonoverlapping(fallback, out, size) };
@@ -752,6 +845,11 @@ pub(crate) unsafe fn map_for_each(
     }
     // SAFETY: caller guarantees the generated bridge signature.
     let call: MapBridge = unsafe { std::mem::transmute(bridge) };
+    // SAFETY: the live header is writable for the synchronous iteration.
+    unsafe {
+        let h = &mut *handle.cast::<AssocHeader>();
+        h.iteration_depth = h.iteration_depth.saturating_add(1);
+    }
     let mut index = 0usize;
     loop {
         // Re-read after every callback: it may clear/grow the container.
@@ -776,11 +874,20 @@ pub(crate) unsafe fn map_for_each(
                 )
             };
             // SAFETY: live Context.
-            if unsafe { (*ctx).trapped() } {
+            if unsafe { (*ctx).trapped() || !(*ctx).is_live(handle as usize) } {
                 break;
             }
         }
         index += 1;
+    }
+    // A callback may delete the receiver. Development storage remains
+    // poisoned and ship storage may be recycled, so touch the depth only
+    // while this exact payload is still live.
+    // SAFETY: live Context and, when true, a live container payload.
+    if unsafe { (*ctx).is_live(handle as usize) } {
+        // SAFETY: liveness check above.
+        let h = unsafe { &mut *handle.cast::<AssocHeader>() };
+        h.iteration_depth = h.iteration_depth.saturating_sub(1);
     }
 }
 
@@ -802,6 +909,11 @@ pub(crate) unsafe fn set_for_each(
     }
     // SAFETY: caller guarantees the generated bridge signature.
     let call: SetBridge = unsafe { std::mem::transmute(bridge) };
+    // SAFETY: the live header is writable for the synchronous iteration.
+    unsafe {
+        let h = &mut *handle.cast::<AssocHeader>();
+        h.iteration_depth = h.iteration_depth.saturating_add(1);
+    }
     let mut index = 0usize;
     loop {
         // SAFETY: live container; re-read after mutation.
@@ -814,11 +926,17 @@ pub(crate) unsafe fn set_for_each(
             // SAFETY: bridge contract.
             unsafe { call(ctx, code, env, entry_key(h, index)) };
             // SAFETY: live Context.
-            if unsafe { (*ctx).trapped() } {
+            if unsafe { (*ctx).trapped() || !(*ctx).is_live(handle as usize) } {
                 break;
             }
         }
         index += 1;
+    }
+    // SAFETY: as in map_for_each.
+    if unsafe { (*ctx).is_live(handle as usize) } {
+        // SAFETY: liveness check above.
+        let h = unsafe { &mut *handle.cast::<AssocHeader>() };
+        h.iteration_depth = h.iteration_depth.saturating_sub(1);
     }
 }
 
@@ -855,6 +973,39 @@ mod tests {
     ) {
         // SAFETY: env points at the test's Vec for this synchronous call.
         unsafe { &mut *(env as *mut Vec<(i32, i32)>) }.push((key, value));
+    }
+
+    struct InsertDuringIteration {
+        map: *mut u8,
+        seen: Vec<i32>,
+        inserted: bool,
+    }
+
+    unsafe extern "C" fn insert_after_deleted_prefix(
+        ctx: *mut Context,
+        env: *const u8,
+        _value: i32,
+        key: i32,
+    ) {
+        // SAFETY: env points at this synchronous test state.
+        let state = unsafe { &mut *(env as *mut InsertDuringIteration) };
+        state.seen.push(key);
+        if key == 2 && !state.inserted {
+            state.inserted = true;
+            let added_key = 5i32;
+            let added_value = 50i32;
+            // SAFETY: the state holds the live i32/i32 map being
+            // traversed, and both values are readable.
+            unsafe {
+                insert(
+                    ctx,
+                    state.map,
+                    (&added_key as *const i32).cast(),
+                    (&added_value as *const i32).cast(),
+                    0,
+                );
+            }
+        }
     }
 
     #[test]
@@ -899,6 +1050,20 @@ mod tests {
                 0,
             );
         }
+        let four = 4i32;
+        let forty = 40i32;
+        // This insertion reaches a full ordered vector containing one
+        // deleted slot, so it stable-compacts before appending.
+        // SAFETY: matching map shape.
+        unsafe {
+            insert(
+                &mut *ctx,
+                h,
+                (&four as *const i32).cast(),
+                (&forty as *const i32).cast(),
+                0,
+            );
+        }
         let mut seen = Vec::new();
         // SAFETY: bridge and callback have the test's fixed signatures.
         unsafe {
@@ -910,7 +1075,85 @@ mod tests {
                 map_i32_bridge as *const u8,
             );
         }
-        assert_eq!(seen, vec![(2, 22), (3, 30), (1, 11)]);
+        assert_eq!(seen, vec![(2, 22), (3, 30), (1, 11), (4, 40)]);
+    }
+
+    #[test]
+    fn churn_compacts_ordered_storage_at_the_growth_boundary() {
+        let mut ctx = Context::new();
+        let h = new(&mut ctx, 4, 4, KeyKind::Bits, false, 0);
+        for key in 0i32..200_000 {
+            let value = key;
+            // SAFETY: h is an i32/i32 map and pointers are readable.
+            unsafe {
+                insert(
+                    &mut *ctx,
+                    h,
+                    (&key as *const i32).cast(),
+                    (&value as *const i32).cast(),
+                    0,
+                );
+            }
+            // SAFETY: matching map shape.
+            assert!(unsafe { delete(&mut *ctx, h, (&key as *const i32).cast()) });
+        }
+        // SAFETY: h remains a live map header.
+        let header = unsafe { &*h.cast::<AssocHeader>() };
+        assert_eq!(header.len, 0);
+        assert_eq!(header.order_len, 4);
+        assert_eq!(header.order_cap, INITIAL_ORDER_CAP as u64);
+        assert_eq!(header.bucket_cap, INITIAL_BUCKET_CAP as u64);
+        assert_eq!(
+            header.order_cap * header.entry_stride,
+            128,
+            "empty i32/i32 map must retain only its four-entry block"
+        );
+    }
+
+    #[test]
+    fn compaction_is_suppressed_during_for_each_mutation() {
+        let mut ctx = Context::new();
+        let h = new(&mut ctx, 4, 4, KeyKind::Bits, false, 0);
+        for key in 1i32..=4 {
+            let value = key * 10;
+            // SAFETY: h is an i32/i32 map and pointers are readable.
+            unsafe {
+                insert(
+                    &mut *ctx,
+                    h,
+                    (&key as *const i32).cast(),
+                    (&value as *const i32).cast(),
+                    0,
+                );
+            }
+        }
+        let deleted = 1i32;
+        // Leave a deleted slot before the first callback. Compacting
+        // when key 2 inserts would shift key 3 behind the loop cursor.
+        // SAFETY: matching map shape.
+        assert!(unsafe { delete(&mut *ctx, h, (&deleted as *const i32).cast()) });
+        let mut state = InsertDuringIteration {
+            map: h,
+            seen: Vec::new(),
+            inserted: false,
+        };
+        // SAFETY: bridge, callback, and environment use the test's fixed
+        // signatures for this synchronous iteration.
+        unsafe {
+            map_for_each(
+                &mut *ctx,
+                h,
+                insert_after_deleted_prefix as *const u8,
+                (&mut state as *mut InsertDuringIteration).cast(),
+                map_i32_bridge as *const u8,
+            );
+        }
+        assert_eq!(state.seen, vec![2, 3, 4, 5]);
+        // SAFETY: h remains live.
+        let header = unsafe { &*h.cast::<AssocHeader>() };
+        assert_eq!(header.order_len, 5);
+        assert_eq!(header.order_cap, 8);
+        assert_eq!(header.iteration_depth, 0);
     }
 
     #[test]
@@ -971,6 +1214,27 @@ mod tests {
         }
         // SAFETY: b has equal content.
         assert!(unsafe { has(&mut *ctx, h, (&b as *const *mut u8).cast()) });
+    }
+
+    #[test]
+    fn get_or_writes_fallback_for_a_null_handle() {
+        let mut ctx = Context::new();
+        let key = 1i32;
+        let fallback = 77i32;
+        let mut out = 0i32;
+        // SAFETY: fallback_size describes the i32 fallback/output slots;
+        // a null handle deliberately exercises the total fallback path.
+        unsafe {
+            get_or(
+                &mut *ctx,
+                std::ptr::null_mut(),
+                (&key as *const i32).cast(),
+                (&fallback as *const i32).cast(),
+                (&mut out as *mut i32).cast(),
+                std::mem::size_of::<i32>(),
+            );
+        }
+        assert_eq!(out, fallback);
     }
 
     #[test]

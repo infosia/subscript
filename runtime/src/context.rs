@@ -827,6 +827,26 @@ impl Context {
         self.allocations.get(&payload).is_some_and(|a| a.live)
     }
 
+    /// Validates a runtime-operation receiver under Q6's tier policy.
+    ///
+    /// Development retains exact allocation membership and traps stale
+    /// handles. Ship-tier use-after-delete is undefined, so the runtime
+    /// preserves its existing unchecked behavior there.
+    pub(crate) fn require_live_handle(&mut self, payload: usize, pos_id: u32) -> bool {
+        if self.trapped() {
+            return false;
+        }
+        if self.release_on_delete || self.is_live(payload) {
+            return true;
+        }
+        self.trap(
+            TrapKind::UseAfterDelete,
+            "use of a deleted allocation",
+            pos_id,
+        );
+        false
+    }
+
     /// Number of live allocations (test/inspection aid). Ship tier: a
     /// chunk walk (live blocks below each watermark) plus the large
     /// records.

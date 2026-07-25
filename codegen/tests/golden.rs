@@ -58,12 +58,13 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // P6.3 async, a36–a38 P7.1 async/Future shapes, a39 P7.2 composed
     // async capstone) plus the stdlib entries (a40 Math battery, a41
     // Math.random sequence, a42 Date battery, a43 P10 String battery,
-    // a44/a45 P11 Array batteries) and P14/review narrow numerics
-    // (a46–a50).
+    // a44/a45 P11 Array batteries), P14/review narrow numerics
+    // (a46–a50), and P15 Map/Set plus aggregate-callback coverage
+    // (a51–a56).
     assert!(
-        golden_ids.len() >= 50,
-        "expected at least the 50 committed goldens (a01–a24 run set + a25–a39 interop \
-         + a40–a45 stdlib + a46–a50 narrow numerics), found {}",
+        golden_ids.len() >= 56,
+        "expected at least the 56 committed goldens (a01–a24 run set + a25–a39 interop \
+         + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set), found {}",
         golden_ids.len()
     );
 

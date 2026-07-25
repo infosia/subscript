@@ -986,7 +986,6 @@ impl AssocKeyKind {
             Type::F64 => AssocKeyKind::F64,
             Type::Str => AssocKeyKind::Str,
             Type::Class(id) if !is_value_class(*id) => AssocKeyKind::Ref,
-            Type::Map(..) | Type::Set(_) => AssocKeyKind::Ref,
             _ => return None,
         })
     }

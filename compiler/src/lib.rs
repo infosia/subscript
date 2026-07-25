@@ -582,6 +582,8 @@ mod tests {
             "(x: i32) => i32",
             "C | null",
             "void",
+            "Map<i32, i32>",
+            "Set<i32>",
         ] {
             let src = format!(
                 "class C {{ x: i32; constructor() {{ this.x = 1; }} }}\n\
@@ -604,6 +606,20 @@ mod tests {
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
         assert!(err[0].message.contains("Q24"));
+    }
+
+    #[test]
+    fn nested_container_value_does_not_inherit_key_resolution_context() {
+        let err = check_one(
+            "export function main(): void {\n\
+               const map: Map<Map<i32, object>, i32> = \
+                 new Map<Map<i32, object>, i32>();\n\
+               print(`${map.size}`);\n\
+             }\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S011);
+        assert!(err[0].message.contains("boundary-only"));
     }
 
     #[test]

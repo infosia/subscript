@@ -368,6 +368,7 @@ fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
         "a53-set",
         "a54-map-reference-key",
         "a55-map-set-foreach",
+        "a56-map-aggregate-foreach",
     ] {
         let path = accept.join(format!("{id}.ts"));
         let source = std::fs::read_to_string(&path)
@@ -410,6 +411,76 @@ fn map_and_set_trapping_foreach_callbacks_report_identically() {
         }
         assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
     }
+}
+
+#[test]
+fn map_growth_during_for_each_does_not_compact_under_the_cursor() {
+    // The deleted first slot makes the ordered vector compactable. The
+    // callback's insertion reaches the growth boundary while iteration
+    // is positioned after that slot; moving entries here would skip key
+    // 3. Both tiers must preserve JS/Node's 2,3,4,5 visit sequence.
+    assert_tiers_print(
+        "let seen: string = \"\";\n\
+         export function main(): void {\n\
+           const map: Map<i32, i32> = new Map<i32, i32>();\n\
+           map.set(1, 10);\n\
+           map.set(2, 20);\n\
+           map.set(3, 30);\n\
+           map.set(4, 40);\n\
+           map.delete(1);\n\
+           map.forEach((value: i32, key: i32): void => {\n\
+             seen += `${key}:${value}|`;\n\
+             if (key === 2) {\n\
+               map.set(5, 50);\n\
+             }\n\
+           });\n\
+           print(seen);\n\
+         }\n",
+        "2:20|3:30|4:40|5:50|\n",
+    );
+}
+
+#[test]
+fn map_mutation_during_for_each_keeps_the_pinned_visit_rules() {
+    assert_tiers_print(
+        "let seen: string = \"\";\n\
+         export function main(): void {\n\
+           const inserted: Map<i32, i32> = new Map<i32, i32>();\n\
+           inserted.set(1, 10);\n\
+           inserted.set(2, 20);\n\
+           inserted.forEach((value: i32, key: i32): void => {\n\
+             seen += `${key}`;\n\
+             if (key === 1) { inserted.set(3, 30); }\n\
+           });\n\
+           seen += \"|\";\n\
+           const deleted: Map<i32, i32> = new Map<i32, i32>();\n\
+           deleted.set(1, 10);\n\
+           deleted.set(2, 20);\n\
+           deleted.set(3, 30);\n\
+           deleted.forEach((value: i32, key: i32): void => {\n\
+             seen += `${key}`;\n\
+             if (key === 1) { deleted.delete(2); }\n\
+           });\n\
+           seen += \"|\";\n\
+           const cleared: Map<i32, i32> = new Map<i32, i32>();\n\
+           cleared.set(1, 10);\n\
+           cleared.set(2, 20);\n\
+           cleared.forEach((value: i32, key: i32): void => {\n\
+             seen += `${key}`;\n\
+             cleared.clear();\n\
+           });\n\
+           seen += \"|\";\n\
+           const removed: Map<i32, i32> = new Map<i32, i32>();\n\
+           removed.set(1, 10);\n\
+           removed.set(2, 20);\n\
+           removed.forEach((value: i32, key: i32): void => {\n\
+             seen += `${key}`;\n\
+             unsafeDelete(removed);\n\
+           });\n\
+           print(seen);\n\
+         }\n",
+        "123|13|1|1\n",
+    );
 }
 
 #[test]

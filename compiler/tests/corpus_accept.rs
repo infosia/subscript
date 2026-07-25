@@ -101,9 +101,9 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     single_files.sort();
     assert_eq!(
         single_files.len(),
-        54,
-        "expected 54 single-file accept entries (23 run set + a25–a39 interop \
-         + a40–a45 stdlib + a46–a50 narrow numerics + a51–a55 Map/Set) \
+        55,
+        "expected 55 single-file accept entries (23 run set + a25–a39 interop \
+         + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set) \
          plus a19-modules"
     );
     for name in &single_files {
