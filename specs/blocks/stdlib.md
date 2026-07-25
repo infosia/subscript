@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -316,3 +316,145 @@ zero errors unchanged config; sort-stability pinned; the
 trapping-callback tuple identical across tiers; reject entries at
 pinned S014 positions; §5 item 5 benchmarks
 (`specs/blocks/benchmarks.md`) — no ship-row regression.
+
+## 10. P15 — `Map` / `Set` (Q24)
+
+Owner decision 2026-07-25 reversed the non-goal (§7). This is the
+stdlib's first **generic reference class with methods**, and its first
+**hash container**; the design rules of §0 apply unchanged (one runtime
+implementation behind opaque `sub_rt_*`, deterministic, ECMA semantics
+for the accepted subset, `tsc` sees the ES2022 lib).
+
+### 10.1 Shape
+
+`Map<K, V>` and `Set<K>` are **reference classes** (heap, Context
+memory, manual lifetime — C2's plain-`class` side), monomorphized on
+first use exactly as `a12`'s generic value class is. `new Map<K, V>()`
+allocates; `unsafeDelete` frees; `collect()` reclaims an unreachable
+one. The `K`/`V` monomorphization means there is no boxing and no
+type erasure: a `Map<i32, Vec3>` stores `i32` keys and `Vec3` values
+inline.
+
+### 10.2 Key kinds (whitelist) — Q24
+
+A key type must have a defined equality **and** a defined hash. The
+whitelist is exactly the kinds Q22 already defines equality for:
+
+- sized integers (`i8`…`u64`), `boolean`, `enum` — by value
+- `f32`/`f64` — by value, with the **Q22 rule, not SameValueZero**:
+  equality is `===`, so `NaN` is never found (a `NaN` key can be
+  inserted and is then unreachable — that is the consequence of one
+  equality rule across the language, and it is why `NaN` keys are
+  **rejected at compile time when the key expression is a literal
+  `NaN`**; a computed `NaN` is accepted and simply never matches).
+  `+0` and `-0` hash and compare equal (they are `===`).
+- `string` — by content, hashed over the UTF-8 bytes
+- `Date` — by millis (its erased `i64`)
+- reference classes — **by identity** (the handle), never structurally
+
+Rejected as key types (S014, naming Q24): `f16` (storage-only, Q23 —
+no arithmetic domain, and its `as f32` widening would make two
+distinct `f16` bit patterns collide silently), `T[]`, `FixedArray`,
+value classes (`@CStruct` — structural equality is not defined for
+them and identity is meaningless for a copied value), `object`
+(boundary-opaque), function types, `Nullable<T>`, `void`.
+
+`V` has no whitelist: any type the language can store in a field can
+be a value, including value classes and `T[]`.
+
+### 10.3 Iteration order — insertion order, pinned
+
+JS `Map`/`Set` iterate in insertion order; §0.3 requires determinism,
+so this is **normative here**, not an implementation accident: entries
+iterate in the order they were first inserted; re-assigning an
+existing key (`set` on a present key) **keeps its original position**;
+`delete` removes it, and re-inserting the same key appends it at the
+end. The container therefore carries an insertion-ordered entry vector
+alongside its index — a golden pins the order across insert /
+overwrite / delete / re-insert.
+
+### 10.4 Accepted API
+
+`Map<K, V>`: `new Map<K, V>()`, `size: i32`, `get(k): V | null`
+(reference-class `V`) — see 10.5 for scalars, `set(k, v): Map<K, V>`
+(returns the receiver, as the lib does), `has(k): boolean`,
+`delete(k): boolean`, `clear(): void`, `forEach(f: (v: V, k: K) =>
+void): void` (the lib's third `map` callback parameter is not
+accepted, as Q22 fixes callback arities).
+
+`Set<K>`: `new Set<K>()`, `size: i32`, `add(k): Set<K>`,
+`has(k): boolean`, `delete(k): boolean`, `clear(): void`,
+`forEach(f: (k: K) => void): void`.
+
+Rejected (S014, Q24): the iterator protocol (`keys`/`values`/
+`entries`/`for…of`/spread — the language has no iterator protocol;
+`forEach` is the traversal), construction from an iterable
+(`new Map([[k, v]])`), `groupBy`, and the ES2024 set-algebra methods
+(`union`/`intersection`/…).
+
+### 10.5 The miss problem — `get` on a scalar value type
+
+`get` must report "absent". For a reference-class `V`, `V | null`
+carries it (C7). For a **scalar** `V` there is no miss value — the
+same problem Q22 solved by rejecting `find` in favour of `findIndex`.
+Rule: `get` returns `V | null` **only where `V` is a nullable-capable
+type** (reference class, handle); for every other `V`, `get` is
+rejected (S014) and the program uses `has` plus a total accessor:
+
+- `getOr(k, fallback: V): V` — this contract's addition, not a lib
+  member. It is `tsc`-clean because it is declared in the prelude's
+  ambient `Map` augmentation, and it is total for every `V`.
+
+The alternative — returning a zeroed `V` on a miss — is rejected: it
+is silently wrong for a program that stores zero as a real value.
+
+### 10.6 Hashing and growth
+
+One runtime implementation, both tiers, behind opaque `sub_rt_map_*` /
+`sub_rt_set_*`. Open addressing or bucketed chaining is the
+implementer's choice; what this contract fixes is the observable
+behaviour:
+
+- The hash function is **the runtime's own**, deterministic and
+  seed-free (a per-Context random seed would break the golden corpus
+  and replays — §0.3). It is not exposed to script.
+- Growth allocates from Context memory and **never runs unbidden**
+  (invariant 2): a `set`/`add` may allocate, nothing else does. There
+  is no incremental rehash triggered by an unrelated operation.
+- A key's hash is a pure function of its value/identity, so the same
+  program produces the same iteration order and the same output on
+  both tiers — the standing gate checks that byte-for-byte.
+- Mutating a reference-class key after insertion does not move it
+  (identity hashing), so no rehash hazard exists.
+
+### 10.7 Interaction with existing rules
+
+- **C5**: `forEach` callbacks are non-escaping, like Q22's, and the
+  trap flag is checked after every callback return.
+- **Invariant 2**: `clear()` and `unsafeDelete` free eagerly;
+  `collect()` reclaims an unreachable container **and the keys/values
+  it uniquely held** — the container's storage must be scannable by
+  the collector (the P2/P4.3 root-range machinery), on both tiers.
+- **Hot reload** (compiler block §8.2): `Map`/`Set` are declarations
+  only through their type arguments; a `Map<K, V>` whose `K`/`V`
+  layout changes is a declaration-hash change and so restarts, which
+  is already the rule.
+
+### 10.8 Corpus and gate (pre-registered)
+
+Accept entries (continue the `aNN` numbering): a map battery
+(`set`/`get`/`getOr`/`has`/`delete`/`size`/`clear`, integer and string
+keys, a value-class value); an **insertion-order** entry pinning
+insert / overwrite-keeps-position / delete / re-insert-appends; a set
+battery; a reference-class-key entry proving identity semantics (two
+equal-shaped instances are distinct keys); and a `forEach` entry
+exercising the trap path. Rejects: an `f16` key, a `T[]` key, a
+`@CStruct` key, `get` on a scalar-valued `Map`, an iterator-protocol
+member, and `new Map([[k, v]])` — each S014 at a pinned position.
+
+Gate: standing gate byte-exact on both tiers including the new
+entries; `tsc` zero errors, unchanged config; iteration order pinned
+by golden; the collector reclaims a dropped container (observable via
+a `collect()` entry that then still prints correctly); a trapping
+`forEach` callback reports an identical tuple across tiers; rejects at
+pinned S014 positions; benchmarks — no ship-row regression.

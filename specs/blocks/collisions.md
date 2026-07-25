@@ -273,6 +273,27 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   - **`Q18` extends unchanged**: bitwise and shifts on `i8`/`u8`/`i16`/
     `u16` match C at that width; mixed-width operands require `as`.
 
+- **Q24 (`Map`/`Set`)** — accepted per `stdlib.md` §10. They are
+  **generic reference classes** monomorphized on first use, so keys and
+  values are stored unboxed. **Key kinds are whitelisted** to those Q22
+  already defines equality for (sized integers, `boolean`, `enum`,
+  `f32`/`f64` by `===`, `string` by content, `Date` by millis,
+  reference classes by identity); `f16` (Q23 storage-only), `T[]`,
+  `FixedArray`, `@CStruct` value classes, `object`, function types and
+  `Nullable<T>` are rejected as keys (S014). **Iteration is insertion
+  order** and is normative, not incidental — §0.3 determinism and the
+  golden corpus both depend on it; overwriting a present key keeps its
+  position, deleting and re-inserting appends. `get` returns
+  `V | null` only where `V` is nullable-capable; for a scalar `V` it is
+  rejected in favour of `has` plus the total `getOr(k, fallback)`,
+  because a zeroed miss value is silently wrong for a program that
+  stores zero (the same reasoning that rejected `find` in Q22). The
+  hash is the runtime's own, deterministic and **seed-free** — a
+  per-Context random seed would make iteration order, the goldens and
+  replays non-reproducible. The iterator protocol is not in the
+  language, so `keys`/`values`/`entries`/`for…of`/spread and
+  iterable construction are rejected; `forEach` is the traversal.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided
