@@ -2148,8 +2148,8 @@ impl<'m> Emitter<'m> {
                 Ok(format!("sub_rt_math_{}(ctx{sep}{argv})", f.name()))
             }
             // Q25 Number predicates, parsers, and toFixed all call the
-            // shared opaque runtime. The range-trapping entries carry
-            // the source position assigned by this emitter.
+            // shared opaque runtime. Trap-capable entries carry the
+            // source position assigned by this emitter.
             hir::Callee::Num(f) => {
                 let argv = self.eval_list(args, out, depth)?;
                 let call = if f.takes_pos_id() {
@@ -3898,14 +3898,13 @@ extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
 extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
 extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
 /* Number predicates, parsing, and fixed-decimal formatting
- * (stdlib.md 11, Q25). parseInt and toFixed carry source positions for
- * their programmer-error range traps. */
+ * (stdlib.md 11, Q25). Trap-capable entries carry source positions. */
 extern int32_t sub_rt_num_is_nan(void* ctx, double value);
 extern int32_t sub_rt_num_is_finite(void* ctx, double value);
 extern int32_t sub_rt_num_is_integer(void* ctx, double value);
 extern int32_t sub_rt_num_is_safe_integer(void* ctx, double value);
 extern double sub_rt_num_parse_int(void* ctx, const void* s, int32_t radix, uint32_t pos_id);
-extern double sub_rt_num_parse_float(void* ctx, const void* s);
+extern double sub_rt_num_parse_float(void* ctx, const void* s, uint32_t pos_id);
 extern void* sub_rt_num_to_fixed(void* ctx, double value, int32_t digits, uint32_t pos_id);
 /* IEEE binary16 is raw uint16_t storage in emitted C. All conversion is
  * behind these opaque runtime symbols; no _Float16/__fp16 operation is

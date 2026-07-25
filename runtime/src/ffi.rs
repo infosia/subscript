@@ -1223,8 +1223,8 @@ pub unsafe extern "C" fn sub_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id: u32)
 // ----- Number / parsing / toFixed (stdlib.md §11, Q25) -----
 //
 // All operations stay behind opaque symbols so both tiers execute the
-// same Rust implementation. The predicates are pure; parseInt and
-// toFixed carry a position because their programmer-error ranges trap.
+// same Rust implementation. The predicates are pure; parseInt,
+// parseFloat, and toFixed carry a position for their trap paths.
 
 /// `Number.isNaN(value)`.
 ///
@@ -1314,7 +1314,11 @@ pub unsafe extern "C" fn sub_rt_num_parse_int(
 ///
 /// Shared contract; `s` is a live UTF-8 string handle.
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_num_parse_float(ctx: *mut Context, s: *const u8) -> f64 {
+pub unsafe extern "C" fn sub_rt_num_parse_float(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+) -> f64 {
     if s.is_null() {
         return f64::NAN;
     }
@@ -1326,7 +1330,7 @@ pub unsafe extern "C" fn sub_rt_num_parse_float(ctx: *mut Context, s: *const u8)
         ctx.trap(
             TrapKind::Internal,
             "parseFloat received a non-UTF-8 language string",
-            0,
+            pos_id,
         );
         return f64::NAN;
     };
@@ -2615,7 +2619,7 @@ mod tests {
             let int_s = sub_rt_str_lit(p, b"fftail".as_ptr(), 6, 0);
             assert_eq!(sub_rt_num_parse_int(p, int_s, 16, 19), 255.0);
             let float_s = sub_rt_str_lit(p, b"1.5tail".as_ptr(), 7, 0);
-            assert_eq!(sub_rt_num_parse_float(p, float_s), 1.5);
+            assert_eq!(sub_rt_num_parse_float(p, float_s, 20), 1.5);
             let fixed = sub_rt_num_to_fixed(p, 1.005, 2, 20);
             assert_eq!(ctx.str_bytes(fixed), b"1.00");
             assert!(sub_rt_num_to_fixed(p, 1.0, 101, 21).is_null());
@@ -2634,6 +2638,18 @@ mod tests {
         let report = ctx.trap_record().expect("parseInt radix trap");
         assert_eq!(report.kind, TrapKind::NumberRange);
         assert_eq!(report.pos_id, 22);
+
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let s = ctx.alloc_str(&[0xff], 0);
+        // SAFETY: valid context and live string handle; the invalid byte
+        // exercises the defensive compiler/runtime-skew trap.
+        unsafe {
+            assert!(sub_rt_num_parse_float(p, s, 23).is_nan());
+        }
+        let report = ctx.trap_record().expect("parseFloat UTF-8 trap");
+        assert_eq!(report.kind, TrapKind::Internal);
+        assert_eq!(report.pos_id, 23);
     }
 
     #[test]

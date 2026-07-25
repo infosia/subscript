@@ -552,10 +552,13 @@ impl NumFn {
     }
 
     /// Whether the runtime signature carries a trailing `pos_id` and
-    /// may trap for an out-of-range programmer argument.
+    /// may trap.
     #[must_use]
     pub fn takes_pos_id(self) -> bool {
-        matches!(self, NumFn::ParseInt | NumFn::ToFixed)
+        matches!(
+            self,
+            NumFn::ParseInt | NumFn::ParseFloat | NumFn::ToFixed
+        )
     }
 
     /// Whether the result is an `i32` boolean representation.
@@ -1614,6 +1617,7 @@ mod tests {
         assert!(NumFn::IsNaN.returns_bool());
         assert!(!NumFn::ParseFloat.returns_bool());
         assert!(NumFn::ParseInt.takes_pos_id());
+        assert!(NumFn::ParseFloat.takes_pos_id());
         assert!(NumFn::ToFixed.takes_pos_id());
         assert!(!NumFn::IsFinite.takes_pos_id());
     }

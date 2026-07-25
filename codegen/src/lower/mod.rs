@@ -446,7 +446,7 @@ fn declare_rt<M: Module>(
                 (&[I64, F64], Some(I32))
             }
             N::ParseInt => (&[I64, I64, I32, I32], Some(F64)),
-            N::ParseFloat => (&[I64, I64], Some(F64)),
+            N::ParseFloat => (&[I64, I64, I32], Some(F64)),
             N::ToFixed => (&[I64, F64, I32, I32], Some(I64)),
             other => return Err(internal(format!("unknown NumFn {other:?}"))),
         };

@@ -337,7 +337,17 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   and checkable with `Number.isNaN`. That is precisely what was absent
   when Q20 rejected Invalid-Date (`Date` erases to `i64`, which has no
   NaN) and when Q24 rejected a zeroed `get` miss (zero is a legitimate
-  stored value). `toFixed(digits)` is fixed-decimal and therefore the
+  stored value).
+  **Divergence — `parseInt` is *more* precise than node at radixes
+  outside {2,4,8,10,16,32}** (recorded 2026-07-25): over 80 413 cases
+  the two differ 8 times, all at radix 3/35/36, and in every one this
+  language's result is the correctly-rounded double while node's is 1
+  ulp off. ECMA-262 §19.2.5 explicitly permits an implementation
+  approximation at exactly those radixes and requires exactness at the
+  others, where there are zero divergences. Recorded because
+  `stdlib.md` §11.6 requires divergences be recorded rather than
+  absorbed — not because anything needs changing.
+  `toFixed(digits)` is fixed-decimal and therefore the
   only numeric string that is not Q14's shortest round-trip; its
   half-way, `±0`, `>= 1e21`, `NaN` and infinity cases are pinned by
   golden, and it is one runtime implementation on both tiers rather
