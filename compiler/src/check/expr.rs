@@ -64,6 +64,19 @@ fn integer_width(ty: &Type) -> Option<i64> {
 }
 
 impl<'p> Checker<'p> {
+    /// Emits a checker-owned generated-reference rejection.
+    fn reject_api_form(&mut self, group: &str, surface: &str, actual: &str, pos: Pos) -> bool {
+        let Some(rejection) = crate::ambient::form_rejection(group, surface) else {
+            return false;
+        };
+        self.error(
+            rejection.code,
+            crate::ambient::rejection_message(rejection, actual),
+            pos,
+        );
+        true
+    }
+
     pub(crate) fn err_expr(&self, pos: Pos) -> hir::Expr {
         hir::Expr {
             kind: ExprKind::Null,
@@ -289,10 +302,10 @@ impl<'p> Checker<'p> {
                 if checked.ty == Type::Date {
                     // Q20: a Date has no implicit string form (the lib's
                     // would be local-time `toString`).
-                    self.error(
-                        RuleCode::S014,
-                        "a `Date` cannot be interpolated into a template; \
-                         format it with `toISOString()` (Q20)",
+                    self.reject_api_form(
+                        "Date",
+                        "template interpolation",
+                        "Date template interpolation",
                         checked.pos.clone(),
                     );
                 } else if !printable {
@@ -431,10 +444,10 @@ impl<'p> Checker<'p> {
                 } else if name == "Math" {
                     // The ambient namespace is not a value (Q19): it
                     // cannot be assigned, passed, or stored.
-                    self.error(
-                        RuleCode::S014,
-                        "`Math` is an ambient namespace, not a value; \
-                         only `Math.<member>` is accepted (Q19)",
+                    self.reject_api_form(
+                        "Math",
+                        "Math used as a value",
+                        "Math used as a value",
                         pos.clone(),
                     );
                     self.err_expr(pos)
@@ -904,10 +917,10 @@ impl<'p> Checker<'p> {
                 B::EqEqEq | B::NotEqEq | B::Lt | B::LtEq | B::Gt | B::GtEq
             )
         {
-            self.error(
-                RuleCode::S014,
-                "`Date` values are not directly comparable; compare `getTime()` \
-                 values (Q20)",
+            self.reject_api_form(
+                "Date",
+                "direct comparison",
+                "Date direct comparison",
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -1270,6 +1283,12 @@ impl<'p> Checker<'p> {
             return Some(self.check_date_member(prop, prop_pos, for_write));
         }
         if (name == "Map" || name == "Set") && self.scope_item(&name).is_none() {
+            if name == "Map"
+                && prop == "groupBy"
+                && self.reject_api_form("Map", "groupBy", "Map.groupBy", prop_pos.clone())
+            {
+                return Some(self.err_expr(prop_pos));
+            }
             self.error(
                 RuleCode::S014,
                 format!(
@@ -1372,16 +1391,16 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(prop_pos);
         }
-        let why = match prop {
-            "imul" | "fround" => {
-                format!(
-                    "`Math.{}`: JS-number op; the language has sized integers (Q19)",
-                    prop
-                )
-            }
-            _ => format!("`Math.{}` is outside the accepted Math subset (Q19)", prop),
-        };
-        self.error(RuleCode::S014, why, prop_pos.clone());
+        if matches!(prop, "imul" | "fround")
+            && self.reject_api_form("Math", prop, prop, prop_pos.clone())
+        {
+            return self.err_expr(prop_pos);
+        }
+        self.error(
+            RuleCode::S014,
+            format!("`Math.{}` is outside the accepted Math subset (Q19)", prop),
+            prop_pos.clone(),
+        );
         self.err_expr(prop_pos)
     }
 
@@ -1398,6 +1417,17 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let arity = f.arity();
         if c.args.len() != arity {
+            if matches!(f, MathFn::Hypot | MathFn::Max | MathFn::Min)
+                && c.args.len() > 2
+                && self.reject_api_form(
+                    "Math",
+                    "max/min/hypot with more than two arguments",
+                    f.name(),
+                    pos.clone(),
+                )
+            {
+                return self.err_expr(pos);
+            }
             let argument_type = if f == MathFn::Clz32 { "u32" } else { "f64" };
             self.error(
                 RuleCode::S014,
@@ -1483,13 +1513,16 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(prop_pos);
         }
-        let why = match prop {
-            "parseInt" | "parseFloat" => format!(
-                "`Number.{prop}` is rejected; use the global `{prop}` spelling (Q25)"
-            ),
-            _ => format!("`Number.{prop}` is outside the accepted Number subset (Q25)"),
-        };
-        self.error(RuleCode::S014, why, prop_pos.clone());
+        if matches!(prop, "parseInt" | "parseFloat")
+            && self.reject_api_form("Number", prop, prop, prop_pos.clone())
+        {
+            return self.err_expr(prop_pos);
+        }
+        self.error(
+            RuleCode::S014,
+            format!("`Number.{prop}` is outside the accepted Number subset (Q25)"),
+            prop_pos.clone(),
+        );
         self.err_expr(prop_pos)
     }
 
@@ -1572,17 +1605,25 @@ impl<'p> Checker<'p> {
             }
         };
         if c.args.len() != params.len() {
-            let why = if f == NumFn::ParseInt && c.args.len() == 1 {
-                "`parseInt` requires an explicit radix (2–36, Q25)".to_string()
+            if f == NumFn::ParseInt && c.args.len() == 1 {
+                self.reject_api_form(
+                    "global",
+                    "parseInt(value)",
+                    "parseInt(value)",
+                    pos.clone(),
+                );
             } else {
-                format!(
-                    "`{}` takes exactly {} argument(s), got {} (Q25)",
-                    f.name(),
-                    params.len(),
-                    c.args.len()
-                )
-            };
-            self.error(RuleCode::S014, why, pos.clone());
+                self.error(
+                    RuleCode::S014,
+                    format!(
+                        "`{}` takes exactly {} argument(s), got {} (Q25)",
+                        f.name(),
+                        params.len(),
+                        c.args.len()
+                    ),
+                    pos.clone(),
+                );
+            }
             return self.err_expr(pos);
         }
         let args = self.check_args(&params, &c.args, fx, &pos, f.name());
@@ -1642,15 +1683,15 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(prop_pos);
         }
-        let why = match prop {
-            "UTC" | "now" => format!(
-                "`Date.{}` may only be called, not read as a value (Q20)",
-                prop
-            ),
-            "parse" => "`Date.parse` is outside the accepted Date subset; construct \
-                        with `Date.UTC(…)` (Q20)"
-                .to_string(),
-            _ => format!("`Date.{}` is outside the accepted Date subset (Q20)", prop),
+        if prop == "parse"
+            && self.reject_api_form("Date", "Date.parse", "Date.parse", prop_pos.clone())
+        {
+            return self.err_expr(prop_pos);
+        }
+        let why = if matches!(prop, "UTC" | "now") {
+            format!("`Date.{}` may only be called, not read as a value (Q20)", prop)
+        } else {
+            format!("`Date.{}` is outside the accepted Date subset (Q20)", prop)
         };
         self.error(RuleCode::S014, why, prop_pos.clone());
         self.err_expr(prop_pos)
@@ -1738,20 +1779,19 @@ impl<'p> Checker<'p> {
                 }
             }
             0 => {
-                self.error(
-                    RuleCode::S014,
-                    "`new Date()` means the current time in the lib; out of subset — \
-                     write `new Date(Date.now())` (Q20)",
+                self.reject_api_form(
+                    "Date",
+                    "new Date()",
+                    "new Date()",
                     pos.clone(),
                 );
                 self.err_expr(pos)
             }
             _ => {
-                self.error(
-                    RuleCode::S014,
-                    "the multi-argument `new Date(y, m, …)` is interpreted in local \
-                     time by the lib; out of subset — write `new Date(Date.UTC(y, m, …))` \
-                     (Q20)",
+                self.reject_api_form(
+                    "Date",
+                    "new Date(year, month, ...)",
+                    "new Date(year, month, ...)",
                     pos.clone(),
                 );
                 self.err_expr(pos)
@@ -1805,51 +1845,18 @@ impl<'p> Checker<'p> {
     /// Emits the Q20 rejection for an out-of-subset `Date` instance
     /// member, naming the member and pointing at the accepted spelling.
     fn date_subset_rejection(&mut self, name: &str, pos: Pos) {
-        const LOCAL_ACCESSORS: &[&str] = &[
-            "getFullYear",
-            "getMonth",
-            "getDate",
-            "getDay",
-            "getHours",
-            "getMinutes",
-            "getSeconds",
-            "getMilliseconds",
-            "getTimezoneOffset",
-            "getYear",
-        ];
-        const TO_STRING_FAMILY: &[&str] = &[
-            "toString",
-            "toDateString",
-            "toTimeString",
-            "toLocaleString",
-            "toLocaleDateString",
-            "toLocaleTimeString",
-            "toUTCString",
-            "toJSON",
-            "valueOf",
-        ];
-        let why = if LOCAL_ACCESSORS.contains(&name) {
-            format!(
-                "`{}` reads local time; the accepted Date subset is UTC-only — \
-                 use the `getUTC…` accessor (Q20)",
-                name
-            )
-        } else if name.starts_with("set") {
-            format!(
-                "`{}`: a `Date` is an immutable value; setters are out of subset — \
-                 construct a new `Date` (Q20)",
-                name
-            )
-        } else if TO_STRING_FAMILY.contains(&name) {
-            format!(
-                "`{}` is outside the accepted Date subset; format with \
-                 `toISOString()` (Q20)",
-                name
+        let (code, why) = if let Some(rejection) = crate::ambient::date_rejection(name) {
+            (
+                rejection.code,
+                crate::ambient::rejection_message(rejection, name),
             )
         } else {
-            format!("`{}` is outside the accepted Date subset (Q20)", name)
+            (
+                RuleCode::S014,
+                format!("`{}` is outside the accepted Date subset (Q20)", name),
+            )
         };
-        self.error(RuleCode::S014, why, pos);
+        self.error(code, why, pos);
     }
 
     /// A Q25/Q26 numeric receiver method. The accepted formatting
@@ -1869,9 +1876,10 @@ impl<'p> Checker<'p> {
             "toFixed" | "toString" | "toExponential" | "toPrecision"
         ) {
             if name == "toLocaleString" {
-                self.error(
-                    RuleCode::S014,
-                    "`toLocaleString` is outside the accepted Number subset (Q25)",
+                self.reject_api_form(
+                    "f32 / f64",
+                    "toLocaleString",
+                    "toLocaleString",
                     prop_pos,
                 );
                 return self.err_expr(pos);
@@ -1885,9 +1893,10 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if !matches!(&recv.ty, Type::F32 | Type::F64) {
-            self.error(
-                RuleCode::S014,
-                format!("`{name}` is accepted only on `f32`/`f64` (Q25/Q26)"),
+            self.reject_api_form(
+                "sized integers",
+                "toFixed/toString/toExponential/toPrecision",
+                name,
                 prop_pos,
             );
             return self.err_expr(pos);
@@ -1926,6 +1935,16 @@ impl<'p> Checker<'p> {
             c.args.len() == 1
         };
         if !arity_ok {
+            let documented = match (name, c.args.len()) {
+                ("toString", 0) => Some("toString()"),
+                ("toPrecision", 0) => Some("toPrecision()"),
+                _ => None,
+            };
+            if documented.is_some_and(|surface| {
+                self.reject_api_form("f32 / f64", surface, surface, pos.clone())
+            }) {
+                return self.err_expr(pos);
+            }
             self.error(
                 RuleCode::S014,
                 format!(
@@ -2043,40 +2062,14 @@ impl<'p> Checker<'p> {
     /// returns `false` when `name` is not in the rejected set (the
     /// caller then falls back to the generic surface diagnostic).
     fn str_subset_rejection(&mut self, name: &str, pos: Pos) -> bool {
-        const REDUNDANT_WITH_SLICE: &[&str] = &["substring", "substr", "at", "charAt"];
-        const LOCALE_OR_UNICODE: &[&str] = &[
-            "localeCompare",
-            "toLocaleUpperCase",
-            "toLocaleLowerCase",
-            "normalize",
-        ];
-        const REGEX: &[&str] = &["match", "matchAll", "search"];
-        let why = if REDUNDANT_WITH_SLICE.contains(&name) {
-            format!(
-                "`{}` is redundant with the byte-measure `slice`; out of the \
-                 accepted String subset (Q21)",
-                name
-            )
-        } else if LOCALE_OR_UNICODE.contains(&name) {
-            format!(
-                "`{}` is locale- or Unicode-table-dependent; the accepted String \
-                 subset is ASCII/byte-based (Q21)",
-                name
-            )
-        } else if REGEX.contains(&name) {
-            format!("`{}` requires RegExp, a stdlib non-goal (Q21)", name)
-        } else if name == "concat" {
-            "`concat` is redundant with `+` concatenation; out of the accepted \
-             String subset (Q21)"
-                .to_string()
-        } else if name == "codePointAt" {
-            "`codePointAt` is outside the accepted String subset; `charCodeAt` \
-             reads byte values (Q21)"
-                .to_string()
-        } else {
+        let Some(rejection) = crate::ambient::string_rejection(name) else {
             return false;
         };
-        self.error(RuleCode::S014, why, pos);
+        self.error(
+            rejection.code,
+            crate::ambient::rejection_message(rejection, name),
+            pos,
+        );
         true
     }
 
@@ -2273,10 +2266,10 @@ impl<'p> Checker<'p> {
             }
             A::Sort => {
                 if c.args.is_empty() {
-                    self.error(
-                        RuleCode::S014,
-                        "`sort` requires a comparator: the lib's no-argument sort \
-                         coerces elements to strings (Q22)",
+                    self.reject_api_form(
+                        "T[]",
+                        "sort()",
+                        "sort()",
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -2300,10 +2293,10 @@ impl<'p> Checker<'p> {
             }
             A::Reduce => {
                 if c.args.len() < 2 {
-                    self.error(
-                        RuleCode::S014,
-                        "`reduce` requires an explicit `init`: the lib's no-init \
-                         overload changes meaning by arity (Q22)",
+                    self.reject_api_form(
+                        "T[]",
+                        "reduce(callback)",
+                        "reduce(callback)",
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -2462,6 +2455,22 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
+        let Some(operation) = crate::ambient::map_method(name) else {
+            if let Some(rejection) = crate::ambient::map_rejection(name) {
+                self.error(
+                    rejection.code,
+                    crate::ambient::rejection_message(rejection, name),
+                    prop_pos,
+                );
+            } else {
+                self.error(
+                    RuleCode::S100,
+                    format!("`Map` has no accepted method `{name}` (Q24)"),
+                    prop_pos,
+                );
+            }
+            return self.err_expr(pos);
+        };
         let map_ty = Type::Map(Box::new(key.clone()), Box::new(value.clone()));
         let mk = |f: MapFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
@@ -2471,16 +2480,13 @@ impl<'p> Checker<'p> {
             ty,
             pos,
         };
-        match name {
-            "get" => {
+        match operation {
+            MapFn::Get => {
                 if !self.map_get_value_ok(&value) {
-                    self.error(
-                        RuleCode::S014,
-                        format!(
-                            "`get` cannot report a miss for scalar-valued `{}`; \
-                             use `has` plus `getOr` (Q24)",
-                            self.type_name(&map_ty)
-                        ),
+                    self.reject_api_form(
+                        "Map<K, scalar V>",
+                        "get(key)",
+                        "get(key)",
                         prop_pos,
                     );
                     return self.err_expr(pos);
@@ -2499,7 +2505,7 @@ impl<'p> Checker<'p> {
                 };
                 mk(MapFn::Get, args, ty, pos)
             }
-            "getOr" => {
+            MapFn::GetOr => {
                 let params = [
                     ParamSig {
                         name: String::new(),
@@ -2516,7 +2522,7 @@ impl<'p> Checker<'p> {
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.getOr"));
                 mk(MapFn::GetOr, args, value, pos)
             }
-            "set" => {
+            MapFn::Set => {
                 let params = [
                     ParamSig {
                         name: String::new(),
@@ -2545,7 +2551,7 @@ impl<'p> Checker<'p> {
                 args.extend(checked);
                 mk(MapFn::Set, args, map_ty, pos)
             }
-            "has" | "delete" => {
+            MapFn::Has | MapFn::Delete => {
                 let params = [ParamSig {
                     name: String::new(),
                     ty: key,
@@ -2557,30 +2563,26 @@ impl<'p> Checker<'p> {
                     &c.args,
                     fx,
                     &pos,
-                    if name == "has" {
+                    if operation == MapFn::Has {
                         "Map.has"
                     } else {
                         "Map.delete"
                     },
                 ));
                 mk(
-                    if name == "has" {
-                        MapFn::Has
-                    } else {
-                        MapFn::Delete
-                    },
+                    operation,
                     args,
                     Type::Bool,
                     pos,
                 )
             }
-            "clear" => {
+            MapFn::Clear => {
                 let checked = self.check_args(&[], &c.args, fx, &pos, "Map.clear");
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(MapFn::Clear, args, Type::Void, pos)
             }
-            "forEach" => {
+            MapFn::ForEach => {
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
@@ -2601,18 +2603,10 @@ impl<'p> Checker<'p> {
                 );
                 mk(MapFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
-            "keys" | "values" | "entries" => {
-                self.error(
-                    RuleCode::S014,
-                    format!("`Map.{name}` requires the iterator protocol; use `forEach` (Q24)"),
-                    prop_pos,
-                );
-                self.err_expr(pos)
-            }
-            _ => {
+            MapFn::New | MapFn::Size => {
                 self.error(
                     RuleCode::S100,
-                    format!("`Map` has no accepted method `{name}` (Q24)"),
+                    "internal Map member-table mismatch",
                     prop_pos,
                 );
                 self.err_expr(pos)
@@ -2631,6 +2625,22 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
+        let Some(operation) = crate::ambient::set_method(name) else {
+            if let Some(rejection) = crate::ambient::set_rejection(name) {
+                self.error(
+                    rejection.code,
+                    crate::ambient::rejection_message(rejection, name),
+                    prop_pos,
+                );
+            } else {
+                self.error(
+                    RuleCode::S100,
+                    format!("`Set` has no accepted method `{name}` (Q24)"),
+                    prop_pos,
+                );
+            }
+            return self.err_expr(pos);
+        };
         let set_ty = Type::Set(Box::new(key.clone()));
         let mk = |f: SetFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
@@ -2640,8 +2650,8 @@ impl<'p> Checker<'p> {
             ty,
             pos,
         };
-        match name {
-            "add" | "has" | "delete" => {
+        match operation {
+            SetFn::Add | SetFn::Has | SetFn::Delete => {
                 let params = [ParamSig {
                     name: String::new(),
                     ty: key,
@@ -2655,20 +2665,20 @@ impl<'p> Checker<'p> {
                     &pos,
                     &format!("Set.{name}"),
                 ));
-                let (f, ty) = match name {
-                    "add" => (SetFn::Add, set_ty),
-                    "has" => (SetFn::Has, Type::Bool),
-                    _ => (SetFn::Delete, Type::Bool),
+                let ty = match operation {
+                    SetFn::Add => set_ty,
+                    SetFn::Has | SetFn::Delete => Type::Bool,
+                    _ => Type::Error,
                 };
-                mk(f, args, ty, pos)
+                mk(operation, args, ty, pos)
             }
-            "clear" => {
+            SetFn::Clear => {
                 let checked = self.check_args(&[], &c.args, fx, &pos, "Set.clear");
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(SetFn::Clear, args, Type::Void, pos)
             }
-            "forEach" => {
+            SetFn::ForEach => {
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
@@ -2689,27 +2699,10 @@ impl<'p> Checker<'p> {
                 );
                 mk(SetFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
-            "keys"
-            | "values"
-            | "entries"
-            | "union"
-            | "intersection"
-            | "difference"
-            | "symmetricDifference"
-            | "isSubsetOf"
-            | "isSupersetOf"
-            | "isDisjointFrom" => {
-                self.error(
-                    RuleCode::S014,
-                    format!("`Set.{name}` is outside the accepted Q24 subset"),
-                    prop_pos,
-                );
-                self.err_expr(pos)
-            }
-            _ => {
+            SetFn::New | SetFn::Size => {
                 self.error(
                     RuleCode::S100,
-                    format!("`Set` has no accepted method `{name}` (Q24)"),
+                    "internal Set member-table mismatch",
                     prop_pos,
                 );
                 self.err_expr(pos)
@@ -2864,33 +2857,14 @@ impl<'p> Checker<'p> {
     /// returns `false` when `name` is not in the rejected set (the
     /// caller then falls back to the generic surface diagnostic).
     fn arr_subset_rejection(&mut self, name: &str, pos: Pos) -> bool {
-        const STRUCTURAL: &[&str] = &["splice", "shift", "unshift", "copyWithin"];
-        const NESTING: &[&str] = &["flat", "flatMap"];
-        const ITERATORS: &[&str] = &["entries", "keys", "values"];
-        let why = if name == "find" || name == "findLast" {
-            format!(
-                "`{}` has no miss value for scalar element types (`T | null` does \
-                 not cover scalars); use `findIndex` (Q22)",
-                name
-            )
-        } else if name == "reduceRight" {
-            "`reduceRight` is outside the accepted Array subset; fold with `reduce` \
-             (Q22)"
-                .to_string()
-        } else if STRUCTURAL.contains(&name) {
-            format!(
-                "`{}` is outside the accepted Array subset (push, pop, slice, fill, \
-                 and the Q22 methods) (Q22)",
-                name
-            )
-        } else if NESTING.contains(&name) {
-            format!("`{}` requires nested-array flattening, out of the Q22 subset (Q22)", name)
-        } else if ITERATORS.contains(&name) {
-            format!("`{}` requires the iterator protocol, out of the Q22 subset (Q22)", name)
-        } else {
+        let Some(rejection) = crate::ambient::array_rejection(name) else {
             return false;
         };
-        self.error(RuleCode::S014, why, pos);
+        self.error(
+            rejection.code,
+            crate::ambient::rejection_message(rejection, name),
+            pos,
+        );
         true
     }
 
@@ -3091,23 +3065,16 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
-                if !for_write
-                    && matches!(
-                        name,
-                        "get" | "getOr" | "set" | "has" | "delete" | "clear" | "forEach"
-                    )
-                {
+                if !for_write && crate::ambient::map_method(name).is_some() {
                     self.error(
                         RuleCode::S100,
                         format!("method `{name}` may only be called, not read as a value"),
                         prop_pos.clone(),
                     );
-                } else if matches!(name, "keys" | "values" | "entries") {
+                } else if let Some(rejection) = crate::ambient::map_rejection(name) {
                     self.error(
-                        RuleCode::S014,
-                        format!(
-                            "`{name}` requires the iterator protocol; use `forEach` (Q24)"
-                        ),
+                        rejection.code,
+                        crate::ambient::rejection_message(rejection, name),
                         prop_pos.clone(),
                     );
                 } else {
@@ -3130,33 +3097,16 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
-                if !for_write
-                    && matches!(name, "add" | "has" | "delete" | "clear" | "forEach")
-                {
+                if !for_write && crate::ambient::set_method(name).is_some() {
                     self.error(
                         RuleCode::S100,
                         format!("method `{name}` may only be called, not read as a value"),
                         prop_pos.clone(),
                     );
-                } else if matches!(
-                    name,
-                    "keys"
-                        | "values"
-                        | "entries"
-                        | "union"
-                        | "intersection"
-                        | "difference"
-                        | "symmetricDifference"
-                        | "isSubsetOf"
-                        | "isSupersetOf"
-                        | "isDisjointFrom"
-                ) {
+                } else if let Some(rejection) = crate::ambient::set_rejection(name) {
                     self.error(
-                        RuleCode::S014,
-                        format!(
-                            "`{name}` is outside the accepted Set subset; use `forEach` \
-                             for traversal (Q24)"
-                        ),
+                        rejection.code,
+                        crate::ambient::rejection_message(rejection, name),
                         prop_pos.clone(),
                     );
                 } else {
@@ -3645,21 +3595,16 @@ impl<'p> Checker<'p> {
                     return self.check_number_global_call(f, c, fx, pos);
                 }
                 if name == "Number" {
-                    self.error(
-                        RuleCode::S014,
-                        "`Number(x)` coercion is rejected; use explicit `as` conversion (Q25)",
-                        pos.clone(),
-                    );
+                    self.reject_api_form("Number", "Number(value)", "Number(value)", pos.clone());
                     return self.err_expr(pos);
                 }
                 if name == "isNaN" || name == "isFinite" {
-                    self.error(
-                        RuleCode::S014,
-                        format!(
-                            "the coercing global `{name}` is rejected; use `Number.{name}` (Q25)"
-                        ),
-                        pos.clone(),
-                    );
+                    let surface = if name == "isNaN" {
+                        "isNaN(value)"
+                    } else {
+                        "isFinite(value)"
+                    };
+                    self.reject_api_form("global", surface, surface, pos.clone());
                     return self.err_expr(pos);
                 }
                 if let Some(ambient) = crate::ambient::ambient_fn(&name) {
@@ -3915,13 +3860,10 @@ impl<'p> Checker<'p> {
             // (`ambient::arr_method` excludes them), so they keep the
             // standing "no method" diagnostic of the fall-through arm.
             Type::FixedArray(..) if crate::ambient::arr_method(&name).is_some() => {
-                self.error(
-                    RuleCode::S014,
-                    format!(
-                        "`{}` is not available on `FixedArray`; the Array methods \
-                         apply to `T[]` only (Q22)",
-                        name
-                    ),
+                self.reject_api_form(
+                    "FixedArray<T, N>",
+                    "T[] methods",
+                    &name,
                     prop_pos.clone(),
                 );
                 self.err_expr(pos)
@@ -4074,10 +4016,10 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if name == "Number" && self.is_number_namespace(callee, fx) {
-            self.error(
-                RuleCode::S014,
-                "`new Number(x)` boxing/coercion is rejected; use an explicit sized \
-                 numeric type and `as` conversion (Q25)",
+            self.reject_api_form(
+                "Number",
+                "new Number(value)",
+                "new Number(value)",
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -4107,12 +4049,10 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             if n.args.as_ref().is_some_and(|args| !args.is_empty()) {
-                self.error(
-                    RuleCode::S014,
-                    format!(
-                        "`new {name}(iterable)` is rejected; iterable construction \
-                         requires the iterator protocol (Q24)"
-                    ),
+                self.reject_api_form(
+                    "Map / Set",
+                    "new Map/Set(iterable)",
+                    &format!("new {name}(iterable)"),
                     pos.clone(),
                 );
                 return self.err_expr(pos);

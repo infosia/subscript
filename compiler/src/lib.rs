@@ -12,6 +12,7 @@
 pub mod diag;
 pub mod hir;
 pub mod types;
+pub mod api_reference;
 
 mod ambient;
 mod check;

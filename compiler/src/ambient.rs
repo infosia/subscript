@@ -4,8 +4,657 @@
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
 
-use crate::hir::{AmbientFn, ArrFn, DateFn, MathFn, NumFn, StrFn};
+use crate::diag::RuleCode;
+use crate::hir::{AmbientFn, ArrFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
 use crate::types::Type;
+
+/// One accepted checker-owned API entry rendered by the generated
+/// reference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApiItem {
+    /// Receiver or namespace heading.
+    pub group: &'static str,
+    /// Source-level subscript signature.
+    pub signature: String,
+    /// Human-readable behavior summary, colocated with the checker table.
+    pub summary: &'static str,
+}
+
+/// One named standard-library rejection consulted by the checker and
+/// rendered by the generated reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ApiRejection {
+    /// Receiver, namespace, or source-form heading.
+    pub group: &'static str,
+    /// Rejected spelling or call shape.
+    pub surface: &'static str,
+    /// Stable checker diagnostic code.
+    pub code: RuleCode,
+    /// Collision-register rule.
+    pub q_rule: &'static str,
+    /// Accepted replacement, when the checker contract names one.
+    pub replacement: Option<&'static str>,
+    /// Human-readable reason.
+    pub summary: &'static str,
+    /// Reject-corpus entry pinning the code, when one exists.
+    pub corpus: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NamedF64 {
+    name: &'static str,
+    value: f64,
+    summary: &'static str,
+}
+
+const MATH_CONSTS: &[NamedF64] = &[
+    NamedF64 {
+        name: "E",
+        value: std::f64::consts::E,
+        summary: "Euler's number.",
+    },
+    NamedF64 {
+        name: "LN2",
+        value: std::f64::consts::LN_2,
+        summary: "Natural logarithm of 2.",
+    },
+    NamedF64 {
+        name: "LN10",
+        value: std::f64::consts::LN_10,
+        summary: "Natural logarithm of 10.",
+    },
+    NamedF64 {
+        name: "LOG2E",
+        value: std::f64::consts::LOG2_E,
+        summary: "Base-2 logarithm of E.",
+    },
+    NamedF64 {
+        name: "LOG10E",
+        value: std::f64::consts::LOG10_E,
+        summary: "Base-10 logarithm of E.",
+    },
+    NamedF64 {
+        name: "PI",
+        value: std::f64::consts::PI,
+        summary: "Ratio of a circle's circumference to its diameter.",
+    },
+    NamedF64 {
+        name: "SQRT1_2",
+        value: std::f64::consts::FRAC_1_SQRT_2,
+        summary: "Square root of one half.",
+    },
+    NamedF64 {
+        name: "SQRT2",
+        value: std::f64::consts::SQRT_2,
+        summary: "Square root of 2.",
+    },
+];
+
+const NUMBER_CONSTS: &[NamedF64] = &[
+    NamedF64 {
+        name: "MAX_SAFE_INTEGER",
+        value: 9_007_199_254_740_991.0,
+        summary: "Largest exactly representable safe integer.",
+    },
+    NamedF64 {
+        name: "MIN_SAFE_INTEGER",
+        value: -9_007_199_254_740_991.0,
+        summary: "Smallest exactly representable safe integer.",
+    },
+    NamedF64 {
+        name: "EPSILON",
+        value: f64::EPSILON,
+        summary: "Difference between 1 and the next `f64`.",
+    },
+    NamedF64 {
+        name: "MAX_VALUE",
+        value: f64::MAX,
+        summary: "Largest finite `f64`.",
+    },
+    NamedF64 {
+        name: "MIN_VALUE",
+        value: f64::from_bits(1),
+        summary: "Smallest positive nonzero `f64`.",
+    },
+    NamedF64 {
+        name: "POSITIVE_INFINITY",
+        value: f64::INFINITY,
+        summary: "Positive infinity.",
+    },
+    NamedF64 {
+        name: "NEGATIVE_INFINITY",
+        value: f64::NEG_INFINITY,
+        summary: "Negative infinity.",
+    },
+    NamedF64 {
+        name: "NaN",
+        value: f64::NAN,
+        summary: "The `f64` not-a-number value.",
+    },
+];
+
+const STRING_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "string",
+        "substring",
+        "Q21",
+        Some("slice"),
+        "Outside the checker-owned String subset.",
+        Some("r25-string-substring.ts"),
+    ),
+    rejection(
+        "string",
+        "substr",
+        "Q21",
+        Some("slice"),
+        "Outside the checker-owned String subset.",
+        None,
+    ),
+    rejection(
+        "string",
+        "at",
+        "Q21",
+        Some("slice"),
+        "The language has no scalar miss value.",
+        None,
+    ),
+    rejection(
+        "string",
+        "charAt",
+        "Q21",
+        Some("slice"),
+        "Outside the checker-owned String subset.",
+        None,
+    ),
+    rejection(
+        "string",
+        "localeCompare",
+        "Q21",
+        None,
+        "Locale-dependent collation is unavailable.",
+        Some("r26-string-localecompare.ts"),
+    ),
+    rejection(
+        "string",
+        "toLocaleUpperCase",
+        "Q21",
+        Some("toUpperCase"),
+        "Locale-sensitive case conversion is unavailable.",
+        Some("r28-string-tolocaleupper.ts"),
+    ),
+    rejection(
+        "string",
+        "toLocaleLowerCase",
+        "Q21",
+        Some("toLowerCase"),
+        "Locale-sensitive case conversion is unavailable.",
+        None,
+    ),
+    rejection(
+        "string",
+        "normalize",
+        "Q21",
+        None,
+        "Unicode normalization tables are unavailable.",
+        None,
+    ),
+    rejection(
+        "string",
+        "match",
+        "Q21",
+        None,
+        "The language has no RegExp engine.",
+        Some("r27-string-match.ts"),
+    ),
+    rejection(
+        "string",
+        "matchAll",
+        "Q21",
+        None,
+        "The language has no RegExp engine or iterator protocol.",
+        None,
+    ),
+    rejection(
+        "string",
+        "search",
+        "Q21",
+        None,
+        "The language has no RegExp engine.",
+        None,
+    ),
+    rejection(
+        "string",
+        "concat",
+        "Q21",
+        Some("+"),
+        "Use the language string-concatenation operator.",
+        None,
+    ),
+    rejection(
+        "string",
+        "codePointAt",
+        "Q21",
+        Some("charCodeAt"),
+        "The accepted code-unit operation reads UTF-8 bytes.",
+        None,
+    ),
+];
+
+const ARRAY_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "T[]",
+        "find",
+        "Q22",
+        Some("findIndex"),
+        "A scalar element type has no miss value.",
+        Some("r30-array-find.ts"),
+    ),
+    rejection(
+        "T[]",
+        "findLast",
+        "Q22",
+        Some("findIndex"),
+        "A scalar element type has no miss value.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "reduceRight",
+        "Q22",
+        Some("reduce"),
+        "Outside the checker-owned Array subset.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "splice",
+        "Q22",
+        None,
+        "Structural mutation is outside the checker-owned Array subset.",
+        Some("r32-array-splice.ts"),
+    ),
+    rejection(
+        "T[]",
+        "shift",
+        "Q22",
+        None,
+        "Structural mutation is outside the checker-owned Array subset.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "unshift",
+        "Q22",
+        Some("push"),
+        "Structural mutation is outside the checker-owned Array subset.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "copyWithin",
+        "Q22",
+        None,
+        "Structural mutation is outside the checker-owned Array subset.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "flat",
+        "Q22",
+        None,
+        "Runtime flattening depth cannot determine a static result type.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "flatMap",
+        "Q22",
+        None,
+        "Runtime flattening depth cannot determine a static result type.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "entries",
+        "Q22",
+        None,
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "keys",
+        "Q22",
+        None,
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "T[]",
+        "values",
+        "Q22",
+        None,
+        "The language has no iterator protocol.",
+        None,
+    ),
+];
+
+const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "Date",
+        "getFullYear",
+        "Q20",
+        Some("getUTCFullYear"),
+        "Local-time accessors are unavailable.",
+        Some("r19-date-local-accessor.ts"),
+    ),
+    rejection(
+        "Date",
+        "getMonth",
+        "Q20",
+        Some("getUTCMonth"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getDate",
+        "Q20",
+        Some("getUTCDate"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getDay",
+        "Q20",
+        Some("getUTCDay"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getHours",
+        "Q20",
+        Some("getUTCHours"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getMinutes",
+        "Q20",
+        Some("getUTCMinutes"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getSeconds",
+        "Q20",
+        Some("getUTCSeconds"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getMilliseconds",
+        "Q20",
+        Some("getUTCMilliseconds"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getTimezoneOffset",
+        "Q20",
+        None,
+        "The runtime has no timezone database.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "getYear",
+        "Q20",
+        Some("getUTCFullYear"),
+        "Local-time accessors are unavailable.",
+        None,
+    ),
+];
+
+const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "Date",
+        "toString",
+        "Q20",
+        Some("toISOString"),
+        "Local-time formatting is unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toDateString",
+        "Q20",
+        Some("toISOString"),
+        "Local-time formatting is unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toTimeString",
+        "Q20",
+        Some("toISOString"),
+        "Local-time formatting is unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toLocaleString",
+        "Q20",
+        Some("toISOString"),
+        "Locale and timezone formatting is unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toLocaleDateString",
+        "Q20",
+        Some("toISOString"),
+        "Locale and timezone formatting is unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toLocaleTimeString",
+        "Q20",
+        Some("toISOString"),
+        "Locale and timezone formatting is unavailable.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toUTCString",
+        "Q20",
+        Some("toISOString"),
+        "Outside the checker-owned Date formatting subset.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "toJSON",
+        "Q20",
+        Some("toISOString"),
+        "Outside the checker-owned Date formatting subset.",
+        None,
+    ),
+    rejection(
+        "Date",
+        "valueOf",
+        "Q20",
+        Some("getTime"),
+        "Implicit Date numeric conversion is unavailable.",
+        None,
+    ),
+];
+
+const MAP_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "Map<K, V>",
+        "keys",
+        "Q24",
+        Some("forEach"),
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "Map<K, V>",
+        "values",
+        "Q24",
+        Some("forEach"),
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "Map<K, V>",
+        "entries",
+        "Q24",
+        Some("forEach"),
+        "The language has no iterator protocol.",
+        Some("r42-map-iterator-member.ts"),
+    ),
+];
+
+const SET_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "Set<K>",
+        "keys",
+        "Q24",
+        Some("forEach"),
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "values",
+        "Q24",
+        Some("forEach"),
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "entries",
+        "Q24",
+        Some("forEach"),
+        "The language has no iterator protocol.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "union",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "intersection",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "difference",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "symmetricDifference",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "isSubsetOf",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "isSupersetOf",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+    rejection(
+        "Set<K>",
+        "isDisjointFrom",
+        "Q24",
+        None,
+        "Outside the checker-owned Set subset.",
+        None,
+    ),
+];
+
+const FORM_REJECTIONS: &[ApiRejection] = &[
+    rejection("global", "isNaN(value)", "Q25", Some("Number.isNaN"), "The global form coerces its argument.", Some("r46-number-global-isnan.ts")),
+    rejection("global", "isFinite(value)", "Q25", Some("Number.isFinite"), "The global form coerces its argument.", None),
+    rejection("global", "parseInt(value)", "Q25", Some("parseInt(value, radix)"), "The radix is a required `i32` argument.", Some("r50-parse-int-no-radix.ts")),
+    rejection("Number", "Number(value)", "Q25", Some("value as f64"), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
+    rejection("Number", "new Number(value)", "Q25", Some("value as f64"), "Boxed numbers and numeric coercion are unavailable.", None),
+    rejection("Number", "parseInt", "Q25", Some("global parseInt"), "Only the global parser spelling is accepted.", None),
+    rejection("Number", "parseFloat", "Q25", Some("global parseFloat"), "Only the global parser spelling is accepted.", None),
+    rejection("f32 / f64", "toLocaleString", "Q25", None, "Locale-sensitive number formatting is unavailable.", None),
+    rejection("f32 / f64", "toString()", "Q26", Some("toString(radix)"), "An explicit radix is required.", Some("r49-number-to-string-radix.ts")),
+    rejection("f32 / f64", "toPrecision()", "Q26", Some("toPrecision(digits)"), "An explicit digit count is required.", Some("r48-number-to-precision.ts")),
+    rejection("sized integers", "toFixed/toString/toExponential/toPrecision", "Q25/Q26", Some("convert to f32 or f64 first"), "Number formatting methods are accepted only on floating-point receivers.", None),
+    rejection("Math", "imul", "Q19", Some("left * right on i32"), "The language already has sized integer multiplication.", Some("r15-math-imul.ts")),
+    rejection("Math", "fround", "Q19", Some("value as f32"), "The language already has explicit `f32` conversion.", Some("r17-math-fround.ts")),
+    rejection("Math", "max/min/hypot with more than two arguments", "Q19", None, "Variadic parameters are outside the language.", Some("r16-math-variadic-max.ts")),
+    rejection("Math", "Math used as a value", "Q19", Some("Math.<member>"), "Math is a compiler-owned namespace.", Some("r18-math-value.ts")),
+    rejection("Date", "Date.parse", "Q20", Some("Date.UTC"), "Parsing depends on timezone rules the runtime does not provide.", None),
+    rejection("Date", "new Date()", "Q20", Some("new Date(Date.now())"), "The zero-argument constructor reads nondeterministic current time.", Some("r23-date-zero-arg-ctor.ts")),
+    rejection("Date", "new Date(year, month, ...)", "Q20", Some("new Date(Date.UTC(...))"), "The multi-argument constructor uses local time.", Some("r21-date-multiarg-ctor.ts")),
+    rejection("Date", "template interpolation", "Q20", Some("toISOString"), "Date has no implicit local-time string form.", Some("r22-date-template.ts")),
+    rejection("Date", "direct comparison", "Q20", Some("compare getTime() values"), "Date values do not compare implicitly.", Some("r24-date-compare.ts")),
+    rejection("Date", "set*", "Q20", Some("construct a new Date"), "Date is an immutable value.", Some("r20-date-setter.ts")),
+    rejection("T[]", "sort()", "Q22", Some("sort(comparator)"), "The no-argument overload coerces elements to strings.", Some("r29-array-sort-noarg.ts")),
+    rejection("T[]", "reduce(callback)", "Q22", Some("reduce(callback, init)"), "An explicit initial accumulator is required.", Some("r31-array-reduce-noinit.ts")),
+    rejection("FixedArray<T, N>", "T[] methods", "Q22", None, "FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays.", None),
+    rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
+    rejection("Map / Set", "new Map/Set(iterable)", "Q24", Some("construct empty, then add/set"), "The language has no iterator protocol.", Some("r43-map-iterable-constructor.ts")),
+    rejection("Map", "groupBy", "Q24", None, "Static Map grouping is outside the checker-owned subset.", None),
+];
+
+const fn rejection(
+    group: &'static str,
+    surface: &'static str,
+    q_rule: &'static str,
+    replacement: Option<&'static str>,
+    summary: &'static str,
+    corpus: Option<&'static str>,
+) -> ApiRejection {
+    ApiRejection {
+        group,
+        surface,
+        code: RuleCode::S014,
+        q_rule,
+        replacement,
+        summary,
+        corpus,
+    }
+}
 
 /// Maps a sized-numeric alias name to its type.
 pub(crate) fn sized_alias(name: &str) -> Option<Type> {
@@ -27,12 +676,7 @@ pub(crate) fn sized_alias(name: &str) -> Option<Type> {
 
 /// Maps an ambient function name to its identity.
 pub(crate) fn ambient_fn(name: &str) -> Option<AmbientFn> {
-    match name {
-        "print" => Some(AmbientFn::Print),
-        "collect" => Some(AmbientFn::Collect),
-        "unsafeDelete" => Some(AmbientFn::UnsafeDelete),
-        _ => None,
-    }
+    AmbientFn::ALL.iter().copied().find(|f| f.name() == name)
 }
 
 /// Parameter types of an ambient function (all return `void`).
@@ -52,33 +696,15 @@ pub(crate) fn math_fn(name: &str) -> Option<MathFn> {
 /// Folded `f64` value of a `Math` constant member (stdlib.md §1): the
 /// exact IEEE bit patterns of the Rust `std::f64::consts` doubles.
 pub(crate) fn math_const(name: &str) -> Option<f64> {
-    use std::f64::consts;
-    match name {
-        "E" => Some(consts::E),
-        "LN2" => Some(consts::LN_2),
-        "LN10" => Some(consts::LN_10),
-        "LOG2E" => Some(consts::LOG2_E),
-        "LOG10E" => Some(consts::LOG10_E),
-        "PI" => Some(consts::PI),
-        "SQRT1_2" => Some(consts::FRAC_1_SQRT_2),
-        "SQRT2" => Some(consts::SQRT_2),
-        _ => None,
-    }
+    MATH_CONSTS.iter().find(|c| c.name == name).map(|c| c.value)
 }
 
 /// Folded `f64` value of a `Number` constant (stdlib.md §11.1).
 pub(crate) fn number_const(name: &str) -> Option<f64> {
-    Some(match name {
-        "MAX_SAFE_INTEGER" => 9_007_199_254_740_991.0,
-        "MIN_SAFE_INTEGER" => -9_007_199_254_740_991.0,
-        "EPSILON" => f64::EPSILON,
-        "MAX_VALUE" => f64::MAX,
-        "MIN_VALUE" => f64::from_bits(1),
-        "POSITIVE_INFINITY" => f64::INFINITY,
-        "NEGATIVE_INFINITY" => f64::NEG_INFINITY,
-        "NaN" => f64::NAN,
-        _ => return None,
-    })
+    NUMBER_CONSTS
+        .iter()
+        .find(|c| c.name == name)
+        .map(|c| c.value)
 }
 
 /// Accepted `Number.is*` predicate member.
@@ -106,18 +732,11 @@ pub(crate) fn number_global(name: &str) -> Option<NumFn> {
 /// it folds to the receiver value at check time — and the statics
 /// (`UTC`, `now`) are resolved on the `Date` namespace, not a receiver.
 pub(crate) fn date_method(name: &str) -> Option<DateFn> {
-    Some(match name {
-        "getUTCFullYear" => DateFn::GetUtcFullYear,
-        "getUTCMonth" => DateFn::GetUtcMonth,
-        "getUTCDate" => DateFn::GetUtcDate,
-        "getUTCDay" => DateFn::GetUtcDay,
-        "getUTCHours" => DateFn::GetUtcHours,
-        "getUTCMinutes" => DateFn::GetUtcMinutes,
-        "getUTCSeconds" => DateFn::GetUtcSeconds,
-        "getUTCMilliseconds" => DateFn::GetUtcMilliseconds,
-        "toISOString" => DateFn::ToIso,
-        _ => return None,
-    })
+    DateFn::ALL
+        .iter()
+        .copied()
+        .filter(|f| !matches!(f, DateFn::New | DateFn::Utc | DateFn::Now))
+        .find(|f| f.name() == name)
 }
 
 /// Maps a `String` method name to its intrinsic (stdlib.md §8, Q21).
@@ -133,6 +752,285 @@ pub(crate) fn str_method(name: &str) -> Option<StrFn> {
 /// nothing.
 pub(crate) fn arr_method(name: &str) -> Option<ArrFn> {
     ArrFn::ALL.iter().copied().find(|f| f.name() == name)
+}
+
+/// Maps a `Map` method name to the intrinsic table the checker lowers.
+pub(crate) fn map_method(name: &str) -> Option<MapFn> {
+    MapFn::ALL
+        .iter()
+        .copied()
+        .filter(|f| !matches!(f, MapFn::New | MapFn::Size))
+        .find(|f| f.name() == name)
+}
+
+/// Maps a `Set` method name to the intrinsic table the checker lowers.
+pub(crate) fn set_method(name: &str) -> Option<SetFn> {
+    SetFn::ALL
+        .iter()
+        .copied()
+        .filter(|f| !matches!(f, SetFn::New | SetFn::Size))
+        .find(|f| f.name() == name)
+}
+
+/// Checker-owned accepted API projection used by the Markdown
+/// generator.
+pub(crate) fn accepted_api() -> Vec<ApiItem> {
+    let mut out = Vec::new();
+    for f in AmbientFn::ALL {
+        out.push(ApiItem {
+            group: "Global",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    out.push(ApiItem {
+        group: "Global",
+        signature: "NaN: f64".to_string(),
+        summary: "Ambient NaN literal used by floating-point APIs.",
+    });
+    for f in [NumFn::ParseInt, NumFn::ParseFloat] {
+        out.push(ApiItem {
+            group: "Global",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    for c in MATH_CONSTS {
+        out.push(ApiItem {
+            group: "Math",
+            signature: format!("{}: f64", c.name),
+            summary: c.summary,
+        });
+    }
+    for f in MathFn::ALL {
+        out.push(ApiItem {
+            group: "Math",
+            signature: f.api_signature(),
+            summary: f.api_summary(),
+        });
+    }
+    for c in NUMBER_CONSTS {
+        out.push(ApiItem {
+            group: "Number",
+            signature: format!("{}: f64", c.name),
+            summary: c.summary,
+        });
+    }
+    for f in [
+        NumFn::IsNaN,
+        NumFn::IsFinite,
+        NumFn::IsInteger,
+        NumFn::IsSafeInteger,
+    ] {
+        out.push(ApiItem {
+            group: "Number",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    for f in DateFn::ALL {
+        let group = match f {
+            DateFn::New => "Date constructor",
+            DateFn::Utc | DateFn::Now => "Date",
+            _ => "Date instance",
+        };
+        out.push(ApiItem {
+            group,
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    out.push(ApiItem {
+        group: "Date instance",
+        signature: "getTime(): i64".to_string(),
+        summary: "Returns epoch milliseconds.",
+    });
+    for (group, f) in [
+        ("f32", NumFn::ToFixed),
+        ("f32", NumFn::ToStringF32),
+        ("f32", NumFn::ToExponential),
+        ("f32", NumFn::ToPrecision),
+        ("f64", NumFn::ToFixed),
+        ("f64", NumFn::ToStringF64),
+        ("f64", NumFn::ToExponential),
+        ("f64", NumFn::ToPrecision),
+    ] {
+        out.push(ApiItem {
+            group,
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    out.push(ApiItem {
+        group: "string",
+        signature: "length: i32".to_string(),
+        summary: "Returns the UTF-8 byte length.",
+    });
+    out.push(ApiItem {
+        group: "string",
+        signature: "slice(start: i32, end: i32): string".to_string(),
+        summary: "Slices by UTF-8 byte offsets; both arguments are required.",
+    });
+    for f in StrFn::ALL {
+        out.push(ApiItem {
+            group: "string",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    for (signature, summary) in [
+        ("length: i32", "Returns the element count."),
+        (
+            "push(value: T): i32",
+            "Appends one element and returns the new length.",
+        ),
+        (
+            "pop(): T",
+            "Removes the last element; an empty array traps.",
+        ),
+    ] {
+        out.push(ApiItem {
+            group: "T[]",
+            signature: signature.to_string(),
+            summary,
+        });
+    }
+    for f in ArrFn::ALL {
+        out.push(ApiItem {
+            group: "T[]",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    out.push(ApiItem {
+        group: "FixedArray<T, N>",
+        signature: "length: i32".to_string(),
+        summary: "Returns the compile-time fixed element count.",
+    });
+    for f in MapFn::ALL {
+        out.push(ApiItem {
+            group: if f == MapFn::New {
+                "Map constructor"
+            } else {
+                "Map<K, V>"
+            },
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    for f in SetFn::ALL {
+        out.push(ApiItem {
+            group: if f == SetFn::New {
+                "Set constructor"
+            } else {
+                "Set<K>"
+            },
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    out.extend([
+        ApiItem {
+            group: "Generator<T>",
+            signature: "next(): IteratorResult<T>".to_string(),
+            summary: "Resumes a coroutine and returns its step result.",
+        },
+        ApiItem {
+            group: "IteratorResult<T>",
+            signature: "done: boolean".to_string(),
+            summary: "Reports whether the coroutine has completed.",
+        },
+        ApiItem {
+            group: "IteratorResult<T>",
+            signature: "value: T".to_string(),
+            summary: "Carries the yielded value, or the zero-initialized value when done.",
+        },
+    ]);
+    out
+}
+
+/// Every checker-owned named rejection rendered by the generated
+/// reference.
+pub(crate) fn rejected_api() -> Vec<ApiRejection> {
+    [
+        STRING_REJECTIONS,
+        ARRAY_REJECTIONS,
+        DATE_LOCAL_REJECTIONS,
+        DATE_STRING_REJECTIONS,
+        MAP_REJECTIONS,
+        SET_REJECTIONS,
+        FORM_REJECTIONS,
+    ]
+    .into_iter()
+    .flatten()
+    .copied()
+    .collect()
+}
+
+/// Named String rejection, if the checker gives the member an S014
+/// subset diagnostic rather than the generic S100 surface diagnostic.
+pub(crate) fn string_rejection(name: &str) -> Option<ApiRejection> {
+    STRING_REJECTIONS
+        .iter()
+        .copied()
+        .find(|r| r.surface == name)
+}
+
+/// Named Array rejection, if the checker gives the member an S014
+/// subset diagnostic rather than the generic S100 surface diagnostic.
+pub(crate) fn array_rejection(name: &str) -> Option<ApiRejection> {
+    ARRAY_REJECTIONS.iter().copied().find(|r| r.surface == name)
+}
+
+/// Named Date instance rejection. Setter spellings share the generated
+/// `set*` row.
+pub(crate) fn date_rejection(name: &str) -> Option<ApiRejection> {
+    DATE_LOCAL_REJECTIONS
+        .iter()
+        .chain(DATE_STRING_REJECTIONS)
+        .copied()
+        .find(|r| r.surface == name)
+        .or_else(|| {
+            name.starts_with("set").then_some(()).and_then(|()| {
+                FORM_REJECTIONS
+                    .iter()
+                    .copied()
+                    .find(|r| r.group == "Date" && r.surface == "set*")
+            })
+        })
+}
+
+/// Named Map rejection.
+pub(crate) fn map_rejection(name: &str) -> Option<ApiRejection> {
+    MAP_REJECTIONS.iter().copied().find(|r| r.surface == name)
+}
+
+/// Named Set rejection.
+pub(crate) fn set_rejection(name: &str) -> Option<ApiRejection> {
+    SET_REJECTIONS.iter().copied().find(|r| r.surface == name)
+}
+
+/// Checker-owned rejection for a non-member call or source form.
+pub(crate) fn form_rejection(group: &str, surface: &str) -> Option<ApiRejection> {
+    FORM_REJECTIONS
+        .iter()
+        .copied()
+        .find(|rejection| rejection.group == group && rejection.surface == surface)
+}
+
+/// Formats the diagnostic shared by a named checker rejection and the
+/// generated API-reference row.
+pub(crate) fn rejection_message(rejection: ApiRejection, actual: &str) -> String {
+    match rejection.replacement {
+        Some(replacement) => format!(
+            "`{actual}` is rejected: {}; use `{replacement}` ({})",
+            rejection.summary, rejection.q_rule
+        ),
+        None => format!(
+            "`{actual}` is rejected: {} ({})",
+            rejection.summary, rejection.q_rule
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -190,11 +1088,17 @@ mod tests {
 
     #[test]
     fn number_surface_lookups_cover_q25() {
-        assert_eq!(number_const("MAX_SAFE_INTEGER"), Some(9_007_199_254_740_991.0));
+        assert_eq!(
+            number_const("MAX_SAFE_INTEGER"),
+            Some(9_007_199_254_740_991.0)
+        );
         assert_eq!(number_const("MIN_VALUE").map(f64::to_bits), Some(1));
         assert!(number_const("NaN").is_some_and(f64::is_nan));
         assert_eq!(number_predicate("isNaN"), Some(NumFn::IsNaN));
-        assert_eq!(number_predicate("isSafeInteger"), Some(NumFn::IsSafeInteger));
+        assert_eq!(
+            number_predicate("isSafeInteger"),
+            Some(NumFn::IsSafeInteger)
+        );
         assert_eq!(number_predicate("parseInt"), None);
         assert_eq!(number_global("parseInt"), Some(NumFn::ParseInt));
         assert_eq!(number_global("parseFloat"), Some(NumFn::ParseFloat));
@@ -262,5 +1166,123 @@ mod tests {
         assert!(ambient_params(AmbientFn::Collect).is_empty());
         assert_eq!(ambient_params(AmbientFn::UnsafeDelete), &[Type::Object]);
         assert_eq!(ambient_fn("eval"), None);
+    }
+
+    #[test]
+    fn accepted_api_rows_are_exactly_the_checker_tables() {
+        let rows = accepted_api();
+        let has = |group: &str, signature: &str| {
+            rows.iter()
+                .any(|item| item.group == group && item.signature == signature)
+        };
+
+        for f in AmbientFn::ALL {
+            assert!(has("Global", f.api_signature()), "ambient {}", f.name());
+        }
+        for c in MATH_CONSTS {
+            assert!(has("Math", &format!("{}: f64", c.name)), "Math.{}", c.name);
+        }
+        for f in MathFn::ALL {
+            assert!(has("Math", &f.api_signature()), "Math.{}", f.name());
+        }
+        for c in NUMBER_CONSTS {
+            assert!(
+                has("Number", &format!("{}: f64", c.name)),
+                "Number.{}",
+                c.name
+            );
+        }
+        for f in [NumFn::ParseInt, NumFn::ParseFloat] {
+            assert!(has("Global", f.api_signature()), "global {}", f.name());
+        }
+        for f in [
+            NumFn::IsNaN,
+            NumFn::IsFinite,
+            NumFn::IsInteger,
+            NumFn::IsSafeInteger,
+        ] {
+            assert!(has("Number", f.api_signature()), "Number.{}", f.name());
+        }
+        for (group, f) in [
+            ("f32", NumFn::ToFixed),
+            ("f32", NumFn::ToStringF32),
+            ("f32", NumFn::ToExponential),
+            ("f32", NumFn::ToPrecision),
+            ("f64", NumFn::ToFixed),
+            ("f64", NumFn::ToStringF64),
+            ("f64", NumFn::ToExponential),
+            ("f64", NumFn::ToPrecision),
+        ] {
+            assert!(has(group, f.api_signature()), "{group}.{}", f.name());
+        }
+        for f in DateFn::ALL {
+            let group = match f {
+                DateFn::New => "Date constructor",
+                DateFn::Utc | DateFn::Now => "Date",
+                _ => "Date instance",
+            };
+            assert!(has(group, f.api_signature()), "Date.{}", f.name());
+        }
+        for f in StrFn::ALL {
+            assert!(has("string", f.api_signature()), "string.{}", f.name());
+        }
+        for f in ArrFn::ALL {
+            assert!(has("T[]", f.api_signature()), "T[].{}", f.name());
+        }
+        for f in MapFn::ALL {
+            let group = if f == MapFn::New {
+                "Map constructor"
+            } else {
+                "Map<K, V>"
+            };
+            assert!(has(group, f.api_signature()), "Map.{}", f.name());
+        }
+        for f in SetFn::ALL {
+            let group = if f == SetFn::New {
+                "Set constructor"
+            } else {
+                "Set<K>"
+            };
+            assert!(has(group, f.api_signature()), "Set.{}", f.name());
+        }
+        for (group, signature) in [
+            ("Global", "NaN: f64"),
+            ("Date instance", "getTime(): i64"),
+            ("string", "length: i32"),
+            ("string", "slice(start: i32, end: i32): string"),
+            ("T[]", "length: i32"),
+            ("T[]", "push(value: T): i32"),
+            ("T[]", "pop(): T"),
+            ("FixedArray<T, N>", "length: i32"),
+            ("Generator<T>", "next(): IteratorResult<T>"),
+            ("IteratorResult<T>", "done: boolean"),
+            ("IteratorResult<T>", "value: T"),
+        ] {
+            assert!(has(group, signature), "{group} {signature}");
+        }
+
+        let expected = AmbientFn::ALL.len()
+            + 1
+            + 2
+            + MATH_CONSTS.len()
+            + MathFn::ALL.len()
+            + NUMBER_CONSTS.len()
+            + 4
+            + DateFn::ALL.len()
+            + 1
+            + 8
+            + 2
+            + StrFn::ALL.len()
+            + 3
+            + ArrFn::ALL.len()
+            + 1
+            + MapFn::ALL.len()
+            + SetFn::ALL.len()
+            + 3;
+        assert_eq!(
+            rows.len(),
+            expected,
+            "generated accepted rows and checker tables disagree"
+        );
     }
 }

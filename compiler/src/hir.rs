@@ -321,6 +321,45 @@ pub enum AmbientFn {
     UnsafeDelete,
 }
 
+impl AmbientFn {
+    /// Every checker-owned ambient function.
+    pub const ALL: [AmbientFn; 3] = [
+        AmbientFn::Print,
+        AmbientFn::Collect,
+        AmbientFn::UnsafeDelete,
+    ];
+
+    /// Surface spelling.
+    #[must_use]
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            AmbientFn::Print => "print",
+            AmbientFn::Collect => "collect",
+            AmbientFn::UnsafeDelete => "unsafeDelete",
+        }
+    }
+
+    /// Source-level subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            AmbientFn::Print => "print(message: string): void",
+            AmbientFn::Collect => "collect(): void",
+            AmbientFn::UnsafeDelete => "unsafeDelete(value: object): void",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            AmbientFn::Print => "Writes one line to the Context output sink.",
+            AmbientFn::Collect => "Explicitly collects unreachable Context allocations.",
+            AmbientFn::UnsafeDelete => "Immediately releases a reference-class allocation.",
+        }
+    }
+}
+
 /// `Math` intrinsic functions (stdlib.md §1): ambient-namespace member
 /// calls typed `f64` in and out, lowered by both tiers to the opaque
 /// runtime symbol `sub_rt_math_<name>` — never the foreign-call path
@@ -489,6 +528,36 @@ impl MathFn {
             _ => 1,
         }
     }
+
+    /// Source-level subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> String {
+        if self == MathFn::Random {
+            return "random(): f64".to_string();
+        }
+        if self == MathFn::Clz32 {
+            return "clz32(value: u32): i32".to_string();
+        }
+        let params = match self.arity() {
+            1 => "value: f64",
+            2 => "left: f64, right: f64",
+            _ => "",
+        };
+        format!("{}({params}): f64", self.name())
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            MathFn::Random => "Draws from the deterministic, Context-owned PRNG.",
+            MathFn::Clz32 => "Counts leading zero bits in a `u32`; zero returns 32.",
+            MathFn::Hypot | MathFn::Max | MathFn::Min => {
+                "Accepts exactly two operands; the ES variadic overload is rejected."
+            }
+            _ => "Uses the accepted `f64` Math intrinsic semantics.",
+        }
+    }
 }
 
 /// `Number` and parsing intrinsics (stdlib.md §11, Q25/Q26).
@@ -600,6 +669,42 @@ impl NumFn {
             NumFn::IsNaN | NumFn::IsFinite | NumFn::IsInteger | NumFn::IsSafeInteger
         )
     }
+
+    /// Source-level subscript signature for this surface operation.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            NumFn::IsNaN => "isNaN(value: f64): boolean",
+            NumFn::IsFinite => "isFinite(value: f64): boolean",
+            NumFn::IsInteger => "isInteger(value: f64): boolean",
+            NumFn::IsSafeInteger => "isSafeInteger(value: f64): boolean",
+            NumFn::ParseInt => "parseInt(value: string, radix: i32): f64",
+            NumFn::ParseFloat => "parseFloat(value: string): f64",
+            NumFn::ToFixed => "toFixed(digits: i32): string",
+            NumFn::ToStringF32 | NumFn::ToStringF64 => "toString(radix: i32): string",
+            NumFn::ToExponential => "toExponential(digits?: i32): string",
+            NumFn::ToPrecision => "toPrecision(digits: i32): string",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            NumFn::IsNaN => "Tests for NaN without coercion.",
+            NumFn::IsFinite => "Tests finiteness without coercion.",
+            NumFn::IsInteger => "Tests whether an `f64` has an integral value.",
+            NumFn::IsSafeInteger => "Tests the ECMA safe-integer range.",
+            NumFn::ParseInt => "Parses the longest integer prefix; the radix is required.",
+            NumFn::ParseFloat => "Parses the longest decimal floating-point prefix.",
+            NumFn::ToFixed => "Formats with a required fixed-decimal digit count.",
+            NumFn::ToStringF32 | NumFn::ToStringF64 => {
+                "Formats in an explicit radix from 2 through 36."
+            }
+            NumFn::ToExponential => "Formats in exponential notation.",
+            NumFn::ToPrecision => "Formats with a required significant-digit count.",
+        }
+    }
 }
 
 /// `Date` intrinsic operations (stdlib.md §3): the accepted
@@ -643,6 +748,22 @@ pub enum DateFn {
 }
 
 impl DateFn {
+    /// Every accepted Date operation in discriminant order.
+    pub const ALL: [DateFn; 12] = [
+        DateFn::New,
+        DateFn::Utc,
+        DateFn::Now,
+        DateFn::GetUtcFullYear,
+        DateFn::GetUtcMonth,
+        DateFn::GetUtcDate,
+        DateFn::GetUtcDay,
+        DateFn::GetUtcHours,
+        DateFn::GetUtcMinutes,
+        DateFn::GetUtcSeconds,
+        DateFn::GetUtcMilliseconds,
+        DateFn::ToIso,
+    ];
+
     /// The lib member name (diagnostics and the checker's lookup).
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -679,6 +800,46 @@ impl DateFn {
             DateFn::GetUtcMilliseconds => 7,
             _ => return None,
         })
+    }
+
+    /// Source-level subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            DateFn::New => "new Date(milliseconds: i64): Date",
+            DateFn::Utc => {
+                "UTC(year: i32, month: i32, date?: i32, hours?: i32, minutes?: i32, seconds?: i32, milliseconds?: i32): i64"
+            }
+            DateFn::Now => "now(): i64",
+            DateFn::GetUtcFullYear => "getUTCFullYear(): i32",
+            DateFn::GetUtcMonth => "getUTCMonth(): i32",
+            DateFn::GetUtcDate => "getUTCDate(): i32",
+            DateFn::GetUtcDay => "getUTCDay(): i32",
+            DateFn::GetUtcHours => "getUTCHours(): i32",
+            DateFn::GetUtcMinutes => "getUTCMinutes(): i32",
+            DateFn::GetUtcSeconds => "getUTCSeconds(): i32",
+            DateFn::GetUtcMilliseconds => "getUTCMilliseconds(): i32",
+            DateFn::ToIso => "toISOString(): string",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            DateFn::New => "Constructs an immutable Date from epoch milliseconds.",
+            DateFn::Utc => "Builds epoch milliseconds from UTC components.",
+            DateFn::Now => "Reads the Context clock.",
+            DateFn::GetUtcFullYear => "Returns the UTC year.",
+            DateFn::GetUtcMonth => "Returns the zero-based UTC month.",
+            DateFn::GetUtcDate => "Returns the UTC day of the month.",
+            DateFn::GetUtcDay => "Returns the UTC weekday, Sunday = 0.",
+            DateFn::GetUtcHours => "Returns the UTC hour.",
+            DateFn::GetUtcMinutes => "Returns the UTC minute.",
+            DateFn::GetUtcSeconds => "Returns the UTC second.",
+            DateFn::GetUtcMilliseconds => "Returns the UTC millisecond.",
+            DateFn::ToIso => "Formats years 0000 through 9999 as UTC ISO text.",
+        }
     }
 }
 
@@ -875,6 +1036,56 @@ impl StrFn {
                 | StrFn::EndsWith
         )
     }
+
+    /// Source-level subscript signature, before checker default normalization.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            StrFn::IndexOf => "indexOf(needle: string, from?: i32): i32",
+            StrFn::LastIndexOf => "lastIndexOf(needle: string): i32",
+            StrFn::Includes => "includes(needle: string, from?: i32): boolean",
+            StrFn::StartsWith => "startsWith(needle: string): boolean",
+            StrFn::EndsWith => "endsWith(needle: string): boolean",
+            StrFn::CharCodeAt => "charCodeAt(index: i32): i32",
+            StrFn::Split => "split(separator: string): string[]",
+            StrFn::Trim => "trim(): string",
+            StrFn::TrimStart => "trimStart(): string",
+            StrFn::TrimEnd => "trimEnd(): string",
+            StrFn::Repeat => "repeat(count: i32): string",
+            StrFn::PadStart => "padStart(length: i32, pad?: string): string",
+            StrFn::PadEnd => "padEnd(length: i32, pad?: string): string",
+            StrFn::ToUpperCase => "toUpperCase(): string",
+            StrFn::ToLowerCase => "toLowerCase(): string",
+            StrFn::Replace => "replace(pattern: string, replacement: string): string",
+            StrFn::ReplaceAll => "replaceAll(pattern: string, replacement: string): string",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            StrFn::IndexOf => "Returns the first matching byte index, or -1.",
+            StrFn::LastIndexOf => "Returns the last matching byte index, or -1.",
+            StrFn::Includes => "Tests for a substring from an optional byte index.",
+            StrFn::StartsWith => "Tests the string prefix.",
+            StrFn::EndsWith => "Tests the string suffix.",
+            StrFn::CharCodeAt => "Returns one UTF-8 byte value; out of range traps.",
+            StrFn::Split => "Splits on a literal non-empty string separator.",
+            StrFn::Trim => "Removes ECMA whitespace from both ends.",
+            StrFn::TrimStart => "Removes ECMA whitespace from the start.",
+            StrFn::TrimEnd => "Removes ECMA whitespace from the end.",
+            StrFn::Repeat => "Repeats the UTF-8 byte string.",
+            StrFn::PadStart => "Pads to a byte length on the left.",
+            StrFn::PadEnd => "Pads to a byte length on the right.",
+            StrFn::ToUpperCase => "Applies Unicode Default Case Conversion.",
+            StrFn::ToLowerCase => "Applies Unicode Default Case Conversion.",
+            StrFn::Replace => "Replaces the first literal match; `$` has no special meaning.",
+            StrFn::ReplaceAll => {
+                "Replaces every literal match; an empty pattern traps."
+            }
+        }
+    }
 }
 
 /// `Array` intrinsic methods (stdlib.md §9, Q22): the accepted subset
@@ -1045,6 +1256,52 @@ impl ArrFn {
     pub fn can_trap(self) -> bool {
         self.takes_callback() || self.takes_pos_id()
     }
+
+    /// Source-level generic subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            ArrFn::IndexOf => "indexOf(value: T): i32",
+            ArrFn::LastIndexOf => "lastIndexOf(value: T): i32",
+            ArrFn::Includes => "includes(value: T): boolean",
+            ArrFn::Join => "join(separator?: string): string",
+            ArrFn::Slice => "slice(start?: i32, end?: i32): T[]",
+            ArrFn::Fill => "fill(value: T, start?: i32, end?: i32): T[]",
+            ArrFn::Reverse => "reverse(): T[]",
+            ArrFn::Concat => "concat(other: T[]): T[]",
+            ArrFn::ForEach => "forEach(callback: (value: T) => void): void",
+            ArrFn::Map => "map<U>(callback: (value: T) => U): U[]",
+            ArrFn::Filter => "filter(callback: (value: T) => boolean): T[]",
+            ArrFn::Reduce => "reduce<U>(callback: (acc: U, value: T) => U, init: U): U",
+            ArrFn::Some => "some(callback: (value: T) => boolean): boolean",
+            ArrFn::Every => "every(callback: (value: T) => boolean): boolean",
+            ArrFn::FindIndex => "findIndex(callback: (value: T) => boolean): i32",
+            ArrFn::Sort => "sort(comparator: (left: T, right: T) => i32): T[]",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            ArrFn::IndexOf => "Returns the first `===`-equal element index, or -1.",
+            ArrFn::LastIndexOf => "Returns the last `===`-equal element index, or -1.",
+            ArrFn::Includes => "Uses SameValueZero equality.",
+            ArrFn::Join => "Formats elements with the language interpolation rules.",
+            ArrFn::Slice => "Returns a fresh range using JS clamp and negative-index rules.",
+            ArrFn::Fill => "Stores one value across a range and returns the receiver.",
+            ArrFn::Reverse => "Reverses in place and returns the receiver.",
+            ArrFn::Concat => "Returns a fresh array from exactly one other array.",
+            ArrFn::ForEach => "Calls a non-escaping one-parameter callback.",
+            ArrFn::Map => "Maps through a non-escaping callback and infers `U`.",
+            ArrFn::Filter => "Returns elements selected by a non-escaping callback.",
+            ArrFn::Reduce => "Folds from a required initial accumulator.",
+            ArrFn::Some => "Short-circuits on the first true callback result.",
+            ArrFn::Every => "Short-circuits on the first false callback result.",
+            ArrFn::FindIndex => "Returns the first matching callback index, or -1.",
+            ArrFn::Sort => "Stable-sorts in place with a required comparator.",
+        }
+    }
 }
 
 /// The hash/equality kind of a monomorphized `Map` / `Set` key (Q24).
@@ -1187,6 +1444,38 @@ impl MapFn {
     pub fn can_trap(self) -> bool {
         self.allocates() || self == MapFn::ForEach
     }
+
+    /// Source-level generic subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            MapFn::New => "new Map<K, V>(): Map<K, V>",
+            MapFn::Size => "size: i32",
+            MapFn::Get => "get(key: K): V | null",
+            MapFn::GetOr => "getOr(key: K, fallback: V): V",
+            MapFn::Set => "set(key: K, value: V): Map<K, V>",
+            MapFn::Has => "has(key: K): boolean",
+            MapFn::Delete => "delete(key: K): boolean",
+            MapFn::Clear => "clear(): void",
+            MapFn::ForEach => "forEach(callback: (value: V, key: K) => void): void",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            MapFn::New => "Constructs an empty insertion-ordered map.",
+            MapFn::Size => "Returns the entry count as `i32`.",
+            MapFn::Get => "Returns a nullable reference value; scalar values must use `getOr`.",
+            MapFn::GetOr => "Returns the stored value or the explicit fallback.",
+            MapFn::Set => "Stores a value and returns the receiver.",
+            MapFn::Has => "Tests key presence with the key kind's equality.",
+            MapFn::Delete => "Deletes a key and reports whether it was present.",
+            MapFn::Clear => "Removes every entry.",
+            MapFn::ForEach => "Traverses in insertion order with a fixed two-parameter callback.",
+        }
+    }
 }
 
 /// `Set<K>` intrinsic operations (stdlib.md §10, Q24).
@@ -1259,6 +1548,34 @@ impl SetFn {
     #[must_use]
     pub fn can_trap(self) -> bool {
         self.allocates() || self == SetFn::ForEach
+    }
+
+    /// Source-level generic subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            SetFn::New => "new Set<K>(): Set<K>",
+            SetFn::Size => "size: i32",
+            SetFn::Add => "add(key: K): Set<K>",
+            SetFn::Has => "has(key: K): boolean",
+            SetFn::Delete => "delete(key: K): boolean",
+            SetFn::Clear => "clear(): void",
+            SetFn::ForEach => "forEach(callback: (key: K) => void): void",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            SetFn::New => "Constructs an empty insertion-ordered set.",
+            SetFn::Size => "Returns the entry count as `i32`.",
+            SetFn::Add => "Adds a key and returns the receiver.",
+            SetFn::Has => "Tests key presence with the key kind's equality.",
+            SetFn::Delete => "Deletes a key and reports whether it was present.",
+            SetFn::Clear => "Removes every entry.",
+            SetFn::ForEach => "Traverses in insertion order with a fixed one-parameter callback.",
+        }
     }
 }
 
