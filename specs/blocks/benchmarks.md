@@ -1,6 +1,6 @@
 # Cross-language benchmarks — contract
 
-Status: Rev 0, 2026-07-23. A cross-language performance comparison of the
+Status: Rev 1, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for). A cross-language performance comparison of the
 subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
@@ -49,10 +49,14 @@ themselves and print `<checksum> <median_seconds>`.
 - A subject whose runtime is absent is reported as `-` (not zero), never
   silently skipped.
 
-## Workloads (8) — sqrt-free numeric set
+## Workloads (9)
 
-subscript's current surface has no math library (no `sqrt`/trig), so the
-set avoids transcendental functions. Each workload's parameters are sized
+*(Rev 1, 2026-07-26: was "Workloads (8) — sqrt-free numeric set".
+`Math` landed at P9, so the sqrt-free framing describes the original
+eight rather than a standing constraint. They stay sqrt-free — the
+checksums are frozen — and the ninth, `callbacks`, is added below.)*
+
+Each workload's parameters are sized
 so the C baseline runs in roughly 10–500 ms, and each produces an exact
 **integer** checksum every subject must reproduce.
 
@@ -66,6 +70,36 @@ so the C baseline runs in roughly 10–500 ms, and each produces an exact
 | tree | build and traverse balanced binary trees (allocate/free) to a fixed depth; subscript uses reference classes with explicit `unsafeDelete` | node-visit count / checksum |
 | queen | count solutions to the N-queens problem | the solution count |
 | particles | value-struct kinematics: M particles, K fixed-`dt` steps, `pos += vel*dt` (no `sqrt`) | an integer quantization of the final state (e.g. sum of `pos` cast to `i32`) |
+| callbacks | array-callback pipeline over an `i32[]` of N elements seeded by the shared LCG, repeated K times: `map` → `filter` → `reduce`, **each callback taking the index** | the i32-wrapping accumulation of each round's `reduce` result |
+
+### `callbacks` — why it exists and how to read it
+
+*(Added Rev 1, 2026-07-26, by the P18 Phase Review.)* Q27 made every
+`T[]` and `FixedArray` callback method accept an index, which put a
+per-element branch in `call_value` and `call_reduce` — the hot path of
+the most-used stdlib surface. **No benchmark in the repository executed
+any of it**: `perf-gate`'s only subject is `a22-matrix-propagation`,
+which uses value structs and hand-written loops, and the eight
+workloads above avoid array callbacks too — `sort` implements quicksort
+by hand rather than calling `Array.sort`. A regression there was
+invisible. This workload is what makes it visible, and a change in the
+`subscript-ship` row for it is the regression signal.
+
+**All arithmetic is i32 with wrapping**, each subject using its own
+spelling (`int32_t` under `-fwrapv` in C, `| 0` in JS, `bit.tobit` in
+LuaJIT, `i32` in subscript per C3). The LCG is the same fixed
+`state = state*1664525 + 1013904223` that `sort` uses, so the input
+array is identical across subjects.
+
+**The subjects are deliberately not spelling this the same way, and
+the ratio must be read accordingly.** C and Lua write loops, because
+that is what those languages do; subscript and the JS runtimes call
+`map`/`filter`/`reduce`, because that is what *those* do. So this
+workload measures **what the idiomatic callback spelling costs against
+a hand-written loop**, not a codegen deficit — the reporting rule
+"report measured numbers, whatever they are" stands, and the published
+row must carry this sentence so the number is not misread as the
+others are read.
 
 The implementer pins the exact N/M/K/loop counts and the precise checksum
 formula per workload, identically across all six subjects, and records
