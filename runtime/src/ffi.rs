@@ -1796,7 +1796,7 @@ pub unsafe extern "C" fn sub_rt_arr_last_index_of(
     unsafe { crate::arrops::last_index_of(ctx, a, x, kind) }
 }
 
-/// `includes(x)`: 1 when found under `===` equality, else 0.
+/// `includes(x)`: 1 when found under SameValueZero equality, else 0.
 ///
 /// # Safety
 ///

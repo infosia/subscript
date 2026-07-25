@@ -250,6 +250,29 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
+const CANONICAL_F32_NAN_BITS: u32 = 0x7fc0_0000;
+const CANONICAL_F64_NAN_BITS: u64 = 0x7ff8_0000_0000_0000;
+
+fn f32_key_bits(value: f32) -> u32 {
+    if value == 0.0 {
+        0
+    } else if value.is_nan() {
+        CANONICAL_F32_NAN_BITS
+    } else {
+        value.to_bits()
+    }
+}
+
+fn f64_key_bits(value: f64) -> u64 {
+    if value == 0.0 {
+        0
+    } else if value.is_nan() {
+        CANONICAL_F64_NAN_BITS
+    } else {
+        value.to_bits()
+    }
+}
+
 unsafe fn hash_key(ctx: *mut Context, kind: KeyKind, key: *const u8, size: usize) -> u64 {
     match kind {
         KeyKind::Bits | KeyKind::Ref => {
@@ -259,14 +282,12 @@ unsafe fn hash_key(ctx: *mut Context, kind: KeyKind, key: *const u8, size: usize
         KeyKind::F32 => {
             // SAFETY: the validated shape is four readable bytes.
             let value = unsafe { key.cast::<f32>().read_unaligned() };
-            let bits = if value == 0.0 { 0 } else { value.to_bits() };
-            mix64(u64::from(bits))
+            mix64(u64::from(f32_key_bits(value)))
         }
         KeyKind::F64 => {
             // SAFETY: the validated shape is eight readable bytes.
             let value = unsafe { key.cast::<f64>().read_unaligned() };
-            let bits = if value == 0.0 { 0 } else { value.to_bits() };
-            mix64(bits)
+            mix64(f64_key_bits(value))
         }
         KeyKind::Str => {
             // SAFETY: the key slot contains a string handle.
@@ -295,11 +316,15 @@ unsafe fn keys_equal(
         }
         // SAFETY: validated shapes are readable for the float width.
         KeyKind::F32 => unsafe {
-            left.cast::<f32>().read_unaligned() == right.cast::<f32>().read_unaligned()
+            let a = left.cast::<f32>().read_unaligned();
+            let b = right.cast::<f32>().read_unaligned();
+            a == b || (a.is_nan() && b.is_nan())
         },
         // SAFETY: as above.
         KeyKind::F64 => unsafe {
-            left.cast::<f64>().read_unaligned() == right.cast::<f64>().read_unaligned()
+            let a = left.cast::<f64>().read_unaligned();
+            let b = right.cast::<f64>().read_unaligned();
+            a == b || (a.is_nan() && b.is_nan())
         },
         KeyKind::Str => {
             // SAFETY: both key slots contain handles.
@@ -310,6 +335,34 @@ unsafe fn keys_equal(
             }
             // SAFETY: both are live strings of this Context.
             unsafe { (*ctx).str_bytes(a) == (*ctx).str_bytes(b) }
+        }
+    }
+}
+
+/// Copies a new key into ordered storage, canonicalizing the
+/// SameValueZero-equivalent float representations. This makes traversal
+/// observe `+0` after insertion of `-0`, and gives every NaN payload one
+/// stable stored representation.
+///
+/// # Safety
+///
+/// `src` and `dst` cover `size` bytes and do not overlap; `(kind, size)`
+/// was validated when the container was created.
+unsafe fn copy_stored_key(kind: KeyKind, src: *const u8, dst: *mut u8, size: usize) {
+    match kind {
+        KeyKind::F32 => {
+            // SAFETY: the validated F32 shape covers four bytes.
+            let value = unsafe { src.cast::<f32>().read_unaligned() };
+            unsafe { dst.cast::<u32>().write_unaligned(f32_key_bits(value)) };
+        }
+        KeyKind::F64 => {
+            // SAFETY: the validated F64 shape covers eight bytes.
+            let value = unsafe { src.cast::<f64>().read_unaligned() };
+            unsafe { dst.cast::<u64>().write_unaligned(f64_key_bits(value)) };
+        }
+        _ => {
+            // SAFETY: caller contract.
+            unsafe { std::ptr::copy_nonoverlapping(src, dst, size) };
         }
     }
 }
@@ -348,7 +401,7 @@ unsafe fn lookup(
         } else {
             let entry = (slot - 1) as usize;
             // The hash check avoids string-content work on unrelated
-            // entries. A NaN key fails `keys_equal` even against itself.
+            // entries.
             // SAFETY: active buckets contain valid entry indices.
             if unsafe { entry_hash(h, entry) } == hash
                 && unsafe {
@@ -641,7 +694,12 @@ pub(crate) unsafe fn insert(
     unsafe {
         ep.cast::<u64>().write_unaligned(hash);
         ep.add(8).cast::<u64>().write_unaligned(1);
-        std::ptr::copy_nonoverlapping(key, ep.add(key_offset()), h.key_size as usize);
+        copy_stored_key(
+            kind,
+            key,
+            ep.add(key_offset()),
+            h.key_size as usize,
+        );
         if h.value_size != 0 && !value.is_null() {
             std::ptr::copy_nonoverlapping(
                 value,
@@ -1157,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn float_zero_hashes_equal_and_nan_never_matches() {
+    fn float_keys_use_same_value_zero_and_normalize_storage() {
         let mut ctx = Context::new();
         let h = new(&mut ctx, 8, 4, KeyKind::F64, false, 0);
         let neg_zero = -0.0f64;
@@ -1175,23 +1233,82 @@ mod tests {
         let pos_zero = 0.0f64;
         // SAFETY: matching map shape.
         assert!(unsafe { has(&mut *ctx, h, (&pos_zero as *const f64).cast()) });
+        // SAFETY: the first ordered entry is active f64 key storage.
+        assert_eq!(
+            unsafe { entry_key(&*h.cast::<AssocHeader>(), 0).cast::<u64>().read_unaligned() },
+            0,
+            "-0 must be stored as +0 for traversal"
+        );
 
-        let nan = f64::NAN;
-        // SAFETY: matching map shape; computed NaN insertion is legal.
+        let nan_a = f64::from_bits(0x7ff0_0000_0000_0001);
+        let nan_b = f64::from_bits(0xfff8_0000_0000_0042);
+        assert!(nan_a.is_nan() && nan_b.is_nan());
+        // SAFETY: matching map shape.
         unsafe {
             insert(
                 &mut *ctx,
                 h,
-                (&nan as *const f64).cast(),
+                (&nan_a as *const f64).cast(),
                 (&value as *const i32).cast(),
                 0,
             );
         }
-        // SAFETY: NaN never equals the stored NaN.
-        assert!(!unsafe { has(&mut *ctx, h, (&nan as *const f64).cast()) });
-        // One zero and one unreachable NaN are both stored.
+        // SAFETY: a distinct NaN payload is the same key.
+        assert!(unsafe { has(&mut *ctx, h, (&nan_b as *const f64).cast()) });
+        let replacement = 9i32;
+        // SAFETY: matching map shape; this overwrites the NaN entry.
+        unsafe {
+            insert(
+                &mut *ctx,
+                h,
+                (&nan_b as *const f64).cast(),
+                (&replacement as *const i32).cast(),
+                0,
+            );
+        }
+        let mut out = 0i32;
+        // SAFETY: matching map shape and writable output.
+        assert!(unsafe {
+            get(
+                &mut *ctx,
+                h,
+                (&nan_a as *const f64).cast(),
+                (&mut out as *mut i32).cast(),
+            )
+        });
+        assert_eq!(out, replacement);
+        // One zero and one NaN are stored; the NaN is canonicalized.
         // SAFETY: live header.
         assert_eq!(unsafe { len(h) }, 2);
+        assert_eq!(
+            unsafe { entry_key(&*h.cast::<AssocHeader>(), 1).cast::<u64>().read_unaligned() },
+            CANONICAL_F64_NAN_BITS
+        );
+
+        let f32_map = new(&mut ctx, 4, 4, KeyKind::F32, false, 0);
+        let f32_nan_a = f32::from_bits(0x7f80_0001);
+        let f32_nan_b = f32::from_bits(0xffc0_0042);
+        // SAFETY: matching f32/i32 map shape.
+        unsafe {
+            insert(
+                &mut *ctx,
+                f32_map,
+                (&f32_nan_a as *const f32).cast(),
+                (&value as *const i32).cast(),
+                0,
+            );
+        }
+        // SAFETY: a distinct f32 NaN payload is the same key.
+        assert!(unsafe { has(&mut *ctx, f32_map, (&f32_nan_b as *const f32).cast()) });
+        assert_eq!(unsafe { len(f32_map) }, 1);
+        assert_eq!(
+            unsafe {
+                entry_key(&*f32_map.cast::<AssocHeader>(), 0)
+                    .cast::<u32>()
+                    .read_unaligned()
+            },
+            CANONICAL_F32_NAN_BITS
+        );
     }
 
     #[test]

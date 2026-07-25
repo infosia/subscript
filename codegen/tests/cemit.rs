@@ -407,6 +407,7 @@ fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
         "a54-map-reference-key",
         "a55-map-set-foreach",
         "a56-map-aggregate-foreach",
+        "a61-same-value-zero",
     ] {
         let path = accept.join(format!("{id}.ts"));
         let source = std::fs::read_to_string(&path)

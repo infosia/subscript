@@ -364,6 +364,44 @@ unsafe fn elem_eq(ctx: *mut Context, kind: ElemKind, size: usize, p: *const u8, 
     }
 }
 
+/// SameValueZero equality for `includes`: `===` except that two NaNs
+/// compare equal. The float-width cases are explicit; all other element
+/// kinds retain [`elem_eq`].
+///
+/// # Safety
+///
+/// As [`elem_eq`].
+unsafe fn elem_same_value_zero(
+    ctx: *mut Context,
+    kind: ElemKind,
+    size: usize,
+    p: *const u8,
+    x: *const u8,
+) -> bool {
+    match kind {
+        // SAFETY: caller contract (4 readable bytes each).
+        ElemKind::F32 => unsafe {
+            let a = p.cast::<f32>().read_unaligned();
+            let b = x.cast::<f32>().read_unaligned();
+            a == b || (a.is_nan() && b.is_nan())
+        },
+        // SAFETY: caller contract (8 readable bytes each).
+        ElemKind::F64 => unsafe {
+            let a = p.cast::<f64>().read_unaligned();
+            let b = x.cast::<f64>().read_unaligned();
+            a == b || (a.is_nan() && b.is_nan())
+        },
+        // SAFETY: caller contract (2 readable bytes each).
+        ElemKind::F16 => unsafe {
+            let a = crate::half::to_f64(p.cast::<u16>().read_unaligned());
+            let b = crate::half::to_f64(x.cast::<u16>().read_unaligned());
+            a == b || (a.is_nan() && b.is_nan())
+        },
+        // SAFETY: forwarded contract.
+        _ => unsafe { elem_eq(ctx, kind, size, p, x) },
+    }
+}
+
 /// `indexOf(x)`: first index under per-kind `===` equality, or −1.
 ///
 /// # Safety
@@ -421,15 +459,31 @@ pub unsafe fn last_index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: E
     -1
 }
 
-/// `includes(x)`: 1 when found under `===` equality (so `NaN` is never
-/// found — the §9 contract pins `===` for all three searches), else 0.
+/// `includes(x)`: 1 when found under SameValueZero equality, else 0.
 ///
 /// # Safety
 ///
 /// As [`index_of`].
 pub unsafe fn includes(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
-    // SAFETY: forwarded contract.
-    i32::from(unsafe { index_of(ctx, h, x, kind) } >= 0)
+    if h.is_null() || x.is_null() {
+        return 0;
+    }
+    // SAFETY: caller contract.
+    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    // As `index_of`: an unsupported element shape traps.
+    // SAFETY: caller contract.
+    if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
+        return 0;
+    }
+    for i in 0..n {
+        // SAFETY: `i < n`; caller contract.
+        let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
+        // SAFETY: element storage and needle are `esz` readable bytes.
+        if unsafe { elem_same_value_zero(ctx, kind, esz, p, x) } {
+            return 1;
+        }
+    }
+    0
 }
 
 // ----- join -----
@@ -1297,13 +1351,18 @@ mod tests {
             assert_eq!(includes(p, h, needle(&n7), ElemKind::Int), 1);
             assert_eq!(includes(p, h, needle(&n5), ElemKind::Int), 0);
 
-            // Floats: -0 == 0; NaN never equal (=== semantics, Q22).
+            // Floats: -0 == 0 under both rules. SameValueZero makes
+            // `includes` find NaN while index searches retain `===`.
             let f = arr_f64(&mut c, &[0.0, 1.5, f64::NAN]);
             let nz = -0.0f64;
             assert_eq!(index_of(p, f, (&nz as *const f64).cast(), ElemKind::F64), 0);
             let nan = f64::NAN;
             assert_eq!(index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64), -1);
-            assert_eq!(includes(p, f, (&nan as *const f64).cast(), ElemKind::F64), 0);
+            assert_eq!(
+                last_index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64),
+                -1
+            );
+            assert_eq!(includes(p, f, (&nan as *const f64).cast(), ElemKind::F64), 1);
 
             // Strings by content: a distinct allocation still matches.
             let s = arr_str(&mut c, &["alpha", "beta"]);

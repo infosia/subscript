@@ -234,10 +234,17 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   them.
 - **Q19 (`Math`)** — the checker accepts a deterministic subset of the
   lib's `Math` with `f64` signatures and ECMA result semantics
-  (`stdlib.md` §1). Rejected: `imul`/`clz32`/`fround` (JS-number ops;
-  the language has sized integers), variadic `max`/`min`/`hypot` (two
-  arguments only). `Math.random` diverges from JS: Context-seeded
-  deterministic PRNG, host-reseedable (`stdlib.md` §2).
+  (`stdlib.md` §1). Rejected: `imul`/`fround` — not because they are
+  hard but because each is an **exact duplicate of a spelling the
+  language already has**: `imul` is `a * b` on `i32`, `fround` is
+  `x as f32`. They exist in JS to simulate machine types JS lacks, and
+  this language has them, so adding these names buys a second spelling
+  and no new capability. Variadic `max`/`min`/`hypot` rejected (two
+  arguments only). **`clz32` is accepted** (Q26, 2026-07-25): the
+  "JS-number op" reason above does not apply to it, because counting
+  leading zeros has **no spelling in this language at all**.
+  `Math.random` diverges from JS: Context-seeded deterministic PRNG,
+  host-reseedable (`stdlib.md` §2).
 - **Q20 (`Date`)** — the checker accepts the UTC-deterministic subset
   only, as an immutable value erasing to `i64` epoch millis
   (`stdlib.md` §3); on that subset semantics equal JS on a UTC host.
@@ -384,7 +391,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   ulp off. ECMA-262 §19.2.5 explicitly permits an implementation
   approximation at exactly those radixes and requires exactness at the
   others, where there are zero divergences. Recorded because
-  `stdlib.md` §11.6 requires divergences be recorded rather than
+  `stdlib.md` §11.7 requires divergences be recorded rather than
   absorbed — not because anything needs changing.
   `toFixed(digits)` is fixed-decimal and therefore the
   only numeric string that is not Q14's shortest round-trip; its
@@ -405,6 +412,53 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   a corpus line rather than from the source. The 2026-07-25 Phase Review
   caught the contradiction between the spec and the implementation,
   goldens and unit tests, all of which have always been ECMA's.)*
+
+- **Q26 (radix and precision formatting; `Math.clz32`)** — accepted per
+  `stdlib.md` §11.5 and §1: `toString(radix)`, `toExponential`,
+  `toPrecision` on `f32`/`f64`, and `Math.clz32`.
+
+  All four were previously rejected, and **the recorded reasons were
+  wrong in the same way**: each named a policy ("not in v1", "JS-number
+  op") where the real content was cost. Owner rule, 2026-07-25: *a JS
+  API that exists and is implementable at realistic cost is
+  implemented, regardless of expected demand.* Measured cost for the
+  three `Number` methods is about 440 lines with no external
+  dependency; `clz32` is one line.
+
+  `toString(radix)` also closed a genuine asymmetry: `parseInt(s, 16)`
+  could **read** hexadecimal and nothing could **write** it, the Q14
+  template form being base 10 only.
+
+  **The radix and `toPrecision`'s digit count are required arguments**,
+  unlike JS, where both have a no-argument form that means something
+  else — the arity-changes-meaning hazard Q22 rejected for
+  `reduce`/`sort` and Q25 for `parseInt`.
+
+  Two implementation traps are normative, both being cases where the C
+  tier's obvious lowering is wrong:
+  - **`Math.clz32(0)` is `32`** (verified against node v24.18.0), but
+    C's `__builtin_clz(0)` is undefined. This is the live-UB class P14
+    hit with over-width shifts. The runtime uses Rust's
+    `leading_zeros()`, which is defined at zero, behind an opaque
+    symbol; the C tier never emits the builtin.
+  - **ECMA does not pad the exponent**: node gives
+    `(0).toExponential(2)` as `0.00e+0` where C's `%e` gives
+    `0.00e+00`. A second reason for §11.4's standing rule that these
+    never reach libc.
+
+  What this rule does **not** reach, and why the boundary is not
+  arbitrary:
+  - `Number(x)`, global `isNaN`/`isFinite` (Q25) — they **coerce**.
+    Adding them adds the unsoundness the language exists to reject, so
+    the cost is not the objection.
+  - `Math.imul`/`fround` (Q19) — duplicate spellings of `a * b` on
+    `i32` and `x as f32`. Cost is near zero and they are still
+    rejected: the rule is about APIs whose absence costs a capability,
+    and these cost none.
+  - `toLocaleString`, `Date` local-time accessors — locale and timezone
+    data the project does not have. `js-alignment-audit.md` records
+    that Boa needs the same data, so these are a missing prerequisite,
+    not a cost question.
 
 ## 3. Open items carried forward
 

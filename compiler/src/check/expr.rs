@@ -36,24 +36,6 @@ fn literalish(e: &ast::Expr) -> bool {
     }
 }
 
-/// True for the ambient literal spelling `NaN` (including
-/// `Number.NaN`), ignoring parentheses. Q24 rejects this spelling as a
-/// float key while accepting computed NaN values.
-fn is_literal_nan(e: &ast::Expr) -> bool {
-    match e {
-        ast::Expr::Ident(id) => id.sym.as_ref() == "NaN",
-        ast::Expr::Member(member) => {
-            matches!(
-                (&*member.obj, &member.prop),
-                (ast::Expr::Ident(obj), ast::MemberProp::Ident(prop))
-                    if obj.sym.as_ref() == "Number" && prop.sym.as_ref() == "NaN"
-            )
-        }
-        ast::Expr::Paren(paren) => is_literal_nan(&paren.expr),
-        _ => false,
-    }
-}
-
 fn int_range(ty: &Type) -> Option<(i64, i64)> {
     // i64/u64 literals are capped at the f64-exact range; larger
     // spellings are out of the surface syntax (C3).
@@ -430,12 +412,22 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             None => {
-                if name == "eval" || name == "Function" {
+                if name == "NaN" {
+                    // The ES ambient global is the literal spelling used
+                    // by Q24. Local or program declarations named `NaN`
+                    // were resolved above and therefore still shadow it.
+                    hir::Expr {
+                        kind: ExprKind::Float(f64::NAN),
+                        ty: Type::F64,
+                        pos,
+                    }
+                } else if name == "eval" || name == "Function" {
                     self.error(
                         RuleCode::S002,
                         "no dynamic code evaluation",
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if name == "Math" {
                     // The ambient namespace is not a value (Q19): it
                     // cannot be assigned, passed, or stored.
@@ -445,6 +437,7 @@ impl<'p> Checker<'p> {
                          only `Math.<member>` is accepted (Q19)",
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if name == "Number" {
                     self.error(
                         RuleCode::S014,
@@ -452,6 +445,7 @@ impl<'p> Checker<'p> {
                          use `Number.<member>` (Q25)",
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if name == "Date" {
                     // The ambient Date surface is a type and a namespace,
                     // never a value (Q20).
@@ -461,6 +455,7 @@ impl<'p> Checker<'p> {
                          and `Date.now()` are accepted (Q20)",
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if name == "Map" || name == "Set" {
                     self.error(
                         RuleCode::S014,
@@ -470,18 +465,21 @@ impl<'p> Checker<'p> {
                         ),
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if crate::ambient::ambient_fn(&name).is_some() {
                     self.error(
                         RuleCode::S100,
                         format!("ambient function `{}` may only be called", name),
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if crate::ambient::number_global(&name).is_some() {
                     self.error(
                         RuleCode::S014,
                         format!("`{name}` may only be called, not read as a value (Q25)"),
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else if name == "isNaN" || name == "isFinite" {
                     self.error(
                         RuleCode::S014,
@@ -490,14 +488,15 @@ impl<'p> Checker<'p> {
                         ),
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 } else {
                     self.error(
                         RuleCode::S100,
                         format!("unknown name `{}`", name),
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 }
-                self.err_expr(pos)
             }
         }
     }
@@ -2398,29 +2397,6 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Rejects the literal spelling `NaN` in a float key position
-    /// without first resolving it as an ordinary identifier. Computed
-    /// NaN expressions continue through normal checking (Q24).
-    fn reject_literal_nan_key(&mut self, key: &Type, c: &ast::CallExpr) -> bool {
-        if !matches!(key, Type::F32 | Type::F64) {
-            return false;
-        }
-        let Some(first) = c.args.first() else {
-            return false;
-        };
-        if first.spread.is_some() || !is_literal_nan(&first.expr) {
-            return false;
-        }
-        let pos = self.pos(first.expr.span());
-        self.error(
-            RuleCode::S014,
-            "a literal `NaN` is not a reachable Map/Set key; compute it \
-             explicitly only when the intentionally-unmatchable Q24 behavior is wanted",
-            pos,
-        );
-        true
-    }
-
     /// True when `V` can carry `get`'s null miss: a reference class or
     /// opaque handle (including the built-in reference containers), or
     /// an already-nullable form of one.
@@ -2450,10 +2426,6 @@ impl<'p> Checker<'p> {
             ty,
             pos,
         };
-        let keyed = matches!(name, "get" | "getOr" | "set" | "has" | "delete");
-        if keyed && self.reject_literal_nan_key(&key, c) {
-            return self.err_expr(pos);
-        }
         match name {
             "get" => {
                 if !self.map_get_value_ok(&value) {
@@ -2623,9 +2595,6 @@ impl<'p> Checker<'p> {
             ty,
             pos,
         };
-        if matches!(name, "add" | "has" | "delete") && self.reject_literal_nan_key(&key, c) {
-            return self.err_expr(pos);
-        }
         match name {
             "add" | "has" | "delete" => {
                 let params = [ParamSig {

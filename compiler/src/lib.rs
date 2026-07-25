@@ -623,17 +623,17 @@ mod tests {
     }
 
     #[test]
-    fn literal_nan_key_is_rejected_but_computed_nan_is_accepted() {
-        let err = check_one(
+    fn literal_and_computed_nan_keys_are_accepted() {
+        check_one(
             "export function main(): void {\n\
                const map: Map<f64, i32> = new Map<f64, i32>();\n\
                map.set(NaN, 1);\n\
-               print(`${map.size}`);\n\
+               const set: Set<f64> = new Set<f64>();\n\
+               set.add(Number.NaN);\n\
+               print(`${map.has(NaN)} ${set.has(NaN)}`);\n\
              }\n",
         )
-        .unwrap_err();
-        assert_eq!(err[0].code, RuleCode::S014);
-        assert!(err[0].message.contains("Q24"));
+        .expect("literal NaN keys are accepted");
         check_one(
             "export function main(): void {\n\
                const map: Map<f64, i32> = new Map<f64, i32>();\n\

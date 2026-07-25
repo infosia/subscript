@@ -868,8 +868,8 @@ pub enum ArrFn {
     IndexOf,
     /// `lastIndexOf(x)` — last index or −1.
     LastIndexOf,
-    /// `includes(x)` — per-kind `===` equality (so `NaN` is never
-    /// found — the contract pins `===` semantics for all three, Q22).
+    /// `includes(x)` — per-kind SameValueZero equality (so float NaNs
+    /// are found, unlike `indexOf`/`lastIndexOf`, Q22).
     Includes,
     /// `join(sep)` — Q14 formatting per element; `sep` defaults `","`.
     Join,

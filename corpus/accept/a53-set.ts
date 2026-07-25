@@ -1,6 +1,6 @@
 // corpus: accept/a53-set
-// purpose: Exercises the accepted Set battery plus Q24 float zero and
-//          computed-NaN equality/hash behavior.
+// purpose: Exercises the accepted Set battery plus Q24 float zero,
+//          NaN insertion, and an ordinary float miss.
 // exercises: set-methods, float-keys, deterministic-hashing
 // questions: Q24, Q22
 
@@ -21,5 +21,5 @@ export function main(): void {
   const zero: f64 = 0.0;
   const computedNaN: f64 = zero / zero;
   floats.add(computedNaN);
-  print(`float ${floats.has(plusZero)} ${floats.has(computedNaN)} ${floats.size}`);
+  print(`float ${floats.has(plusZero)} ${floats.has(1.0)} ${floats.size}`);
 }

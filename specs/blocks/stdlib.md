@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -50,9 +50,14 @@ because the sized aliases erase to `number`):
   the C `<math.h>`/Rust `f64::consts` doubles (identical bits; the
   shared HIR literal makes the two tiers agree by construction).
 
-Rejected members (S-code + reject-corpus entries): `imul`, `clz32`,
-`fround` (JS-number semantics ops; the language has real sized
-integers), variadic `max`/`min`/`hypot`.
+`clz32(x: u32): i32` is accepted (Q26). **`clz32(0)` is `32`** — the
+runtime uses Rust's `leading_zeros()` behind an opaque symbol, because
+C's `__builtin_clz(0)` is undefined and the ship tier must not emit it.
+
+Rejected members (S-code + reject-corpus entries): `imul`, `fround` —
+each is an exact duplicate of a spelling the language already has
+(`a * b` on `i32`, `x as f32`), so they buy a second name and no
+capability; and variadic `max`/`min`/`hypot`.
 
 ECMA edge semantics, pinned by golden: `round` is half-toward-+∞
 (`round(-2.5) === -2`); `sign(±0) === ±0`; `max`/`min` propagate `NaN`
@@ -555,26 +560,66 @@ One implementation behind an opaque `sub_rt_num_*` symbol on both
 tiers (§0.2) — never the host libc's `snprintf("%.*f")`, whose
 rounding is platform-dependent.
 
-### 11.5 Rejected (S014, naming Q25)
+### 11.5 `toString(radix)`, `toExponential`, `toPrecision`
 
-`Number` as a constructor or a coercing call (`Number(x)`);
-`Number.parseInt`/`parseFloat` aliases (one spelling — the globals);
-`toPrecision`, `toExponential`, `toLocaleString`; `toString(radix)`
-(radix formatting is not in v1; the Q14 template form is the spelling
-for base 10); the global `isNaN`/`isFinite` (§11.1).
+Accepted on `f32`/`f64` (Q26, 2026-07-25). They were rejected in the
+first revision of Q25 as "not in v1"; that was a scope statement, and
+the owner's standing rule is that a JS API which is implementable at
+realistic cost is implemented regardless of expected demand. Measured
+cost: about 440 lines total, no external dependency, pure computation.
 
-### 11.6 Corpus and gate (pre-registered)
+- `toString(radix: i32): string` — **the radix is required**, for the
+  reason §11.3 gives for `parseInt`: an arity that changes meaning is
+  what Q22 rejected in `reduce` and `sort`. Radix 2–36; anything else
+  **traps**. Radix 10 must agree with Q14 exactly. The fractional part
+  is converted too (`(1234.5678).toString(36)` is `"ya.kfv9yqdpm"`),
+  which is the substantial part of the implementation. This closes a
+  real asymmetry: `parseInt(s, 16)` could read hexadecimal but nothing
+  could write it, and the Q14 template form is base 10 only.
+- `toExponential(digits?: i32): string` — `digits` 0–100, else traps.
+  Omitted `digits` uses as many digits as needed to represent the
+  value uniquely.
+- `toPrecision(digits: i32): string` — `digits` 1–100, else traps.
+  Note the argument is **required** here, unlike JS, where the
+  no-argument form is `ToString` — the same arity rule again.
+
+`NaN` and `±Infinity` format as in §11.4 for all three.
+
+One implementation behind `sub_rt_num_*` on both tiers (§0.2), never
+libc. §11.4's reason (platform-dependent rounding) applies, and there
+is a second: **C's `%e` pads the exponent to two digits where ECMA does
+not** — node gives `(0).toExponential(2)` as `0.00e+0`, `printf` gives
+`0.00e+00`.
+
+### 11.6 Rejected (S014, naming Q25)
+
+`Number` as a constructor or a coercing call (`Number(x)`) and the
+global `isNaN`/`isFinite` (§11.1) — these **coerce**, which is the
+unsoundness the language exists to reject; adding them would import it,
+so the Q26 rule above does not reach them. `Number.parseInt`/
+`parseFloat` aliases (one spelling — the globals). `toLocaleString`
+(needs locale data; `js-alignment-audit.md` records that Boa needs the
+same thing, so this is a missing prerequisite, not a cost question).
+
+### 11.7 Corpus and gate (pre-registered)
 
 Accept (continue the `aNN` numbering): a `Number` statics and
 predicates battery (including the `MAX_SAFE_INTEGER` ≠ `i64`-bound
 comment); a parse battery (success, prefix parse, whitespace, sign,
 each radix boundary 2/16/36, `NaN` failure checked with
 `Number.isNaN`, then `as i32` conversion of a success); a `toFixed`
-battery covering every §11.4 pinned case. Rejects: the global
-`isNaN`, `Number(x)`, `toPrecision`, `toString(16)`, and a `parseInt`
-without a radix — each S014 at a pinned position; plus a radix-out-of
--range trap and a `digits`-out-of-range trap, whose tuples must be
-identical across tiers.
+battery covering every §11.4 pinned case; and a §11.5 battery —
+`toString` at radix 2/8/16/36 over integral and **fractional** values,
+negative values, `NaN`/`±Infinity`, radix 10 shown equal to the Q14
+template form; `toExponential` with and without `digits`, including
+the unpadded-exponent case `(0).toExponential(2)`; `toPrecision`
+across the fixed/exponential switchover; and `Math.clz32` at `0`, `1`,
+`2^31` and an all-ones input. Rejects: the global `isNaN`, `Number(x)`,
+`Math.imul`, `Math.fround`, a `parseInt` without a radix, a
+`toString` without a radix, and a `toPrecision` without `digits` —
+each S014 at a pinned position; plus a radix-out-of-range trap and a
+`digits`-out-of-range trap, whose tuples must be identical across
+tiers.
 
 Gate: standing gate byte-exact on both tiers including the new
 entries; `tsc` zero errors, unchanged config; the `toFixed` and parse

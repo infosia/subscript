@@ -1,0 +1,5 @@
+f64 array true -1 -1
+f32 array true -1 -1
+map 33 true 1
+set true true 1
+zero 0:2 1

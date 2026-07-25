@@ -459,9 +459,9 @@ no-context agent. **1 CRITICAL, 1 MAJOR, 4 MINOR.**
   Q25; `parse_float`'s non-UTF-8 internal trap carried `pos_id` 0 while
   every sibling carried a real position — fixed, with a regression test;
   the P12 commit message says "r46-r49" where the corpus adds **r46–r50**
-  (`r50-parse-int-no-radix` is the §11.6-required entry — the corpus is
+  (`r50-parse-int-no-radix` is the §11.7-required entry — the corpus is
   right, the message undercounts); this tracking entry and the
-  benchmark row were the outstanding §2/§11.6 items.
+  benchmark row were the outstanding §2/§11.7 items.
 
 **Verified clean by the review** (~4.06 M values, both tiers): the Q14
 correction is exactly node's notation everywhere, perturbs **zero**
@@ -470,12 +470,12 @@ matches node over 650 588 cases including the half-way rule
 (`(1.005).toFixed(2)` → `"1.00"`), `digits` 0 and 100, `≥1e21`, `NaN`,
 infinities and `f32` receivers; `parseFloat` matches over 80 094 cases
 including every ECMA whitespace class; all six trap tuples are
-identical across tiers; the whole §11.5 rejected surface is S014 with a
+identical across tiers; the whole §11.6 rejected surface is S014 with a
 Q25 citation, and program-declared shadowing of `parseInt`/`isNaN`/
 `Number` correctly wins over the intrinsic. No cross-tier divergence
 anywhere.
 
-## Gate (§11.6, all met — orchestrator-verified)
+## Gate (§11.7, all met — orchestrator-verified)
 
 Standing gate byte-exact on both tiers (floor 56 → 59); `tsc` zero
 errors, unchanged config; the `toFixed` and parse goldens hand-derived
