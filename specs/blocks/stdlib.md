@@ -707,3 +707,62 @@ goldens hand-derived from ECMA and cross-checked against node, with
 any divergence recorded in Q25 rather than absorbed; trap tuples
 identical across tiers; rejects at pinned S014 positions; benchmarks —
 no ship-row regression.
+
+## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
+
+Q27 spans five sections, so its corpus is registered here rather than
+split across them. Staged in the order below; each stage is a Phase
+Review boundary, because the last stage touches the checker and the
+first four do not.
+
+**Stage 1 — `Math` and `Number` (no new machinery).** `imul`, `fround`,
+`Number.parseInt`/`parseFloat`. Accept: an entry pinning `imul`'s
+wrapping at the `i32` boundary, `fround`'s rounding
+(`Math.fround(1.1)` is `1.100000023841858`), and the two `Number`
+statics agreeing with the globals on the same inputs. The existing
+`r15`/`r17` reject entries for `imul`/`fround` must be **removed or
+repurposed** — they now assert the opposite of the contract.
+
+**Stage 2 — `String`.** Accept: `substring` with a reversed pair and
+negative arguments shown differing from `slice` on the same inputs
+(this is the entry that proves it is not a duplicate); `substr` with a
+negative start and a non-positive length; `charAt` in range, out of
+range (`""`), and on a multi-byte code point; `codePointAt` on ASCII
+and on a multi-byte code point; `concat`; `startsWith`/`endsWith` with
+a position. `$` substitution: `$$`, `$&`, `` $` ``, `$'`, and `$1`
+shown **literal**. Traps, tuple-identical across tiers: `charAt` and
+`codePointAt` off a UTF-8 boundary, `codePointAt` out of range.
+
+**Stage 3 — `Array` without the checker change.** Accept:
+`reduceRight` right-to-left order pinned (a non-commutative fold, so
+the direction is observable); `splice` returning the removed elements
+and mutating in place; `unshift` returning the new length; `shift`;
+`copyWithin` with negative arguments. Traps: `shift` on an empty
+array. The existing `r32-array-splice` reject entry must be removed or
+repurposed. Rejects to add: the variadic `splice` insert form and
+multi-argument `unshift`, each S014 naming variadic parameters as the
+missing prerequisite — otherwise a reader cannot tell a subset from an
+oversight.
+
+**Stage 4 — `Map`/`Set`.** Accept: `Map.groupBy` over an array with a
+`string` key, showing group order and membership; each of the four
+set-algebra operations with **result order pinned**, and the three
+predicates. Reject: `Object.groupBy`, and a set operation given a
+non-`Set` argument.
+
+**Stage 5 — the callback index parameter (checker).** Accept: `forEach`,
+`map`, `filter`, `some`, `every`, `findIndex` and `sort` each called
+with both arities where the lib allows it, and `reduce`/`reduceRight`
+with the index. Reject: the three-parameter `(v, i, arr)` form, S014
+naming C5 — this is the narrowing most likely to be read as an
+oversight, so its reject entry carries the reason.
+
+Gate: standing differential gate byte-exact on both tiers for every new
+entry; `tsc` zero errors, unchanged config; every accept golden
+generated from node v24.18.0 and `cmp`-verified, with any divergence
+recorded in Q27 rather than absorbed — the `substring`-versus-`slice`
+and `$1`-stays-literal lines exist to be checked against node, not
+assumed; trap tuples identical across tiers; rejects at pinned S014
+positions; no pre-existing `.expected` moves, since Q27 adds surface
+and changes none — a golden that moves is a defect in this phase;
+benchmarks — no ship-row regression.
