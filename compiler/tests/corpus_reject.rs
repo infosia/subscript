@@ -73,6 +73,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r57-json-stringify-set.ts", RuleCode::S014, 8),
     ("r58-json-stringify-object.ts", RuleCode::S014, 11),
     ("r59-json-stringify-function.ts", RuleCode::S014, 12),
+    ("r60-json-parse-no-context.ts", RuleCode::S014, 7),
+    ("r61-json-parse-date.ts", RuleCode::S014, 7),
 ];
 
 #[test]
@@ -105,6 +107,44 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
             file, line, first.pos.line, first.pos.col, first.message
         );
     }
+}
+
+#[test]
+fn json_parse_without_context_is_pinned_to_the_parse_member() {
+    let file = "r60-json-parse-no-context.ts";
+    let source = fs::read_to_string(corpus_dir().join("reject").join(file))
+        .expect("read JSON.parse reject entry");
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("context-free JSON.parse must be rejected");
+    assert_eq!(diagnostics[0].code, RuleCode::S014);
+    assert_eq!(
+        (diagnostics[0].pos.line, diagnostics[0].pos.col),
+        (7, 8),
+        "S014 must point at the `parse` member"
+    );
+}
+
+#[test]
+fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
+    let file = "r61-json-parse-date.ts";
+    let source = fs::read_to_string(corpus_dir().join("reject").join(file))
+        .expect("read JSON.parse<Date> reject entry");
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("JSON.parse<Date> must be rejected");
+    assert_eq!(diagnostics[0].code, RuleCode::S014);
+    assert_eq!(
+        (diagnostics[0].pos.line, diagnostics[0].pos.col),
+        (7, 8),
+        "S014 must point at the `parse` member"
+    );
+    assert!(
+        diagnostics[0]
+            .message
+            .contains("untagged ISO string cannot identify a Date")
+            && diagnostics[0].message.contains("target could never match"),
+        "diagnostic must explain the unreachable target: {}",
+        diagnostics[0].message
+    );
 }
 
 #[test]

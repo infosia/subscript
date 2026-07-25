@@ -731,11 +731,11 @@ impl NumFn {
 }
 
 /// Internal operations used by the checker-generated, monomorphized
-/// `JSON.stringify<T>` serializers (stdlib.md §13, Q28). These are not
-/// independently callable source members: the checker expands one
-/// accepted call into ordinary typed helper functions whose only special
-/// leaves are these opaque runtime calls. Both execution tiers therefore
-/// lower the same finite HIR serializer graph.
+/// `JSON.stringify<T>` serializers and `JSON.parse<T>` deserializers
+/// (stdlib.md §13, Q28). These are not independently callable source
+/// members: the checker expands one accepted call into ordinary typed
+/// helper functions whose only special leaves are these opaque runtime
+/// calls. Both execution tiers therefore lower the same finite HIR graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum JsonFn {
@@ -772,11 +772,36 @@ pub enum JsonFn {
     Visit,
     /// Removes a reference from the active-path set.
     Leave,
+    /// Parses complete text into a transient syntax tree; zero means
+    /// malformed input and is data, not a trap.
+    ParseBegin,
+    /// Removes a transient parsed syntax tree.
+    ParseEnd,
+    /// Returns the root node handle.
+    ParseRoot,
+    /// Tests a node's JSON kind tag.
+    ParseIsKind,
+    /// Tests whether a number fits one exact sized numeric target.
+    ParseNumberFits,
+    /// Reads a validated number as `f64`.
+    ParseNumber,
+    /// Reads a validated sized integer exactly from its JSON token text.
+    ParseInteger,
+    /// Reads a validated boolean.
+    ParseBool,
+    /// Allocates a language string from a validated string node.
+    ParseString,
+    /// Returns a validated array node's length.
+    ParseArrayLen,
+    /// Returns an array element node.
+    ParseArrayGet,
+    /// Returns the last occurrence of an object field, or zero if absent.
+    ParseObjectGet,
 }
 
 impl JsonFn {
     /// Every internal JSON runtime leaf in discriminant order.
-    pub const ALL: [JsonFn; 16] = [
+    pub const ALL: [JsonFn; 28] = [
         JsonFn::Begin,
         JsonFn::BeginTracked,
         JsonFn::Finish,
@@ -793,6 +818,18 @@ impl JsonFn {
         JsonFn::Null,
         JsonFn::Visit,
         JsonFn::Leave,
+        JsonFn::ParseBegin,
+        JsonFn::ParseEnd,
+        JsonFn::ParseRoot,
+        JsonFn::ParseIsKind,
+        JsonFn::ParseNumberFits,
+        JsonFn::ParseNumber,
+        JsonFn::ParseInteger,
+        JsonFn::ParseBool,
+        JsonFn::ParseString,
+        JsonFn::ParseArrayLen,
+        JsonFn::ParseArrayGet,
+        JsonFn::ParseObjectGet,
     ];
 
     /// Opaque runtime symbol shared by dev-JIT and ship-C-AOT.
@@ -815,13 +852,28 @@ impl JsonFn {
             JsonFn::Null => "sub_rt_json_null",
             JsonFn::Visit => "sub_rt_json_visit",
             JsonFn::Leave => "sub_rt_json_leave",
+            JsonFn::ParseBegin => "sub_rt_json_parse_begin",
+            JsonFn::ParseEnd => "sub_rt_json_parse_end",
+            JsonFn::ParseRoot => "sub_rt_json_parse_root",
+            JsonFn::ParseIsKind => "sub_rt_json_parse_is_kind",
+            JsonFn::ParseNumberFits => "sub_rt_json_parse_number_fits",
+            JsonFn::ParseNumber => "sub_rt_json_parse_number",
+            JsonFn::ParseInteger => "sub_rt_json_parse_integer",
+            JsonFn::ParseBool => "sub_rt_json_parse_bool",
+            JsonFn::ParseString => "sub_rt_json_parse_string",
+            JsonFn::ParseArrayLen => "sub_rt_json_parse_array_len",
+            JsonFn::ParseArrayGet => "sub_rt_json_parse_array_get",
+            JsonFn::ParseObjectGet => "sub_rt_json_parse_object_get",
         }
     }
 
     /// Whether the runtime result is the language boolean representation.
     #[must_use]
     pub fn returns_bool(self) -> bool {
-        self == JsonFn::Visit
+        matches!(
+            self,
+            JsonFn::Visit | JsonFn::ParseIsKind | JsonFn::ParseNumberFits | JsonFn::ParseBool
+        )
     }
 }
 
@@ -2096,8 +2148,8 @@ pub enum Callee {
     /// / `Date.now` statics, the UTC accessors, and `toISOString`. For
     /// the instance operations the receiver is the first argument.
     Date(DateFn),
-    /// One internal leaf of a checker-generated `JSON.stringify<T>`
-    /// serializer (stdlib.md §13, Q28).
+    /// One internal leaf of a checker-generated `JSON.stringify<T>` or
+    /// `JSON.parse<T>` helper graph (stdlib.md §13, Q28).
     Json(JsonFn),
     /// A `String` method intrinsic (stdlib.md §8, Q21). The receiver is
     /// the first argument; optional arguments were normalized at check
@@ -2208,6 +2260,14 @@ pub enum ExprKind {
         class: ClassId,
         /// Constructor arguments.
         args: Vec<Expr>,
+    },
+    /// Checker-internal zero value used by typed JSON.parse construction.
+    Zero,
+    /// Checker-internal raw allocation of a reference class, bypassing
+    /// field initializers and its source constructor.
+    RawNew {
+        /// Allocated reference class.
+        class: ClassId,
     },
     /// Field access `obj.name` (classes and the `IterResult` shape).
     Field {

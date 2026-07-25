@@ -512,6 +512,22 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
         "f16 is a storage-only type with no arithmetic/formatting domain.",
         None,
     ),
+    rejection(
+        "JSON",
+        "parse(text) without target type",
+        "Q28",
+        Some("JSON.parse<T>(text)"),
+        "The checker has no static type to monomorphize.",
+        Some("r60-json-parse-no-context.ts"),
+    ),
+    rejection(
+        "JSON",
+        "parse<Date>(text)",
+        "Q28",
+        None,
+        "An untagged ISO string cannot identify a Date, so the target could never match.",
+        Some("r61-json-parse-date.ts"),
+    ),
 ];
 
 const FORM_REJECTIONS: &[ApiRejection] = &[
@@ -852,6 +868,23 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         signature: "stringify<T>(value: T): string".to_string(),
         summary: "Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle.",
     });
+    out.push(ApiItem {
+        group: "JSON",
+        signature: "parse<T>(text: string): JsonResult<T>".to_string(),
+        summary: "Parses and validates one statically known P13 type; malformed or mismatched data returns ok=false, and the caller releases the result with unsafeDelete.",
+    });
+    out.extend([
+        ApiItem {
+            group: "JsonResult<T>",
+            signature: "ok: boolean".to_string(),
+            summary: "Reports whether parsing and complete static-type validation succeeded.",
+        },
+        ApiItem {
+            group: "JsonResult<T>",
+            signature: "value: T".to_string(),
+            summary: "Carries the parsed value on success and is zero-initialized but unreadable on failure.",
+        },
+    ]);
     out.extend([
         ApiItem {
             group: "Generator<T>",
@@ -948,6 +981,15 @@ pub(crate) fn json_rejection(ty: &Type) -> Option<ApiRejection> {
         .iter()
         .copied()
         .find(|rejection| rejection.surface == surface)
+}
+
+/// The named rejection for a JSON.parse target containing Date.
+pub(crate) fn json_parse_date_rejection() -> ApiRejection {
+    JSON_REJECTIONS
+        .iter()
+        .copied()
+        .find(|rejection| rejection.surface == "parse<Date>(text)")
+        .expect("JSON.parse<Date> rejection metadata")
 }
 
 /// Checker-owned rejection for a non-member call or source form.
@@ -1224,6 +1266,9 @@ mod tests {
             ("T[]", "pop(): T"),
             ("FixedArray<T, N>", "length: i32"),
             ("JSON", "stringify<T>(value: T): string"),
+            ("JSON", "parse<T>(text: string): JsonResult<T>"),
+            ("JsonResult<T>", "ok: boolean"),
+            ("JsonResult<T>", "value: T"),
             ("Generator<T>", "next(): IteratorResult<T>"),
             ("IteratorResult<T>", "done: boolean"),
             ("IteratorResult<T>", "value: T"),
@@ -1252,7 +1297,7 @@ mod tests {
                 .count()
             + MapFn::ALL.len()
             + SetFn::ALL.len()
-            + 4;
+            + 7;
         assert_eq!(
             rows.len(),
             expected,

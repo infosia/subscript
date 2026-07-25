@@ -211,6 +211,9 @@ pub struct Context {
     // Transient P13 JSON output builders. Untracked serializers create
     // no active-reference set; tracked ones do so explicitly.
     json_builders: crate::json::JsonBuilders,
+    // Transient P13 parsed syntax trees. They contain no language
+    // allocations and are removed before JSON.parse returns.
+    json_parsers: crate::json::JsonParsers,
     // Ship-tier policy flag (§8.1a): when true, `delete`/`collect` free
     // and forget immediately; when false (dev tier), they retain and
     // poison so use-after-delete/double-delete trap.
@@ -278,6 +281,7 @@ impl Context {
             roots: Vec::new(),
             callbacks: Vec::new(),
             json_builders: crate::json::JsonBuilders::default(),
+            json_parsers: crate::json::JsonParsers::default(),
             release_on_delete,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             now_override: None,
@@ -447,17 +451,21 @@ impl Context {
     pub fn clear_trap(&mut self) {
         self.trap = None;
         self.trap_flag = 0;
-        // A trapping JSON serializer unwinds before its Finish leaf on
-        // the dev tier. Its builder is transient implementation state,
-        // not language-visible state, and is discarded at this safe host
-        // boundary before the next call.
+        // A trapping JSON operation may unwind before its finish leaf on
+        // the dev tier. Builders and parsed trees are transient
+        // implementation state, not language-visible state.
         self.json_builders.clear();
+        self.json_parsers.clear();
     }
 
     // ----- JSON.stringify transient builders (stdlib.md §13) -----
 
     pub(crate) fn json_builders(&mut self) -> &mut crate::json::JsonBuilders {
         &mut self.json_builders
+    }
+
+    pub(crate) fn json_parsers(&mut self) -> &mut crate::json::JsonParsers {
+        &mut self.json_parsers
     }
 
     /// True when a trap is pending.

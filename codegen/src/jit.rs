@@ -107,6 +107,54 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_json_null", ffi::sub_rt_json_null as *const u8),
         ("sub_rt_json_visit", ffi::sub_rt_json_visit as *const u8),
         ("sub_rt_json_leave", ffi::sub_rt_json_leave as *const u8),
+        (
+            "sub_rt_json_parse_begin",
+            ffi::sub_rt_json_parse_begin as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_end",
+            ffi::sub_rt_json_parse_end as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_root",
+            ffi::sub_rt_json_parse_root as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_is_kind",
+            ffi::sub_rt_json_parse_is_kind as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_number_fits",
+            ffi::sub_rt_json_parse_number_fits as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_number",
+            ffi::sub_rt_json_parse_number as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_integer",
+            ffi::sub_rt_json_parse_integer as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_bool",
+            ffi::sub_rt_json_parse_bool as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_string",
+            ffi::sub_rt_json_parse_string as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_array_len",
+            ffi::sub_rt_json_parse_array_len as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_array_get",
+            ffi::sub_rt_json_parse_array_get as *const u8,
+        ),
+        (
+            "sub_rt_json_parse_object_get",
+            ffi::sub_rt_json_parse_object_get as *const u8,
+        ),
         ("sub_rt_f16_from_f64", ffi::sub_rt_f16_from_f64 as *const u8),
         ("sub_rt_f16_to_f64", ffi::sub_rt_f16_to_f64 as *const u8),
         ("sub_rt_array_new", ffi::sub_rt_array_new as *const u8),

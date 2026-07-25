@@ -1724,6 +1724,18 @@ impl<'m> Emitter<'m> {
             }
             K::Call { callee, args } => self.eval_call(callee, args, &e.ty, &e.pos, out, depth),
             K::New { class, args } => self.eval_new(*class, args, &e.pos, out, depth),
+            K::Zero => self.zero_value(&e.ty),
+            K::RawNew { class } => {
+                if self.is_value_class(*class)? {
+                    return Err("raw allocation requested for a value class".to_string());
+                }
+                let cname = self.class_name(*class)?;
+                let pid = self.pos_id(&e.pos);
+                Ok(format!(
+                    "sub_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
+                    class.0
+                ))
+            }
             K::Field { obj, name } => self.eval_field(obj, name, out, depth),
             K::Length(obj) => match &obj.ty {
                 Type::Array(_) => {
@@ -4096,6 +4108,18 @@ extern void sub_rt_json_date(void* ctx, uint64_t builder, int64_t value, uint32_
 extern void sub_rt_json_null(void* ctx, uint64_t builder, uint32_t pos_id);
 extern int32_t sub_rt_json_visit(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
 extern void sub_rt_json_leave(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern uint64_t sub_rt_json_parse_begin(void* ctx, const void* text, uint32_t pos_id);
+extern void sub_rt_json_parse_end(void* ctx, uint64_t parser, uint32_t pos_id);
+extern uint64_t sub_rt_json_parse_root(void* ctx, uint64_t parser, uint32_t pos_id);
+extern int32_t sub_rt_json_parse_is_kind(void* ctx, uint64_t parser, uint64_t node, uint32_t kind, uint32_t pos_id);
+extern int32_t sub_rt_json_parse_number_fits(void* ctx, uint64_t parser, uint64_t node, uint32_t target, uint32_t pos_id);
+extern double sub_rt_json_parse_number(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern uint64_t sub_rt_json_parse_integer(void* ctx, uint64_t parser, uint64_t node, uint32_t target, uint32_t pos_id);
+extern int32_t sub_rt_json_parse_bool(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern void* sub_rt_json_parse_string(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern int32_t sub_rt_json_parse_array_len(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern uint64_t sub_rt_json_parse_array_get(void* ctx, uint64_t parser, uint64_t node, int32_t index, uint32_t pos_id);
+extern uint64_t sub_rt_json_parse_object_get(void* ctx, uint64_t parser, uint64_t node, const void* key, uint32_t pos_id);
 /* Number and parsing intrinsics (stdlib.md 11, Q25/Q26).
  * Trap-capable entries carry source positions. */
 extern int32_t sub_rt_num_is_nan(void* ctx, double value);

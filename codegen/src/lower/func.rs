@@ -1253,6 +1253,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Call { callee, args } => self.eval_call(callee, args, &e.ty, &e.pos, None),
             K::New { class, args } => self.eval_new(class.0, args, &e.pos, None),
+            K::Zero => Ok(match self.ml.layouts.repr(&e.ty)? {
+                Repr::None => RV::None,
+                Repr::Scalar(ty) => RV::S(self.zero_of(ty)),
+                Repr::Pair => RV::P(self.iconst(types::I64, 0), self.iconst(types::I64, 0)),
+                Repr::Agg { size, align } => {
+                    let slot = self.temp_slot(size, align);
+                    self.zero_bytes(slot, size, align);
+                    RV::A(slot)
+                }
+            }),
+            K::RawNew { class } => self.eval_raw_new(class.0, &e.pos),
             K::Field { obj, name } => {
                 let (addr, off, fty) = self.field_addr(obj, name)?;
                 self.load_val(&fty, addr, off)
@@ -2819,7 +2830,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         use hir::JsonFn as J;
         let expected = match f {
             J::Begin | J::BeginTracked => 0,
-            J::Finish | J::Null => 1,
+            J::Finish | J::Null | J::ParseBegin | J::ParseEnd | J::ParseRoot => 1,
             J::Raw
             | J::Str
             | J::I32
@@ -2831,7 +2842,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             | J::Bool
             | J::Date
             | J::Visit
-            | J::Leave => 2,
+            | J::Leave
+            | J::ParseNumber
+            | J::ParseBool
+            | J::ParseString
+            | J::ParseArrayLen => 2,
+            J::ParseIsKind
+            | J::ParseNumberFits
+            | J::ParseInteger
+            | J::ParseArrayGet
+            | J::ParseObjectGet => 3,
             other => return Err(internal(format!("unknown JsonFn {other:?}"))),
         };
         if args.len() != expected {
@@ -2846,12 +2866,21 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         argv.push(self.iconst(types::I32, pid));
         let result = self.call_rt(self.ml.rt.json[f as usize], &argv, true)?;
         Ok(match f {
-            J::Begin | J::BeginTracked | J::Finish => {
+            J::Begin
+            | J::BeginTracked
+            | J::Finish
+            | J::ParseBegin
+            | J::ParseRoot
+            | J::ParseNumber
+            | J::ParseInteger
+            | J::ParseString
+            | J::ParseArrayLen
+            | J::ParseArrayGet
+            | J::ParseObjectGet => {
                 RV::S(result.ok_or_else(|| internal(format!("{} result", f.symbol())))?)
             }
-            J::Visit => {
-                let value =
-                    result.ok_or_else(|| internal("sub_rt_json_visit result"))?;
+            J::Visit | J::ParseIsKind | J::ParseNumberFits | J::ParseBool => {
+                let value = result.ok_or_else(|| internal("sub_rt_json_visit result"))?;
                 RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, value, 0))
             }
             _ => RV::None,
@@ -3726,34 +3755,40 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         })
     }
 
-    fn eval_array_lit(
-        &mut self,
-        ty: &Type,
-        elems: &[hir::Expr],
-        pos: &Pos,
-    ) -> Result<RV, String> {
+    /// Allocates a zeroed reference-class payload without running source
+    /// field initializers or its constructor. Only checker-generated
+    /// JSON.parse construction uses this path.
+    fn eval_raw_new(&mut self, cid: usize, pos: &Pos) -> Result<RV, String> {
+        let layout = self.ml.layouts.class(cid)?.clone();
+        if layout.is_value {
+            return Err(internal("raw allocation requested for a value class"));
+        }
+        let size = self.iconst(types::I64, i64::from(layout.size));
+        let class_v = self.iconst(types::I32, i64::from(cid as u32));
+        let pos_id = self.pos_id(pos);
+        let pos_v = self.iconst(types::I32, pos_id);
+        let result = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], true)?;
+        Ok(RV::S(result.ok_or_else(|| {
+            internal("raw JSON object allocation result")
+        })?))
+    }
+
+    fn eval_array_lit(&mut self, ty: &Type, elems: &[hir::Expr], pos: &Pos) -> Result<RV, String> {
         match ty {
             Type::Array(elem) => {
                 let stride = self.ml.layouts.stride(elem)?;
                 let stride_v = self.iconst(types::I64, i64::from(stride));
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res = self.call_rt(
-                    self.ml.rt.array_new,
-                    &[self.ctx_v, stride_v, pos_v],
-                    true,
-                )?;
+                let res =
+                    self.call_rt(self.ml.rt.array_new, &[self.ctx_v, stride_v, pos_v], true)?;
                 let h = res.ok_or_else(|| internal("array_new result"))?;
                 for e in elems {
                     let rv = self.eval(e)?;
                     let src = self.materialize(rv, elem)?;
                     let pid = self.pos_id(&e.pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    self.call_rt(
-                        self.ml.rt.array_push,
-                        &[self.ctx_v, h, src, pos_v],
-                        true,
-                    )?;
+                    self.call_rt(self.ml.rt.array_push, &[self.ctx_v, h, src, pos_v], true)?;
                 }
                 Ok(RV::S(h))
             }

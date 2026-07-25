@@ -1,23 +1,60 @@
-//! P13 stage 1: statically typed, call-site-monomorphized
-//! `JSON.stringify<T>` serializer construction.
+//! P13: statically typed, call-site-monomorphized JSON construction.
 //!
-//! No runtime type inspection is involved. Once the argument has been
-//! checked, this module builds a finite graph of ordinary HIR helper
-//! functions for that exact `T`. Recursive reference-class types become
-//! recursive helper calls, while leaf writes go through the shared
-//! `sub_rt_json_*` runtime.
+//! No language RTTI is involved. Once an exact `T` is known, this module
+//! builds a finite graph of ordinary HIR helper functions. Stringify
+//! traverses language values; parse validates a transient runtime syntax
+//! tree before constructing any language value. Representation-neutral
+//! leaves go through the shared `sub_rt_json_*` runtime.
 
 use std::collections::HashSet;
 
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
-use crate::hir::{self, BinOp, Callee, ExprKind, JsonFn};
+use crate::hir::{self, BinOp, Callee, ExprKind, JsonFn, UnOp};
 use crate::types::{ClassId, Type};
 
 use super::{Checker, FnCtx};
 
 impl Checker<'_> {
+    /// Monomorphizes P13's ambient `JsonResult<T>` reference class on
+    /// first use. The zeroed payload is exactly the failed-result shape.
+    pub(crate) fn instantiate_json_result(&mut self, value: &Type, pos: Pos) -> ClassId {
+        let name = self.mono_name("JsonResult", std::slice::from_ref(value));
+        if let Some(&id) = self.class_ids.get(&name) {
+            return id;
+        }
+        let id = self.new_class(&name, false, pos.clone());
+        self.classes[id.0].fields = vec![
+            hir::Field {
+                name: "ok".to_string(),
+                ty: Type::Bool,
+                init: None,
+                pos: pos.clone(),
+            },
+            hir::Field {
+                name: "value".to_string(),
+                ty: value.clone(),
+                init: None,
+                pos,
+            },
+        ];
+        id
+    }
+
+    fn json_result_value_type(&self, ty: &Type) -> Option<Type> {
+        let Type::Class(id) = ty else {
+            return None;
+        };
+        let class = self.classes.get(id.0)?;
+        if !class.name.starts_with("JsonResult<") || class.fields.len() != 2 {
+            return None;
+        }
+        let ok = &class.fields[0];
+        let value = &class.fields[1];
+        (ok.name == "ok" && ok.ty == Type::Bool && value.name == "value").then(|| value.ty.clone())
+    }
+
     /// True when `obj` denotes the unshadowed ambient `JSON` namespace.
     pub(crate) fn is_json_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
         let ast::Expr::Ident(id) = obj else {
@@ -39,16 +76,18 @@ impl Checker<'_> {
         &mut self,
         member: &str,
         call: &ast::CallExpr,
+        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
         member_pos: Pos,
     ) -> hir::Expr {
+        if member == "parse" {
+            return self.check_json_parse(call, ctx, fx, pos, member_pos);
+        }
         if member != "stringify" {
             self.error(
                 RuleCode::S014,
-                format!(
-                    "`JSON.{member}` is outside P13 stage 1; only `JSON.stringify` is implemented"
-                ),
+                format!("`JSON.{member}` is outside the accepted JSON subset (Q28)"),
                 member_pos,
             );
             return self.err_expr(pos);
@@ -112,6 +151,138 @@ impl Checker<'_> {
             ty: Type::Str,
             pos,
         }
+    }
+
+    fn check_json_parse(
+        &mut self,
+        call: &ast::CallExpr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+        member_pos: Pos,
+    ) -> hir::Expr {
+        if call.args.len() != 1 {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`JSON.parse` expects exactly 1 argument, got {}",
+                    call.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        if let Some(spread) = call.args[0].spread {
+            let spread_pos = self.pos(spread);
+            self.error(
+                RuleCode::S100,
+                "spread arguments are not decided",
+                spread_pos.clone(),
+            );
+            return self.err_expr(spread_pos);
+        }
+
+        let target = if let Some(type_args) = &call.type_args {
+            if type_args.params.len() != 1 {
+                self.error(
+                    RuleCode::S014,
+                    "`JSON.parse<T>` takes exactly one type argument",
+                    member_pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let saved = self.in_json_argument;
+            self.in_json_argument = true;
+            let target = self.resolve_type(&type_args.params[0]);
+            self.in_json_argument = saved;
+            target
+        } else if let Some(target) = ctx.and_then(|ty| self.json_result_value_type(ty)) {
+            target
+        } else {
+            self.error(
+                RuleCode::S014,
+                "`JSON.parse` requires a target type; use `JSON.parse<T>(text)` \
+                 or a contextual `JsonResult<T>` type (Q28)",
+                member_pos,
+            );
+            return self.err_expr(pos);
+        };
+        if target == Type::Error {
+            return self.err_expr(pos);
+        }
+        if self.json_type_contains_date(&target) {
+            let rejection = crate::ambient::json_parse_date_rejection();
+            let actual = if target == Type::Date {
+                "JSON.parse<Date>"
+            } else {
+                "JSON.parse target containing Date"
+            };
+            self.error(
+                rejection.code,
+                crate::ambient::rejection_message(rejection, actual),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        }
+        if !self.json_serializable(&target) {
+            let name = self.type_name(&target);
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`JSON.parse` cannot deserialize `{name}`; Q28 accepts sized numerics \
+                     except f16, boolean, string, arrays, @CStruct values, reference \
+                     classes, and Ref | null"
+                ),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        }
+
+        let text = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
+        self.require_assignable(
+            &text.ty.clone(),
+            &Type::Str,
+            text.pos.clone(),
+            "`JSON.parse` text",
+        );
+        if text.ty == Type::Error {
+            return self.err_expr(pos);
+        }
+
+        let result_id = self.instantiate_json_result(&target, pos.clone());
+        let wrapper = self.synthesize_json_parser(&target, result_id, pos.clone());
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Func(wrapper),
+                args: vec![text],
+            },
+            ty: Type::Class(result_id),
+            pos,
+        }
+    }
+
+    /// True when a parse target contains Date at any depth. JSON has no
+    /// tagged Date node, so every such target is unreachable rather than
+    /// merely subject to a data-dependent mismatch.
+    fn json_type_contains_date(&self, ty: &Type) -> bool {
+        fn visit(checker: &Checker<'_>, ty: &Type, seen: &mut HashSet<ClassId>) -> bool {
+            match ty {
+                Type::Date => true,
+                Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
+                    visit(checker, element, seen)
+                }
+                Type::Class(id) => {
+                    seen.insert(*id)
+                        && checker.classes[id.0]
+                            .fields
+                            .iter()
+                            .any(|field| visit(checker, &field.ty, seen))
+                }
+                _ => false,
+            }
+        }
+
+        visit(self, ty, &mut HashSet::new())
     }
 
     /// P13's serializable-type predicate. A currently active class is
@@ -562,6 +733,546 @@ impl Checker<'_> {
         body.push(raw("}"));
         body
     }
+
+    fn synthesize_json_parser(&mut self, root: &Type, result_id: ClassId, pos: Pos) -> String {
+        let call_id = self.functions.len();
+        let mut types = Vec::new();
+        self.collect_json_types(root, &mut types);
+        let validators: Vec<String> = (0..types.len())
+            .map(|index| format!("[[json.parse#{call_id}.validate#{index}]]"))
+            .collect();
+        let constructors: Vec<String> = (0..types.len())
+            .map(|index| format!("[[json.parse#{call_id}.construct#{index}]]"))
+            .collect();
+
+        for (index, ty) in types.iter().enumerate() {
+            let body = self.json_validation_body(ty, &types, &validators, &pos);
+            self.functions.push(hir::Function {
+                name: validators[index].clone(),
+                exported: false,
+                is_generator: false,
+                params: vec![
+                    json_param("parser", Type::U64, &pos),
+                    json_param("node", Type::U64, &pos),
+                ],
+                ret: Type::Bool,
+                body,
+                pos: pos.clone(),
+            });
+        }
+        for (index, ty) in types.iter().enumerate() {
+            let body = self.json_construction_body(ty, &types, &constructors, &pos);
+            self.functions.push(hir::Function {
+                name: constructors[index].clone(),
+                exported: false,
+                is_generator: false,
+                params: vec![
+                    json_param("parser", Type::U64, &pos),
+                    json_param("node", Type::U64, &pos),
+                ],
+                ret: ty.clone(),
+                body,
+                pos: pos.clone(),
+            });
+        }
+
+        let result_ty = Type::Class(result_id);
+        let result = || json_local("result", result_ty.clone(), &pos);
+        let parser = || json_local("parser", Type::U64, &pos);
+        let node = || json_local("node", Type::U64, &pos);
+        let root_index = json_type_index(&types, root);
+        let assign_ok = json_assign(
+            json_field(result(), "ok", Type::Bool, &pos),
+            json_bool(true, &pos),
+            Type::Bool,
+            &pos,
+        );
+        let constructed = script_call(
+            constructors[root_index].clone(),
+            vec![parser(), node()],
+            root.clone(),
+            &pos,
+        );
+        let assign_value = json_assign(
+            json_field(result(), "value", root.clone(), &pos),
+            constructed,
+            root.clone(),
+            &pos,
+        );
+        let valid = script_call(
+            validators[root_index].clone(),
+            vec![parser(), node()],
+            Type::Bool,
+            &pos,
+        );
+        let parser_present = json_binary(BinOp::Ne, parser(), json_u64(0, &pos), Type::Bool, &pos);
+        let wrapper = format!("[[json.parse#{call_id}.root]]");
+        self.functions.push(hir::Function {
+            name: wrapper.clone(),
+            exported: false,
+            is_generator: false,
+            params: vec![json_param("text", Type::Str, &pos)],
+            ret: result_ty.clone(),
+            body: vec![
+                hir::Stmt::Let {
+                    name: "result".to_string(),
+                    ty: result_ty.clone(),
+                    mutable: false,
+                    init: hir::Expr {
+                        kind: ExprKind::RawNew { class: result_id },
+                        ty: Type::Class(result_id),
+                        pos: pos.clone(),
+                    },
+                    pos: pos.clone(),
+                },
+                hir::Stmt::Let {
+                    name: "parser".to_string(),
+                    ty: Type::U64,
+                    mutable: false,
+                    init: json_call(
+                        JsonFn::ParseBegin,
+                        vec![json_local("text", Type::Str, &pos)],
+                        Type::U64,
+                        &pos,
+                    ),
+                    pos: pos.clone(),
+                },
+                hir::Stmt::If {
+                    cond: parser_present,
+                    then: vec![
+                        hir::Stmt::Let {
+                            name: "node".to_string(),
+                            ty: Type::U64,
+                            mutable: false,
+                            init: json_call(JsonFn::ParseRoot, vec![parser()], Type::U64, &pos),
+                            pos: pos.clone(),
+                        },
+                        hir::Stmt::If {
+                            cond: valid,
+                            then: vec![hir::Stmt::Expr(assign_value), hir::Stmt::Expr(assign_ok)],
+                            els: None,
+                            pos: pos.clone(),
+                        },
+                        hir::Stmt::Expr(json_call(
+                            JsonFn::ParseEnd,
+                            vec![parser()],
+                            Type::Void,
+                            &pos,
+                        )),
+                    ],
+                    els: None,
+                    pos: pos.clone(),
+                },
+                hir::Stmt::Return {
+                    value: Some(result()),
+                    pos: pos.clone(),
+                },
+            ],
+            pos,
+        });
+        wrapper
+    }
+
+    fn json_validation_body(
+        &self,
+        ty: &Type,
+        types: &[Type],
+        validators: &[String],
+        pos: &Pos,
+    ) -> Vec<hir::Stmt> {
+        let parser = || json_local("parser", Type::U64, pos);
+        let node = || json_local("node", Type::U64, pos);
+        let kind = |code: i64| {
+            json_call(
+                JsonFn::ParseIsKind,
+                vec![parser(), node(), json_int(code, pos)],
+                Type::Bool,
+                pos,
+            )
+        };
+        let return_value = |value: hir::Expr| hir::Stmt::Return {
+            value: Some(value),
+            pos: pos.clone(),
+        };
+        if let Some(target) = json_number_target(ty) {
+            return vec![return_value(json_call(
+                JsonFn::ParseNumberFits,
+                vec![parser(), node(), json_int(target, pos)],
+                Type::Bool,
+                pos,
+            ))];
+        }
+        match ty {
+            Type::Bool => vec![return_value(kind(1))],
+            Type::Str => vec![return_value(kind(3))],
+            Type::Nullable(inner) => vec![hir::Stmt::If {
+                cond: kind(0),
+                then: vec![return_value(json_bool(true, pos))],
+                els: Some(vec![return_value(script_call(
+                    validators[json_type_index(types, inner)].clone(),
+                    vec![parser(), node()],
+                    Type::Bool,
+                    pos,
+                ))]),
+                pos: pos.clone(),
+            }],
+            Type::Array(element) | Type::FixedArray(element, _) => {
+                self.json_array_validation_body(ty, element, types, validators, pos)
+            }
+            Type::Class(id) => {
+                let mut body = vec![json_return_false_unless(kind(5), pos)];
+                for field in &self.classes[id.0].fields {
+                    let field_node = json_call(
+                        JsonFn::ParseObjectGet,
+                        vec![parser(), node(), json_string(&field.name, pos)],
+                        Type::U64,
+                        pos,
+                    );
+                    body.push(hir::Stmt::Let {
+                        name: format!("field_{}", field.name),
+                        ty: Type::U64,
+                        mutable: false,
+                        init: field_node,
+                        pos: pos.clone(),
+                    });
+                    let local = json_local(&format!("field_{}", field.name), Type::U64, pos);
+                    body.push(json_return_false_unless(
+                        json_binary(BinOp::Ne, local.clone(), json_u64(0, pos), Type::Bool, pos),
+                        pos,
+                    ));
+                    body.push(json_return_false_unless(
+                        script_call(
+                            validators[json_type_index(types, &field.ty)].clone(),
+                            vec![parser(), local],
+                            Type::Bool,
+                            pos,
+                        ),
+                        pos,
+                    ));
+                }
+                body.push(return_value(json_bool(true, pos)));
+                body
+            }
+            other => panic!("checker generated JSON validator for rejected type {other:?}"),
+        }
+    }
+
+    fn json_array_validation_body(
+        &self,
+        array_ty: &Type,
+        element: &Type,
+        types: &[Type],
+        validators: &[String],
+        pos: &Pos,
+    ) -> Vec<hir::Stmt> {
+        let parser = || json_local("parser", Type::U64, pos);
+        let node = || json_local("node", Type::U64, pos);
+        let index = || json_local("index", Type::I32, pos);
+        let len = || json_local("length", Type::I32, pos);
+        let mut body = vec![
+            json_return_false_unless(
+                json_call(
+                    JsonFn::ParseIsKind,
+                    vec![parser(), node(), json_int(4, pos)],
+                    Type::Bool,
+                    pos,
+                ),
+                pos,
+            ),
+            hir::Stmt::Let {
+                name: "length".to_string(),
+                ty: Type::I32,
+                mutable: false,
+                init: json_call(
+                    JsonFn::ParseArrayLen,
+                    vec![parser(), node()],
+                    Type::I32,
+                    pos,
+                ),
+                pos: pos.clone(),
+            },
+        ];
+        if let Type::FixedArray(_, expected) = array_ty {
+            body.push(json_return_false_unless(
+                json_binary(
+                    BinOp::Eq,
+                    len(),
+                    json_int(i64::from(*expected), pos),
+                    Type::Bool,
+                    pos,
+                ),
+                pos,
+            ));
+        } else {
+            body.push(json_return_false_unless(
+                json_binary(BinOp::Ge, len(), json_int(0, pos), Type::Bool, pos),
+                pos,
+            ));
+        }
+        body.push(hir::Stmt::Let {
+            name: "index".to_string(),
+            ty: Type::I32,
+            mutable: true,
+            init: json_int(0, pos),
+            pos: pos.clone(),
+        });
+        let child = json_call(
+            JsonFn::ParseArrayGet,
+            vec![parser(), node(), index()],
+            Type::U64,
+            pos,
+        );
+        body.push(hir::Stmt::While {
+            cond: json_binary(BinOp::Lt, index(), len(), Type::Bool, pos),
+            body: vec![
+                json_return_false_unless(
+                    script_call(
+                        validators[json_type_index(types, element)].clone(),
+                        vec![parser(), child],
+                        Type::Bool,
+                        pos,
+                    ),
+                    pos,
+                ),
+                hir::Stmt::Expr(json_increment(index(), pos)),
+            ],
+            pos: pos.clone(),
+        });
+        body.push(hir::Stmt::Return {
+            value: Some(json_bool(true, pos)),
+            pos: pos.clone(),
+        });
+        body
+    }
+
+    fn json_construction_body(
+        &self,
+        ty: &Type,
+        types: &[Type],
+        constructors: &[String],
+        pos: &Pos,
+    ) -> Vec<hir::Stmt> {
+        let parser = || json_local("parser", Type::U64, pos);
+        let node = || json_local("node", Type::U64, pos);
+        let return_value = |value: hir::Expr| hir::Stmt::Return {
+            value: Some(value),
+            pos: pos.clone(),
+        };
+        if let Some(target) = json_number_target(ty) {
+            if matches!(ty, Type::F32 | Type::F64) {
+                let number = json_call(JsonFn::ParseNumber, vec![parser(), node()], Type::F64, pos);
+                return vec![return_value(if *ty == Type::F64 {
+                    number
+                } else {
+                    json_cast(number, ty.clone(), pos)
+                })];
+            }
+            let integer = json_call(
+                JsonFn::ParseInteger,
+                vec![parser(), node(), json_int(target, pos)],
+                Type::U64,
+                pos,
+            );
+            return vec![return_value(if *ty == Type::U64 {
+                integer
+            } else {
+                json_cast(integer, ty.clone(), pos)
+            })];
+        }
+        match ty {
+            Type::Bool => vec![return_value(json_call(
+                JsonFn::ParseBool,
+                vec![parser(), node()],
+                Type::Bool,
+                pos,
+            ))],
+            Type::Str => vec![return_value(json_call(
+                JsonFn::ParseString,
+                vec![parser(), node()],
+                Type::Str,
+                pos,
+            ))],
+            Type::Nullable(inner) => vec![hir::Stmt::If {
+                cond: json_call(
+                    JsonFn::ParseIsKind,
+                    vec![parser(), node(), json_int(0, pos)],
+                    Type::Bool,
+                    pos,
+                ),
+                then: vec![return_value(hir::Expr {
+                    kind: ExprKind::Null,
+                    ty: Type::Null,
+                    pos: pos.clone(),
+                })],
+                els: Some(vec![return_value(script_call(
+                    constructors[json_type_index(types, inner)].clone(),
+                    vec![parser(), node()],
+                    (**inner).clone(),
+                    pos,
+                ))]),
+                pos: pos.clone(),
+            }],
+            Type::Array(element) | Type::FixedArray(element, _) => {
+                self.json_array_construction_body(ty, element, types, constructors, pos)
+            }
+            Type::Class(id) => {
+                let value = || json_local("value", Type::Class(*id), pos);
+                let init = if self.classes[id.0].is_value {
+                    json_zero(Type::Class(*id), pos)
+                } else {
+                    hir::Expr {
+                        kind: ExprKind::RawNew { class: *id },
+                        ty: Type::Class(*id),
+                        pos: pos.clone(),
+                    }
+                };
+                let mut body = vec![hir::Stmt::Let {
+                    name: "value".to_string(),
+                    ty: Type::Class(*id),
+                    mutable: false,
+                    init,
+                    pos: pos.clone(),
+                }];
+                for field in &self.classes[id.0].fields {
+                    let field_node = json_call(
+                        JsonFn::ParseObjectGet,
+                        vec![parser(), node(), json_string(&field.name, pos)],
+                        Type::U64,
+                        pos,
+                    );
+                    let constructed = script_call(
+                        constructors[json_type_index(types, &field.ty)].clone(),
+                        vec![parser(), field_node],
+                        field.ty.clone(),
+                        pos,
+                    );
+                    body.push(hir::Stmt::Expr(json_assign(
+                        json_field(value(), &field.name, field.ty.clone(), pos),
+                        constructed,
+                        field.ty.clone(),
+                        pos,
+                    )));
+                }
+                body.push(return_value(value()));
+                body
+            }
+            other => panic!("checker generated JSON constructor for rejected type {other:?}"),
+        }
+    }
+
+    fn json_array_construction_body(
+        &self,
+        array_ty: &Type,
+        element: &Type,
+        types: &[Type],
+        constructors: &[String],
+        pos: &Pos,
+    ) -> Vec<hir::Stmt> {
+        let parser = || json_local("parser", Type::U64, pos);
+        let node = || json_local("node", Type::U64, pos);
+        let value = || json_local("value", array_ty.clone(), pos);
+        let index = || json_local("index", Type::I32, pos);
+        let length = match array_ty {
+            Type::FixedArray(_, length) => json_int(i64::from(*length), pos),
+            Type::Array(_) => json_call(
+                JsonFn::ParseArrayLen,
+                vec![parser(), node()],
+                Type::I32,
+                pos,
+            ),
+            _ => unreachable!("JSON array construction type"),
+        };
+        let init = match array_ty {
+            Type::FixedArray(..) => json_zero(array_ty.clone(), pos),
+            Type::Array(_) => hir::Expr {
+                kind: ExprKind::ArrayLit(Vec::new()),
+                ty: array_ty.clone(),
+                pos: pos.clone(),
+            },
+            _ => unreachable!("JSON array construction type"),
+        };
+        let mut body = vec![
+            hir::Stmt::Let {
+                name: "value".to_string(),
+                ty: array_ty.clone(),
+                mutable: false,
+                init,
+                pos: pos.clone(),
+            },
+            hir::Stmt::Let {
+                name: "length".to_string(),
+                ty: Type::I32,
+                mutable: false,
+                init: length,
+                pos: pos.clone(),
+            },
+            hir::Stmt::Let {
+                name: "index".to_string(),
+                ty: Type::I32,
+                mutable: true,
+                init: json_int(0, pos),
+                pos: pos.clone(),
+            },
+        ];
+        let child_node = json_call(
+            JsonFn::ParseArrayGet,
+            vec![parser(), node(), index()],
+            Type::U64,
+            pos,
+        );
+        let child = script_call(
+            constructors[json_type_index(types, element)].clone(),
+            vec![parser(), child_node],
+            element.clone(),
+            pos,
+        );
+        let store = match array_ty {
+            Type::Array(_) => hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Method {
+                        recv: Box::new(value()),
+                        name: "push".to_string(),
+                    },
+                    args: vec![child],
+                },
+                ty: Type::I32,
+                pos: pos.clone(),
+            },
+            Type::FixedArray(..) => json_assign(
+                hir::Expr {
+                    kind: ExprKind::Index {
+                        obj: Box::new(value()),
+                        index: Box::new(index()),
+                    },
+                    ty: element.clone(),
+                    pos: pos.clone(),
+                },
+                child,
+                element.clone(),
+                pos,
+            ),
+            _ => unreachable!("JSON array construction type"),
+        };
+        body.push(hir::Stmt::While {
+            cond: json_binary(
+                BinOp::Lt,
+                index(),
+                json_local("length", Type::I32, pos),
+                Type::Bool,
+                pos,
+            ),
+            body: vec![
+                hir::Stmt::Expr(store),
+                hir::Stmt::Expr(json_increment(index(), pos)),
+            ],
+            pos: pos.clone(),
+        });
+        body.push(hir::Stmt::Return {
+            value: Some(value()),
+            pos: pos.clone(),
+        });
+        body
+    }
 }
 
 fn json_type_index(types: &[Type], ty: &Type) -> usize {
@@ -602,6 +1313,113 @@ fn json_int(value: i64, pos: &Pos) -> hir::Expr {
         ty: Type::I32,
         pos: pos.clone(),
     }
+}
+
+fn json_u64(value: u64, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Int(value as i64),
+        ty: Type::U64,
+        pos: pos.clone(),
+    }
+}
+
+fn json_bool(value: bool, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Bool(value),
+        ty: Type::Bool,
+        pos: pos.clone(),
+    }
+}
+
+fn json_zero(ty: Type, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Zero,
+        ty,
+        pos: pos.clone(),
+    }
+}
+
+fn json_field(obj: hir::Expr, name: &str, ty: Type, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Field {
+            obj: Box::new(obj),
+            name: name.to_string(),
+        },
+        ty,
+        pos: pos.clone(),
+    }
+}
+
+fn json_assign(target: hir::Expr, value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Assign {
+            op: None,
+            target: Box::new(target),
+            value: Box::new(value),
+        },
+        ty,
+        pos: pos.clone(),
+    }
+}
+
+fn json_binary(op: BinOp, left: hir::Expr, right: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Binary {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+        ty,
+        pos: pos.clone(),
+    }
+}
+
+fn json_return_false_unless(condition: hir::Expr, pos: &Pos) -> hir::Stmt {
+    hir::Stmt::If {
+        cond: hir::Expr {
+            kind: ExprKind::Unary {
+                op: UnOp::Not,
+                operand: Box::new(condition),
+            },
+            ty: Type::Bool,
+            pos: pos.clone(),
+        },
+        then: vec![hir::Stmt::Return {
+            value: Some(json_bool(false, pos)),
+            pos: pos.clone(),
+        }],
+        els: None,
+        pos: pos.clone(),
+    }
+}
+
+fn json_increment(index: hir::Expr, pos: &Pos) -> hir::Expr {
+    hir::Expr {
+        kind: ExprKind::Assign {
+            op: Some(BinOp::Add),
+            target: Box::new(index),
+            value: Box::new(json_int(1, pos)),
+        },
+        ty: Type::I32,
+        pos: pos.clone(),
+    }
+}
+
+/// Stable target codes mirrored by runtime::json's `NUMBER_*` constants.
+fn json_number_target(ty: &Type) -> Option<i64> {
+    Some(match ty {
+        Type::I8 => 0,
+        Type::U8 => 1,
+        Type::I16 => 2,
+        Type::U16 => 3,
+        Type::I32 => 4,
+        Type::U32 => 5,
+        Type::I64 => 6,
+        Type::U64 => 7,
+        Type::F32 => 8,
+        Type::F64 => 9,
+        _ => return None,
+    })
 }
 
 fn json_cast(value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {

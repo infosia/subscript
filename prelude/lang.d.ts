@@ -16,6 +16,16 @@ declare function print(message: string): void;
 declare function collect(): void;
 declare function unsafeDelete(value: object): void;
 
+declare class JsonResult<T> {
+  private constructor();
+  ok: boolean;
+  value: T;
+}
+
+declare interface JSON {
+  parse<T>(text: string): JsonResult<T>;
+}
+
 declare function CStruct<T extends abstract new (...args: never[]) => object>(
   target: T,
   context: ClassDecoratorContext,

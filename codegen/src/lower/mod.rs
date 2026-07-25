@@ -490,6 +490,17 @@ fn declare_rt<M: Module>(
             J::Null => (&[I64, I64, I32], None),
             J::Visit => (&[I64, I64, I64, I32], Some(I32)),
             J::Leave => (&[I64, I64, I64, I32], None),
+            J::ParseBegin => (&[I64, I64, I32], Some(I64)),
+            J::ParseEnd => (&[I64, I64, I32], None),
+            J::ParseRoot => (&[I64, I64, I32], Some(I64)),
+            J::ParseIsKind | J::ParseNumberFits => (&[I64, I64, I64, I32, I32], Some(I32)),
+            J::ParseNumber => (&[I64, I64, I64, I32], Some(F64)),
+            J::ParseInteger => (&[I64, I64, I64, I32, I32], Some(I64)),
+            J::ParseBool => (&[I64, I64, I64, I32], Some(I32)),
+            J::ParseString => (&[I64, I64, I64, I32], Some(I64)),
+            J::ParseArrayLen => (&[I64, I64, I64, I32], Some(I32)),
+            J::ParseArrayGet => (&[I64, I64, I64, I32, I32], Some(I64)),
+            J::ParseObjectGet => (&[I64, I64, I64, I64, I32], Some(I64)),
             other => return Err(internal(format!("unknown JsonFn {other:?}"))),
         };
         json_ids.push(mk(f.symbol(), params, ret)?);

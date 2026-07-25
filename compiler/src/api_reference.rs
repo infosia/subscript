@@ -799,6 +799,13 @@ mod tests {
                 "export function main(): void {\n  const value: f16 = 1.0 as f16;\n  JSON.stringify(value);\n}\n"
                     .to_string()
             }
+            ("JSON", "parse(text) without target type") => {
+                "export function main(): void {\n  JSON.parse(\"{}\");\n}\n".to_string()
+            }
+            ("JSON", "parse<Date>(text)") => {
+                "export function main(): void {\n  JSON.parse<Date>(\"\\\"2020-01-01T00:00:00.000Z\\\"\");\n}\n"
+                    .to_string()
+            }
             _ => panic!(
                 "no checker witness for generated rejection {} {}",
                 rejection.group, rejection.surface

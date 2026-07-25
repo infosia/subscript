@@ -203,6 +203,31 @@ impl<'p> Checker<'p> {
             _ => {}
         }
 
+        // P13's ambient generic result reference. Like Map/Set below, the
+        // language checker monomorphizes it directly; a source declaration
+        // with the same name shadows the ambient class.
+        if name == "JsonResult" && self.scope_item(name).is_none() {
+            let Some(args) = &r.type_params else {
+                self.error(
+                    RuleCode::S100,
+                    "generic reference class `JsonResult` requires one type argument",
+                    pos,
+                );
+                return Type::Error;
+            };
+            if args.params.len() != 1 {
+                self.error(
+                    RuleCode::S100,
+                    "`JsonResult` takes exactly one type argument",
+                    pos,
+                );
+                return Type::Error;
+            }
+            let value = self.resolve_type(&args.params[0]);
+            let id = self.instantiate_json_result(&value, pos);
+            return Type::Class(id);
+        }
+
         // The ES2022 lib supplies the editor declarations; the language
         // checker resolves its accepted, monomorphized subset directly.
         // A program declaration shadows the ambient name, as for Date.

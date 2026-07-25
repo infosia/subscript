@@ -1,0 +1,13 @@
+success-ok=true
+success=demo:3
+malformed-ok=false
+mismatch-ok=false
+missing-ok=false
+array-mismatch-ok=false
+duplicate=last
+negative-zero-reciprocal=-Infinity
+beyond-safe=9007199254740992
+beyond-safe-i64=9007199254740993
+overflow-ok=false
+narrow-overflow-ok=false
+wide-overflow-ok=false

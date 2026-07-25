@@ -256,6 +256,14 @@
 | subscript signature | Behavior |
 |---|---|
 | `stringify<T>(value: T): string` | Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle. |
+| `parse<T>(text: string): JsonResult<T>` | Parses and validates one statically known P13 type; malformed or mismatched data returns ok=false, and the caller releases the result with unsafeDelete. |
+
+### JsonResult<T>
+
+| subscript signature | Behavior |
+|---|---|
+| `ok: boolean` | Reports whether parsing and complete static-type validation succeeded. |
+| `value: T` | Carries the parsed value on success and is zero-initialized but unreadable on failure. |
 
 ### Generator<T>
 
@@ -321,6 +329,8 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | JSON | `stringify(object)` | S014 | Q28 | — | The boundary-opaque object type has no static field shape to serialize. | `r58-json-stringify-object.ts` |
 | JSON | `stringify(function)` | S014 | Q28 | — | Function values are not JSON data. | `r59-json-stringify-function.ts` |
 | JSON | `stringify(f16)` | S014 | Q28 | — | f16 is a storage-only type with no arithmetic/formatting domain. | — |
+| JSON | `parse(text) without target type` | S014 | Q28 | `JSON.parse<T>(text)` | The checker has no static type to monomorphize. | `r60-json-parse-no-context.ts` |
+| JSON | `parse<Date>(text)` | S014 | Q28 | — | An untagged ISO string cannot identify a Date, so the target could never match. | `r61-json-parse-date.ts` |
 | global | `isNaN(value)` | S014 | Q25 | `Number.isNaN` | The global form coerces its argument. | `r46-number-global-isnan.ts` |
 | global | `isFinite(value)` | S014 | Q25 | `Number.isFinite` | The global form coerces its argument. | — |
 | global | `parseInt(value)` | S014 | Q25 | `parseInt(value, radix)` | The radix is a required `i32` argument. | `r50-parse-int-no-radix.ts` |

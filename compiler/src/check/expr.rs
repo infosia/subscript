@@ -123,7 +123,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Assign(a) => self.check_assign(a, fx, pos),
             ast::Expr::Member(m) => self.check_member_read(m, fx),
             ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
-            ast::Expr::Call(c) => self.check_call(c, fx, pos),
+            ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
             ast::Expr::New(n) => self.check_new(n, fx, pos),
             ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
             ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
@@ -462,8 +462,8 @@ impl<'p> Checker<'p> {
                 } else if name == "JSON" {
                     self.error(
                         RuleCode::S014,
-                        "`JSON` is an ambient namespace, not a value; use `JSON.stringify(value)` \
-                         (Q28)",
+                        "`JSON` is an ambient namespace, not a value; use \
+                         `JSON.stringify(value)` or `JSON.parse<T>(text)` (Q28)",
                         pos.clone(),
                     );
                     self.err_expr(pos)
@@ -1287,15 +1287,13 @@ impl<'p> Checker<'p> {
         if name == "Number" && self.scope_item(&name).is_none() {
             return Some(self.check_number_member(prop, prop_pos, for_write));
         }
-        // `JSON.<member>` (stdlib.md §13, Q28): `stringify` is
+        // `JSON.<member>` (stdlib.md §13, Q28): accepted functions are
         // intercepted in call position; namespace members are not values.
         if name == "JSON" && self.scope_item(&name).is_none() {
-            let detail = if prop == "stringify" {
-                "`JSON.stringify` may only be called, not read as a value (Q28)".to_string()
+            let detail = if matches!(prop, "stringify" | "parse") {
+                format!("`JSON.{prop}` may only be called, not read as a value (Q28)")
             } else {
-                format!(
-                    "`JSON.{prop}` is outside P13 stage 1; only `JSON.stringify` is implemented"
-                )
+                format!("`JSON.{prop}` is outside the accepted JSON subset (Q28)")
             };
             self.error(RuleCode::S014, detail, prop_pos.clone());
             return Some(self.err_expr(prop_pos));
@@ -3913,7 +3911,13 @@ impl<'p> Checker<'p> {
 
     // ----- calls -----
 
-    fn check_call(&mut self, c: &ast::CallExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    fn check_call(
+        &mut self,
+        c: &ast::CallExpr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
         let ast::Callee::Expr(callee) = &c.callee else {
             self.error(
                 RuleCode::S100,
@@ -3928,7 +3932,7 @@ impl<'p> Checker<'p> {
         }
         match callee {
             ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos),
-            ast::Expr::Member(m) => self.check_method_call(m, c, fx, pos),
+            ast::Expr::Member(m) => self.check_method_call(m, c, ctx, fx, pos),
             other => {
                 let value = self.check_expr(other, None, fx);
                 self.check_indirect_call(value, c, fx, pos)
@@ -4193,6 +4197,7 @@ impl<'p> Checker<'p> {
         &mut self,
         m: &ast::MemberExpr,
         c: &ast::CallExpr,
+        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -4226,7 +4231,7 @@ impl<'p> Checker<'p> {
         // `JSON.stringify<T>(value)` is checked from the argument's
         // static type and expanded into a call-site serializer graph.
         if self.is_json_namespace(&m.obj, fx) {
-            return self.check_json_call(&name, c, fx, pos, prop_pos);
+            return self.check_json_call(&name, c, ctx, fx, pos, prop_pos);
         }
         // `Date.UTC(…)` / `Date.now()` (stdlib.md §3): static intrinsic
         // calls, resolved before the generic namespace-member path.

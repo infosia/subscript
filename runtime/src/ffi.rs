@@ -1913,6 +1913,304 @@ pub unsafe extern "C" fn sub_rt_json_leave(
     json_builder_result(ctx, ok, "leave", pos_id);
 }
 
+// ----- JSON.parse (stdlib.md §13.4, Q28) -----
+
+fn json_parser_invalid(ctx: &mut Context, operation: &str, pos_id: u32) {
+    ctx.trap(
+        TrapKind::Internal,
+        format!("invalid transient JSON parser access in {operation}"),
+        pos_id,
+    );
+}
+
+/// Parses a complete JSON document into transient runtime state.
+/// Malformed input returns zero without trapping.
+///
+/// # Safety
+///
+/// Shared contract; `text` is a live language string handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_begin(
+    ctx: *mut Context,
+    text: *const u8,
+    _pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let bytes = unsafe { ctx.str_bytes(text) }.to_vec();
+    ctx.json_parsers().begin(&bytes)
+}
+
+/// Removes one transient parsed document.
+///
+/// # Safety
+///
+/// Shared contract; `parser` is a nonzero handle returned by parse begin.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_end(ctx: *mut Context, parser: u64, pos_id: u32) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    if !ctx.json_parsers().finish(parser) {
+        json_parser_invalid(ctx, "end", pos_id);
+    }
+}
+
+/// Returns the root node handle of a transient parsed document.
+///
+/// # Safety
+///
+/// Shared contract; `parser` is live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_root(
+    ctx: *mut Context,
+    parser: u64,
+    pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().root(parser) {
+        Some(root) => root,
+        None => {
+            json_parser_invalid(ctx, "root", pos_id);
+            0
+        }
+    }
+}
+
+/// Tests a parsed node's JSON kind.
+///
+/// # Safety
+///
+/// Shared contract; `parser` and `node` are live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_is_kind(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    kind: u32,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().is_kind(parser, node, kind) {
+        Some(value) => i32::from(value),
+        None => {
+            json_parser_invalid(ctx, "kind test", pos_id);
+            0
+        }
+    }
+}
+
+/// Tests whether a parsed number can populate one exact sized numeric
+/// target without producing an out-of-range integer or non-finite float.
+///
+/// # Safety
+///
+/// Shared contract; `parser` and `node` are live.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_number_fits(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    target: u32,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().number_fits(parser, node, target) {
+        Some(value) => i32::from(value),
+        None => {
+            json_parser_invalid(ctx, "number validation", pos_id);
+            0
+        }
+    }
+}
+
+/// Reads a previously validated parsed number as its ECMA `f64` value.
+///
+/// # Safety
+///
+/// Shared contract; the node was validated as an f32/f64 number.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_number(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    pos_id: u32,
+) -> f64 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().number(parser, node) {
+        Some(value) => value,
+        None => {
+            json_parser_invalid(ctx, "number read", pos_id);
+            0.0
+        }
+    }
+}
+
+/// Reads a previously validated parsed number as one exact sized
+/// integer. The returned `u64` carries the target value's bits; no
+/// floating-point conversion occurs.
+///
+/// # Safety
+///
+/// Shared contract; the node was validated for `target`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_integer(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    target: u32,
+    pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().integer(parser, node, target) {
+        Some(value) => value,
+        None => {
+            json_parser_invalid(ctx, "integer read", pos_id);
+            0
+        }
+    }
+}
+
+/// Reads a previously validated parsed boolean.
+///
+/// # Safety
+///
+/// Shared contract; the node was validated as a boolean.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_bool(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().boolean(parser, node) {
+        Some(value) => i32::from(value),
+        None => {
+            json_parser_invalid(ctx, "boolean read", pos_id);
+            0
+        }
+    }
+}
+
+/// Allocates a language string from a previously validated parsed string.
+///
+/// # Safety
+///
+/// Shared contract; the node was validated as a string.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_string(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Some(bytes) = ctx
+        .json_parsers()
+        .string(parser, node)
+        .map(str::as_bytes)
+        .map(<[u8]>::to_vec)
+    else {
+        json_parser_invalid(ctx, "string read", pos_id);
+        return std::ptr::null_mut();
+    };
+    ctx.alloc_str(&bytes, pos_id)
+}
+
+/// Returns a previously validated parsed array's length.
+///
+/// # Safety
+///
+/// Shared contract; the node was validated as an array.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_array_len(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    match ctx.json_parsers().array_len(parser, node) {
+        Some(len) => match i32::try_from(len) {
+            Ok(len) => len,
+            Err(_) => {
+                // Dynamic arrays use i32 indexing in the language, so an
+                // unrepresentable JSON length cannot match any T[].
+                -1
+            }
+        },
+        None => {
+            json_parser_invalid(ctx, "array length", pos_id);
+            -1
+        }
+    }
+}
+
+/// Returns one node handle from a previously validated parsed array.
+///
+/// # Safety
+///
+/// Shared contract; `index` is in bounds.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_array_get(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    index: i32,
+    pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let value = usize::try_from(index)
+        .ok()
+        .and_then(|index| ctx.json_parsers().array_get(parser, node, index));
+    match value {
+        Some(value) => value,
+        None => {
+            json_parser_invalid(ctx, "array element", pos_id);
+            0
+        }
+    }
+}
+
+/// Returns the last occurrence of an object field, or zero when absent.
+///
+/// # Safety
+///
+/// Shared contract; `key` is a live language string handle and the node
+/// was validated as an object.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_json_parse_object_get(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    key: *const u8,
+    pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let key = unsafe { ctx.str_bytes(key) }.to_vec();
+    let Some(key) = std::str::from_utf8(&key).ok() else {
+        json_parser_invalid(ctx, "object key", pos_id);
+        return 0;
+    };
+    match ctx.json_parsers().object_get(parser, node, key) {
+        Some(value) => value,
+        None => {
+            json_parser_invalid(ctx, "object field", pos_id);
+            0
+        }
+    }
+}
+
 // ----- Number and parsing intrinsics (stdlib.md §11, Q25/Q26) -----
 //
 // All operations stay behind opaque symbols so both tiers execute the
