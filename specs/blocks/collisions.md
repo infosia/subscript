@@ -472,9 +472,9 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
     not a cost question.
 
 - **Q27 (the rejection sweep — thirteen groups reinstated)** —
-  **contract written 2026-07-25; stages 1 and 2 implemented
-  2026-07-26.** `Math.imul`/`fround`, `Number.parseInt`/`parseFloat`
-  and the whole `String` group are live; the `Array`, `Map`/`Set` and
+  **contract written 2026-07-25; stages 1–3 implemented 2026-07-26.**
+  `Math.imul`/`fround`, `Number.parseInt`/`parseFloat`, the whole
+  `String` group and the `Array` group are live; the `Map`/`Set` and
   callback-arity groups are still contract only, and the checker
   rejects those members. `generated-docs/api-reference.md` reports the
   checker rather than the contract (`compiler.md` §17.1), so it is the

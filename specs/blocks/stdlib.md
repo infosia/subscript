@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 stages 1-2 as implemented and corrects §12's no-golden-moves pre-registration). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 stages 1-3 as implemented and corrects two §12 pre-registrations — no-golden-moves, and which stages touch the checker). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -387,7 +387,9 @@ formatting, slice negatives, fill/reverse/concat); `a45` closure
 battery (map type change f64→string, filter, reduce with init,
 some/every short-circuit order, findIndex, sort stability — equal
 keys keep input order, pinned). Rejects: no-arg `sort`, `find`,
-no-init `reduce`, `splice` — S014 each. Trapping-callback cross-tier
+no-init `reduce` — S014 each; `r32` was **repurposed** by Q27 stage 3
+from rejecting `splice` outright to rejecting its variadic insert
+form. Trapping-callback cross-tier
 test (a callback that traps mid-`map`: identical trap tuple both
 tiers) in cemit tests, not corpus.
 
@@ -720,17 +722,21 @@ no ship-row regression.
 
 ## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
 
-**Status: stages 1 and 2 implemented** (`Math`/`Number` and `String`).
-Stages 3–5 — `Array`, `Map`/`Set`, and the callback index parameter —
-are still contract only, and the checker still rejects those members.
-`generated-docs/api-reference.md` reports the checker, not this
-contract (`compiler.md` §17.1), so the two agree on stages 1–2 and
-disagree on 3–5 by design while P18 is open.
+**Status: stages 1, 2 and 3 implemented** (`Math`/`Number`, `String`,
+`Array`). Stages 4 and 5 — `Map`/`Set` and the callback index
+parameter — are still contract only, and the checker still rejects
+those members. `generated-docs/api-reference.md` reports the checker,
+not this contract (`compiler.md` §17.1), so the two agree on stages
+1–3 and disagree on 4–5 by design while P18 is open.
 
 Q27 spans five sections, so its corpus is registered here rather than
 split across them. Staged in the order below; each stage is a Phase
-Review boundary, because the last stage touches the checker and the
-first four do not.
+Review boundary. **Correction (2026-07-26):** this paragraph said the
+last stage touches the checker and the first four do not. That is
+wrong — every stage extends the checker's accepted-member tables and
+its fixed-arity checking. What is unique to stage 5 is that it needs
+**new arity machinery**, a callback being accepted at two arities;
+the others only add entries to machinery that already exists.
 
 **Stage 1 — `Math` and `Number` (no new machinery).** `imul`, `fround`,
 `Number.parseInt`/`parseFloat`. Accept: an entry pinning `imul`'s
@@ -750,7 +756,7 @@ a position. `$` substitution: `$$`, `$&`, `` $` ``, `$'`, and `$1`
 shown **literal**. Traps, tuple-identical across tiers: `charAt` and
 `codePointAt` off a UTF-8 boundary, `codePointAt` out of range.
 
-**Stage 3 — `Array` without the checker change.** Accept:
+**Stage 3 — `Array`, no new arity machinery.** Accept:
 `reduceRight` right-to-left order pinned (a non-commutative fold, so
 the direction is observable); `splice` returning the removed elements
 and mutating in place; `unshift` returning the new length; `shift`;

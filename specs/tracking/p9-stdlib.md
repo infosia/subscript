@@ -553,3 +553,46 @@ divergence-witness set changed as designed: the Q21 `$`-substitution
 witness was **removed** (the divergence no longer exists, and the
 witness test asserts `subscript != node`, so a stale one fails loudly)
 and a Q27 `codePointAt` out-of-range witness added.
+
+## P18 stage 3 — Q27 `Array` (2026-07-26)
+
+Implemented: `reduceRight` (required `init`), delete-only `splice`,
+`shift`, single-element `unshift`, `copyWithin`. Stages 4–5
+(`Map`/`Set`, callback arity) untouched.
+
+Corpus `a65-q27-array`. Golden generated from node v24.18.0 by the
+implementer and **re-verified independently by the orchestrator** on a
+hand-written equivalent — matched. **No pre-existing `.expected`
+moved** (64/64 hashes identical), as expected: unlike stage 2, this
+stage changes no accepted behaviour.
+
+`shift` on an empty array traps with the same tuple on both tiers
+(`EmptyPop`, `"shift() on an empty array"`), reusing `pop`'s existing
+path rather than inventing a second empty-container rule.
+
+Two properties the entry pins that the contract only implies:
+
+- **`copyWithin` returns the receiver, not a copy.** `a65` mutates the
+  returned array with `fill` and prints both, showing they alias.
+- **`splice`'s required `deleteCount` past the end is clamped**, not
+  an error: `[1,2,3].splice(1, 99)` removes `2,3`.
+
+The subset is visible rather than implied: `r32-array-splice` was
+repurposed from rejecting `splice` outright to rejecting its variadic
+insert form, and `r51-array-unshift-variadic` added, **both with an
+S014 message naming variadic parameters as the missing prerequisite**
+— §12 requires that, because a reader cannot otherwise tell a
+deliberate subset from an oversight.
+
+### Contract correction found by the work
+
+§12 said "the last stage touches the checker and the first four do
+not". Wrong: every stage extends the checker's accepted-member tables
+and fixed-arity checking. What is unique to stage 5 is **new arity
+machinery** — one callback accepted at two arities. Corrected.
+
+### Gate
+
+Zero build warnings; `cargo test` clean including the standing
+dev-JIT ≡ ship-C-AOT ≡ golden gate, the P16 structural and witness
+tests; `tsc` exit 0; `git diff --check` clean.
