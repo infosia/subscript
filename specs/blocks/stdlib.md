@@ -167,7 +167,7 @@ detailed contract lands in this file before its implementation opens.
 | P10 | `String` methods (§8) | none (extends the Str member surface) | contract below |
 | P11 | `Array` methods (§9) | runtime→script comparator/predicate calls (non-escaping closures, C5) | contract below |
 | P12 | `Number` statics + `parseInt`/`parseFloat`/`toFixed` | none | contract before open |
-| P13 | `JSON` | typed serialization over layout descriptors (RTTI) — needs its own design | contract before open |
+| P13 | `JSON` | **none** — §13.1 shows RTTI is unnecessary, since the language has no inheritance and no heterogeneous container, so a serializer monomorphizes at the call site | contract in §13 |
 | P15 | `Map`/`Set` | generic reference classes + hashing (owner decision below) | contract before open |
 
 Two phases outside this file share the queue: **P14 narrow numerics**
@@ -864,3 +864,140 @@ blanket prohibition. The implementer reported the movement rather than
 weakening the corpus to preserve the old bytes, which is the required
 behaviour; `a43`'s source assertion is unchanged and only its comment
 was updated.
+
+## 13. P13 — `JSON` (Q28)
+
+### 13.1 No RTTI is needed, and why
+
+The roadmap (§7) listed P13's new machinery as "typed serialization
+over layout descriptors (RTTI)". **That premise does not hold.** The
+language has no inheritance — a value class rejects `extends` (S006,
+C2) and a reference class rejects it too (S100, "class inheritance is
+not in the decided surface") — no `any`, and no heterogeneous
+container: C7 admits `Ref | null` as the only union. Therefore **every
+value's static type is its dynamic type**, and a serializer can be
+specialized at the call site from the checked type alone.
+
+That is machinery the language already has: generic functions and
+generic value classes monomorphize at check time (`a12`),
+`Array.map`'s `U` is inferred from a closure return (Q22), and
+`Map`/`Set` are generic reference classes monomorphized on first use
+(Q24). `JSON` adds no new mechanism — it adds two intrinsics that
+monomorphize.
+
+### 13.2 `stringify`
+
+`JSON.stringify<T>(value: T): string`. `tsc` types the lib member as
+taking `any`, so any call this compiler accepts is `tsc`-clean; this
+compiler requires `T` to be a **serializable type** and emits a
+serializer for it.
+
+Serializable: the sized numerics, `boolean`, `string`, `Date`, `T[]`,
+`FixedArray<T, N>`, `@CStruct` value classes, reference classes, and
+`Ref | null`. Rejected (S014): `object` (boundary-opaque — it has no
+type to serialize), function types, `Map`/`Set`, and `f16`.
+
+- **`Map`/`Set` are rejected rather than serialized.** JS gives `{}`
+  for both, because neither has enumerable own properties — a silently
+  empty result for a container the program filled. Serializing them as
+  an object or an array instead would be a divergence invented here.
+  A program that wants either in JSON converts it explicitly.
+- **`f16`** follows Q23: storage-only, no arithmetic domain.
+
+Field order is **declaration order**. JS sorts integer-like keys
+numerically ahead of insertion order; this language's field names are
+identifiers (the checker rejects computed and non-identifier field
+names), so no integer-like key can arise and the rule never applies.
+
+Numbers use Q14 — shortest round-trip and ECMA's exponent thresholds —
+which is what `JSON.stringify` already does for finite values.
+
+`Date` serializes as its `toISOString()` string, matching JS.
+
+**Cycles.** A reference-class graph can cycle. Because the serializer
+is monomorphized, the checker knows statically whether `T`'s field
+graph can reach a reference class from itself. If it cannot, the
+emitted serializer carries **no tracking at all**. If it can, it
+carries a visited set and **traps** on a revisit, where JS throws
+`TypeError` (C6: no exceptions).
+
+### 13.3 The number-loss decision (owner, 2026-07-26)
+
+**`NaN` and `±Infinity` trap.** JS writes them as `null`, which is a
+silent loss of information: the value that comes back is `0`, not the
+value that went in, and nothing reports it. That is the class Q20
+rejected for Invalid-Date and Q24 rejected for a zeroed `get` miss —
+this is the same rule applied a third time, not a new one.
+
+**`-0` serializes as `0`**, as JS does. Q14 deliberately spells `-0` as
+`-0`, and the two are consistent rather than in conflict: Q14 governs
+`${…}`, the language's only general-purpose number-to-string path,
+where losing the sign would discard information the program has no
+other way to see. JSON is a specific interchange format with its own
+ECMA-defined answer, exactly as Q25 argued for `toFixed`.
+
+### 13.4 `parse` — the failure channel (owner, 2026-07-26)
+
+`JSON.parse<T>(text: string): JsonResult<T>`.
+
+`JsonResult<T>` is an ambient **generic reference class**, the same
+machinery `Map`/`Set` use (Q24), with `ok: boolean` and `value: T`.
+The caller owns it and releases it with `unsafeDelete` (Q6).
+
+The alternative — trapping — was rejected because it contradicts the
+reasoning Q25 already committed to: **a parse failure is *data*, not a
+programmer error**, which is precisely why `parseInt`/`parseFloat` are
+allowed `NaN` as a sentinel where Q20 and Q24 were not. JSON reaching
+a script has usually crossed the host boundary as a save file, a
+config, or a message, and a malformed one must be reportable rather
+than stopping the Context. The cost, stated rather than hidden: one
+heap allocation per parse, and a caller obligation to release it.
+
+A `@CStruct` result — `a18`'s `DivisionResult` shape — was rejected for
+a different reason: C2's value-class field whitelist excludes `string`,
+reference-class and nullable fields, so `value: T` would not typecheck
+for most `T`. Extending that whitelist is a type-system change and is
+**not** a prerequisite here; it stays C2's open item.
+
+`ok` is `false` for malformed JSON **and** for well-formed JSON that
+does not match `T` — a missing field, a wrong type, an array of the
+wrong element type. When `ok` is `false`, `value` is zero-initialized
+and must not be read; the contract does not promise a partial parse.
+
+Measured on node v24.18.0, and matched here: a **duplicate key takes
+the last occurrence**; `-0` parses to `-0`; integers beyond `2^53`
+lose precision to `f64`; and `1e400` parses to `Infinity` — which,
+under §13.3, means a document containing it **fails to parse into any
+`f32`/`f64` field** rather than silently yielding an infinity.
+
+`JSON.parse` requires a target type. A call whose result has no
+contextual type is S014: the checker has nothing to monomorphize.
+
+### 13.5 Corpus and gate (pre-registered)
+
+Accept (continue `aNN`): a `stringify` battery over each serializable
+kind — scalars, `string` with the escape set (`"`, `\`, control
+characters as `\u00XX`), `boolean`, `Date`, nested `T[]`,
+`FixedArray`, a `@CStruct`, a reference class, and `Ref | null` with
+both a value and `null` — with the golden generated from node and
+`cmp`-verified; a round-trip entry (`parse(stringify(x))` equal to
+`x`); a `parse` battery covering success, malformed input, a
+type-mismatched document, a duplicate key, and `-0`.
+
+Reject: `stringify` of a `Map`, a `Set`, an `object` and a function
+type; a `parse` with no contextual type — each S014 at a pinned
+position. Traps, tuple-identical across tiers: `stringify` of `NaN`,
+of `Infinity`, and of a cyclic reference-class graph.
+
+Gate: standing differential gate byte-exact on both tiers; `tsc` zero
+errors, unchanged config; every `stringify` golden generated from node
+v24.18.0 and `cmp`-verified, with any divergence recorded in Q28
+rather than absorbed — **`NaN`/`Infinity` are the recorded
+divergences and their corpus entries are traps, not goldens**; trap
+tuples identical across tiers; rejects at pinned S014 positions;
+benchmarks — no ship-row regression.
+
+**Pre-registration caveat, from the P18 review:** the claims above
+about node's behaviour were measured, but the claims about what *this*
+implementation will do are provisional until an implementation
+exercises them. A pre-registration is not evidence.
