@@ -1649,6 +1649,26 @@ mod tests {
     }
 
     #[test]
+    fn map_set_fn_tables_match_the_section_10_contract() {
+        for (i, f) in MapFn::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, i, "MapFn::ALL out of order at {i}");
+            assert!(f.symbol().starts_with("sub_rt_map_"));
+        }
+        for (i, f) in SetFn::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, i, "SetFn::ALL out of order at {i}");
+            assert!(f.symbol().starts_with("sub_rt_set_"));
+        }
+        assert!(MapFn::New.allocates());
+        assert!(MapFn::Set.allocates());
+        assert!(!MapFn::Get.allocates());
+        assert!(MapFn::ForEach.can_trap());
+        assert!(SetFn::New.allocates());
+        assert!(SetFn::Add.allocates());
+        assert!(!SetFn::Has.allocates());
+        assert!(SetFn::ForEach.can_trap());
+    }
+
+    #[test]
     fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
         use crate::types::FuncType;
         let value_class = |id: ClassId| id.0 == 0; // class 0 is @CStruct, class 1 is a reference

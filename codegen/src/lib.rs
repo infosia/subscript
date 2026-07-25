@@ -138,6 +138,25 @@ mod tests {
     }
 
     #[test]
+    fn assoc_key_kind_codes_agree_between_compiler_and_runtime() {
+        use subscript_compiler::hir::AssocKeyKind;
+        use subscript_runtime::assocops::KeyKind;
+        for (compiler, runtime) in [
+            (AssocKeyKind::Bits, KeyKind::Bits),
+            (AssocKeyKind::F32, KeyKind::F32),
+            (AssocKeyKind::F64, KeyKind::F64),
+            (AssocKeyKind::Str, KeyKind::Str),
+            (AssocKeyKind::Ref, KeyKind::Ref),
+        ] {
+            assert_eq!(
+                KeyKind::from_u32(compiler.code()),
+                Some(runtime),
+                "association key kind {compiler:?}"
+            );
+        }
+    }
+
+    #[test]
     fn hello_prints_to_the_sink() {
         assert_eq!(run_ok("export function main(): void {\n  print(\"hello\");\n}\n"), "hello\n");
     }
