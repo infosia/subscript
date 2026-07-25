@@ -1,5 +1,5 @@
 //! Byte-identical regeneration test (`specs/blocks/compiler.md` §12.2)
-//! plus Q13 mapping checks. Running the generator on the pinned header
+//! plus Q13/P14 mapping checks. Running the generator on the pinned header
 //! reproduces the committed mirror byte-for-byte; drift fails the test.
 //! This is how "generated code is never hand-edited" (CLAUDE.md core
 //! principle 6) is enforced for the mirror.
@@ -29,7 +29,7 @@ fn committed_mirror_is_byte_identical_to_regeneration() {
 }
 
 #[test]
-fn q13_rules_are_reflected_in_the_mirror() {
+fn binding_rules_are_reflected_in_the_mirror() {
     let m = subscript_bindgen::generate(&header()).expect("generate");
 
     // Opaque handle → branded empty interface.

@@ -42,7 +42,7 @@ fn using_program_type_checks_against_the_generated_mirror() {
 
     // Every C function in the header became a foreign symbol with a mapped
     // signature, in declaration order: the six device entries, then the
-    // four typed-slice facades (their `SubSlice*` descriptors absorbed into
+    // nine typed-slice facades (their `SubSlice*` descriptors absorbed into
     // `T[]`, so each takes a primitive array and returns i32).
     let names: Vec<&str> = module.foreign_fns.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(

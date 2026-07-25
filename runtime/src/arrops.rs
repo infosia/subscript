@@ -1297,6 +1297,28 @@ mod tests {
             let out = join(p, f, sep, FmtKind::F64, 0);
             assert_eq!(c.str_bytes(out), b"0.5, -0, 7");
 
+            let i8s = c.array_new(1, 0);
+            for v in [-128i8, 127i8] {
+                c.array_push(i8s, (&v as *const i8).cast(), 0);
+            }
+            let out = join(p, i8s, sep, FmtKind::I8, 0);
+            assert_eq!(c.str_bytes(out), b"-128, 127");
+
+            let u16s = c.array_new(2, 0);
+            for v in [0u16, u16::MAX] {
+                c.array_push(u16s, (&v as *const u16).cast(), 0);
+            }
+            let out = join(p, u16s, sep, FmtKind::U16, 0);
+            assert_eq!(c.str_bytes(out), b"0, 65535");
+
+            let halves = c.array_new(2, 0);
+            for v in [1.5, -0.0] {
+                let bits = crate::half::from_f64(v);
+                c.array_push(halves, (&bits as *const u16).cast(), 0);
+            }
+            let out = join(p, halves, sep, FmtKind::F16, 0);
+            assert_eq!(c.str_bytes(out), b"1.5, -0");
+
             let s = arr_str(&mut c, &["a", "b"]);
             let out = join(p, s, sep, FmtKind::Str, 0);
             assert_eq!(c.str_bytes(out), b"a, b");
