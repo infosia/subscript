@@ -197,6 +197,19 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   one frozen golden moves (`a49`'s f16 subnormal, `0.000…5960464477539063`
   → `5.960464477539063e-8`) under the `compiler.md` §2 golden-change
   procedure.
+  **Divergence — exact decimal ties break away from zero, not to even**
+  (recorded 2026-07-25; pre-existing, found by the P12 review): the
+  digits come from Rust's shortest-round-trip writer, which on an exact
+  tie picks the value further from zero, while ECMA's
+  `Number::toString` picks the even one. Measured over 3 010 916 `f64`
+  bit patterns against node: **339 divergences, all of this one class**
+  (e.g. the double whose exact value is `2205594957347911.25` prints
+  `…11.3` here and `…11.2` in node). Both spellings round-trip to the
+  same double and both tiers agree byte-for-byte, so determinism and the
+  standing gate are unaffected — only JS agreement is. Matching ECMA
+  needs a custom shortest-float writer with tie-to-even; a hand-rolled
+  one is a worse risk than the 0.011 % divergence it would close, so it
+  is recorded rather than fixed and left as a follow-up.
   Both tiers share one implementation; byte-identical output is a
   standing differential-gate assertion (plan P3).
 - **Q17** — decided in C2. **Q18** — `|`, `&`, `^`, `~`, shifts on `i64`/
@@ -329,15 +342,20 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   half-way, `±0`, `>= 1e21`, `NaN` and infinity cases are pinned by
   golden, and it is one runtime implementation on both tiers rather
   than the host libc, whose rounding is platform-dependent.
-  **Divergence — `(-0).toFixed(d)` keeps the sign** (`-0.00`), where
-  ECMA and node drop it (`0.00`): ECMA takes the sign only when
-  `x < 0`, which is false for `-0`. This language already spells
-  negative zero `-0` in Q14 — itself a recorded divergence, since JS's
-  `String(-0)` is `"0"` — so dropping the sign here would make `${-0}`
-  and `(-0).toFixed(2)` disagree about whether the value is signed.
-  Keeping it is also the more uniform rule: node itself prints
-  `(-0.001).toFixed(2)` as `"-0.00"`, so only exactly `-0` is special
-  there, and here it is not.
+  **`(-0).toFixed(d)` follows ECMA and drops the sign** (`0.00`): the
+  sign is taken only when `x < 0`, which is false for `-0`. A value that
+  merely *rounds* to zero keeps it (`(-0.0001).toFixed(2)` is `-0.00`),
+  as in every JS engine. This is deliberately unlike Q14's interpolation
+  rule, which spells `-0` as `-0`: `${x}` is the language's only
+  general-purpose number-to-string path, so losing the sign there would
+  discard information a program has no other way to see, whereas
+  `toFixed` is a specific formatting request with ECMA-defined
+  semantics and `${}` remains available when the sign matters.
+  *(An earlier revision of this entry claimed the opposite — that the
+  sign is kept — and was wrong: it was written from an assumption about
+  a corpus line rather than from the source. The 2026-07-25 Phase Review
+  caught the contradiction between the spec and the implementation,
+  goldens and unit tests, all of which have always been ECMA's.)*
 
 ## 3. Open items carried forward
 
