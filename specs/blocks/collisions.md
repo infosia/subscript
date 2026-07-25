@@ -240,15 +240,17 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   them.
 - **Q19 (`Math`)** — the checker accepts a deterministic subset of the
   lib's `Math` with `f64` signatures and ECMA result semantics
-  (`stdlib.md` §1). Rejected: `imul`/`fround` — not because they are
-  hard but because each is an **exact duplicate of a spelling the
-  language already has**: `imul` is `a * b` on `i32`, `fround` is
-  `x as f32`. They exist in JS to simulate machine types JS lacks, and
-  this language has them, so adding these names buys a second spelling
-  and no new capability. Variadic `max`/`min`/`hypot` rejected (two
-  arguments only). **`clz32` is accepted** (Q26, 2026-07-25): the
-  "JS-number op" reason above does not apply to it, because counting
-  leading zeros has **no spelling in this language at all**.
+  (`stdlib.md` §1). **`clz32` accepted** (Q26); **`imul` and `fround`
+  accepted** (Q27, implemented 2026-07-26). Both entries were
+  previously rejected, and both rejections have now been withdrawn for
+  different reasons. `clz32` was rejected as a "JS-number op", which
+  never applied to it: counting leading zeros has **no spelling in this
+  language at all**. `imul` and `fround` genuinely *are* exact
+  duplicates — `a * b` on `i32` and `x as f32` — and were rejected on
+  that ground; the owner's rule (2026-07-25) is that a second spelling
+  is not grounds for rejection when JS has the name. Variadic
+  `max`/`min`/`hypot` stay rejected: the language has no variadic
+  parameters, a missing prerequisite rather than a cost.
   `Math.random` diverges from JS: Context-seeded deterministic PRNG,
   host-reseedable (`stdlib.md` §2).
 - **Q20 (`Date`)** — the checker accepts the UTC-deterministic subset
@@ -457,22 +459,26 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   - `Number(x)`, global `isNaN`/`isFinite` (Q25) — they **coerce**.
     Adding them adds the unsoundness the language exists to reject, so
     the cost is not the objection.
-  - `Math.imul`/`fround` (Q19) — duplicate spellings of `a * b` on
-    `i32` and `x as f32`. Cost is near zero and they are still
-    rejected: the rule is about APIs whose absence costs a capability,
-    and these cost none.
+  - *(Superseded 2026-07-25.)* This bullet listed `Math.imul`/`fround`
+    as still rejected, on the ground that the rule was "about APIs
+    whose absence costs a capability, and these cost none". The owner
+    rejected that reading the same day: **a second spelling of an
+    existing operation is not grounds for rejection.** Both are
+    accepted under Q27 and implemented. The class the bullet described
+    is now empty, and the surviving reasons are the two below.
   - `toLocaleString`, `Date` local-time accessors — locale and timezone
     data the project does not have. `js-alignment-audit.md` records
     that Boa needs the same data, so these are a missing prerequisite,
     not a cost question.
 
 - **Q27 (the rejection sweep — thirteen groups reinstated)** —
-  **contract written 2026-07-25; not yet implemented.** The checker
-  still rejects every member below, and `generated-docs/api-reference.md`
-  correctly records that, because §17.1 makes the generated reference
-  report the checker rather than the contract. The two agree again when
-  P18 (`stdlib.md` §12) lands; until then, this entry is the target and
-  the generated reference is the present tense.
+  **contract written 2026-07-25; stages 1 and 2 implemented
+  2026-07-26.** `Math.imul`/`fround`, `Number.parseInt`/`parseFloat`
+  and the whole `String` group are live; the `Array`, `Map`/`Set` and
+  callback-arity groups are still contract only, and the checker
+  rejects those members. `generated-docs/api-reference.md` reports the
+  checker rather than the contract (`compiler.md` §17.1), so it is the
+  present tense wherever the two differ.
   Accepted per `stdlib.md` §1, §8, §9, §10 and §11. The 2026-07-25 sweep
   (`specs/tracking/js-api-sweep.md`) applied the owner's Q26 rule to
   every rejection in the contract. These failed no surviving reason:

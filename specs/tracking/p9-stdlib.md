@@ -489,3 +489,67 @@ compute-bound 0.97–1.03×). 493 tests, 0 failures, zero warnings, only
 ## P12 follow-ups (not scheduled)
 
 - ECMA tie-to-even in the shortest-float writer (MAJOR 1).
+
+## P18 stages 1–2 — Q27 `Math`/`Number` and `String` (2026-07-26)
+
+Implemented: `Math.imul`, `Math.fround`, `Number.parseInt`/`parseFloat`
+(sharing the globals' implementation rather than forking it), and the
+whole Q27 `String` group — `substring`, `substr`, `charAt`,
+`codePointAt`, `concat`, the `startsWith`/`endsWith` position
+arguments, and `$` substitution in `replace`/`replaceAll`. All
+byte-indexed, per Q5. Stages 3–5 (`Array`, `Map`/`Set`, callback
+arity) untouched; `r32-array-splice` deliberately left in place.
+
+Corpus: `a63-q27-math-number`, `a64-q27-string`. Both goldens
+generated from node v24.18.0 and `cmp`-verified by the implementer,
+then **re-verified independently by the orchestrator** on a
+hand-written equivalent script — both matched. Reject entries `r15`
+(`imul`), `r17` (`fround`) and `r25` (`substring`) removed: each
+asserted the opposite of the new contract. The generated API reference
+index was used to confirm no other reject entry covered an accepted
+member.
+
+`a64` proves `substring` is not a duplicate of `slice` by printing both
+on the same inputs: `substring(4, 1)` is `ell` (arguments swapped)
+where `slice(4, 1)` is empty, and `substring(-2, 3)` is `hel`
+(negatives clamped to 0) where `slice(-2, 3)` is empty.
+
+### Golden change — `a43-string`, under `compiler.md` §2
+
+One frozen golden moved:
+
+```
+repdollar x=$&   ->   repdollar x=1
+```
+
+**Language rule defining the new bytes:** Q27's `$` substitution — `$&`
+expands to the matched substring, so `"x=1".replace("1", "$&")` is
+`"x=1"`. This *closes* the divergence Q21 recorded ("`$` in the
+replacement is not interpreted"), so the movement is the point of the
+change rather than a side effect. Verified against node v24.18.0
+directly: `repdollar x=1`.
+
+The corpus source's assertion is unchanged — only its comment was
+updated. This matters because the same handoff constraint ("stop if a
+pre-existing `.expected` changes") had earlier caused the Q22/Q24 work
+to *weaken* `a44` and `a53` so their old goldens would still pass,
+which had to be undone. The constraint was restated for this task as
+"report it, do not alter the corpus source", and the implementer did.
+
+### Contract correction found by the work
+
+`stdlib.md` §12 pre-registered "no pre-existing `.expected` moves,
+since Q27 adds surface and changes none". That was wrong: Q27 changes
+accepted behaviour in exactly one place, `$` substitution. The section
+now defers to the §2 golden-change procedure instead of prohibiting
+movement outright.
+
+### Gate
+
+Zero build warnings; `cargo test` clean including the standing
+dev-JIT ≡ ship-C-AOT ≡ golden gate, the P16 structural tests and the
+21-witness node run; `tsc` exit 0; `git diff --check` clean. The P16
+divergence-witness set changed as designed: the Q21 `$`-substitution
+witness was **removed** (the divergence no longer exists, and the
+witness test asserts `subscript != node`, so a stale one fails loudly)
+and a Q27 `codePointAt` out-of-range witness added.

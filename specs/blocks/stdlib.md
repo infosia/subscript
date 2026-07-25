@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 stages 1-2 as implemented and corrects §12's no-golden-moves pre-registration). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -216,8 +216,9 @@ returning a string allocates via the Context):
   `from` defaults 0, clamped to `[0, length]` (negative → 0)
 - `lastIndexOf(needle: string): i32`
 - `includes(needle: string, from?: i32): boolean`
-- `startsWith(needle: string): boolean`, `endsWith(needle: string):
-  boolean` (the lib's optional position arguments are not accepted)
+- `startsWith(needle: string, position?: i32): boolean`,
+  `endsWith(needle: string, endPosition?: i32): boolean` — byte
+  offsets (the position arguments were added by Q27)
 - `charCodeAt(i: i32): i32` — the byte value 0–255 (Q21; JS returns
   the UTF-16 unit); out of range traps (JS returns NaN)
 - `split(sep: string): string[]` — no-match → `[whole]`; adjacent
@@ -237,9 +238,11 @@ returning a string allocates via the Context):
   non-padding hides bugs)
 - `toUpperCase(): string`, `toLowerCase(): string` — Unicode Default
   Case Conversion, including the special-casing table (Q21)
-- `replace(pat: string, repl: string): string` — first occurrence,
-  literal (no regex; `$` in the replacement is **not** interpreted —
-  Q21; JS substitutes `$$`/`$&`)
+- `replace(pat: string, repl: string): string` — first occurrence, no
+  regex. **`$` in the replacement is interpreted** (Q27): `$$`, `$&`,
+  `` $` ``, `$'`. `$1`–`$9` stay literal, which is ECMA's own behaviour
+  for a string pattern — it has no capture groups — so no regex engine
+  is involved
 - `replaceAll(pat: string, repl: string): string` — all occurrences;
   empty `pat` traps (JS inserts between every unit)
 
@@ -284,10 +287,17 @@ Corpus: `a43` string battery — every accepted member incl. the edges:
 `indexOf` miss −1 / empty needle 0 / `from` clamp; `lastIndexOf`;
 `split` no-match, adjacent separators, trailing separator; `trim`
 family boundaries; `repeat(0)`; `pad*` exact/longer/shorter and
-two-arg; case round-trip; `replace` vs `replaceAll` multiplicity;
-literal `$` in replacement. Rejects: `substring`, `localeCompare`,
-`match`, `toLocaleUpperCase` — each S014. Trap paths (`charCodeAt`
-OOB, `repeat(-1)`, `split("")`, `replaceAll("", …)`) are cross-tier
+two-arg; case round-trip; `replace` vs `replaceAll` multiplicity; `$`
+substitution (**revised by Q27** — the entry previously pinned a
+literal `$&`, and closing that divergence moved `a43`'s golden line
+`repdollar x=$&` to `repdollar x=1` under the `compiler.md` §2
+golden-change procedure; the corpus source's assertion is unchanged).
+`a64` covers the rest of the Q27 String surface. Rejects:
+`localeCompare`, `match`, `toLocaleUpperCase` — each S014;
+`r25-string-substring` was **removed**, `substring` now being accepted.
+Trap paths (`charCodeAt` OOB, `repeat(-1)`, `split("")`,
+`replaceAll("", …)`, and Q27's `charAt`/`codePointAt` off a UTF-8
+boundary and `codePointAt` OOB) are cross-tier
 cemit tests (identical kind/message/position), not corpus entries.
 
 Gate (pre-registered): standing differential gate byte-exact incl.
@@ -695,8 +705,8 @@ template form; `toExponential` with and without `digits`, including
 the unpadded-exponent case `(0).toExponential(2)`; `toPrecision`
 across the fixed/exponential switchover; and `Math.clz32` at `0`, `1`,
 `2^31` and an all-ones input. Rejects: the global `isNaN`, `Number(x)`,
-`Math.imul`, `Math.fround`, a `parseInt` without a radix, a
-`toString` without a radix, and a `toPrecision` without `digits` —
+a `parseInt` without a radix, a `toString` without a radix, and a
+`toPrecision` without `digits` —
 each S014 at a pinned position; plus a radix-out-of-range trap and a
 `digits`-out-of-range trap, whose tuples must be identical across
 tiers.
@@ -710,11 +720,12 @@ no ship-row regression.
 
 ## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
 
-**Status: contract only.** Every Q27 member named in §1, §8, §9, §10
-and §11 is still rejected by the checker until this phase lands.
+**Status: stages 1 and 2 implemented** (`Math`/`Number` and `String`).
+Stages 3–5 — `Array`, `Map`/`Set`, and the callback index parameter —
+are still contract only, and the checker still rejects those members.
 `generated-docs/api-reference.md` reports the checker, not this
-contract (`compiler.md` §17.1), so the two disagree by design while
-P18 is open.
+contract (`compiler.md` §17.1), so the two agree on stages 1–2 and
+disagree on 3–5 by design while P18 is open.
 
 Q27 spans five sections, so its corpus is registered here rather than
 split across them. Staged in the order below; each stage is a Phase
@@ -769,6 +780,17 @@ generated from node v24.18.0 and `cmp`-verified, with any divergence
 recorded in Q27 rather than absorbed — the `substring`-versus-`slice`
 and `$1`-stays-literal lines exist to be checked against node, not
 assumed; trap tuples identical across tiers; rejects at pinned S014
-positions; no pre-existing `.expected` moves, since Q27 adds surface
-and changes none — a golden that moves is a defect in this phase;
-benchmarks — no ship-row regression.
+positions; benchmarks — no ship-row regression.
+
+**Correction (2026-07-26): this section originally required that no
+pre-existing `.expected` move, "since Q27 adds surface and changes
+none". That was wrong.** Q27 does change accepted behaviour in one
+place: `$` substitution in `replace`/`replaceAll` closes a divergence
+Q21 had recorded, so `a43`'s `repdollar` line necessarily moved from
+`x=$&` to `x=1`. The rule that matters is the `compiler.md` §2
+golden-change procedure — a moved golden must cite the language rule
+defining the new bytes and land in the phase tracking file — not a
+blanket prohibition. The implementer reported the movement rather than
+weakening the corpus to preserve the old bytes, which is the required
+behaviour; `a43`'s source assertion is unchanged and only its comment
+was updated.
