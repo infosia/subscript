@@ -42,13 +42,14 @@ independently of the implementer. `r48`/`r49` were repurposed from the
 old contract's `toPrecision`/`toString(16)` rejections to the
 required-argument S014s.
 
-## Accepted by the rule — contracted as Q27, implementation pending
+## Accepted by the rule — contracted as Q27, fully implemented
 
 The sweep of 2026-07-25 found these fail no surviving reason: each
 exists in JS, introduces no defect, and needs no prerequisite the
-project lacks. Contracted as **Q27** (`f51d480`), with the corpus and
-gate staged in five in `stdlib.md` §12 (`52ed74e`). Implementation
-pending.
+project lacks. Contracted as **Q27** (`f51d480`) and **fully implemented
+2026-07-26** across six stages (`stdlib.md` §12), corpus `a63`–`a68`.
+The sixth stage — the `every` family on `FixedArray` — was added after
+the P18 Phase Review found that group contracted but never staged.
 
 **Writing the contract corrected the table in three places, each found
 by measuring rather than reasoning** — the entries below are the
@@ -83,7 +84,7 @@ corrected form:
 | `Array` | `reduceRight` with a required `init` | passes the same arity rule that `reduce` passes |
 | `Array` | `splice` (delete-only), `shift` (traps when empty, as `pop` does), `unshift` (one element, as `push`), `copyWithin` | JS makes `splice`/`unshift` variadic; the language has no variadic parameters, so these are a recorded subset |
 | `Array` | **the index parameter on callbacks** | `map((v, i) => …)`; the largest item here by real-world use, and the one that touches the checker's arity machinery. The third `array` parameter stays **rejected** — see below |
-| `Array` | the `every` family on `FixedArray` | currently a "v1 is `T[]` only" scope rejection |
+| `Array` | the `every` family on `FixedArray` | was a "v1 is `T[]` only" scope rejection. Implemented as §12 stage 6; `map` returns `U[]` and `filter` returns `T[]`, since a fixed-length receiver cannot give a fixed-length result when the element type or the length changes |
 | `Map`/`Set` | `groupBy`, ES2024 set algebra (`union`, `intersection`, `difference`, `symmetricDifference`, `isSubsetOf`, `isSupersetOf`, `isDisjointFrom`) | |
 | `Number` | `Number.parseInt`, `Number.parseFloat` | verified `=== parseInt` / `=== parseFloat` on node — pure aliases |
 

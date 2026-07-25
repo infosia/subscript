@@ -766,7 +766,7 @@ no ship-row regression.
 
 ## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
 
-**Status: complete — all five stages implemented 2026-07-26.**
+**Status: complete — six stages, all implemented 2026-07-26.**
 `generated-docs/api-reference.md` and this contract now agree; where
 they ever differ, §17.1 makes the generated document the present
 tense.
@@ -774,7 +774,8 @@ tense.
 Q27 spans five sections, so its corpus is registered here rather than
 split across them. Staged in the order below; each stage is a Phase
 Review boundary. **Correction (2026-07-26):** this paragraph said the
-last stage touches the checker and the first four do not. That is
+last stage touches the checker and the first four do not, and it
+counted five stages where there are six. That is
 wrong — every stage extends the checker's accepted-member tables and
 its fixed-arity checking. What is unique to stage 5 is that it needs
 **new arity machinery**, a callback being accepted at two arities;
@@ -823,6 +824,25 @@ and that was wrong — JS gives a comparator no index, verified on node:
 `arguments.length` is 2 and the third argument is `undefined`)*. Reject: the three-parameter `(v, i, arr)` form, S014
 naming C5 — this is the narrowing most likely to be read as an
 oversight, so its reject entry carries the reason.
+
+**Stage 6 — the `every` family on `FixedArray<T, N>`.** *(Added
+2026-07-26. It belonged in the original staging: §9 and Q27 both list
+it among the thirteen reinstated groups, but no stage registered a
+corpus for it, so the pre-registered gate could not catch its absence.
+The P18 Phase Review did.)* All eight closure-taking members —
+`forEach`, `map`, `filter`, `some`, `every`, `findIndex`, `reduce`,
+`reduceRight` — at **both arities**, as on `T[]`.
+
+Return types follow from `FixedArray` being a fixed-length in-place C
+array rather than from copying `T[]`'s: `forEach` is `void`,
+`some`/`every` are `boolean`, `findIndex` is `i32`, `reduce`/
+`reduceRight` are `U`, **`map` returns `U[]`** because the element
+type may change, and **`filter` returns `T[]`** because the result
+length is not known at compile time. No member had to be left out, so
+this stage adds no rejection.
+
+Accept: an entry covering every member at both arities with each
+index observable in the output.
 
 Gate: standing differential gate byte-exact on both tiers for every new
 entry; `tsc` zero errors, unchanged config; every accept golden

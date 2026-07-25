@@ -475,7 +475,8 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 
 - **Q27 (the rejection sweep — thirteen groups reinstated)** —
   **contract written 2026-07-25; fully implemented 2026-07-26**
-  (`stdlib.md` §12, five stages). `generated-docs/api-reference.md` reports the
+  (`stdlib.md` §12, six stages — the sixth added after the Phase
+  Review found the `FixedArray` group contracted but unstaged). `generated-docs/api-reference.md` reports the
   checker rather than the contract (`compiler.md` §17.1), so it is the
   present tense wherever the two differ.
   Accepted per `stdlib.md` §1, §8, §9, §10 and §11. The 2026-07-25 sweep

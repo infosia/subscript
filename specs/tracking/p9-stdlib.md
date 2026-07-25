@@ -805,3 +805,53 @@ where the surface is Q27; the generated reference's `string.slice`
 summary no longer matches its behaviour after MAJOR 1.
 
 **P18 is NOT COMPLETE**: MAJOR 2 is open.
+
+## P18 review fixes (2026-07-26) — MAJOR 2 and MINOR 1–4 closed. P18 COMPLETE
+
+**MAJOR 2 — stage 6, the `every` family on `FixedArray<T, N>`.** All
+eight closure-taking members implemented at both arities. Return types
+were derived from what a fixed-length in-place C array can promise
+rather than copied from `T[]`: `map` returns **`U[]`** because the
+element type may change, and `filter` returns **`T[]`** because the
+result length is not known at compile time. Every member turned out
+supportable, so the stage adds no rejection — the "leave it rejected
+with an S014 saying why" fallback in the handoff was not needed.
+
+Corpus `a68-q27-fixed-array-callbacks`, golden generated from node
+v24.18.0 and **re-verified independently by the orchestrator** on a
+hand-written equivalent — matched. No pre-existing `.expected` moved.
+
+**MINOR 2** — `Map.groupBy`'s element and key slots are now `u64`-backed,
+so the generated bridges' typed loads and stores always see 8-byte
+alignment; a typed-access regression test guards it. The previous
+`vec![0u8; …]` and `[0u8; 8]` were align-1 and worked only because
+malloc and stack layout over-align on the supported targets.
+
+**MINOR 3** — a wrong-arity `Map.groupBy` callback now cites Q27, its
+actual surface, instead of Q24. Map/Set's own callbacks still cite Q24,
+correctly.
+
+**MINOR 4** — `string.slice` is table-driven through `StrFn` and its
+generated summary now reads "using JS clamp and negative-index rules",
+matching what MAJOR 1 recorded. The old summary's claim that "both
+arguments are required" was **also wrong**: the checker confirms both
+are optional, defaulting to `0` and to the end. The generated signature
+is now `slice(start?: i32, end?: i32): string`.
+
+**MINOR 1** — `js-api-sweep.md` updated: Q27 is implemented, and the
+`FixedArray` row records the `U[]`/`T[]` return-type reasoning.
+
+### P18 disposition
+
+All CRITICAL (none), MAJOR and MINOR findings are closed. **P18 is
+COMPLETE.**
+
+Two items were opened by the review and are **not** P18 blockers; they
+are carried forward:
+
+1. **No benchmark exercises array callbacks.** `perf-gate`'s a22 and
+   every `benchmarks/workloads/subscript/` entry avoid them, so stage
+   5's and stage 6's per-element work is measured by nothing.
+2. **The emitted-C figure needs an idle-machine re-measurement.**
+   1.87x observed against 1.05x recorded for arm64; unattributable to
+   P18, since a22 does not execute P18's code.
