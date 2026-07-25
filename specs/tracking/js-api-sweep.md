@@ -21,29 +21,35 @@ Only two reasons survive the rule, and they are recorded per API below:
 implementing it would **introduce a defect**, or the project **lacks a
 prerequisite** it cannot cheaply acquire.
 
-## Accepted — contracted, implementation pending
+## Accepted — implemented
 
-These are decided and specified; the work is queued.
-
-| API | contract | cost |
+| API | contract | status |
 |---|---|---|
-| `Number.prototype.toString(radix)` | Q26, `stdlib.md` §11.5 | ~120 lines |
-| `Number.prototype.toExponential` | Q26, §11.5 | ~100 + ~90 shared |
-| `Number.prototype.toPrecision` | Q26, §11.5 | ~125, shares the above |
-| `Math.clz32` | Q26, `stdlib.md` §1 | 1 line |
+| `Number.prototype.toString(radix)` | Q26, `stdlib.md` §11.5 | `86f925a`, corpus `a62` |
+| `Number.prototype.toExponential` | Q26, §11.5 | `86f925a`, `a62` |
+| `Number.prototype.toPrecision` | Q26, §11.5 | `86f925a`, `a62` |
+| `Math.clz32` | Q26, `stdlib.md` §1 | `86f925a`, `a62` |
 
-Two normative traps are recorded in Q26, both places where the C tier's
-obvious lowering is wrong: `Math.clz32(0)` is `32` while
-`__builtin_clz(0)` is undefined, and ECMA does not pad the exponent
-(`(0).toExponential(2)` is `0.00e+0`; C's `%e` gives `0.00e+00`).
+Both normative traps held. Radix 10 **delegates to the existing Q14
+formatter** rather than reimplementing it, so the two agree by
+construction and `a62` prints them side by side. `clz32` goes through
+`sub_rt_math_clz32` over `u32::leading_zeros`, and a `cemit` test
+asserts the emitted C does **not** contain `__builtin_clz`, which is
+undefined at zero where ECMA defines `clz32(0)` as `32`. Exponents are
+unpadded (`(0).toExponential(2)` is `0.00e+0`, not C's `0.00e+00`).
+`a62`'s golden was regenerated from node v24.18.0 and `cmp`'d
+independently of the implementer. `r48`/`r49` were repurposed from the
+old contract's `toPrecision`/`toString(16)` rejections to the
+required-argument S014s.
 
 ## Accepted by the rule — not yet contracted
 
 The sweep of 2026-07-25 found these fail no surviving reason: each
 exists in JS, introduces no defect, and needs no prerequisite the
 project lacks. **They are deferred only in ordering** — Q26 was already
-contracted and is closed first (owner decision: finish the contracted
-work before opening more). Nothing here is rejected.
+contracted, and the owner's decision was to close it first before
+opening more; that is now done (`86f925a`), so this table is the next
+contract to write. Nothing here is rejected.
 
 | area | API | note |
 |---|---|---|
