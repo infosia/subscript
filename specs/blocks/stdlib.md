@@ -710,6 +710,12 @@ no ship-row regression.
 
 ## 12. P18 — the Q27 sweep groups: corpus and gate (pre-registered)
 
+**Status: contract only.** Every Q27 member named in §1, §8, §9, §10
+and §11 is still rejected by the checker until this phase lands.
+`generated-docs/api-reference.md` reports the checker, not this
+contract (`compiler.md` §17.1), so the two disagree by design while
+P18 is open.
+
 Q27 spans five sections, so its corpus is registered here rather than
 split across them. Staged in the order below; each stage is a Phase
 Review boundary, because the last stage touches the checker and the

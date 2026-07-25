@@ -197,19 +197,25 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   one frozen golden moves (`a49`'s f16 subnormal, `0.000…5960464477539063`
   → `5.960464477539063e-8`) under the `compiler.md` §2 golden-change
   procedure.
-  **Divergence — exact decimal ties break away from zero, not to even**
-  (recorded 2026-07-25; pre-existing, found by the P12 review): the
-  digits come from Rust's shortest-round-trip writer, which on an exact
-  tie picks the value further from zero, while ECMA's
-  `Number::toString` picks the even one. Measured over 3 010 916 `f64`
-  bit patterns against node: **339 divergences, all of this one class**
-  (e.g. the double whose exact value is `2205594957347911.25` prints
-  `…11.3` here and `…11.2` in node). Both spellings round-trip to the
-  same double and both tiers agree byte-for-byte, so determinism and the
-  standing gate are unaffected — only JS agreement is. Matching ECMA
-  needs a custom shortest-float writer with tie-to-even; a hand-rolled
-  one is a worse risk than the 0.011 % divergence it would close, so it
-  is recorded rather than fixed and left as a follow-up.
+  **Closed — the decimal-tie divergence no longer exists.** It was
+  recorded 2026-07-25 by the P12 review: Rust's shortest-round-trip
+  writer broke an exact tie away from zero where ECMA breaks to even,
+  339 divergences over 3 010 916 `f64` bit patterns, and the entry
+  concluded that matching ECMA "needs a custom shortest-float writer"
+  not worth hand-rolling. **That conclusion was wrong**: `ryu-js` — Ryū
+  forked for ECMA semantics, the crate Boa uses — does exactly this and
+  was already in the local cargo cache. Adopted the same day (`=1.0.3`,
+  runtime only, still behind the opaque `sub_rt_*` symbols per
+  `stdlib.md` §0.2). Verified after the change: 200 000 random bit
+  patterns, zero divergences from node on either tier; the entry's own
+  example now agrees (`2205594957347911.25` prints
+  `2205594957347911.2` here and in node). It also removed the
+  hand-written exponent thresholds and `toFixed` rounding — net 111
+  lines of hand-written float code deleted.
+  **The one Q14 divergence that remains is the `-0` spelling above**,
+  which is deliberate. The episode produced the standing rule recorded
+  in `specs/tracking/js-alignment-audit.md`: a negative claim — "no
+  solution exists" — needs investigation most of all.
   Both tiers share one implementation; byte-identical output is a
   standing differential-gate assertion (plan P3).
 - **Q17** — decided in C2. **Q18** — `|`, `&`, `^`, `~`, shifts on `i64`/
@@ -460,8 +466,14 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
     that Boa needs the same data, so these are a missing prerequisite,
     not a cost question.
 
-- **Q27 (the rejection sweep — thirteen groups reinstated)** — accepted
-  per `stdlib.md` §1, §8, §9, §10 and §11. The 2026-07-25 sweep
+- **Q27 (the rejection sweep — thirteen groups reinstated)** —
+  **contract written 2026-07-25; not yet implemented.** The checker
+  still rejects every member below, and `generated-docs/api-reference.md`
+  correctly records that, because §17.1 makes the generated reference
+  report the checker rather than the contract. The two agree again when
+  P18 (`stdlib.md` §12) lands; until then, this entry is the target and
+  the generated reference is the present tense.
+  Accepted per `stdlib.md` §1, §8, §9, §10 and §11. The 2026-07-25 sweep
   (`specs/tracking/js-api-sweep.md`) applied the owner's Q26 rule to
   every rejection in the contract. These failed no surviving reason:
 
