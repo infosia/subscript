@@ -375,3 +375,117 @@ a trapping `forEach` callback reports an identical tuple across tiers;
 rejects at pinned S014 positions; benchmarks re-captured with no
 ship-row regression. 481 tests, 0 failures, zero warnings, no
 pre-existing golden modified.
+
+## P12 — `Number`, parsing, `toFixed`: COMPLETE (2026-07-25)
+
+`Number` constants and the four `is*` predicates, `parseInt` with a
+**required radix**, `parseFloat`, and `toFixed` — per `stdlib.md` §11 /
+Q25. No new machinery: these extend the ambient-namespace and member
+surfaces P9/P10 built. One runtime implementation (`runtime/src/num.rs`)
+behind opaque `sub_rt_num_*` on both tiers; the host libc's
+`snprintf("%.*f")` is deliberately unused (§0.2 — its rounding is
+platform-dependent), verified by the review to be absent from the
+runtime, the emitter and the emitted C.
+
+Contract point decided here: **`NaN` is admitted as a failure value**,
+the only sentinel in the language. Parse failure is *data* — a config
+string may legitimately not be a number — so C6's trap model is wrong
+for it, and `parseInt` returns `f64` rather than a sized integer
+because no integer type can carry the failure. That is exactly what was
+missing when Q20 rejected Invalid-Date (`Date` erases to `i64`, which
+has no NaN) and when Q24 rejected a zeroed `get` miss (zero is a
+legitimate stored value): here the sentinel is representable, outside
+the domain of any successful parse, and checkable with `Number.isNaN`.
+`parseInt`'s radix is required because ECMA's default is
+context-dependent — the same arity-changes-meaning hazard Q22 rejected
+for `reduce` and `sort`.
+
+## Q14 corrected in this phase (founding rule)
+
+Codex stopped mid-implementation to report that `(1e21).toFixed(2)` is
+`"1e+21"` in node while the contract said it falls back to the Q14
+form. That was the tip of a defect in **Q14 itself**: the rule's
+"without a decimal point or exponent" wording was aimed at printing `7`
+rather than `7.0`, but taken literally it banned exponents at the
+magnitude extremes too — so `${5e-324}` produced a **751-character**
+string and `${1e21}` diverged from every JS engine, with no divergence
+recorded (which §0.4 requires). Owner decision: adopt ECMA's
+thresholds, exponential outside **`[1e-6, 1e21)`**. This also makes
+`toFixed`'s ECMA-specified fallback coherent instead of contradicting
+the interpolation form for the same value.
+
+Blast radius was measured before the change (one golden line) and
+confirmed after: **exactly one frozen golden moved** — `a49`'s f16
+subnormal, `0.00000005960464477539063` → `5.960464477539063e-8` — under
+the `compiler.md` §2 procedure.
+
+## Phase Review (2026-07-25, fresh no-context, different model from the
+## implementer)
+
+Implementation by Codex `gpt-5.6-sol`; review by an independent
+no-context agent. **1 CRITICAL, 1 MAJOR, 4 MINOR.**
+
+- **CRITICAL 1 — the orchestrator wrote a false claim into the
+  normative spec.** Q25 recorded that `(-0).toFixed(d)` *keeps* the
+  sign (`-0.00`) where ECMA drops it, with a justification. The
+  implementation, its unit test, its doc comment and the `a59` golden
+  all did the opposite — ECMA's — and node agrees with them over
+  650 588 cases with zero divergences. The claim came from reading the
+  golden line `signs 0.00 -0.00 -12.340` and *assuming* its three inputs
+  were `0`, `-0`, `-12.34`; the entry's actual middle value is
+  `(-0.0001).toFixed(2)`, which is `-0.00` in every engine. Four
+  artifacts were right and the spec was wrong. **Resolved by correcting
+  the spec**: `toFixed` follows ECMA on `-0`, deliberately unlike Q14's
+  interpolation rule, because `${x}` is the language's only
+  general-purpose number-to-string path (losing the sign there would
+  discard information with no alternative) while `toFixed` is a
+  specific formatting request with ECMA-defined semantics. The
+  misrecording is itself noted in Q25 so the failure mode stays visible.
+  **Rule taken from this: never infer a corpus entry's inputs from its
+  golden — read the source.**
+- **MAJOR 1 — exact decimal ties break away from zero, not to even**
+  (pre-existing, not introduced here). The digits come from Rust's
+  shortest-round-trip writer; ECMA breaks ties to even. Measured:
+  **339 divergences in 3 010 916 `f64` bit patterns** (0.011 %), all of
+  this one class. Both spellings round-trip and **both tiers agree
+  byte-for-byte**, so determinism and the standing gate are unaffected;
+  only JS agreement is. Recorded in Q14 as a divergence rather than
+  fixed: matching ECMA needs a custom shortest-float writer with
+  tie-to-even, and a hand-rolled one is a worse risk than the 0.011 %
+  it would close. Follow-up.
+- MINOR: `parseInt` is **1 ulp more precise than node** at radix
+  3/35/36 (ECMA-262 §19.2.5 permits approximation exactly there, and
+  there are zero divergences where it requires exactness) — recorded in
+  Q25; `parse_float`'s non-UTF-8 internal trap carried `pos_id` 0 while
+  every sibling carried a real position — fixed, with a regression test;
+  the P12 commit message says "r46-r49" where the corpus adds **r46–r50**
+  (`r50-parse-int-no-radix` is the §11.6-required entry — the corpus is
+  right, the message undercounts); this tracking entry and the
+  benchmark row were the outstanding §2/§11.6 items.
+
+**Verified clean by the review** (~4.06 M values, both tiers): the Q14
+correction is exactly node's notation everywhere, perturbs **zero**
+in-range values, and is coherent for `f32` as well as `f64`; `toFixed`
+matches node over 650 588 cases including the half-way rule
+(`(1.005).toFixed(2)` → `"1.00"`), `digits` 0 and 100, `≥1e21`, `NaN`,
+infinities and `f32` receivers; `parseFloat` matches over 80 094 cases
+including every ECMA whitespace class; all six trap tuples are
+identical across tiers; the whole §11.5 rejected surface is S014 with a
+Q25 citation, and program-declared shadowing of `parseInt`/`isNaN`/
+`Number` correctly wins over the intrinsic. No cross-tier divergence
+anywhere.
+
+## Gate (§11.6, all met — orchestrator-verified)
+
+Standing gate byte-exact on both tiers (floor 56 → 59); `tsc` zero
+errors, unchanged config; the `toFixed` and parse goldens hand-derived
+from ECMA and cross-checked against node with every divergence recorded
+in Q14/Q25 rather than absorbed; trap tuples identical across tiers;
+rejects at pinned S014 positions; benchmarks re-captured — **no
+ship-row regression** (tree 1.39×, sort 1.77×, particles 3.08×,
+compute-bound 0.97–1.03×). 493 tests, 0 failures, zero warnings, only
+`a49` moved among pre-existing goldens.
+
+## P12 follow-ups (not scheduled)
+
+- ECMA tie-to-even in the shortest-float writer (MAJOR 1).
