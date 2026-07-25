@@ -539,7 +539,9 @@ disagree: half-way cases (ECMA specifies "let n be an integer for
 which n / 10^f - x is as close to zero as possible; if there are two
 such n, pick the larger" — so `(1.005).toFixed(2)` is `"1.00"`,
 because the stored double is below the decimal 1.005), negative zero,
-values ≥ 1e21 (ECMA falls back to `ToString`, i.e. the Q14 form),
+values ≥ 1e21 (ECMA falls back to `ToString`, i.e. the Q14 form — which
+since the 2026-07-25 Q14 correction uses ECMA's exponent thresholds, so
+`(1e21).toFixed(2)` is `"1e+21"`, matching node),
 `NaN` → `"NaN"`, `±Infinity` → `"Infinity"`/`"-Infinity"`, and a
 negative value's sign placement.
 
