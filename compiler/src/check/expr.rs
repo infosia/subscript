@@ -1861,10 +1861,26 @@ impl<'p> Checker<'p> {
                     self.error(RuleCode::S100, "spread arguments are not decided", p.clone());
                     return self.err_expr(p);
                 }
-                // The init's type is the accumulator type `U` (checked
-                // first so the callback's `acc` parameter has context).
-                let init = self.check_expr(&c.args[1].expr, None, fx);
-                let acc_ty = init.ty.clone();
+                // C4: the accumulator type `U` is the callback's when the
+                // callback spells it (an annotated `acc` parameter, or a
+                // function value's declared type) — that is `init`'s
+                // natural contextual type, so a plain literal init does
+                // not default to `i32` and poison `U`. Only an
+                // un-annotated arrow leaves `U` to `init` itself.
+                let (acc_ctx, checked_cb) = self.reduce_acc_context(&c.args[0], fx);
+                let init = self.check_expr(&c.args[1].expr, acc_ctx.as_ref(), fx);
+                if matches!(init.ty, Type::Error) {
+                    return self.err_expr(pos);
+                }
+                let acc_ty = match &acc_ctx {
+                    // The callback fixes `U`; a non-conforming init is
+                    // reported against the init, not the callback.
+                    Some(u) => {
+                        self.require_assignable(&init.ty, u, init.pos.clone(), "the `reduce` init");
+                        u.clone()
+                    }
+                    None => init.ty.clone(),
+                };
                 if matches!(acc_ty, Type::Error) {
                     return self.err_expr(pos);
                 }
@@ -1881,13 +1897,23 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let cb = self.check_arr_callback(
-                    &c.args[0],
-                    vec![acc_ty.clone(), elem],
-                    Some(acc_ty.clone()),
-                    fx,
-                    "reduce",
-                );
+                let cb = match checked_cb {
+                    // Already checked (a function value): validate its
+                    // shape, never check it twice.
+                    Some(v) => self.expect_callback_shape(
+                        v,
+                        &[acc_ty.clone(), elem],
+                        Some(&acc_ty),
+                        "reduce",
+                    ),
+                    None => self.check_arr_callback(
+                        &c.args[0],
+                        vec![acc_ty.clone(), elem],
+                        Some(acc_ty.clone()),
+                        fx,
+                        "reduce",
+                    ),
+                };
                 mk(vec![recv, cb, init], acc_ty, pos)
             }
             A::ForEach | A::Map | A::Filter | A::Some | A::Every | A::FindIndex => {
@@ -1951,6 +1977,46 @@ impl<'p> Checker<'p> {
                 mk(vec![recv, cb], ty, pos)
             }
         }
+    }
+
+    /// The accumulator type `U` a `reduce` callback spells, if any — the
+    /// contextual type for `init` (C4).
+    ///
+    /// An arrow callback spells it as its first parameter's annotation:
+    /// resolved here without reporting, because the callback check
+    /// resolves the same annotation for real afterwards. Any other
+    /// callback expression is a function value whose declared type
+    /// already gives `U`; it is checked **once**, here, and returned so
+    /// the caller shape-validates it rather than checking it again.
+    /// `(None, None)` when the callback does not spell `U` (an
+    /// un-annotated arrow, or an expression that is not a function),
+    /// which leaves `init` context-free as before.
+    fn reduce_acc_context(
+        &mut self,
+        arg: &ast::ExprOrSpread,
+        fx: &mut FnCtx,
+    ) -> (Option<Type>, Option<hir::Expr>) {
+        if arg.spread.is_some() {
+            return (None, None); // reported by `check_arr_callback`
+        }
+        if let ast::Expr::Arrow(a) = &*arg.expr {
+            let Some(ast::Pat::Ident(binding)) = a.params.first() else {
+                return (None, None);
+            };
+            let Some(ann) = binding.type_ann.as_ref() else {
+                return (None, None);
+            };
+            let mark = self.diags.len();
+            let ty = self.resolve_type(&ann.type_ann);
+            self.diags.truncate(mark);
+            return ((!matches!(ty, Type::Error)).then_some(ty), None);
+        }
+        let checked = self.check_expr(&arg.expr, None, fx);
+        let acc = match &checked.ty {
+            Type::Func(ft) => ft.params.first().cloned(),
+            _ => None,
+        };
+        (acc, Some(checked))
     }
 
     /// Checks one callback argument of an `Array` method (stdlib.md §9):
@@ -2911,31 +2977,20 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 }
             },
-            Type::FixedArray(..) => {
-                // stdlib.md §9: the v1 Array methods are `T[]` only.
-                if name == "push"
-                    || name == "pop"
-                    || crate::ambient::arr_method(&name).is_some()
-                {
-                    self.error(
-                        RuleCode::S014,
-                        format!(
-                            "`{}` is not available on `FixedArray`; the Array methods \
-                             apply to `T[]` only (Q22)",
-                            name
-                        ),
-                        prop_pos.clone(),
-                    );
-                } else {
-                    self.error(
-                        RuleCode::S100,
-                        format!(
-                            "`{}` is outside the FixedArray surface (length, indexing)",
-                            name
-                        ),
-                        prop_pos.clone(),
-                    );
-                }
+            // stdlib.md §9: the v1 Array methods are `T[]` only. Only the
+            // Q22 methods cite Q22 — `push`/`pop` are not Q22 members
+            // (`ambient::arr_method` excludes them), so they keep the
+            // standing "no method" diagnostic of the fall-through arm.
+            Type::FixedArray(..) if crate::ambient::arr_method(&name).is_some() => {
+                self.error(
+                    RuleCode::S014,
+                    format!(
+                        "`{}` is not available on `FixedArray`; the Array methods \
+                         apply to `T[]` only (Q22)",
+                        name
+                    ),
+                    prop_pos.clone(),
+                );
                 self.err_expr(pos)
             }
             Type::Str => match name.as_str() {

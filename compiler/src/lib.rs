@@ -417,6 +417,85 @@ mod tests {
     }
 
     #[test]
+    fn push_and_pop_on_a_fixed_array_are_not_blamed_on_q22() {
+        // P11 review MINOR 3: `push`/`pop` are not Q22 Array methods
+        // (they are deliberately outside `ambient::arr_method`), so the
+        // FixedArray rejection keeps the standing S100 "no method"
+        // diagnostic rather than citing Q22.
+        for call in ["xs.push(4)", "xs.pop()"] {
+            let err = check_one(&format!(
+                "export function main(): void {{\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  {call};\n}}\n"
+            ))
+            .unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S100, "{call}: {}", err[0].message);
+            assert!(
+                !err[0].message.contains("Q22"),
+                "{call}: {}",
+                err[0].message
+            );
+            assert!(
+                err[0].message.contains("has no method"),
+                "{call}: {}",
+                err[0].message
+            );
+        }
+    }
+
+    #[test]
+    fn reduce_init_takes_its_contextual_type_from_the_callback() {
+        // P11 review MINOR 1 (C4): the callback's annotated accumulator
+        // type is `init`'s contextual type, so a plain literal init does
+        // not default to `i32` and poison `U`.
+        for (acc, cb) in [
+            ("i64", "(a: i64, v: i32): i64 => a + (v as i64)"),
+            ("f64", "(a: f64, v: i32): f64 => a + (v as f64)"),
+            ("u32", "(a: u32, v: i32): u32 => a + (v as u32)"),
+        ] {
+            let src = format!(
+                "export function main(): void {{\n  const xs: i32[] = [1, 2, 3];\n  const total: {acc} = xs.reduce({cb}, 0);\n  print(`${{total}}`);\n}}\n"
+            );
+            let module = check_one(&src)
+                .unwrap_or_else(|e| panic!("{acc} accumulator rejected: {e:?}"));
+            assert_eq!(module.functions.len(), 1, "{acc}");
+        }
+    }
+
+    #[test]
+    fn reduce_init_takes_its_type_from_a_function_value_callback() {
+        // The same rule when the callback is a function value: its
+        // declared accumulator type is `init`'s context.
+        let src = "function add(acc: i64, v: i32): i64 {\n  return acc + (v as i64);\n}\nexport function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const total: i64 = xs.reduce(add, 0);\n  print(`${total}`);\n}\n";
+        check_one(src).unwrap_or_else(|e| panic!("function-value callback rejected: {e:?}"));
+    }
+
+    #[test]
+    fn reduce_init_that_does_not_fit_the_accumulator_names_the_init() {
+        // A genuine mismatch still errors — against the init, which is
+        // the offending argument, not the callback.
+        let err = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const total: i64 = xs.reduce((a: i64, v: i32): i64 => a + (v as i64), \"x\");\n  print(`${total}`);\n}\n",
+        )
+        .unwrap_err();
+        assert!(
+            err[0].message.contains("`reduce` init"),
+            "{}",
+            err[0].message
+        );
+        assert_eq!(err[0].pos.line, 3);
+    }
+
+    #[test]
+    fn reduce_without_an_annotated_accumulator_still_types_from_the_init() {
+        // An un-annotated arrow does not spell `U`; `init` keeps giving
+        // it, as before (contextual typing then flows to the callback).
+        let module = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const joined: string = xs.reduce((acc, v) => acc + `${v}`, \"#\");\n  print(joined);\n}\n",
+        )
+        .expect("clean check");
+        assert_eq!(module.functions.len(), 1);
+    }
+
+    #[test]
     fn array_callback_over_value_class_elements_is_s014() {
         // Value-class elements cannot cross the runtime->script element
         // boundary (stdlib.md §9); the checker gates them.

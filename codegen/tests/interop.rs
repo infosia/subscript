@@ -256,6 +256,25 @@ fn all_patterns_composed() {
     assert_eq!(both_tiers(&prog), b"19\n");
 }
 
+/// Foreign-call arguments are evaluated left to right, like every other
+/// operand list: the receiver-shaped first argument runs before the
+/// second, whose ternary lowers to statements of its own. The dev tier
+/// marshals in argument order, so the ship tier must not let the
+/// marshaling of a later argument overtake an earlier one.
+#[test]
+fn foreign_call_arguments_run_left_to_right() {
+    let prog = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkDevice(): SubDevice {\n  note(\"D\");\n  return subDeviceCreate(null);\n}\nfunction mkLabel(): string {\n  note(\"L\");\n  return \"abc\";\n}\nexport function main(): void {\n  subDeviceSetLabel(mkDevice(), pick ? mkLabel() : \"\");\n  print(log);\n}\n";
+    assert_eq!(both_tiers(prog), b"DL\n");
+}
+
+/// A mirror boundary struct's `new` is a positional field initializer
+/// list; its fields are evaluated left to right too.
+#[test]
+fn boundary_struct_field_initializers_run_left_to_right() {
+    let prog = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkHeader(): SubChainHeader {\n  note(\"H\");\n  return new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_BASE, null);\n}\nfunction mkIntensity(): f32 {\n  note(\"I\");\n  return 1.5;\n}\nexport function main(): void {\n  const ext: SubChainExtA = new SubChainExtA(mkHeader(), pick ? mkIntensity() : 0.0, 2);\n  print(`${log}:${ext.intensity}`);\n}\n";
+    assert_eq!(both_tiers(prog), b"HI:1.5\n");
+}
+
 /// §14.2 HFA guard: a foreign call returning a pure Homogeneous
 /// Floating-point Aggregate by value (all-f32 / all-f64, 1–4 members) is
 /// returned in SIMD registers, which the dev-JIT register-return path does

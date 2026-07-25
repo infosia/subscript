@@ -1433,7 +1433,8 @@ impl<'m> Emitter<'m> {
             Type::Array(e) => (**e).clone(),
             other => return Err(format!("array method on {other:?}")),
         };
-        let h = self.eval(recv, out, depth)?;
+        // Receiver before argument (the element temp is a statement).
+        let h = self.eval_pinned(recv, out, depth)?;
         let ect = self.ctype(&elem)?;
         let pid = self.pos_id(pos);
         match name {
@@ -1465,8 +1466,11 @@ impl<'m> Emitter<'m> {
         if let hir::ExprKind::Index { obj, index } = &target.kind {
             if let Type::Array(elem) = &obj.ty {
                 let ect = self.ctype(elem)?;
-                let h = self.eval(obj, out, depth)?;
-                let idx = self.eval(index, out, depth)?;
+                // Target operands first (the dev tier evaluates the
+                // handle and the index, then the value, and only then
+                // resolves the element address — growth-safe, §N3).
+                let h = self.eval_pinned(obj, out, depth)?;
+                let idx = self.eval_pinned(index, out, depth)?;
                 let pid = self.pos_id(&target.pos);
                 match op {
                     None => {
@@ -1528,6 +1532,13 @@ impl<'m> Emitter<'m> {
 
     /// A C lvalue for an assignable place (never a dynamic-array
     /// element, which `emit_assign` handles directly).
+    ///
+    /// The returned lvalue embeds no user-visible evaluation: every
+    /// sub-expression it needs (field bases, indices) is bound to a
+    /// temporary first. So the target is evaluated before the assigned
+    /// value, as the dev tier does (`lower/func.rs`, `eval_assign` calls
+    /// `place` first), and a compound assignment may spell the place
+    /// twice without running its base twice.
     fn place(&mut self, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
         use hir::ExprKind as K;
         match &e.kind {
@@ -1541,7 +1552,7 @@ impl<'m> Emitter<'m> {
             K::Index { obj, index } => match &obj.ty {
                 Type::FixedArray(_, n) => {
                     let base = self.place(obj, out, depth)?;
-                    let idx = self.eval(index, out, depth)?;
+                    let idx = self.eval_pinned(index, out, depth)?;
                     if self.index_in_bounds(index, *n) {
                         Ok(format!("{base}.a[{idx}]"))
                     } else {
@@ -1561,7 +1572,8 @@ impl<'m> Emitter<'m> {
     }
 
     /// The base expression and member operator (`.`/`->`) for a field
-    /// access on `obj`.
+    /// access in a **place** ([`Self::place`]): the base is bound to a
+    /// temporary, so the place carries no evaluation of its own.
     fn field_base(&mut self, obj: &hir::Expr, out: &mut String, depth: usize) -> Result<(String, &'static str), String> {
         match &obj.ty {
             Type::Class(id) => {
@@ -1569,7 +1581,7 @@ impl<'m> Emitter<'m> {
                     Ok((self.place_or_eval(obj, out, depth)?, "."))
                 } else {
                     let cname = self.class_name(*id)?;
-                    let o = self.eval(obj, out, depth)?;
+                    let o = self.eval_pinned(obj, out, depth)?;
                     Ok((format!("(({cname}*)({o}))"), "->"))
                 }
             }
@@ -1579,7 +1591,9 @@ impl<'m> Emitter<'m> {
     }
 
     /// For an assignable value-class receiver, an lvalue; otherwise the
-    /// evaluated (by-value) expression wrapped so `.field` is legal.
+    /// value bound to a temporary, which is both a legal `.field` base in
+    /// C (an rvalue struct is not) and the dev tier's behaviour: the
+    /// write lands in a temporary and is correctly lost (C2).
     fn place_or_eval(&mut self, obj: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
         use hir::ExprKind as K;
         match &obj.kind {
@@ -1587,7 +1601,7 @@ impl<'m> Emitter<'m> {
                 self.place(obj, out, depth)
             }
             _ => {
-                let v = self.eval(obj, out, depth)?;
+                let v = self.eval_pinned(obj, out, depth)?;
                 Ok(format!("({v})"))
             }
         }
@@ -1669,12 +1683,85 @@ impl<'m> Emitter<'m> {
         }
     }
 
+    /// Evaluates an operand list left to right (see [`Self::eval_operands`])
+    /// and joins the results into a C argument list.
     fn eval_list(&mut self, elems: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
-        let mut parts = Vec::with_capacity(elems.len());
-        for e in elems {
-            parts.push(self.eval(e, out, depth)?);
+        let refs: Vec<&hir::Expr> = elems.iter().collect();
+        Ok(self.eval_operands(&refs, out, depth)?.join(", "))
+    }
+
+    /// Evaluates the operands of one C expression **left to right**, the
+    /// order the language and the dev tier (`lower/func.rs`) both use.
+    ///
+    /// [`Self::eval`] returns an expression string and emits its
+    /// statements separately, so a later operand's statements would
+    /// otherwise run before an earlier operand's expression; C's own
+    /// operand order is unspecified and cannot carry the guarantee. Each
+    /// operand is therefore lowered into its own statement buffer, and an
+    /// operand is bound to a temporary exactly when a **later** operand
+    /// lowered to statements — so a list whose operands are plain
+    /// expressions emits exactly what it did before, with no temporaries.
+    fn eval_operands(&mut self, exprs: &[&hir::Expr], out: &mut String, depth: usize) -> Result<Vec<String>, String> {
+        let n = exprs.len();
+        let mut bufs: Vec<String> = Vec::with_capacity(n);
+        let mut vals: Vec<String> = Vec::with_capacity(n);
+        for e in exprs {
+            let mut buf = String::new();
+            let v = self.eval(e, &mut buf, depth)?;
+            bufs.push(buf);
+            vals.push(v);
         }
-        Ok(parts.join(", "))
+        // `pin[i]`: some operand after `i` emitted statements.
+        let mut pin = vec![false; n];
+        let mut later = false;
+        for i in (0..n).rev() {
+            pin[i] = later;
+            later = later || !bufs[i].is_empty();
+        }
+        for i in 0..n {
+            out.push_str(&bufs[i]);
+            if pin[i] {
+                vals[i] = self.bind_tmp(&vals[i], exprs[i], out, depth)?;
+            }
+        }
+        Ok(vals)
+    }
+
+    /// Binds the already-emitted value `v` of `e` to a fresh temporary,
+    /// so it is computed here rather than where the expression string
+    /// lands. Constants are returned unchanged: no statement can change
+    /// them.
+    fn bind_tmp(&mut self, v: &str, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        use hir::ExprKind as K;
+        if matches!(
+            e.kind,
+            K::Int(_) | K::Float(_) | K::Bool(_) | K::Null | K::EnumMember { .. }
+        ) || e.ty == Type::Void
+        {
+            return Ok(v.to_string());
+        }
+        let ct = self.ctype(&e.ty)?;
+        let t = self.fresh_tmp();
+        let _ = writeln!(out, "{}{ct} {t} = {v};", indent(depth));
+        Ok(t)
+    }
+
+    /// Evaluates `e` and binds the value to a temporary, so it is
+    /// computed **where the statement is emitted** rather than where the
+    /// returned expression string finally lands.
+    ///
+    /// [`Self::eval`] returns an expression string; any statement emitted
+    /// afterwards therefore runs *before* that expression. A method call
+    /// evaluates its receiver before its arguments (TS/JS; the dev tier
+    /// does so by construction), so every operand an argument's
+    /// statements could overtake is pinned here first. C's own
+    /// argument-evaluation order is unspecified and cannot carry the
+    /// property.
+    ///
+    /// Constants are returned unchanged: no statement can change them.
+    fn eval_pinned(&mut self, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+        let v = self.eval(e, out, depth)?;
+        self.bind_tmp(&v, e, out, depth)
     }
 
     fn string_literal(&mut self, bytes: &[u8], pos: &Pos) -> Result<String, String> {
@@ -1690,9 +1777,25 @@ impl<'m> Emitter<'m> {
         use hir::BinOp as B;
         let operand_ty = if left.ty == Type::Null { right.ty.clone() } else { left.ty.clone() };
 
-        if operand_ty == Type::Str {
+        // `&&`/`||` short-circuit: the right operand may lower to
+        // statements, which C's `&&` cannot guard — emit the branch, as
+        // the dev tier does (`lower/func.rs`, `eval_binary`).
+        if matches!(op, B::And | B::Or) {
+            let ind = indent(depth);
             let l = self.eval(left, out, depth)?;
-            let r = self.eval(right, out, depth)?;
+            let res = self.fresh_tmp();
+            let _ = writeln!(out, "{ind}int32_t {res} = ({l}) != 0;");
+            let guard = if op == B::And { res.clone() } else { format!("!{res}") };
+            let _ = writeln!(out, "{ind}if ({guard}) {{");
+            let r = self.eval(right, out, depth + 1)?;
+            let _ = writeln!(out, "{}{res} = ({r}) != 0;", indent(depth + 1));
+            let _ = writeln!(out, "{ind}}}");
+            return Ok(res);
+        }
+
+        if operand_ty == Type::Str {
+            let ops = self.eval_operands(&[left, right], out, depth)?;
+            let (l, r) = (&ops[0], &ops[1]);
             return match op {
                 B::Add => {
                     let pid = self.pos_id(pos);
@@ -1704,8 +1807,8 @@ impl<'m> Emitter<'m> {
             };
         }
 
-        let l = self.eval(left, out, depth)?;
-        let r = self.eval(right, out, depth)?;
+        let ops = self.eval_operands(&[left, right], out, depth)?;
+        let (l, r) = (&ops[0], &ops[1]);
         let float = operand_ty.is_float();
         match op {
             B::Div if !float => {
@@ -1777,8 +1880,8 @@ impl<'m> Emitter<'m> {
     fn eval_index(&mut self, obj: &hir::Expr, index: &hir::Expr, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         match &obj.ty {
             Type::FixedArray(elem, n) => {
-                let base = self.eval(obj, out, depth)?;
-                let idx = self.eval(index, out, depth)?;
+                let ops = self.eval_operands(&[obj, index], out, depth)?;
+                let (base, idx) = (&ops[0], &ops[1]);
                 if self.index_in_bounds(index, *n) {
                     Ok(format!("({base}).a[{idx}]"))
                 } else {
@@ -1789,8 +1892,8 @@ impl<'m> Emitter<'m> {
             }
             Type::Array(elem) => {
                 let ect = self.ctype(elem)?;
-                let h = self.eval(obj, out, depth)?;
-                let idx = self.eval(index, out, depth)?;
+                let ops = self.eval_operands(&[obj, index], out, depth)?;
+                let (h, idx) = (&ops[0], &ops[1]);
                 let pid = self.pos_id(pos);
                 Ok(format!("(*({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u))"))
             }
@@ -1899,16 +2002,15 @@ impl<'m> Emitter<'m> {
                     Type::Func(ft) => (**ft).clone(),
                     other => return Err(format!("call of {other:?}")),
                 };
+                // The callee value is evaluated first (its `SubFn` temp is
+                // that binding), then the arguments left to right.
                 let fv = self.eval(v, out, depth)?;
                 let fvt = self.fresh_tmp();
                 let _ = writeln!(out, "{}SubFn {fvt} = {fv};", indent(depth));
                 let cast = self.fn_ptr_cast(&ft)?;
                 let mut parts = vec![format!("({fvt}).env")];
-                for (t, a) in ft.params.iter().zip(args) {
-                    let av = self.eval(a, out, depth)?;
-                    let _ = t;
-                    parts.push(av);
-                }
+                let argv: Vec<&hir::Expr> = ft.params.iter().zip(args).map(|(_, a)| a).collect();
+                parts.extend(self.eval_operands(&argv, out, depth)?);
                 Ok(format!("(({cast})({fvt}).code)(ctx, {})", parts.join(", ")))
             }
             hir::Callee::Method { recv, name } => self.eval_method(recv, name, args, ret_ty, pos, out, depth),
@@ -1968,6 +2070,7 @@ impl<'m> Emitter<'m> {
                 if args.len() != 1 + f.params().len() {
                     return Err(format!("{} arity (checker normalizes)", f.name()));
                 }
+                // Receiver first, then the parameters, left to right.
                 let argv = self.eval_list(args, out, depth)?;
                 let call = if f.takes_pos_id() {
                     let pid = self.pos_id(pos);
@@ -1992,8 +2095,10 @@ impl<'m> Emitter<'m> {
     }
 
     /// Emits an `Array` method intrinsic call (stdlib.md §9, Q22). The
-    /// in-place methods (`fill`, `reverse`, `sort`) bind the receiver
-    /// handle to a temporary and yield it as the expression's value.
+    /// receiver is pinned to a temporary before any argument statement is
+    /// emitted, so both tiers evaluate receiver-then-arguments
+    /// ([`Self::eval_pinned`]); the in-place methods (`fill`, `reverse`,
+    /// `sort`) then yield that same temporary as the expression's value.
     fn eval_arr_call(&mut self, f: hir::ArrFn, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         use hir::ArrFn as A;
         let ind = indent(depth);
@@ -2002,7 +2107,7 @@ impl<'m> Emitter<'m> {
             Type::Array(e) => (**e).clone(),
             other => return Err(format!("array method on {other:?}")),
         };
-        let h = self.eval(recv, out, depth)?;
+        let h = self.eval_pinned(recv, out, depth)?;
         let arg_at = |args: &[hir::Expr], i: usize| -> Result<hir::Expr, String> {
             args.get(i)
                 .cloned()
@@ -2031,31 +2136,27 @@ impl<'m> Emitter<'m> {
                 Ok(format!("{sym}(ctx, {h}, {sep}, {kind}u, {pid}u)"))
             }
             A::Slice => {
-                let start = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let start = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
                 let end = self.eval(&arg_at(args, 2)?, out, depth)?;
                 let pid = self.pos_id(pos);
                 Ok(format!("{sym}(ctx, {h}, {start}, {end}, {pid}u)"))
             }
             A::Fill => {
-                // Bind the receiver once: it is both the call operand
-                // and the expression's value (in place, §9).
-                let th = self.fresh_tmp();
-                let _ = writeln!(out, "{ind}void* {th} = {h};");
+                // The receiver is already pinned and is also the
+                // expression's value (in place, §9).
                 let ect = self.ctype(&elem)?;
-                let x = self.eval(&arg_at(args, 1)?, out, depth)?;
-                let start = self.eval(&arg_at(args, 2)?, out, depth)?;
+                let x = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
+                let start = self.eval_pinned(&arg_at(args, 2)?, out, depth)?;
                 let end = self.eval(&arg_at(args, 3)?, out, depth)?;
                 let _ = writeln!(
                     out,
-                    "{ind}{{ {ect} _e = {x}; {sym}(ctx, {th}, &_e, {start}, {end}); }}"
+                    "{ind}{{ {ect} _e = {x}; {sym}(ctx, {h}, &_e, {start}, {end}); }}"
                 );
-                Ok(th)
+                Ok(h)
             }
             A::Reverse => {
-                let th = self.fresh_tmp();
-                let _ = writeln!(out, "{ind}void* {th} = {h};");
-                let _ = writeln!(out, "{ind}{sym}(ctx, {th});");
-                Ok(th)
+                let _ = writeln!(out, "{ind}{sym}(ctx, {h});");
+                Ok(h)
             }
             A::Concat => {
                 let other = self.eval(&arg_at(args, 1)?, out, depth)?;
@@ -2081,13 +2182,11 @@ impl<'m> Emitter<'m> {
             }
             A::Sort => {
                 let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
-                let th = self.fresh_tmp();
-                let _ = writeln!(out, "{ind}void* {th} = {h};");
                 let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
-                let _ = writeln!(out, "{ind}{sym}(ctx, {th}, {tf}.code, {tf}.env, {kind}u);");
-                Ok(th)
+                let _ = writeln!(out, "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u);");
+                Ok(h)
             }
             A::Map => {
                 let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
@@ -2172,9 +2271,33 @@ impl<'m> Emitter<'m> {
         let ff = self.module.foreign_fns.iter().find(|f| f.name == name)
             .ok_or_else(|| format!("unknown foreign function `{name}`"))?
             .clone();
-        let mut parts = Vec::new();
+        // Arguments are marshaled left to right (the dev tier marshals in
+        // argument order). Each lands in its own statement buffer; an
+        // argument whose marshaled form is not already a read of bound
+        // temporaries is bound when a later argument emitted statements.
+        let mut bufs: Vec<String> = Vec::new();
+        let mut parts: Vec<String> = Vec::new();
+        let mut pin_cts: Vec<Option<String>> = Vec::new();
         for (p, a) in ff.params.iter().zip(args) {
-            parts.push(self.marshal_foreign_c_arg(&p.ty, a, out, depth)?);
+            let mut buf = String::new();
+            let (expr, pin_ct) = self.marshal_foreign_c_arg(&p.ty, a, &mut buf, depth)?;
+            bufs.push(buf);
+            parts.push(expr);
+            pin_cts.push(pin_ct);
+        }
+        let mut later = false;
+        let mut pin = vec![false; parts.len()];
+        for i in (0..parts.len()).rev() {
+            pin[i] = later;
+            later = later || !bufs[i].is_empty();
+        }
+        for i in 0..parts.len() {
+            out.push_str(&bufs[i]);
+            if let (true, Some(ct)) = (pin[i], pin_cts[i].clone()) {
+                let t = self.fresh_tmp();
+                let _ = writeln!(out, "{}{ct} {t} = {};", indent(depth), parts[i]);
+                parts[i] = t;
+            }
         }
         let call = format!("{name}({})", parts.join(", "));
         // A by-value boundary-struct return (§14.2): the C compiler performs
@@ -2198,15 +2321,26 @@ impl<'m> Emitter<'m> {
 
     /// Marshals one argument of a foreign call to a C expression (Q13),
     /// emitting any needed temporaries into `out`.
-    fn marshal_foreign_c_arg(&mut self, pty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    ///
+    /// Returns the expression and, when that expression still evaluates
+    /// something of its own, the C type it can be bound to so the caller
+    /// can fix its evaluation order. `None` means the expression only
+    /// reads temporaries this function already bound (or immutable
+    /// state), so where it is evaluated cannot be observed.
+    fn marshal_foreign_c_arg(&mut self, pty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<(String, Option<String>), String> {
         let ind = indent(depth);
         match pty {
             Type::Str => {
+                // Strings are immutable, so the data/length reads below
+                // are stable wherever they land.
                 let h = self.eval(arg, out, depth)?;
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
-                Ok(format!(
-                    "((SubStringView){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
+                Ok((
+                    format!(
+                        "((SubStringView){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
+                    ),
+                    None,
                 ))
             }
             Type::Array(elem) => {
@@ -2225,12 +2359,19 @@ impl<'m> Emitter<'m> {
                 let h = self.eval(arg, out, depth)?;
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
-                Ok(format!(
-                    "(({desc}){{ {elem_cast}sub_rt_array_data(ctx, {t}), (size_t)sub_rt_array_len(ctx, {t}) }})"
-                ))
+                // The data pointer and count are read here, not at the
+                // call: a later argument may grow the array and move its
+                // storage, and the dev tier reads them at this point.
+                let d = self.fresh_tmp();
+                let n = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}const void* {d} = sub_rt_array_data(ctx, {t});");
+                let _ = writeln!(out, "{ind}size_t {n} = (size_t)sub_rt_array_len(ctx, {t});");
+                Ok((format!("(({desc}){{ {elem_cast}{d}, {n} }})"), None))
             }
             Type::Class(id) if self.is_value_class(*id)? => {
-                self.marshal_boundary_c_struct(*id, arg, out, depth)
+                let header = self.class(*id)?.name.clone();
+                let expr = self.marshal_boundary_c_struct(*id, arg, out, depth)?;
+                Ok((expr, Some(header)))
             }
             _ if self.is_boundary_struct_ptr(pty)? => {
                 // Struct | null pointer: address of a value struct's
@@ -2243,9 +2384,13 @@ impl<'m> Emitter<'m> {
                 let cast = self.boundary_ptr_cast(pty)?
                     .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
                 let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
-                Ok(format!("({cast})({expr})"))
+                Ok((format!("({cast})({expr})"), Some(cast)))
             }
-            _ => self.eval(arg, out, depth),
+            _ => {
+                let v = self.eval(arg, out, depth)?;
+                let ct = self.ctype(pty)?;
+                Ok((v, Some(ct)))
+            }
         }
     }
 
@@ -2333,29 +2478,32 @@ impl<'m> Emitter<'m> {
         self.eval(arg, out, depth)
     }
 
+    /// The argument list of a script call: the declared arguments, with
+    /// each omitted optional filled by its default, evaluated left to
+    /// right ([`Self::eval_operands`]).
     fn call_args(&mut self, params: &[hir::Param], args: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
-        let mut parts = Vec::new();
+        let mut exprs: Vec<&hir::Expr> = Vec::with_capacity(params.len());
         for (i, p) in params.iter().enumerate() {
-            let text = match args.get(i) {
-                Some(a) => self.eval(a, out, depth)?,
-                None => {
-                    let d = p.default.as_ref().ok_or_else(|| format!("missing argument `{}`", p.name))?;
-                    self.eval(d, out, depth)?
-                }
-            };
-            parts.push(text);
+            exprs.push(match args.get(i) {
+                Some(a) => a,
+                None => p
+                    .default
+                    .as_ref()
+                    .ok_or_else(|| format!("missing argument `{}`", p.name))?,
+            });
         }
-        Ok(parts.join(", "))
+        Ok(self.eval_operands(&exprs, out, depth)?.join(", "))
     }
 
     fn eval_method(&mut self, recv: &hir::Expr, name: &str, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         match recv.ty.clone() {
             Type::Str => {
-                let h = self.eval(recv, out, depth)?;
                 if name != "slice" {
                     return Err(format!("string method `{name}`"));
                 }
-                let a0 = self.eval(args.first().ok_or("slice arity")?, out, depth)?;
+                // Receiver, then arguments left to right (`eval_pinned`).
+                let h = self.eval_pinned(recv, out, depth)?;
+                let a0 = self.eval_pinned(args.first().ok_or("slice arity")?, out, depth)?;
                 let a1 = self.eval(args.get(1).ok_or("slice arity")?, out, depth)?;
                 let pid = self.pos_id(pos);
                 Ok(format!("sub_rt_str_slice(ctx, {h}, {a0}, {a1}, {pid}u)"))
@@ -2390,13 +2538,30 @@ impl<'m> Emitter<'m> {
                 let m = self.hir_method(cid.0, name)?;
                 // C2: a value receiver is passed by pointer to its
                 // storage (so a mutating method mutates the receiver); a
-                // reference receiver passes its handle.
-                let recv_c = if self.is_value_class(cid)? {
-                    self.value_recv_ptr(recv, cid, out, depth)?
+                // reference receiver passes its handle. The receiver is
+                // evaluated before the arguments (the dev tier evaluates
+                // it first, then `push_args`), so it is bound to a
+                // temporary whenever an argument lowers to statements.
+                let mut rbuf = String::new();
+                let mut recv_c = if self.is_value_class(cid)? {
+                    self.value_recv_ptr(recv, cid, &mut rbuf, depth)?
                 } else {
-                    self.eval(recv, out, depth)?
+                    self.eval(recv, &mut rbuf, depth)?
                 };
-                let argv = self.call_args(&m.params.clone(), args, out, depth)?;
+                let mut abuf = String::new();
+                let argv = self.call_args(&m.params.clone(), args, &mut abuf, depth)?;
+                out.push_str(&rbuf);
+                if !abuf.is_empty() {
+                    let ct = if self.is_value_class(cid)? {
+                        format!("{}*", self.class_name(cid)?)
+                    } else {
+                        "void*".to_string()
+                    };
+                    let t = self.fresh_tmp();
+                    let _ = writeln!(out, "{}{ct} {t} = {recv_c};", indent(depth));
+                    recv_c = t;
+                }
+                out.push_str(&abuf);
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let _ = ret_ty;
                 Ok(format!("ss_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name)))
@@ -2446,9 +2611,33 @@ impl<'m> Emitter<'m> {
                     c.name, fields.len(), args.len()
                 ));
             }
-            let mut parts = Vec::new();
+            // Field initializers run left to right, like any other
+            // operand list: each into its own buffer, binding an earlier
+            // one when a later one lowered to statements.
+            let mut bufs: Vec<String> = Vec::new();
+            let mut parts: Vec<String> = Vec::new();
             for (i, field) in fields.iter().enumerate() {
-                parts.push(self.boundary_field_init(&field.ty, &args[i], out, depth)?);
+                let mut buf = String::new();
+                parts.push(self.boundary_field_init(&field.ty, &args[i], &mut buf, depth)?);
+                bufs.push(buf);
+            }
+            let mut pin = vec![false; parts.len()];
+            let mut later = false;
+            for i in (0..parts.len()).rev() {
+                pin[i] = later;
+                later = later || !bufs[i].is_empty();
+            }
+            for i in 0..parts.len() {
+                out.push_str(&bufs[i]);
+                if pin[i] {
+                    let ct = match self.boundary_ptr_cast(&fields[i].ty)? {
+                        Some(cast) => cast,
+                        None => self.ctype(&fields[i].ty)?,
+                    };
+                    let t = self.fresh_tmp();
+                    let _ = writeln!(out, "{}{ct} {t} = {};", indent(depth), parts[i]);
+                    parts[i] = t;
+                }
             }
             return Ok(format!("(({cname}){{ {} }})", parts.join(", ")));
         }

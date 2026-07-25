@@ -267,8 +267,10 @@ unsafe fn read_uint(p: *const u8, size: usize) -> u64 {
 ///
 /// # Safety
 ///
-/// `p` and `x` are readable for `size` bytes; string handles are live
-/// handles of `ctx` (or null).
+/// `p` and `x` are readable for `size` bytes; `(kind, size)` is a shape
+/// [`abi_of`] accepts (the searches check it once, before the loop, as
+/// the callback operations do); string handles are live handles of
+/// `ctx` (or null).
 unsafe fn elem_eq(ctx: *mut Context, kind: ElemKind, size: usize, p: *const u8, x: *const u8) -> bool {
     match kind {
         ElemKind::Int => {
@@ -308,6 +310,13 @@ pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKi
     }
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    // An element shape the code generators never produce is an internal
+    // trap, not a silent comparison — the same guard the callback
+    // operations apply (compiler↔runtime version skew).
+    // SAFETY: caller contract.
+    if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
+        return -1;
+    }
     for i in 0..n {
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
@@ -330,6 +339,11 @@ pub unsafe fn last_index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: E
     }
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    // As `index_of`: an unsupported element shape traps.
+    // SAFETY: caller contract.
+    if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
+        return -1;
+    }
     for i in (0..n).rev() {
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
@@ -1476,6 +1490,34 @@ mod tests {
             unsafe { &mut *ctx }.trap(TrapKind::IndexOutOfBounds, "reduce trap", 9);
         }
         acc + f64::from(v)
+    }
+
+    #[test]
+    fn unknown_abi_shape_traps_in_the_equality_searches() {
+        // P11 review MINOR 2: the searches validate the element shape
+        // exactly as the callback entries do. Two 3-byte elements have
+        // no ABI class; comparing them as zero-extended words would
+        // report them *equal*, so the entry traps and misses instead.
+        let mut c = ctx();
+        let p: *mut Context = &mut *c;
+        let h = c.array_new(3, 0);
+        let (a, b) = ([1u8, 2, 3], [4u8, 5, 6]);
+        // SAFETY: live 3-byte-element array; sources readable for 3 bytes.
+        unsafe {
+            c.array_push(h, a.as_ptr(), 0);
+            c.array_push(h, b.as_ptr(), 0);
+            assert_eq!(index_of(p, h, b.as_ptr(), ElemKind::Int), -1);
+        }
+        assert!(c.trapped());
+        assert_eq!(c.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
+        c.clear_trap();
+        // SAFETY: as above.
+        unsafe {
+            assert_eq!(last_index_of(p, h, a.as_ptr(), ElemKind::Int), -1);
+            assert_eq!(includes(p, h, a.as_ptr(), ElemKind::Int), 0);
+        }
+        assert!(c.trapped());
+        assert_eq!(c.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
     }
 
     #[test]

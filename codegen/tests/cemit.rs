@@ -29,6 +29,23 @@ fn assert_tiers_agree(src: &str) {
     );
 }
 
+/// Asserts both tiers print exactly `expected`. Used where cross-tier
+/// equality alone cannot see the fault — a wrong result both tiers would
+/// share (aliasing, formatting).
+fn assert_tiers_print(src: &str, expected: &str) {
+    let files = [SourceFile::new("test.ts", src)];
+    for (tier, out) in [
+        ("dev-JIT", run_jit(&files).expect("dev-JIT run")),
+        ("ship-C-AOT", run_c_aot(&files).expect("ship-C-AOT run")),
+    ] {
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            expected,
+            "{tier} printed unexpected bytes"
+        );
+    }
+}
+
 // ----- P4.3 phase-review regressions (dev-JIT ≡ ship-C-AOT) -----
 
 #[test]
@@ -251,6 +268,289 @@ fn array_methods_match_across_tiers_without_a_golden() {
     // comparator (C5: non-escaping, legal as a callback).
     assert_tiers_agree(
         "export function main(): void {\n  const xs: i32[] = [3, 1, 2];\n  const pred: (v: i32) => boolean = (v: i32): boolean => v > 1;\n  print(`${xs.filter(pred).length} ${xs.findIndex(pred)}`);\n  const pivot: i32 = 2;\n  xs.sort((a: i32, b: i32): i32 => (a === pivot ? -1 : a) - (b === pivot ? -1 : b));\n  print(xs.slice(0).concat(xs).join(\",\"));\n}\n",
+    );
+}
+
+/// Asserts both tiers abort an `Array` callback method with the same
+/// out-of-bounds trap tuple (kind, message, position) — stdlib.md §9's
+/// callback-trap rule, for the methods the `map` test above does not
+/// cover.
+fn assert_callback_trap_identical(src: &str, line: u32) {
+    let files = [SourceFile::new("test.ts", src)];
+    let mut reports = Vec::new();
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
+                assert_eq!(t.pos.file, "test.ts", "{tier}");
+                assert_eq!(t.pos.line, line, "{tier}");
+                reports.push((t.rule, t.message, t.pos));
+            }
+            other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
+fn array_trapping_callbacks_report_identically_across_tiers() {
+    // The remaining seven closure methods (`map` has its own test): a
+    // callback that indexes past the end aborts the iteration in the
+    // shared runtime and surfaces the identical trap tuple on both
+    // tiers. `sort`'s additional §9 guarantee — a comparator trap
+    // leaves the receiver byte-identical — is not observable in-language
+    // (the trap returns from the function), so it is pinned in the
+    // shared runtime instead (`arrops.rs`, `callback_traps_abort_...`).
+    const PROLOGUE: &str = "let sink: i32 = 0;\nexport function main(): void {\n  const xs: i32[] = [1, 2, 3];\n";
+    for call in [
+        "xs.forEach((v: i32): void => { sink = sink + xs[v + 1]; });",
+        "sink = xs.filter((v: i32): boolean => xs[v + 1] > 0).length;",
+        "sink = xs.reduce((acc: i32, v: i32): i32 => acc + xs[v + 1], 0);",
+        "sink = xs.some((v: i32): boolean => xs[v + 1] > 5) ? 1 : 0;",
+        "sink = xs.every((v: i32): boolean => xs[v + 1] > 0) ? 1 : 0;",
+        "sink = xs.findIndex((v: i32): boolean => xs[v + 1] > 5);",
+        "sink = xs.sort((a: i32, b: i32): i32 => xs[a + b] - 1).length;",
+    ] {
+        assert_callback_trap_identical(&format!("{PROLOGUE}  {call}\n  print(`${{sink}}`);\n}}\n"), 4);
+    }
+}
+
+#[test]
+fn array_callback_growth_during_iteration_is_defined_on_both_tiers() {
+    // The callback pushes while the runtime iterates the receiver, well
+    // past the initial capacity, so the storage moves; the runtime
+    // re-resolves the element pointer per element (`arrops.rs`
+    // `read_elem`). The result is defined and identical on both tiers.
+    assert_tiers_print(
+        "let seen: i32 = 0;\nexport function main(): void {\n  const xs: i32[] = [];\n  let i: i32 = 0;\n  while (i < 8) {\n    xs.push(i);\n    i = i + 1;\n  }\n  xs.forEach((v: i32): void => {\n    seen = seen + v;\n    xs.push(v + 100);\n  });\n  const doubled: i32[] = xs.map((v: i32): i32 => {\n    xs.push(v);\n    return v * 2;\n  });\n  print(`${seen} ${xs.length} ${doubled.length} ${doubled[0]} ${doubled[15]}`);\n}\n",
+        "28 32 16 0 214\n",
+    );
+}
+
+#[test]
+fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
+    // stdlib.md §9: the in-place methods return the receiver. Mutating
+    // through the returned handle must be visible through the original
+    // one — a44/a45 cannot tell a fresh copy from the receiver, so the
+    // expected bytes are asserted here rather than only cross-tier
+    // agreement.
+    assert_tiers_print(
+        "export function main(): void {\n  const xs: i32[] = [];\n  xs.push(3);\n  xs.push(1);\n  xs.push(2);\n  const rev: i32[] = xs.reverse();\n  rev.push(9);\n  print(xs.join(\",\"));\n  const filled: i32[] = xs.fill(7, 0, 1);\n  filled.push(8);\n  print(xs.join(\",\"));\n  const sorted: i32[] = xs.sort((a: i32, b: i32): i32 => a - b);\n  sorted.push(0);\n  print(`${xs.join(\",\")} ${xs.length}`);\n}\n",
+        "2,1,3,9\n7,1,3,9,8\n1,3,7,8,9,0 6\n",
+    );
+}
+
+#[test]
+fn join_prints_negative_zero_as_the_q14_rules_require() {
+    // Q14 formatting, not the host's: `-0` keeps its sign in `join`
+    // exactly as in interpolation. Node 24.18.0 prints `0.1,2.5,0` for
+    // the same array (run 2026-07-25) — a recorded divergence, and one
+    // no committed golden pins.
+    assert_tiers_print(
+        "export function main(): void {\n  const xs: f64[] = [0.1, 2.5, -0];\n  print(xs.join(\",\"));\n}\n",
+        "0.1,2.5,-0\n",
+    );
+}
+
+// ----- P11 phase-review regressions: evaluation order (CRITICAL 1) -----
+//
+// TS/JS evaluate a method call's receiver before its arguments. The dev
+// JIT does so by construction (SSA order); the ship tier must bind the
+// receiver to a temporary before it emits any argument statement, or C's
+// statement order runs the argument first. Each program below logs the
+// order it observed, so the two tiers disagree unless the property holds.
+
+#[test]
+fn array_needle_method_evaluates_the_receiver_before_the_argument() {
+    assert_tiers_print(
+        "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nfunction mkNeedle(): i32 {\n  log = log + \"N\";\n  return 2;\n}\nexport function main(): void {\n  const r: i32 = mkArr().indexOf(mkNeedle());\n  print(`${log}:${r}`);\n}\n",
+        "RN:1\n",
+    );
+}
+
+#[test]
+fn array_closure_method_evaluates_the_receiver_before_the_callback() {
+    assert_tiers_print(
+        "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nfunction big(v: i32): boolean {\n  return v > 1;\n}\nfunction mkPred(): (v: i32) => boolean {\n  log = log + \"P\";\n  return big;\n}\nexport function main(): void {\n  const kept: i32[] = mkArr().filter(mkPred());\n  print(`${log}:${kept.length}`);\n}\n",
+        "RP:1\n",
+    );
+}
+
+#[test]
+fn array_reduce_evaluates_receiver_then_callback_then_init() {
+    assert_tiers_print(
+        "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nfunction add(acc: i32, v: i32): i32 {\n  return acc + v;\n}\nfunction mkStep(): (acc: i32, v: i32) => i32 {\n  log = log + \"F\";\n  return add;\n}\nfunction mkInit(): i32 {\n  log = log + \"I\";\n  return 10;\n}\nexport function main(): void {\n  const total: i32 = mkArr().reduce(mkStep(), mkInit());\n  print(`${log}:${total}`);\n}\n",
+        "RFI:13\n",
+    );
+}
+
+#[test]
+fn array_push_evaluates_the_receiver_before_the_argument() {
+    assert_tiers_print(
+        "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  return a;\n}\nfunction mkVal(): i32 {\n  log = log + \"V\";\n  return 5;\n}\nexport function main(): void {\n  mkArr().push(mkVal());\n  print(log);\n}\n",
+        "RV\n",
+    );
+}
+
+#[test]
+fn string_method_evaluates_the_receiver_before_the_argument() {
+    // The argument emits statements of its own (`reverse` is an in-place
+    // call statement), so an unbound receiver expression would land in
+    // the call after them.
+    assert_tiers_print(
+        "let log: string = \"\";\nfunction mkStr(): string {\n  log = log + \"R\";\n  return \"2,1\";\n}\nfunction mkArr(): i32[] {\n  log = log + \"A\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nexport function main(): void {\n  const hit: boolean = mkStr().includes(mkArr().reverse().join(\",\"));\n  print(`${log}:${hit}`);\n}\n",
+        "RA:true\n",
+    );
+}
+
+// ----- evaluation order: the remaining operand sites -----
+//
+// The same property as the array/string sites above, one test per site
+// class: every sub-expression of one C expression is evaluated left to
+// right, matching the dev tier (`lower/func.rs`), instead of resting on
+// C's unspecified operand order.
+//
+// The right-hand operand is spelled `pick ? mkR() : 0` on purpose: a
+// ternary lowers to `if`/`else` **statements**, so its side effect is
+// hoisted above the enclosing C expression unless the operands to its
+// left are bound first. That makes the order deterministic to observe —
+// a plain call as the operand would only measure whichever order the C
+// compiler happens to pick today.
+
+/// Side-effecting helpers shared by the order tests: each appends its
+/// tag to `log`, so the printed log is the observed evaluation order.
+const ORDER_PRELUDE: &str = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkL(): i32 {\n  note(\"L\");\n  return 1;\n}\nfunction mkR(): i32 {\n  note(\"R\");\n  return 2;\n}\nfunction take(a: i32, b: i32): i32 {\n  return a * 10 + b;\n}\n";
+
+/// A program built on [`ORDER_PRELUDE`], asserted on both tiers.
+fn assert_order(body: &str, expected: &str) {
+    assert_tiers_print(&format!("{ORDER_PRELUDE}{body}"), expected);
+}
+
+#[test]
+fn user_function_arguments_run_left_to_right() {
+    assert_order(
+        "export function main(): void {\n  const r: i32 = take(mkL(), pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "LR:12\n",
+    );
+}
+
+#[test]
+fn indirect_call_arguments_run_left_to_right() {
+    assert_order(
+        "export function main(): void {\n  const f: (a: i32, b: i32) => i32 = take;\n  const r: i32 = f(mkL(), pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "LR:12\n",
+    );
+}
+
+#[test]
+fn reference_class_method_receiver_runs_before_its_argument() {
+    assert_order(
+        "class Box {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkBox(): Box {\n  note(\"B\");\n  return new Box(10);\n}\nexport function main(): void {\n  const r: i32 = mkBox().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "BR:12\n",
+    );
+}
+
+#[test]
+fn value_class_method_receiver_runs_before_its_argument() {
+    assert_order(
+        "@value\nclass P {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkP(): P {\n  note(\"P\");\n  return new P(10);\n}\nexport function main(): void {\n  const r: i32 = mkP().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "PR:12\n",
+    );
+}
+
+#[test]
+fn constructor_arguments_run_left_to_right() {
+    assert_order(
+        "class Pair {\n  a: i32;\n  b: i32;\n  constructor(a: i32, b: i32) {\n    this.a = a;\n    this.b = b;\n  }\n}\nexport function main(): void {\n  const p: Pair = new Pair(mkL(), pick ? mkR() : 0);\n  print(`${log}:${p.a}${p.b}`);\n}\n",
+        "LR:12\n",
+    );
+}
+
+#[test]
+fn math_arguments_run_left_to_right() {
+    assert_order(
+        "export function main(): void {\n  const r: f64 = Math.max(mkL() as f64, (pick ? mkR() : 0) as f64);\n  print(`${log}:${r}`);\n}\n",
+        "LR:2\n",
+    );
+}
+
+#[test]
+fn date_utc_arguments_run_left_to_right() {
+    assert_order(
+        "export function main(): void {\n  const ms: i64 = Date.UTC(2000, mkL(), pick ? mkR() : 0);\n  print(`${log}:${new Date(ms).toISOString()}`);\n}\n",
+        "LR:2000-02-02T00:00:00.000Z\n",
+    );
+}
+
+#[test]
+fn binary_operands_run_left_to_right() {
+    assert_order(
+        "export function main(): void {\n  const r: i32 = mkL() + (pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "LR:3\n",
+    );
+}
+
+#[test]
+fn index_operands_run_left_to_right() {
+    assert_order(
+        "function mkArr(): i32[] {\n  note(\"A\");\n  const a: i32[] = [];\n  a.push(7);\n  a.push(8);\n  return a;\n}\nexport function main(): void {\n  const r: i32 = mkArr()[(pick ? mkR() : 0) - 1];\n  print(`${log}:${r}`);\n}\n",
+        "AR:8\n",
+    );
+}
+
+#[test]
+fn array_element_store_evaluates_the_target_before_the_value() {
+    assert_order(
+        "function mkArr(): i32[] {\n  note(\"A\");\n  const a: i32[] = [];\n  a.push(7);\n  a.push(8);\n  return a;\n}\nexport function main(): void {\n  mkArr()[0] = pick ? mkR() : 0;\n  print(log);\n}\n",
+        "AR\n",
+    );
+}
+
+#[test]
+fn field_store_evaluates_the_target_base_before_the_value() {
+    assert_order(
+        "class Box {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n}\nfunction mkBox(): Box {\n  note(\"B\");\n  return new Box(0);\n}\nexport function main(): void {\n  mkBox().n = pick ? mkR() : 0;\n  print(log);\n}\n",
+        "BR\n",
+    );
+}
+
+#[test]
+fn compound_assignment_evaluates_the_target_base_once() {
+    // `mkBox().n += …` calls `mkBox` exactly once, as the dev tier does;
+    // an unpinned place is spelled twice in the emitted C.
+    assert_order(
+        "class Box {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n}\nfunction mkBox(): Box {\n  note(\"B\");\n  return new Box(5);\n}\nexport function main(): void {\n  mkBox().n += mkL();\n  print(log);\n}\n",
+        "BL\n",
+    );
+}
+
+#[test]
+fn fixed_array_literal_elements_run_left_to_right() {
+    assert_order(
+        "export function main(): void {\n  const fa: FixedArray<i32, 2> = [mkL(), pick ? mkR() : 0];\n  print(`${log}:${fa[0]}${fa[1]}`);\n}\n",
+        "LR:12\n",
+    );
+}
+
+#[test]
+fn short_circuit_operands_do_not_run_the_skipped_side() {
+    // `&&`/`||` skip the right operand entirely (the dev tier branches).
+    // The right operand here lowers to statements, which must not be
+    // hoisted out of the branch in the ship tier.
+    assert_order(
+        "export function main(): void {\n  const off: boolean = mkL() > 100;\n  const both: boolean = off && (pick ? mkR() : 0) > 0;\n  const either: boolean = !off || (pick ? mkR() : 0) > 0;\n  print(`${log}:${both}${either}`);\n}\n",
+        "L:falsetrue\n",
+    );
+}
+
+#[test]
+fn short_circuit_in_a_loop_condition_re_runs_per_iteration() {
+    // The branch lowering above sits inside the loop, so the condition
+    // is re-evaluated each iteration and still guards its right operand:
+    // the last test would index out of bounds if `&&` did not stop.
+    assert_tiers_print(
+        "export function main(): void {\n  const xs: i32[] = [];\n  xs.push(1);\n  xs.push(2);\n  xs.push(3);\n  let i: i32 = 0;\n  let sum: i32 = 0;\n  while (i < xs.length && xs[i] < 3) {\n    sum = sum + xs[i];\n    i = i + 1;\n  }\n  let j: i32 = 0;\n  let seen: i32 = 0;\n  while (j >= xs.length || xs[j] > 0) {\n    seen = seen + 1;\n    j = j + 1;\n    if (j > 2) {\n      break;\n    }\n  }\n  print(`${i} ${sum} ${j} ${seen}`);\n}\n",
+        "2 3 3 3\n",
     );
 }
 
