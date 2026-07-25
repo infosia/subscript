@@ -586,6 +586,20 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   obligation, stated rather than hidden. `ok` is `false` both for
   malformed text and for well-formed text that does not match `T`.
 
+  **Integer `parse` targets are converted from the number's text, not
+  through `f64`** — an `i64` target given `9007199254740993` yields
+  that value, not `…92`. The stage-2 implementation initially routed
+  every number through `f64` before consulting the target, returning a
+  different integer with `ok = true`; that is the silently-wrong class
+  this register refuses elsewhere. `f32`/`f64` targets keep the `f64`
+  path, where the inexactness belongs to the type.
+
+  **`Date` is rejected as a `parse` target** (S014) while staying a
+  `stringify` output: it serializes to an untagged ISO string that no
+  parser can distinguish from a `string` field of the same text, so
+  the target is unreachable by construction — the shape this register
+  refused for a literal `NaN` `Map` key.
+
   **`Map`/`Set` are rejected as `stringify` input**, not serialized:
   JS gives `{}` for both, a silently empty result for a container the
   program filled, and any other shape would be a divergence invented

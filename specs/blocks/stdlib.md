@@ -994,6 +994,43 @@ under §13.3, means a document containing it **fails to parse into any
 `JSON.parse` requires a target type. A call whose result has no
 contextual type is S014: the checker has nothing to monomorphize.
 
+**Integer targets are parsed from the number's text, not through
+`f64`.** *(Added 2026-07-26 — the stage-2 implementation routed every
+JSON number through `f64` before consulting the target type, so
+`JSON.parse<i64>("9007199254740993")` returned `…92` with `ok = true`.
+The orchestrator's review caught it.)* For an `i8`…`u64` target the
+text is converted directly and exactly; `ok` is `false` if it is not
+an integer or does not fit. `f32`/`f64` targets keep the `f64` path,
+where inexactness is the type's, not the parser's:
+`JSON.parse<f64>("9007199254740993")` yielding `…92` is correct and
+`JSON.parse<i64>` of the same text yielding `…92` was not.
+
+**`Date` is rejected as a `parse` target (S014)**, while staying
+accepted for `stringify`. A `Date` serializes to an untagged ISO
+string, which no parser can tell from a `string` field holding the
+same text, so the target is **unreachable by construction** — every
+call would return `ok = false`. That is the shape Q24 originally had
+with a literal `NaN` `Map` key, insertable and never retrievable, and
+which Q24 rejected at compile time for that reason.
+
+#### 13.4a What round-trips, and what cannot
+
+*(Corrected 2026-07-26. §13.5 pre-registered "a round-trip entry
+(`parse(stringify(x))` equal to `x`)", which is too broad — two
+families cannot satisfy it, and the contract asserted they could.)*
+
+`parse(stringify(x)) === x` holds for every serializable family
+**except**:
+
+- **`-0`**, because §13.3 has `stringify` emit `0`. The sign is lost
+  in serialization, not in parsing, and this is the decision §13.3
+  made deliberately.
+- **`Date`**, which is not a `parse` target at all, per the rule
+  above.
+
+The round-trip corpus entry covers the families that do round-trip and
+shows `-0` returning as `0` rather than omitting the case.
+
 ### 13.5 Corpus and gate (pre-registered)
 
 Accept (continue `aNN`): a `stringify` battery over each serializable
@@ -1001,9 +1038,9 @@ kind — scalars, `string` with the escape set (§13.2a), `boolean`,
 `Date`, nested `T[]`,
 `FixedArray`, a `@CStruct`, a reference class, and `Ref | null` with
 both a value and `null` — with the golden generated from node and
-`cmp`-verified; a round-trip entry (`parse(stringify(x))` equal to
-`x`); a `parse` battery covering success, malformed input, a
-type-mismatched document, a duplicate key, and `-0`.
+`cmp`-verified; a round-trip entry (§13.4a); a `parse` battery
+covering success, malformed input, a type-mismatched document, a
+duplicate key, and `-0`.
 
 Reject: `stringify` of a `Map`, a `Set`, an `object` and a function
 type; a `parse` with no contextual type — each S014 at a pinned

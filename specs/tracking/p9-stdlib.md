@@ -955,3 +955,57 @@ U+0080, U+2028, U+2029 and `/` all pass through unescaped. Recorded as
 This is the same failure the P18 review named five times: a
 pre-registration asserting something no measurement had checked. The
 contract now carries the measured set and says so.
+
+## P13 stage 2 — `JSON.parse` (2026-07-26). P13 implementation complete
+
+Implemented. `JsonResult<T>` is an ambient generic reference class on
+Q24's machinery; the prelude declares it with a private constructor so
+`JSON.parse<T>(text): JsonResult<T>` is `tsc`-clean. Parsing validates
+the whole document before constructing any language value, so a
+failure returns `ok = false` with no partial result and no trap —
+which is what §13.4 required and the reason it was chosen over
+trapping.
+
+Corpus `a70-json-roundtrip`, `a71-json-parse`, `r60-json-parse-no-context`,
+`r61-json-parse-date`. Node-comparable lines `cmp`-verified against
+v24.18.0; the `ok`-flag lines are contract-derived, JS having no
+`JsonResult`, no static `T` validation and no `unsafeDelete`. No
+pre-existing `.expected` moved.
+
+### Defect found in review — integer targets lost precision silently
+
+`a71`'s first golden recorded `beyond-safe-i64=9007199254740992` for
+the source `JSON.parse<i64>("9007199254740993")`. `runtime/src/json.rs`
+had `number()` return `Option<f64>` and range-check *that* against the
+target, so **every JSON number went through `f64` before the target
+type was consulted** and exactness above 2^53 was gone first. A
+different integer came back with `ok = true` and nothing reported it.
+
+Fixed: an `i8`…`u64` target converts the number's **text** directly and
+exactly, with `ok = false` if it is not an integer or does not fit.
+`f32`/`f64` keep the `f64` path — `JSON.parse<f64>("9007199254740993")`
+returning `…92` is correct, because `f64` cannot hold the value; the
+`i64` case was not, because `i64` can.
+
+Worth keeping as a distinction: **inexactness that belongs to the
+target type is not a defect; inexactness the parser introduces before
+the target is consulted is.**
+
+### `Date` rejected as a `parse` target
+
+The implementer reported that `Date` was an accepted target no JSON
+node could ever match, an untagged ISO string being indistinguishable
+from a `string` field of the same text. An unreachable-by-construction
+target is the shape Q24 originally had with a literal `NaN` `Map` key.
+Now S014, with the reason in the message; `Date` stays a `stringify`
+output. Reject entry `r61`.
+
+### Contract correction: what round-trips
+
+§13.5 pre-registered a round-trip entry with `parse(stringify(x))`
+equal to `x`. Too broad: `-0` cannot, because §13.3 has `stringify`
+emit `0`, and `Date` cannot, because it is not a `parse` target.
+Recorded as §13.4a. The corpus entry shows `-0` coming back as `0`
+rather than omitting the case.
+
+**Phase Review pending** before P13 is marked COMPLETE.
