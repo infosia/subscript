@@ -1216,13 +1216,28 @@ pub enum ArrFn {
     /// `sort(cmp)` — comparator required (Q22); stable merge sort; in
     /// place; the expression's value is the receiver.
     Sort,
+    /// `reduceRight(f, init)` — `reduce` from right to left; `init` is
+    /// required (Q27). The accumulator travels by pointer (in/out).
+    ReduceRight,
+    /// `splice(start, deleteCount)` — delete-only; returns the removed
+    /// elements as a fresh array and mutates the receiver in place.
+    Splice,
+    /// `shift()` — removes and returns the first element; an empty
+    /// receiver traps.
+    Shift,
+    /// `unshift(x)` — prepends exactly one element and returns the new
+    /// length.
+    Unshift,
+    /// `copyWithin(target, start, end)` — JS negative/clamp rules; in
+    /// place; the expression's value is the receiver.
+    CopyWithin,
 }
 
 impl ArrFn {
     /// Every accepted `Array` method, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [ArrFn; 16] = [
+    pub const ALL: [ArrFn; 21] = [
         ArrFn::IndexOf,
         ArrFn::LastIndexOf,
         ArrFn::Includes,
@@ -1239,10 +1254,15 @@ impl ArrFn {
         ArrFn::Every,
         ArrFn::FindIndex,
         ArrFn::Sort,
+        ArrFn::ReduceRight,
+        ArrFn::Splice,
+        ArrFn::Shift,
+        ArrFn::Unshift,
+        ArrFn::CopyWithin,
     ];
 
     /// The checker's spelling of a defaulted missing `end` argument of
-    /// `slice`/`fill`: `i32::MAX`, which the runtime's JS clamp reduces
+    /// `slice`/`fill`/`copyWithin`: `i32::MAX`, which the runtime's JS clamp reduces
     /// to the length ("to the end"). An explicit `end` of this value
     /// means the same thing, so the sentinel is not observable.
     pub const END_SENTINEL: i64 = i32::MAX as i64;
@@ -1267,6 +1287,11 @@ impl ArrFn {
             ArrFn::Every => "every",
             ArrFn::FindIndex => "findIndex",
             ArrFn::Sort => "sort",
+            ArrFn::ReduceRight => "reduceRight",
+            ArrFn::Splice => "splice",
+            ArrFn::Shift => "shift",
+            ArrFn::Unshift => "unshift",
+            ArrFn::CopyWithin => "copyWithin",
         }
     }
 
@@ -1290,6 +1315,11 @@ impl ArrFn {
             ArrFn::Every => "sub_rt_arr_every",
             ArrFn::FindIndex => "sub_rt_arr_find_index",
             ArrFn::Sort => "sub_rt_arr_sort",
+            ArrFn::ReduceRight => "sub_rt_arr_reduce_right",
+            ArrFn::Splice => "sub_rt_arr_splice",
+            ArrFn::Shift => "sub_rt_arr_shift",
+            ArrFn::Unshift => "sub_rt_arr_unshift",
+            ArrFn::CopyWithin => "sub_rt_arr_copy_within",
         }
     }
 
@@ -1303,6 +1333,7 @@ impl ArrFn {
                 | ArrFn::Map
                 | ArrFn::Filter
                 | ArrFn::Reduce
+                | ArrFn::ReduceRight
                 | ArrFn::Some
                 | ArrFn::Every
                 | ArrFn::FindIndex
@@ -1310,16 +1341,24 @@ impl ArrFn {
         )
     }
 
-    /// Whether the runtime symbol takes a trailing `pos_id`: exactly
-    /// the operations that allocate through the Context (a fresh array
-    /// or string), whose allocation failure traps at the call site.
+    /// Whether the runtime symbol takes a trailing `pos_id`: the
+    /// operations that allocate through the Context (a fresh array or
+    /// string), plus `shift`, whose empty-receiver trap is at the call
+    /// site.
     /// The callback-taking non-allocating operations surface only
     /// *callback* traps, which carry their own position.
     #[must_use]
     pub fn takes_pos_id(self) -> bool {
         matches!(
             self,
-            ArrFn::Join | ArrFn::Slice | ArrFn::Concat | ArrFn::Map | ArrFn::Filter
+            ArrFn::Join
+                | ArrFn::Slice
+                | ArrFn::Concat
+                | ArrFn::Map
+                | ArrFn::Filter
+                | ArrFn::Splice
+                | ArrFn::Shift
+                | ArrFn::Unshift
         )
     }
 
@@ -1351,6 +1390,11 @@ impl ArrFn {
             ArrFn::Every => "every(callback: (value: T) => boolean): boolean",
             ArrFn::FindIndex => "findIndex(callback: (value: T) => boolean): i32",
             ArrFn::Sort => "sort(comparator: (left: T, right: T) => i32): T[]",
+            ArrFn::ReduceRight => "reduceRight<U>(callback: (acc: U, value: T) => U, init: U): U",
+            ArrFn::Splice => "splice(start: i32, deleteCount: i32): T[]",
+            ArrFn::Shift => "shift(): T",
+            ArrFn::Unshift => "unshift(value: T): i32",
+            ArrFn::CopyWithin => "copyWithin(target: i32, start: i32, end?: i32): T[]",
         }
     }
 
@@ -1374,6 +1418,13 @@ impl ArrFn {
             ArrFn::Every => "Short-circuits on the first false callback result.",
             ArrFn::FindIndex => "Returns the first matching callback index, or -1.",
             ArrFn::Sort => "Stable-sorts in place with a required comparator.",
+            ArrFn::ReduceRight => "Folds right-to-left from a required initial accumulator.",
+            ArrFn::Splice => "Deletes a clamped range in place and returns the removed elements.",
+            ArrFn::Shift => "Removes the first element; an empty array traps.",
+            ArrFn::Unshift => "Prepends one element and returns the new length.",
+            ArrFn::CopyWithin => {
+                "Copies a clamped range within the receiver and returns the receiver."
+            }
         }
     }
 }
@@ -2148,7 +2199,7 @@ mod tests {
         assert!(ArrFn::ALL.iter().all(|f| f.symbol().starts_with("sub_rt_arr_")));
         assert_eq!(ArrFn::ForEach.symbol(), "sub_rt_arr_for_each");
         assert_eq!(ArrFn::FindIndex.name(), "findIndex");
-        // Callback set: exactly the eight closure-taking methods.
+        // Callback set: exactly the nine closure-taking methods.
         let with_cb: Vec<ArrFn> = ArrFn::ALL.iter().copied().filter(|f| f.takes_callback()).collect();
         assert_eq!(
             with_cb,
@@ -2161,18 +2212,26 @@ mod tests {
                 ArrFn::Every,
                 ArrFn::FindIndex,
                 ArrFn::Sort,
+                ArrFn::ReduceRight,
             ]
         );
-        // pos_id: exactly the allocating operations.
+        // pos_id: the allocating operations plus the trapping shift.
         for f in ArrFn::ALL {
-            let allocates = matches!(
+            let carries_pos = matches!(
                 f,
-                ArrFn::Join | ArrFn::Slice | ArrFn::Concat | ArrFn::Map | ArrFn::Filter
+                ArrFn::Join
+                    | ArrFn::Slice
+                    | ArrFn::Concat
+                    | ArrFn::Map
+                    | ArrFn::Filter
+                    | ArrFn::Splice
+                    | ArrFn::Shift
+                    | ArrFn::Unshift
             );
-            assert_eq!(f.takes_pos_id(), allocates, "pos_id of {}", f.name());
+            assert_eq!(f.takes_pos_id(), carries_pos, "pos_id of {}", f.name());
             assert_eq!(
                 f.can_trap(),
-                allocates || f.takes_callback(),
+                carries_pos || f.takes_callback(),
                 "trap check of {}",
                 f.name()
             );

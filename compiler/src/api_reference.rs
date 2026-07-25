@@ -53,7 +53,7 @@ pub struct DivergenceWitness {
 
 /// Date on which the listed checker-owned built-in surfaces were last
 /// adversarially compared with Node.
-pub const DIVERGENCE_SWEEP_DATE: &str = "2026-07-25";
+pub const DIVERGENCE_SWEEP_DATE: &str = "2026-07-26";
 
 /// Every recorded divergence and its executable witness.
 ///
@@ -346,6 +346,21 @@ console.log(value === 0.7085450778517304 ? "context-sequence" : "host-sequence")
         javascript_outcome: WitnessOutcome::Value("undefined\n"),
     },
     DivergenceWitness {
+        id: "q27-empty-array-shift",
+        surface: "`T[].shift` on an empty array",
+        q_rule: "Q27",
+        summary: "subscript traps because `T` cannot represent JS's undefined result.",
+        subscript: r#"export function main(): void {
+  const values: i32[] = [];
+  print(`${values.shift()}`);
+}
+"#,
+        javascript: r#"console.log(String([].shift()));
+"#,
+        subscript_outcome: WitnessOutcome::Trap,
+        javascript_outcome: WitnessOutcome::Value("undefined\n"),
+    },
+    DivergenceWitness {
         id: "q24-map-get-miss",
         surface: "`Map.get` miss for a reference-class value",
         q_rule: "Q24",
@@ -584,6 +599,18 @@ mod tests {
             }
             ("T[]", "reduce(callback)") => {
                 "export function main(): void {\n  const values: i32[] = [1];\n  values.reduce((a: i32, b: i32): i32 => a + b);\n}\n"
+                    .to_string()
+            }
+            ("T[]", "reduceRight(callback)") => {
+                "export function main(): void {\n  const values: i32[] = [1];\n  values.reduceRight((a: i32, b: i32): i32 => a + b);\n}\n"
+                    .to_string()
+            }
+            ("T[]", "splice(start, deleteCount, ...items)") => {
+                "export function main(): void {\n  const values: i32[] = [1];\n  values.splice(0, 0, 2);\n}\n"
+                    .to_string()
+            }
+            ("T[]", "unshift(value, ...values)") => {
+                "export function main(): void {\n  const values: i32[] = [1];\n  values.unshift(2, 3);\n}\n"
                     .to_string()
             }
             ("T[]", member) => format!(

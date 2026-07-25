@@ -529,11 +529,21 @@ fn declare_rt<M: Module>(
             A::Filter => (&[I64, I64, I64, I64, I32, I32], Some(I64)),
             // (ctx, recv, code, env, elem_kind, acc_kind, acc_size,
             // acc_ptr)
-            A::Reduce => (&[I64, I64, I64, I64, I32, I32, I64, I64], None),
+            A::Reduce | A::ReduceRight => {
+                (&[I64, I64, I64, I64, I32, I32, I64, I64], None)
+            }
             // (ctx, recv, code, env, kind) -> i32
             A::Some | A::Every | A::FindIndex => (&[I64, I64, I64, I64, I32], Some(I32)),
             // (ctx, recv, code, env, kind)
             A::Sort => (&[I64, I64, I64, I64, I32], None),
+            // (ctx, recv, start, delete_count, pos_id) -> array handle
+            A::Splice => (&[I64, I64, I32, I32, I32], Some(I64)),
+            // (ctx, recv, out_ptr, pos_id)
+            A::Shift => (&[I64, I64, I64, I32], None),
+            // (ctx, recv, x_ptr, pos_id) -> new length
+            A::Unshift => (&[I64, I64, I64, I32], Some(I32)),
+            // (ctx, recv, target, start, end)
+            A::CopyWithin => (&[I64, I64, I32, I32, I32], None),
             // `ArrFn` is #[non_exhaustive]; a variant this crate does
             // not know is a compiler/codegen version skew.
             other => return Err(internal(format!("unknown ArrFn {other:?}"))),

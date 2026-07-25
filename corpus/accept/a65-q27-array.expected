@@ -1,0 +1,9 @@
+reduceRight cba
+splice 2,3 | 1,4,5
+spliceNeg 4,5 | 1,2,3
+splicePast [] | 1,2,3
+splicePastCount 2,3 | 1
+shift 1 | 2,3
+unshift 2 | 0,1
+copyWithin 1,2,3,2,5 | 1,2,3,2,5
+copyAlias 9,2,3,2,5 | 9,2,3,2,5

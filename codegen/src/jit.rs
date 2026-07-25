@@ -249,6 +249,17 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             ffi::sub_rt_arr_find_index as *const u8,
         ),
         ("sub_rt_arr_sort", ffi::sub_rt_arr_sort as *const u8),
+        (
+            "sub_rt_arr_reduce_right",
+            ffi::sub_rt_arr_reduce_right as *const u8,
+        ),
+        ("sub_rt_arr_splice", ffi::sub_rt_arr_splice as *const u8),
+        ("sub_rt_arr_shift", ffi::sub_rt_arr_shift as *const u8),
+        ("sub_rt_arr_unshift", ffi::sub_rt_arr_unshift as *const u8),
+        (
+            "sub_rt_arr_copy_within",
+            ffi::sub_rt_arr_copy_within as *const u8,
+        ),
         // Map/Set intrinsics (stdlib.md §10, Q24).
         ("sub_rt_map_new", ffi::sub_rt_map_new as *const u8),
         ("sub_rt_map_size", ffi::sub_rt_map_size as *const u8),

@@ -219,46 +219,6 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
     ),
     rejection(
         "T[]",
-        "reduceRight",
-        "Q22",
-        Some("reduce"),
-        "Outside the checker-owned Array subset.",
-        None,
-    ),
-    rejection(
-        "T[]",
-        "splice",
-        "Q22",
-        None,
-        "Structural mutation is outside the checker-owned Array subset.",
-        Some("r32-array-splice.ts"),
-    ),
-    rejection(
-        "T[]",
-        "shift",
-        "Q22",
-        None,
-        "Structural mutation is outside the checker-owned Array subset.",
-        None,
-    ),
-    rejection(
-        "T[]",
-        "unshift",
-        "Q22",
-        Some("push"),
-        "Structural mutation is outside the checker-owned Array subset.",
-        None,
-    ),
-    rejection(
-        "T[]",
-        "copyWithin",
-        "Q22",
-        None,
-        "Structural mutation is outside the checker-owned Array subset.",
-        None,
-    ),
-    rejection(
-        "T[]",
         "flat",
         "Q22",
         None,
@@ -587,6 +547,9 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("Date", "set*", "Q20", Some("construct a new Date"), "Date is an immutable value.", Some("r20-date-setter.ts")),
     rejection("T[]", "sort()", "Q22", Some("sort(comparator)"), "The no-argument overload coerces elements to strings.", Some("r29-array-sort-noarg.ts")),
     rejection("T[]", "reduce(callback)", "Q22", Some("reduce(callback, init)"), "An explicit initial accumulator is required.", Some("r31-array-reduce-noinit.ts")),
+    rejection("T[]", "reduceRight(callback)", "Q27", Some("reduceRight(callback, init)"), "An explicit initial accumulator is required.", None),
+    rejection("T[]", "splice(start, deleteCount, ...items)", "Q27", None, "Variadic parameters are the missing prerequisite for insertion through `splice`.", Some("r32-array-splice.ts")),
+    rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
     rejection("FixedArray<T, N>", "T[] methods", "Q22", None, "FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays.", None),
     rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
     rejection("Map / Set", "new Map/Set(iterable)", "Q24", Some("construct empty, then add/set"), "The language has no iterator protocol.", Some("r43-map-iterable-constructor.ts")),
@@ -1114,10 +1077,14 @@ mod tests {
         // `push`/`pop` stay on the standing Callee::Method path.
         assert_eq!(arr_method("push"), None);
         assert_eq!(arr_method("pop"), None);
-        // Out-of-subset members resolve to nothing (Q22).
+        // Q27 stage 3 additions are checker-owned intrinsics.
+        assert_eq!(arr_method("reduceRight"), Some(ArrFn::ReduceRight));
+        assert_eq!(arr_method("splice"), Some(ArrFn::Splice));
+        assert_eq!(arr_method("shift"), Some(ArrFn::Shift));
+        assert_eq!(arr_method("unshift"), Some(ArrFn::Unshift));
+        assert_eq!(arr_method("copyWithin"), Some(ArrFn::CopyWithin));
+        // Out-of-subset members resolve to nothing (Q22/Q27).
         assert_eq!(arr_method("find"), None);
-        assert_eq!(arr_method("reduceRight"), None);
-        assert_eq!(arr_method("splice"), None);
         assert_eq!(arr_method("flatMap"), None);
     }
 

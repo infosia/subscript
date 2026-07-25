@@ -19,7 +19,7 @@ use std::fmt;
 pub enum TrapKind {
     /// Array or `FixedArray` index out of bounds.
     IndexOutOfBounds = 1,
-    /// `pop()` on an empty array.
+    /// `pop()` or `shift()` on an empty array.
     EmptyPop = 2,
     /// `string.slice` range invalid or off a UTF-8 boundary (Q5).
     StringSlice = 3,

@@ -2270,6 +2270,124 @@ impl<'p> Checker<'p> {
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "concat"));
                 mk(args, arr_ty, pos)
             }
+            A::Splice => {
+                if c.args.len() > 2 {
+                    self.reject_api_form(
+                        "T[]",
+                        "splice(start, deleteCount, ...items)",
+                        "splice with inserted elements",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if c.args.len() != 2 {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`splice` expects 2 arguments (start, deleteCount), got {}",
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let params = [
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: false,
+                    },
+                ];
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, "splice"));
+                mk(args, arr_ty, pos)
+            }
+            A::Shift => {
+                let mut args = vec![recv];
+                args.extend(self.check_args(&[], &c.args, fx, &pos, "shift"));
+                mk(args, elem, pos)
+            }
+            A::Unshift => {
+                if c.args.len() > 1 {
+                    self.reject_api_form(
+                        "T[]",
+                        "unshift(value, ...values)",
+                        "unshift with multiple elements",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                if c.args.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`unshift` expects 1 argument (value), got {}", c.args.len()),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let params = [ParamSig {
+                    name: String::new(),
+                    ty: elem,
+                    has_default: false,
+                }];
+                let checked = self.check_args(&params, &c.args, fx, &pos, "unshift");
+                // C5: `unshift` stores its argument in the array.
+                if let Some(value) = checked.first() {
+                    if self.is_capturing_value(value, fx) {
+                        self.error(
+                            RuleCode::S009,
+                            "capturing lambdas may not escape: `unshift` stores its \
+                             argument in the array",
+                            value.pos.clone(),
+                        );
+                    }
+                }
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(args, Type::I32, pos)
+            }
+            A::CopyWithin => {
+                if !(2..=3).contains(&c.args.len()) {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`copyWithin` expects 2 or 3 arguments (target, start, end?), got {}",
+                            c.args.len()
+                        ),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let params = [
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
+                ];
+                let mut checked = self.check_args(&params, &c.args, fx, &pos, "copyWithin");
+                if checked.len() == 2 {
+                    checked.push(int_default(ArrFn::END_SENTINEL, &pos));
+                }
+                let mut args = vec![recv];
+                args.extend(checked);
+                mk(args, arr_ty, pos)
+            }
             A::Sort => {
                 if c.args.is_empty() {
                     self.reject_api_form(
@@ -2297,12 +2415,17 @@ impl<'p> Checker<'p> {
                 );
                 mk(vec![recv, cb], arr_ty, pos)
             }
-            A::Reduce => {
+            A::Reduce | A::ReduceRight => {
                 if c.args.len() < 2 {
+                    let surface = if f == A::Reduce {
+                        "reduce(callback)"
+                    } else {
+                        "reduceRight(callback)"
+                    };
                     self.reject_api_form(
                         "T[]",
-                        "reduce(callback)",
-                        "reduce(callback)",
+                        surface,
+                        surface,
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -2311,7 +2434,8 @@ impl<'p> Checker<'p> {
                     self.error(
                         RuleCode::S100,
                         format!(
-                            "`reduce` expects 2 arguments (callback, init), got {}",
+                            "`{}` expects 2 arguments (callback, init), got {}",
+                            f.name(),
                             c.args.len()
                         ),
                         pos.clone(),
@@ -2338,7 +2462,12 @@ impl<'p> Checker<'p> {
                     // The callback fixes `U`; a non-conforming init is
                     // reported against the init, not the callback.
                     Some(u) => {
-                        self.require_assignable(&init.ty, u, init.pos.clone(), "the `reduce` init");
+                        self.require_assignable(
+                            &init.ty,
+                            u,
+                            init.pos.clone(),
+                            &format!("the `{}` init", f.name()),
+                        );
                         u.clone()
                     }
                     None => init.ty.clone(),
@@ -2351,8 +2480,9 @@ impl<'p> Checker<'p> {
                     self.error(
                         RuleCode::S014,
                         format!(
-                            "the `reduce` accumulator crosses the runtime↔script \
+                            "the `{}` accumulator crosses the runtime↔script \
                              boundary; `{}` is outside the supported kinds (Q22)",
+                            f.name(),
                             acc_n
                         ),
                         init.pos.clone(),
@@ -2366,14 +2496,14 @@ impl<'p> Checker<'p> {
                         v,
                         &[acc_ty.clone(), elem],
                         Some(&acc_ty),
-                        "reduce",
+                        f.name(),
                     ),
                     None => self.check_arr_callback(
                         &c.args[0],
                         vec![acc_ty.clone(), elem],
                         Some(acc_ty.clone()),
                         fx,
-                        "reduce",
+                        f.name(),
                     ),
                 };
                 mk(vec![recv, cb, init], acc_ty, pos)

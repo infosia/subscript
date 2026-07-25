@@ -2991,6 +2991,46 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let res = self.call_rt(rt, &[self.ctx_v, h, other, pos_v], checked)?;
                 res.map(RV::S).ok_or_else(|| internal("concat result"))
             }
+            A::Splice => {
+                let start = self.eval(arg_at(1)?)?;
+                let start = self.expect_s(start)?;
+                let delete_count = self.eval(arg_at(2)?)?;
+                let delete_count = self.expect_s(delete_count)?;
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(
+                    rt,
+                    &[self.ctx_v, h, start, delete_count, pos_v],
+                    checked,
+                )?;
+                res.map(RV::S).ok_or_else(|| internal("splice result"))
+            }
+            A::Shift => {
+                let (size, align) = self.ml.layouts.size_align(&elem)?;
+                let dst = self.temp_slot(size.max(8), align.max(8));
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                self.call_rt(rt, &[self.ctx_v, h, dst, pos_v], checked)?;
+                self.load_val(&elem, dst, 0)
+            }
+            A::Unshift => {
+                let x = self.eval(arg_at(1)?)?;
+                let ptr = self.materialize(x, &elem)?;
+                let pid = self.pos_id(pos);
+                let pos_v = self.iconst(types::I32, pid);
+                let res = self.call_rt(rt, &[self.ctx_v, h, ptr, pos_v], checked)?;
+                res.map(RV::S).ok_or_else(|| internal("unshift result"))
+            }
+            A::CopyWithin => {
+                let target = self.eval(arg_at(1)?)?;
+                let target = self.expect_s(target)?;
+                let start = self.eval(arg_at(2)?)?;
+                let start = self.expect_s(start)?;
+                let end = self.eval(arg_at(3)?)?;
+                let end = self.expect_s(end)?;
+                self.call_rt(rt, &[self.ctx_v, h, target, start, end], checked)?;
+                Ok(RV::S(h))
+            }
             A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex | A::Sort => {
                 let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
                 let cb = self.eval(arg_at(1)?)?;
@@ -3034,7 +3074,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 )?;
                 res.map(RV::S).ok_or_else(|| internal("map result"))
             }
-            A::Reduce => {
+            A::Reduce | A::ReduceRight => {
                 let elem_kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
                 let acc_kind = crate::layout::arr_elem_kind(self.ml.hir, ret_ty)?;
                 let acc_stride = self.ml.layouts.stride(ret_ty)?;

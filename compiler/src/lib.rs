@@ -362,11 +362,12 @@ mod tests {
     fn array_methods_type_and_normalize_optional_arguments() {
         // stdlib.md §9: every accepted method resolves to a Callee::Arr
         // intrinsic with the receiver first; the optional arguments are
-        // normalized at check time (join separator -> ",", slice/fill
-        // start -> 0, end -> the END_SENTINEL) so each runtime symbol
-        // has a fixed arity; map's `U` is inferred from the closure.
+        // normalized at check time (join separator -> ",",
+        // slice/fill/copyWithin end -> the END_SENTINEL) so each runtime
+        // symbol has a fixed arity; map's `U` is inferred from the
+        // closure.
         let module = check_one(
-            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const i: i32 = xs.indexOf(2);\n  const s: string = xs.join();\n  const sl: i32[] = xs.slice(1);\n  const fl: i32[] = xs.fill(0);\n  const m: string[] = xs.map((v: i32) => `${v}`);\n  const r: string = xs.reduce((acc: string, v: i32): string => acc + `${v}`, \"#\");\n  print(`${i}${s}${sl.length}${fl.length}${m.length}${r}`);\n}\n",
+            "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const i: i32 = xs.indexOf(2);\n  const s: string = xs.join();\n  const sl: i32[] = xs.slice(1);\n  const fl: i32[] = xs.fill(0);\n  const m: string[] = xs.map((v: i32) => `${v}`);\n  const r: string = xs.reduce((acc: string, v: i32): string => acc + `${v}`, \"#\");\n  const rr: string = xs.reduceRight((acc: string, v: i32): string => acc + `${v}`, \"#\");\n  const sp: i32[] = xs.splice(0, 1);\n  const sh: i32 = xs.shift();\n  const us: i32 = xs.unshift(0);\n  const cw: i32[] = xs.copyWithin(0, 1);\n  print(`${i}${s}${sl.length}${fl.length}${m.length}${r}${rr}${sp.length}${sh}${us}${cw.length}`);\n}\n",
         )
         .expect("clean check");
         let mut found = Vec::new();
@@ -403,6 +404,12 @@ mod tests {
         // reduce's result is the init's type.
         assert_eq!(get(hir::ArrFn::Reduce).2, Type::Str);
         assert_eq!(get(hir::ArrFn::Reduce).1, 3); // recv + callback + init
+        assert_eq!(get(hir::ArrFn::ReduceRight).2, Type::Str);
+        assert_eq!(get(hir::ArrFn::ReduceRight).1, 3);
+        assert_eq!(get(hir::ArrFn::Splice).1, 3); // recv + start + deleteCount
+        assert_eq!(get(hir::ArrFn::Shift).1, 1); // receiver only
+        assert_eq!(get(hir::ArrFn::Unshift).1, 2); // recv + value
+        assert_eq!(get(hir::ArrFn::CopyWithin).1, 4); // recv + target + start + end
     }
 
     #[test]
@@ -412,12 +419,7 @@ mod tests {
             ("reduce", "xs.reduce((acc: i32, v: i32): i32 => acc + v)"),
             ("find", "xs.find((v: i32): boolean => v > 1)"),
             ("findLast", "xs.findLast((v: i32): boolean => v > 1)"),
-            ("reduceRight", "xs.reduceRight((acc: i32, v: i32): i32 => acc + v, 0)"),
-            ("splice", "xs.splice(0, 1)"),
-            ("shift", "xs.shift()"),
-            ("unshift", "xs.unshift(0)"),
             ("flat", "xs.flat()"),
-            ("copyWithin", "xs.copyWithin(0, 1)"),
             ("keys", "xs.keys()"),
         ] {
             let err = check_one(&format!(

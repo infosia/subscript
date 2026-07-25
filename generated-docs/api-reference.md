@@ -182,6 +182,11 @@
 | `every(callback: (value: T) => boolean): boolean` | Short-circuits on the first false callback result. |
 | `findIndex(callback: (value: T) => boolean): i32` | Returns the first matching callback index, or -1. |
 | `sort(comparator: (left: T, right: T) => i32): T[]` | Stable-sorts in place with a required comparator. |
+| `reduceRight<U>(callback: (acc: U, value: T) => U, init: U): U` | Folds right-to-left from a required initial accumulator. |
+| `splice(start: i32, deleteCount: i32): T[]` | Deletes a clamped range in place and returns the removed elements. |
+| `shift(): T` | Removes the first element; an empty array traps. |
+| `unshift(value: T): i32` | Prepends one element and returns the new length. |
+| `copyWithin(target: i32, start: i32, end?: i32): T[]` | Copies a clamped range within the receiver and returns the receiver. |
 
 ### FixedArray<T, N>
 
@@ -254,11 +259,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | string | `search` | S014 | Q21 | — | The language has no RegExp engine. | — |
 | T[] | `find` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | `r30-array-find.ts` |
 | T[] | `findLast` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | — |
-| T[] | `reduceRight` | S014 | Q22 | `reduce` | Outside the checker-owned Array subset. | — |
-| T[] | `splice` | S014 | Q22 | — | Structural mutation is outside the checker-owned Array subset. | `r32-array-splice.ts` |
-| T[] | `shift` | S014 | Q22 | — | Structural mutation is outside the checker-owned Array subset. | — |
-| T[] | `unshift` | S014 | Q22 | `push` | Structural mutation is outside the checker-owned Array subset. | — |
-| T[] | `copyWithin` | S014 | Q22 | — | Structural mutation is outside the checker-owned Array subset. | — |
 | T[] | `flat` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
 | T[] | `flatMap` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
 | T[] | `entries` | S014 | Q22 | — | The language has no iterator protocol. | — |
@@ -315,6 +315,9 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Date | `set*` | S014 | Q20 | `construct a new Date` | Date is an immutable value. | `r20-date-setter.ts` |
 | T[] | `sort()` | S014 | Q22 | `sort(comparator)` | The no-argument overload coerces elements to strings. | `r29-array-sort-noarg.ts` |
 | T[] | `reduce(callback)` | S014 | Q22 | `reduce(callback, init)` | An explicit initial accumulator is required. | `r31-array-reduce-noinit.ts` |
+| T[] | `reduceRight(callback)` | S014 | Q27 | `reduceRight(callback, init)` | An explicit initial accumulator is required. | — |
+| T[] | `splice(start, deleteCount, ...items)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for insertion through `splice`. | `r32-array-splice.ts` |
+| T[] | `unshift(value, ...values)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for prepending multiple elements. | `r51-array-unshift-variadic.ts` |
 | FixedArray<T, N> | `T[] methods` | S014 | Q22 | — | FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays. | — |
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
 | Map / Set | `new Map/Set(iterable)` | S014 | Q24 | `construct empty, then add/set` | The language has no iterator protocol. | `r43-map-iterable-constructor.ts` |
@@ -322,7 +325,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 
 ## Divergences from ECMA
 
-Last adversarial sweep of the listed checker-owned built-in surfaces against Node: **2026-07-25**. Each entry below is executed by the test suite. An outcome is either `Value(stdout bytes)` or `Trap`; two values agree only byte-for-byte, two traps agree, and `Trap` never agrees with a value.
+Last adversarial sweep of the listed checker-owned built-in surfaces against Node: **2026-07-26**. Each entry below is executed by the test suite. An outcome is either `Value(stdout bytes)` or `Trap`; two values agree only byte-for-byte, two traps agree, and `Trap` never agrees with a value.
 
 ### template interpolation, `T[].join`, `f32/f64.toString(10)` — Q14 (the method is accepted by Q26)
 
@@ -736,6 +739,28 @@ Node:
 
 ```js
 console.log(String([].pop()));
+```
+
+- subscript result: `Trap`
+- Node result: `undefined\n`
+
+### `T[].shift` on an empty array — Q27
+
+subscript traps because `T` cannot represent JS's undefined result.
+
+subscript:
+
+```ts
+export function main(): void {
+  const values: i32[] = [];
+  print(`${values.shift()}`);
+}
+```
+
+Node:
+
+```js
+console.log(String([].shift()));
 ```
 
 - subscript result: `Trap`

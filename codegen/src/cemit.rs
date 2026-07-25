@@ -2243,7 +2243,8 @@ impl<'m> Emitter<'m> {
     /// receiver is pinned to a temporary before any argument statement is
     /// emitted, so both tiers evaluate receiver-then-arguments
     /// ([`Self::eval_pinned`]); the in-place methods (`fill`, `reverse`,
-    /// `sort`) then yield that same temporary as the expression's value.
+    /// `sort`, `copyWithin`) then yield that same temporary as the
+    /// expression's value.
     fn eval_arr_call(&mut self, f: hir::ArrFn, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         use hir::ArrFn as A;
         let ind = indent(depth);
@@ -2308,6 +2309,34 @@ impl<'m> Emitter<'m> {
                 let pid = self.pos_id(pos);
                 Ok(format!("{sym}(ctx, {h}, {other}, {pid}u)"))
             }
+            A::Splice => {
+                let start = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
+                let delete_count = self.eval(&arg_at(args, 2)?, out, depth)?;
+                let pid = self.pos_id(pos);
+                Ok(format!("{sym}(ctx, {h}, {start}, {delete_count}, {pid}u)"))
+            }
+            A::Shift => {
+                let ect = self.ctype(&elem)?;
+                let value = self.fresh_tmp();
+                let pid = self.pos_id(pos);
+                let _ = writeln!(out, "{ind}{ect} {value}; {sym}(ctx, {h}, &{value}, {pid}u);");
+                Ok(value)
+            }
+            A::Unshift => {
+                let ect = self.ctype(&elem)?;
+                let x = self.eval(&arg_at(args, 1)?, out, depth)?;
+                let value = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{ect} {value} = {x};");
+                let pid = self.pos_id(pos);
+                Ok(format!("{sym}(ctx, {h}, &{value}, {pid}u)"))
+            }
+            A::CopyWithin => {
+                let target = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
+                let start = self.eval_pinned(&arg_at(args, 2)?, out, depth)?;
+                let end = self.eval(&arg_at(args, 3)?, out, depth)?;
+                let _ = writeln!(out, "{ind}{sym}(ctx, {h}, {target}, {start}, {end});");
+                Ok(h)
+            }
             A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex => {
                 let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
                 let fv = self.eval(&arg_at(args, 1)?, out, depth)?;
@@ -2349,7 +2378,7 @@ impl<'m> Emitter<'m> {
                     "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u)"
                 ))
             }
-            A::Reduce => {
+            A::Reduce | A::ReduceRight => {
                 let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
                 let acc_kind = crate::layout::arr_elem_kind(self.module, ret_ty)?.code();
                 let acct = self.ctype(ret_ty)?;
@@ -3975,6 +4004,11 @@ extern int32_t sub_rt_arr_some(void* ctx, void* a, const void* code, const void*
 extern int32_t sub_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
 extern int32_t sub_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
 extern void sub_rt_arr_sort(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern void sub_rt_arr_reduce_right(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc);
+extern void* sub_rt_arr_splice(void* ctx, void* a, int32_t start, int32_t delete_count, uint32_t pos_id);
+extern void sub_rt_arr_shift(void* ctx, void* a, void* out, uint32_t pos_id);
+extern int32_t sub_rt_arr_unshift(void* ctx, void* a, const void* x, uint32_t pos_id);
+extern void sub_rt_arr_copy_within(void* ctx, void* a, int32_t target, int32_t start, int32_t end);
 
 /* Map/Set intrinsics (stdlib.md 10, Q24): ordered entry storage and its
  * deterministic hash index live behind these shared runtime symbols.

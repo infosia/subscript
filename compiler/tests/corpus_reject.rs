@@ -64,6 +64,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r48-number-to-precision.ts", RuleCode::S014, 9),
     ("r49-number-to-string-radix.ts", RuleCode::S014, 9),
     ("r50-parse-int-no-radix.ts", RuleCode::S014, 8),
+    ("r51-array-unshift-variadic.ts", RuleCode::S014, 10),
 ];
 
 #[test]
@@ -111,4 +112,20 @@ fn reject_table_covers_every_corpus_entry() {
     let mut expected: Vec<String> = EXPECTED.iter().map(|(f, _, _)| f.to_string()).collect();
     expected.sort();
     assert_eq!(entries, expected, "reject corpus and test table disagree");
+}
+
+#[test]
+fn q27_array_variadic_rejections_name_the_missing_prerequisite() {
+    let dir = corpus_dir().join("reject");
+    for file in ["r32-array-splice.ts", "r51-array-unshift-variadic.ts"] {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("variadic Array form must be rejected");
+        let message = &diagnostics[0].message;
+        assert!(
+            message.contains("Variadic parameters") && message.contains("missing prerequisite"),
+            "{file}: diagnostic does not name the prerequisite: {message}"
+        );
+    }
 }

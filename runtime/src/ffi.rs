@@ -2267,6 +2267,78 @@ pub unsafe extern "C" fn sub_rt_arr_concat(
     unsafe { crate::arrops::concat(ctx, a, b, pos_id) }
 }
 
+/// `splice(start, deleteCount)`: delete-only structural mutation,
+/// returning the removed elements as a fresh array.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_splice(
+    ctx: *mut Context,
+    a: *mut u8,
+    start: i32,
+    delete_count: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::splice(ctx, a, start, delete_count, pos_id) }
+}
+
+/// `shift()`: removes the first element into `out`; an empty array
+/// traps at `pos_id`.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle and `out` is writable
+/// for one element.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_shift(
+    ctx: *mut Context,
+    a: *mut u8,
+    out: *mut u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::shift(ctx, a, out, pos_id) }
+}
+
+/// `unshift(x)`: prepends exactly one element and returns the new
+/// length.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle and `x` is readable for
+/// one element.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_unshift(
+    ctx: *mut Context,
+    a: *mut u8,
+    x: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::unshift(ctx, a, x, pos_id) }
+}
+
+/// `copyWithin(target, start, end)` in place with JS clamp rules.
+/// Generated code reuses the receiver handle as the expression's value.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_copy_within(
+    ctx: *mut Context,
+    a: *mut u8,
+    target: i32,
+    start: i32,
+    end: i32,
+) {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::copy_within(ctx, a, target, start, end) }
+}
+
 /// `forEach(f)`: calls the language callback per element; aborts on the
 /// first trap (stdlib.md §9).
 ///
@@ -2369,6 +2441,33 @@ pub unsafe extern "C" fn sub_rt_arr_reduce(
     };
     // SAFETY: shared contract.
     unsafe { crate::arrops::reduce(ctx, a, code, env, ek, ak, acc_size as usize, acc) }
+}
+
+/// `reduceRight(f, init)`: folds right-to-left; the accumulator travels
+/// in/out through `acc`.
+///
+/// # Safety
+///
+/// As [`sub_rt_arr_reduce`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_arr_reduce_right(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    acc_kind: u32,
+    acc_size: u64,
+    acc: *mut u8,
+) {
+    // SAFETY: shared contract (forwarded).
+    let (Some(ek), Some(ak)) = (unsafe { decode_elem_kind(ctx, elem_kind) }, unsafe {
+        decode_elem_kind(ctx, acc_kind)
+    }) else {
+        return;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::reduce_right(ctx, a, code, env, ek, ak, acc_size as usize, acc) }
 }
 
 /// `some(f)`: 1 when any element satisfies the predicate

@@ -581,7 +581,7 @@ pub unsafe fn join(
     unsafe { &mut *ctx }.alloc_str(&out, pos_id)
 }
 
-// ----- slice / fill / reverse / concat -----
+// ----- slice / fill / reverse / concat / structural mutation -----
 
 /// JS slice-range clamp: a negative index counts from the end; the
 /// result is clamped to `[0, len]`.
@@ -716,6 +716,178 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
         }
     }
     out
+}
+
+/// `splice(start, deleteCount)`: returns the removed elements in a
+/// fresh array, then removes them from the receiver. `start` uses JS
+/// negative/clamp rules; a negative `deleteCount` deletes nothing and
+/// a count past the end is clamped.
+///
+/// The receiver is not mutated until the result array has been fully
+/// built, so an allocation trap leaves it unchanged.
+///
+/// # Safety
+///
+/// `h` is a live array of `ctx` (or null).
+pub unsafe fn splice(
+    ctx: *mut Context,
+    h: *mut u8,
+    start: i32,
+    delete_count: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    if h.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: caller contract.
+    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let lo = clamp_index(start, n);
+    let count = usize::try_from(delete_count.max(0))
+        .unwrap_or(usize::MAX)
+        .min(n - lo);
+    // SAFETY: caller contract.
+    let out = unsafe { &mut *ctx }.array_new(esz, pos_id);
+    if out.is_null() {
+        return std::ptr::null_mut();
+    }
+    for i in lo..lo + count {
+        // SAFETY: `i < n`; caller contract.
+        let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
+        // SAFETY: `out` is a live array with the same element width.
+        if unsafe { (*ctx).array_push(out, p, pos_id) } < 0 {
+            return out; // allocation trap: receiver stays unchanged
+        }
+    }
+    if count == 0 {
+        return out;
+    }
+
+    // Close the deleted gap with memmove semantics.
+    // SAFETY: caller contract; the live data block contains `n * esz`
+    // bytes and the source/destination ranges may overlap.
+    let data = unsafe { (*ctx).array_data(h) }.cast_mut();
+    unsafe {
+        std::ptr::copy(
+            data.add((lo + count) * esz),
+            data.add(lo * esz),
+            (n - lo - count) * esz,
+        );
+    }
+    let mut discarded = vec![0u8; esz];
+    for _ in 0..count {
+        // SAFETY: each iteration removes one of the known `count` live
+        // tail slots; `discarded` is writable for `esz` bytes.
+        unsafe { (*ctx).array_pop(h, discarded.as_mut_ptr(), pos_id) };
+    }
+    out
+}
+
+/// `shift()`: removes the first element into `dst`. An empty receiver
+/// traps with the same trap kind used by `pop()`.
+///
+/// # Safety
+///
+/// `h` is a live array of `ctx` (or null); `dst` is writable for the
+/// element size.
+pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) {
+    if h.is_null() || dst.is_null() {
+        return;
+    }
+    // SAFETY: caller contract.
+    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    if n == 0 {
+        // SAFETY: caller contract.
+        unsafe { &mut *ctx }.trap(TrapKind::EmptyPop, "shift() on an empty array", pos_id);
+        return;
+    }
+    // SAFETY: element zero exists and `dst` is writable for `esz`.
+    let first = unsafe { (*ctx).array_elem_ptr(h, 0, 0) };
+    unsafe { std::ptr::copy_nonoverlapping(first, dst, esz) };
+    // SAFETY: caller contract; the source and destination overlap for
+    // arrays longer than two elements, so this is memmove semantics.
+    let data = unsafe { (*ctx).array_data(h) }.cast_mut();
+    unsafe { std::ptr::copy(data.add(esz), data, (n - 1) * esz) };
+    let mut discarded = vec![0u8; esz];
+    // SAFETY: `n > 0`; the tail slot is live and `discarded` is
+    // writable for one element.
+    unsafe { (*ctx).array_pop(h, discarded.as_mut_ptr(), pos_id) };
+}
+
+/// `unshift(x)`: prepends exactly one element and returns the new
+/// length, or −1 after an allocation trap.
+///
+/// # Safety
+///
+/// `h` is a live array of `ctx` (or null); `x` is readable for the
+/// element size.
+pub unsafe fn unshift(
+    ctx: *mut Context,
+    h: *mut u8,
+    x: *const u8,
+    pos_id: u32,
+) -> i32 {
+    if h.is_null() || x.is_null() {
+        return -1;
+    }
+    // Copy before growth so the operation is correct even if `x`
+    // aliases receiver storage retired by `array_push`.
+    // SAFETY: caller contract.
+    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    // SAFETY: `x` is readable for `esz` bytes.
+    let value = unsafe { std::slice::from_raw_parts(x, esz) }.to_vec();
+    // SAFETY: caller contract; `value` is one readable element.
+    let new_len = unsafe { (*ctx).array_push(h, value.as_ptr(), pos_id) };
+    if new_len < 0 {
+        return -1;
+    }
+    // SAFETY: the grown data block contains `n + 1` slots; move the
+    // former contents one slot right with memmove semantics.
+    let data = unsafe { (*ctx).array_data(h) }.cast_mut();
+    unsafe {
+        std::ptr::copy(data, data.add(esz), n * esz);
+        std::ptr::copy_nonoverlapping(value.as_ptr(), data, esz);
+    }
+    new_len
+}
+
+/// `copyWithin(target, start, end)` in place using JS negative/clamp
+/// rules. Generated code reuses the receiver handle as the expression's
+/// value.
+///
+/// # Safety
+///
+/// `h` is a live array of `ctx` (or null).
+pub unsafe fn copy_within(
+    ctx: *mut Context,
+    h: *mut u8,
+    target: i32,
+    start: i32,
+    end: i32,
+) {
+    if h.is_null() {
+        return;
+    }
+    // SAFETY: caller contract.
+    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (to, from, final_) = (
+        clamp_index(target, n),
+        clamp_index(start, n),
+        clamp_index(end, n),
+    );
+    let count = final_.saturating_sub(from).min(n - to);
+    if count == 0 {
+        return;
+    }
+    // SAFETY: both clamped ranges fit in the live data block. `copy`
+    // deliberately provides memmove semantics for overlapping ranges.
+    let data = unsafe { (*ctx).array_data(h) }.cast_mut();
+    unsafe {
+        std::ptr::copy(
+            data.add(from * esz),
+            data.add(to * esz),
+            count * esz,
+        );
+    }
 }
 
 // ----- callback operations -----
@@ -905,16 +1077,22 @@ pub unsafe fn filter(
     out
 }
 
-/// `reduce(f, init)`: folds left with the accumulator traveling in/out
-/// through `acc_ptr` (its C-ABI class is `acc_kind` at `acc_size`
-/// bytes). On a callback trap the last completed accumulator remains in
-/// `acc_ptr`.
+/// Direction of a reduction.
+#[derive(Clone, Copy)]
+enum ReduceDirection {
+    /// Visit indices from zero upward.
+    Left,
+    /// Visit indices from the initial last index downward.
+    Right,
+}
+
+/// Shared `reduce`/`reduceRight` implementation.
 ///
 /// # Safety
 ///
 /// As [`for_each`], with callback shape `(ctx, env, A, T) -> A`;
 /// `acc_ptr` is readable and writable for `acc_size` bytes.
-pub unsafe fn reduce(
+unsafe fn reduce_direction(
     ctx: *mut Context,
     h: *mut u8,
     code: *const u8,
@@ -923,6 +1101,7 @@ pub unsafe fn reduce(
     acc_kind: ElemKind,
     acc_size: usize,
     acc_ptr: *mut u8,
+    direction: ReduceDirection,
 ) {
     if acc_ptr.is_null() {
         return;
@@ -945,10 +1124,17 @@ pub unsafe fn reduce(
         with_abi!(aa, A, {
             // SAFETY: `acc_ptr` readable for `acc_size == size_of::<A>()`.
             let mut acc: A = unsafe { acc_ptr.cast::<A>().read_unaligned() };
-            for i in 0..n {
+            for step in 0..n {
+                let i = match direction {
+                    ReduceDirection::Left => step,
+                    ReduceDirection::Right => n - 1 - step,
+                };
                 // SAFETY: caller contract.
                 if unsafe { len_of(ctx, h) } <= i {
-                    break;
+                    if matches!(direction, ReduceDirection::Left) {
+                        break;
+                    }
+                    continue;
                 }
                 // SAFETY: `i` in bounds; widths match by dispatch.
                 let v: T = unsafe { read_elem(ctx, h, i) };
@@ -964,6 +1150,57 @@ pub unsafe fn reduce(
             unsafe { acc_ptr.cast::<A>().write_unaligned(acc) };
         })
     });
+}
+
+/// `reduce(f, init)`: folds left with the accumulator traveling in/out
+/// through `acc_ptr` (its C-ABI class is `acc_kind` at `acc_size`
+/// bytes). On a callback trap the last completed accumulator remains in
+/// `acc_ptr`.
+///
+/// # Safety
+///
+/// As [`for_each`], with callback shape `(ctx, env, A, T) -> A`;
+/// `acc_ptr` is readable and writable for `acc_size` bytes.
+pub unsafe fn reduce(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    acc_kind: ElemKind,
+    acc_size: usize,
+    acc_ptr: *mut u8,
+) {
+    // SAFETY: forwarded contract.
+    unsafe {
+        reduce_direction(
+            ctx, h, code, env, elem_kind, acc_kind, acc_size, acc_ptr, ReduceDirection::Left,
+        )
+    };
+}
+
+/// `reduceRight(f, init)`: folds right-to-left. On a callback trap the
+/// last completed accumulator remains in `acc_ptr`.
+///
+/// # Safety
+///
+/// As [`reduce`].
+pub unsafe fn reduce_right(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    acc_kind: ElemKind,
+    acc_size: usize,
+    acc_ptr: *mut u8,
+) {
+    // SAFETY: forwarded contract.
+    unsafe {
+        reduce_direction(
+            ctx, h, code, env, elem_kind, acc_kind, acc_size, acc_ptr, ReduceDirection::Right,
+        )
+    };
 }
 
 /// Search mode of [`search`]: what the predicate result decides.
@@ -1259,6 +1496,10 @@ mod tests {
         acc + f64::from(v)
     }
 
+    unsafe extern "C" fn append_digit(_ctx: *mut Context, _env: *const u8, acc: i32, v: i32) -> i32 {
+        acc * 10 + v
+    }
+
     unsafe extern "C" fn cmp_i32(_ctx: *mut Context, _env: *const u8, a: i32, b: i32) -> i32 {
         a - b
     }
@@ -1486,6 +1727,77 @@ mod tests {
     }
 
     #[test]
+    fn splice_shift_unshift_and_copy_within_match_js_rules() {
+        let mut c = ctx();
+        let p: *mut Context = &mut *c;
+        // SAFETY: live arrays of `c`; element pointers are readable or
+        // writable for one i32 as required.
+        unsafe {
+            let middle = arr_i32(&mut c, &[1, 2, 3, 4, 5]);
+            let removed = splice(p, middle, 1, 2, 0);
+            assert_eq!(i32_items(&c, removed), vec![2, 3]);
+            assert_eq!(i32_items(&c, middle), vec![1, 4, 5]);
+
+            let negative = arr_i32(&mut c, &[1, 2, 3, 4, 5]);
+            let removed = splice(p, negative, -2, 2, 0);
+            assert_eq!(i32_items(&c, removed), vec![4, 5]);
+            assert_eq!(i32_items(&c, negative), vec![1, 2, 3]);
+
+            let past_start = arr_i32(&mut c, &[1, 2, 3]);
+            let removed = splice(p, past_start, 99, 5, 0);
+            assert_eq!(i32_items(&c, removed), Vec::<i32>::new());
+            assert_eq!(i32_items(&c, past_start), vec![1, 2, 3]);
+
+            let past_end = arr_i32(&mut c, &[1, 2, 3]);
+            let removed = splice(p, past_end, 1, 99, 0);
+            assert_eq!(i32_items(&c, removed), vec![2, 3]);
+            assert_eq!(i32_items(&c, past_end), vec![1]);
+
+            let negative_count = arr_i32(&mut c, &[1, 2, 3]);
+            let removed = splice(p, negative_count, -2, -1, 0);
+            assert_eq!(i32_items(&c, removed), Vec::<i32>::new());
+            assert_eq!(i32_items(&c, negative_count), vec![1, 2, 3]);
+
+            let shifted = arr_i32(&mut c, &[1, 2, 3]);
+            let mut first = 0i32;
+            shift(p, shifted, (&mut first as *mut i32).cast(), 0);
+            assert_eq!(first, 1);
+            assert_eq!(i32_items(&c, shifted), vec![2, 3]);
+
+            let prepended = arr_i32(&mut c, &[1]);
+            let zero = 0i32;
+            assert_eq!(unshift(p, prepended, (&zero as *const i32).cast(), 0), 2);
+            assert_eq!(i32_items(&c, prepended), vec![0, 1]);
+
+            let to_front = arr_i32(&mut c, &[1, 2, 3, 4, 5]);
+            copy_within(p, to_front, 0, 3, i32::MAX);
+            assert_eq!(i32_items(&c, to_front), vec![4, 5, 3, 4, 5]);
+
+            let one = arr_i32(&mut c, &[1, 2, 3, 4, 5]);
+            copy_within(p, one, 1, 3, 4);
+            assert_eq!(i32_items(&c, one), vec![1, 4, 3, 4, 5]);
+
+            let negative = arr_i32(&mut c, &[1, 2, 3, 4, 5]);
+            copy_within(p, negative, -2, -4, -3);
+            assert_eq!(i32_items(&c, negative), vec![1, 2, 3, 2, 5]);
+        }
+    }
+
+    #[test]
+    fn empty_shift_uses_the_empty_pop_kind_with_a_shift_message() {
+        let mut c = ctx();
+        let p: *mut Context = &mut *c;
+        let empty = arr_i32(&mut c, &[]);
+        let mut out = 0i32;
+        // SAFETY: live empty array; `out` is writable for one i32.
+        unsafe { shift(p, empty, (&mut out as *mut i32).cast(), 73) };
+        let trap = c.trap_record().expect("empty shift must trap");
+        assert_eq!(trap.kind, TrapKind::EmptyPop);
+        assert_eq!(trap.message, "shift() on an empty array");
+        assert_eq!(trap.pos_id, 73);
+    }
+
+    #[test]
     fn for_each_and_map_and_filter() {
         let mut c = ctx();
         let p: *mut Context = &mut *c;
@@ -1553,6 +1865,19 @@ mod tests {
                 (&mut acc as *mut f64).cast(),
             );
             assert_eq!(acc, 106.0);
+
+            let mut right = 0i32;
+            reduce_right(
+                p,
+                h,
+                append_digit as *const u8,
+                std::ptr::null(),
+                ElemKind::Int,
+                ElemKind::Int,
+                4,
+                (&mut right as *mut i32).cast(),
+            );
+            assert_eq!(right, 321);
         }
     }
 

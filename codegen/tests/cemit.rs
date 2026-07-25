@@ -378,6 +378,28 @@ fn array_trapping_map_callback_reports_identically_across_tiers() {
 }
 
 #[test]
+fn array_empty_shift_reports_identically_across_tiers() {
+    let files = [SourceFile::new(
+        "test.ts",
+        "export function main(): void {\n  const xs: i32[] = [];\n  print(`${xs.shift()}`);\n}\n",
+    )];
+    let mut reports = Vec::new();
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::EmptyPop, "{tier}");
+                assert_eq!(t.message, "shift() on an empty array", "{tier}");
+                assert_eq!(t.pos.file, "test.ts", "{tier}");
+                assert_eq!(t.pos.line, 3, "{tier}");
+                reports.push((t.rule, t.message, t.pos));
+            }
+            other => panic!("{tier}: expected an empty-array trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
 fn array_methods_match_across_tiers_without_a_golden() {
     // The committed a44/a45 goldens pin the full batteries; this pins
     // cross-tier agreement for a compact slice with computed receivers,
