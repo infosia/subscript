@@ -35,9 +35,11 @@ const ENTRY_PREFIX: usize = 16; // hash, active
 pub enum KeyKind {
     /// Integer-like bits: sized integers, boolean, enum, and `Date`.
     Bits,
-    /// IEEE `f32`; equality is `===`, and zero hashes canonically.
+    /// IEEE `f32` under SameValueZero (Q24): every NaN payload is one
+    /// key, and `-0` is stored, hashed and compared as `+0`.
     F32,
-    /// IEEE `f64`; equality is `===`, and zero hashes canonically.
+    /// IEEE `f64` under SameValueZero (Q24): every NaN payload is one
+    /// key, and `-0` is stored, hashed and compared as `+0`.
     F64,
     /// A string handle, compared and hashed by UTF-8 content.
     Str,

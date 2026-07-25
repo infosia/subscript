@@ -230,8 +230,8 @@ returning a string allocates via the Context):
   an empty `pad` with `len > length` traps (JS returns the string
   unchanged for empty pad — divergence recorded in Q21: silent
   non-padding hides bugs)
-- `toUpperCase(): string`, `toLowerCase(): string` — Unicode Default Case Conversion (Q21)
-  only (Q21)
+- `toUpperCase(): string`, `toLowerCase(): string` — Unicode Default
+  Case Conversion, including the special-casing table (Q21)
 - `replace(pat: string, repl: string): string` — first occurrence,
   literal (no regex; `$` in the replacement is **not** interpreted —
   Q21; JS substitutes `$$`/`$&`)

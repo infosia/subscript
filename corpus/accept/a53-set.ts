@@ -1,6 +1,7 @@
 // corpus: accept/a53-set
-// purpose: Exercises the accepted Set battery plus Q24 float zero,
-//          NaN insertion, and an ordinary float miss.
+// purpose: Exercises the accepted Set battery plus Q24 float zero
+//          normalization, NaN retrieval under SameValueZero, and an
+//          ordinary float miss.
 // exercises: set-methods, float-keys, deterministic-hashing
 // questions: Q24, Q22
 
@@ -21,5 +22,7 @@ export function main(): void {
   const zero: f64 = 0.0;
   const computedNaN: f64 = zero / zero;
   floats.add(computedNaN);
-  print(`float ${floats.has(plusZero)} ${floats.has(1.0)} ${floats.size}`);
+  // SameValueZero (Q24, 2026-07-25): the inserted NaN is retrievable,
+  // and `-0` was normalized to `+0` on insert.
+  print(`float ${floats.has(plusZero)} ${floats.has(computedNaN)} ${floats.has(1.0)} ${floats.size}`);
 }

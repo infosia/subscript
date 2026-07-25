@@ -2,7 +2,7 @@ iof 0 3 -1
 liof 2 -1
 inc true false
 fiof 0 1 -1
-finc false
+finc true false
 siof 1 0
 sliof 2 -1
 diof 1 -1

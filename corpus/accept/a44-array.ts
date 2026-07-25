@@ -2,7 +2,8 @@
 // purpose: Exercises the no-closure Array method subset of stdlib.md §9
 //          (Q22): indexOf/lastIndexOf per-kind `===` equality (i32 by
 //          value, f64 IEEE, string by content, Date by millis, reference
-//          classes by identity), ordinary includes hits/misses, join
+//          classes by identity) contrasted with includes, which uses
+//          SameValueZero and therefore finds NaN; join
 //          with Q14 formatting and the "," default separator, slice
 //          with the JS negative/clamp rules, fill/reverse in place
 //          returning the receiver, and concat of exactly one array.
@@ -23,11 +24,14 @@ export function main(): void {
   print(`liof ${xs.lastIndexOf(4)} ${xs.lastIndexOf(5)}`);
   const has7: boolean = xs.includes(7);
   print(`inc ${has7} ${xs.includes(5)}`);
-  // f64[]: IEEE index equality — -0 equals 0; NaN is never found.
-  // The SameValueZero includes/NaN case is isolated in a61.
+  // f64[]: -0 equals 0 for every search; `indexOf` uses `===` and so
+  // never finds NaN, while `includes` uses SameValueZero and does.
   const fs: f64[] = [0, 1.5, Math.sqrt(-1)];
   print(`fiof ${fs.indexOf(-0)} ${fs.indexOf(1.5)} ${fs.indexOf(Math.sqrt(-1))}`);
-  print(`finc ${fs.includes(2.5)}`);
+  // SameValueZero: `includes` finds NaN where `indexOf` above does not
+  // (Q22, 2026-07-25). a61 isolates the rule; this line keeps the two
+  // searches side by side, which is where the divergence is visible.
+  print(`finc ${fs.includes(Math.sqrt(-1))} ${fs.includes(2.5)}`);
   // string[]: equality by content — split-produced strings match fresh
   // literals and concatenations (never pointer identity).
   const parts: string[] = "alpha,beta,alpha".split(",");
