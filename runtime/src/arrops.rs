@@ -1411,6 +1411,415 @@ pub unsafe fn find_index(
     unsafe { search(ctx, h, code, env, kind, SearchMode::FindIndex, indexed) }
 }
 
+// ----- FixedArray callback operations (Q27) -----
+
+/// Reads element `i` from an in-place fixed buffer. The generated tier
+/// supplies its concrete element width separately and [`abi_or_trap`]
+/// proves that it matches `T` before this helper is reached.
+///
+/// # Safety
+///
+/// `data` is readable for `(i + 1) * size_of::<T>()` bytes.
+unsafe fn fixed_read<T>(data: *const u8, i: usize) -> T {
+    // SAFETY: caller contract.
+    unsafe { data.add(i * std::mem::size_of::<T>()).cast::<T>().read_unaligned() }
+}
+
+unsafe fn fixed_cb_blocked(ctx: *mut Context, data: *const u8, len: usize, code: *const u8) -> bool {
+    code.is_null() || (data.is_null() && len != 0) || unsafe { (*ctx).trapped() }
+}
+
+/// Q27 `FixedArray.forEach`: direct iteration over the caller's
+/// fixed-length in-place storage.
+///
+/// # Safety
+///
+/// `data` is readable for `len * elem_size` bytes and `code`/`env`
+/// have the callback shape selected by `kind` and `indexed`.
+pub unsafe fn fixed_for_each(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) {
+    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
+        return;
+    }
+    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, elem_size) }) else {
+        return;
+    };
+    with_abi!(abi, T, {
+        for i in 0..len {
+            let value: T = unsafe { fixed_read(data, i) };
+            let (): () =
+                unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+            if unsafe { (*ctx).trapped() } {
+                break;
+            }
+        }
+    });
+}
+
+/// Q27 `FixedArray.map`: a fresh dynamic array of callback results.
+///
+/// # Safety
+///
+/// As [`fixed_for_each`], with the result ABI described by
+/// `ret_kind`/`ret_size`.
+pub unsafe fn fixed_map(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    ret_kind: ElemKind,
+    ret_size: usize,
+    pos_id: u32,
+    indexed: bool,
+) -> *mut u8 {
+    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
+        return std::ptr::null_mut();
+    }
+    let (Some(ea), Some(ra)) = (
+        unsafe { abi_or_trap(ctx, elem_kind, elem_size) },
+        unsafe { abi_or_trap(ctx, ret_kind, ret_size) },
+    ) else {
+        return std::ptr::null_mut();
+    };
+    let out = unsafe { &mut *ctx }.array_new(ret_size, pos_id);
+    if out.is_null() {
+        return out;
+    }
+    // The result is runtime-owned until this call returns to generated
+    // code; keep it live if a callback explicitly collects.
+    let mut root = out as usize;
+    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
+    with_abi!(ea, T, {
+        with_abi!(ra, R, {
+            for i in 0..len {
+                let value: T = unsafe { fixed_read(data, i) };
+                let result: R =
+                    unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+                if unsafe { (*ctx).trapped() } {
+                    break;
+                }
+                if unsafe {
+                    (*ctx).array_push(out, (&result as *const R).cast(), pos_id)
+                } < 0
+                {
+                    break;
+                }
+            }
+        })
+    });
+    unsafe { (*ctx).shadow_pop() };
+    out
+}
+
+/// Q27 `FixedArray.filter`: selected elements in a fresh dynamic array.
+///
+/// # Safety
+///
+/// As [`fixed_for_each`].
+pub unsafe fn fixed_filter(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    pos_id: u32,
+    indexed: bool,
+) -> *mut u8 {
+    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
+        return std::ptr::null_mut();
+    }
+    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, elem_size) }) else {
+        return std::ptr::null_mut();
+    };
+    let out = unsafe { &mut *ctx }.array_new(elem_size, pos_id);
+    if out.is_null() {
+        return out;
+    }
+    let mut root = out as usize;
+    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
+    with_abi!(abi, T, {
+        for i in 0..len {
+            let value: T = unsafe { fixed_read(data, i) };
+            let keep: u8 =
+                unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+            if unsafe { (*ctx).trapped() } {
+                break;
+            }
+            if keep != 0
+                && unsafe {
+                    (*ctx).array_push(out, (&value as *const T).cast(), pos_id)
+                } < 0
+            {
+                break;
+            }
+        }
+    });
+    unsafe { (*ctx).shadow_pop() };
+    out
+}
+
+unsafe fn fixed_reduce_direction(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    acc_kind: ElemKind,
+    acc_size: usize,
+    acc_ptr: *mut u8,
+    direction: ReduceDirection,
+    indexed: bool,
+) {
+    if acc_ptr.is_null() || unsafe { fixed_cb_blocked(ctx, data, len, code) } {
+        return;
+    }
+    let (Some(ea), Some(aa)) = (
+        unsafe { abi_or_trap(ctx, elem_kind, elem_size) },
+        unsafe { abi_or_trap(ctx, acc_kind, acc_size) },
+    ) else {
+        return;
+    };
+    with_abi!(ea, T, {
+        with_abi!(aa, A, {
+            let mut acc: A = unsafe { acc_ptr.cast::<A>().read_unaligned() };
+            for step in 0..len {
+                let i = match direction {
+                    ReduceDirection::Left => step,
+                    ReduceDirection::Right => len - 1 - step,
+                };
+                let value: T = unsafe { fixed_read(data, i) };
+                let result: A =
+                    unsafe { call_reduce(code, ctx, env, acc, value, i as i32, indexed) };
+                if unsafe { (*ctx).trapped() } {
+                    break;
+                }
+                acc = result;
+            }
+            unsafe { acc_ptr.cast::<A>().write_unaligned(acc) };
+        })
+    });
+}
+
+/// Q27 `FixedArray.reduce`.
+///
+/// # Safety
+///
+/// As [`fixed_for_each`]; `acc_ptr` is readable and writable for
+/// `acc_size` bytes.
+pub unsafe fn fixed_reduce(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    acc_kind: ElemKind,
+    acc_size: usize,
+    acc_ptr: *mut u8,
+    indexed: bool,
+) {
+    unsafe {
+        fixed_reduce_direction(
+            ctx,
+            data,
+            len,
+            elem_size,
+            code,
+            env,
+            elem_kind,
+            acc_kind,
+            acc_size,
+            acc_ptr,
+            ReduceDirection::Left,
+            indexed,
+        )
+    };
+}
+
+/// Q27 `FixedArray.reduceRight`.
+///
+/// # Safety
+///
+/// As [`fixed_reduce`].
+pub unsafe fn fixed_reduce_right(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    acc_kind: ElemKind,
+    acc_size: usize,
+    acc_ptr: *mut u8,
+    indexed: bool,
+) {
+    unsafe {
+        fixed_reduce_direction(
+            ctx,
+            data,
+            len,
+            elem_size,
+            code,
+            env,
+            elem_kind,
+            acc_kind,
+            acc_size,
+            acc_ptr,
+            ReduceDirection::Right,
+            indexed,
+        )
+    };
+}
+
+unsafe fn fixed_search(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    mode: SearchMode,
+    indexed: bool,
+) -> i32 {
+    let miss = match mode {
+        SearchMode::Some => 0,
+        SearchMode::Every => 1,
+        SearchMode::FindIndex => -1,
+    };
+    let trapped_result = if mode == SearchMode::FindIndex { -1 } else { 0 };
+    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
+        return trapped_result;
+    }
+    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, elem_size) }) else {
+        return trapped_result;
+    };
+    with_abi!(abi, T, {
+        for i in 0..len {
+            let value: T = unsafe { fixed_read(data, i) };
+            let result: u8 =
+                unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+            if unsafe { (*ctx).trapped() } {
+                return trapped_result;
+            }
+            match mode {
+                SearchMode::Some if result != 0 => return 1,
+                SearchMode::Every if result == 0 => return 0,
+                SearchMode::FindIndex if result != 0 => return i as i32,
+                _ => {}
+            }
+        }
+    });
+    miss
+}
+
+/// Q27 `FixedArray.some`.
+///
+/// # Safety
+///
+/// As [`fixed_for_each`].
+pub unsafe fn fixed_some(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) -> i32 {
+    unsafe {
+        fixed_search(
+            ctx,
+            data,
+            len,
+            elem_size,
+            code,
+            env,
+            kind,
+            SearchMode::Some,
+            indexed,
+        )
+    }
+}
+
+/// Q27 `FixedArray.every`.
+///
+/// # Safety
+///
+/// As [`fixed_some`].
+pub unsafe fn fixed_every(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) -> i32 {
+    unsafe {
+        fixed_search(
+            ctx,
+            data,
+            len,
+            elem_size,
+            code,
+            env,
+            kind,
+            SearchMode::Every,
+            indexed,
+        )
+    }
+}
+
+/// Q27 `FixedArray.findIndex`.
+///
+/// # Safety
+///
+/// As [`fixed_some`].
+pub unsafe fn fixed_find_index(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    elem_size: usize,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) -> i32 {
+    unsafe {
+        fixed_search(
+            ctx,
+            data,
+            len,
+            elem_size,
+            code,
+            env,
+            kind,
+            SearchMode::FindIndex,
+            indexed,
+        )
+    }
+}
+
 /// Stable bottom-up merge sort of `a` using the script comparator;
 /// `false` when a comparator call trapped (the caller then discards the
 /// buffer). Stability: the merge takes from the left run when

@@ -2017,9 +2017,13 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        let optional_slice = f == StrFn::Slice;
         let optional_zero_position =
             matches!(f, StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith);
-        let optional_end_position = matches!(f, StrFn::EndsWith | StrFn::Substring | StrFn::Substr);
+        let optional_end_position = matches!(
+            f,
+            StrFn::EndsWith | StrFn::Substring | StrFn::Substr
+        );
         let optional_pad = matches!(f, StrFn::PadStart | StrFn::PadEnd);
         let params: Vec<ParamSig> = f
             .params()
@@ -2031,21 +2035,29 @@ impl<'p> Checker<'p> {
                     hir::StrParam::Str => Type::Str,
                     hir::StrParam::I32 => Type::I32,
                 },
-                has_default: i == 1
-                    && (optional_zero_position || optional_end_position || optional_pad),
+                has_default: optional_slice
+                    || (i == 1
+                        && (optional_zero_position || optional_end_position || optional_pad)),
             })
             .collect();
         let mut args = self.check_args(&params, &c.args, fx, &pos, f.name());
+        if optional_slice && args.is_empty() {
+            args.push(hir::Expr {
+                kind: ExprKind::Int(0),
+                ty: Type::I32,
+                pos: pos.clone(),
+            });
+        }
         if args.len() + 1 == params.len() {
-            if optional_zero_position {
+            if optional_slice || optional_end_position {
                 args.push(hir::Expr {
-                    kind: ExprKind::Int(0),
+                    kind: ExprKind::Int(i64::from(i32::MAX)),
                     ty: Type::I32,
                     pos: pos.clone(),
                 });
-            } else if optional_end_position {
+            } else if optional_zero_position {
                 args.push(hir::Expr {
-                    kind: ExprKind::Int(i64::from(i32::MAX)),
+                    kind: ExprKind::Int(0),
                     ty: Type::I32,
                     pos: pos.clone(),
                 });
@@ -3141,7 +3153,13 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        let q24 = method.starts_with("Map.") || method.starts_with("Set.");
+        let q_rule = if method == "Map.groupBy" {
+            "Q27"
+        } else if method.starts_with("Map.") || method.starts_with("Set.") {
+            "Q24"
+        } else {
+            "Q22"
+        };
         self.error(
             RuleCode::S014,
             if allow_index {
@@ -3151,11 +3169,11 @@ impl<'p> Checker<'p> {
                     base.len(),
                     base.len() + 1,
                 )
-            } else if q24 {
+            } else if q_rule == "Q24" || q_rule == "Q27" {
                 format!(
                     "`{method}` callbacks take exactly {} parameter(s); \
-                     extra lib callback parameters are not accepted (Q24)",
-                    base.len()
+                     extra lib callback parameters are not accepted ({q_rule})",
+                    base.len(),
                 )
             } else {
                 format!(
@@ -3424,11 +3442,28 @@ impl<'p> Checker<'p> {
                     } else if !self.arr_subset_rejection(name, prop_pos.clone()) {
                         self.arr_surface_error(name, prop_pos.clone());
                     }
+                } else if !for_write
+                    && crate::ambient::arr_method(name)
+                        .is_some_and(|f| f.fixed_symbol().is_some())
+                {
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{name}` may only be called, not read as a value"),
+                        prop_pos.clone(),
+                    );
+                } else if crate::ambient::arr_method(name).is_some() {
+                    self.reject_api_form(
+                        "FixedArray<T, N>",
+                        "non-callback T[] methods",
+                        name,
+                        prop_pos.clone(),
+                    );
                 } else {
                     self.error(
                         RuleCode::S100,
                         format!(
-                            "`{}` is outside the FixedArray surface (length, indexing)",
+                            "`{}` is outside the FixedArray surface (length, indexing, \
+                             and the Q27 callback family)",
                             name
                         ),
                         prop_pos.clone(),
@@ -3511,9 +3546,7 @@ impl<'p> Checker<'p> {
                 // A member on a string outside a call position
                 // (stdlib.md §8): the accepted members beyond `length`
                 // are all methods.
-                if !for_write
-                    && (name == "slice" || crate::ambient::str_method(name).is_some())
-                {
+                if !for_write && crate::ambient::str_method(name).is_some() {
                     self.error(
                         RuleCode::S100,
                         format!("method `{}` may only be called, not read as a value", name),
@@ -4248,36 +4281,39 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 }
             },
-            // stdlib.md §9: the v1 Array methods are `T[]` only. Only the
-            // Q22 methods cite Q22 — `push`/`pop` are not Q22 members
-            // (`ambient::arr_method` excludes them), so they keep the
-            // standing "no method" diagnostic of the fall-through arm.
-            Type::FixedArray(..) if crate::ambient::arr_method(&name).is_some() => {
-                self.reject_api_form(
-                    "FixedArray<T, N>",
-                    "T[] methods",
-                    &name,
-                    prop_pos.clone(),
+            // Q27 accepts the closure-taking `every` family on the
+            // in-place fixed buffer. Other checker-owned Array methods
+            // retain a named S014; `push`/`pop` are not in that table and
+            // keep the standing "no method" diagnostic.
+            Type::FixedArray(elem, n) => {
+                if let Some(f) = crate::ambient::arr_method(&name) {
+                    if f.fixed_symbol().is_some() {
+                        return self.check_array_method(
+                            recv,
+                            (*elem).clone(),
+                            f,
+                            c,
+                            fx,
+                            pos,
+                        );
+                    }
+                    self.reject_api_form(
+                        "FixedArray<T, N>",
+                        "non-callback T[] methods",
+                        &name,
+                        prop_pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let type_name = self.type_name(&Type::FixedArray(elem, n));
+                self.error(
+                    RuleCode::S100,
+                    format!("`{type_name}` has no method `{name}`"),
+                    prop_pos,
                 );
                 self.err_expr(pos)
             }
             Type::Str => match name.as_str() {
-                "slice" => {
-                    let params = [
-                        ParamSig {
-                            name: String::new(),
-                            ty: Type::I32,
-                            has_default: false,
-                        },
-                        ParamSig {
-                            name: String::new(),
-                            ty: Type::I32,
-                            has_default: false,
-                        },
-                    ];
-                    let args = self.check_args(&params, &c.args, fx, &pos, "slice");
-                    mk(recv, args, Type::Str, pos)
-                }
                 other => {
                     // The §8 method intrinsics (stdlib.md §8, Q21).
                     if let Some(f) = crate::ambient::str_method(other) {

@@ -495,7 +495,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("T[]", "callback(value, index, array)", "Q27", Some("callback(value, index)"), "Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule.", Some("r55-array-callback-container.ts")),
     rejection("T[]", "splice(start, deleteCount, ...items)", "Q27", None, "Variadic parameters are the missing prerequisite for insertion through `splice`.", Some("r32-array-splice.ts")),
     rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
-    rejection("FixedArray<T, N>", "T[] methods", "Q22", None, "FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays.", None),
+    rejection("FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
     rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
     rejection("Map / Set", "new Map/Set(iterable)", "Q24", Some("construct empty, then add/set"), "The language has no iterator protocol.", Some("r43-map-iterable-constructor.ts")),
     rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
@@ -609,8 +609,7 @@ pub(crate) fn date_method(name: &str) -> Option<DateFn> {
 }
 
 /// Maps a `String` method name to its intrinsic (stdlib.md §8, Q21).
-/// `slice` is not here — it predates the §8 surface and stays on the
-/// `Callee::Method` path; the out-of-subset members resolve to nothing.
+/// The out-of-subset members resolve to nothing.
 pub(crate) fn str_method(name: &str) -> Option<StrFn> {
     StrFn::ALL.iter().copied().find(|f| f.name() == name)
 }
@@ -737,11 +736,6 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         signature: "length: i32".to_string(),
         summary: "Returns the UTF-8 byte length.",
     });
-    out.push(ApiItem {
-        group: "string",
-        signature: "slice(start: i32, end: i32): string".to_string(),
-        summary: "Slices by UTF-8 byte offsets; both arguments are required.",
-    });
     for f in StrFn::ALL {
         out.push(ApiItem {
             group: "string",
@@ -778,6 +772,16 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         signature: "length: i32".to_string(),
         summary: "Returns the compile-time fixed element count.",
     });
+    for f in ArrFn::ALL
+        .into_iter()
+        .filter(|f| f.fixed_symbol().is_some())
+    {
+        out.push(ApiItem {
+            group: "FixedArray<T, N>",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
     for f in MapFn::ALL {
         out.push(ApiItem {
             group: match f {
@@ -998,8 +1002,7 @@ mod tests {
         for f in StrFn::ALL {
             assert_eq!(str_method(f.name()), Some(f));
         }
-        // `slice` stays on the standing Callee::Method path.
-        assert_eq!(str_method("slice"), None);
+        assert_eq!(str_method("slice"), Some(StrFn::Slice));
         assert_eq!(str_method("substring"), Some(StrFn::Substring));
         assert_eq!(str_method("substr"), Some(StrFn::Substr));
         assert_eq!(str_method("charAt"), Some(StrFn::CharAt));
@@ -1123,6 +1126,13 @@ mod tests {
         }
         for f in ArrFn::ALL {
             assert!(has("T[]", f.api_signature()), "T[].{}", f.name());
+            if f.fixed_symbol().is_some() {
+                assert!(
+                    has("FixedArray<T, N>", f.api_signature()),
+                    "FixedArray.{}",
+                    f.name()
+                );
+            }
         }
         for f in MapFn::ALL {
             let group = match f {
@@ -1144,7 +1154,6 @@ mod tests {
             ("Global", "NaN: f64"),
             ("Date instance", "getTime(): i64"),
             ("string", "length: i32"),
-            ("string", "slice(start: i32, end: i32): string"),
             ("T[]", "length: i32"),
             ("T[]", "push(value: T): i32"),
             ("T[]", "pop(): T"),
@@ -1166,11 +1175,15 @@ mod tests {
             + DateFn::ALL.len()
             + 1
             + 8
-            + 2
+            + 1
             + StrFn::ALL.len()
             + 3
             + ArrFn::ALL.len()
             + 1
+            + ArrFn::ALL
+                .into_iter()
+                .filter(|f| f.fixed_symbol().is_some())
+                .count()
             + MapFn::ALL.len()
             + SetFn::ALL.len()
             + 3;

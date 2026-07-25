@@ -2922,13 +2922,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ) -> Result<RV, String> {
         use hir::ArrFn as A;
         let recv = args.first().ok_or_else(|| internal("array method receiver"))?;
-        let elem = match &recv.ty {
-            Type::Array(e) => (**e).clone(),
+        let (elem, fixed_len) = match &recv.ty {
+            Type::Array(e) => ((**e).clone(), None),
+            Type::FixedArray(e, n) => ((**e).clone(), Some(*n)),
             other => return Err(internal(format!("array method on {other:?}"))),
         };
         let rv = self.eval(recv)?;
-        let h = self.expect_s(rv)?;
-        let rt = self.ml.rt.arr_ops[f as usize];
+        let h = if fixed_len.is_some() {
+            self.expect_a(rv)?
+        } else {
+            self.expect_s(rv)?
+        };
+        let rt = if fixed_len.is_some() {
+            self.ml.rt.fixed_arr_ops[f as usize]
+                .ok_or_else(|| internal(format!("{} is not a FixedArray method", f.name())))?
+        } else {
+            self.ml.rt.arr_ops[f as usize]
+        };
         let arg_at = |i: usize| -> Result<&hir::Expr, String> {
             args.get(i)
                 .ok_or_else(|| internal(format!("{} arity (checker normalizes)", f.name())))
@@ -3054,7 +3064,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let cb = self.eval(callback)?;
                 let (code, env) = self.expect_p(cb)?;
                 let kv = self.iconst(types::I32, i64::from(kind.code()));
-                let mut argv = vec![self.ctx_v, h, code, env, kv];
+                let mut argv = vec![self.ctx_v, h];
+                if let Some(n) = fixed_len {
+                    let stride = self.ml.layouts.stride(&elem)?;
+                    argv.push(self.iconst(types::I64, i64::from(n)));
+                    argv.push(self.iconst(types::I64, i64::from(stride)));
+                }
+                argv.extend([code, env, kv]);
                 if f == A::Filter {
                     let pid = self.pos_id(pos);
                     argv.push(self.iconst(types::I32, pid));
@@ -3096,9 +3112,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
                 let indexed_v = self.iconst(types::I32, i64::from(indexed));
+                let mut argv = vec![self.ctx_v, h];
+                if let Some(n) = fixed_len {
+                    let elem_stride = self.ml.layouts.stride(&elem)?;
+                    argv.push(self.iconst(types::I64, i64::from(n)));
+                    argv.push(self.iconst(types::I64, i64::from(elem_stride)));
+                }
+                argv.extend([
+                    code, env, ekv, rkv, size_v, pos_v, indexed_v,
+                ]);
                 let res = self.call_rt(
                     rt,
-                    &[self.ctx_v, h, code, env, ekv, rkv, size_v, pos_v, indexed_v],
+                    &argv,
                     checked,
                 )?;
                 res.map(RV::S).ok_or_else(|| internal("map result"))
@@ -3118,9 +3143,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let akv = self.iconst(types::I32, i64::from(acc_kind.code()));
                 let size_v = self.iconst(types::I64, i64::from(acc_stride));
                 let indexed_v = self.iconst(types::I32, i64::from(indexed));
+                let mut argv = vec![self.ctx_v, h];
+                if let Some(n) = fixed_len {
+                    let elem_stride = self.ml.layouts.stride(&elem)?;
+                    argv.push(self.iconst(types::I64, i64::from(n)));
+                    argv.push(self.iconst(types::I64, i64::from(elem_stride)));
+                }
+                argv.extend([
+                    code, env, ekv, akv, size_v, slot, indexed_v,
+                ]);
                 self.call_rt(
                     rt,
-                    &[self.ctx_v, h, code, env, ekv, akv, size_v, slot, indexed_v],
+                    &argv,
                     checked,
                 )?;
                 self.load_val(ret_ty, slot, 0)
@@ -3506,25 +3540,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     other => Err(internal(format!("array method `{other}`"))),
                 }
             }
-            Type::Str => {
-                let rv = self.eval(recv)?;
-                let h = self.expect_s(rv)?;
-                if name != "slice" {
-                    return Err(internal(format!("string method `{name}`")));
-                }
-                let a0 = self.eval(args.first().ok_or_else(|| internal("slice arity"))?)?;
-                let a0 = self.expect_s(a0)?;
-                let a1 = self.eval(args.get(1).ok_or_else(|| internal("slice arity"))?)?;
-                let a1 = self.expect_s(a1)?;
-                let pid = self.pos_id(pos);
-                let pos_v = self.iconst(types::I32, pid);
-                let res = self.call_rt(
-                    self.ml.rt.str_slice,
-                    &[self.ctx_v, h, a0, a1, pos_v],
-                    true,
-                )?;
-                res.map(RV::S).ok_or_else(|| internal("slice result"))
-            }
+            Type::Str => Err(internal(format!("string method `{name}`"))),
             Type::Generator(y) => {
                 if name != "next" {
                     return Err(internal(format!("generator method `{name}`")));

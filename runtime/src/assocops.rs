@@ -940,7 +940,11 @@ pub(crate) unsafe fn group_by(
 
     let elem_size = unsafe { (*ctx).array_elem_size(items) };
     let initial_len = unsafe { (*ctx).array_len(items) }.max(0) as usize;
-    let mut element = vec![0u8; elem_size];
+    // Generated bridges perform concrete typed loads from `element` and
+    // typed stores into `key`. Back both slots with `u64` storage so the
+    // bridge always receives at least 8-byte-aligned addresses.
+    let mut element = vec![0u64; elem_size.div_ceil(std::mem::size_of::<u64>())];
+    let element_ptr = element.as_mut_ptr().cast::<u8>();
     let call: GroupBridge = unsafe { std::mem::transmute(bridge) };
     for index in 0..initial_len {
         // Match the existing Array callback methods: appends after entry
@@ -954,11 +958,19 @@ pub(crate) unsafe fn group_by(
         }
         // SAFETY: source is an in-bounds element slot and `element`
         // owns exactly the tier's element width.
-        unsafe { std::ptr::copy_nonoverlapping(source, element.as_mut_ptr(), elem_size) };
-        let mut key = [0u8; 8];
+        unsafe { std::ptr::copy_nonoverlapping(source, element_ptr, elem_size) };
+        let mut key = 0u64;
         // SAFETY: generated bridge contract. Q24 key widths are at most
         // eight bytes, validated by `new`.
-        unsafe { call(ctx, code, env, element.as_ptr(), key.as_mut_ptr()) };
+        unsafe {
+            call(
+                ctx,
+                code,
+                env,
+                element_ptr,
+                (&mut key as *mut u64).cast(),
+            )
+        };
         if unsafe { (*ctx).trapped() } {
             break;
         }
@@ -968,11 +980,11 @@ pub(crate) unsafe fn group_by(
             get(
                 ctx,
                 out,
-                key.as_ptr(),
+                (&key as *const u64).cast(),
                 (&mut group as *mut *mut u8).cast(),
             )
         } {
-            if unsafe { (*ctx).array_push(group, element.as_ptr(), pos_id) } < 0 {
+            if unsafe { (*ctx).array_push(group, element_ptr, pos_id) } < 0 {
                 break;
             }
             continue;
@@ -982,7 +994,7 @@ pub(crate) unsafe fn group_by(
         if created.is_null() {
             break;
         }
-        if unsafe { (*ctx).array_push(created, element.as_ptr(), pos_id) } < 0 {
+        if unsafe { (*ctx).array_push(created, element_ptr, pos_id) } < 0 {
             break;
         }
         // `insert` copies the handle into map-owned entry storage; no
@@ -991,7 +1003,7 @@ pub(crate) unsafe fn group_by(
             insert(
                 ctx,
                 out,
-                key.as_ptr(),
+                (&key as *const u64).cast(),
                 (&created as *const *mut u8).cast(),
                 pos_id,
             )
@@ -1384,9 +1396,21 @@ mod tests {
     ) {
         let callback: unsafe extern "C" fn(*mut Context, *const u8, Pair) -> i32 =
             unsafe { std::mem::transmute(code) };
-        let value = unsafe { element.cast::<Pair>().read_unaligned() };
+        assert_eq!(
+            element.addr() % std::mem::align_of::<Pair>(),
+            0,
+            "groupBy element bridge input must be suitably aligned"
+        );
+        assert_eq!(
+            key_out.addr() % std::mem::align_of::<i32>(),
+            0,
+            "groupBy key bridge output must be suitably aligned"
+        );
+        // Match generated bridges: these are concrete typed accesses, so
+        // the runtime-owned slots must meet the concrete types' alignment.
+        let value = unsafe { *element.cast::<Pair>() };
         let key = unsafe { callback(ctx, env, value) };
-        unsafe { key_out.cast::<i32>().write_unaligned(key) };
+        unsafe { *key_out.cast::<i32>() = key };
     }
 
     unsafe extern "C" fn pair_parity_with_collect(

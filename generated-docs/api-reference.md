@@ -135,7 +135,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `length: i32` | Returns the UTF-8 byte length. |
-| `slice(start: i32, end: i32): string` | Slices by UTF-8 byte offsets; both arguments are required. |
+| `slice(start?: i32, end?: i32): string` | Returns a fresh UTF-8 byte range using JS clamp and negative-index rules. |
 | `indexOf(needle: string, from?: i32): i32` | Returns the first matching byte index, or -1. |
 | `lastIndexOf(needle: string): i32` | Returns the last matching byte index, or -1. |
 | `includes(needle: string, from?: i32): boolean` | Tests for a substring from an optional byte index. |
@@ -193,6 +193,14 @@
 | subscript signature | Behavior |
 |---|---|
 | `length: i32` | Returns the compile-time fixed element count. |
+| `forEach(callback: ((value: T) => void) \| ((value: T, index: i32) => void)): void` | Calls a non-escaping callback with a value and optional index. |
+| `map<U>(callback: ((value: T) => U) \| ((value: T, index: i32) => U)): U[]` | Maps through a non-escaping callback and infers `U`. |
+| `filter(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T[]` | Returns elements selected by a non-escaping callback. |
+| `reduce<U>(callback: ((acc: U, value: T) => U) \| ((acc: U, value: T, index: i32) => U), init: U): U` | Folds from a required initial accumulator. |
+| `some(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): boolean` | Short-circuits on the first true callback result. |
+| `every(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): boolean` | Short-circuits on the first false callback result. |
+| `findIndex(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): i32` | Returns the first matching callback index, or -1. |
+| `reduceRight<U>(callback: ((acc: U, value: T) => U) \| ((acc: U, value: T, index: i32) => U), init: U): U` | Folds right-to-left from a required initial accumulator. |
 
 ### Map constructor
 
@@ -325,7 +333,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `callback(value, index, array)` | S014 | Q27 | `callback(value, index)` | Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule. | `r55-array-callback-container.ts` |
 | T[] | `splice(start, deleteCount, ...items)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for insertion through `splice`. | `r32-array-splice.ts` |
 | T[] | `unshift(value, ...values)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for prepending multiple elements. | `r51-array-unshift-variadic.ts` |
-| FixedArray<T, N> | `T[] methods` | S014 | Q22 | — | FixedArray accepts only length and indexing; the checker-owned Array methods apply to dynamic arrays. | — |
+| FixedArray<T, N> | `non-callback T[] methods` | S014 | Q22/Q27 | — | Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. | — |
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
 | Map / Set | `new Map/Set(iterable)` | S014 | Q24 | `construct empty, then add/set` | The language has no iterator protocol. | `r43-map-iterable-constructor.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |

@@ -2764,6 +2764,343 @@ pub unsafe extern "C" fn sub_rt_arr_find_index(
     unsafe { crate::arrops::find_index(ctx, a, code, env, kind, indexed != 0) }
 }
 
+// Q27 FixedArray callback family. Unlike the dynamic-array entries
+// above, these receive the in-place element storage, compile-time
+// length, and concrete tier element width directly.
+
+/// `FixedArray.forEach` over in-place storage.
+///
+/// # Safety
+///
+/// `data` is readable for `len * elem_size` bytes; callback pointers
+/// have the selected generated ABI.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_for_each(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) {
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return;
+    };
+    unsafe {
+        crate::arrops::fixed_for_each(
+            ctx,
+            data,
+            len as usize,
+            elem_size as usize,
+            code,
+            env,
+            kind,
+            indexed != 0,
+        )
+    };
+}
+
+/// `FixedArray.map` into a fresh dynamic array.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_for_each`], with the result ABI described by
+/// `ret_kind` and `ret_size`.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_map(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    ret_kind: u32,
+    ret_size: u64,
+    pos_id: u32,
+    indexed: u32,
+) -> *mut u8 {
+    let (Some(elem_kind), Some(ret_kind)) = (
+        unsafe { decode_elem_kind(ctx, elem_kind) },
+        unsafe { decode_elem_kind(ctx, ret_kind) },
+    ) else {
+        return std::ptr::null_mut();
+    };
+    unsafe {
+        crate::arrops::fixed_map(
+            ctx,
+            data,
+            len as usize,
+            elem_size as usize,
+            code,
+            env,
+            elem_kind,
+            ret_kind,
+            ret_size as usize,
+            pos_id,
+            indexed != 0,
+        )
+    }
+}
+
+/// `FixedArray.filter` into a fresh dynamic array.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_for_each`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_filter(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    pos_id: u32,
+    indexed: u32,
+) -> *mut u8 {
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return std::ptr::null_mut();
+    };
+    unsafe {
+        crate::arrops::fixed_filter(
+            ctx,
+            data,
+            len as usize,
+            elem_size as usize,
+            code,
+            env,
+            kind,
+            pos_id,
+            indexed != 0,
+        )
+    }
+}
+
+unsafe fn fixed_arr_reduce_entry(
+    right: bool,
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    acc_kind: u32,
+    acc_size: u64,
+    acc: *mut u8,
+    indexed: u32,
+) {
+    let (Some(elem_kind), Some(acc_kind)) = (
+        unsafe { decode_elem_kind(ctx, elem_kind) },
+        unsafe { decode_elem_kind(ctx, acc_kind) },
+    ) else {
+        return;
+    };
+    if right {
+        unsafe {
+            crate::arrops::fixed_reduce_right(
+                ctx,
+                data,
+                len as usize,
+                elem_size as usize,
+                code,
+                env,
+                elem_kind,
+                acc_kind,
+                acc_size as usize,
+                acc,
+                indexed != 0,
+            )
+        };
+    } else {
+        unsafe {
+            crate::arrops::fixed_reduce(
+                ctx,
+                data,
+                len as usize,
+                elem_size as usize,
+                code,
+                env,
+                elem_kind,
+                acc_kind,
+                acc_size as usize,
+                acc,
+                indexed != 0,
+            )
+        };
+    }
+}
+
+/// `FixedArray.reduce` from the left.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_for_each`]; `acc` is readable and writable for
+/// `acc_size` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_reduce(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    acc_kind: u32,
+    acc_size: u64,
+    acc: *mut u8,
+    indexed: u32,
+) {
+    unsafe {
+        fixed_arr_reduce_entry(
+            false, ctx, data, len, elem_size, code, env, elem_kind, acc_kind, acc_size, acc,
+            indexed,
+        )
+    };
+}
+
+/// `FixedArray.reduceRight` from the right.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_reduce`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_reduce_right(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: u32,
+    acc_kind: u32,
+    acc_size: u64,
+    acc: *mut u8,
+    indexed: u32,
+) {
+    unsafe {
+        fixed_arr_reduce_entry(
+            true, ctx, data, len, elem_size, code, env, elem_kind, acc_kind, acc_size, acc,
+            indexed,
+        )
+    };
+}
+
+unsafe fn fixed_arr_search_entry(
+    operation: u8,
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> i32 {
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return if operation == 2 { -1 } else { 0 };
+    };
+    match operation {
+        0 => unsafe {
+            crate::arrops::fixed_some(
+                ctx,
+                data,
+                len as usize,
+                elem_size as usize,
+                code,
+                env,
+                kind,
+                indexed != 0,
+            )
+        },
+        1 => unsafe {
+            crate::arrops::fixed_every(
+                ctx,
+                data,
+                len as usize,
+                elem_size as usize,
+                code,
+                env,
+                kind,
+                indexed != 0,
+            )
+        },
+        _ => unsafe {
+            crate::arrops::fixed_find_index(
+                ctx,
+                data,
+                len as usize,
+                elem_size as usize,
+                code,
+                env,
+                kind,
+                indexed != 0,
+            )
+        },
+    }
+}
+
+/// `FixedArray.some`.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_for_each`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_some(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> i32 {
+    unsafe { fixed_arr_search_entry(0, ctx, data, len, elem_size, code, env, kind, indexed) }
+}
+
+/// `FixedArray.every`.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_some`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_every(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> i32 {
+    unsafe { fixed_arr_search_entry(1, ctx, data, len, elem_size, code, env, kind, indexed) }
+}
+
+/// `FixedArray.findIndex`.
+///
+/// # Safety
+///
+/// As [`sub_rt_fixed_arr_some`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_fixed_arr_find_index(
+    ctx: *mut Context,
+    data: *const u8,
+    len: u64,
+    elem_size: u64,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> i32 {
+    unsafe { fixed_arr_search_entry(2, ctx, data, len, elem_size, code, env, kind, indexed) }
+}
+
 /// `sort(cmp)`: stable merge sort in place; a comparator trap leaves
 /// the array exactly as it was (stdlib.md §9). Generated code reuses
 /// the receiver handle as the expression's value.

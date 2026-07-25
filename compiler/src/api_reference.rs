@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_reference_shows_only_array_index_callback_overloads() {
+    fn generated_reference_shows_dynamic_and_fixed_array_index_callback_overloads() {
         let markdown = render_markdown();
         for method in [
             "forEach(callback:",
@@ -561,11 +561,19 @@ mod tests {
             "findIndex(callback:",
             "reduceRight<U>(callback:",
         ] {
-            let row = markdown
+            let rows: Vec<_> = markdown
                 .lines()
-                .find(|line| line.contains(method) && line.contains("index: i32"))
-                .unwrap_or_else(|| panic!("missing indexed callback signature for {method}"));
-            assert!(row.starts_with("| `"), "{method}: malformed accepted row");
+                .filter(|line| line.contains(method) && line.contains("index: i32"))
+                .collect();
+            assert_eq!(
+                rows.len(),
+                2,
+                "expected T[] and FixedArray indexed callback signatures for {method}"
+            );
+            assert!(
+                rows.iter().all(|row| row.starts_with("| `")),
+                "{method}: malformed accepted row"
+            );
         }
         assert!(markdown.contains(
             "| `sort(comparator: (left: T, right: T) => i32): T[]` |"
@@ -731,7 +739,7 @@ mod tests {
                 "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  print(`${value.get(1)}`);\n}\n"
                     .to_string()
             }
-            ("FixedArray<T, N>", "T[] methods") => {
+            ("FixedArray<T, N>", "non-callback T[] methods") => {
                 "export function main(): void {\n  const value: FixedArray<i32, 1> = [1];\n  print(`${value.indexOf(1)}`);\n}\n"
                     .to_string()
             }

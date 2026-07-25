@@ -260,6 +260,32 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "sub_rt_arr_copy_within",
             ffi::sub_rt_arr_copy_within as *const u8,
         ),
+        (
+            "sub_rt_fixed_arr_for_each",
+            ffi::sub_rt_fixed_arr_for_each as *const u8,
+        ),
+        ("sub_rt_fixed_arr_map", ffi::sub_rt_fixed_arr_map as *const u8),
+        (
+            "sub_rt_fixed_arr_filter",
+            ffi::sub_rt_fixed_arr_filter as *const u8,
+        ),
+        (
+            "sub_rt_fixed_arr_reduce",
+            ffi::sub_rt_fixed_arr_reduce as *const u8,
+        ),
+        ("sub_rt_fixed_arr_some", ffi::sub_rt_fixed_arr_some as *const u8),
+        (
+            "sub_rt_fixed_arr_every",
+            ffi::sub_rt_fixed_arr_every as *const u8,
+        ),
+        (
+            "sub_rt_fixed_arr_find_index",
+            ffi::sub_rt_fixed_arr_find_index as *const u8,
+        ),
+        (
+            "sub_rt_fixed_arr_reduce_right",
+            ffi::sub_rt_fixed_arr_reduce_right as *const u8,
+        ),
         // Map/Set intrinsics (stdlib.md §10, Q24).
         ("sub_rt_map_new", ffi::sub_rt_map_new as *const u8),
         ("sub_rt_map_size", ffi::sub_rt_map_size as *const u8),

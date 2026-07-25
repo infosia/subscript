@@ -271,7 +271,7 @@ mod tests {
         // positions → i32::MAX, `pad` → " ") so each runtime symbol
         // has a fixed arity.
         let module = check_one(
-            "export function main(): void {\n  const s: string = \"ab\";\n  const i: i32 = s.indexOf(\"a\");\n  const b: boolean = s.includes(\"a\", 1);\n  const p: string = s.padStart(5);\n  const parts: string[] = s.split(\"a\");\n  const c: i32 = s.charCodeAt(0);\n  const sub: string = s.substring(1);\n  const at: string = s.charAt(0);\n  const cp: i32 = s.codePointAt(0);\n  const cat: string = s.concat(at);\n  const start: boolean = s.startsWith(\"a\");\n  const end: boolean = s.endsWith(\"b\");\n  print(`${i}${b}${p}${parts.length}${c}${sub}${cp}${cat}${start}${end}`);\n}\n",
+            "export function main(): void {\n  const s: string = \"ab\";\n  const sl: string = s.slice();\n  const i: i32 = s.indexOf(\"a\");\n  const b: boolean = s.includes(\"a\", 1);\n  const p: string = s.padStart(5);\n  const parts: string[] = s.split(\"a\");\n  const c: i32 = s.charCodeAt(0);\n  const sub: string = s.substring(1);\n  const at: string = s.charAt(0);\n  const cp: i32 = s.codePointAt(0);\n  const cat: string = s.concat(at);\n  const start: boolean = s.startsWith(\"a\");\n  const end: boolean = s.endsWith(\"b\");\n  print(`${sl}${i}${b}${p}${parts.length}${c}${sub}${cp}${cat}${start}${end}`);\n}\n",
         )
         .expect("clean check");
         let mut found = Vec::new();
@@ -293,6 +293,7 @@ mod tests {
             }
         }
         for f in [
+            hir::StrFn::Slice,
             hir::StrFn::IndexOf,
             hir::StrFn::Includes,
             hir::StrFn::PadStart,
@@ -453,6 +454,34 @@ mod tests {
     }
 
     #[test]
+    fn fixed_array_callback_family_accepts_both_q27_arities_and_dynamic_results() {
+        check_one(
+            "function indexedMap(v: i32, i: i32): string { return `${i}:${v}`; }\n\
+             export function main(): void {\n\
+               const xs: FixedArray<i32, 3> = [1, 2, 3];\n\
+               xs.forEach((v: i32): void => { print(`${v}`); });\n\
+               xs.forEach((v: i32, i: i32): void => { print(`${i}:${v}`); });\n\
+               const m1: i32[] = xs.map((v: i32): i32 => v * 2);\n\
+               const m2: string[] = xs.map(indexedMap);\n\
+               const f1: i32[] = xs.filter((v: i32): boolean => v > 1);\n\
+               const f2: i32[] = xs.filter((v: i32, i: i32): boolean => v > i);\n\
+               xs.some((v: i32): boolean => v === 2);\n\
+               xs.some((v: i32, i: i32): boolean => v === i);\n\
+               xs.every((v: i32): boolean => v > 0);\n\
+               xs.every((v: i32, i: i32): boolean => v > i);\n\
+               xs.findIndex((v: i32): boolean => v === 3);\n\
+               xs.findIndex((v: i32, i: i32): boolean => v === i);\n\
+               const r1: i32 = xs.reduce((a: i32, v: i32): i32 => a + v, 0);\n\
+               const r2: string = xs.reduce((a: string, v: i32, i: i32): string => a + `${i}:${v}`, \"\");\n\
+               const rr1: i32 = xs.reduceRight((a: i32, v: i32): i32 => a + v, 0);\n\
+               const rr2: string = xs.reduceRight((a: string, v: i32, i: i32): string => a + `${i}:${v}`, \"\");\n\
+               print(`${m1.length}${m2.length}${f1.length}${f2.length}${r1}${r2}${rr1}${rr2}`);\n\
+             }\n",
+        )
+        .expect("Q27 FixedArray callback family checks");
+    }
+
+    #[test]
     fn array_callback_container_parameter_is_s014_naming_c5() {
         let err = check_one(
             "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const m: i32[] = xs.map((v: i32, i: i32, arr: i32[]): i32 => v + i + arr.length);\n  print(`${m.length}`);\n}\n",
@@ -467,13 +496,15 @@ mod tests {
 
     #[test]
     fn array_method_on_fixed_array_is_s014() {
-        // stdlib.md §9: v1 Array methods are `T[]` only.
+        // Q27 adds only the callback family; formatting and the other
+        // checker-owned Array methods remain dynamic-array-only.
         let err = check_one(
             "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(xs.join(\",\"));\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
-        assert!(err[0].message.contains("FixedArray"));
+        assert!(err[0].message.contains("dynamic-array-only"));
+        assert!(err[0].message.contains("Q22/Q27"));
     }
 
     #[test]
@@ -790,9 +821,10 @@ mod tests {
 
     #[test]
     fn q27_array_index_arity_does_not_reach_map_or_set_callbacks() {
-        for (surface, source) in [
+        for (surface, q_rule, source) in [
             (
                 "Map.forEach",
+                "Q24",
                 "export function main(): void {\n\
                    const map: Map<i32, i32> = new Map<i32, i32>();\n\
                    map.forEach((value: i32, key: i32, index: i32): void => {});\n\
@@ -800,6 +832,7 @@ mod tests {
             ),
             (
                 "Set.forEach",
+                "Q24",
                 "export function main(): void {\n\
                    const set: Set<i32> = new Set<i32>();\n\
                    set.forEach((value: i32, index: i32): void => {});\n\
@@ -807,6 +840,7 @@ mod tests {
             ),
             (
                 "Map.groupBy",
+                "Q27",
                 "export function main(): void {\n\
                    Map.groupBy([1], (value: i32, index: i32): i32 => value + index);\n\
                  }\n",
@@ -815,7 +849,7 @@ mod tests {
             let err = check_one(source).unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{surface}");
             assert!(
-                err[0].message.contains("Q24"),
+                err[0].message.contains(q_rule),
                 "{surface}: {}",
                 err[0].message
             );

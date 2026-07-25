@@ -2249,11 +2249,31 @@ impl<'m> Emitter<'m> {
         use hir::ArrFn as A;
         let ind = indent(depth);
         let recv = args.first().ok_or("array method receiver")?;
-        let elem = match &recv.ty {
-            Type::Array(e) => (**e).clone(),
+        let (elem, fixed_len) = match &recv.ty {
+            Type::Array(e) => ((**e).clone(), None),
+            Type::FixedArray(e, n) => ((**e).clone(), Some(*n)),
             other => return Err(format!("array method on {other:?}")),
         };
-        let h = self.eval_pinned(recv, out, depth)?;
+        let h = if fixed_len.is_some() {
+            use hir::ExprKind as K;
+            let addressable = matches!(
+                recv.kind,
+                K::Local(_) | K::Global(_) | K::Field { .. } | K::Index { .. } | K::This
+            );
+            let base = if addressable {
+                self.eval(recv, out, depth)?
+            } else {
+                self.eval_pinned(recv, out, depth)?
+            };
+            let data = self.fresh_tmp();
+            let _ = writeln!(
+                out,
+                "{ind}const void* {data} = (const void*)({base}).a;"
+            );
+            data
+        } else {
+            self.eval_pinned(recv, out, depth)?
+        };
         let arg_at = |args: &[hir::Expr], i: usize| -> Result<hir::Expr, String> {
             args.get(i)
                 .cloned()
@@ -2276,7 +2296,12 @@ impl<'m> Emitter<'m> {
             }
         };
         // Materializes one element value into an addressable temporary.
-        let sym = f.symbol();
+        let sym = if fixed_len.is_some() {
+            f.fixed_symbol()
+                .ok_or_else(|| format!("{} is not a FixedArray method", f.name()))?
+        } else {
+            f.symbol()
+        };
         match f {
             A::IndexOf | A::LastIndexOf | A::Includes => {
                 let kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
@@ -2360,14 +2385,28 @@ impl<'m> Emitter<'m> {
                 let fv = self.eval(&callback, out, depth)?;
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
-                let call = match f {
-                    A::Filter => {
+                let fixed_shape = if let Some(n) = fixed_len {
+                    format!(", {n}ull, sizeof({})", self.ctype(&elem)?)
+                } else {
+                    String::new()
+                };
+                let call = match (f, fixed_len) {
+                    (A::Filter, Some(_)) => {
+                        let pid = self.pos_id(pos);
+                        format!(
+                            "{sym}(ctx, {h}{fixed_shape}, {tf}.code, {tf}.env, {kind}u, {pid}u, {indexed}u)"
+                        )
+                    }
+                    (A::Filter, None) => {
                         let pid = self.pos_id(pos);
                         format!(
                             "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {pid}u, {indexed}u)"
                         )
                     }
-                    _ => format!(
+                    (_, Some(_)) => format!(
+                        "{sym}(ctx, {h}{fixed_shape}, {tf}.code, {tf}.env, {kind}u, {indexed}u)"
+                    ),
+                    (_, None) => format!(
                         "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {indexed}u)"
                     ),
                 };
@@ -2398,9 +2437,16 @@ impl<'m> Emitter<'m> {
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
                 let pid = self.pos_id(pos);
-                Ok(format!(
-                    "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u, {indexed}u)"
-                ))
+                Ok(if let Some(n) = fixed_len {
+                    let ect = self.ctype(&elem)?;
+                    format!(
+                        "{sym}(ctx, {h}, {n}ull, sizeof({ect}), {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u, {indexed}u)"
+                    )
+                } else {
+                    format!(
+                        "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u, {indexed}u)"
+                    )
+                })
             }
             A::Reduce | A::ReduceRight => {
                 let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
@@ -2414,10 +2460,18 @@ impl<'m> Emitter<'m> {
                 let init = self.eval(&arg_at(args, 2)?, out, depth)?;
                 let acc = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{acct} {acc} = {init};");
-                let _ = writeln!(
-                    out,
-                    "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc}, {indexed}u);"
-                );
+                if let Some(n) = fixed_len {
+                    let ect = self.ctype(&elem)?;
+                    let _ = writeln!(
+                        out,
+                        "{ind}{sym}(ctx, {h}, {n}ull, sizeof({ect}), {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc}, {indexed}u);"
+                    );
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc}, {indexed}u);"
+                    );
+                }
                 Ok(acc)
             }
             other => Err(format!("unknown ArrFn {other:?}")),
@@ -2959,17 +3013,7 @@ impl<'m> Emitter<'m> {
 
     fn eval_method(&mut self, recv: &hir::Expr, name: &str, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         match recv.ty.clone() {
-            Type::Str => {
-                if name != "slice" {
-                    return Err(format!("string method `{name}`"));
-                }
-                // Receiver, then arguments left to right (`eval_pinned`).
-                let h = self.eval_pinned(recv, out, depth)?;
-                let a0 = self.eval_pinned(args.first().ok_or("slice arity")?, out, depth)?;
-                let a1 = self.eval(args.get(1).ok_or("slice arity")?, out, depth)?;
-                let pid = self.pos_id(pos);
-                Ok(format!("sub_rt_str_slice(ctx, {h}, {a0}, {a1}, {pid}u)"))
-            }
+            Type::Str => Err(format!("string method `{name}`")),
             Type::Array(elem) => {
                 // `pop` used as a value (mutators-as-statements are
                 // handled by emit_array_mutator).
@@ -4099,6 +4143,17 @@ extern void* sub_rt_arr_splice(void* ctx, void* a, int32_t start, int32_t delete
 extern void sub_rt_arr_shift(void* ctx, void* a, void* out, uint32_t pos_id);
 extern int32_t sub_rt_arr_unshift(void* ctx, void* a, const void* x, uint32_t pos_id);
 extern void sub_rt_arr_copy_within(void* ctx, void* a, int32_t target, int32_t start, int32_t end);
+/* Q27 callback family on in-place FixedArray storage. These mirror the
+ * dynamic-array callback ABI, with `(data, len, elem_size)` replacing
+ * the growable-array handle. map/filter still return dynamic arrays. */
+extern void sub_rt_fixed_arr_for_each(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void* sub_rt_fixed_arr_map(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id, uint32_t indexed);
+extern void* sub_rt_fixed_arr_filter(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t pos_id, uint32_t indexed);
+extern void sub_rt_fixed_arr_reduce(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
+extern int32_t sub_rt_fixed_arr_some(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t sub_rt_fixed_arr_every(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t sub_rt_fixed_arr_find_index(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void sub_rt_fixed_arr_reduce_right(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
 
 /* Map/Set intrinsics (stdlib.md 10, Q24): ordered entry storage and its
  * deterministic hash index live behind these shared runtime symbols.

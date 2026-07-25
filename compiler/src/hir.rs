@@ -878,6 +878,9 @@ impl DateFn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum StrFn {
+    /// `slice(start, end)` — JS negative/clamp rules over UTF-8 byte
+    /// offsets; off-boundary indices trap.
+    Slice,
     /// `indexOf(needle, from)` — byte index or −1; `from` clamped to
     /// `[0, length]`; an empty needle returns the clamped `from`.
     IndexOf,
@@ -960,7 +963,8 @@ impl StrFn {
     /// Every accepted `String` method, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [StrFn; 22] = [
+    pub const ALL: [StrFn; 23] = [
+        StrFn::Slice,
         StrFn::IndexOf,
         StrFn::LastIndexOf,
         StrFn::Includes,
@@ -989,6 +993,7 @@ impl StrFn {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
+            StrFn::Slice => "slice",
             StrFn::IndexOf => "indexOf",
             StrFn::LastIndexOf => "lastIndexOf",
             StrFn::Includes => "includes",
@@ -1018,6 +1023,7 @@ impl StrFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
+            StrFn::Slice => "sub_rt_str_slice",
             StrFn::IndexOf => "sub_rt_str_index_of",
             StrFn::LastIndexOf => "sub_rt_str_last_index_of",
             StrFn::Includes => "sub_rt_str_includes",
@@ -1048,6 +1054,9 @@ impl StrFn {
     #[must_use]
     pub fn params(self) -> &'static [StrParam] {
         match self {
+            StrFn::Slice | StrFn::Substring | StrFn::Substr => {
+                &[StrParam::I32, StrParam::I32]
+            }
             StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => {
                 &[StrParam::Str, StrParam::I32]
             }
@@ -1055,7 +1064,6 @@ impl StrFn {
             StrFn::CharCodeAt | StrFn::Repeat | StrFn::CharAt | StrFn::CodePointAt => {
                 &[StrParam::I32]
             }
-            StrFn::Substring | StrFn::Substr => &[StrParam::I32, StrParam::I32],
             StrFn::Trim
             | StrFn::TrimStart
             | StrFn::TrimEnd
@@ -1099,6 +1107,7 @@ impl StrFn {
     #[must_use]
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
+            StrFn::Slice => "slice(start?: i32, end?: i32): string",
             StrFn::IndexOf => "indexOf(needle: string, from?: i32): i32",
             StrFn::LastIndexOf => "lastIndexOf(needle: string): i32",
             StrFn::Includes => "includes(needle: string, from?: i32): boolean",
@@ -1128,6 +1137,9 @@ impl StrFn {
     #[must_use]
     pub(crate) fn api_summary(self) -> &'static str {
         match self {
+            StrFn::Slice => {
+                "Returns a fresh UTF-8 byte range using JS clamp and negative-index rules."
+            }
             StrFn::IndexOf => "Returns the first matching byte index, or -1.",
             StrFn::LastIndexOf => "Returns the last matching byte index, or -1.",
             StrFn::Includes => "Tests for a substring from an optional byte index.",
@@ -1325,6 +1337,23 @@ impl ArrFn {
             ArrFn::Unshift => "sub_rt_arr_unshift",
             ArrFn::CopyWithin => "sub_rt_arr_copy_within",
         }
+    }
+
+    /// The Q27 `FixedArray<T, N>` callback-family runtime symbol, when
+    /// this operation is accepted on an in-place fixed buffer.
+    #[must_use]
+    pub fn fixed_symbol(self) -> Option<&'static str> {
+        Some(match self {
+            ArrFn::ForEach => "sub_rt_fixed_arr_for_each",
+            ArrFn::Map => "sub_rt_fixed_arr_map",
+            ArrFn::Filter => "sub_rt_fixed_arr_filter",
+            ArrFn::Reduce => "sub_rt_fixed_arr_reduce",
+            ArrFn::Some => "sub_rt_fixed_arr_some",
+            ArrFn::Every => "sub_rt_fixed_arr_every",
+            ArrFn::FindIndex => "sub_rt_fixed_arr_find_index",
+            ArrFn::ReduceRight => "sub_rt_fixed_arr_reduce_right",
+            _ => return None,
+        })
     }
 
     /// True for the methods whose second HIR argument is a script

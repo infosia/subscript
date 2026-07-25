@@ -24,6 +24,14 @@ declare function CStruct<T extends abstract new (...args: never[]) => object>(
 declare interface FixedArray<T, N extends number> {
   [index: number]: T;
   readonly length: i32;
+  forEach(callback: (value: T, index: i32) => void): void;
+  map<U>(callback: (value: T, index: i32) => U): U[];
+  filter(callback: (value: T, index: i32) => boolean): T[];
+  some(callback: (value: T, index: i32) => boolean): boolean;
+  every(callback: (value: T, index: i32) => boolean): boolean;
+  findIndex(callback: (value: T, index: i32) => boolean): i32;
+  reduce<U>(callback: (acc: U, value: T, index: i32) => U, init: U): U;
+  reduceRight<U>(callback: (acc: U, value: T, index: i32) => U, init: U): U;
 }
 
 // Ambient augmentation of ES2022's Map surface; the compiler narrows
