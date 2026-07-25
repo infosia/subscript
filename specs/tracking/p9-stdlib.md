@@ -269,3 +269,109 @@ failures, zero warnings, goldens untouched.
 ## P11 follow-ups (not scheduled)
 - a29's `ok` marker discriminates the handle lifecycle only weakly.
 - Mirror-ingestion predicate is a `subDevice` substring match.
+
+## P15 — `Map` / `Set`: COMPLETE (2026-07-25)
+
+`Map<K, V>` and `Set<K>` per `stdlib.md` §10 / Q24 — the project's first
+**generic reference class with methods** and its first **hash
+container**. Monomorphized on first use like `a12`'s generic value
+class, so keys and values are stored unboxed. One runtime
+implementation (`runtime/src/assocops.rs`) behind opaque
+`sub_rt_map_*`/`sub_rt_set_*` on both tiers. Corpus `a51`–`a56`,
+rejects `r38`–`r45`.
+
+Contract points worth restating because they were decided here, not
+inherited: **iteration order is insertion order and is normative**
+(§0.3 determinism and the goldens depend on it — overwrite keeps
+position, delete-then-reinsert appends); the hash is the runtime's own
+and **seed-free** (a per-Context seed would make order, goldens and
+replays irreproducible); `get` returns `V | null` only where `V` is
+nullable-capable and is otherwise rejected in favour of `has` plus the
+total **`getOr(k, fallback)`** — returning a zeroed `V` on a miss was
+explicitly rejected as silently wrong for a program that stores zero,
+the same reasoning that rejected `find` in Q22.
+
+## Phase Review (2026-07-25, fresh no-context, different model from the
+## implementer)
+
+Implementation by Codex `gpt-5.6-sol`; review by an independent
+no-context agent. **1 CRITICAL, 1 MAJOR, 9 MINOR** — all fixed.
+
+- **CRITICAL 1 — `Map.forEach` over an aggregate `V` diverged across
+  tiers and broke C2.** The dev-JIT bridge passed the raw pointer into
+  the map's live entry storage as the callback's aggregate argument,
+  while ship-C copied. A callback assigning `v.x = 777` over a
+  `Map<i32, V3>` left the container mutated under dev-JIT and untouched
+  under ship-C (orchestrator-reproduced). Two defects, one cause:
+  dev-JIT ≢ ship-C-AOT on an accepted program (§11), and the dev tier
+  letting a callback silently mutate a stored value, which C2 forbids.
+  §10.1's own example (`Map<i32, Vec3>`) was exactly the broken shape.
+  New in P15 — P11's `Array.forEach` rejects value-class elements
+  (Q22), so the array bridge never reaches the aggregate arm. Fixed by
+  copying into a caller-owned temporary before the indirect call,
+  matching the C emitter. **The gate could not see it**: `a55` used
+  only `i32`/`string` values; `a56` now covers `@CStruct` and
+  `FixedArray` values, for both a callback that mutates its parameter
+  and one that overwrites the entry it is visiting.
+- **MAJOR 1 — the insertion-ordered entry vector never compacted.**
+  `delete` zeroed the slot and left it occupied, so 200 000
+  `set`+`delete` pairs on a map whose live size is always 0 retained
+  8.4 MB, unreclaimable by `collect()` (the entries block is reachable
+  from the live header), and made `rehash`/`forEach` O(total inserts
+  ever). This defeated the very use case §7 cited to justify the phase.
+  Fixed by compacting in insertion order before growth, **suppressed
+  while an iteration is active** so the mutation-during-`forEach`
+  semantics the review had verified node-identical are preserved.
+  Orchestrator-verified: after the same 200k churn, `order_len` is 4
+  (was 200 000) and the subsequent order still matches node exactly.
+- MINOR fixed: golden floor raised to cover the new entries; the
+  nested `in_assoc_key` leak that let boundary-only `object` escape
+  through a nested container's value type; `Map`/`Set` rejected as key
+  kinds for consistency with `T[]` (both are identity handles §10.2
+  never listed as accepted) — pinned by `r44`; Q6's dev-tier
+  use-after-delete trap added to the container entry points; `get_or`
+  made total on a null handle.
+
+**Verified positively by the review, no finding:** memory safety —
+every GC route requested (reference-class keys and values, runtime-built
+strings, containers in a local, a global, a class field, another
+container, a `T[]`, a `FixedArray`) survives `collect()` plus churn on
+both tiers, and dropping the root reclaims the container, its entries,
+its buckets and all uniquely-held values. Insertion order survives five
+entry-vector growths and five rehashes and is **byte-identical to
+node**. Key semantics match node except the recorded Q22/Q24 `NaN`
+divergence. The hash has no seed (identical output across five
+processes). Mutation during `forEach` is defined, identical across
+tiers, and node-identical. No memory-unsafe route on either tier.
+
+## The benchmark gate earned its place here
+
+§10.8's pre-registered "no ship-row regression" was the **only** check
+that caught the next defect: every test was green, `tsc` was clean, the
+standing gate was byte-exact, and the Phase Review had found nothing
+further — but the `tree` ship row had moved **1.37× → 1.71×**
+(89.7 ms → 111.6 ms), reproduced twice on a quiet machine.
+
+Cause: P15 put Map/Set class resolution **inside `Context::delete`**,
+so every delete performed a container-path lookup before the existing
+release lookup. `tree` frees 30 × 131 071 nodes — ~3.93 M deletes —
+so a program that never touches a container paid a Map/Set tax on its
+hottest path. Fixed by folding class resolution into the existing
+release lookup: an ordinary delete completes in one lookup and only a
+confirmed container enters cleanup. Orchestrator-re-measured: **tree
+1.39× (90.6 ms)**, level with the pre-P15 1.37× (89.7 ms); every other
+ship row unchanged (sort 1.82×, particles 3.07×, compute-bound
+0.97–1.03×). A structural guard now asserts an ordinary delete skips
+the container path and that ship-tier delete performs exactly one
+membership lookup — a benchmark number alone would not prevent
+recurrence.
+
+## Gate (§10.8, all met — orchestrator-verified)
+
+Standing gate byte-exact on both tiers including `a51`–`a56`; `tsc`
+zero errors with unchanged config; iteration order pinned by golden and
+cross-checked against node; the collector reclaims a dropped container;
+a trapping `forEach` callback reports an identical tuple across tiers;
+rejects at pinned S014 positions; benchmarks re-captured with no
+ship-row regression. 481 tests, 0 failures, zero warnings, no
+pre-existing golden modified.
