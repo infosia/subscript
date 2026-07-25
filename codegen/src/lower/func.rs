@@ -2744,10 +2744,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Lowers a `Math.<fn>` intrinsic (stdlib.md §1) to its opaque
-    /// `sub_rt_math_*` runtime call, `(ctx, f64 args…) -> f64`. No trap
-    /// check follows: the runtime entries never trap (pure, or a PRNG
-    /// state advance). Constants never reach here — they folded to
-    /// literals at check time.
+    /// `sub_rt_math_*` runtime call. `clz32` is `(ctx, u32) -> i32`;
+    /// all others use `f64`. No trap check follows: the runtime entries
+    /// never trap (pure, or a PRNG state advance). Constants never reach
+    /// here — they folded to literals at check time.
     fn eval_math(&mut self, f: hir::MathFn, args: &[hir::Expr]) -> Result<RV, String> {
         if args.len() != f.arity() {
             return Err(internal(format!("Math.{} arity", f.name())));
@@ -2762,9 +2762,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal(format!("Math.{} result", f.name())))
     }
 
-    /// Lowers a Q25 Number/parser/toFixed intrinsic to its opaque
-    /// runtime symbol. The checker fixes every arity and widens an f32
-    /// toFixed receiver to f64 before this point.
+    /// Lowers a Q25/Q26 Number or parser intrinsic to its opaque runtime
+    /// symbol. The checker fixes every arity, normalizes optional
+    /// `toExponential` digits, and widens `f32` receivers where required.
     fn eval_num(
         &mut self,
         f: hir::NumFn,
@@ -2774,7 +2774,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         use hir::NumFn as N;
         let expected = match f {
             N::IsNaN | N::IsFinite | N::IsInteger | N::IsSafeInteger | N::ParseFloat => 1,
-            N::ParseInt | N::ToFixed => 2,
+            N::ParseInt
+            | N::ToFixed
+            | N::ToStringF32
+            | N::ToStringF64
+            | N::ToExponential
+            | N::ToPrecision => 2,
             other => return Err(internal(format!("unknown NumFn {other:?}"))),
         };
         if args.len() != expected {

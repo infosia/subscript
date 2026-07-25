@@ -2147,9 +2147,9 @@ impl<'m> Emitter<'m> {
                 let sep = if argv.is_empty() { "" } else { ", " };
                 Ok(format!("sub_rt_math_{}(ctx{sep}{argv})", f.name()))
             }
-            // Q25 Number predicates, parsers, and toFixed all call the
-            // shared opaque runtime. Trap-capable entries carry the
-            // source position assigned by this emitter.
+            // Q25/Q26 Number and parsing intrinsics all call the shared
+            // opaque runtime. Trap-capable entries carry the source
+            // position assigned by this emitter.
             hir::Callee::Num(f) => {
                 let argv = self.eval_list(args, out, depth)?;
                 let call = if f.takes_pos_id() {
@@ -3897,8 +3897,8 @@ extern void* sub_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
 extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
 extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
 extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
-/* Number predicates, parsing, and fixed-decimal formatting
- * (stdlib.md 11, Q25). Trap-capable entries carry source positions. */
+/* Number and parsing intrinsics (stdlib.md 11, Q25/Q26).
+ * Trap-capable entries carry source positions. */
 extern int32_t sub_rt_num_is_nan(void* ctx, double value);
 extern int32_t sub_rt_num_is_finite(void* ctx, double value);
 extern int32_t sub_rt_num_is_integer(void* ctx, double value);
@@ -3906,6 +3906,10 @@ extern int32_t sub_rt_num_is_safe_integer(void* ctx, double value);
 extern double sub_rt_num_parse_int(void* ctx, const void* s, int32_t radix, uint32_t pos_id);
 extern double sub_rt_num_parse_float(void* ctx, const void* s, uint32_t pos_id);
 extern void* sub_rt_num_to_fixed(void* ctx, double value, int32_t digits, uint32_t pos_id);
+extern void* sub_rt_num_to_string_f32(void* ctx, float value, int32_t radix, uint32_t pos_id);
+extern void* sub_rt_num_to_string_f64(void* ctx, double value, int32_t radix, uint32_t pos_id);
+extern void* sub_rt_num_to_exponential(void* ctx, double value, int32_t digits, uint32_t pos_id);
+extern void* sub_rt_num_to_precision(void* ctx, double value, int32_t digits, uint32_t pos_id);
 /* IEEE binary16 is raw uint16_t storage in emitted C. All conversion is
  * behind these opaque runtime symbols; no _Float16/__fp16 operation is
  * emitted (compiler.md 16.2). */
@@ -4022,6 +4026,7 @@ extern double sub_rt_math_pow(void* ctx, double base, double exp);
 extern double sub_rt_math_max(void* ctx, double a, double b);
 extern double sub_rt_math_min(void* ctx, double a, double b);
 extern double sub_rt_math_random(void* ctx);
+extern int32_t sub_rt_math_clz32(void* ctx, uint32_t x);
 
 /* Date intrinsics (stdlib.md 3): a Date value is its int64_t epoch
  * milliseconds; the calendar arithmetic lives in the runtime so both
@@ -4276,10 +4281,12 @@ mod tests {
     fn math_calls_use_the_opaque_runtime_symbol_never_libm() {
         // stdlib.md §0.2: a bare libm call would be constant-folded by
         // clang at -O2 — the emitted call must be the sub_rt symbol.
-        let c = emit("export function main(): void {\n  print(`${Math.floor(1.5)}`);\n  print(`${Math.pow(2.0, 10.0)}`);\n  print(`${Math.random()}`);\n}\n");
+        let c = emit("export function main(): void {\n  print(`${Math.floor(1.5)}`);\n  print(`${Math.pow(2.0, 10.0)}`);\n  print(`${Math.random()}`);\n  print(`${Math.clz32(0)}`);\n}\n");
         assert!(c.contains("sub_rt_math_floor(ctx, 1.5)"));
         assert!(c.contains("sub_rt_math_pow(ctx, 2.0, 10.0)"));
         assert!(c.contains("sub_rt_math_random(ctx)"));
+        assert!(c.contains("sub_rt_math_clz32(ctx, 0u)"));
+        assert!(!c.contains("__builtin_clz"));
         // Token-boundary scan: a bare `<name>(` whose preceding character
         // is not part of an identifier is a libm call regardless of the
         // surrounding punctuation (`=floor(`, `(pow(`, line-start, ...);
@@ -4312,12 +4319,18 @@ mod tests {
                const parsed: f64 = parseInt(\"ff\", 16);\n\
                print(`${Number.isFinite(parsed)}`);\n\
                print(parseFloat(\"1.5x\").toFixed(2));\n\
+               print(parsed.toString(16));\n\
+               print(parsed.toExponential());\n\
+               print(parsed.toPrecision(2));\n\
              }\n",
         );
         assert!(c.contains("sub_rt_num_parse_int(ctx, "), "{c}");
         assert!(c.contains("(sub_rt_num_is_finite(ctx, "), "{c}");
         assert!(c.contains("sub_rt_num_parse_float(ctx, "), "{c}");
         assert!(c.contains("sub_rt_num_to_fixed(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_num_to_string_f64(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_num_to_exponential(ctx, "), "{c}");
+        assert!(c.contains("sub_rt_num_to_precision(ctx, "), "{c}");
         for f in hir::NumFn::ALL {
             assert!(
                 PREAMBLE.contains(&format!("{}(void* ctx", f.symbol())),
@@ -4391,7 +4404,7 @@ mod tests {
         for line in c.lines() {
             if line.contains("sub_rt_math_") {
                 assert!(
-                    line.starts_with("extern double sub_rt_math_"),
+                    line.starts_with("extern "),
                     "unexpected math reference: {line}"
                 );
             }

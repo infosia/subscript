@@ -394,13 +394,15 @@ pub enum MathFn {
     Min,
     /// `Math.random()` (stdlib.md §2: Context-seeded deterministic).
     Random,
+    /// `Math.clz32(x)` with a `u32` argument and `i32` result.
+    Clz32,
 }
 
 impl MathFn {
     /// Every accepted `Math` function, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [MathFn; 32] = [
+    pub const ALL: [MathFn; 33] = [
         MathFn::Abs,
         MathFn::Acos,
         MathFn::Acosh,
@@ -433,6 +435,7 @@ impl MathFn {
         MathFn::Max,
         MathFn::Min,
         MathFn::Random,
+        MathFn::Clz32,
     ];
 
     /// The member name, which is also the runtime symbol suffix
@@ -472,11 +475,12 @@ impl MathFn {
             MathFn::Max => "max",
             MathFn::Min => "min",
             MathFn::Random => "random",
+            MathFn::Clz32 => "clz32",
         }
     }
 
-    /// Number of `f64` arguments (exact; the lib's variadic forms are
-    /// out of subset, Q19).
+    /// Number of arguments (exact; the lib's variadic forms are out of
+    /// subset, Q19). `clz32`'s one argument is `u32`; the rest are f64.
     #[must_use]
     pub fn arity(self) -> usize {
         match self {
@@ -487,7 +491,7 @@ impl MathFn {
     }
 }
 
-/// `Number`, parsing, and `toFixed` intrinsics (stdlib.md §11, Q25).
+/// `Number` and parsing intrinsics (stdlib.md §11, Q25/Q26).
 /// Constants fold to [`ExprKind::Float`] at check time; every operation
 /// represented here calls one opaque `sub_rt_num_*` runtime symbol on
 /// both execution tiers.
@@ -509,11 +513,21 @@ pub enum NumFn {
     /// `value.toFixed(digits)` after an `f32` receiver is widened
     /// exactly to `f64` by the checker.
     ToFixed,
+    /// `f32_value.toString(radix)`; kept at `f32` so radix 10 is
+    /// exactly the Q14 `f32` form.
+    ToStringF32,
+    /// `f64_value.toString(radix)`.
+    ToStringF64,
+    /// `value.toExponential(digits?)`; omission is normalized to a
+    /// `-1` digit sentinel by the checker.
+    ToExponential,
+    /// `value.toPrecision(digits)`.
+    ToPrecision,
 }
 
 impl NumFn {
-    /// Every Q25 runtime operation in discriminant order.
-    pub const ALL: [NumFn; 7] = [
+    /// Every Q25/Q26 runtime operation in discriminant order.
+    pub const ALL: [NumFn; 11] = [
         NumFn::IsNaN,
         NumFn::IsFinite,
         NumFn::IsInteger,
@@ -521,6 +535,10 @@ impl NumFn {
         NumFn::ParseInt,
         NumFn::ParseFloat,
         NumFn::ToFixed,
+        NumFn::ToStringF32,
+        NumFn::ToStringF64,
+        NumFn::ToExponential,
+        NumFn::ToPrecision,
     ];
 
     /// Surface member/global name.
@@ -534,6 +552,9 @@ impl NumFn {
             NumFn::ParseInt => "parseInt",
             NumFn::ParseFloat => "parseFloat",
             NumFn::ToFixed => "toFixed",
+            NumFn::ToStringF32 | NumFn::ToStringF64 => "toString",
+            NumFn::ToExponential => "toExponential",
+            NumFn::ToPrecision => "toPrecision",
         }
     }
 
@@ -548,6 +569,10 @@ impl NumFn {
             NumFn::ParseInt => "sub_rt_num_parse_int",
             NumFn::ParseFloat => "sub_rt_num_parse_float",
             NumFn::ToFixed => "sub_rt_num_to_fixed",
+            NumFn::ToStringF32 => "sub_rt_num_to_string_f32",
+            NumFn::ToStringF64 => "sub_rt_num_to_string_f64",
+            NumFn::ToExponential => "sub_rt_num_to_exponential",
+            NumFn::ToPrecision => "sub_rt_num_to_precision",
         }
     }
 
@@ -557,7 +582,13 @@ impl NumFn {
     pub fn takes_pos_id(self) -> bool {
         matches!(
             self,
-            NumFn::ParseInt | NumFn::ParseFloat | NumFn::ToFixed
+            NumFn::ParseInt
+                | NumFn::ParseFloat
+                | NumFn::ToFixed
+                | NumFn::ToStringF32
+                | NumFn::ToStringF64
+                | NumFn::ToExponential
+                | NumFn::ToPrecision
         )
     }
 
@@ -1406,8 +1437,8 @@ pub enum Callee {
     Ambient(AmbientFn),
     /// A `Math.<fn>` ambient-namespace intrinsic (stdlib.md §1).
     Math(MathFn),
-    /// A `Number`, parsing, or `toFixed` intrinsic (stdlib.md §11,
-    /// Q25). `toFixed` carries its receiver as the first argument.
+    /// A `Number` or parsing intrinsic (stdlib.md §11, Q25/Q26).
+    /// Receiver methods carry their receiver as the first argument.
     Num(NumFn),
     /// A `Date` intrinsic (stdlib.md §3): `new Date(ms)`, the `Date.UTC`
     /// / `Date.now` statics, the UTC accessors, and `toISOString`. For
@@ -1604,8 +1635,10 @@ mod tests {
         assert_eq!(MathFn::Max.arity(), 2);
         assert_eq!(MathFn::Min.arity(), 2);
         assert_eq!(MathFn::Random.arity(), 0);
+        assert_eq!(MathFn::Clz32.arity(), 1);
         assert_eq!(MathFn::Random.name(), "random");
         assert_eq!(MathFn::Log1p.name(), "log1p");
+        assert_eq!(MathFn::Clz32.name(), "clz32");
     }
 
     #[test]
@@ -1619,6 +1652,10 @@ mod tests {
         assert!(NumFn::ParseInt.takes_pos_id());
         assert!(NumFn::ParseFloat.takes_pos_id());
         assert!(NumFn::ToFixed.takes_pos_id());
+        assert!(NumFn::ToStringF32.takes_pos_id());
+        assert!(NumFn::ToStringF64.takes_pos_id());
+        assert!(NumFn::ToExponential.takes_pos_id());
+        assert!(NumFn::ToPrecision.takes_pos_id());
         assert!(!NumFn::IsFinite.takes_pos_id());
     }
 

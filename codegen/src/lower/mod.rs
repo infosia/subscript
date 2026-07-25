@@ -107,7 +107,7 @@ pub(crate) struct RtFns {
     /// `sub_rt_math_*` imports (stdlib.md §1), indexed by
     /// `hir::MathFn as usize` (the [`hir::MathFn::ALL`] order).
     pub math: [FuncId; hir::MathFn::ALL.len()],
-    /// `sub_rt_num_*` imports (stdlib.md §11, Q25), indexed by
+    /// `sub_rt_num_*` imports (stdlib.md §11, Q25/Q26), indexed by
     /// [`hir::NumFn::ALL`] discriminant order.
     pub num: [FuncId; hir::NumFn::ALL.len()],
     /// `sub_rt_date_utc` (stdlib.md §3): 7 `i32` components + pos id → i64.
@@ -425,18 +425,24 @@ fn declare_rt<M: Module>(
     };
     use types::{F32, F64, I16, I32, I64};
     // Math intrinsic imports (stdlib.md §1): one opaque symbol per
-    // accepted function, `(ctx, f64 args…) -> f64`, in MathFn::ALL
-    // order so `f as usize` indexes the table.
+    // accepted function, in MathFn::ALL order so `f as usize` indexes
+    // the table. `clz32` is `(ctx, u32) -> i32`; all other arguments
+    // and results are f64.
     let mut math_ids: Vec<FuncId> = Vec::with_capacity(hir::MathFn::ALL.len());
     for f in hir::MathFn::ALL {
-        let mut params = vec![I64];
-        params.extend(std::iter::repeat(F64).take(f.arity()));
-        math_ids.push(mk(&format!("sub_rt_math_{}", f.name()), &params, Some(F64))?);
+        let (params, ret) = if f == hir::MathFn::Clz32 {
+            (vec![I64, I32], I32)
+        } else {
+            let mut params = vec![I64];
+            params.extend(std::iter::repeat_n(F64, f.arity()));
+            (params, F64)
+        };
+        math_ids.push(mk(&format!("sub_rt_math_{}", f.name()), &params, Some(ret))?);
     }
     let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
         .try_into()
         .map_err(|_| internal("math import table size"))?;
-    // Number predicates, parsers, and toFixed (stdlib.md §11, Q25).
+    // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
     // Every import starts with Context and is opaque to both tiers.
     let mut num_ids: Vec<FuncId> = Vec::with_capacity(hir::NumFn::ALL.len());
     for f in hir::NumFn::ALL {
@@ -448,6 +454,10 @@ fn declare_rt<M: Module>(
             N::ParseInt => (&[I64, I64, I32, I32], Some(F64)),
             N::ParseFloat => (&[I64, I64, I32], Some(F64)),
             N::ToFixed => (&[I64, F64, I32, I32], Some(I64)),
+            N::ToStringF32 => (&[I64, F32, I32, I32], Some(I64)),
+            N::ToStringF64 | N::ToExponential | N::ToPrecision => {
+                (&[I64, F64, I32, I32], Some(I64))
+            }
             other => return Err(internal(format!("unknown NumFn {other:?}"))),
         };
         num_ids.push(mk(f.symbol(), params, ret)?);

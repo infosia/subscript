@@ -1373,7 +1373,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(prop_pos);
         }
         let why = match prop {
-            "imul" | "clz32" | "fround" => {
+            "imul" | "fround" => {
                 format!(
                     "`Math.{}`: JS-number op; the language has sized integers (Q19)",
                     prop
@@ -1387,7 +1387,8 @@ impl<'p> Checker<'p> {
 
     /// A `Math.<fn>(…)` intrinsic call (stdlib.md §1): exact arity
     /// (Q19 — the lib's variadic `max`/`min`/`hypot` beyond two are out
-    /// of subset), every argument `f64`, result `f64`.
+    /// of subset). `clz32` takes `u32` and returns `i32`; every other
+    /// argument and result is `f64`.
     fn check_math_call(
         &mut self,
         f: MathFn,
@@ -1397,23 +1398,30 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let arity = f.arity();
         if c.args.len() != arity {
+            let argument_type = if f == MathFn::Clz32 { "u32" } else { "f64" };
             self.error(
                 RuleCode::S014,
                 format!(
-                    "`Math.{}` takes exactly {} f64 argument(s), got {} \
+                    "`Math.{}` takes exactly {} {} argument(s), got {} \
                      (Q19: the lib's variadic forms are out of subset)",
                     f.name(),
                     arity,
+                    argument_type,
                     c.args.len()
                 ),
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
+        let param_ty = if f == MathFn::Clz32 {
+            Type::U32
+        } else {
+            Type::F64
+        };
         let params: Vec<ParamSig> = (0..arity)
             .map(|_| ParamSig {
                 name: String::new(),
-                ty: Type::F64,
+                ty: param_ty.clone(),
                 has_default: false,
             })
             .collect();
@@ -1423,7 +1431,11 @@ impl<'p> Checker<'p> {
                 callee: Callee::Math(f),
                 args,
             },
-            ty: Type::F64,
+            ty: if f == MathFn::Clz32 {
+                Type::I32
+            } else {
+                Type::F64
+            },
             pos,
         }
     }
@@ -1840,10 +1852,9 @@ impl<'p> Checker<'p> {
         self.error(RuleCode::S014, why, pos);
     }
 
-    /// A Q25 numeric receiver method. `toFixed` is accepted on
-    /// `f32`/`f64`; an f32 receiver is widened exactly in HIR so the
-    /// shared runtime has one f64 entry. Other Number formatting
-    /// methods and integer receivers are rejected.
+    /// A Q25/Q26 numeric receiver method. The accepted formatting
+    /// methods operate on `f32`/`f64`; methods with a shared `f64`
+    /// runtime entry widen an `f32` receiver exactly in HIR.
     fn check_number_method(
         &mut self,
         recv: hir::Expr,
@@ -1853,80 +1864,114 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
-        if name == "toFixed" {
-            if !matches!(&recv.ty, Type::F32 | Type::F64) {
+        if !matches!(
+            name,
+            "toFixed" | "toString" | "toExponential" | "toPrecision"
+        ) {
+            if name == "toLocaleString" {
                 self.error(
                     RuleCode::S014,
-                    "`toFixed` is accepted only on `f32`/`f64` (Q25)",
+                    "`toLocaleString` is outside the accepted Number subset (Q25)",
                     prop_pos,
                 );
                 return self.err_expr(pos);
             }
-            if c.args.len() != 1 {
-                self.error(
-                    RuleCode::S014,
-                    format!(
-                        "`toFixed` takes exactly 1 i32 digit count, got {} (Q25)",
-                        c.args.len()
-                    ),
-                    pos.clone(),
-                );
-                return self.err_expr(pos);
-            }
-            let digits = self.check_args(
-                &[ParamSig {
-                    name: String::new(),
-                    ty: Type::I32,
-                    has_default: false,
-                }],
-                &c.args,
-                fx,
-                &pos,
-                "toFixed",
+            let type_name = self.type_name(&recv.ty);
+            self.error(
+                RuleCode::S100,
+                format!("`{type_name}` has no method `{name}`"),
+                prop_pos,
             );
-            let recv_pos = recv.pos.clone();
-            let recv = if recv.ty == Type::F32 {
-                hir::Expr {
-                    kind: ExprKind::Cast(Box::new(recv)),
-                    ty: Type::F64,
-                    pos: recv_pos,
-                }
-            } else {
-                recv
-            };
-            let mut args = Vec::with_capacity(2);
-            args.push(recv);
-            args.extend(digits);
-            return hir::Expr {
-                kind: ExprKind::Call {
-                    callee: Callee::Num(NumFn::ToFixed),
-                    args,
-                },
-                ty: Type::Str,
-                pos,
-            };
-        }
-        if matches!(
-            name,
-            "toPrecision" | "toExponential" | "toLocaleString" | "toString"
-        ) {
-            let why = if name == "toString" {
-                "`toString(radix)` is rejected; use Q14 template interpolation \
-                 for base 10 (Q25)"
-                    .to_string()
-            } else {
-                format!("`{name}` is outside the accepted Number formatting subset (Q25)")
-            };
-            self.error(RuleCode::S014, why, prop_pos);
             return self.err_expr(pos);
         }
-        let type_name = self.type_name(&recv.ty);
-        self.error(
-            RuleCode::S100,
-            format!("`{type_name}` has no method `{name}`"),
-            prop_pos,
-        );
-        self.err_expr(pos)
+        if !matches!(&recv.ty, Type::F32 | Type::F64) {
+            self.error(
+                RuleCode::S014,
+                format!("`{name}` is accepted only on `f32`/`f64` (Q25/Q26)"),
+                prop_pos,
+            );
+            return self.err_expr(pos);
+        }
+
+        let (f, optional, arity_message) = match name {
+            "toFixed" => (
+                NumFn::ToFixed,
+                false,
+                "`toFixed` takes exactly 1 i32 digit count",
+            ),
+            "toString" => (
+                if recv.ty == Type::F32 {
+                    NumFn::ToStringF32
+                } else {
+                    NumFn::ToStringF64
+                },
+                false,
+                "`toString` requires an explicit radix (2–36)",
+            ),
+            "toExponential" => (
+                NumFn::ToExponential,
+                true,
+                "`toExponential` takes zero or one i32 digit count",
+            ),
+            "toPrecision" => (
+                NumFn::ToPrecision,
+                false,
+                "`toPrecision` requires an explicit i32 digit count",
+            ),
+            _ => return self.err_expr(pos),
+        };
+        let arity_ok = if optional {
+            c.args.len() <= 1
+        } else {
+            c.args.len() == 1
+        };
+        if !arity_ok {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "{arity_message}, got {} argument(s) (Q26)",
+                    c.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+
+        let params = [ParamSig {
+            name: String::new(),
+            ty: Type::I32,
+            has_default: optional,
+        }];
+        let mut checked = self.check_args(&params, &c.args, fx, &pos, name);
+        if optional && checked.is_empty() {
+            checked.push(hir::Expr {
+                kind: ExprKind::Int(-1),
+                ty: Type::I32,
+                pos: pos.clone(),
+            });
+        }
+
+        let recv_pos = recv.pos.clone();
+        let recv = if recv.ty == Type::F32 && f != NumFn::ToStringF32 {
+            hir::Expr {
+                kind: ExprKind::Cast(Box::new(recv)),
+                ty: Type::F64,
+                pos: recv_pos,
+            }
+        } else {
+            recv
+        };
+        let mut args = Vec::with_capacity(2);
+        args.push(recv);
+        args.extend(checked);
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Num(f),
+                args,
+            },
+            ty: Type::Str,
+            pos,
+        }
     }
 
     /// A `String` method intrinsic call on a string receiver
@@ -3221,7 +3266,7 @@ impl<'p> Checker<'p> {
                         RuleCode::S014,
                         format!(
                             "numeric method `{name}` may only appear in an accepted call \
-                             (`toFixed` on f32/f64; Q25)"
+                             (Number formatting on f32/f64; Q25/Q26)"
                         ),
                         prop_pos.clone(),
                     );

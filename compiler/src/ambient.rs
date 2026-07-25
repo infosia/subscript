@@ -155,9 +155,9 @@ mod tests {
         assert_eq!(math_fn("floor"), Some(MathFn::Floor));
         assert_eq!(math_fn("atan2"), Some(MathFn::Atan2));
         assert_eq!(math_fn("random"), Some(MathFn::Random));
+        assert_eq!(math_fn("clz32"), Some(MathFn::Clz32));
         // Out-of-subset JS-number ops resolve to nothing (Q19).
         assert_eq!(math_fn("imul"), None);
-        assert_eq!(math_fn("clz32"), None);
         assert_eq!(math_fn("fround"), None);
         // Constants are not functions.
         assert_eq!(math_fn("PI"), None);

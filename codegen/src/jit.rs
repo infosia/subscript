@@ -133,7 +133,8 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_math_max", ffi::sub_rt_math_max as *const u8),
         ("sub_rt_math_min", ffi::sub_rt_math_min as *const u8),
         ("sub_rt_math_random", ffi::sub_rt_math_random as *const u8),
-        // Number predicates, parsing, and toFixed (stdlib.md §11, Q25).
+        ("sub_rt_math_clz32", ffi::sub_rt_math_clz32 as *const u8),
+        // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
         ("sub_rt_num_is_nan", ffi::sub_rt_num_is_nan as *const u8),
         (
             "sub_rt_num_is_finite",
@@ -158,6 +159,22 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         (
             "sub_rt_num_to_fixed",
             ffi::sub_rt_num_to_fixed as *const u8,
+        ),
+        (
+            "sub_rt_num_to_string_f32",
+            ffi::sub_rt_num_to_string_f32 as *const u8,
+        ),
+        (
+            "sub_rt_num_to_string_f64",
+            ffi::sub_rt_num_to_string_f64 as *const u8,
+        ),
+        (
+            "sub_rt_num_to_exponential",
+            ffi::sub_rt_num_to_exponential as *const u8,
+        ),
+        (
+            "sub_rt_num_to_precision",
+            ffi::sub_rt_num_to_precision as *const u8,
         ),
         // Date intrinsics (stdlib.md §3): same opaque-symbol rule; the
         // ship tier resolves these from the runtime static library.

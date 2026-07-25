@@ -8,6 +8,8 @@
 //! pinned by tests: `round` (half-toward-+∞), `sign` (±0 preserved),
 //! `max`/`min` (NaN propagation, zero ordering), `pow` (±1 to an
 //! infinite exponent is NaN; a NaN exponent is NaN even for base 1).
+//! `clz32` uses Rust's zero-defined [`u32::leading_zeros`] behind the
+//! runtime boundary; generated C never emits `__builtin_clz`.
 //!
 //! `Math.random` (§2) draws from [`Rng`], a xoshiro256++ generator
 //! seeded by splitmix64 expansion; the state is owned by the Context so
@@ -17,6 +19,12 @@
 #[must_use]
 pub fn abs(x: f64) -> f64 {
     x.abs()
+}
+
+/// `Math.clz32`: count leading zero bits, including `clz32(0) == 32`.
+#[must_use]
+pub fn clz32(x: u32) -> i32 {
+    x.leading_zeros() as i32
 }
 
 /// `Math.acos`.
@@ -405,6 +413,14 @@ mod tests {
     fn abs_clears_the_sign_of_zero() {
         assert_eq!(bits(abs(-0.0)), bits(0.0));
         assert_eq!(abs(-3.5), 3.5);
+    }
+
+    #[test]
+    fn clz32_is_defined_at_zero_and_bit_extremes() {
+        assert_eq!(clz32(0), 32);
+        assert_eq!(clz32(1), 31);
+        assert_eq!(clz32(1_u32 << 31), 0);
+        assert_eq!(clz32(u32::MAX), 0);
     }
 
     #[test]

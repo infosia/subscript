@@ -266,7 +266,7 @@ fn string_methods_match_across_tiers_without_a_golden() {
     );
 }
 
-/// Asserts a Q25 programmer-error range trap has the same
+/// Asserts a Q25/Q26 programmer-error range trap has the same
 /// kind/message/position tuple on the dev-JIT and ship-C-AOT tiers.
 fn assert_number_range_trap_identical(src: &str, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
@@ -300,6 +300,30 @@ fn parse_int_out_of_range_radix_traps_identically() {
 fn to_fixed_out_of_range_digits_trap_identically() {
     assert_number_range_trap_identical(
         "export function main(): void {\n  print((1.0).toFixed(101));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn to_string_out_of_range_radix_traps_identically() {
+    assert_number_range_trap_identical(
+        "export function main(): void {\n  print((1.0).toString(37));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn to_exponential_out_of_range_digits_trap_identically() {
+    assert_number_range_trap_identical(
+        "export function main(): void {\n  print((1.0).toExponential(101));\n}\n",
+        2,
+    );
+}
+
+#[test]
+fn to_precision_out_of_range_digits_trap_identically() {
+    assert_number_range_trap_identical(
+        "export function main(): void {\n  print((1.0).toPrecision(0));\n}\n",
         2,
     );
 }

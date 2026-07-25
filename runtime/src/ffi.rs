@@ -1222,11 +1222,11 @@ pub unsafe extern "C" fn sub_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id: u32)
     unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_bool(v != 0).as_bytes(), pos_id)
 }
 
-// ----- Number / parsing / toFixed (stdlib.md §11, Q25) -----
+// ----- Number and parsing intrinsics (stdlib.md §11, Q25/Q26) -----
 //
 // All operations stay behind opaque symbols so both tiers execute the
-// same Rust implementation. The predicates are pure; parseInt,
-// parseFloat, and toFixed carry a position for their trap paths.
+// same Rust implementation. The predicates are pure; parsing and
+// formatting entries carry a position for allocation/range traps.
 
 /// `Number.isNaN(value)`.
 ///
@@ -1373,15 +1373,153 @@ pub unsafe extern "C" fn sub_rt_num_to_fixed(
     ctx.alloc_str(crate::num::to_fixed(value, digits).as_bytes(), pos_id)
 }
 
+/// `f32_value.toString(radix)`: radix 2–36, with radix 10 delegated
+/// exactly to the Q14 `f32` formatter.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_to_string_f32(
+    ctx: *mut Context,
+    value: f32,
+    radix: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Ok(radix) = u32::try_from(radix) else {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toString radix must be in 2..=36, got {radix}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    if !(2..=36).contains(&radix) {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toString radix must be in 2..=36, got {radix}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(
+        crate::num::to_string_radix_f32(value, radix).as_bytes(),
+        pos_id,
+    )
+}
+
+/// `f64_value.toString(radix)`: radix 2–36, with radix 10 delegated
+/// exactly to Q14.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_to_string_f64(
+    ctx: *mut Context,
+    value: f64,
+    radix: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Ok(radix) = u32::try_from(radix) else {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toString radix must be in 2..=36, got {radix}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    if !(2..=36).contains(&radix) {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toString radix must be in 2..=36, got {radix}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(
+        crate::num::to_string_radix_f64(value, radix).as_bytes(),
+        pos_id,
+    )
+}
+
+/// `value.toExponential(digits?)`: `-1` represents the checker-normalized
+/// omitted argument; supplied digits must be in 0–100.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_to_exponential(
+    ctx: *mut Context,
+    value: f64,
+    digits: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let digits = if digits == -1 {
+        None
+    } else {
+        match u32::try_from(digits) {
+            Ok(digits) if digits <= 100 => Some(digits),
+            _ => {
+                ctx.trap(
+                    TrapKind::NumberRange,
+                    format!("toExponential digits must be in 0..=100, got {digits}"),
+                    pos_id,
+                );
+                return std::ptr::null_mut();
+            }
+        }
+    };
+    ctx.alloc_str(crate::num::to_exponential(value, digits).as_bytes(), pos_id)
+}
+
+/// `value.toPrecision(digits)`: digits must be in 1–100.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_num_to_precision(
+    ctx: *mut Context,
+    value: f64,
+    digits: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Ok(digits) = u32::try_from(digits) else {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toPrecision digits must be in 1..=100, got {digits}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    if !(1..=100).contains(&digits) {
+        ctx.trap(
+            TrapKind::NumberRange,
+            format!("toPrecision digits must be in 1..=100, got {digits}"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(crate::num::to_precision(value, digits).as_bytes(), pos_id)
+}
+
 // ----- Math (stdlib.md §1/§2) -----
 //
-// One uniform signature convention: every `sub_rt_math_*` symbol takes
-// the Context pointer first (`sub_rt_math_<fn>(ctx, args…) -> f64`,
-// stdlib.md §1), so both tiers emit every Math call identically. The
-// pure entries ignore `ctx` (and are safe: nothing is dereferenced);
-// only `random` reads Context state. Both tiers must call these opaque
-// symbols — never a direct libm call, which clang constant-folds at
-// `-O2` (stdlib.md §0.2).
+// Every `sub_rt_math_*` symbol takes the Context pointer first, so both
+// tiers emit every Math call identically. The f64 subset returns f64;
+// clz32 is `(ctx, u32) -> i32`. Pure entries ignore `ctx`; only
+// `random` reads Context state. Both tiers must call these opaque
+// symbols — never a direct libm/builtin operation (stdlib.md §0.2/Q26).
 
 /// Declares the C entry of a pure unary `Math` member: `f(ctx, x)`
 /// forwarding to [`crate::math`].
@@ -1479,6 +1617,15 @@ math_ffi_binary! {
     sub_rt_math_max => max,
     /// `Math.min(a, b)` (NaN propagation, zero ordering).
     sub_rt_math_min => min,
+}
+
+/// `Math.clz32(x)`: Rust defines the zero input as 32; this opaque
+/// entry prevents the ship tier from emitting C's undefined
+/// `__builtin_clz(0)`.
+#[no_mangle]
+pub extern "C" fn sub_rt_math_clz32(ctx: *mut Context, x: u32) -> i32 {
+    let _ = ctx;
+    crate::math::clz32(x)
 }
 
 /// `Math.random()` (stdlib.md §2): the next deterministic draw from the
@@ -2631,6 +2778,15 @@ mod tests {
             assert_eq!(sub_rt_num_parse_float(p, float_s, 20), 1.5);
             let fixed = sub_rt_num_to_fixed(p, 1.005, 2, 20);
             assert_eq!(ctx.str_bytes(fixed), b"1.00");
+            let radix_f32 = sub_rt_num_to_string_f32(p, 10.5, 2, 20);
+            assert_eq!(ctx.str_bytes(radix_f32), b"1010.1");
+            let radix = sub_rt_num_to_string_f64(p, 1234.5678, 36, 20);
+            assert_eq!(ctx.str_bytes(radix), b"ya.kfv9yqdpm");
+            let exponential = sub_rt_num_to_exponential(p, 0.0, 2, 20);
+            assert_eq!(ctx.str_bytes(exponential), b"0.00e+0");
+            let precision = sub_rt_num_to_precision(p, 123.456, 2, 20);
+            assert_eq!(ctx.str_bytes(precision), b"1.2e+2");
+            assert_eq!(sub_rt_math_clz32(p, 0), 32);
             assert!(sub_rt_num_to_fixed(p, 1.0, 101, 21).is_null());
         }
         let report = ctx.trap_record().expect("toFixed range trap");

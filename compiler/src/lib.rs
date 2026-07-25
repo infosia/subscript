@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn number_q25_surface_types_and_rejections() {
+    fn number_q25_q26_surface_types_and_rejections() {
         check_one(
             "export function main(): void {\n\
                const parsed: f64 = parseInt(\"ff\", 16);\n\
@@ -657,17 +657,20 @@ mod tests {
                         ${Number.isFinite(parsed)} ${Number.isInteger(decimal)} \
                         ${Number.isSafeInteger(parsed)}`);\n\
                print(f.toFixed(1));\n\
+               print(f.toString(16));\n\
+               print(parsed.toExponential());\n\
+               print(decimal.toPrecision(2));\n\
+               const leading: i32 = Math.clz32(0 as u32);\n\
+               print(`${leading}`);\n\
              }\n",
         )
-        .expect("accepted Q25 surface");
+        .expect("accepted Q25/Q26 surface");
 
         for body in [
             "isNaN(1.0);",
             "isFinite(1.0);",
             "Number(1.0);",
             "Number.parseInt(\"1\", 10);",
-            "(1.0 as f64).toPrecision(2);",
-            "(1.0 as f64).toString(16);",
             "parseInt(\"1\");",
         ] {
             let err = check_one(&format!(
@@ -676,6 +679,18 @@ mod tests {
             .unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
             assert!(err[0].message.contains("Q25"), "{body}: {}", err[0].message);
+        }
+
+        for body in [
+            "(1.0 as f64).toPrecision();",
+            "(1.0 as f64).toString();",
+        ] {
+            let err = check_one(&format!(
+                "export function main(): void {{\n  {body}\n}}\n"
+            ))
+            .unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
+            assert!(err[0].message.contains("Q26"), "{body}: {}", err[0].message);
         }
     }
 
