@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract). Evidence lands in
+Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics). Evidence lands in
 `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
@@ -158,12 +158,34 @@ detailed contract lands in this file before its implementation opens.
 | P11 | `Array` methods (§9) | runtime→script comparator/predicate calls (non-escaping closures, C5) | contract below |
 | P12 | `Number` statics + `parseInt`/`parseFloat`/`toFixed` | none | contract before open |
 | P13 | `JSON` | typed serialization over layout descriptors (RTTI) — needs its own design | contract before open |
+| P15 | `Map`/`Set` | generic reference classes + hashing (owner decision below) | contract before open |
+
+Two phases outside this file share the queue: **P14 narrow numerics**
+(`compiler.md` §16 — a type-system extension, not stdlib) and the
+tracked `bindgen` follow-ups. P14 is sequenced first among them
+because a production C header with a single `uint8_t` field cannot be
+bound until it lands.
+
+**`Map`/`Set` — non-goal reversed (owner decision 2026-07-25.)** They
+were listed as a non-goal on the grounds that they need general
+generics and that `T[]`/`FixedArray` are the containers. Evidence
+against that: game scripts do sparse associative lookup constantly
+(entity id → object, asset name → handle) and the only alternative
+today is a linear scan or parallel arrays; and the language already
+monomorphizes generic functions and generic value classes at check
+time (`a12`), with `Array.map`'s `U` inferred from a closure return
+(P11), so "general generics" overstates the gap. What is genuinely new
+is a **generic reference class with methods plus hashing**; per-kind
+key equality is already defined (Q22's `indexOf` rule). The contract
+lands here before implementation opens and must state the iteration
+order rule (JS `Map`/`Set` are insertion-ordered — determinism, §0.3,
+requires pinning it), the key-kind whitelist, and the growth/rehash
+policy under the no-implicit-GC memory model.
 
 **Stdlib non-goals** (permanent unless revised with evidence):
 `RegExp`, `Intl`/locale- and Unicode-table-dependent behavior
 (collation, full case folding — Q21 is ASCII), `Promise` (C8:
-coroutines), `Map`/`Set` (needs general generics; `T[]`/`FixedArray`
-are the containers), `console` (the language has `print`), `Symbol`,
+coroutines), `console` (the language has `print`), `Symbol`,
 `Proxy`/`Reflect`, `eval`/`Function`, `BigInt` (`i64`/`u64` exist).
 
 ## 8. P10 — `String` methods
@@ -228,8 +250,8 @@ cemit tests (identical kind/message/position), not corpus entries.
 Gate (pre-registered): standing differential gate byte-exact incl.
 `a43`; `tsc` zero errors unchanged config (every accepted call types
 under lib ES2022); reject entries at pinned S014 positions; trap
-identity across tiers for the four trap paths; §5.5 benchmarks — no
-ship-row regression.
+identity across tiers for the four trap paths; §5 item 5 benchmarks
+(`specs/blocks/benchmarks.md`) — no ship-row regression.
 
 ## 9. P11 — `Array` methods (Q22)
 
@@ -292,4 +314,5 @@ tiers) in cemit tests, not corpus.
 Gate (pre-registered): standing gate byte-exact incl. a44/a45; `tsc`
 zero errors unchanged config; sort-stability pinned; the
 trapping-callback tuple identical across tiers; reject entries at
-pinned S014 positions; §5.5 benchmarks — no ship-row regression.
+pinned S014 positions; §5 item 5 benchmarks
+(`specs/blocks/benchmarks.md`) — no ship-row regression.

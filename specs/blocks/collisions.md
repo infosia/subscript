@@ -223,6 +223,38 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   strings); `find` is rejected (no miss value for scalar element
   types — use `findIndex`). Callbacks are non-escaping (C5) by
   construction; a callback trap aborts the iteration.
+- **Q23 (narrow numerics: `i8`/`u8`/`i16`/`u16`/`f16`)** — five further
+  ambient aliases of `number`, extending C3's table. They exist because
+  real C headers and GPU buffer formats are full of byte and half-width
+  fields: without them `bindgen`'s scalar map has no entry for
+  `uint8_t`/`uint16_t`/`char`/`short` and fails loud, so a header with a
+  single byte field cannot be bound at all.
+  - **Storage and interchange, not a new arithmetic domain.** The five
+    behave exactly as C3/C4/Q18 already specify for the existing sized
+    types: bare `number` still rejected; conversions spelled `x as T`
+    with C truncation/wrapping semantics; no implicit conversion; mixed
+    width requires `as`; contextual literal typing (C4) with
+    out-of-range literals rejected at compile time.
+  - **`f16` is storage-only (owner decision 2026-07-25).** `f16`
+    declares fields, array elements and boundary parameters, and
+    converts to and from `f32`/`f64` with `as`. **Arithmetic on `f16`
+    operands is rejected (S014)** — compute via `as f32`. Reason: an
+    arithmetic `f16` is a cross-tier determinism hazard of exactly the
+    kind §0.2 of `stdlib.md` records for libm — the C tier's `_Float16`
+    (arithmetic in half) and `__fp16` (operands promoted to `f32`)
+    differ in where rounding happens, and the dev tier's own half
+    support is a separate implementation. A rejection can be relaxed
+    later on measured evidence; a silently diverging arithmetic cannot
+    be un-shipped. Conversion is one runtime implementation behind an
+    opaque symbol on both tiers (§0.2's rule), never an emitted
+    compiler builtin.
+  - **Integer arithmetic on the narrow integer types** follows C3
+    unchanged: operands must already share a type, and the result is
+    that type with C wrapping — the language does not import C's
+    integer promotion (there is no implicit widening to `int` to
+    import, since there are no implicit conversions).
+  - **`Q18` extends unchanged**: bitwise and shifts on `i8`/`u8`/`i16`/
+    `u16` match C at that width; mixed-width operands require `as`.
 
 ## 3. Open items carried forward
 
