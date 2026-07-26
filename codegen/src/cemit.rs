@@ -1569,14 +1569,18 @@ impl<'m> Emitter<'m> {
     /// growth-safe dynamic-array element stores (N3).
     fn emit_assign(&mut self, out: &mut String, op: Option<hir::BinOp>, target: &hir::Expr, value: &hir::Expr, depth: usize) -> Result<(), String> {
         let ind = indent(depth);
-        // Dynamic-array element store: resolve the (checked) address
-        // after the RHS so growth cannot dangle it.
+        // Dynamic-array element store. A plain assignment evaluates the
+        // RHS before resolving the checked write address. A compound
+        // assignment resolves and reads first (so an invalid target traps
+        // before the RHS), then resolves again after the RHS for a
+        // growth-safe write.
         if let hir::ExprKind::Index { obj, index } = &target.kind {
             if let Type::Array(elem) = &obj.ty {
                 let ect = self.ctype(elem)?;
-                // Target operands first (the dev tier evaluates the
-                // handle and the index, then the value, and only then
-                // resolves the element address — growth-safe, §N3).
+                // The dev tier evaluates the handle and index first. Plain
+                // assignment then evaluates the value before its only
+                // resolution; compound assignment resolves for the read,
+                // evaluates the value, and resolves again for the write.
                 let h = self.eval_pinned(obj, out, depth)?;
                 let idx = self.eval_pinned(index, out, depth)?;
                 let pid = self.pos_id(&target.pos);
@@ -1591,34 +1595,39 @@ impl<'m> Emitter<'m> {
                         let _ = writeln!(out, "{ind}*{p} = {value_tmp};");
                     }
                     Some(bin) => {
+                        let read_p = self.emit_dynamic_index_addr(
+                            &h, &idx, elem, pid, out, depth,
+                        )?;
+                        let current_tmp = self.fresh_tmp();
+                        let _ = writeln!(out, "{ind}{ect} {current_tmp} = *{read_p};");
                         let v = self.eval(value, out, depth)?;
                         let value_tmp = self.fresh_tmp();
                         let _ = writeln!(out, "{ind}{ect} {value_tmp} = {v};");
-                        let p = self.emit_dynamic_index_addr(
+                        let write_p = self.emit_dynamic_index_addr(
                             &h, &idx, elem, pid, out, depth,
                         )?;
                         if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
                             let shifted =
-                                shift_expr(bin, elem, &format!("*{p}"), &value_tmp)?;
-                            let _ = writeln!(out, "{ind}*{p} = {shifted};");
+                                shift_expr(bin, elem, &current_tmp, &value_tmp)?;
+                            let _ = writeln!(out, "{ind}*{write_p} = {shifted};");
                         } else if elem.is_integer()
                             && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem)
                         {
                             let combined = self.eval_checked_divrem(
                                 elem,
                                 bin == hir::BinOp::Div,
-                                &format!("*{p}"),
+                                &current_tmp,
                                 &value_tmp,
                                 &target.pos,
                                 out,
                                 depth,
                             )?;
-                            let _ = writeln!(out, "{ind}*{p} = {combined};");
+                            let _ = writeln!(out, "{ind}*{write_p} = {combined};");
                         } else {
                             let sym = binop_sym(bin)?;
                             let _ = writeln!(
                                 out,
-                                "{ind}*{p} = *{p} {sym} {value_tmp};"
+                                "{ind}*{write_p} = {current_tmp} {sym} {value_tmp};"
                             );
                         }
                     }
@@ -2081,7 +2090,12 @@ impl<'m> Emitter<'m> {
         let helper = divrem_helper(ty, div)?;
         let pid = self.pos_id(pos);
         let ind = indent(depth);
-        let _ = writeln!(out, "{ind}if (({right}) == 0) {{");
+        let cty = self.ctype(ty)?;
+        let left_tmp = self.fresh_tmp();
+        let right_tmp = self.fresh_tmp();
+        let _ = writeln!(out, "{ind}{cty} {left_tmp} = {left};");
+        let _ = writeln!(out, "{ind}{cty} {right_tmp} = {right};");
+        let _ = writeln!(out, "{ind}if ({right_tmp} == 0) {{");
         let _ = writeln!(
             out,
             "{}sub_rt_trap(ctx, SS_TRAP_DIV0, {pid}u);",
@@ -2089,9 +2103,9 @@ impl<'m> Emitter<'m> {
         );
         self.emit_trap_return(out, depth + 1)?;
         let _ = writeln!(out, "{ind}}}");
-        let call = format!("{helper}(ctx, {left}, {right}, {pid}u)");
+        let call = format!("{helper}(ctx, {left_tmp}, {right_tmp}, {pid}u)");
         let result = self.fresh_tmp();
-        let _ = writeln!(out, "{ind}{} {result} = {call};", self.ctype(ty)?);
+        let _ = writeln!(out, "{ind}{cty} {result} = {call};");
         Ok(result)
     }
 
@@ -4950,6 +4964,22 @@ mod tests {
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
         assert!(!c.contains("sub_rt_ctx_trap_kind(ctx)"));
+    }
+
+    #[test]
+    fn emitted_trap_flag_load_matches_the_runtime_context_layout() {
+        assert_eq!(
+            rtc::Context::trap_flag_offset(),
+            0,
+            "the emitted `*(const uint32_t*)ctx` load requires the trap flag at offset zero"
+        );
+        let c = emit(
+            "export function main(): void {\n  const xs: i32[] = [];\n  print(`${xs[0]}`);\n}\n",
+        );
+        assert!(
+            c.contains("if (*(const uint32_t*)ctx != 0u)"),
+            "the ship-tier trap check must use the offset-zero load tied to Context::trap_flag_offset()"
+        );
     }
 
     #[test]

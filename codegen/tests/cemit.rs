@@ -418,9 +418,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
         ids.len(),
-        6,
-        "expected exactly the six committed trap entries (t01 P13 JsonResult.value + five P19 \
-         unwind probes), found {}",
+        7,
+        "expected exactly the seven committed trap entries (t01 P13 JsonResult.value + five P19 \
+         unwind probes + one P19 review compound-assignment ordering probe), found {}",
         ids.len()
     );
 

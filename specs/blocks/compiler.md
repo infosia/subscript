@@ -1644,9 +1644,28 @@ weakened — including the accept-corpus goldens, which is the check that
 non-trapping behaviour did not move.
 
 - **`Callee::can_trap()` in `compiler/src/hir.rs` is the shared
-  policy**, consumed by both lowerings. This is §19.3's structural
-  requirement: a trap-capable operation added later is checked in both
-  tiers by construction rather than by remembering.
+  policy for *calls*,** consumed by both lowerings, and the dev tier's
+  behaviour is unchanged by the refactor.
+
+  *(Corrected 2026-07-26 after the Phase Review. This said a
+  trap-capable operation added later is checked in both tiers "by
+  construction rather than by remembering". That is true of `Callee`
+  variants and **false of everything else**: about ten non-call trap
+  sites — integer div/rem, index read and write, `JsonResult.value`,
+  narrowing casts, use-after-delete, stale-coroutine, and the
+  allocation-bearing literals — remain hard-coded separately in each
+  tier. Both of this phase's own CRITICALs were instances of that
+  duplication failing.)*
+
+  **Finishing the structural fix is possible but is not a small
+  predicate.** A shared `TrapSite` classification plus a both-tier
+  coverage test is ~0.5–1 day; a real explicit checked-operation IR is
+  ~2–4 days and a few hundred lines. A boolean predicate alone cannot
+  express what these sites need — the proof-based elision of a proven
+  index, the *two* resolutions a compound assignment requires, the
+  several trap points inside a template or array literal, and the
+  position each guard reports. Recorded as the open item rather than
+  claimed as done.
 - **One inline Context-layout assumption**, `*(const uint32_t*)ctx` at
   a single site in `cemit.rs` — the §19.5 exception to §18.1b, kept to
   one place so it cannot spread.
@@ -1672,12 +1691,27 @@ session, `--warmup 12 --timed 15`, both valid under the ±20% rule:
 The C baselines agree to 1.7%, which is the control that makes the
 comparison mean anything.
 
-The result is the opposite of the expected direction and the mechanism
-is clear: `ss_arr_at` was an **out-of-line call per array element
-access** that the range analysis could not prove away, and `a22` is
-matrix propagation, so indexing is its inner loop. Replacing that call
-with an inline check is a large win. Adding trap checks made the
-emitted C faster because it removed more calls than it added.
+The result is the opposite of the expected direction. *(The mechanism
+originally recorded here — that `ss_arr_at` was "an out-of-line call
+per array element access" — was **wrong**, and the Phase Review
+measured it: `ss_arr_at` was `static`, and clang inlined it. Corrected
+below from the emitted assembly.)*
+
+What the old shape cost per access was not a call but everything the
+**fallback pointer** forced: a null compare and `csel` choosing
+between the returned pointer and `ss_scratch`, the global address of
+`ss_scratch` held live, a reachable cold-arm `bl _sub_rt_array_ptr`,
+and — because that call is reachable inside the loop — an 80-byte
+frame with callee-saved spills and reloads. The loop body was 82
+instructions with a full spill set. Expanding the check at the call
+site makes the out-of-range arm return immediately, so the cold call
+becomes a tail branch and the frame, the spills, the `csel` and the
+scratch reference all disappear: 39 instructions, no spills. `a22` is
+matrix propagation, so indexing is its inner loop.
+
+In one line: the helper cost **leafness, register pressure and alias
+freedom**, not a call. Adding trap checks made the emitted C faster
+because expanding them removed all four.
 
 **The gap to 1.05× is closed as a question: there is no regression to
 fix, and 1.05× is not a target to return to.** Bisected on the same

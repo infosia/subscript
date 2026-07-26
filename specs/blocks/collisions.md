@@ -90,10 +90,7 @@ lambda; `tsc`-clean).
 `throw`, `try`/`catch`/`finally` are not in the language. Fallible
 operations return result values (`a18` pattern). Runtime faults (index out
 of bounds, failed narrowing, allocation failure) trap: the Context stops
-with a diagnostic carrying a source position. *(This is true of the dev
-tier and, until P19 lands, **false of the ship tier**, which continues
-to the end of the enclosing function — `compiler.md` §19. C6 is the
-rule; the ship tier is the defect.)* the host decides what
+with a diagnostic carrying a source position; the host decides what
 happens next. Trapping is not catchable in-language.
 Accept: `a18`. Reject: `r11-throw` (`throw` statement; `tsc`-clean).
 
