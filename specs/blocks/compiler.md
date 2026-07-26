@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer and §18.2b `sub_rt_ctx_clear_trap`). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1223,6 +1223,63 @@ both-tier test is not checking that the hook mechanism differs between
 tiers — it cannot — but that the two tiers **agree on which fault is
 the originating one**.
 
+### 18.2b `sub_rt_ctx_clear_trap` — making a trapped Context callable again
+
+```c
+int sub_rt_ctx_clear_trap(Context*);   /* 1 = cleared, 0 = refused */
+```
+
+C6 says the host decides what happens after a trap, and until now it
+could not decide "continue": `Context::clear_trap` existed with the
+right semantics and a proving unit test, but was **never exposed over
+the C ABI** — its only production caller was the reload session. A
+host could therefore only release a trapped Context and rebuild.
+
+**Precondition, checked by the function, not left to the caller.**
+Clearing is legal only at a host↔script boundary — `script_depth == 0`,
+no generated code on the stack. Clearing while a script frame is live
+would resume a run that has already given up. The function **returns 0
+and does nothing** if the precondition fails; it must not be a
+documented obligation, because the one place a host would most
+naturally try it — inside the trap observer — is exactly the illegal
+case (§18.2a: every script frame is still live when the observer
+fires). This is a second reason the observer receives no Context
+handle.
+
+**It clears reporting state and nothing else.** Live allocations stay
+live, deleted ones stay deleted, the reload epoch survives, the stdout
+sink survives. So:
+
+> **Clearing makes the Context callable again. It does not roll
+> anything back.** There is no transaction. A run that trapped
+> mid-`update` leaves script data exactly as it was at the fault —
+> an entity may be half-written.
+
+The host's three coherent choices, in increasing cost: accept the
+damaged state and continue; continue but detach the failing subsystem
+(which is what the observer's frame-current context is *for*); or
+release the Context and rebuild from `ss_init`, which is the only one
+that restores consistency.
+
+**Not clearing is a silent failure mode worth naming.** The trap flag
+stays set, and generated code checks it after every fault-capable
+call — so the *next* exported call unwinds immediately, executing
+nothing. The host keeps running while the script is quietly dead.
+
+### 18.2c How a host detects a trap at all
+
+Exported functions return `void` or their declared type, **never a
+status**, and a trapped call returns the **zeroed** value for a
+non-`void` return (`emit_trap_return`). An `update(): i32` that
+trapped hands the host `0`, indistinguishable from a legitimate `0`.
+
+**The return value therefore cannot be used to detect a trap.** The
+host tests `sub_rt_ctx_trap_kind(ctx) != 0` — the accessor returns `0`
+when no trap is pending and `TrapKind` starts at 1 — or registers an
+observer (§18.2) and tests its own flag. This is stated because
+getting it wrong is silent: the host reads a plausible zero and
+carries on.
+
 ### 18.3 Why there is no in-language observer
 
 A script cannot observe its own traps, and this is deliberate rather
@@ -1250,3 +1307,11 @@ the originating one. Clearing the observer with null is covered.
 Determinism: a corpus entry's output is byte-identical with and
 without an observer registered. This is the check that the shape
 really is observation-only.
+
+For `sub_rt_ctx_clear_trap`: a host-side test traps, clears, and calls
+script again, asserting the second call **executes** rather than
+unwinding on a stale flag; asserts a clear attempted with a live script
+frame returns 0 and leaves the trap pending; and asserts that live
+allocations, the reload epoch and the stdout sink are unchanged across
+the clear — the property that makes "no rollback" true rather than
+merely claimed. Both tiers.
