@@ -42,7 +42,8 @@ pub use aot::{
 };
 pub use cemit::{emit_c, CProgram};
 pub use jit::{
-    jit_bench, run_jit, run_jit_with_alloc_failure, BenchSamples, RunError, TrapReport,
+    jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure, BenchSamples,
+    RunError, TrapReport,
 };
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};

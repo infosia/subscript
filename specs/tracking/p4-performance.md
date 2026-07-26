@@ -499,3 +499,76 @@ invalid | V8 2.61×`, checksum `1332546592` reproduced by every subject
 that ran. All six can force a collection here — node has
 `--expose-gc`, this JSC shell exposes `gc()`, LuaJIT has
 `collectgarbage`, C frees explicitly.
+
+## Warm-up was silently zero for three C workloads (2026-07-27)
+
+`clang -O2` **deleted the warm-up loop outright** in `fib-loop`,
+`mandelbrot` and `primes`. Their `workload()` takes no argument,
+touches no memory and has no side effect, so LLVM proves it pure and
+terminating, and the loop's only result is overwritten by the timed
+loop. Verified by wall time, `--warmup 0` against `--warmup 200`:
+
+```
+before   fib-loop 0.63s -> 0.09s     primes 0.44s -> 0.06s   (no work added)
+         sort     0.40s -> 3.10s                             (200 iterations ran)
+after    fib-loop 0.63s -> 5.95s                             (200 x 29ms)
+```
+
+**`--warmup` was a complete no-op for exactly those three**, which is
+why raising it 3 → 25 → 60 across three full-suite runs never fixed
+their spread failures. The contract required "≥3 warm-up runs
+discarded" and the real figure was zero for three of ten.
+
+The seven that survived did so **by accident** — heap access, `queen`'s
+`volatile`, or recursion defeating the termination proof. Nothing in
+the harness kept warm-up alive, so all ten now write the warm-up result
+to a `volatile` sink.
+
+Two further corrections came out of it. Warm-up is now a **measured
+time floor** (200 ms, ~3× this machine's measured 70 ms DVFS ramp)
+because a count cannot express "reach steady state" across 3.7 ms to
+125 ms per iteration; and **a subject reports its warm-up time and is
+rejected below the floor**, because three full-suite runs could not
+diagnose a silently-zero warm-up. `compiler.md` §9 was saying the old
+thing while `benchmarks.md` Rev 3 claimed to mirror it.
+
+**Result: the first fully clean capture — all 60 cells valid**, minimum
+measured warm-up 0.2009 s.
+
+The instability was never "the machine is noisy". It was a harness bug
+plus a 1.63× DVFS ramp, and `cpu/wall ≥ 0.9996` on every sample ruled
+out descheduling from the start.
+
+## Open — `collect` on the dev tier is bimodal, 221 ms against 459 ms
+
+| capture | ship | dev-JIT |
+|---|---:|---:|
+| three pre-fix runs | ~209 ms | **~221 ms** |
+| post-fix (coding agent) | 209.1 ms | **221.7 ms** |
+| clean capture 1 (published) | 209.4 ms | **462.7 ms** |
+| clean capture 2 | 208.9 ms | **459.0 ms** |
+
+**Not noise**: each capture's own 11 samples sit within 1–3% of its
+median. The ship tier is stable at ~209 ms across all six. Only the dev
+tier moves, and it moves by a factor of two between processes while
+being tight inside one.
+
+No code changed between the 221 ms and 459 ms captures — the warm-up
+fix touched the C harnesses and the runner only, and warm-up iteration
+count for this cell is 3 either way.
+
+**Hypothesis, not yet tested:** collection is **conservative**, so the
+mark phase traces every payload word that looks like a live block
+address. The dev tier makes an individual system allocation per object
+tracked in a map, so its addresses are far more scattered than the ship
+tier's arena — which would make spurious traces both more likely and
+more sensitive to where the heap lands, i.e. to ASLR. That would
+produce exactly this signature: stable within a process, bimodal
+across processes, dev tier only.
+
+The published figure is capture 1's 14.21×. **It is a real measurement
+of one process and not a stable property of the tier**, which is why
+this entry exists.
+
+This is the `collect` workload doing its job on its first outing: the
+suite had no way to see any of this before P21's review asked for it.

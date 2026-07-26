@@ -3,8 +3,8 @@
  *
  * It is the measurement counterpart of the gate's normal entry
  * (`AOT_ENTRY_C` in codegen/src/aot.rs): same C-ABI surface, but the
- * exported `main` is called `warmup + timed` times and each call is
- * timed on its own with CLOCK_MONOTONIC.
+ * exported `main` is called for a measured warm-up phase and then for
+ * each timed sample, timing every call on its own with CLOCK_MONOTONIC.
  *
  * Timed span: the `ss_export_main` call alone. Context creation, the
  * module initializer `ss_init`, reading the stdout sink, and Context
@@ -16,8 +16,9 @@
  * every run against the first.
  *
  * stdout: the sink bytes of the workload (the program's output).
- * stderr: one machine-readable line per timed run,
- * `sample <index> <ns>`, followed by `checksum-stable <0|1>`.
+ * stderr: when a warm-up floor is supplied, `warmup <iterations> <ns>`;
+ * then one `sample <index> <ns>` line per timed run, followed by
+ * `checksum-stable <0|1>`.
  */
 
 #include <stdio.h>
@@ -74,20 +75,39 @@ int main(int argc, char **argv) {
 #endif
     int warmup = 3;
     int timed = 11;
+    uint64_t warmup_floor_ns = 0;
+    int report_warmup = 0;
     if (argc >= 3) {
         warmup = atoi(argv[1]);
         timed = atoi(argv[2]);
     }
+    if (argc >= 4) {
+        warmup_floor_ns = (uint64_t)strtoull(argv[3], NULL, 10);
+        report_warmup = 1;
+    }
     if (warmup < 0 || timed < 1) {
-        fprintf(stderr, "usage: aot-bench <warmup-runs> <timed-runs>\n");
+        fprintf(stderr, "usage: aot-bench <warmup-runs> <timed-runs> [warmup-floor-ns]\n");
         return 2;
     }
 
     unsigned char *first = NULL;
     size_t first_len = 0;
     int stable = 1;
+    int warmup_iterations = 0;
+    int timed_iterations = 0;
+    uint64_t warmup_elapsed_ns = 0;
 
-    for (int run = 0; run < warmup + timed; run += 1) {
+    while (timed_iterations < timed) {
+        int warming =
+            warmup_iterations < warmup || warmup_elapsed_ns < warmup_floor_ns;
+        if (!warming && timed_iterations == 0 && report_warmup) {
+            fprintf(
+                stderr,
+                "warmup %d %llu\n",
+                warmup_iterations,
+                (unsigned long long)warmup_elapsed_ns
+            );
+        }
         Context *ctx = sub_rt_ctx_new();
         if (ctx == NULL) {
             free(first);
@@ -133,8 +153,12 @@ int main(int argc, char **argv) {
         }
         sub_rt_ctx_release(ctx);
 
-        if (run >= warmup) {
-            fprintf(stderr, "sample %d %llu\n", run - warmup, (unsigned long long)(end - start));
+        if (warming) {
+            warmup_elapsed_ns += end - start;
+            warmup_iterations += 1;
+        } else {
+            fprintf(stderr, "sample %d %llu\n", timed_iterations, (unsigned long long)(end - start));
+            timed_iterations += 1;
         }
     }
 

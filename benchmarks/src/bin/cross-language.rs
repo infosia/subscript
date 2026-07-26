@@ -22,16 +22,19 @@
 //!
 //! Usage (release only — a debug runtime would be unoptimized and unfair):
 //! `cargo run --offline --release -p subscript-benchmarks --bin cross-language`
-//! Flags: `--warmup N` `--timed M` (subscript tiers; the self-timed scripts use
-//! the 3/11 floor), `--only <id>`, `--check` (validate the subscript sources
-//! through the JIT and print each checksum, no timing/external tools).
+//! Flags: `--warmup N` (minimum warm-up iterations; every subject also reaches
+//! the 200 ms floor), `--timed M`, `--only <id>`, `--check` (validate the
+//! subscript sources through the JIT and print each checksum, no timing/external
+//! tools).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Duration;
 
-use subscript_codegen::{emit_c, jit_bench, runtime_staticlib_path};
+use subscript_codegen::{
+    emit_c, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path,
+};
 use subscript_compiler::{check_program, SourceFile};
 
 /// A failure that stops one measurement; the runner never panics.
@@ -69,9 +72,9 @@ fn workload_params(id: &str) -> &'static str {
     }
 }
 
-/// The AOT timing entry: calls the exported workload `warmup+timed` times and
-/// times each call, printing `sample <i> <ns>` lines on stderr (shared with the
-/// P4 gate harness). Reused verbatim so the ship-tier span matches the gate.
+/// The AOT timing entry: measures a warm-up phase and each timed workload call,
+/// printing machine-readable durations on stderr (shared with the P4 gate
+/// harness). Reused verbatim so the ship-tier span matches the gate.
 const AOT_BENCH_ENTRY_C: &str = concat!(
     include_str!("../../../runtime/include/subscript_runtime.h"),
     include_str!("../../aot-entry.c")
@@ -80,10 +83,12 @@ const AOT_BENCH_ENTRY_C: &str = concat!(
 /// C baseline flags (`benchmarks.md` Subjects table).
 const BASELINE_CFLAGS: [&str; 3] = ["-O2", "-fwrapv", "-ffp-contract=off"];
 
-/// Default discarded warm-up runs (methodology floor is 3).
+/// Default minimum number of discarded warm-up iterations.
 const DEFAULT_WARMUP: usize = 3;
 /// Default timed runs (methodology floor is 11).
 const DEFAULT_TIMED: usize = 11;
+/// Minimum sum of measured workload execution discarded as warm-up.
+const WARMUP_FLOOR: Duration = Duration::from_millis(200);
 /// A spread wider than this fraction of the median flags a noisy subject.
 const NOISE_LIMIT: f64 = 0.20;
 
@@ -104,16 +109,24 @@ struct Measured {
     checksum: i128,
     /// The subject's median timed run, in seconds.
     median_s: f64,
-    /// Min/max of the timed samples, in seconds (for the noise note); `None`
-    /// for a self-timed subject that reports only its median.
-    spread: Option<(f64, f64)>,
+    /// Every timed sample in execution order, in seconds.
+    samples_s: Vec<f64>,
+    /// Sum of measured workload-call durations discarded as warm-up.
+    warmup_s: f64,
+    /// Number of workload calls discarded as warm-up.
+    warmup_iterations: usize,
 }
 
 impl Measured {
-    /// Whether min/max extend beyond the valid +/-20% band around the median.
+    /// Min/max of the timed samples, in seconds.
+    fn spread(&self) -> Option<(f64, f64)> {
+        stats(&self.samples_s).map(|(_, min, max)| (min, max))
+    }
+
+    /// Whether the sample set extends beyond the valid +/-20% median band.
     fn noisy(&self) -> bool {
-        let Some((min, max)) = self.spread else {
-            return false;
+        let Some((min, max)) = self.spread() else {
+            return true;
         };
         self.median_s > 0.0
             && ((max - self.median_s) / self.median_s)
@@ -187,7 +200,9 @@ fn parse_args() -> Result<Args, Fail> {
     }
     if a.warmup < 3 || a.timed < 11 {
         return Err(format!(
-            "the methodology fixes a floor of 3 warm-up and 11 timed runs; got {} and {}",
+            "the methodology fixes floors of 3 warm-up iterations, 200 ms of \
+             warm-up execution, and 11 timed runs; got {} warm-up iterations \
+             and {} timed runs",
             a.warmup, a.timed
         ));
     }
@@ -296,7 +311,13 @@ fn run() -> Result<ExitCode, Fail> {
         ];
         for (name, o) in &outcomes {
             match o {
-                Outcome::Ok(m) => eprintln!("  {name:<15} checksum={} median={:.3} ms", m.checksum, m.median_s * 1000.0),
+                Outcome::Ok(m) => eprintln!(
+                    "  {name:<15} checksum={} median={:.3} ms warm-up={:.3} s ({} iterations)",
+                    m.checksum,
+                    m.median_s * 1000.0,
+                    m.warmup_s,
+                    m.warmup_iterations
+                ),
                 Outcome::Unavailable(reason) => eprintln!("  {name:<15} - ({reason})"),
                 Outcome::Error(e) => eprintln!("  {name:<15} ERROR: {e}"),
             }
@@ -449,12 +470,16 @@ impl WorkloadResult {
 
 // ---- measurement ----------------------------------------------------------
 
-/// Median of `samples` in seconds, with min/max.
-fn stats(samples: &[Duration]) -> Option<(f64, f64, f64)> {
-    if samples.is_empty() {
+/// Median of finite, non-negative samples in seconds, with min/max.
+fn stats(samples_s: &[f64]) -> Option<(f64, f64, f64)> {
+    if samples_s.is_empty()
+        || samples_s
+            .iter()
+            .any(|sample| !sample.is_finite() || *sample < 0.0)
+    {
         return None;
     }
-    let mut s: Vec<f64> = samples.iter().map(Duration::as_secs_f64).collect();
+    let mut s = samples_s.to_vec();
     s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = s.len() / 2;
     let median = if s.len() % 2 == 1 {
@@ -496,7 +521,7 @@ fn measure_c(
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
     }
     let argv: Vec<std::ffi::OsString> = vec![warmup.to_string().into(), timed.to_string().into()];
-    run_self_timed(&exe, &argv)
+    run_self_timed(&exe, &argv, warmup, timed)
 }
 
 /// Emits C for the workload, compiles + links it with the runtime static
@@ -561,16 +586,30 @@ fn measure_ship(
         }
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
     }
-    match run_looped_binary(&exe, warmup, timed) {
-        Ok((stdout, samples)) => finish(&stdout, &samples),
+    match run_looped_binary(&exe, warmup, timed, WARMUP_FLOOR) {
+        Ok(run) => finish(
+            &run.stdout,
+            &run.samples,
+            run.warmup,
+            run.warmup_iterations,
+            warmup,
+            timed,
+        ),
         Err(e) => Outcome::Error(e),
     }
 }
 
 /// Times the dev-tier JIT on the workload.
 fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Outcome {
-    match jit_bench(files, warmup, timed) {
-        Ok(b) => finish(&b.stdout, &b.samples),
+    match jit_bench_with_warmup_floor(files, warmup, timed, WARMUP_FLOOR) {
+        Ok(b) => finish(
+            &b.stdout,
+            &b.samples,
+            b.warmup,
+            b.warmup_iterations,
+            warmup,
+            timed,
+        ),
         Err(e) => Outcome::Error(format!("dev-JIT: {e}")),
     }
 }
@@ -603,7 +642,7 @@ fn measure_script(
     }
     argv.push(warmup.to_string().into());
     argv.push(timed.to_string().into());
-    run_self_timed(exe, &argv)
+    run_self_timed(exe, &argv, warmup, timed)
 }
 
 /// Runs `collect` under Node only when `--expose-gc` really exposes the
@@ -692,9 +731,14 @@ fn measure_collect_jsc(
     )
 }
 
-/// Runs `exe args…`, expecting a single `<checksum> <median_seconds>` line on
-/// stdout, and returns the parsed measurement.
-fn run_self_timed(exe: &Path, args: &[std::ffi::OsString]) -> Outcome {
+/// Runs `exe args…`, expecting `<checksum> <median_seconds>` on stdout and
+/// `warmup` / per-sample records on stderr.
+fn run_self_timed(
+    exe: &Path,
+    args: &[std::ffi::OsString],
+    minimum_warmup: usize,
+    timed: usize,
+) -> Outcome {
     let out = match Command::new(exe).args(args).output() {
         Ok(o) => o,
         Err(e) => return Outcome::Error(format!("run {}: {e}", exe.display())),
@@ -710,7 +754,7 @@ fn run_self_timed(exe: &Path, args: &[std::ffi::OsString]) -> Outcome {
     let text = String::from_utf8_lossy(&out.stdout);
     let line = text.trim();
     let mut parts = line.split_whitespace();
-    let (Some(cs), Some(md)) = (parts.next(), parts.next()) else {
+    let (Some(cs), Some(md), None) = (parts.next(), parts.next(), parts.next()) else {
         return Outcome::Error(format!("unparseable output `{line}`"));
     };
     let checksum: i128 = match cs.parse() {
@@ -722,59 +766,166 @@ fn run_self_timed(exe: &Path, args: &[std::ffi::OsString]) -> Outcome {
         Err(_) => return Outcome::Error(format!("median `{md}` is not a number")),
     };
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let spread = if stderr.trim().is_empty() {
-        None
-    } else {
-        let mut fields = stderr.split_whitespace();
-        let (Some("spread"), Some(min), Some(max), None) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
-            return Outcome::Error(format!("unparseable stderr `{}`", stderr.trim()));
-        };
-        let min: f64 = match min.parse() {
-            Ok(v) => v,
-            Err(_) => return Outcome::Error(format!("minimum `{min}` is not a number")),
-        };
-        let max: f64 = match max.parse() {
-            Ok(v) => v,
-            Err(_) => return Outcome::Error(format!("maximum `{max}` is not a number")),
-        };
-        Some((min, max))
+    let mut warmup_report: Option<(usize, f64)> = None;
+    let mut samples_s = Vec::with_capacity(timed);
+    for record in stderr.lines() {
+        let fields = record.split_whitespace().collect::<Vec<_>>();
+        match fields.as_slice() {
+            ["warmup", iterations, seconds] => {
+                if warmup_report.is_some() {
+                    return Outcome::Error("duplicate warm-up report".to_string());
+                }
+                let iterations = match iterations.parse() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return Outcome::Error(format!(
+                            "warm-up iterations `{iterations}` is not an integer"
+                        ))
+                    }
+                };
+                let seconds = match seconds.parse() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return Outcome::Error(format!(
+                            "warm-up time `{seconds}` is not a number"
+                        ))
+                    }
+                };
+                warmup_report = Some((iterations, seconds));
+            }
+            ["sample", index, seconds] => {
+                let index: usize = match index.parse() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return Outcome::Error(format!("sample index `{index}` is not an integer"))
+                    }
+                };
+                if index != samples_s.len() {
+                    return Outcome::Error(format!(
+                        "sample index {index} is out of sequence; expected {}",
+                        samples_s.len()
+                    ));
+                }
+                let seconds = match seconds.parse() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return Outcome::Error(format!("sample `{seconds}` is not a number"))
+                    }
+                };
+                samples_s.push(seconds);
+            }
+            _ => return Outcome::Error(format!("unparseable stderr record `{record}`")),
+        }
+    }
+    let Some((warmup_iterations, warmup_s)) = warmup_report else {
+        return Outcome::Error("subject did not report its measured warm-up time".to_string());
     };
-    Outcome::Ok(Measured {
+    finish_measurement(
         checksum,
-        median_s,
-        spread,
-    })
+        samples_s,
+        warmup_s,
+        warmup_iterations,
+        minimum_warmup,
+        timed,
+        Some(median_s),
+    )
 }
 
-/// Builds a `Measured` from a subscript tier's stdout bytes and samples.
-fn finish(stdout: &[u8], samples: &[Duration]) -> Outcome {
+/// Builds a `Measured` from a runner-timed subscript tier.
+fn finish(
+    stdout: &[u8],
+    samples: &[Duration],
+    warmup: Duration,
+    warmup_iterations: usize,
+    minimum_warmup: usize,
+    timed: usize,
+) -> Outcome {
     let s = String::from_utf8_lossy(stdout);
     let checksum: i128 = match s.trim().parse() {
         Ok(v) => v,
         Err(_) => return Outcome::Error(format!("checksum `{}` is not an integer", s.trim())),
     };
-    let Some((median, min, max)) = stats(samples) else {
-        return Outcome::Error("no timed samples".to_string());
+    finish_measurement(
+        checksum,
+        samples.iter().map(Duration::as_secs_f64).collect(),
+        warmup.as_secs_f64(),
+        warmup_iterations,
+        minimum_warmup,
+        timed,
+        None,
+    )
+}
+
+/// Validates the common timing contract and constructs a successful result.
+fn finish_measurement(
+    checksum: i128,
+    samples_s: Vec<f64>,
+    warmup_s: f64,
+    warmup_iterations: usize,
+    minimum_warmup: usize,
+    timed: usize,
+    reported_median_s: Option<f64>,
+) -> Outcome {
+    if !warmup_s.is_finite() || warmup_s < WARMUP_FLOOR.as_secs_f64() {
+        return Outcome::Error(format!(
+            "warm-up = {warmup_s:.3} s across {warmup_iterations} iterations; \
+             the floor is {:.3} s",
+            WARMUP_FLOOR.as_secs_f64()
+        ));
+    }
+    let required_iterations = minimum_warmup.max(DEFAULT_WARMUP);
+    if warmup_iterations < required_iterations {
+        return Outcome::Error(format!(
+            "warm-up used {warmup_iterations} iterations; expected at least \
+             {required_iterations}"
+        ));
+    }
+    if samples_s.len() != timed {
+        return Outcome::Error(format!(
+            "subject gave {} timed samples, expected {timed}",
+            samples_s.len()
+        ));
+    }
+    let Some((median_s, _, _)) = stats(&samples_s) else {
+        return Outcome::Error("timed samples are empty or invalid".to_string());
     };
+    if let Some(reported) = reported_median_s {
+        if !reported.is_finite() || (reported - median_s).abs() > 0.000_000_1 {
+            return Outcome::Error(format!(
+                "reported median {reported:.9} s disagrees with the sample \
+                 median {median_s:.9} s"
+            ));
+        }
+    }
     Outcome::Ok(Measured {
         checksum,
-        median_s: median,
-        spread: Some((min, max)),
+        median_s,
+        samples_s,
+        warmup_s,
+        warmup_iterations,
     })
 }
 
-/// Runs a looped-entry binary (the ship subject) with `warmup timed` and parses
-/// its `sample <i> <ns>` / `checksum-stable <0|1>` stderr protocol.
+/// One parsed runner-timed execution.
+struct LoopedRun {
+    stdout: Vec<u8>,
+    samples: Vec<Duration>,
+    warmup: Duration,
+    warmup_iterations: usize,
+}
+
+/// Runs a looped-entry binary (the ship subject) and parses its warm-up,
+/// per-sample, and checksum-stability protocol.
 fn run_looped_binary(
     exe: &Path,
     warmup: usize,
     timed: usize,
-) -> Result<(Vec<u8>, Vec<Duration>), Fail> {
+    warmup_floor: Duration,
+) -> Result<LoopedRun, Fail> {
     let out = Command::new(exe)
         .arg(warmup.to_string())
         .arg(timed.to_string())
+        .arg(warmup_floor.as_nanos().to_string())
         .output()
         .map_err(|e| format!("run {}: {e}", exe.display()))?;
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -783,14 +934,36 @@ fn run_looped_binary(
     }
     let mut samples = Vec::with_capacity(timed);
     let mut stable = None;
+    let mut warmup_report = None;
     for line in stderr.lines() {
-        let mut parts = line.split_whitespace();
-        match (parts.next(), parts.next(), parts.next()) {
-            (Some("sample"), Some(_), Some(ns)) => {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        match fields.as_slice() {
+            ["warmup", iterations, ns] => {
+                if warmup_report.is_some() {
+                    return Err("duplicate warm-up report".to_string());
+                }
+                let iterations = iterations
+                    .parse()
+                    .map_err(|_| format!("bad warm-up iterations `{line}`"))?;
+                let ns = ns
+                    .parse()
+                    .map_err(|_| format!("bad warm-up time `{line}`"))?;
+                warmup_report = Some((iterations, Duration::from_nanos(ns)));
+            }
+            ["sample", index, ns] => {
+                let index: usize = index
+                    .parse()
+                    .map_err(|_| format!("bad sample index `{line}`"))?;
+                if index != samples.len() {
+                    return Err(format!(
+                        "sample index {index} is out of sequence; expected {}",
+                        samples.len()
+                    ));
+                }
                 let ns: u64 = ns.parse().map_err(|_| format!("bad sample `{line}`"))?;
                 samples.push(Duration::from_nanos(ns));
             }
-            (Some("checksum-stable"), Some(flag), None) => stable = Some(flag == "1"),
+            ["checksum-stable", flag] => stable = Some(*flag == "1"),
             _ => return Err(format!("unexpected stderr line `{line}`")),
         }
     }
@@ -800,7 +973,18 @@ fn run_looped_binary(
     if samples.len() != timed {
         return Err(format!("{} gave {} samples, expected {timed}", exe.display(), samples.len()));
     }
-    Ok((out.stdout, samples))
+    let Some((warmup_iterations, warmup)) = warmup_report else {
+        return Err(format!(
+            "{} did not report its measured warm-up time",
+            exe.display()
+        ));
+    };
+    Ok(LoopedRun {
+        stdout: out.stdout,
+        samples,
+        warmup,
+        warmup_iterations,
+    })
 }
 
 // ---- environment / tools --------------------------------------------------
@@ -1106,6 +1290,20 @@ fn cell(row: &WorkloadResult, subject: &str, baseline: Option<f64>) -> String {
     }
 }
 
+/// A cell for the measured warm-up table.
+fn warmup_cell(row: &WorkloadResult, subject: &str) -> String {
+    if let Some(measured) = row.sampled(subject) {
+        format!(
+            "{:.3} s ({} iterations)",
+            measured.warmup_s, measured.warmup_iterations
+        )
+    } else if row.unavailable_reason(subject).is_some() {
+        "-".to_string()
+    } else {
+        "error".to_string()
+    }
+}
+
 /// Renders `README.md`.
 fn render_readme(
     rows: &[WorkloadResult],
@@ -1141,17 +1339,19 @@ fn render_readme(
     let _ = writeln!(
         s,
         "## Method\n\n\
-         Every subject that runs uses the same schedule: {warmup} warm-up runs \
-         discarded, {timed} timed runs, median reported — the runner passes \
-         these counts to every self-timed subject (C/LuaJIT/JSC/V8 read them \
-         from argv), so the figures above hold for every measured subject. Only the workload \
-         execution is timed. C is the 1.00x reference; every other subject is \
-         `ratio (median)`. C, LuaJIT, JSC, and V8 self-time with a monotonic \
-         clock and print their own median; the two subscript tiers are timed by \
-         the runner (the language has no clock primitive). Every subject that \
-         runs computes the identical integer checksum for a workload — \
-         unavailable subjects contribute no checksum, and the runner withholds \
-         a workload's timings if any measured checksum differs.\n\n\
+         Every subject that runs discards at least {warmup} warm-up iterations \
+         and continues until measured workload execution reaches the {:.0} ms \
+         floor, then performs {timed} timed runs and reports the median. \
+         `--warmup` is the minimum iteration count; the time floor is always \
+         additional. The runner rejects a subject that reports less than the \
+         floor or fewer than the requested iterations. Only workload execution \
+         is timed. C is the 1.00x reference; every other subject is `ratio \
+         (median)`. C, LuaJIT, JSC, and V8 self-time and report every sample; \
+         the two subscript tiers are timed by the runner (the language has no \
+         clock primitive). Every subject that runs computes the identical \
+         integer checksum for a workload — unavailable subjects contribute no \
+         checksum, and the runner withholds a workload's timings if any \
+         measured checksum differs.\n\n\
          **Span note.** The C/LuaJIT/JSC/V8 subjects time only the `workload()` \
          call and print the checksum afterward; the two subscript tiers time the \
          whole exported `main()`, which includes formatting and writing the \
@@ -1159,7 +1359,8 @@ fn render_readme(
          sub-microsecond step inside subscript's span but outside the others' — \
          a conservative difference that penalizes subscript, retained because \
          the ship-tier AOT timing entry and `jit_bench` are shared with the P4 \
-         performance gate and time the exported entry by contract."
+         performance gate and time the exported entry by contract.",
+        WARMUP_FLOOR.as_secs_f64() * 1000.0
     );
     let _ = writeln!(s);
     let _ = writeln!(s, "## Results");
@@ -1189,6 +1390,27 @@ fn render_readme(
             cell(row, "LuaJIT", baseline),
             cell(row, "JSC", baseline),
             cell(row, "V8 (Node.js)", baseline),
+        );
+    }
+    let _ = writeln!(s);
+    let _ = writeln!(s, "## Measured warm-up");
+    let _ = writeln!(s);
+    let _ = writeln!(
+        s,
+        "| Workload | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |"
+    );
+    let _ = writeln!(s, "|---|---|---|---|---|---|---|");
+    for row in rows {
+        let _ = writeln!(
+            s,
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            row.id,
+            warmup_cell(row, "C"),
+            warmup_cell(row, "subscript-ship"),
+            warmup_cell(row, "subscript-jit"),
+            warmup_cell(row, "LuaJIT"),
+            warmup_cell(row, "JSC"),
+            warmup_cell(row, "V8 (Node.js)"),
         );
     }
     if rows.iter().any(|row| row.id == "callbacks") {
@@ -1252,12 +1474,12 @@ fn render_readme(
             let _ = writeln!(s, "- **{id}** — {}", workload_params(id));
         }
     }
-    // Noise note for every subject whose min/max samples the runner holds.
+    // Noise note for every subject's recorded sample set.
     let mut noisy: Vec<String> = Vec::new();
     for row in rows {
         for subject in SUBJECTS {
             if let Some(m) = row.sampled(subject) {
-                if let Some((min, max)) = m.spread {
+                if let Some((min, max)) = m.spread() {
                     if m.median_s > 0.0 {
                         let spread = ((max - m.median_s) / m.median_s)
                             .max((m.median_s - min) / m.median_s);
@@ -1303,7 +1525,9 @@ fn render_json(
         s,
         "  \"procedure\": {},",
         jstr(&format!(
-            "{warmup} warm-up runs discarded, {timed} timed runs, median reported"
+            "{warmup} minimum warm-up iterations and {:.0} ms measured warm-up \
+             execution, {timed} timed runs, median reported",
+            WARMUP_FLOOR.as_secs_f64() * 1000.0
         ))
     );
     let _ = writeln!(s, "  \"machine\": {{");
@@ -1343,12 +1567,52 @@ fn render_json(
             let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
         }
         let _ = writeln!(s, "      }},");
+        let _ = writeln!(s, "      \"warmups_s\": {{");
+        for (si, subject) in subs.iter().enumerate() {
+            let comma = if si + 1 < subs.len() { "," } else { "" };
+            let value = row
+                .sampled(subject)
+                .map(|measured| format!("{:.9}", measured.warmup_s))
+                .unwrap_or_else(|| "null".to_string());
+            let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
+        }
+        let _ = writeln!(s, "      }},");
+        let _ = writeln!(s, "      \"warmup_iterations\": {{");
+        for (si, subject) in subs.iter().enumerate() {
+            let comma = if si + 1 < subs.len() { "," } else { "" };
+            let value = row
+                .sampled(subject)
+                .map(|measured| measured.warmup_iterations.to_string())
+                .unwrap_or_else(|| "null".to_string());
+            let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
+        }
+        let _ = writeln!(s, "      }},");
+        let _ = writeln!(s, "      \"samples_s\": {{");
+        for (si, subject) in subs.iter().enumerate() {
+            let comma = if si + 1 < subs.len() { "," } else { "" };
+            let value = row
+                .sampled(subject)
+                .map(|measured| {
+                    format!(
+                        "[{}]",
+                        measured
+                            .samples_s
+                            .iter()
+                            .map(|sample| format!("{sample:.9}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })
+                .unwrap_or_else(|| "null".to_string());
+            let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
+        }
+        let _ = writeln!(s, "      }},");
         let _ = writeln!(s, "      \"ranges_s\": {{");
         for (si, subject) in subs.iter().enumerate() {
             let comma = if si + 1 < subs.len() { "," } else { "" };
             let value = row
                 .sampled(subject)
-                .and_then(|m| m.spread)
+                .and_then(Measured::spread)
                 .map(|(min, max)| format!("[{min:.9}, {max:.9}]"))
                 .unwrap_or_else(|| "null".to_string());
             let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));

@@ -651,6 +651,10 @@ pub struct BenchSamples {
     /// Elapsed time of each timed run, in order; warm-up runs are not
     /// included.
     pub samples: Vec<Duration>,
+    /// Sum of the measured workload-call durations discarded as warm-up.
+    pub warmup: Duration,
+    /// Number of workload calls discarded as warm-up.
+    pub warmup_iterations: usize,
     /// Time spent turning source into executable code before the first
     /// run (reported, never gated — §9).
     pub compile: Duration,
@@ -677,6 +681,26 @@ pub fn jit_bench(
     warmup: usize,
     timed: usize,
 ) -> Result<BenchSamples, RunError> {
+    jit_bench_with_warmup_floor(files, warmup, timed, Duration::ZERO)
+}
+
+/// Measures the dev-JIT tier like [`jit_bench`], but continues warm-up until
+/// both `warmup` calls and `warmup_floor` of measured workload execution have
+/// completed.
+///
+/// The returned [`BenchSamples::warmup`] is the sum of the workload-call
+/// durations only. Compilation, Context construction, initialization, and I/O
+/// remain outside both the warm-up and timed spans.
+///
+/// # Errors
+///
+/// Returns the same errors as [`jit_bench`].
+pub fn jit_bench_with_warmup_floor(
+    files: &[SourceFile],
+    warmup: usize,
+    timed: usize,
+    warmup_floor: Duration,
+) -> Result<BenchSamples, RunError> {
     if timed == 0 {
         return Err(RunError::Internal(internal(
             "a benchmark subject needs at least one timed run",
@@ -687,9 +711,11 @@ pub fn jit_bench(
     let compile = started.elapsed();
 
     let mut samples = Vec::with_capacity(timed);
+    let mut warmup_elapsed = Duration::ZERO;
+    let mut warmup_iterations = 0;
     let mut stdout: Option<Vec<u8>> = None;
     let mut failure: Option<RunError> = None;
-    for run in 0..warmup + timed {
+    while warmup_iterations < warmup || warmup_elapsed < warmup_floor {
         match run_entry(&module, &lowered, None) {
             Ok((out, elapsed)) => {
                 match &stdout {
@@ -704,13 +730,37 @@ pub fn jit_bench(
                 if failure.is_some() {
                     break;
                 }
-                if run >= warmup {
-                    samples.push(elapsed);
-                }
+                warmup_elapsed += elapsed;
+                warmup_iterations += 1;
             }
             Err(e) => {
                 failure = Some(e);
                 break;
+            }
+        }
+    }
+    if failure.is_none() {
+        for _ in 0..timed {
+            match run_entry(&module, &lowered, None) {
+                Ok((out, elapsed)) => {
+                    match &stdout {
+                        Some(first) if first != &out => {
+                            failure = Some(RunError::Internal(internal(
+                                "the dev-JIT workload produced different output on two runs",
+                            )));
+                        }
+                        Some(_) => {}
+                        None => stdout = Some(out),
+                    }
+                    if failure.is_some() {
+                        break;
+                    }
+                    samples.push(elapsed);
+                }
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
             }
         }
     }
@@ -724,6 +774,8 @@ pub fn jit_bench(
     Ok(BenchSamples {
         stdout: stdout.unwrap_or_default(),
         samples,
+        warmup: warmup_elapsed,
+        warmup_iterations,
         compile,
     })
 }
@@ -1021,6 +1073,8 @@ mod tests {
         .expect("bench run");
         assert_eq!(b.stdout, b"tick\n");
         assert_eq!(b.samples.len(), 3);
+        assert_eq!(b.warmup_iterations, 2);
+        assert!(b.warmup > Duration::ZERO);
         assert!(b.compile > Duration::ZERO);
     }
 

@@ -60,9 +60,8 @@ static int cmp_double(const void *a, const void *b) {
 }
 
 int main(int argc, char **argv) {
-    /* Warm-up and timed counts come from argv, defaulting to the 3/11 floor, so
-     * the runner drives this baseline with the same counts as every other
-     * subject. Only the workload call is timed. */
+    /* The argv warm-up count is a minimum; measured workload execution also
+     * has to reach the 200 ms methodology floor. */
     int warmup = 3, timed = 11;
     if (argc >= 3) {
         warmup = atoi(argv[1]);
@@ -77,20 +76,34 @@ int main(int argc, char **argv) {
         return 2;
     }
     int32_t checksum = 0;
-    for (int i = 0; i < warmup; i++) {
+    int warmup_iterations = 0;
+    double warmup_seconds = 0.0;
+    while (warmup_iterations < warmup || warmup_iterations < 3 ||
+           warmup_seconds < 0.200) {
+        double t0 = now_seconds();
         checksum = workload();
+        double t1 = now_seconds();
+        warmup_seconds += t1 - t0;
+        warmup_iterations++;
     }
+    /* This volatile sink makes the warm-up result observable so the optimizer
+     * cannot delete the contractually required warm-up as dead code. */
+    volatile int32_t warmup_sink = checksum;
+    (void)warmup_sink;
     for (int i = 0; i < timed; i++) {
         double t0 = now_seconds();
         checksum = workload();
         double t1 = now_seconds();
         times[i] = t1 - t0;
     }
+    fprintf(stderr, "warmup %d %.9f\n", warmup_iterations, warmup_seconds);
+    for (int i = 0; i < timed; i++) {
+        fprintf(stderr, "sample %d %.9f\n", i, times[i]);
+    }
     qsort(times, (size_t)timed, sizeof(double), cmp_double);
     int mid = timed / 2;
     double median = (timed % 2 == 1) ? times[mid] : (times[mid - 1] + times[mid]) / 2.0;
     printf("%d %.9f\n", checksum, median);
-    fprintf(stderr, "spread %.9f %.9f\n", times[0], times[timed - 1]);
     free(times);
     return 0;
 }
