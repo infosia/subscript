@@ -1161,6 +1161,14 @@ having to poll the trap flag after every call into script.
   C6's rule that trapping is not catchable survives by construction
   rather than by promise. This is not a recovery mechanism and no
   later revision may make it one without revisiting C6.
+- It is handed **no Context pointer**. *(An earlier revision of this
+  section said this made re-entry "structurally impossible". That was
+  an overclaim, corrected 2026-07-26 after the implementer pointed it
+  out: `userdata` can carry a Context pointer, so the signature
+  withholds the means without preventing the act. Calling through a
+  smuggled pointer is undefined behaviour, not a rule violation — see
+  §18.2a — and the honest statement is that the shape removes the
+  obvious path, not every path.)*
 - It fires **at most once per run** — `Context::trap` is first-wins.
 - It must not call back into script. The Context is trapped; re-entry
   is undefined and the host is responsible for not attempting it.
@@ -1236,15 +1244,65 @@ the C ABI** — its only production caller was the reload session. A
 host could therefore only release a trapped Context and rebuild.
 
 **Precondition, checked by the function, not left to the caller.**
-Clearing is legal only at a host↔script boundary — `script_depth == 0`,
-no generated code on the stack. Clearing while a script frame is live
-would resume a run that has already given up. The function **returns 0
-and does nothing** if the precondition fails; it must not be a
-documented obligation, because the one place a host would most
-naturally try it — inside the trap observer — is exactly the illegal
-case (§18.2a: every script frame is still live when the observer
-fires). This is a second reason the observer receives no Context
-handle.
+Clearing is legal only at a host↔script boundary — no generated code
+on the stack. Clearing while a script frame is live would resume a run
+that has already given up. The function **returns 0 and does nothing**
+if the precondition fails; it must not be a documented obligation,
+because the one place a host would most naturally try it — inside the
+trap observer — is exactly the illegal case (§18.2a: every script
+frame is still live when the observer fires).
+
+**Two guards are required, because `script_depth` alone is inert.**
+*(Corrected 2026-07-26. This section originally named `script_depth ==
+0` as the whole check. The implementer found that nothing maintains
+`script_depth` outside the reload session — ordinary `run_jit` and AOT
+host entries never touch it — so for the deployment shape that matters
+it reads 0 always, the guard always passes, and it passes **from
+inside the observer**, which is the exact case it exists to refuse. A
+guard that is inert in production is worse than none, because it reads
+as protection.)*
+
+1. **An observer-active flag on the Context**, set for the duration of
+   the observer call. `clear_trap` refuses while it is set. This is
+   trivially correct and addresses the actual hazard directly.
+2. **`script_depth` maintained for real**, which needs the host
+   enter/exit API of §18.1a. Until that exists the depth check is
+   retained but is not load-bearing, and this section says so rather
+   than implying coverage it does not have.
+
+### 18.1a Host enter/exit — making `script_depth` real
+
+```c
+void sub_rt_ctx_enter_script(Context*);
+void sub_rt_ctx_exit_script(Context*);
+```
+
+A host brackets each call into an exported function with these. They
+maintain `Context::script_depth`, which is what makes "no generated
+code on the stack" a checkable condition rather than a comment. The
+reload session already maintains the depth internally; this exposes
+the same discipline to an embedding host.
+
+They are **not** optional for a host that calls `clear_trap`: without
+them the depth is always 0 and §18.2b's first guard is the only real
+one. A host that never clears may ignore them.
+
+### 18.1b The host C header
+
+**There is none, and that is a gap.** The runtime's declarations are
+embedded ad hoc in `AOT_ENTRY_C` and the emitted-C preamble; nothing
+in this repository gives a host outside it a header to include. For a
+language whose fourth invariant is that host interop crosses a C ABI
+only, the absence of the artifact that expresses that ABI is a real
+hole, found 2026-07-26 while implementing §18.2.
+
+Required: a single generated header covering the `sub_rt_ctx_*`
+surface (§18.1, §18.1a, §18.2, §18.2b, §18.2d) and the exported-entry
+convention, **generated from the Rust declarations rather than
+hand-written**, on the `bindgen` mirror's principle (§12.2) and
+CLAUDE.md core principle 6 — generated code is never hand-edited, fix
+the generator. A hand-kept header would drift from the ABI it claims
+to describe, which is the failure this section was written to close.
 
 **It clears reporting state and nothing else.** Live allocations stay
 live, deleted ones stay deleted, the reload epoch survives, the stdout
