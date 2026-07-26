@@ -1505,7 +1505,12 @@ allocations, the reload epoch and the stdout sink are unchanged across
 the clear — the property that makes "no rollback" true rather than
 merely claimed. Both tiers.
 
-## 19. P19 — trap unwind parity (CRITICAL)
+## 19. P19 — trap unwind parity (CRITICAL) — RESOLVED 2026-07-26
+
+**Everything in §19.1–19.4 below is the state that was found, kept in
+the past tense it was written in rather than rewritten, because the
+evidence is the reason the fix took the shape it did.** §19.7 records
+what landed. The one item still open is the emitted-C ratio in §19.7.
 
 Found 2026-07-26 by a fresh no-context investigation, opened as its own
 phase because it predates P13 and P18 and is larger than either.
@@ -1629,6 +1634,50 @@ phases before it: this phase changes emitted code on the hottest paths
 C measures 1.05× hand-written C. Re-run `perf-gate` and the
 cross-language suite, and record the rows. A regression is a finding,
 not an acceptable cost, without an explicit owner decision.
+
+### 19.7 What landed
+
+**Fully green**: `cargo test --offline` reports 559 passed, 0 failed;
+`codegen/tests/cemit.rs` 68 passed. All 11 of stage B's intentional
+failures are fixed with no `.expected` touched and no assertion
+weakened — including the accept-corpus goldens, which is the check that
+non-trapping behaviour did not move.
+
+- **`Callee::can_trap()` in `compiler/src/hir.rs` is the shared
+  policy**, consumed by both lowerings. This is §19.3's structural
+  requirement: a trap-capable operation added later is checked in both
+  tiers by construction rather than by remembering.
+- **One inline Context-layout assumption**, `*(const uint32_t*)ctx` at
+  a single site in `cemit.rs` — the §19.5 exception to §18.1b, kept to
+  one place so it cannot spread.
+- **`ss_arr_at`, `ss_fa_at` and `ss_scratch` are gone**, their checks
+  expanded at the call sites. ASan on the 320-byte `@CStruct` case:
+  before, `global-buffer-overflow`, `WRITE of size 320`, exit 134;
+  after, clean. A regression test pins it.
+- **No loop back-edge polling.** The implementer checked the dev tier
+  rather than assuming: it has no unconditional back-edge poll either,
+  checking exact fault-capable operations instead. Ship-only polling
+  was measurably slower and was removed. Both tiers now stop at the
+  fault for the same reason.
+
+**Open: the emitted-C ratio.** This run measured emitted-C at **1.53×**
+hand-written C, against the **1.05×** this document and CLAUDE.md cite
+as the evidence for choosing C emission as the ship tier. The run is
+valid under the ±20% rule (spreads 0.6–2.0%).
+
+Attribution is **not yet established** and must not be assumed either
+way. Two facts bear on it: earlier the same day, **before** any P19
+change, the same harness measured 1.54× (a run the harness voided) and
+1.87× (valid) on this machine — so the 1.05× figure was already not
+reproducing here, and a P19 cause is not the only explanation. The
+`p9-stdlib.md` carried-forward item already records that drift as
+needing an idle-machine re-measurement. A controlled same-session
+comparison against the pre-P19 commit is the measurement that settles
+it; until it is done this section claims nothing.
+
+Cross-language timings are **not reported**: the run matched all nine
+checksums but was voided by the harness on C-subject spread (27–97%)
+even at 200 warm-ups. Reporting them would violate §9.
 
 ### 19.6 Rejected: `setjmp`/`longjmp`
 
