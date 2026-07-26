@@ -967,6 +967,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         key: &FnKey,
         args: &[Value],
+        checked: bool,
     ) -> Result<Vec<Value>, String> {
         let inst = if self.ml.opts.reload {
             let (code, sigref) = indirect_target(self.ml, &mut self.b, self.ctx_v, key)?;
@@ -977,7 +978,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.b.ins().call(fref, args)
         };
         let res = self.b.inst_results(inst).to_vec();
-        self.trap_check();
+        if checked {
+            self.trap_check();
+        }
         Ok(res)
     }
 
@@ -2124,6 +2127,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         pos: &Pos,
         dest: Option<Value>,
     ) -> Result<RV, String> {
+        let checked = callee.can_trap();
         match callee {
             hir::Callee::Func(name) => {
                 let f = self.ml.hir_fn(name)?;
@@ -2131,7 +2135,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     // Creator call: allocates and initializes the frame.
                     let mut argv = vec![self.ctx_v];
                     self.push_args(&mut argv, &f.params, args)?;
-                    let res = self.call_script(&FnKey::Free(name.clone()), &argv)?;
+                    let res =
+                        self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
                     return Ok(RV::S(
                         *res.first().ok_or_else(|| internal("creator result"))?,
                     ));
@@ -2143,18 +2148,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 self.push_args(&mut argv, &f.params, args)?;
                 let ret = f.ret.clone();
-                let res = self.call_script(&FnKey::Free(name.clone()), &argv)?;
+                let res =
+                    self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
                 self.shape_results(&ret, &res, sret)
             }
-            hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos),
-            hir::Callee::Math(f) => self.eval_math(*f, args),
-            hir::Callee::Num(f) => self.eval_num(*f, args, pos),
-            hir::Callee::Date(f) => self.eval_date(*f, args, pos),
-            hir::Callee::Json(f) => self.eval_json(*f, args, pos),
-            hir::Callee::Str(f) => self.eval_str(*f, args, pos),
-            hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos),
-            hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos),
-            hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos),
+            hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos, checked),
+            hir::Callee::Math(f) => self.eval_math(*f, args, checked),
+            hir::Callee::Num(f) => self.eval_num(*f, args, pos, checked),
+            hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
+            hir::Callee::Json(f) => self.eval_json(*f, args, pos, checked),
+            hir::Callee::Str(f) => self.eval_str(*f, args, pos, checked),
+            hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos, checked),
+            hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos, checked),
+            hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos, checked),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -2180,13 +2186,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let sigref = self.b.import_signature(sig);
                 let inst = self.b.ins().call_indirect(sigref, code, &argv);
                 let res = self.b.inst_results(inst).to_vec();
-                self.trap_check();
+                if checked {
+                    self.trap_check();
+                }
                 self.shape_results(&ft.ret, &res, sret)
             }
             hir::Callee::Method { recv, name } => {
-                self.eval_method(recv, name, args, ret_ty, pos, dest)
+                self.eval_method(recv, name, args, ret_ty, pos, dest, checked)
             }
-            hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, pos),
+            hir::Callee::Foreign(name) => {
+                self.eval_foreign_call(name, args, pos, checked)
+            }
             other => Err(internal(format!("callee {other:?}"))),
         }
     }
@@ -2201,6 +2211,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         name: &str,
         args: &[hir::Expr],
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         let ff = self.ml.foreign_fn(name)?;
         let params: Vec<Type> = ff.params.iter().map(|p| p.ty.clone()).collect();
@@ -2251,7 +2262,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let res = self.b.inst_results(inst).to_vec();
         // A foreign call may set the Context trap flag — directly, or via
         // a callback that trapped inside the trampoline — so check it.
-        self.trap_check();
+        if checked {
+            self.trap_check();
+        }
         Ok(match ret_repr {
             Repr::Scalar(_) => RV::S(*res.first().ok_or_else(|| internal("foreign result"))?),
             Repr::Agg { .. } => {
@@ -2809,7 +2822,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// all others use `f64`. No trap check follows: the runtime entries
     /// never trap (pure, or a PRNG state advance). Constants never reach
     /// here — they folded to literals at check time.
-    fn eval_math(&mut self, f: hir::MathFn, args: &[hir::Expr]) -> Result<RV, String> {
+    fn eval_math(
+        &mut self,
+        f: hir::MathFn,
+        args: &[hir::Expr],
+        checked: bool,
+    ) -> Result<RV, String> {
         if args.len() != f.arity() {
             return Err(internal(format!("Math.{} arity", f.name())));
         }
@@ -2818,7 +2836,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let rv = self.eval(a)?;
             argv.push(self.expect_s(rv)?);
         }
-        let res = self.call_rt(self.ml.rt.math[f as usize], &argv, false)?;
+        let res = self.call_rt(self.ml.rt.math[f as usize], &argv, checked)?;
         res.map(RV::S)
             .ok_or_else(|| internal(format!("Math.{} result", f.name())))
     }
@@ -2831,6 +2849,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         f: hir::NumFn,
         args: &[hir::Expr],
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         use hir::NumFn as N;
         let expected = match f {
@@ -2855,9 +2874,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let pid = self.pos_id(pos);
             argv.push(self.iconst(types::I32, pid));
         }
-        let traps = f.takes_pos_id();
         let result = self
-            .call_rt(self.ml.rt.num[f as usize], &argv, traps)?
+            .call_rt(self.ml.rt.num[f as usize], &argv, checked)?
             .ok_or_else(|| internal(format!("{} result", f.name())))?;
         Ok(RV::S(if f.returns_bool() {
             self.b.ins().icmp_imm(IntCC::NotEqual, result, 0)
@@ -2875,6 +2893,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         f: hir::JsonFn,
         args: &[hir::Expr],
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         use hir::JsonFn as J;
         let expected = match f {
@@ -2913,7 +2932,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
         let pid = self.pos_id(pos);
         argv.push(self.iconst(types::I32, pid));
-        let result = self.call_rt(self.ml.rt.json[f as usize], &argv, true)?;
+        let result = self.call_rt(self.ml.rt.json[f as usize], &argv, checked)?;
         Ok(match f {
             J::Begin
             | J::BeginTracked
@@ -2948,6 +2967,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         f: hir::DateFn,
         args: &[hir::Expr],
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         use hir::DateFn as D;
         let scalar_arg = |this: &mut Self, e: &hir::Expr| -> Result<Value, String> {
@@ -2959,7 +2979,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let ms = scalar_arg(self, args.first().ok_or_else(|| internal("Date arity"))?)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res = self.call_rt(self.ml.rt.date_new, &[self.ctx_v, ms, pos_v], true)?;
+                let res =
+                    self.call_rt(self.ml.rt.date_new, &[self.ctx_v, ms, pos_v], checked)?;
                 res.map(RV::S).ok_or_else(|| internal("Date result"))
             }
             D::Utc => {
@@ -2972,11 +2993,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 let pid = self.pos_id(pos);
                 argv.push(self.iconst(types::I32, pid));
-                let res = self.call_rt(self.ml.rt.date_utc, &argv, true)?;
+                let res = self.call_rt(self.ml.rt.date_utc, &argv, checked)?;
                 res.map(RV::S).ok_or_else(|| internal("Date.UTC result"))
             }
             D::Now => {
-                let res = self.call_rt(self.ml.rt.date_now, &[self.ctx_v], false)?;
+                let res = self.call_rt(self.ml.rt.date_now, &[self.ctx_v], checked)?;
                 res.map(RV::S).ok_or_else(|| internal("Date.now result"))
             }
             D::ToIso => {
@@ -2986,8 +3007,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 )?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res =
-                    self.call_rt(self.ml.rt.date_to_iso, &[self.ctx_v, ms, pos_v], true)?;
+                let res = self.call_rt(
+                    self.ml.rt.date_to_iso,
+                    &[self.ctx_v, ms, pos_v],
+                    checked,
+                )?;
                 res.map(RV::S).ok_or_else(|| internal("toISOString result"))
             }
             accessor => {
@@ -2999,8 +3023,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     args.first().ok_or_else(|| internal("Date accessor receiver"))?,
                 )?;
                 let field = self.iconst(types::I32, i64::from(code));
-                let res =
-                    self.call_rt(self.ml.rt.date_get, &[self.ctx_v, ms, field], false)?;
+                let res = self.call_rt(
+                    self.ml.rt.date_get,
+                    &[self.ctx_v, ms, field],
+                    checked,
+                )?;
                 res.map(RV::S)
                     .ok_or_else(|| internal(format!("Date accessor {} result", accessor.name())))
             }
@@ -3014,7 +3041,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// exactly when the symbol is fault-capable
     /// ([`hir::StrFn::takes_pos_id`]). A `boolean` result arrives as
     /// `i32` 0/1 and is narrowed here.
-    fn eval_str(&mut self, f: hir::StrFn, args: &[hir::Expr], pos: &Pos) -> Result<RV, String> {
+    fn eval_str(
+        &mut self,
+        f: hir::StrFn,
+        args: &[hir::Expr],
+        pos: &Pos,
+        checked: bool,
+    ) -> Result<RV, String> {
         if args.len() != 1 + f.params().len() {
             return Err(internal(format!("{} arity (checker normalizes)", f.name())));
         }
@@ -3023,12 +3056,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let rv = self.eval(a)?;
             argv.push(self.expect_s(rv)?);
         }
-        let traps = f.takes_pos_id();
-        if traps {
+        if f.takes_pos_id() {
             let pid = self.pos_id(pos);
             argv.push(self.iconst(types::I32, pid));
         }
-        let res = self.call_rt(self.ml.rt.str_ops[f as usize], &argv, traps)?;
+        let res =
+            self.call_rt(self.ml.rt.str_ops[f as usize], &argv, checked)?;
         let res = res.ok_or_else(|| internal(format!("{} result", f.name())))?;
         Ok(RV::S(match f.ret() {
             hir::StrRet::Bool => self.b.ins().icmp_imm(IntCC::NotEqual, res, 0),
@@ -3050,6 +3083,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         use hir::ArrFn as A;
         let recv = args.first().ok_or_else(|| internal("array method receiver"))?;
@@ -3090,7 +3124,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 ))),
             }
         };
-        let checked = f.can_trap();
         match f {
             A::IndexOf | A::LastIndexOf | A::Includes => {
                 let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
@@ -3303,6 +3336,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         use hir::MapFn as F;
         if f == F::GroupBy {
@@ -3350,7 +3384,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.iconst(types::I32, i64::from(pos_id)),
             ];
             let result =
-                self.call_rt(self.ml.rt.map_ops[f as usize], &argv, true)?;
+                self.call_rt(self.ml.rt.map_ops[f as usize], &argv, checked)?;
             return result
                 .map(RV::S)
                 .ok_or_else(|| internal("Map.groupBy result"));
@@ -3366,7 +3400,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             },
         };
         let rt = self.ml.rt.map_ops[f as usize];
-        let checked = f.can_trap();
         if f == F::New {
             let (key_size, _) = self.ml.layouts.size_align(&key)?;
             let (value_size, _) = self.ml.layouts.size_align(&value)?;
@@ -3486,6 +3519,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         use hir::SetFn as F;
         let key = match f {
@@ -3499,7 +3533,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             },
         };
         let rt = self.ml.rt.set_ops[f as usize];
-        let checked = f.can_trap();
         if f == F::New {
             let (key_size, _) = self.ml.layouts.size_align(&key)?;
             let kind = crate::layout::assoc_key_kind(self.ml.hir, &key)?;
@@ -3603,17 +3636,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         a: hir::AmbientFn,
         args: &[hir::Expr],
         pos: &Pos,
+        checked: bool,
     ) -> Result<RV, String> {
         match a {
             hir::AmbientFn::Print => {
                 let arg = args.first().ok_or_else(|| internal("print arity"))?;
                 let rv = self.eval(arg)?;
                 let h = self.expect_s(rv)?;
-                self.call_rt(self.ml.rt.print, &[self.ctx_v, h], false)?;
+                self.call_rt(self.ml.rt.print, &[self.ctx_v, h], checked)?;
                 Ok(RV::None)
             }
             hir::AmbientFn::Collect => {
-                self.call_rt(self.ml.rt.collect, &[self.ctx_v], false)?;
+                self.call_rt(self.ml.rt.collect, &[self.ctx_v], checked)?;
                 Ok(RV::None)
             }
             hir::AmbientFn::UnsafeDelete => {
@@ -3622,7 +3656,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let ptr = self.expect_s(rv)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                self.call_rt(self.ml.rt.delete, &[self.ctx_v, ptr, pos_v], true)?;
+                self.call_rt(
+                    self.ml.rt.delete,
+                    &[self.ctx_v, ptr, pos_v],
+                    checked,
+                )?;
                 Ok(RV::None)
             }
             _ => Err(internal("unknown ambient function")),
@@ -3637,6 +3675,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         _ret_ty: &Type,
         pos: &Pos,
         dest: Option<Value>,
+        checked: bool,
     ) -> Result<RV, String> {
         match recv.ty.clone() {
             Type::Array(elem) => {
@@ -3652,7 +3691,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         let res = self.call_rt(
                             self.ml.rt.array_push,
                             &[self.ctx_v, h, src, pos_v],
-                            true,
+                            checked,
                         )?;
                         res.map(RV::S).ok_or_else(|| internal("push result"))
                     }
@@ -3664,7 +3703,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         self.call_rt(
                             self.ml.rt.array_pop,
                             &[self.ctx_v, h, dst, pos_v],
-                            true,
+                            checked,
                         )?;
                         self.load_val(&elem, dst, 0)
                     }
@@ -3698,7 +3737,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ins()
                     .call_indirect(sigref, resume, &[self.ctx_v, frame, out]);
                 let done = self.b.inst_results(inst)[0];
-                self.trap_check();
+                if checked {
+                    self.trap_check();
+                }
                 self.b.ins().store(flags(), done, slot, 0);
                 Ok(RV::A(slot))
             }
@@ -3721,7 +3762,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 argv.push(this);
                 self.push_args(&mut argv, &m.params, args)?;
                 let ret = m.ret.clone();
-                let res = self.call_script(&FnKey::Method(cid.0, name.to_string()), &argv)?;
+                let res = self.call_script(
+                    &FnKey::Method(cid.0, name.to_string()),
+                    &argv,
+                    checked,
+                )?;
                 self.shape_results(&ret, &res, sret)
             }
             other => Err(internal(format!("method on {other:?}"))),
@@ -3795,7 +3840,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if let Some(ctor) = &class.ctor {
             let mut argv = vec![self.ctx_v, this];
             self.push_args(&mut argv, &ctor.params, args)?;
-            self.call_script(&FnKey::Ctor(cid), &argv)?;
+            self.call_script(&FnKey::Ctor(cid), &argv, true)?;
         }
         Ok(if layout.is_value {
             RV::A(this)

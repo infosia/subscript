@@ -413,7 +413,7 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 }
 
 #[test]
-fn trap_corpus_entries_match_dev_stdout_and_expose_ship_divergences() {
+fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
@@ -479,6 +479,51 @@ fn trap_corpus_entries_match_dev_stdout_and_expose_ship_divergences() {
         "trap corpus stdout divergences:\n{}",
         divergences.join("\n")
     );
+}
+
+#[test]
+fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
+    // P19: the old ship-tier path let ss_arr_at return its 256-byte
+    // scratch sentinel after trapping, then copied this 320-byte value
+    // into it. Under ASan that was a global-buffer-overflow. The store
+    // must now be unreachable, in addition to stdout matching the dev
+    // tier.
+    let fields = std::iter::repeat("0")
+        .take(80)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!(
+        "@CStruct\n\
+         class Wide {{\n\
+           words: FixedArray<i32, 80>;\n\
+           constructor(words: FixedArray<i32, 80>) {{ this.words = words; }}\n\
+         }}\n\
+         export function main(): void {{\n\
+           const values: Wide[] = [];\n\
+           const wide: Wide = new Wide([{fields}]);\n\
+           print(\"before\");\n\
+           values[0] = wide;\n\
+           print(\"after\");\n\
+         }}\n"
+    );
+    let files = [SourceFile::new("test.ts", source)];
+    let mut outcomes = Vec::new();
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
+        match result {
+            Err(RunError::Trap(report)) => {
+                assert_eq!(report.rule, TrapKind::IndexOutOfBounds, "{tier}");
+                assert_eq!(report.stdout, b"before\n", "{tier}");
+                outcomes.push(trap_outcome(report));
+            }
+            other => {
+                panic!("{tier}: expected an out-of-bounds trap, got {other:?}")
+            }
+        }
+    }
+    assert_trap_outcomes_identical("320-byte CStruct array store", &outcomes);
 }
 
 #[test]

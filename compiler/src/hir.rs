@@ -329,6 +329,12 @@ impl AmbientFn {
         AmbientFn::UnsafeDelete,
     ];
 
+    /// Whether the runtime call can leave the Context trapped.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        self == AmbientFn::UnsafeDelete
+    }
+
     /// Surface spelling.
     #[must_use]
     pub(crate) fn name(self) -> &'static str {
@@ -483,6 +489,12 @@ impl MathFn {
         MathFn::Imul,
         MathFn::Fround,
     ];
+
+    /// Whether the runtime call can leave the Context trapped.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        false
+    }
 
     /// The member name, which is also the runtime symbol suffix
     /// (`sub_rt_math_<name>`).
@@ -832,6 +844,15 @@ impl JsonFn {
         JsonFn::ParseObjectGet,
     ];
 
+    /// Whether the runtime call can leave the Context trapped.
+    ///
+    /// Every JSON leaf currently carries a source position and may
+    /// allocate or report a data-dependent JSON fault.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        true
+    }
+
     /// Opaque runtime symbol shared by dev-JIT and ship-C-AOT.
     #[must_use]
     pub fn symbol(self) -> &'static str {
@@ -933,6 +954,12 @@ impl DateFn {
         DateFn::GetUtcMilliseconds,
         DateFn::ToIso,
     ];
+
+    /// Whether the runtime call can leave the Context trapped.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        matches!(self, DateFn::New | DateFn::Utc | DateFn::ToIso)
+    }
 
     /// The lib member name (diagnostics and the checker's lookup).
     #[must_use]
@@ -2176,6 +2203,32 @@ pub enum Callee {
     },
 }
 
+impl Callee {
+    /// Whether invoking this callee can leave the Context trapped.
+    ///
+    /// This is the shared dev/ship-tier check policy. Family variants
+    /// delegate to the same operation predicates that describe their
+    /// runtime calls, so adding a new trap-capable operation requires one
+    /// predicate update and both lowering tiers acquire the check.
+    #[must_use]
+    pub fn can_trap(&self) -> bool {
+        match self {
+            Callee::Func(_) | Callee::Value(_) | Callee::Method { .. } | Callee::Foreign(_) => {
+                true
+            }
+            Callee::Ambient(f) => f.can_trap(),
+            Callee::Math(f) => f.can_trap(),
+            Callee::Num(f) => f.takes_pos_id(),
+            Callee::Date(f) => f.can_trap(),
+            Callee::Json(f) => f.can_trap(),
+            Callee::Str(f) => f.takes_pos_id(),
+            Callee::Arr(f) => f.can_trap(),
+            Callee::Map(f) => f.can_trap(),
+            Callee::Set(f) => f.can_trap(),
+        }
+    }
+}
+
 /// One interpolation segment of a template literal.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -2404,6 +2457,28 @@ mod tests {
         }
         assert_eq!(DateFn::ToIso.name(), "toISOString");
         assert_eq!(DateFn::Utc.name(), "UTC");
+    }
+
+    #[test]
+    fn callee_trap_policy_delegates_to_operation_predicates() {
+        assert!(!Callee::Ambient(AmbientFn::Print).can_trap());
+        assert!(Callee::Ambient(AmbientFn::UnsafeDelete).can_trap());
+        assert!(!Callee::Math(MathFn::Abs).can_trap());
+        assert!(Callee::Num(NumFn::ParseInt).can_trap());
+        assert!(!Callee::Num(NumFn::IsFinite).can_trap());
+        assert!(Callee::Date(DateFn::New).can_trap());
+        assert!(!Callee::Date(DateFn::Now).can_trap());
+        assert!(Callee::Json(JsonFn::Finish).can_trap());
+        assert!(Callee::Str(StrFn::CharCodeAt).can_trap());
+        assert!(!Callee::Str(StrFn::Includes).can_trap());
+        assert!(Callee::Arr(ArrFn::ForEach).can_trap());
+        assert!(!Callee::Arr(ArrFn::Reverse).can_trap());
+        assert!(Callee::Map(MapFn::Set).can_trap());
+        assert!(!Callee::Map(MapFn::Get).can_trap());
+        assert!(Callee::Set(SetFn::Union).can_trap());
+        assert!(!Callee::Set(SetFn::Has).can_trap());
+        assert!(Callee::Func("script".to_string()).can_trap());
+        assert!(Callee::Foreign("host".to_string()).can_trap());
     }
 
     #[test]

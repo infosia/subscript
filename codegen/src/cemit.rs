@@ -54,9 +54,10 @@
 //!   multiply-add.
 //! - **Q14 formatting** is the runtime's (`sub_rt_fmt_*`), so an f32
 //!   checksum prints the same bytes both tiers.
-//! - **Trap model.** Emitted checks call `sub_rt_trap`; a trap sets the
-//!   Context flag and is reported by the host entry without aborting the
-//!   host, matching the runtime.
+//! - **Trap model.** Fault-capable calls are followed by an inline read
+//!   of the Context trap flag; a set flag unwinds generated C frames and
+//!   is reported by the host entry without aborting the host, matching
+//!   the dev tier.
 //!
 //! # Scope
 //!
@@ -1078,7 +1079,7 @@ impl<'m> Emitter<'m> {
 
     /// Returns from the current emitted function after a trap, matching
     /// the dev tier's per-frame unwind. The caller checks the Context
-    /// trap flag after every script call and continues unwinding.
+    /// trap flag after every fault-capable call and continues unwinding.
     fn emit_trap_return(&mut self, out: &mut String, depth: usize) -> Result<(), String> {
         self.emit_shadow_pop(out, depth);
         if self.gen.is_some() {
@@ -1089,6 +1090,21 @@ impl<'m> Emitter<'m> {
             let zero = self.zero_value(&self.current_ret.clone())?;
             let _ = writeln!(out, "{}return {zero};", indent(depth));
         }
+        Ok(())
+    }
+
+    /// Emits the pending-trap check and current-frame unwind.
+    ///
+    /// P19 deliberately makes emitted C depend on one private Context
+    /// layout fact outside the generated host header: `trap_flag` is the
+    /// first `u32` (`Context::trap_flag_offset() == 0`). Keep the layout
+    /// assumption in this one emitter method; every ship-tier check goes
+    /// through it so the assumption cannot spread silently.
+    fn emit_trap_check(&mut self, out: &mut String, depth: usize) -> Result<(), String> {
+        let ind = indent(depth);
+        let _ = writeln!(out, "{ind}if (*(const uint32_t*)ctx != 0u) {{");
+        self.emit_trap_return(out, depth + 1)?;
+        let _ = writeln!(out, "{ind}}}");
         Ok(())
     }
 
@@ -1465,13 +1481,27 @@ impl<'m> Emitter<'m> {
         let ind = indent(depth);
         match &e.kind {
             K::Assign { op, target, value } => self.emit_assign(out, *op, target, value, depth),
-            K::Call { callee: hir::Callee::Ambient(a), args } => {
-                self.emit_ambient(out, *a, args, &e.pos, depth)
+            K::Call {
+                callee: callee @ hir::Callee::Ambient(a),
+                args,
+            } => {
+                self.emit_ambient(out, *a, args, &e.pos, depth)?;
+                if callee.can_trap() {
+                    self.emit_trap_check(out, depth)?;
+                }
+                Ok(())
             }
-            K::Call { callee: hir::Callee::Method { recv, name }, args }
+            K::Call {
+                callee: callee @ hir::Callee::Method { recv, name },
+                args,
+            }
                 if is_array_mutator(&recv.ty, name) =>
             {
-                self.emit_array_mutator(out, recv, name, args, &e.pos, depth)
+                self.emit_array_mutator(out, recv, name, args, &e.pos, depth)?;
+                if callee.can_trap() {
+                    self.emit_trap_check(out, depth)?;
+                }
+                Ok(())
             }
             _ => {
                 let text = self.eval(e, out, depth)?;
@@ -1553,24 +1583,42 @@ impl<'m> Emitter<'m> {
                 match op {
                     None => {
                         let v = self.eval(value, out, depth)?;
-                        let _ = writeln!(
-                            out,
-                            "{ind}{{ {ect} _v = {v}; *({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u) = _v; }}"
-                        );
+                        let value_tmp = self.fresh_tmp();
+                        let _ = writeln!(out, "{ind}{ect} {value_tmp} = {v};");
+                        let p = self.emit_dynamic_index_addr(
+                            &h, &idx, elem, pid, out, depth,
+                        )?;
+                        let _ = writeln!(out, "{ind}*{p} = {value_tmp};");
                     }
                     Some(bin) => {
                         let v = self.eval(value, out, depth)?;
+                        let value_tmp = self.fresh_tmp();
+                        let _ = writeln!(out, "{ind}{ect} {value_tmp} = {v};");
+                        let p = self.emit_dynamic_index_addr(
+                            &h, &idx, elem, pid, out, depth,
+                        )?;
                         if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
-                            let shifted = shift_expr(bin, elem, "*_p", "_v")?;
-                            let _ = writeln!(
+                            let shifted =
+                                shift_expr(bin, elem, &format!("*{p}"), &value_tmp)?;
+                            let _ = writeln!(out, "{ind}*{p} = {shifted};");
+                        } else if elem.is_integer()
+                            && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem)
+                        {
+                            let combined = self.eval_checked_divrem(
+                                elem,
+                                bin == hir::BinOp::Div,
+                                &format!("*{p}"),
+                                &value_tmp,
+                                &target.pos,
                                 out,
-                                "{ind}{{ {ect} _v = {v}; {ect}* _p = ({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u); *_p = {shifted}; }}"
-                            );
+                                depth,
+                            )?;
+                            let _ = writeln!(out, "{ind}*{p} = {combined};");
                         } else {
                             let sym = binop_sym(bin)?;
                             let _ = writeln!(
                                 out,
-                                "{ind}{{ {ect} _v = {v}; {ect}* _p = ({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u); *_p = *_p {sym} _v; }}"
+                                "{ind}*{p} = *{p} {sym} {value_tmp};"
                             );
                         }
                     }
@@ -1600,12 +1648,23 @@ impl<'m> Emitter<'m> {
                 if target.ty == Type::Str && bin == hir::BinOp::Add {
                     let v = self.eval(value, out, depth)?;
                     let pid = self.pos_id(&target.pos);
-                    let _ = writeln!(out, "{ind}{place} = sub_rt_str_concat(ctx, {place}, {v}, {pid}u);");
+                    let call =
+                        format!("sub_rt_str_concat(ctx, {place}, {v}, {pid}u)");
+                    let result =
+                        self.eval_checked_call(call, &Type::Str, out, depth)?;
+                    let _ = writeln!(out, "{ind}{place} = {result};");
                 } else if target.ty.is_integer() && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem) {
                     let v = self.eval(value, out, depth)?;
-                    let helper = divrem_helper(&target.ty, bin == hir::BinOp::Div)?;
-                    let pid = self.pos_id(&target.pos);
-                    let _ = writeln!(out, "{ind}{place} = {helper}(ctx, {place}, {v}, {pid}u);");
+                    let result = self.eval_checked_divrem(
+                        &target.ty,
+                        bin == hir::BinOp::Div,
+                        &place,
+                        &v,
+                        &target.pos,
+                        out,
+                        depth,
+                    )?;
+                    let _ = writeln!(out, "{ind}{place} = {result};");
                 } else if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
                     let v = self.eval(value, out, depth)?;
                     let shifted = shift_expr(bin, &target.ty, &place, &v)?;
@@ -1650,9 +1709,17 @@ impl<'m> Emitter<'m> {
                             Type::FixedArray(el, _) => (**el).clone(),
                             _ => unreachable!(),
                         };
-                        let ect = self.ctype(&elem)?;
                         let pid = self.pos_id(&e.pos);
-                        Ok(format!("(*({ect}*)ss_fa_at(ctx, {base}.a, {n}, {idx}, sizeof({ect}), {pid}u))"))
+                        let p = self.emit_fixed_index_addr(
+                            &format!("{base}.a"),
+                            *n,
+                            &idx,
+                            &elem,
+                            pid,
+                            out,
+                            depth,
+                        )?;
+                        Ok(format!("(*{p})"))
                     }
                 }
                 other => Err(format!("assignment target index on {other:?}")),
@@ -1733,7 +1800,9 @@ impl<'m> Emitter<'m> {
                 }
             }
             K::Bool(b) => Ok(if *b { "1".to_string() } else { "0".to_string() }),
-            K::Str(s) => self.string_literal(s.as_bytes(), &e.pos),
+            K::Str(s) => {
+                self.string_literal(s.as_bytes(), &e.pos, out, depth)
+            }
             K::Null => Ok("((void*)0)".to_string()),
             K::This => Ok(self.this.this_expr()?.to_string()),
             K::Local(name) => Ok(self.local_ref(name)),
@@ -1771,10 +1840,11 @@ impl<'m> Emitter<'m> {
                 }
                 let cname = self.class_name(*class)?;
                 let pid = self.pos_id(&e.pos);
-                Ok(format!(
+                let call = format!(
                     "sub_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
                     class.0
-                ))
+                );
+                self.eval_checked_call(call, &e.ty, out, depth)
             }
             K::Field { obj, name } => self.eval_field(obj, name, out, depth),
             K::JsonResultValue(obj) => self.eval_json_result_value(obj, out, depth, &e.pos),
@@ -1883,13 +1953,20 @@ impl<'m> Emitter<'m> {
         self.bind_tmp(&v, e, out, depth)
     }
 
-    fn string_literal(&mut self, bytes: &[u8], pos: &Pos) -> Result<String, String> {
+    fn string_literal(
+        &mut self,
+        bytes: &[u8],
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let pid = self.pos_id(pos);
-        Ok(format!(
+        let call = format!(
             "sub_rt_str_lit(ctx, (const unsigned char*){}, {}ull, {pid}u)",
             c_string_literal(bytes),
             bytes.len()
-        ))
+        );
+        self.eval_checked_call(call, &Type::Str, out, depth)
     }
 
     fn eval_binary(&mut self, op: hir::BinOp, left: &hir::Expr, right: &hir::Expr, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
@@ -1918,7 +1995,9 @@ impl<'m> Emitter<'m> {
             return match op {
                 B::Add => {
                     let pid = self.pos_id(pos);
-                    Ok(format!("sub_rt_str_concat(ctx, {l}, {r}, {pid}u)"))
+                    let call =
+                        format!("sub_rt_str_concat(ctx, {l}, {r}, {pid}u)");
+                    self.eval_checked_call(call, &Type::Str, out, depth)
                 }
                 B::Eq => Ok(format!("(sub_rt_str_eq(ctx, {l}, {r}) != 0)")),
                 B::Ne => Ok(format!("(sub_rt_str_eq(ctx, {l}, {r}) == 0)")),
@@ -1937,14 +2016,26 @@ impl<'m> Emitter<'m> {
         let float = operand_ty.is_float();
         match op {
             B::Div if !float => {
-                let f = divrem_helper(&operand_ty, true)?;
-                let pid = self.pos_id(pos);
-                return Ok(format!("{f}(ctx, {l}, {r}, {pid}u)"));
+                return self.eval_checked_divrem(
+                    &operand_ty,
+                    true,
+                    l,
+                    r,
+                    pos,
+                    out,
+                    depth,
+                );
             }
             B::Rem => {
-                let f = divrem_helper(&operand_ty, false)?;
-                let pid = self.pos_id(pos);
-                return Ok(format!("{f}(ctx, {l}, {r}, {pid}u)"));
+                return self.eval_checked_divrem(
+                    &operand_ty,
+                    false,
+                    l,
+                    r,
+                    pos,
+                    out,
+                    depth,
+                );
             }
             _ => {}
         }
@@ -1974,6 +2065,108 @@ impl<'m> Emitter<'m> {
         }
     }
 
+    /// Expands the zero-divisor guard in the caller before invoking the
+    /// integer div/rem helper, so a fault returns before the result can be
+    /// consumed by the enclosing expression or store.
+    fn eval_checked_divrem(
+        &mut self,
+        ty: &Type,
+        div: bool,
+        left: &str,
+        right: &str,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let helper = divrem_helper(ty, div)?;
+        let pid = self.pos_id(pos);
+        let ind = indent(depth);
+        let _ = writeln!(out, "{ind}if (({right}) == 0) {{");
+        let _ = writeln!(
+            out,
+            "{}sub_rt_trap(ctx, SS_TRAP_DIV0, {pid}u);",
+            indent(depth + 1)
+        );
+        self.emit_trap_return(out, depth + 1)?;
+        let _ = writeln!(out, "{ind}}}");
+        let call = format!("{helper}(ctx, {left}, {right}, {pid}u)");
+        let result = self.fresh_tmp();
+        let _ = writeln!(out, "{ind}{} {result} = {call};", self.ctype(ty)?);
+        Ok(result)
+    }
+
+    /// Expands a growable-array bounds check in the caller, so the fault
+    /// branch can unwind before any load or store uses the address.
+    fn emit_dynamic_index_addr(
+        &mut self,
+        handle: &str,
+        index: &str,
+        elem: &Type,
+        pos_id: u32,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let ind = indent(depth);
+        let h = self.fresh_tmp();
+        let i = self.fresh_tmp();
+        let header = self.fresh_tmp();
+        let p = self.fresh_tmp();
+        let ect = self.ctype(elem)?;
+        let _ = writeln!(out, "{ind}void* {h} = {handle};");
+        let _ = writeln!(out, "{ind}int32_t {i} = {index};");
+        let _ = writeln!(out, "{ind}SsArrayHeader* {header} = (SsArrayHeader*){h};");
+        let _ = writeln!(
+            out,
+            "{ind}if ({i} < 0 || (uint64_t){i} >= {header}->len) {{"
+        );
+        let _ = writeln!(
+            out,
+            "{}(void)sub_rt_array_ptr(ctx, {h}, {i}, {pos_id}u);",
+            indent(depth + 1)
+        );
+        self.emit_trap_return(out, depth + 1)?;
+        let _ = writeln!(out, "{ind}}}");
+        let _ = writeln!(
+            out,
+            "{ind}{ect}* {p} = ({ect}*)({header}->data + (int64_t){i} * (int64_t){header}->elem_size);"
+        );
+        Ok(p)
+    }
+
+    /// Expands a FixedArray bounds check in the caller for the same
+    /// immediate-unwind reason as [`Self::emit_dynamic_index_addr`].
+    fn emit_fixed_index_addr(
+        &mut self,
+        base: &str,
+        len: u32,
+        index: &str,
+        elem: &Type,
+        pos_id: u32,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let ind = indent(depth);
+        let b = self.fresh_tmp();
+        let i = self.fresh_tmp();
+        let p = self.fresh_tmp();
+        let ect = self.ctype(elem)?;
+        let _ = writeln!(out, "{ind}void* {b} = (void*)({base});");
+        let _ = writeln!(out, "{ind}int32_t {i} = {index};");
+        let _ = writeln!(out, "{ind}if ((uint32_t){i} >= {len}u) {{");
+        let _ = writeln!(
+            out,
+            "{}sub_rt_trap(ctx, SS_TRAP_OOB, {pos_id}u);",
+            indent(depth + 1)
+        );
+        self.emit_trap_return(out, depth + 1)?;
+        let _ = writeln!(out, "{ind}}}");
+        let _ = writeln!(
+            out,
+            "{ind}{ect}* {p} = ({ect}*)((unsigned char*){b} + (int64_t){i} * (int64_t)sizeof({ect}));"
+        );
+        Ok(p)
+    }
+
     fn eval_assign_expr(&mut self, op: Option<hir::BinOp>, target: &hir::Expr, value: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
         // Assignment used as an expression (loop steps, `i += 1`). Only
         // simple scalar places reach here; aggregate/array assigns are
@@ -1983,7 +2176,27 @@ impl<'m> Emitter<'m> {
         match op {
             None => Ok(format!("({place} = {v})")),
             Some(bin) => {
-                if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
+                if target.ty == Type::Str && bin == hir::BinOp::Add {
+                    let pid = self.pos_id(&target.pos);
+                    let call =
+                        format!("sub_rt_str_concat(ctx, {place}, {v}, {pid}u)");
+                    let result =
+                        self.eval_checked_call(call, &Type::Str, out, depth)?;
+                    Ok(format!("({place} = {result})"))
+                } else if target.ty.is_integer()
+                    && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem)
+                {
+                    let result = self.eval_checked_divrem(
+                        &target.ty,
+                        bin == hir::BinOp::Div,
+                        &place,
+                        &v,
+                        &target.pos,
+                        out,
+                        depth,
+                    )?;
+                    Ok(format!("({place} = {result})"))
+                } else if matches!(bin, hir::BinOp::Shl | hir::BinOp::Shr | hir::BinOp::UShr) {
                     let shifted = shift_expr(bin, &target.ty, &place, &v)?;
                     Ok(format!("({place} = {shifted})"))
                 } else {
@@ -2086,17 +2299,28 @@ impl<'m> Emitter<'m> {
                 if self.index_in_bounds(index, *n) {
                     Ok(format!("({base}).a[{idx}]"))
                 } else {
-                    let ect = self.ctype(elem)?;
                     let pid = self.pos_id(pos);
-                    Ok(format!("(*({ect}*)ss_fa_at(ctx, ({base}).a, {n}, {idx}, sizeof({ect}), {pid}u))"))
+                    let p = self.emit_fixed_index_addr(
+                        &format!("({base}).a"),
+                        *n,
+                        idx,
+                        elem,
+                        pid,
+                        out,
+                        depth,
+                    );
+                    let p = p?;
+                    Ok(format!("(*{p})"))
                 }
             }
             Type::Array(elem) => {
-                let ect = self.ctype(elem)?;
                 let ops = self.eval_operands(&[obj, index], out, depth)?;
                 let (h, idx) = (&ops[0], &ops[1]);
                 let pid = self.pos_id(pos);
-                Ok(format!("(*({ect}*)ss_arr_at(ctx, {h}, {idx}, {pid}u))"))
+                let p = self.emit_dynamic_index_addr(
+                    h, idx, elem, pid, out, depth,
+                )?;
+                Ok(format!("(*{p})"))
             }
             other => Err(format!("index on {other:?}")),
         }
@@ -2114,8 +2338,9 @@ impl<'m> Emitter<'m> {
             Type::Array(elem) => {
                 let ect = self.ctype(elem)?;
                 let pid = self.pos_id(pos);
-                let h = self.fresh_tmp();
-                let _ = writeln!(out, "{ind}void* {h} = sub_rt_array_new(ctx, sizeof({ect}), {pid}u);");
+                let call =
+                    format!("sub_rt_array_new(ctx, sizeof({ect}), {pid}u)");
+                let h = self.eval_checked_call(call, ty, out, depth)?;
                 for e in elems {
                     let v = self.eval(e, out, depth)?;
                     let epid = self.pos_id(&e.pos);
@@ -2123,6 +2348,7 @@ impl<'m> Emitter<'m> {
                         out,
                         "{ind}{{ {ect} _e = {v}; sub_rt_array_push(ctx, {h}, &_e, {epid}u); }}"
                     );
+                    self.emit_trap_check(out, depth)?;
                 }
                 Ok(h)
             }
@@ -2136,10 +2362,12 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind}void* {acc} = 0;");
         for part in parts {
             let piece = match part {
-                hir::TplPart::Text(t) => self.string_literal(t.as_bytes(), pos)?,
+                hir::TplPart::Text(t) => {
+                    self.string_literal(t.as_bytes(), pos, out, depth)?
+                }
                 hir::TplPart::Expr(e) => {
                     let v = self.eval(e, out, depth)?;
-                    self.format_value(&v, &e.ty, &e.pos)?
+                    self.format_value(&v, &e.ty, &e.pos, out, depth)?
                 }
                 other => return Err(format!("template part {other:?}")),
             };
@@ -2148,37 +2376,45 @@ impl<'m> Emitter<'m> {
                 out,
                 "{ind}{acc} = ({acc} == 0) ? ({piece}) : sub_rt_str_concat(ctx, {acc}, {piece}, {pid}u);"
             );
+            self.emit_trap_check(out, depth)?;
         }
         // An empty template is the empty string.
-        let empty = self.string_literal(b"", pos)?;
+        let empty = self.string_literal(b"", pos, out, depth)?;
         Ok(format!("(({acc} == 0) ? {empty} : {acc})"))
     }
 
-    fn format_value(&mut self, v: &str, ty: &Type, pos: &Pos) -> Result<String, String> {
+    fn format_value(
+        &mut self,
+        v: &str,
+        ty: &Type,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let pid = self.pos_id(pos);
-        let f = match ty {
+        let call = match ty {
             Type::Str => return Ok(v.to_string()),
             Type::I8 | Type::I16 => {
-                return Ok(format!("sub_rt_fmt_i32(ctx, (int32_t)({v}), {pid}u)"));
+                format!("sub_rt_fmt_i32(ctx, (int32_t)({v}), {pid}u)")
             }
             Type::U8 | Type::U16 => {
-                return Ok(format!("sub_rt_fmt_u32(ctx, (uint32_t)({v}), {pid}u)"));
+                format!("sub_rt_fmt_u32(ctx, (uint32_t)({v}), {pid}u)")
             }
-            Type::I32 | Type::Enum(_) => "sub_rt_fmt_i32",
-            Type::U32 => "sub_rt_fmt_u32",
-            Type::I64 => "sub_rt_fmt_i64",
-            Type::U64 => "sub_rt_fmt_u64",
-            Type::F32 => "sub_rt_fmt_f32",
-            Type::F64 => "sub_rt_fmt_f64",
+            Type::I32 | Type::Enum(_) => format!("sub_rt_fmt_i32(ctx, {v}, {pid}u)"),
+            Type::U32 => format!("sub_rt_fmt_u32(ctx, {v}, {pid}u)"),
+            Type::I64 => format!("sub_rt_fmt_i64(ctx, {v}, {pid}u)"),
+            Type::U64 => format!("sub_rt_fmt_u64(ctx, {v}, {pid}u)"),
+            Type::F32 => format!("sub_rt_fmt_f32(ctx, {v}, {pid}u)"),
+            Type::F64 => format!("sub_rt_fmt_f64(ctx, {v}, {pid}u)"),
             Type::F16 => {
-                return Ok(format!(
+                format!(
                     "sub_rt_fmt_f64(ctx, sub_rt_f16_to_f64({v}), {pid}u)"
-                ));
+                )
             }
-            Type::Bool => "sub_rt_fmt_bool",
+            Type::Bool => format!("sub_rt_fmt_bool(ctx, {v}, {pid}u)"),
             other => return Err(format!("interpolation of {other:?}")),
         };
-        Ok(format!("{f}(ctx, {v}, {pid}u)"))
+        self.eval_checked_call(call, &Type::Str, out, depth)
     }
 
     fn eval_cond(&mut self, cond: &hir::Expr, then: &hir::Expr, els: &hir::Expr, ty: &Type, out: &mut String, depth: usize) -> Result<String, String> {
@@ -2202,13 +2438,18 @@ impl<'m> Emitter<'m> {
     // ----- calls -----
 
     fn eval_call(&mut self, callee: &hir::Callee, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+        let checked = callee.can_trap();
         match callee {
             hir::Callee::Func(name) => {
                 let f = self.hir_fn(name)?;
                 let argv = self.call_args(&f.params.clone(), args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let call = format!("ss_fn_{}(ctx{sep}{argv})", sanitize(name));
-                self.eval_checked_script_call(call, ret_ty, out, depth)
+                if checked {
+                    self.eval_checked_call(call, ret_ty, out, depth)
+                } else {
+                    Ok(call)
+                }
             }
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
@@ -2225,13 +2466,18 @@ impl<'m> Emitter<'m> {
                 let argv: Vec<&hir::Expr> = ft.params.iter().zip(args).map(|(_, a)| a).collect();
                 parts.extend(self.eval_operands(&argv, out, depth)?);
                 let call = format!("(({cast})({fvt}).code)(ctx, {})", parts.join(", "));
-                self.eval_checked_script_call(call, ret_ty, out, depth)
+                if checked {
+                    self.eval_checked_call(call, ret_ty, out, depth)
+                } else {
+                    Ok(call)
+                }
             }
             hir::Callee::Method { recv, name } => {
-                let call = self.eval_method(recv, name, args, ret_ty, pos, out, depth)?;
-                self.eval_checked_script_call(call, ret_ty, out, depth)
+                self.eval_method(recv, name, args, ret_ty, pos, out, depth, checked)
             }
-            hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, out, depth),
+            hir::Callee::Foreign(name) => {
+                self.eval_foreign_call(name, args, ret_ty, out, depth, checked)
+            }
             // A Math intrinsic (stdlib.md §1) calls its opaque runtime
             // symbol — never a bare libm call, which clang would
             // constant-fold at -O2 (stdlib.md §0.2). Constants never
@@ -2239,7 +2485,8 @@ impl<'m> Emitter<'m> {
             hir::Callee::Math(f) => {
                 let argv = self.eval_list(args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                Ok(format!("sub_rt_math_{}(ctx{sep}{argv})", f.name()))
+                let call = format!("sub_rt_math_{}(ctx{sep}{argv})", f.name());
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             // Q25/Q26 Number and parsing intrinsics all call the shared
             // opaque runtime. Trap-capable entries carry the source
@@ -2252,10 +2499,13 @@ impl<'m> Emitter<'m> {
                 } else {
                     format!("{}(ctx, {argv})", f.symbol())
                 };
+                let result = self.eval_call_with_policy(
+                    call, ret_ty, checked, out, depth,
+                )?;
                 Ok(if f.returns_bool() {
-                    format!("({call} != 0)")
+                    format!("({result} != 0)")
                 } else {
-                    call
+                    result
                 })
             }
             // A Date intrinsic (stdlib.md §3) calls its opaque runtime
@@ -2264,11 +2514,11 @@ impl<'m> Emitter<'m> {
             // reaches here (folded at check time).
             hir::Callee::Date(f) => {
                 use subscript_compiler::hir::DateFn as D;
-                match f {
+                let call = match f {
                     D::New => {
                         let ms = self.eval(args.first().ok_or("Date arity")?, out, depth)?;
                         let pid = self.pos_id(pos);
-                        Ok(format!("sub_rt_date_new(ctx, {ms}, {pid}u)"))
+                        format!("sub_rt_date_new(ctx, {ms}, {pid}u)")
                     }
                     D::Utc => {
                         if args.len() != 7 {
@@ -2276,14 +2526,14 @@ impl<'m> Emitter<'m> {
                         }
                         let argv = self.eval_list(args, out, depth)?;
                         let pid = self.pos_id(pos);
-                        Ok(format!("sub_rt_date_utc(ctx, {argv}, {pid}u)"))
+                        format!("sub_rt_date_utc(ctx, {argv}, {pid}u)")
                     }
-                    D::Now => Ok("sub_rt_date_now(ctx)".to_string()),
+                    D::Now => "sub_rt_date_now(ctx)".to_string(),
                     D::ToIso => {
                         let ms =
                             self.eval(args.first().ok_or("toISOString receiver")?, out, depth)?;
                         let pid = self.pos_id(pos);
-                        Ok(format!("sub_rt_date_to_iso(ctx, {ms}, {pid}u)"))
+                        format!("sub_rt_date_to_iso(ctx, {ms}, {pid}u)")
                     }
                     accessor => {
                         let code = accessor
@@ -2291,9 +2541,10 @@ impl<'m> Emitter<'m> {
                             .ok_or_else(|| format!("Date intrinsic {accessor:?}"))?;
                         let ms = self
                             .eval(args.first().ok_or("Date accessor receiver")?, out, depth)?;
-                        Ok(format!("sub_rt_date_get(ctx, {ms}, {code}u)"))
+                        format!("sub_rt_date_get(ctx, {ms}, {code}u)")
                     }
-                }
+                };
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             // Leaves of the checker-generated, call-site-monomorphized
             // JSON serializer graph. Traversal is ordinary HIR; escaping,
@@ -2307,10 +2558,13 @@ impl<'m> Emitter<'m> {
                 } else {
                     format!("{}(ctx, {argv}, {pid}u)", f.symbol())
                 };
+                let result = self.eval_call_with_policy(
+                    call, ret_ty, checked, out, depth,
+                )?;
                 Ok(if f.returns_bool() {
-                    format!("({call} != 0)")
+                    format!("({result} != 0)")
                 } else {
-                    call
+                    result
                 })
             }
             // A String method intrinsic (stdlib.md §8) calls its opaque
@@ -2330,9 +2584,12 @@ impl<'m> Emitter<'m> {
                 } else {
                     format!("{}(ctx, {argv})", f.symbol())
                 };
+                let result = self.eval_call_with_policy(
+                    call, ret_ty, checked, out, depth,
+                )?;
                 Ok(match f.ret() {
-                    StrRet::Bool => format!("({call} != 0)"),
-                    _ => call,
+                    StrRet::Bool => format!("({result} != 0)"),
+                    _ => result,
                 })
             }
             // An Array method intrinsic (stdlib.md §9) calls its opaque
@@ -2341,19 +2598,25 @@ impl<'m> Emitter<'m> {
             // temporaries and passed by pointer; a callback passes its
             // SubFn (code, env) halves; kind tags come from the shared
             // compiler mapping so the tiers cannot disagree.
-            hir::Callee::Arr(f) => self.eval_arr_call(*f, args, ret_ty, pos, out, depth),
+            hir::Callee::Arr(f) => {
+                self.eval_arr_call(*f, args, ret_ty, pos, out, depth, checked)
+            }
             // Map/Set use the same opaque Context runtime in both tiers.
             // The concrete monomorphized key/value widths and key-kind
             // tag cross that boundary with construction.
-            hir::Callee::Map(f) => self.eval_map_call(*f, args, ret_ty, pos, out, depth),
-            hir::Callee::Set(f) => self.eval_set_call(*f, args, ret_ty, pos, out, depth),
+            hir::Callee::Map(f) => {
+                self.eval_map_call(*f, args, ret_ty, pos, out, depth, checked)
+            }
+            hir::Callee::Set(f) => {
+                self.eval_set_call(*f, args, ret_ty, pos, out, depth, checked)
+            }
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
     }
 
     /// Materializes one script-call result, checks the Context trap flag,
     /// and unwinds the current C frame before the result can be consumed.
-    fn eval_checked_script_call(
+    fn eval_checked_call(
         &mut self,
         call: String,
         ret_ty: &Type,
@@ -2370,10 +2633,23 @@ impl<'m> Emitter<'m> {
             let _ = writeln!(out, "{ind}{cty} {temp} = {call};");
             temp
         };
-        let _ = writeln!(out, "{ind}if (sub_rt_ctx_trap_kind(ctx) != 0u) {{");
-        self.emit_trap_return(out, depth + 1)?;
-        let _ = writeln!(out, "{ind}}}");
+        self.emit_trap_check(out, depth)?;
         Ok(result)
+    }
+
+    fn eval_call_with_policy(
+        &mut self,
+        call: String,
+        ret_ty: &Type,
+        checked: bool,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        if checked {
+            self.eval_checked_call(call, ret_ty, out, depth)
+        } else {
+            Ok(call)
+        }
     }
 
     /// Emits an `Array` method intrinsic call (stdlib.md §9, Q22). The
@@ -2382,7 +2658,16 @@ impl<'m> Emitter<'m> {
     /// ([`Self::eval_pinned`]); the in-place methods (`fill`, `reverse`,
     /// `sort`, `copyWithin`) then yield that same temporary as the
     /// expression's value.
-    fn eval_arr_call(&mut self, f: hir::ArrFn, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_arr_call(
+        &mut self,
+        f: hir::ArrFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+        checked: bool,
+    ) -> Result<String, String> {
         use hir::ArrFn as A;
         let ind = indent(depth);
         let recv = args.first().ok_or("array method receiver")?;
@@ -2447,23 +2732,28 @@ impl<'m> Emitter<'m> {
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{ect} {t} = {x};");
                 let call = format!("{sym}(ctx, {h}, &{t}, {kind}u)");
+                let result = self.eval_call_with_policy(
+                    call, ret_ty, checked, out, depth,
+                )?;
                 Ok(if f == A::Includes {
-                    format!("({call} != 0)")
+                    format!("({result} != 0)")
                 } else {
-                    call
+                    result
                 })
             }
             A::Join => {
                 let kind = crate::layout::arr_fmt_kind(&elem)?.code();
                 let sep = self.eval(&arg_at(args, 1)?, out, depth)?;
                 let pid = self.pos_id(pos);
-                Ok(format!("{sym}(ctx, {h}, {sep}, {kind}u, {pid}u)"))
+                let call = format!("{sym}(ctx, {h}, {sep}, {kind}u, {pid}u)");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             A::Slice => {
                 let start = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
                 let end = self.eval(&arg_at(args, 2)?, out, depth)?;
                 let pid = self.pos_id(pos);
-                Ok(format!("{sym}(ctx, {h}, {start}, {end}, {pid}u)"))
+                let call = format!("{sym}(ctx, {h}, {start}, {end}, {pid}u)");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             A::Fill => {
                 // The receiver is already pinned and is also the
@@ -2476,28 +2766,39 @@ impl<'m> Emitter<'m> {
                     out,
                     "{ind}{{ {ect} _e = {x}; {sym}(ctx, {h}, &_e, {start}, {end}); }}"
                 );
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(h)
             }
             A::Reverse => {
                 let _ = writeln!(out, "{ind}{sym}(ctx, {h});");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(h)
             }
             A::Concat => {
                 let other = self.eval(&arg_at(args, 1)?, out, depth)?;
                 let pid = self.pos_id(pos);
-                Ok(format!("{sym}(ctx, {h}, {other}, {pid}u)"))
+                let call = format!("{sym}(ctx, {h}, {other}, {pid}u)");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             A::Splice => {
                 let start = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
                 let delete_count = self.eval(&arg_at(args, 2)?, out, depth)?;
                 let pid = self.pos_id(pos);
-                Ok(format!("{sym}(ctx, {h}, {start}, {delete_count}, {pid}u)"))
+                let call = format!("{sym}(ctx, {h}, {start}, {delete_count}, {pid}u)");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             A::Shift => {
                 let ect = self.ctype(&elem)?;
                 let value = self.fresh_tmp();
                 let pid = self.pos_id(pos);
                 let _ = writeln!(out, "{ind}{ect} {value}; {sym}(ctx, {h}, &{value}, {pid}u);");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(value)
             }
             A::Unshift => {
@@ -2506,13 +2807,17 @@ impl<'m> Emitter<'m> {
                 let value = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{ect} {value} = {x};");
                 let pid = self.pos_id(pos);
-                Ok(format!("{sym}(ctx, {h}, &{value}, {pid}u)"))
+                let call = format!("{sym}(ctx, {h}, &{value}, {pid}u)");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             A::CopyWithin => {
                 let target = self.eval_pinned(&arg_at(args, 1)?, out, depth)?;
                 let start = self.eval_pinned(&arg_at(args, 2)?, out, depth)?;
                 let end = self.eval(&arg_at(args, 3)?, out, depth)?;
                 let _ = writeln!(out, "{ind}{sym}(ctx, {h}, {target}, {start}, {end});");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(h)
             }
             A::ForEach | A::Filter | A::Some | A::Every | A::FindIndex => {
@@ -2547,9 +2852,12 @@ impl<'m> Emitter<'m> {
                         "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {indexed}u)"
                     ),
                 };
+                let result = self.eval_call_with_policy(
+                    call, ret_ty, checked, out, depth,
+                )?;
                 Ok(match f {
-                    A::Some | A::Every => format!("({call} != 0)"),
-                    _ => call,
+                    A::Some | A::Every => format!("({result} != 0)"),
+                    _ => result,
                 })
             }
             A::Sort => {
@@ -2558,6 +2866,9 @@ impl<'m> Emitter<'m> {
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
                 let _ = writeln!(out, "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u);");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(h)
             }
             A::Map => {
@@ -2574,7 +2885,7 @@ impl<'m> Emitter<'m> {
                 let tf = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {tf} = {fv};");
                 let pid = self.pos_id(pos);
-                Ok(if let Some(n) = fixed_len {
+                let call = if let Some(n) = fixed_len {
                     let ect = self.ctype(&elem)?;
                     format!(
                         "{sym}(ctx, {h}, {n}ull, sizeof({ect}), {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u, {indexed}u)"
@@ -2583,7 +2894,8 @@ impl<'m> Emitter<'m> {
                     format!(
                         "{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {ret_kind}u, sizeof({rect}), {pid}u, {indexed}u)"
                     )
-                })
+                };
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             A::Reduce | A::ReduceRight => {
                 let elem_kind = crate::layout::arr_elem_kind(self.module, &elem)?.code();
@@ -2609,6 +2921,9 @@ impl<'m> Emitter<'m> {
                         "{ind}{sym}(ctx, {h}, {tf}.code, {tf}.env, {elem_kind}u, {acc_kind}u, sizeof({acc}), &{acc}, {indexed}u);"
                     );
                 }
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(acc)
             }
             other => Err(format!("unknown ArrFn {other:?}")),
@@ -2624,6 +2939,7 @@ impl<'m> Emitter<'m> {
         pos: &Pos,
         out: &mut String,
         depth: usize,
+        checked: bool,
     ) -> Result<String, String> {
         use hir::MapFn as M;
         let ind = indent(depth);
@@ -2654,9 +2970,10 @@ impl<'m> Emitter<'m> {
             let key_kind =
                 crate::layout::assoc_key_kind(self.module, &key)?.code();
             let pid = self.pos_id(pos);
-            return Ok(format!(
+            let call = format!(
                 "sub_rt_map_group_by(ctx, {items}, {ft}.code, {ft}.env, (const void*)&{bridge}, sizeof({key_ct}), {key_kind}u, {pid}u)"
-            ));
+            );
+            return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
         let (key, value) = match f {
             M::New => match ret_ty {
@@ -2677,14 +2994,18 @@ impl<'m> Emitter<'m> {
         };
         if f == M::New {
             let pid = self.pos_id(pos);
-            return Ok(format!(
+            let call = format!(
                 "sub_rt_map_new(ctx, sizeof({key_ct}), sizeof({value_ct}), {key_kind}u, {pid}u)"
-            ));
+            );
+            return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
 
         let h = self.eval_pinned(arg_at(0)?, out, depth)?;
         match f {
-            M::Size => Ok(format!("sub_rt_map_size(ctx, {h})")),
+            M::Size => {
+                let call = format!("sub_rt_map_size(ctx, {h})");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+            }
             M::Get => {
                 let key_expr = self.eval(arg_at(1)?, out, depth)?;
                 let kt = self.fresh_tmp();
@@ -2692,6 +3013,9 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let _ = writeln!(out, "{ind}{value_ct} {result} = {{0}};");
                 let _ = writeln!(out, "{ind}(void)sub_rt_map_get(ctx, {h}, &{kt}, &{result});");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(result)
             }
             M::GetOr => {
@@ -2707,6 +3031,9 @@ impl<'m> Emitter<'m> {
                     out,
                     "{ind}sub_rt_map_get_or(ctx, {h}, &{kt}, &{fallback}, &{result});"
                 );
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(result)
             }
             M::Set => {
@@ -2718,23 +3045,33 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}{value_ct} {vt} = {value_expr};");
                 let pid = self.pos_id(pos);
                 let _ = writeln!(out, "{ind}sub_rt_map_set(ctx, {h}, &{kt}, &{vt}, {pid}u);");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(h)
             }
             M::Has | M::Delete => {
                 let key_expr = self.eval(arg_at(1)?, out, depth)?;
                 let kt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
-                Ok(format!("({}(ctx, {h}, &{kt}) != 0)", f.symbol()))
+                let call = format!("{}(ctx, {h}, &{kt})", f.symbol());
+                let result =
+                    self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                Ok(format!("({result} != 0)"))
             }
-            M::Clear => Ok(format!("sub_rt_map_clear(ctx, {h})")),
+            M::Clear => {
+                let call = format!("sub_rt_map_clear(ctx, {h})");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+            }
             M::ForEach => {
                 let callback = self.eval(arg_at(1)?, out, depth)?;
                 let ft = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
                 let bridge = self.emit_assoc_bridge(&key, Some(&value))?;
-                Ok(format!(
+                let call = format!(
                     "sub_rt_map_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
-                ))
+                );
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             M::GroupBy => Err("Map.GroupBy reached receiver lowering".to_string()),
             other => Err(format!("unknown MapFn {other:?}")),
@@ -2750,6 +3087,7 @@ impl<'m> Emitter<'m> {
         pos: &Pos,
         out: &mut String,
         depth: usize,
+        checked: bool,
     ) -> Result<String, String> {
         use hir::SetFn as S;
         let ind = indent(depth);
@@ -2771,46 +3109,64 @@ impl<'m> Emitter<'m> {
         };
         if f == S::New {
             let pid = self.pos_id(pos);
-            return Ok(format!(
+            let call = format!(
                 "sub_rt_set_new(ctx, sizeof({key_ct}), {key_kind}u, {pid}u)"
-            ));
+            );
+            return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
 
         let h = self.eval_pinned(arg_at(0)?, out, depth)?;
         match f {
-            S::Size => Ok(format!("sub_rt_set_size(ctx, {h})")),
+            S::Size => {
+                let call = format!("sub_rt_set_size(ctx, {h})");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+            }
             S::Add => {
                 let key_expr = self.eval(arg_at(1)?, out, depth)?;
                 let kt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let pid = self.pos_id(pos);
                 let _ = writeln!(out, "{ind}sub_rt_set_add(ctx, {h}, &{kt}, {pid}u);");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(h)
             }
             S::Has | S::Delete => {
                 let key_expr = self.eval(arg_at(1)?, out, depth)?;
                 let kt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
-                Ok(format!("({}(ctx, {h}, &{kt}) != 0)", f.symbol()))
+                let call = format!("{}(ctx, {h}, &{kt})", f.symbol());
+                let result =
+                    self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                Ok(format!("({result} != 0)"))
             }
-            S::Clear => Ok(format!("sub_rt_set_clear(ctx, {h})")),
+            S::Clear => {
+                let call = format!("sub_rt_set_clear(ctx, {h})");
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+            }
             S::ForEach => {
                 let callback = self.eval(arg_at(1)?, out, depth)?;
                 let ft = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
                 let bridge = self.emit_assoc_bridge(&key, None)?;
-                Ok(format!(
+                let call = format!(
                     "sub_rt_set_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
-                ))
+                );
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             S::Union | S::Intersection | S::Difference | S::SymmetricDifference => {
                 let other = self.eval_pinned(arg_at(1)?, out, depth)?;
                 let pid = self.pos_id(pos);
-                Ok(format!("{}(ctx, {h}, {other}, {pid}u)", f.symbol()))
+                let call = format!("{}(ctx, {h}, {other}, {pid}u)", f.symbol());
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             S::IsSubsetOf | S::IsSupersetOf | S::IsDisjointFrom => {
                 let other = self.eval_pinned(arg_at(1)?, out, depth)?;
-                Ok(format!("({}(ctx, {h}, {other}) != 0)", f.symbol()))
+                let call = format!("{}(ctx, {h}, {other})", f.symbol());
+                let result =
+                    self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                Ok(format!("({result} != 0)"))
             }
             other => Err(format!("unknown SetFn {other:?}")),
         }
@@ -2920,7 +3276,15 @@ impl<'m> Emitter<'m> {
     /// call of the header symbol with each argument marshaled per Q13. The
     /// C compiler resolves the ABI; the symbol resolves from the linked
     /// `interop.c` (compiler.md §12.4).
-    fn eval_foreign_call(&mut self, name: &str, args: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_foreign_call(
+        &mut self,
+        name: &str,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        out: &mut String,
+        depth: usize,
+        checked: bool,
+    ) -> Result<String, String> {
         let ff = self.module.foreign_fns.iter().find(|f| f.name == name)
             .ok_or_else(|| format!("unknown foreign function `{name}`"))?
             .clone();
@@ -2965,11 +3329,14 @@ impl<'m> Emitter<'m> {
                 let h = self.fresh_tmp();
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{header_ty} {h} = {call};");
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 let _ = writeln!(out, "{ind}{lang_ty} {t}; memcpy(&{t}, &{h}, sizeof {t});");
                 return Ok(t);
             }
         }
-        Ok(call)
+        self.eval_call_with_policy(call, ret_ty, checked, out, depth)
     }
 
     /// Marshals one argument of a foreign call to a C expression (Q13),
@@ -3148,7 +3515,17 @@ impl<'m> Emitter<'m> {
         Ok(self.eval_operands(&exprs, out, depth)?.join(", "))
     }
 
-    fn eval_method(&mut self, recv: &hir::Expr, name: &str, args: &[hir::Expr], ret_ty: &Type, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_method(
+        &mut self,
+        recv: &hir::Expr,
+        name: &str,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+        checked: bool,
+    ) -> Result<String, String> {
         match recv.ty.clone() {
             Type::Str => Err(format!("string method `{name}`")),
             Type::Array(elem) => {
@@ -3162,6 +3539,9 @@ impl<'m> Emitter<'m> {
                 let pid = self.pos_id(pos);
                 let d = self.fresh_tmp();
                 let _ = writeln!(out, "{}{ect} {d}; sub_rt_array_pop(ctx, {h}, &{d}, {pid}u);", indent(depth));
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(d)
             }
             Type::Generator(y) => {
@@ -3175,6 +3555,9 @@ impl<'m> Emitter<'m> {
                 let ind = indent(depth);
                 let _ = writeln!(out, "{ind}{ir} {step}; memset(&{step}, 0, sizeof {step});");
                 let _ = writeln!(out, "{ind}{step}.done = ss_resume_{}(ctx, {g}, &{step}.value);", sanitize(&creator));
+                if checked {
+                    self.emit_trap_check(out, depth)?;
+                }
                 Ok(step)
             }
             Type::Class(cid) => {
@@ -3206,8 +3589,9 @@ impl<'m> Emitter<'m> {
                 }
                 out.push_str(&abuf);
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let _ = ret_ty;
-                Ok(format!("ss_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name)))
+                let call =
+                    format!("ss_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name));
+                self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             other => Err(format!("method on {other:?}")),
         }
@@ -3293,7 +3677,7 @@ impl<'m> Emitter<'m> {
             if ctor.is_some() {
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let call = format!("ss_ctor{}(ctx{sep}{argv})", class.0);
-                self.eval_checked_script_call(call, &Type::Class(class), out, depth)
+                self.eval_checked_call(call, &Type::Class(class), out, depth)
             } else {
                 Ok(format!("({}){{0}}", self.class_name(class)?))
             }
@@ -3301,7 +3685,7 @@ impl<'m> Emitter<'m> {
             let pid = self.pos_id(pos);
             let sep = if argv.is_empty() { "" } else { ", " };
             let call = format!("ss_new{}(ctx, {pid}u{sep}{argv})", class.0);
-            self.eval_checked_script_call(call, &Type::Class(class), out, depth)
+            self.eval_checked_call(call, &Type::Class(class), out, depth)
         }
     }
 
@@ -4166,10 +4550,8 @@ fn c_string_literal(bytes: &[u8]) -> String {
 }
 
 /// The fixed prelude: runtime `extern` declarations, checked
-/// integer-div/rem helpers, saturating float→int helpers, and the safe
-/// checked-index accessors (which return a scratch pointer after a trap
-/// so a post-trap dereference does not fault — the host entry discards a
-/// trapped run's output).
+/// integer-div/rem helpers, saturating float→int helpers, and the array
+/// header view used by caller-expanded checked index access.
 const PREAMBLE: &str = concat!(
     include_str!("../../runtime/include/subscript_runtime.h"),
     r#"
@@ -4413,35 +4795,12 @@ enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };
 /* A non-capturing function value / capturing lambda: (code, env). */
 typedef struct { void* code; void* env; } SubFn;
 
-/* Scratch returned by the checked accessors after a trap, so a post-trap
- * dereference stays in bounds; the host entry discards a trapped run's
- * output, so its value is never observed. */
-static unsigned char ss_scratch[256];
-
 /* Mirror of the runtime ArrayHeader (runtime/src/context.rs, repr(C),
- * compiler.md invariant 1 / §10a). The in-bounds fast path is inlined so
- * the host C compiler can optimize the surrounding loops; an out-of-bounds
- * index falls to sub_rt_array_ptr, the sole producer of the trap and its
- * exact message, so behaviour stays byte-identical to the runtime path. */
+ * compiler.md invariant 1 / §10a). Generated index call sites expand
+ * the bounds branch around this view; the out-of-bounds arm calls
+ * sub_rt_array_ptr, the sole producer of the trap and its exact message,
+ * and returns from the current script frame before any load or store. */
 typedef struct { uint64_t len; uint64_t cap; uint64_t elem_size; unsigned char* data; } SsArrayHeader;
-
-static void* ss_arr_at(void* ctx, void* a, int32_t idx, uint32_t pos) {
-    SsArrayHeader* h = (SsArrayHeader*)a;
-    if (idx >= 0 && (uint64_t)idx < h->len) {
-        return h->data + (int64_t)idx * (int64_t)h->elem_size;
-    }
-    void* p = sub_rt_array_ptr(ctx, a, idx, pos);
-    return p ? p : (void*)ss_scratch;
-}
-
-static void* ss_fa_at(void* ctx, void* base, int64_t n, int32_t idx, int64_t elem, uint32_t pos) {
-    if ((uint32_t)idx >= (uint32_t)n) {
-        sub_rt_trap(ctx, SS_TRAP_OOB, pos);
-        return (void*)ss_scratch;
-    }
-    (void)elem;
-    return (unsigned char*)base + (int64_t)idx * elem;
-}
 
 /* Integer div/rem with the language's semantics: trap on a zero divisor;
  * two's-complement wrap for signed MIN / -1 and MIN % -1. */
@@ -4589,6 +4948,8 @@ mod tests {
         assert!(c.contains("void ss_export_main(Context* ctx)"));
         assert!(c.contains("sub_rt_fmt_f32"));
         assert!(c.contains("1.5f"));
+        assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
+        assert!(!c.contains("sub_rt_ctx_trap_kind(ctx)"));
     }
 
     #[test]
@@ -4609,14 +4970,18 @@ mod tests {
     #[test]
     fn fixed_array_proven_index_is_unchecked() {
         let c = emit("export function main(): void {\n  const xs: FixedArray<i32, 4> = [10, 20, 30, 40];\n  let sum: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    sum += xs[i];\n  }\n  print(`${sum}`);\n}\n");
-        assert!(!c.contains("ss_fa_at(ctx,"), "proven index must not be checked");
+        assert!(
+            !c.contains("sub_rt_trap(ctx, SS_TRAP_OOB"),
+            "proven index must not be checked"
+        );
         assert!(c.contains("(xs).a[i]"));
     }
 
     #[test]
     fn dynamic_array_index_is_checked() {
         let c = emit("export function main(): void {\n  const xs: i32[] = [];\n  xs.push(7);\n  print(`${xs[0]}`);\n}\n");
-        assert!(c.contains("ss_arr_at"));
+        assert!(c.contains("SsArrayHeader*"));
+        assert!(c.contains("sub_rt_array_ptr(ctx,"));
         assert!(c.contains("sub_rt_array_push"));
     }
 
