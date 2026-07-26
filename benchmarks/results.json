@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-25",
-  "procedure": "100 warm-up runs discarded, 11 timed runs, median reported",
+  "generated": "2026-07-26",
+  "procedure": "30 warm-up runs discarded, 11 timed runs, median reported",
   "machine": {
     "arch": "aarch64",
     "os": "macos",
@@ -10,7 +10,7 @@
   },
   "versions": {
     "C": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
-    "subscript": "subscript @ 4a39836 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "subscript": "subscript @ 67f72a2 (dev-JIT: Cranelift; ship: HIR->C->clang)",
     "LuaJIT": "LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/",
     "JSC": "JavaScriptCore (macOS 26.5.2)",
     "V8 (Node.js)": "Node.js v24.18.0"
@@ -24,19 +24,27 @@
       "checksum_match": true,
       "medians_s": {
         "C": 0.003644000,
-        "subscript-ship": 0.003632000,
-        "subscript-jit": 0.007821666,
-        "LuaJIT": 0.007013000,
-        "JSC": 0.005420000,
-        "V8 (Node.js)": 0.009554292
+        "subscript-ship": 0.003624000,
+        "subscript-jit": 0.008051000,
+        "LuaJIT": 0.007235000,
+        "JSC": 0.005460000,
+        "V8 (Node.js)": 0.009578208
       },
       "ranges_s": {
-        "C": [0.003633000, 0.003723000],
-        "subscript-ship": [0.003629000, 0.003767000],
-        "subscript-jit": [0.007816667, 0.007876792],
-        "LuaJIT": [0.007007000, 0.007093000],
-        "JSC": [0.005420000, 0.005480000],
-        "V8 (Node.js)": [0.009552125, 0.009630166]
+        "C": [0.003633000, 0.003659000],
+        "subscript-ship": [0.003613000, 0.003651000],
+        "subscript-jit": [0.008047500, 0.008136417],
+        "LuaJIT": [0.007146000, 0.007666000],
+        "JSC": [0.005400000, 0.005680000],
+        "V8 (Node.js)": [0.009553583, 0.009615875]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -46,19 +54,27 @@
       "checksum_match": true,
       "medians_s": {
         "C": null,
-        "subscript-ship": 0.030170000,
-        "subscript-jit": 0.059214500,
-        "LuaJIT": 0.043324000,
-        "JSC": 0.031980000,
-        "V8 (Node.js)": 0.030050542
+        "subscript-ship": 0.030165000,
+        "subscript-jit": 0.059184417,
+        "LuaJIT": 0.043312000,
+        "JSC": 0.032000000,
+        "V8 (Node.js)": null
       },
       "ranges_s": {
-        "C": [0.029208000, 0.050004000],
-        "subscript-ship": [0.030112000, 0.030216000],
-        "subscript-jit": [0.059108666, 0.059409167],
-        "LuaJIT": [0.043269000, 0.043504000],
-        "JSC": [0.031940000, 0.032100000],
-        "V8 (Node.js)": [0.030002750, 0.030120209]
+        "C": [0.029213000, 0.055210000],
+        "subscript-ship": [0.030074000, 0.030310000],
+        "subscript-jit": [0.059106584, 0.059433750],
+        "LuaJIT": [0.043233000, 0.043525000],
+        "JSC": [0.030860000, 0.032200000],
+        "V8 (Node.js)": [0.046321000, 0.646720083]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -68,19 +84,27 @@
       "checksum_match": true,
       "medians_s": {
         "C": null,
-        "subscript-ship": 0.124351000,
-        "subscript-jit": 0.130171250,
-        "LuaJIT": 0.348347000,
-        "JSC": 0.124560000,
-        "V8 (Node.js)": 0.124972209
+        "subscript-ship": 0.124387000,
+        "subscript-jit": 0.130191291,
+        "LuaJIT": 0.354446000,
+        "JSC": 0.124600000,
+        "V8 (Node.js)": 0.133235166
       },
       "ranges_s": {
-        "C": [0.123958000, 0.152393000],
-        "subscript-ship": [0.124190000, 0.125066000],
-        "subscript-jit": [0.129928125, 0.130449375],
-        "LuaJIT": [0.347321000, 0.349158000],
-        "JSC": [0.124440000, 0.124900000],
-        "V8 (Node.js)": [0.124904167, 0.125368750]
+        "C": [0.124047000, 0.153620000],
+        "subscript-ship": [0.124172000, 0.125153000],
+        "subscript-jit": [0.130088583, 0.130481375],
+        "LuaJIT": [0.346558000, 0.354962000],
+        "JSC": [0.124400000, 0.124960000],
+        "V8 (Node.js)": [0.133021792, 0.138770584]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -90,19 +114,27 @@
       "checksum_match": true,
       "medians_s": {
         "C": null,
-        "subscript-ship": 0.021257000,
-        "subscript-jit": 0.031678833,
-        "LuaJIT": 0.045596000,
-        "JSC": 0.020060000,
-        "V8 (Node.js)": 0.037196625
+        "subscript-ship": 0.020893000,
+        "subscript-jit": 0.031679500,
+        "LuaJIT": 0.045578000,
+        "JSC": 0.020080000,
+        "V8 (Node.js)": 0.037203792
       },
       "ranges_s": {
-        "C": [0.021809000, 0.048031000],
-        "subscript-ship": [0.021220000, 0.021529000],
-        "subscript-jit": [0.031611000, 0.031719791],
-        "LuaJIT": [0.045461000, 0.045648000],
-        "JSC": [0.020060000, 0.020080000],
-        "V8 (Node.js)": [0.037128250, 0.037742959]
+        "C": [0.021795000, 0.048179000],
+        "subscript-ship": [0.020850000, 0.020947000],
+        "subscript-jit": [0.031640208, 0.031864625],
+        "LuaJIT": [0.045470000, 0.045638000],
+        "JSC": [0.020060000, 0.020160000],
+        "V8 (Node.js)": [0.037122875, 0.037378333]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -111,20 +143,28 @@
       "checksum": 3672124540,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.015312000,
-        "subscript-ship": 0.027619000,
-        "subscript-jit": 0.056832209,
-        "LuaJIT": 0.034931000,
-        "JSC": 0.022900000,
-        "V8 (Node.js)": 0.028043083
+        "C": 0.015325000,
+        "subscript-ship": 0.019135000,
+        "subscript-jit": 0.073071167,
+        "LuaJIT": 0.035044000,
+        "JSC": 0.022820000,
+        "V8 (Node.js)": 0.028056583
       },
       "ranges_s": {
-        "C": [0.015281000, 0.015683000],
-        "subscript-ship": [0.027580000, 0.027715000],
-        "subscript-jit": [0.056798833, 0.057135500],
-        "LuaJIT": [0.034766000, 0.035856000],
-        "JSC": [0.022800000, 0.023140000],
-        "V8 (Node.js)": [0.027957709, 0.028235333]
+        "C": [0.015299000, 0.016203000],
+        "subscript-ship": [0.019061000, 0.019214000],
+        "subscript-jit": [0.072917209, 0.073416500],
+        "LuaJIT": [0.034855000, 0.035675000],
+        "JSC": [0.022720000, 0.022880000],
+        "V8 (Node.js)": [0.027998459, 0.028154084]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -133,20 +173,28 @@
       "checksum": 3932130,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.065380000,
-        "subscript-ship": 0.092792000,
-        "subscript-jit": 0.666066792,
-        "LuaJIT": 0.145981000,
-        "JSC": 0.019900000,
-        "V8 (Node.js)": 0.027916708
+        "C": 0.065441000,
+        "subscript-ship": 0.110504000,
+        "subscript-jit": 0.667496458,
+        "LuaJIT": 0.144214000,
+        "JSC": 0.019920000,
+        "V8 (Node.js)": 0.028961000
       },
       "ranges_s": {
-        "C": [0.065338000, 0.065465000],
-        "subscript-ship": [0.092512000, 0.092908000],
-        "subscript-jit": [0.663951333, 0.678799875],
-        "LuaJIT": [0.142001000, 0.148098000],
-        "JSC": [0.019820000, 0.021640000],
-        "V8 (Node.js)": [0.027207209, 0.029109458]
+        "C": [0.065301000, 0.065627000],
+        "subscript-ship": [0.110432000, 0.111095000],
+        "subscript-jit": [0.664900791, 0.671640250],
+        "LuaJIT": [0.139788000, 0.148035000],
+        "JSC": [0.019820000, 0.021500000],
+        "V8 (Node.js)": [0.027719834, 0.032183916]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -155,20 +203,28 @@
       "checksum": 73712,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.023717000,
-        "subscript-ship": 0.023598000,
-        "subscript-jit": 0.035086958,
-        "LuaJIT": 0.034961000,
-        "JSC": 0.028920000,
-        "V8 (Node.js)": 0.041579208
+        "C": 0.023722000,
+        "subscript-ship": 0.024561000,
+        "subscript-jit": 0.035004042,
+        "LuaJIT": 0.032305000,
+        "JSC": 0.028960000,
+        "V8 (Node.js)": 0.041634250
       },
       "ranges_s": {
-        "C": [0.023675000, 0.023986000],
-        "subscript-ship": [0.023544000, 0.023708000],
-        "subscript-jit": [0.034928084, 0.035246292],
-        "LuaJIT": [0.034925000, 0.035177000],
-        "JSC": [0.028880000, 0.029080000],
-        "V8 (Node.js)": [0.041519167, 0.041767667]
+        "C": [0.023638000, 0.024504000],
+        "subscript-ship": [0.024538000, 0.024612000],
+        "subscript-jit": [0.034858334, 0.035170084],
+        "LuaJIT": [0.032216000, 0.032465000],
+        "JSC": [0.028920000, 0.029160000],
+        "V8 (Node.js)": [0.041573916, 0.041997000]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -177,20 +233,28 @@
       "checksum": 1712845248,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.038717000,
-        "subscript-ship": 0.118466000,
-        "subscript-jit": 0.403757375,
-        "LuaJIT": 0.148638000,
-        "JSC": 0.073660000,
-        "V8 (Node.js)": 0.138062458
+        "C": 0.038707000,
+        "subscript-ship": 0.074574000,
+        "subscript-jit": 0.560109792,
+        "LuaJIT": 0.148401000,
+        "JSC": 0.073720000,
+        "V8 (Node.js)": 0.138645333
       },
       "ranges_s": {
-        "C": [0.038640000, 0.038861000],
-        "subscript-ship": [0.118289000, 0.118867000],
-        "subscript-jit": [0.398236750, 0.406023584],
-        "LuaJIT": [0.148269000, 0.148834000],
-        "JSC": [0.073500000, 0.073980000],
-        "V8 (Node.js)": [0.137888250, 0.138915708]
+        "C": [0.038640000, 0.038941000],
+        "subscript-ship": [0.074503000, 0.074765000],
+        "subscript-jit": [0.559684666, 0.560560667],
+        "LuaJIT": [0.148159000, 0.149073000],
+        "JSC": [0.073580000, 0.073880000],
+        "V8 (Node.js)": [0.138459917, 0.143096958]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     },
     {
@@ -199,20 +263,58 @@
       "checksum": -662567840,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.013072000,
-        "subscript-ship": 0.272433000,
-        "subscript-jit": 0.340632958,
-        "LuaJIT": 0.125815000,
-        "JSC": 0.070280000,
-        "V8 (Node.js)": 0.389078000
+        "C": 0.013011000,
+        "subscript-ship": 0.299978000,
+        "subscript-jit": 0.319559667,
+        "LuaJIT": 0.119304000,
+        "JSC": 0.067820000,
+        "V8 (Node.js)": 0.389831750
       },
       "ranges_s": {
-        "C": [0.013040000, 0.013135000],
-        "subscript-ship": [0.272184000, 0.272952000],
-        "subscript-jit": [0.340188250, 0.341908166],
-        "LuaJIT": [0.123431000, 0.126727000],
-        "JSC": [0.066780000, 0.079800000],
-        "V8 (Node.js)": [0.385634458, 0.395527166]
+        "C": [0.013006000, 0.013064000],
+        "subscript-ship": [0.299894000, 0.300361000],
+        "subscript-jit": [0.319366208, 0.320675750],
+        "LuaJIT": [0.117363000, 0.120351000],
+        "JSC": [0.067440000, 0.068420000],
+        "V8 (Node.js)": [0.385772166, 0.393525542]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
+      }
+    },
+    {
+      "id": "collect",
+      "params": "N=20000 nodes x K=6 rounds from LCG state=state*1664525+1013904223 (seed 0x12345678); each 48-byte node owns unique strings of lengths 9/41/105/233 bytes (subscript requests 17/49/113/241 bytes, one byte past size-class payload capacities 16/48/112/240); keep exactly the nodes with (state&3)!=0 (15000 survivors/round), drop the rest, force collection (C: explicitly free), then traverse the surviving reverse-built chain; checksum per survivor in traversal order is checksum=(checksum*31+state+9+41+105+233) with i32 wrap; final checksum=1332546592",
+      "checksum": 1332546592,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.032385000,
+        "subscript-ship": 0.207223000,
+        "subscript-jit": 0.219517083,
+        "LuaJIT": 0.118410000,
+        "JSC": 0.036700000,
+        "V8 (Node.js)": 0.085162500
+      },
+      "ranges_s": {
+        "C": [0.032349000, 0.033362000],
+        "subscript-ship": [0.206784000, 0.214964000],
+        "subscript-jit": [0.217534250, 0.220449625],
+        "LuaJIT": [0.117587000, 0.119316000],
+        "JSC": [0.032700000, 0.040620000],
+        "V8 (Node.js)": [0.076810833, 0.087365125]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": null
       }
     }
   ]

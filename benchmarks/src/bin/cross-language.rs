@@ -1,7 +1,7 @@
 #![warn(missing_docs)]
 //! Cross-language benchmark runner (`specs/blocks/benchmarks.md`).
 //!
-//! Measures six subjects on nine workloads in one session and writes
+//! Measures six subjects on ten workloads in one session and writes
 //! `benchmarks/results.json` and `benchmarks/README.md`:
 //!
 //! - **C** — the hand-written baseline (`benchmarks/workloads/c/<id>.c`), compiled
@@ -37,8 +37,8 @@ use subscript_compiler::{check_program, SourceFile};
 /// A failure that stops one measurement; the runner never panics.
 type Fail = String;
 
-/// The nine workload ids, in report order.
-const WORKLOADS: [&str; 9] = [
+/// The ten workload ids, in report order.
+const WORKLOADS: [&str; 10] = [
     "fib-recursive",
     "fib-loop",
     "mandelbrot",
@@ -48,6 +48,7 @@ const WORKLOADS: [&str; 9] = [
     "queen",
     "particles",
     "callbacks",
+    "collect",
 ];
 
 /// One-line parameter/checksum description per workload, rendered into the
@@ -63,6 +64,7 @@ fn workload_params(id: &str) -> &'static str {
         "queen" => "count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)",
         "particles" => "100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.",
         "callbacks" => "i32[1000000] from LCG state=state*1664525+1013904223 (seed 0x12345678), K=20 rounds; map(value,index)=(value+index) i32; filter(value,index)=((value^index)&3)!=0 (removes exactly 250000 elements per round); reduce(acc,value,index)=(acc+value+index) i32 from 0; checksum=checksum+round_result (i32 wrap)",
+        "collect" => "N=20000 nodes x K=6 rounds from LCG state=state*1664525+1013904223 (seed 0x12345678); each 48-byte node owns unique strings of lengths 9/41/105/233 bytes (subscript requests 17/49/113/241 bytes, one byte past size-class payload capacities 16/48/112/240); keep exactly the nodes with (state&3)!=0 (15000 survivors/round), drop the rest, force collection (C: explicitly free), then traverse the surviving reverse-built chain; checksum per survivor in traversal order is checksum=(checksum*31+state+9+41+105+233) with i32 wrap; final checksum=1332546592",
         _ => "",
     }
 }
@@ -124,8 +126,8 @@ impl Measured {
 enum Outcome {
     /// Measured successfully.
     Ok(Measured),
-    /// The runtime is not installed; reported as `-`.
-    Absent,
+    /// The subject cannot run; reported as `-` with this reason.
+    Unavailable(String),
     /// The runtime is present but the run failed; reported with the reason.
     Error(String),
 }
@@ -242,9 +244,47 @@ fn run() -> Result<ExitCode, Fail> {
         let c = measure_c(&tools, &dir, &work, id, args.warmup, args.timed);
         let ship = measure_ship(&tools, &files, &work, &staticlib, id, args.warmup, args.timed);
         let jit = measure_jit(&files, args.warmup, args.timed);
-        let lua = measure_script(&tools.luajit, &dir, "lua", "lua", id, args.warmup, args.timed, false);
-        let jsc = measure_script(&tools.jsc, &dir, "js", "js", id, args.warmup, args.timed, true);
-        let node = measure_script(&tools.node, &dir, "js", "js", id, args.warmup, args.timed, false);
+        let lua = measure_script(
+            &tools.luajit,
+            &dir,
+            "lua",
+            "lua",
+            id,
+            args.warmup,
+            args.timed,
+            false,
+            &[],
+        );
+        let jsc = if *id == "collect" {
+            measure_collect_jsc(&tools.jsc, &dir, args.warmup, args.timed)
+        } else {
+            measure_script(
+                &tools.jsc,
+                &dir,
+                "js",
+                "js",
+                id,
+                args.warmup,
+                args.timed,
+                true,
+                &[],
+            )
+        };
+        let node = if *id == "collect" {
+            measure_collect_node(&tools.node, &dir, args.warmup, args.timed)
+        } else {
+            measure_script(
+                &tools.node,
+                &dir,
+                "js",
+                "js",
+                id,
+                args.warmup,
+                args.timed,
+                false,
+                &[],
+            )
+        };
 
         let outcomes: Vec<(&str, Outcome)> = vec![
             ("C", c),
@@ -257,23 +297,24 @@ fn run() -> Result<ExitCode, Fail> {
         for (name, o) in &outcomes {
             match o {
                 Outcome::Ok(m) => eprintln!("  {name:<15} checksum={} median={:.3} ms", m.checksum, m.median_s * 1000.0),
-                Outcome::Absent => eprintln!("  {name:<15} -"),
+                Outcome::Unavailable(reason) => eprintln!("  {name:<15} - ({reason})"),
                 Outcome::Error(e) => eprintln!("  {name:<15} ERROR: {e}"),
             }
         }
 
-        // Fairness check: every present subject's checksum must agree.
-        let present: Vec<(&str, i128)> = outcomes
+        // Fairness check: every subject that ran must agree. An unavailable
+        // subject contributes neither a checksum nor a timing.
+        let ran: Vec<(&str, i128)> = outcomes
             .iter()
             .filter_map(|(n, o)| match o {
                 Outcome::Ok(m) => Some((*n, m.checksum)),
                 _ => None,
             })
             .collect();
-        let checksum = present.first().map(|(_, c)| *c);
+        let checksum = ran.first().map(|(_, c)| *c);
         let mut matched = true;
         if let Some(first) = checksum {
-            for (n, c) in &present {
+            for (n, c) in &ran {
                 if *c != first {
                     matched = false;
                     eprintln!("  CHECKSUM MISMATCH: {n} = {c}, expected {first}");
@@ -316,6 +357,9 @@ fn run() -> Result<ExitCode, Fail> {
         Ok(ExitCode::from(1))
     } else if rows.iter().any(WorkloadResult::has_noise) {
         eprintln!("benchmarks: at least one subject exceeded the +/-20% spread limit; its timing is invalid and withheld.");
+        Ok(ExitCode::from(1))
+    } else if rows.iter().any(WorkloadResult::has_error) {
+        eprintln!("benchmarks: at least one available subject failed; its timing is unavailable.");
         Ok(ExitCode::from(1))
     } else {
         Ok(ExitCode::SUCCESS)
@@ -387,11 +431,19 @@ impl WorkloadResult {
         })
     }
 
-    /// Whether a subject's runtime was absent (reported as `-`).
-    fn absent(&self, subject: &str) -> bool {
+    /// Whether an available subject failed.
+    fn has_error(&self) -> bool {
         self.outcomes
             .iter()
-            .any(|(n, o)| n == subject && matches!(o, Outcome::Absent))
+            .any(|(_, outcome)| matches!(outcome, Outcome::Error(_)))
+    }
+
+    /// Why a subject could not run (reported as `-`).
+    fn unavailable_reason(&self, subject: &str) -> Option<&str> {
+        self.outcomes.iter().find_map(|(n, outcome)| match outcome {
+            Outcome::Unavailable(reason) if n == subject => Some(reason.as_str()),
+            _ => None,
+        })
     }
 }
 
@@ -423,7 +475,7 @@ fn measure_c(
     timed: usize,
 ) -> Outcome {
     let Some(cc) = &tools.cc else {
-        return Outcome::Absent;
+        return Outcome::Unavailable("clang is not installed".to_string());
     };
     let src = dir.join("c").join(format!("{id}.c"));
     let exe = work.path.join(format!("c-{id}{}", std::env::consts::EXE_SUFFIX));
@@ -459,7 +511,7 @@ fn measure_ship(
     timed: usize,
 ) -> Outcome {
     let Some(cc) = &tools.cc else {
-        return Outcome::Absent;
+        return Outcome::Unavailable("clang is not installed".to_string());
     };
     let module = match check_program(files) {
         Ok(m) => m,
@@ -524,7 +576,7 @@ fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Outcome {
 }
 
 /// Runs a self-timed script under an interpreter, parsing `<checksum> <median>`
-/// from its stdout. A missing interpreter is `Absent`.
+/// from its stdout. A missing interpreter is unavailable.
 fn measure_script(
     tool: &Option<PathBuf>,
     dir: &Path,
@@ -534,21 +586,110 @@ fn measure_script(
     warmup: usize,
     timed: usize,
     dashdash: bool,
+    prefix_args: &[&str],
 ) -> Outcome {
     let Some(exe) = tool else {
-        return Outcome::Absent;
+        return Outcome::Unavailable(format!("{subdir} runtime is not installed"));
     };
     let script = dir.join(subdir).join(format!("{id}.{ext}"));
     // The self-timed subject reads its warm-up/timed counts from argv, so it runs
     // the same schedule as the subscript tiers. `jsc` exposes script arguments
     // only when they follow `--`; node and luajit take them directly.
-    let mut argv: Vec<std::ffi::OsString> = vec![script.into_os_string()];
+    let mut argv: Vec<std::ffi::OsString> =
+        prefix_args.iter().map(std::ffi::OsString::from).collect();
+    argv.push(script.into_os_string());
     if dashdash {
         argv.push("--".into());
     }
     argv.push(warmup.to_string().into());
     argv.push(timed.to_string().into());
     run_self_timed(exe, &argv)
+}
+
+/// Runs `collect` under Node only when `--expose-gc` really exposes the
+/// synchronous `globalThis.gc` hook. A runtime without it is an honest `-`;
+/// the workload is never approximated by allocation pressure.
+fn measure_collect_node(
+    tool: &Option<PathBuf>,
+    dir: &Path,
+    warmup: usize,
+    timed: usize,
+) -> Outcome {
+    let Some(exe) = tool else {
+        return Outcome::Unavailable("Node.js is not installed".to_string());
+    };
+    let probe = Command::new(exe)
+        .args([
+            "--expose-gc",
+            "-e",
+            "if (typeof globalThis.gc !== 'function') process.exit(1)",
+        ])
+        .output();
+    if !matches!(probe, Ok(ref out) if out.status.success()) {
+        return Outcome::Unavailable(
+            "this Node.js cannot expose forced collection with --expose-gc".to_string(),
+        );
+    }
+    measure_script(
+        tool,
+        dir,
+        "js",
+        "js",
+        "collect",
+        warmup,
+        timed,
+        false,
+        &["--expose-gc"],
+    )
+}
+
+/// Runs `collect` under JSC when either the shell's `gc()` hook is already
+/// present or `--useDollarVM=true` exposes `$vm.gc()`.
+fn measure_collect_jsc(
+    tool: &Option<PathBuf>,
+    dir: &Path,
+    warmup: usize,
+    timed: usize,
+) -> Outcome {
+    let Some(exe) = tool else {
+        return Outcome::Unavailable("JavaScriptCore is not installed".to_string());
+    };
+    let probe_source = "if (typeof gc !== 'function' && \
+        (typeof $vm !== 'object' || typeof $vm.gc !== 'function')) \
+        throw new Error('forced collection unavailable')";
+    let default_probe = Command::new(exe).args(["-e", probe_source]).output();
+    if matches!(default_probe, Ok(ref out) if out.status.success()) {
+        return measure_script(
+            tool,
+            dir,
+            "js",
+            "js",
+            "collect",
+            warmup,
+            timed,
+            true,
+            &[],
+        );
+    }
+    let dollar_vm_probe = Command::new(exe)
+        .args(["--useDollarVM=true", "-e", probe_source])
+        .output();
+    if matches!(dollar_vm_probe, Ok(ref out) if out.status.success()) {
+        return measure_script(
+            tool,
+            dir,
+            "js",
+            "js",
+            "collect",
+            warmup,
+            timed,
+            true,
+            &["--useDollarVM=true"],
+        );
+    }
+    Outcome::Unavailable(
+        "this JSC shell exposes neither gc() nor --useDollarVM=true/$vm.gc()".to_string(),
+    )
 }
 
 /// Runs `exe args…`, expecting a single `<checksum> <median_seconds>` line on
@@ -953,7 +1094,7 @@ fn cell(row: &WorkloadResult, subject: &str, baseline: Option<f64>) -> String {
             Some(b) if b > 0.0 => format!("{:.2}x ({:.3} ms)", m.median_s / b, ms),
             _ => format!("{:.3} ms", ms),
         }
-    } else if row.absent(subject) {
+    } else if row.unavailable_reason(subject).is_some() {
         "-".to_string()
     } else if row.noisy(subject) {
         "invalid (noise)".to_string()
@@ -1000,16 +1141,17 @@ fn render_readme(
     let _ = writeln!(
         s,
         "## Method\n\n\
-         All six subjects run the same schedule: {warmup} warm-up runs \
+         Every subject that runs uses the same schedule: {warmup} warm-up runs \
          discarded, {timed} timed runs, median reported — the runner passes \
          these counts to every self-timed subject (C/LuaJIT/JSC/V8 read them \
-         from argv), so the figures above hold for all six. Only the workload \
+         from argv), so the figures above hold for every measured subject. Only the workload \
          execution is timed. C is the 1.00x reference; every other subject is \
          `ratio (median)`. C, LuaJIT, JSC, and V8 self-time with a monotonic \
          clock and print their own median; the two subscript tiers are timed by \
-         the runner (the language has no clock primitive). Every subject \
-         computes the identical integer checksum for a workload — the runner \
-         withholds a workload's timings otherwise.\n\n\
+         the runner (the language has no clock primitive). Every subject that \
+         runs computes the identical integer checksum for a workload — \
+         unavailable subjects contribute no checksum, and the runner withholds \
+         a workload's timings if any measured checksum differs.\n\n\
          **Span note.** The C/LuaJIT/JSC/V8 subjects time only the `workload()` \
          call and print the checksum afterward; the two subscript tiers time the \
          whole exported `main()`, which includes formatting and writing the \
@@ -1055,6 +1197,52 @@ fn render_readme(
             "\n**callbacks interpretation.** This workload measures what the \
              idiomatic callback spelling costs against a hand-written loop, \
              not a codegen deficit."
+        );
+    }
+    if let Some(row) = rows.iter().find(|row| row.id == "collect") {
+        let ran = row
+            .outcomes
+            .iter()
+            .filter_map(|(subject, outcome)| {
+                matches!(outcome, Outcome::Ok(_)).then_some(subject.as_str())
+            })
+            .collect::<Vec<_>>();
+        let unavailable = row
+            .outcomes
+            .iter()
+            .filter_map(|(subject, outcome)| match outcome {
+                Outcome::Unavailable(reason) => Some(format!("{subject} ({reason})")),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let failed = row
+            .outcomes
+            .iter()
+            .filter_map(|(subject, outcome)| match outcome {
+                Outcome::Error(reason) => Some(format!("{subject} ({reason})")),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let _ = writeln!(
+            s,
+            "\n**collect interpretation.** This is not a cross-runtime “GC \
+             speed” claim; it compares reclaiming the pinned graph in each \
+             runtime's own explicit idiom. Ran: {}. Could not run: {}. Failed: {}.",
+            if ran.is_empty() {
+                "none".to_string()
+            } else {
+                ran.join(", ")
+            },
+            if unavailable.is_empty() {
+                "none".to_string()
+            } else {
+                unavailable.join("; ")
+            },
+            if failed.is_empty() {
+                "none".to_string()
+            } else {
+                failed.join("; ")
+            },
         );
     }
     let _ = writeln!(s);
@@ -1162,6 +1350,16 @@ fn render_json(
                 .sampled(subject)
                 .and_then(|m| m.spread)
                 .map(|(min, max)| format!("[{min:.9}, {max:.9}]"))
+                .unwrap_or_else(|| "null".to_string());
+            let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
+        }
+        let _ = writeln!(s, "      }},");
+        let _ = writeln!(s, "      \"unavailable_reasons\": {{");
+        for (si, subject) in subs.iter().enumerate() {
+            let comma = if si + 1 < subs.len() { "," } else { "" };
+            let value = row
+                .unavailable_reason(subject)
+                .map(jstr)
                 .unwrap_or_else(|| "null".to_string());
             let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
         }
