@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1102,3 +1102,101 @@ The editor's over-promise — `tsserver` completing `Math.imul`,
 a reduced `lib` for authoring while the `tsc` gate keeps the stock one
 (§0.1), which is a separate design question. This phase makes the gap
 *documented*; closing it is later work.
+
+## 18. The host Context C API, and the trap observer
+
+Owner decision 2026-07-26. **This section exists partly to close a
+gap**: the `sub_rt_ctx_*` surface is what an embedding host actually
+calls, and it had no contract anywhere under `specs/` — it existed only
+in `runtime/src/ffi.rs`. A host-facing ABI with no written contract is
+the one surface where drift is least acceptable, since the host is
+outside this repository and cannot be fixed by a commit here.
+
+### 18.1 The existing surface, contracted retroactively
+
+```c
+void            sub_rt_ctx_release(Context*);
+const uint8_t*  sub_rt_ctx_stdout(const Context*, uint64_t* len);
+void            sub_rt_ctx_seed_random(Context*, uint64_t seed);
+void            sub_rt_ctx_set_now(Context*, int64_t ms);
+uint32_t        sub_rt_ctx_trap_kind(const Context*);
+uint32_t        sub_rt_ctx_trap_pos_id(const Context*);
+const uint8_t*  sub_rt_ctx_trap_message(const Context*, uint64_t* len);
+```
+
+`seed_random` (`stdlib.md` §2) and `set_now` (§3) pin the two
+nondeterministic inputs so tests and replays reproduce. The three
+`trap_*` accessors are **post-hoc**: after a run returns, the host
+reads the fault that stopped it. `Context::trap` records the **first**
+trap and ignores later ones, so what the host reads is the
+originating fault, not whatever was last seen while unwinding.
+
+`pos_id` is an index into the compiler's position table; resolving it
+to a TypeScript position needs that table, which is a separate
+artifact from the Context.
+
+### 18.2 The trap observer — observation only
+
+```c
+typedef void (*sub_rt_trap_observer)(
+    void* userdata, uint32_t kind, uint32_t pos_id,
+    const uint8_t* message, uint64_t message_len);
+
+void sub_rt_ctx_set_trap_observer(
+    Context*, sub_rt_trap_observer observer, void* userdata);
+```
+
+Called at the moment a trap is recorded, **before** the unwind, on the
+trapping thread. Passing a null observer clears it.
+
+**What it adds over §18.1**, honestly and only this: the host learns
+while *its own* state is still current — which frame, tick, or entity
+it was processing. Once the run has returned, that context is gone and
+the post-hoc accessors cannot recover it. Secondarily, the host stops
+having to poll the trap flag after every call into script.
+
+**Observation-only is enforced by shape, not by documentation:**
+
+- The observer returns `void`. There is no encoding for "continue", so
+  C6's rule that trapping is not catchable survives by construction
+  rather than by promise. This is not a recovery mechanism and no
+  later revision may make it one without revisiting C6.
+- It fires **at most once per run** — `Context::trap` is first-wins.
+- It must not call back into script. The Context is trapped; re-entry
+  is undefined and the host is responsible for not attempting it.
+- It cannot change script-visible output, so §0.3 determinism and the
+  golden corpus are unaffected. The observer receives copies and no
+  mutable Context handle.
+
+**Implementation.** All trap sites — 70 across the runtime at the time
+of writing — funnel through the single `Context::trap`, so the
+observer has exactly one call site. Nothing in generated code changes,
+and neither tier's lowering is touched.
+
+### 18.3 Why there is no in-language observer
+
+A script cannot observe its own traps, and this is deliberate rather
+than unimplemented. C6 makes trapping uncatchable; **a script-visible
+trap observer is the first half of an exception mechanism** — once a
+program can see its own fault, the pressure to let it continue arrives
+immediately, and the property that "a trap stops the run" stops being
+something the rest of the contract can rely on. Q20 (no Invalid-Date),
+Q25 (`toFixed` range), Q27 (`shift` on empty) and Q28 (`NaN` in
+`stringify`, reading `value` when `ok` is false) all lean on it.
+Script-visible state that depends on a fault would also be a
+determinism hazard.
+
+### 18.4 Gate
+
+A host-side test registers an observer, runs a program that traps, and
+asserts: the observer fired exactly once; `kind`, `pos_id` and
+`message` equal what the §18.1 accessors report afterwards; the run
+still unwound and the Context is still trapped; and a second trap in
+the same run does not fire it again. The same test runs on **both
+tiers** — the observer is runtime-side, so both must agree, and a
+divergence here would mean the two tiers disagree about which fault is
+the originating one. Clearing the observer with null is covered.
+
+Determinism: a corpus entry's output is byte-identical with and
+without an observer registered. This is the check that the shape
+really is observation-only.
