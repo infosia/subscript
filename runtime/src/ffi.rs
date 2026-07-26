@@ -17,7 +17,7 @@
 //! the script ran under the emitted trap-check discipline, so a null
 //! result from a trapping function is never fed into another call.
 
-use crate::context::{CallbackBinding, Context};
+use crate::context::{CallbackBinding, Context, TrapObserver};
 use crate::trap::TrapKind;
 
 /// Narrows an `f64` to raw IEEE 754 binary16 storage bits using
@@ -3967,9 +3967,160 @@ pub unsafe extern "C" fn sub_rt_ctx_trap_message(ctx: *const Context, len: *mut 
     }
 }
 
+/// Installs the callback invoked when `ctx` records its first trap.
+/// Passing a null `observer` clears it.
+///
+/// The callback receives no Context handle. It runs from inside
+/// [`Context::trap`] while the Context is exclusively borrowed, so it
+/// must not call any `sub_rt_*` function taking that Context (including
+/// by recovering the pointer from `userdata`); doing so is an aliasing
+/// violation and undefined behaviour. The message points into the
+/// stored trap record and remains valid until the trap is cleared or
+/// the Context is released.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. `observer`, when
+/// present, must be callable with `userdata` and obey the no-re-entry
+/// rule above.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_set_trap_observer(
+    ctx: *mut Context,
+    observer: Option<TrapObserver>,
+    userdata: *mut std::ffi::c_void,
+) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.set_trap_observer(observer, userdata);
+}
+
+/// Marks entry into an exported script function.
+///
+/// A host that uses [`sub_rt_ctx_clear_trap`] must call this immediately
+/// before each `ss_init` or `ss_export_<name>` call and pair it with
+/// [`sub_rt_ctx_exit_script`] after the call returns.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_enter_script(ctx: *mut Context) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.enter_script();
+}
+
+/// Marks return from an exported script function.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract and this call pairs with
+/// a preceding [`sub_rt_ctx_enter_script`].
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_exit_script(ctx: *mut Context) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.exit_script();
+}
+
+/// Clears the pending trap reporting state when no script call is live.
+///
+/// Returns 1 after clearing. Returns 0, without changing the Context,
+/// while a trap observer is active or `script_depth != 0`.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_clear_trap(ctx: *mut Context) -> i32 {
+    // SAFETY: exclusive Context contract.
+    let ctx = unsafe { &mut *ctx };
+    if !ctx.can_clear_trap() {
+        return 0;
+    }
+    ctx.clear_trap();
+    1
+}
+
+/// Number of live Context-owned allocations.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_live_allocations(ctx: *const Context) -> u64 {
+    // SAFETY: shared Context contract.
+    unsafe { &*ctx }.live_count() as u64
+}
+
+/// Payload capacity in live Context-owned allocations.
+///
+/// Development reports exact requested sizes; ship reports size-class
+/// capacity for arena blocks and exact sizes for large allocations.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_live_bytes(ctx: *const Context) -> u64 {
+    // SAFETY: shared Context contract.
+    unsafe { &*ctx }.live_bytes() as u64
+}
+
+/// Bytes currently reserved from the system for Context allocations.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_reserved_bytes(ctx: *const Context) -> u64 {
+    // SAFETY: shared Context contract.
+    unsafe { &*ctx }.reserved_bytes() as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct ObservedTrap {
+        calls: u32,
+        kind: u32,
+        pos_id: u32,
+        message_ptr: *const u8,
+        message_len: u64,
+        message: Vec<u8>,
+    }
+
+    impl Default for ObservedTrap {
+        fn default() -> Self {
+            Self {
+                calls: 0,
+                kind: 0,
+                pos_id: 0,
+                message_ptr: std::ptr::null(),
+                message_len: 0,
+                message: Vec::new(),
+            }
+        }
+    }
+
+    unsafe extern "C" fn observe_trap(
+        userdata: *mut std::ffi::c_void,
+        kind: u32,
+        pos_id: u32,
+        message: *const u8,
+        message_len: u64,
+    ) {
+        // SAFETY: the tests pass a live `ObservedTrap` as userdata and
+        // keep it alive until after every callback.
+        let observed = unsafe { &mut *userdata.cast::<ObservedTrap>() };
+        observed.calls += 1;
+        observed.kind = kind;
+        observed.pos_id = pos_id;
+        observed.message_ptr = message;
+        observed.message_len = message_len;
+        // SAFETY: the observer contract supplies `message_len` bytes
+        // from the stored record for the callback and beyond.
+        observed.message =
+            unsafe { std::slice::from_raw_parts(message, message_len as usize) }.to_vec();
+    }
 
     #[test]
     fn ffi_f16_conversion_round_trips_raw_binary16_storage() {
@@ -4003,6 +4154,134 @@ mod tests {
             let m = sub_rt_ctx_trap_message(ctx, &mut mlen);
             assert!(!m.is_null() && mlen > 0);
             sub_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn ffi_trap_observer_is_first_wins_and_null_clears_on_both_tier_policies() {
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let p: *mut Context = &mut *ctx;
+            let mut observed = ObservedTrap::default();
+            // SAFETY: live exclusive Context and live callback userdata.
+            unsafe {
+                sub_rt_ctx_set_trap_observer(
+                    p,
+                    Some(observe_trap),
+                    (&mut observed as *mut ObservedTrap).cast(),
+                );
+            }
+
+            // SAFETY: live exclusive Context; this brackets the modeled
+            // host call exactly as an embedding host does.
+            unsafe { sub_rt_ctx_enter_script(p) };
+            ctx.trap(TrapKind::EmptyPop, "first fault", 7);
+            // This is deliberately a direct second call to the central
+            // runtime trap path, modeling a runtime leaf reached during
+            // generated-code unwind. It cannot be optimized away by an
+            // early return in generated code.
+            ctx.trap(TrapKind::DivisionByZero, "later unwind fault", 9);
+            // SAFETY: pairs with the enter above.
+            unsafe { sub_rt_ctx_exit_script(p) };
+
+            let record = ctx.trap_record().expect("first trap record");
+            assert_eq!(observed.calls, 1, "{tier}");
+            assert_eq!(observed.kind, record.kind as u32, "{tier}");
+            assert_eq!(observed.pos_id, record.pos_id, "{tier}");
+            assert_eq!(observed.message, record.message.as_bytes(), "{tier}");
+            assert!(ctx.trapped(), "{tier}: the observer must not recover");
+
+            let mut message_len = 0;
+            // SAFETY: shared live Context and writable length.
+            let message = unsafe { sub_rt_ctx_trap_message(p, &mut message_len) };
+            assert_eq!(observed.message_ptr, message, "{tier}: record lifetime");
+            assert_eq!(observed.message_len, message_len, "{tier}");
+            assert_eq!(
+                observed.kind,
+                // SAFETY: shared live Context.
+                unsafe { sub_rt_ctx_trap_kind(p) },
+                "{tier}"
+            );
+            assert_eq!(
+                observed.pos_id,
+                // SAFETY: shared live Context.
+                unsafe { sub_rt_ctx_trap_pos_id(p) },
+                "{tier}"
+            );
+
+            // SAFETY: at a host boundary. A null observer clears it.
+            unsafe {
+                assert_eq!(sub_rt_ctx_clear_trap(p), 1, "{tier}");
+                sub_rt_ctx_set_trap_observer(p, None, std::ptr::null_mut());
+            }
+            ctx.trap(TrapKind::Internal, "not observed", 11);
+            assert_eq!(observed.calls, 1, "{tier}: null did not clear observer");
+        }
+    }
+
+    #[test]
+    fn ffi_clear_trap_checks_depth_and_preserves_state_on_both_tier_policies() {
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let kept = ctx.alloc(8, 1, 0);
+            ctx.print_line(b"before");
+            ctx.bump_reload_epoch();
+            let live_before = ctx.live_count();
+            let epoch_before = ctx.reload_epoch();
+            let stdout_before = ctx.stdout_bytes().to_vec();
+            let p: *mut Context = &mut *ctx;
+            // SAFETY: shared accessors over a live Context.
+            let accounting_before = unsafe {
+                (
+                    sub_rt_ctx_live_allocations(p),
+                    sub_rt_ctx_live_bytes(p),
+                    sub_rt_ctx_reserved_bytes(p),
+                )
+            };
+            assert_eq!(accounting_before.0, live_before as u64, "{tier}");
+
+            // SAFETY: live exclusive Context at a host boundary.
+            unsafe { sub_rt_ctx_enter_script(p) };
+            assert_eq!(ctx.script_depth(), 1, "{tier}: enter did not raise depth");
+            ctx.trap(TrapKind::EmptyPop, "pop() on an empty array", 3);
+            let record_before = ctx.trap_record().cloned();
+            // SAFETY: live exclusive Context. The function itself must
+            // reject the live-script state without changing anything.
+            assert_eq!(unsafe { sub_rt_ctx_clear_trap(p) }, 0, "{tier}");
+            assert!(ctx.trapped(), "{tier}");
+            assert_eq!(ctx.trap_record(), record_before.as_ref(), "{tier}");
+            assert_eq!(ctx.live_count(), live_before, "{tier}");
+            assert!(ctx.is_live(kept as usize), "{tier}");
+            assert_eq!(ctx.reload_epoch(), epoch_before, "{tier}");
+            assert_eq!(ctx.stdout_bytes(), stdout_before, "{tier}");
+
+            // SAFETY: pairs with the host enter above.
+            unsafe { sub_rt_ctx_exit_script(p) };
+            assert_eq!(ctx.script_depth(), 0, "{tier}: exit did not lower depth");
+            // SAFETY: the live script frame has returned.
+            assert_eq!(unsafe { sub_rt_ctx_clear_trap(p) }, 1, "{tier}");
+            assert!(!ctx.trapped(), "{tier}");
+            assert!(ctx.trap_record().is_none(), "{tier}");
+            assert_eq!(ctx.live_count(), live_before, "{tier}");
+            assert!(ctx.is_live(kept as usize), "{tier}");
+            assert_eq!(ctx.reload_epoch(), epoch_before, "{tier}");
+            assert_eq!(ctx.stdout_bytes(), stdout_before, "{tier}");
+            // SAFETY: shared accessors over a live Context.
+            let accounting_after = unsafe {
+                (
+                    sub_rt_ctx_live_allocations(p),
+                    sub_rt_ctx_live_bytes(p),
+                    sub_rt_ctx_reserved_bytes(p),
+                )
+            };
+            assert_eq!(
+                accounting_after, accounting_before,
+                "{tier}: clearing a trap rolled memory state back"
+            );
         }
     }
 

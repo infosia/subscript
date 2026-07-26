@@ -518,6 +518,23 @@ fn compile_jit(files: &[SourceFile]) -> Result<(JITModule, Lowered), RunError> {
     Ok((module, lowered))
 }
 
+/// Calls one finalized `(Context*) -> void` script entry under the host
+/// depth discipline.
+///
+/// # Safety
+///
+/// `entry` must be finalized generated code of this exact signature and
+/// remain live for the call.
+unsafe fn call_script_entry(entry: *const u8, ctx: &mut Context) {
+    type Entry = unsafe extern "C" fn(*mut Context);
+    // SAFETY: guaranteed by the caller.
+    let entry: Entry = unsafe { std::mem::transmute(entry) };
+    ctx.enter_script();
+    // SAFETY: generated code never unwinds across this C boundary.
+    unsafe { entry(ctx) };
+    ctx.exit_script();
+}
+
 /// Runs the module initializer and then the exported `main` on a fresh
 /// Context, returning the stdout bytes of the run and how long the
 /// `main` call itself took.
@@ -533,7 +550,6 @@ fn run_entry(module: &JITModule, lowered: &Lowered) -> Result<(Vec<u8>, Duration
     let mut ctx = Context::new();
     let mut elapsed = Duration::ZERO;
     {
-        type Entry = unsafe extern "C" fn(*mut Context);
         // SAFETY: `init_ptr`/`main_ptr` are finalized JIT code for
         // functions the lowering built with exactly this signature
         // (`(ctx) -> void`, host C calling convention); the module
@@ -541,13 +557,15 @@ fn run_entry(module: &JITModule, lowered: &Lowered) -> Result<(Vec<u8>, Duration
         // Generated code never unwinds (traps return through the
         // flag-check paths), so no panic crosses this boundary.
         unsafe {
-            let init: Entry = std::mem::transmute(init_ptr);
-            init(&mut *ctx);
+            call_script_entry(init_ptr, &mut ctx);
             if !ctx.trapped() {
+                type Entry = unsafe extern "C" fn(*mut Context);
                 let main: Entry = std::mem::transmute(main_ptr);
+                ctx.enter_script();
                 let start = Instant::now();
                 main(&mut *ctx);
                 elapsed = start.elapsed();
+                ctx.exit_script();
             }
         }
     }
@@ -677,11 +695,222 @@ pub fn jit_bench(
 }
 
 #[cfg(test)]
+pub(crate) fn memory_accounting_after_run(
+    files: &[SourceFile],
+) -> Result<(u64, u64, u64), RunError> {
+    let (module, lowered) = compile_jit(files)?;
+    let init = module.get_finalized_function(lowered.init);
+    let main = module.get_finalized_function(lowered.main);
+    let mut ctx = Context::new();
+    // SAFETY: both pointers are finalized entries and the module remains
+    // live through the calls.
+    unsafe {
+        call_script_entry(init, &mut ctx);
+        if !ctx.trapped() {
+            call_script_entry(main, &mut ctx);
+        }
+    }
+    let result = match ctx.trap_record() {
+        Some(record) => Err(RunError::Internal(internal(format!(
+            "accounting probe trapped: {}",
+            record.message
+        )))),
+        None => {
+            let p: *const Context = &*ctx;
+            // SAFETY: shared host accessors over a live Context after
+            // every script entry returned.
+            Ok(unsafe {
+                (
+                    ffi::sub_rt_ctx_live_allocations(p),
+                    ffi::sub_rt_ctx_live_bytes(p),
+                    ffi::sub_rt_ctx_reserved_bytes(p),
+                )
+            })
+        }
+    };
+    // SAFETY: all entries returned and no code pointer survives.
+    unsafe { module.free_memory() };
+    result
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    struct ObservedTrap {
+        calls: u32,
+        kind: u32,
+        pos_id: u32,
+        message: Vec<u8>,
+    }
+
+    impl Default for ObservedTrap {
+        fn default() -> Self {
+            Self {
+                calls: 0,
+                kind: 0,
+                pos_id: 0,
+                message: Vec::new(),
+            }
+        }
+    }
+
+    unsafe extern "C" fn observe_trap(
+        userdata: *mut std::ffi::c_void,
+        kind: u32,
+        pos_id: u32,
+        message: *const u8,
+        message_len: u64,
+    ) {
+        // SAFETY: each test passes a live `ObservedTrap` as userdata.
+        let observed = unsafe { &mut *userdata.cast::<ObservedTrap>() };
+        observed.calls += 1;
+        observed.kind = kind;
+        observed.pos_id = pos_id;
+        // SAFETY: the trap observer supplies the stored record's bytes.
+        observed.message =
+            unsafe { std::slice::from_raw_parts(message, message_len as usize) }.to_vec();
+    }
+
     fn sources(src: &str) -> Vec<SourceFile> {
         vec![SourceFile::new("test.ts", src)]
+    }
+
+    unsafe fn call_entry(code: *const u8, ctx: &mut Context) {
+        type Entry = unsafe extern "C" fn(*mut Context);
+        // SAFETY: callers pass a finalized `(ctx) -> void` entry and
+        // keep its JIT module alive for the duration of this call.
+        let entry: Entry = unsafe { std::mem::transmute(code) };
+        ctx.enter_script();
+        // SAFETY: finalized generated code never unwinds across FFI.
+        unsafe { entry(ctx) };
+        ctx.exit_script();
+    }
+
+    #[test]
+    fn jit_host_trap_observer_and_clear_api_preserve_unwind_semantics() {
+        let program = sources(
+            "let calls: i32 = 0;\n\
+             export function main(): void {\n\
+               calls += 1;\n\
+               print(`start:${calls}`);\n\
+               if (calls === 1) {\n\
+                 const failed: JsonResult<i32> = JSON.parse<i32>(\"nope\");\n\
+                 print(`${failed.value}`);\n\
+               }\n\
+               print(\"done\");\n\
+             }\n",
+        );
+        let (module, lowered) = compile_jit(&program).expect("compile observer program");
+        let init = module.get_finalized_function(lowered.init);
+        let main = module.get_finalized_function(lowered.main);
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let mut observed = ObservedTrap::default();
+        // SAFETY: live Context and observer userdata; the callback does
+        // not receive or recover the Context.
+        unsafe {
+            ffi::sub_rt_ctx_set_trap_observer(
+                p,
+                Some(observe_trap),
+                (&mut observed as *mut ObservedTrap).cast(),
+            );
+            call_entry(init, &mut ctx);
+            call_entry(main, &mut ctx);
+        }
+
+        assert_eq!(observed.calls, 1);
+        // SAFETY: shared access to the live Context after script return.
+        assert_eq!(observed.kind, unsafe { ffi::sub_rt_ctx_trap_kind(p) });
+        // SAFETY: shared access to the live Context after script return.
+        assert_eq!(observed.pos_id, unsafe { ffi::sub_rt_ctx_trap_pos_id(p) });
+        let mut message_len = 0;
+        // SAFETY: shared live Context and writable length.
+        let message = unsafe { ffi::sub_rt_ctx_trap_message(p, &mut message_len) };
+        // SAFETY: the accessor returns `message_len` record-owned bytes.
+        let message = unsafe { std::slice::from_raw_parts(message, message_len as usize) };
+        assert_eq!(observed.message, message);
+        assert!(ctx.trapped(), "observer must not suppress the trap");
+        assert_eq!(
+            ctx.stdout_bytes(),
+            b"start:1\n",
+            "the first call must unwind before the trailing print"
+        );
+
+        // SAFETY: the first call has fully returned to the host boundary.
+        assert_eq!(unsafe { ffi::sub_rt_ctx_clear_trap(p) }, 1);
+        // SAFETY: same finalized entry, now on a clear Context.
+        unsafe { call_entry(main, &mut ctx) };
+        assert!(!ctx.trapped());
+        assert_eq!(
+            ctx.stdout_bytes(),
+            b"start:1\nstart:2\ndone\n",
+            "the second call must execute beyond the stale trap check"
+        );
+        assert_eq!(observed.calls, 1, "the successful call must not notify");
+
+        // Re-run initialization on a fresh Context so `main` traps
+        // again, but clear the observer first through the null ABI form.
+        let mut cleared_ctx = Context::new();
+        let cleared_p: *mut Context = &mut *cleared_ctx;
+        let mut cleared_observed = ObservedTrap::default();
+        // SAFETY: live Context and userdata; null explicitly unregisters.
+        unsafe {
+            ffi::sub_rt_ctx_set_trap_observer(
+                cleared_p,
+                Some(observe_trap),
+                (&mut cleared_observed as *mut ObservedTrap).cast(),
+            );
+            ffi::sub_rt_ctx_set_trap_observer(cleared_p, None, std::ptr::null_mut());
+            call_entry(init, &mut cleared_ctx);
+            call_entry(main, &mut cleared_ctx);
+        }
+        assert!(cleared_ctx.trapped());
+        assert_eq!(cleared_observed.calls, 0);
+
+        // SAFETY: all calls returned and neither Context retains JIT
+        // code pointers.
+        unsafe { module.free_memory() };
+    }
+
+    #[test]
+    fn jit_corpus_output_is_byte_identical_with_an_observer_registered() {
+        let source = include_str!("../../corpus/accept/a01-hello.ts");
+        let program = [SourceFile::new("a01-hello.ts", source)];
+        let (module, lowered) = compile_jit(&program).expect("compile a01");
+        let init = module.get_finalized_function(lowered.init);
+        let main = module.get_finalized_function(lowered.main);
+
+        let run = |with_observer: bool| {
+            let mut ctx = Context::new();
+            let mut observed = ObservedTrap::default();
+            if with_observer {
+                // SAFETY: live Context and callback userdata.
+                unsafe {
+                    ffi::sub_rt_ctx_set_trap_observer(
+                        &mut *ctx,
+                        Some(observe_trap),
+                        (&mut observed as *mut ObservedTrap).cast(),
+                    );
+                }
+            }
+            // SAFETY: finalized entries; module remains alive.
+            unsafe {
+                call_entry(init, &mut ctx);
+                call_entry(main, &mut ctx);
+            }
+            assert!(!ctx.trapped());
+            assert_eq!(observed.calls, 0);
+            ctx.take_stdout()
+        };
+
+        let without = run(false);
+        let with = run(true);
+        assert_eq!(with, without, "observer changed a01 stdout bytes");
+        assert_eq!(with, b"hello\n");
+
+        // SAFETY: every execution returned and no code pointer survives.
+        unsafe { module.free_memory() };
     }
 
     #[test]

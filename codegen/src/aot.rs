@@ -143,10 +143,13 @@ pub fn emit_object(files: &[SourceFile], triple: Option<&str>) -> Result<AotObje
 /// its temporary directory, and the device-triple link script writes it
 /// through the `emit-object` binary. It is generated output, never
 /// hand-edited in place.
-pub const AOT_ENTRY_C: &str = r#"/* Host entry for a subscript AOT build (compiler.md 8.1).
+pub const AOT_ENTRY_C: &str = concat!(
+    include_str!("../../runtime/include/subscript_runtime.h"),
+    r#"
+
+/* Host entry for a subscript AOT build (compiler.md 8.1).
  * Generated; never hand-edited.
  */
-#include <stdint.h>
 #include <stdio.h>
 #include <stddef.h>
 #if defined(_WIN32)
@@ -154,15 +157,11 @@ pub const AOT_ENTRY_C: &str = r#"/* Host entry for a subscript AOT build (compil
 #include <fcntl.h>
 #endif
 
-extern void *sub_rt_ctx_new(void);
-extern void sub_rt_ctx_release(void *ctx);
-extern const unsigned char *sub_rt_ctx_stdout(const void *ctx, uint64_t *len);
-extern uint32_t sub_rt_ctx_trap_kind(const void *ctx);
-extern uint32_t sub_rt_ctx_trap_pos_id(const void *ctx);
-extern const unsigned char *sub_rt_ctx_trap_message(const void *ctx, uint64_t *len);
-
-extern void ss_init(void *ctx);
-extern void ss_export_main(void *ctx);
+static void call_script_entry(Context *ctx, sub_script_main_entry entry) {
+    sub_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    sub_rt_ctx_exit_script(ctx);
+}
 
 int main(void) {
 #if defined(_WIN32)
@@ -172,13 +171,13 @@ int main(void) {
      * every other platform, which has no text-mode translation. */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
-    void *ctx = sub_rt_ctx_new();
+    Context *ctx = sub_rt_ctx_new();
     if (ctx == NULL) {
         return 2;
     }
-    ss_init(ctx);
+    call_script_entry(ctx, ss_init);
     if (sub_rt_ctx_trap_kind(ctx) == 0) {
-        ss_export_main(ctx);
+        call_script_entry(ctx, ss_export_main);
     }
     uint64_t len = 0;
     const unsigned char *out = sub_rt_ctx_stdout(ctx, &len);
@@ -201,7 +200,11 @@ int main(void) {
     sub_rt_ctx_release(ctx);
     return status;
 }
-"#;
+"#
+);
+
+/// Generated host header consumed by the standard and test AOT entries.
+pub const HOST_HEADER_C: &str = include_str!("../../runtime/include/subscript_runtime.h");
 
 /// A temporary directory removed when the guard is dropped.
 struct TempDir {
@@ -643,6 +646,54 @@ mod tests {
         vec![SourceFile::new("test.ts", src)]
     }
 
+    /// Drives the emitted-C ship tier with a test-specific C host entry.
+    /// The compile/link flags and runtime/interop inputs are exactly the
+    /// ones used by `run_c_aot`; only the host driver source differs.
+    fn run_c_aot_with_entry(files: &[SourceFile], entry: &str) -> std::process::Output {
+        let hir = check_program(files).expect("test program checks");
+        let program = crate::emit_c(&hir).expect("emit ship C");
+        let staticlib = runtime_staticlib().expect("runtime staticlib");
+        let dir = TempDir::new("host-api-test").expect("temp dir");
+        let src_path = dir.path.join("program.c");
+        let entry_path = dir.path.join("entry.c");
+        let exe_path = dir
+            .path
+            .join(format!("program{}", std::env::consts::EXE_SUFFIX));
+        write_file(&src_path, program.source.as_bytes()).expect("write program.c");
+        write_file(&entry_path, entry.as_bytes()).expect("write entry.c");
+
+        let interop = interop_dir();
+        let cc = host_c_compiler();
+        let compile = Command::new(&cc)
+            .arg("-std=c11")
+            .arg("-O2")
+            .arg("-fwrapv")
+            .arg("-ffp-contract=off")
+            .arg("-I")
+            .arg(&interop)
+            .arg(&src_path)
+            .arg(&entry_path)
+            .arg(interop.join("interop.c"))
+            .arg(&staticlib)
+            .args(runtime_system_libs())
+            .arg("-o")
+            .arg(&exe_path)
+            .output()
+            .expect("run C compiler");
+        assert!(
+            compile.status.success(),
+            "compiling/linking test host failed:\n{}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        Command::new(&exe_path).output().expect("run test host")
+    }
+
+    /// Prefixes a test host body with the generated runtime header, so
+    /// host tests exercise the committed ABI artifact.
+    fn host_entry(body: &str) -> String {
+        format!("{HOST_HEADER_C}\n{body}")
+    }
+
     /// Asserts the shape every emitted object must have: the right
     /// format and architecture, `ss_export_main` and `ss_init` defined
     /// and global, and the runtime reached only as undefined imports.
@@ -728,6 +779,246 @@ mod tests {
         ))
         .expect("aot run");
         assert_eq!(out, b"42\n");
+    }
+
+    #[test]
+    fn ship_c_host_trap_observer_and_clear_api_preserve_unwind_semantics() {
+        let program = sources(
+            "let calls: i32 = 0;\n\
+             export function main(): void {\n\
+               calls += 1;\n\
+               print(`start:${calls}`);\n\
+               if (calls === 1) {\n\
+                 const failed: JsonResult<i32> = JSON.parse<i32>(\"nope\");\n\
+                 print(`${failed.value}`);\n\
+               }\n\
+               print(\"done\");\n\
+             }\n",
+        );
+        let entry = host_entry(
+            r#"
+#include <stdio.h>
+#include <string.h>
+
+struct observed_trap {
+    uint32_t calls;
+    uint32_t kind;
+    uint32_t pos_id;
+    const uint8_t* message;
+    uint64_t message_len;
+};
+
+static void observe(
+    void* userdata, uint32_t kind, uint32_t pos_id,
+    const uint8_t* message, uint64_t message_len) {
+    struct observed_trap* observed = (struct observed_trap*)userdata;
+    observed->calls += 1;
+    observed->kind = kind;
+    observed->pos_id = pos_id;
+    observed->message = message;
+    observed->message_len = message_len;
+}
+
+static int fail(Context* ctx, int code) {
+    sub_rt_ctx_release(ctx);
+    return code;
+}
+
+static void call_entry(Context* ctx, sub_script_main_entry entry) {
+    sub_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    sub_rt_ctx_exit_script(ctx);
+}
+
+int main(void) {
+    Context* ctx = sub_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    struct observed_trap observed = {0};
+    sub_rt_ctx_set_trap_observer(ctx, observe, &observed);
+    call_entry(ctx, ss_init);
+    call_entry(ctx, ss_export_main);
+
+    if (observed.calls != 1) return fail(ctx, 10);
+    uint32_t kind = sub_rt_ctx_trap_kind(ctx);
+    uint32_t pos_id = sub_rt_ctx_trap_pos_id(ctx);
+    uint64_t message_len = 0;
+    const uint8_t* message = sub_rt_ctx_trap_message(ctx, &message_len);
+    if (kind == 0) return fail(ctx, 11);
+    if (observed.kind != kind || observed.pos_id != pos_id) return fail(ctx, 12);
+    if (observed.message != message || observed.message_len != message_len) return fail(ctx, 13);
+    if (memcmp(observed.message, message, (size_t)message_len) != 0) return fail(ctx, 14);
+
+    const uint64_t live_before = sub_rt_ctx_live_allocations(ctx);
+    const uint64_t bytes_before = sub_rt_ctx_live_bytes(ctx);
+    const uint64_t reserved_before = sub_rt_ctx_reserved_bytes(ctx);
+    sub_rt_ctx_enter_script(ctx);
+    const int cleared_while_live = sub_rt_ctx_clear_trap(ctx);
+    sub_rt_ctx_exit_script(ctx);
+    if (cleared_while_live != 0) return fail(ctx, 15);
+    if (sub_rt_ctx_clear_trap(ctx) != 1) return fail(ctx, 16);
+    if (sub_rt_ctx_live_allocations(ctx) != live_before ||
+        sub_rt_ctx_live_bytes(ctx) != bytes_before ||
+        sub_rt_ctx_reserved_bytes(ctx) != reserved_before) return fail(ctx, 17);
+    if (sub_rt_ctx_trap_kind(ctx) != 0) return fail(ctx, 18);
+    call_entry(ctx, ss_export_main);
+    if (sub_rt_ctx_trap_kind(ctx) != 0) return fail(ctx, 19);
+    if (observed.calls != 1) return fail(ctx, 20);
+
+    uint64_t stdout_len = 0;
+    const uint8_t* stdout_bytes = sub_rt_ctx_stdout(ctx, &stdout_len);
+    if (stdout_len > 0) fwrite(stdout_bytes, 1, (size_t)stdout_len, stdout);
+    sub_rt_ctx_release(ctx);
+
+    Context* cleared_ctx = sub_rt_ctx_new();
+    if (cleared_ctx == NULL) return 3;
+    struct observed_trap cleared = {0};
+    sub_rt_ctx_set_trap_observer(cleared_ctx, observe, &cleared);
+    sub_rt_ctx_set_trap_observer(cleared_ctx, NULL, NULL);
+    call_entry(cleared_ctx, ss_init);
+    call_entry(cleared_ctx, ss_export_main);
+    if (sub_rt_ctx_trap_kind(cleared_ctx) == 0) return fail(cleared_ctx, 21);
+    if (cleared.calls != 0) return fail(cleared_ctx, 22);
+    sub_rt_ctx_release(cleared_ctx);
+    return 0;
+}
+"#,
+        );
+        let run = run_c_aot_with_entry(&program, &entry);
+        assert!(
+            run.status.success(),
+            "ship host exited with {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert_eq!(
+            run.stdout, b"start:1\nstart:2\ndone\n",
+            "the first call must unwind and the cleared second call must finish"
+        );
+    }
+
+    #[test]
+    fn ship_c_corpus_output_is_byte_identical_with_an_observer_registered() {
+        let source = include_str!("../../corpus/accept/a01-hello.ts");
+        let program = [SourceFile::new("a01-hello.ts", source)];
+        let without = run_c_aot(&program).expect("a01 without observer");
+        let entry = host_entry(
+            r#"
+#include <stdio.h>
+
+static void observe(
+    void* userdata, uint32_t kind, uint32_t pos_id,
+    const uint8_t* message, uint64_t message_len) {
+    (void)kind;
+    (void)pos_id;
+    (void)message;
+    (void)message_len;
+    *(uint32_t*)userdata += 1;
+}
+
+int main(void) {
+    Context* ctx = sub_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    uint32_t calls = 0;
+    sub_rt_ctx_set_trap_observer(ctx, observe, &calls);
+    sub_rt_ctx_enter_script(ctx);
+    ss_init(ctx);
+    sub_rt_ctx_exit_script(ctx);
+    sub_rt_ctx_enter_script(ctx);
+    ss_export_main(ctx);
+    sub_rt_ctx_exit_script(ctx);
+    if (sub_rt_ctx_trap_kind(ctx) != 0 || calls != 0) {
+        sub_rt_ctx_release(ctx);
+        return 3;
+    }
+    uint64_t len = 0;
+    const uint8_t* bytes = sub_rt_ctx_stdout(ctx, &len);
+    if (len > 0) fwrite(bytes, 1, (size_t)len, stdout);
+    sub_rt_ctx_release(ctx);
+    return 0;
+}
+"#,
+        );
+        let with = run_c_aot_with_entry(&program, &entry);
+        assert!(
+            with.status.success(),
+            "ship observer host exited with {}: {}",
+            with.status,
+            String::from_utf8_lossy(&with.stderr)
+        );
+        assert_eq!(with.stdout, without, "observer changed a01 stdout bytes");
+        assert_eq!(with.stdout, b"hello\n");
+    }
+
+    #[test]
+    fn host_memory_accounting_agrees_on_count_and_measures_tier_bytes() {
+        let program = sources(
+            "class Cell {\n\
+               value: i32;\n\
+               constructor(value: i32) { this.value = value; }\n\
+             }\n\
+             export function main(): void {\n\
+               const first: Cell = new Cell(1);\n\
+               const deleted: Cell = new Cell(2);\n\
+               const last: Cell = new Cell(first.value + 2);\n\
+               unsafeDelete(deleted);\n\
+               if (last.value === 0) { print(\"unreachable\"); }\n\
+             }\n",
+        );
+        let dev = crate::jit::memory_accounting_after_run(&program).expect("dev accounting");
+        let entry = host_entry(
+            r#"
+#include <stdio.h>
+
+static void call_entry(Context* ctx, sub_script_main_entry entry) {
+    sub_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    sub_rt_ctx_exit_script(ctx);
+}
+
+int main(void) {
+    Context* ctx = sub_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    call_entry(ctx, ss_init);
+    if (sub_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, ss_export_main);
+    if (sub_rt_ctx_trap_kind(ctx) != 0) {
+        sub_rt_ctx_release(ctx);
+        return 3;
+    }
+    printf("%llu %llu %llu\n",
+        (unsigned long long)sub_rt_ctx_live_allocations(ctx),
+        (unsigned long long)sub_rt_ctx_live_bytes(ctx),
+        (unsigned long long)sub_rt_ctx_reserved_bytes(ctx));
+    sub_rt_ctx_release(ctx);
+    return 0;
+}
+"#,
+        );
+        let run = run_c_aot_with_entry(&program, &entry);
+        assert!(
+            run.status.success(),
+            "ship accounting host exited with {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let values: Vec<u64> = String::from_utf8(run.stdout)
+            .expect("ship accounting output is UTF-8")
+            .split_whitespace()
+            .map(|value| value.parse().expect("ship accounting integer"))
+            .collect();
+        assert_eq!(values.len(), 3);
+        let ship = (values[0], values[1], values[2]);
+
+        assert_eq!(dev.0, 2, "three allocations minus one delete");
+        assert_eq!(ship.0, dev.0, "tiers disagree on live allocation count");
+        assert_ne!(ship.1, dev.1, "live bytes unexpectedly agree across tiers");
+        assert_ne!(
+            ship.2, dev.2,
+            "reserved bytes unexpectedly agree across tiers"
+        );
+        eprintln!(
+            "host memory accounting: dev=({}, {}, {}), ship=({}, {}, {})",
+            dev.0, dev.1, dev.2, ship.0, ship.1, ship.2
+        );
     }
 
     #[test]

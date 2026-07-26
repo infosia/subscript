@@ -10,6 +10,9 @@
 //! live handles (M1). Cross-tier byte-equality is the real invariant, so
 //! these need no committed golden.
 
+#[path = "support/trap_corpus.rs"]
+mod trap_corpus;
+
 use subscript_codegen::{run_c_aot, run_jit, RunError};
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -379,29 +382,41 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 
 #[test]
 fn json_result_value_trap_corpus_entry_is_identical() {
-    let source = include_str!("../../corpus/trap/t01-json-result-value.ts");
-    let files = [SourceFile::new("t01-json-result-value.ts", source)];
-    let mut reports = Vec::new();
-    for (tier, result) in [
-        ("dev-JIT", run_jit(&files)),
-        ("ship-C-AOT", run_c_aot(&files)),
-    ] {
-        match result {
-            Err(RunError::Trap(report)) => {
-                assert_eq!(report.rule, TrapKind::JsonResultValue, "{tier}");
-                assert_eq!(
-                    report.message,
-                    "`JsonResult.value` read when `ok` is false",
-                    "{tier}"
-                );
-                assert_eq!(report.pos.file, "t01-json-result-value.ts", "{tier}");
-                assert_eq!(report.pos.line, 9, "{tier}");
-                reports.push((report.rule, report.message, report.pos));
+    let trap = trap_corpus::corpus_trap();
+    let ids = trap_corpus::trap_ids(&trap);
+    assert_eq!(
+        ids.len(),
+        1,
+        "expected exactly the one committed trap entry (t01 P13 JsonResult.value), found {}",
+        ids.len()
+    );
+
+    for id in ids {
+        let files = trap_corpus::trap_sources(&trap, &id);
+        let mut reports = Vec::new();
+        for (tier, result) in [
+            ("dev-JIT", run_jit(&files)),
+            ("ship-C-AOT", run_c_aot(&files)),
+        ] {
+            match result {
+                Err(RunError::Trap(report)) => {
+                    assert_eq!(report.rule, TrapKind::JsonResultValue, "{tier}: {id}");
+                    assert_eq!(
+                        report.message,
+                        "`JsonResult.value` read when `ok` is false",
+                        "{tier}: {id}"
+                    );
+                    assert_eq!(report.pos.file, format!("{id}.ts"), "{tier}: {id}");
+                    assert_eq!(report.pos.line, 9, "{tier}: {id}");
+                    reports.push((report.rule, report.message, report.pos));
+                }
+                other => {
+                    panic!("{tier}: {id}: expected a JsonResultValue trap, got {other:?}")
+                }
             }
-            other => panic!("{tier}: expected a JsonResultValue trap, got {other:?}"),
         }
+        assert_eq!(reports[0], reports[1], "{id}: tiers disagree on trap report");
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
 }
 
 #[test]
@@ -976,21 +991,17 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     let program = emit_c(&hir).expect("ship C emission");
     let staticlib = runtime_staticlib_path().expect("runtime staticlib");
 
-    let decl_anchor = "extern void ss_init(void *ctx);";
-    let call_anchor = "    ss_init(ctx);";
+    let call_anchor = "    call_script_entry(ctx, ss_init);";
     assert!(
-        AOT_ENTRY_C.contains(decl_anchor) && AOT_ENTRY_C.contains(call_anchor),
+        AOT_ENTRY_C.contains(call_anchor),
         "AOT_ENTRY_C anchors moved; update this test's entry derivation"
     );
-    let entry = AOT_ENTRY_C
-        .replace(
-            decl_anchor,
-            "extern void sub_rt_ctx_set_now(void *ctx, int64_t ms);\nextern void ss_init(void *ctx);",
-        )
-        .replace(
-            call_anchor,
-            &format!("    sub_rt_ctx_set_now(ctx, {PINNED_MS});\n    ss_init(ctx);"),
-        );
+    let entry = AOT_ENTRY_C.replace(
+        call_anchor,
+        &format!(
+            "    sub_rt_ctx_set_now(ctx, {PINNED_MS});\n    call_script_entry(ctx, ss_init);"
+        ),
+    );
 
     // Temp dir removed on every exit path, including assertion panics.
     struct Cleanup(PathBuf);

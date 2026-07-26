@@ -36,7 +36,7 @@ mod lower;
 mod reload;
 
 pub use aot::{
-    emit_object, run_aot, run_c_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C,
+    emit_object, run_aot, run_c_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C, HOST_HEADER_C,
     RUNTIME_STATICLIB_ENV,
 };
 pub use cemit::{emit_c, CProgram};

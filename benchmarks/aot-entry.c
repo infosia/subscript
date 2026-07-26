@@ -20,7 +20,6 @@
  * `sample <index> <ns>`, followed by `checksum-stable <0|1>`.
  */
 
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,16 +29,6 @@
 #include <fcntl.h>
 #include <windows.h>
 #endif
-
-extern void *sub_rt_ctx_new(void);
-extern void sub_rt_ctx_release(void *ctx);
-extern const unsigned char *sub_rt_ctx_stdout(const void *ctx, uint64_t *len);
-extern uint32_t sub_rt_ctx_trap_kind(const void *ctx);
-extern uint32_t sub_rt_ctx_trap_pos_id(const void *ctx);
-extern const unsigned char *sub_rt_ctx_trap_message(const void *ctx, uint64_t *len);
-
-extern void ss_init(void *ctx);
-extern void ss_export_main(void *ctx);
 
 /* Nanoseconds since an unspecified monotonic epoch. The MSVC UCRT has no
  * clock_gettime/CLOCK_MONOTONIC, so on Windows the same monotonic span is
@@ -66,7 +55,7 @@ static uint64_t monotonic_ns(void) {
 
 /* Reports a trap the way the gate's entry program does, so a failing
  * benchmark run is diagnosable with the same reader. */
-static void report_trap(const void *ctx) {
+static void report_trap(const Context *ctx) {
     uint64_t mlen = 0;
     const unsigned char *msg = sub_rt_ctx_trap_message(ctx, &mlen);
     fprintf(stderr, "trap %u %u ", sub_rt_ctx_trap_kind(ctx), sub_rt_ctx_trap_pos_id(ctx));
@@ -99,12 +88,14 @@ int main(int argc, char **argv) {
     int stable = 1;
 
     for (int run = 0; run < warmup + timed; run += 1) {
-        void *ctx = sub_rt_ctx_new();
+        Context *ctx = sub_rt_ctx_new();
         if (ctx == NULL) {
             free(first);
             return 2;
         }
+        sub_rt_ctx_enter_script(ctx);
         ss_init(ctx);
+        sub_rt_ctx_exit_script(ctx);
         if (sub_rt_ctx_trap_kind(ctx) != 0) {
             report_trap(ctx);
             sub_rt_ctx_release(ctx);
@@ -112,9 +103,11 @@ int main(int argc, char **argv) {
             return 3;
         }
 
+        sub_rt_ctx_enter_script(ctx);
         const uint64_t start = monotonic_ns();
         ss_export_main(ctx);
         const uint64_t end = monotonic_ns();
+        sub_rt_ctx_exit_script(ctx);
 
         if (sub_rt_ctx_trap_kind(ctx) != 0) {
             report_trap(ctx);

@@ -41,8 +41,39 @@
 
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::HashMap;
+use std::ffi::c_void;
 
 use crate::trap::{TrapKind, TrapRecord};
+
+/// Host callback invoked when a Context records its first trap.
+///
+/// The callback deliberately receives no [`Context`] handle. It runs
+/// inside [`Context::trap`] while that method holds exclusive access to
+/// the Context, so calling any `sub_rt_*` API that takes that Context
+/// (including through a pointer smuggled in `userdata`) would violate
+/// Rust's aliasing rules and is undefined behaviour.
+///
+/// `message` points into the stored [`TrapRecord`]. The bytes remain
+/// valid after the callback returns, until the trap is cleared or the
+/// Context is released.
+pub type TrapObserver = unsafe extern "C" fn(
+    userdata: *mut c_void,
+    kind: u32,
+    pos_id: u32,
+    message: *const u8,
+    message_len: u64,
+);
+
+/// C calling convention shared by the module initializer (`ss_init`)
+/// and the required exported `main(): void` (`ss_export_main`).
+///
+/// A host that may clear traps brackets each call with
+/// `sub_rt_ctx_enter_script` and `sub_rt_ctx_exit_script`.
+///
+/// Every other currently supported host export is a zero-argument
+/// `void` script function using the symbol `ss_export_<name>` and this
+/// same C signature.
+pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Bytes between an allocation's base and its payload.
 pub const HEADER_SIZE: usize = 16;
@@ -204,6 +235,9 @@ pub struct Context {
     allocations: HashMap<usize, Allocation>,
     stdout: Vec<u8>,
     trap: Option<TrapRecord>,
+    trap_observer: Option<TrapObserver>,
+    trap_observer_userdata: *mut c_void,
+    trap_observer_active: bool,
     interned: HashMap<(usize, usize), usize>,
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
@@ -276,6 +310,9 @@ impl Context {
             allocations: HashMap::new(),
             stdout: Vec::new(),
             trap: None,
+            trap_observer: None,
+            trap_observer_userdata: std::ptr::null_mut(),
+            trap_observer_active: false,
             interned: HashMap::new(),
             shadow: Vec::new(),
             roots: Vec::new(),
@@ -421,7 +458,33 @@ impl Context {
     pub fn trap(&mut self, kind: TrapKind, message: impl Into<String>, pos_id: u32) {
         if self.trap.is_none() {
             self.trap = Some(TrapRecord::new(kind, message, pos_id));
+            // The observer sees both the stored record and the raised
+            // flag. The unconditional write below remains the central
+            // unwind-path rule for every call to `trap`.
+            self.trap_flag = 1;
+            if let Some(observer) = self.trap_observer {
+                let record = self.trap.as_ref().expect("trap was just stored");
+                let message = record.message.as_bytes();
+                let kind = record.kind as u32;
+                let pos_id = record.pos_id;
+                let message_ptr = if message.is_empty() {
+                    std::ptr::null()
+                } else {
+                    message.as_ptr()
+                };
+                let message_len = message.len() as u64;
+                let userdata = self.trap_observer_userdata;
+                // SAFETY: the host supplied the callback and userdata.
+                // No Context pointer is passed; the callback contract
+                // forbids obtaining and using one by other means while
+                // this exclusive borrow is live.
+                self.with_trap_observer_active(|| unsafe {
+                    observer(userdata, kind, pos_id, message_ptr, message_len);
+                });
+            }
         }
+        // Later faults on the unwind path do not replace the record or
+        // notify the observer, but they still re-raise the flag.
         self.trap_flag = 1;
     }
 
@@ -429,6 +492,47 @@ impl Context {
     #[must_use]
     pub fn trap_record(&self) -> Option<&TrapRecord> {
         self.trap.as_ref()
+    }
+
+    /// Installs a host observer for the first trap in each uncleared
+    /// run. Passing `None` clears the observer and its userdata.
+    pub fn set_trap_observer(
+        &mut self,
+        observer: Option<TrapObserver>,
+        userdata: *mut c_void,
+    ) {
+        self.trap_observer = observer;
+        self.trap_observer_userdata = if observer.is_some() {
+            userdata
+        } else {
+            std::ptr::null_mut()
+        };
+    }
+
+    /// Runs `call` while the observer-active guard is raised.
+    ///
+    /// The drop guard also restores the flag during a Rust unwind. The
+    /// public observer type is `extern "C"`, whose callbacks may not
+    /// unwind across the ABI boundary; this cleanup additionally covers
+    /// every unwind path Rust can construct before such a boundary.
+    fn with_trap_observer_active(&mut self, call: impl FnOnce()) {
+        struct ResetObserverActive<'a>(&'a mut bool);
+
+        impl Drop for ResetObserverActive<'_> {
+            fn drop(&mut self) {
+                *self.0 = false;
+            }
+        }
+
+        self.trap_observer_active = true;
+        let _reset = ResetObserverActive(&mut self.trap_observer_active);
+        call();
+    }
+
+    /// Whether trap clearing is legal at the current host boundary.
+    #[must_use]
+    pub(crate) fn can_clear_trap(&self) -> bool {
+        !self.trap_observer_active && self.script_depth == 0
     }
 
     /// Clears the trap record and lowers the trap flag, so the next
@@ -921,6 +1025,58 @@ impl Context {
             return n;
         }
         self.allocations.values().filter(|a| a.live).count()
+    }
+
+    /// Payload capacity in live allocations.
+    ///
+    /// The development tier reports exact requested payload sizes. The
+    /// ship tier reports size-class payload capacity for arena blocks and
+    /// exact payload size for large allocations.
+    #[must_use]
+    pub fn live_bytes(&self) -> usize {
+        if self.release_on_delete {
+            let mut bytes = self
+                .large
+                .values()
+                .fold(0usize, |sum, a| sum.saturating_add(a.payload_size));
+            for chunk in &self.chunks {
+                for bi in 0..chunk.bump {
+                    // SAFETY: `bi < bump`, so the state word lies inside
+                    // the Context-owned chunk.
+                    let state =
+                        unsafe { (chunk.base.add(bi * chunk.block_size) as *const u64).read() };
+                    if state == LIVE_STATE {
+                        bytes = bytes.saturating_add(chunk.block_size - HEADER_SIZE);
+                    }
+                }
+            }
+            return bytes;
+        }
+        self.allocations
+            .values()
+            .filter(|a| a.live)
+            .fold(0usize, |sum, a| sum.saturating_add(a.payload_size))
+    }
+
+    /// Bytes currently reserved from the system for Context allocations.
+    ///
+    /// Development-tier deleted allocations remain reserved until the
+    /// Context is dropped. Ship-tier chunks remain reserved, while a
+    /// deleted large allocation is returned to the system immediately.
+    #[must_use]
+    pub fn reserved_bytes(&self) -> usize {
+        if self.release_on_delete {
+            let chunk_bytes = self
+                .chunks
+                .iter()
+                .fold(0usize, |sum, c| sum.saturating_add(c.layout.size()));
+            return self.large.values().fold(chunk_bytes, |sum, a| {
+                sum.saturating_add(a.layout.size())
+            });
+        }
+        self.allocations
+            .values()
+            .fold(0usize, |sum, a| sum.saturating_add(a.layout.size()))
     }
 
     // ----- roots and collection -----
@@ -1532,6 +1688,32 @@ mod tests {
     }
 
     #[test]
+    fn observer_active_guard_blocks_clear_and_resets_on_rust_unwind() {
+        let mut ctx = Context::new();
+        ctx.trap(TrapKind::EmptyPop, "pending", 1);
+        ctx.trap_observer_active = true;
+        assert!(!ctx.can_clear_trap());
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: this is a host-boundary probe over a live Context. The
+        // test raises only the guard bit, without entering a callback and
+        // therefore without creating an aliasing violation.
+        assert_eq!(unsafe { crate::ffi::sub_rt_ctx_clear_trap(p) }, 0);
+        assert!(ctx.trapped(), "the refused clear changed trap state");
+        ctx.trap_observer_active = false;
+        assert!(ctx.can_clear_trap());
+
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            ctx.with_trap_observer_active(|| panic!("test observer unwind"));
+        }));
+        assert!(unwind.is_err());
+        assert!(
+            !ctx.trap_observer_active,
+            "the observer-active flag remained stuck after a Rust unwind"
+        );
+        assert!(ctx.can_clear_trap());
+    }
+
+    #[test]
     fn fn_table_and_globals_pointers_round_trip() {
         let mut ctx = Context::new();
         let table: [*const u8; 2] = [std::ptr::null(), std::ptr::null()];
@@ -1565,6 +1747,51 @@ mod tests {
                 assert_eq!(p.add(i).read(), 0);
             }
         }
+    }
+
+    #[test]
+    fn memory_accounting_walks_live_blocks_without_running_counters() {
+        let mut measured = Vec::new();
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let first = ctx.alloc(1, 1, 0);
+            let deleted = ctx.alloc(17, 1, 0);
+            let large = ctx.alloc(5000, 1, 0);
+            assert!(!first.is_null() && !deleted.is_null() && !large.is_null());
+            assert_eq!(ctx.live_count(), 3, "{tier}: N allocations");
+            let reserved_before = ctx.reserved_bytes();
+
+            ctx.delete(deleted as usize, 0);
+            assert_eq!(ctx.live_count(), 2, "{tier}: N-M allocations");
+            assert_eq!(
+                ctx.reserved_bytes(),
+                reserved_before,
+                "{tier}: deleting a size-class allocation must retain its storage"
+            );
+            measured.push((
+                tier,
+                ctx.live_count(),
+                ctx.live_bytes(),
+                ctx.reserved_bytes(),
+            ));
+        }
+
+        assert_eq!(measured[0], ("dev", 2, 5001, 5066));
+        assert_eq!(measured[1], ("ship", 2, 5016, 136_088));
+        assert_eq!(
+            measured[0].1, measured[1].1,
+            "live allocation count is tier-independent"
+        );
+        assert_ne!(
+            measured[0].2, measured[1].2,
+            "size-class payload capacity makes live bytes tier-dependent"
+        );
+        assert_ne!(
+            measured[0].3, measured[1].3,
+            "arena chunks make reserved bytes tier-dependent"
+        );
     }
 
     #[test]
@@ -2064,9 +2291,14 @@ mod tests {
         // Direct delete of a large allocation frees it too.
         let big3 = ctx.alloc(LARGEST_BLOCK + 100, 1, 0);
         assert_eq!(ctx.test_stats().large.load(SeqCst), 1);
+        let reserved_before_delete = ctx.reserved_bytes();
         ctx.delete(big3 as usize, 0);
         assert!(!ctx.is_live(big3 as usize));
         assert_eq!(ctx.test_stats().large.load(SeqCst), 0);
+        assert!(
+            ctx.reserved_bytes() < reserved_before_delete,
+            "a large delete returns its individual allocation to the system"
+        );
     }
 
     // The exact membership test (§8.1b): chunk range, block grid, bump

@@ -24,11 +24,12 @@ pub mod date;
 pub mod ffi;
 pub mod fmt;
 mod half;
+pub mod host_header;
 pub mod json;
 pub mod math;
 pub mod num;
 pub mod strops;
 pub mod trap;
 
-pub use context::Context;
+pub use context::{Context, ScriptMainEntry, TrapObserver};
 pub use trap::{TrapKind, TrapRecord};

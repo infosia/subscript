@@ -70,7 +70,10 @@ fn workload_params(id: &str) -> &'static str {
 /// The AOT timing entry: calls the exported workload `warmup+timed` times and
 /// times each call, printing `sample <i> <ns>` lines on stderr (shared with the
 /// P4 gate harness). Reused verbatim so the ship-tier span matches the gate.
-const AOT_BENCH_ENTRY_C: &str = include_str!("../../aot-entry.c");
+const AOT_BENCH_ENTRY_C: &str = concat!(
+    include_str!("../../../runtime/include/subscript_runtime.h"),
+    include_str!("../../aot-entry.c")
+);
 
 /// C baseline flags (`benchmarks.md` Subjects table).
 const BASELINE_CFLAGS: [&str; 3] = ["-O2", "-fwrapv", "-ffp-contract=off"];

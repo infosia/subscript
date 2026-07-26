@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1265,6 +1265,14 @@ as protection.)*
 1. **An observer-active flag on the Context**, set for the duration of
    the observer call. `clear_trap` refuses while it is set. This is
    trivially correct and addresses the actual hazard directly.
+
+   It is a **backstop, not a supported call**. Reaching
+   `sub_rt_ctx_clear_trap` from inside an observer already requires a
+   Context pointer, and §18.2a makes calling any `sub_rt_*` through
+   one from there undefined behaviour. The flag turns the most likely
+   such attempt into a defined refusal instead of a resumed run; it
+   does not make observer re-entry a defined API, and nothing else
+   about §18.2a's prohibition is relaxed.
 2. **`script_depth` maintained for real**, which needs the host
    enter/exit API of §18.1a. Until that exists the depth check is
    retained but is not load-bearing, and this section says so rather
@@ -1289,14 +1297,16 @@ one. A host that never clears may ignore them.
 
 ### 18.1b The host C header
 
-**There is none, and that is a gap.** The runtime's declarations are
-embedded ad hoc in `AOT_ENTRY_C` and the emitted-C preamble; nothing
-in this repository gives a host outside it a header to include. For a
-language whose fourth invariant is that host interop crosses a C ABI
-only, the absence of the artifact that expresses that ABI is a real
-hole, found 2026-07-26 while implementing §18.2.
+**`runtime/include/subscript_runtime.h`**, generated. *(Until
+2026-07-26 there was none: the runtime's declarations were embedded ad
+hoc in `AOT_ENTRY_C` and the emitted-C preamble, so a host outside this
+repository had nothing to include — in a language whose fourth
+invariant is that host interop crosses a C ABI only. Found while
+implementing §18.2 and closed in the same phase; the AOT entry, the
+emitted-C preamble and the benchmark entry all consume it now instead
+of repeating declarations.)*
 
-Required: a single generated header covering the `sub_rt_ctx_*`
+It is a single generated header covering the `sub_rt_ctx_*`
 surface (§18.1, §18.1a, §18.2, §18.2b, §18.2d) and the exported-entry
 convention, **generated from the Rust declarations rather than
 hand-written**, on the `bindgen` mirror's principle (§12.2) and
@@ -1368,15 +1378,28 @@ production host embedding the same build could not have.
 **`live_bytes` and `reserved_bytes` are tier-dependent, and that is
 not a defect.** The two tiers have different allocators — the ship
 tier (§8.1b) bump-allocates fixed-size blocks in size-class chunks and
-therefore rounds every payload up, while the dev tier allocates exact
-payloads. A host comparing byte figures across tiers will see them
+therefore rounds a payload up **when it fits a size class** — an
+allocation above `LARGEST_BLOCK` is an individual system allocation of
+its exact size — while the dev tier allocates exact payloads
+throughout. A host comparing byte figures across tiers will see them
 differ; only the **count** is comparable. Stating this is the point of
 the entry, because a host that assumed otherwise would chase a
 non-bug.
 
-**Cost.** `reserved_bytes` is O(chunks) and cheap. `live_allocations`
-and `live_bytes` walk live blocks on the ship tier and are **O(live
-blocks)** — they are diagnostics, not per-frame counters. The contract
+Measured on one program (3 allocations, 1 delete), reported as
+`(live_allocations, live_bytes, reserved_bytes)`:
+
+```
+dev  = (2, 8, 60)
+ship = (2, 32, 65536)
+```
+
+The count agrees; neither byte figure does.
+
+**Cost.** `reserved_bytes` is O(chunks + live large allocations) on the
+ship tier and walks the retained allocation records on the dev tier —
+cheap, but not O(1). `live_allocations` and `live_bytes` walk live
+blocks on the ship tier and are **O(live blocks)** — they are diagnostics, not per-frame counters. The contract
 deliberately does **not** add running counters maintained in
 `alloc`/`delete`: that would make the figures O(1) at the price of an
 invariant that must stay correct across delete, chunk reuse and

@@ -74,7 +74,10 @@ const ENTRY_GOLDEN: &[u8] = include_bytes!("../../../corpus/accept/a22-matrix-pr
 const BASELINE_C: &str = include_str!("../../a22-baseline.c");
 
 /// The timing entry program linked with the AOT object.
-const AOT_BENCH_ENTRY_C: &str = include_str!("../../aot-entry.c");
+const AOT_BENCH_ENTRY_C: &str = concat!(
+    include_str!("../../../runtime/include/subscript_runtime.h"),
+    include_str!("../../aot-entry.c")
+);
 
 /// Flags the C baseline is compiled with. `-O2` is the criterion's
 /// (§3); `-ffp-contract=off` matches the language's f32 arithmetic,
