@@ -1,6 +1,6 @@
 # Cross-language benchmarks — contract
 
-Status: Rev 1, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for). A cross-language performance comparison of the
+Status: Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
 subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
@@ -49,7 +49,7 @@ themselves and print `<checksum> <median_seconds>`.
 - A subject whose runtime is absent is reported as `-` (not zero), never
   silently skipped.
 
-## Workloads (9)
+## Workloads (10)
 
 *(Rev 1, 2026-07-26: was "Workloads (8) — sqrt-free numeric set".
 `Math` landed at P9, so the sqrt-free framing describes the original
@@ -73,6 +73,50 @@ machine), and each produces an exact
 | queen | count solutions to the N-queens problem | the solution count |
 | particles | value-struct kinematics: M particles, K fixed-`dt` steps, `pos += vel*dt` (no `sqrt`) | an integer quantization of the final state (e.g. sum of `pos` cast to `i32`) |
 | callbacks | array-callback pipeline over an `i32[]` of N elements seeded by the shared LCG, repeated K times: `map` → `filter` → `reduce`, **each callback taking the index** | the i32-wrapping accumulation of each round's `reduce` result |
+| collect | build a live object graph of **mixed, deliberately unaligned sizes** — strings dominating — drop part of it, then reclaim | an i32 checksum over the surviving graph |
+
+### `collect` — why it exists and what it is allowed to compare
+
+*(Added Rev 2, 2026-07-26, by the P21 Phase Review.)* P21 took the
+header word that held each classed block's exact payload size, so
+`collect`'s mark phase now traces the **whole size-class capacity**
+(`compiler.md` §21.2, `collisions.md` Q7). The cost is up to **3× the
+words traced** — worst at a request just past a size-class boundary,
+and `alloc_str` requests `8 + len`, so strings land there routinely.
+
+Tracing padding is not merely reading more: the mark phase **pushes
+every payload word onto a work list and looks each one up**, so the
+extra words become extra work-list traffic and extra conservative
+lookups, not just extra loads.
+
+**Nothing measures it.** No workload calls `collect()`; `tree`
+allocates and frees 131 071 nodes with `unsafeDelete`, exercising the
+**allocator, not the collector**; `perf-gate`'s `a22` has no heap graph
+at all. Correctness is well covered — three corpus entries call
+`collect`, and P21's review ran a 200 000-operation randomized stress —
+so this closes a **performance** gap only. It is the same shape as the
+gap P18's review found for array callbacks.
+
+**Sizes must be unaligned on purpose.** A workload built from
+8-byte-aligned allocations measures the one case where P21 changed
+nothing (ratio 1.0×). The point is the odd sizes.
+
+**Subjects that cannot force a collection are reported `-`, with the
+reason, and are not approximated.** C has no collector; its honest
+analogue is freeing the graph explicitly, and that is what it does.
+LuaJIT has `collectgarbage`. The JS runtimes need a flag to expose one
+and may not have it here. The existing rule that a subject's timings
+are withheld unless **every** subject's checksum matches applies to the
+subjects that **ran**; a `-` subject contributes no checksum. Say in
+the published row which subjects ran and which could not, because a
+four-subject row read as a six-subject row is a misreading this
+workload invites.
+
+**What the comparison means, and does not.** subscript's `collect` is
+explicit and conservative; the JS and Lua runtimes have generational or
+incremental collectors. This is not "which GC is faster" — it is what
+reclaiming one graph of N objects costs in each runtime's own idiom,
+which is the same framing the `callbacks` row carries.
 
 ### `callbacks` — why it exists and how to read it
 
