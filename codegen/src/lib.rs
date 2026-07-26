@@ -34,6 +34,7 @@ mod jit;
 mod layout;
 mod lower;
 mod reload;
+mod trap_sites;
 
 pub use aot::{
     emit_object, run_aot, run_c_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C, HOST_HEADER_C,

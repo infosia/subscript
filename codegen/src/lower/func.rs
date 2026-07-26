@@ -32,6 +32,7 @@ use subscript_runtime::TrapKind;
 
 use crate::layout::{has_managed_interior, is_managed, is_unsigned, managed_words, Repr};
 use crate::lower::{internal, FnKey, GlobalSlot, ModLower};
+use crate::trap_sites::{lower_trap_sites, TrapSiteConsumer};
 
 /// A computed value.
 #[derive(Debug, Clone, Copy)]
@@ -928,11 +929,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             K::Bool(v) => Ok(RV::S(self.iconst(types::I8, i64::from(*v)))),
             K::Str(s) => {
                 let sites = e.trap_sites(self.ml.hir);
-                let site = sites
-                    .first()
-                    .ok_or_else(|| internal("string literal has no HIR allocation site"))?;
-                let h = self.string_literal(s.as_bytes(), site)?;
-                Ok(RV::S(h))
+                lower_trap_sites(&sites, "string literal", |sites| {
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("string literal has no HIR allocation site"),
+                    )?;
+                    let h = self.string_literal(s.as_bytes(), site)?;
+                    Ok(RV::S(h))
+                })
             }
             K::Null => Ok(RV::S(self.iconst(types::I64, 0))),
             K::This => {
@@ -979,24 +983,34 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Binary { op, left, right } => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_binary(*op, left, right, &e.pos, &sites)
+                lower_trap_sites(&sites, "binary expression", |sites| {
+                    self.eval_binary(*op, left, right, &e.pos, sites)
+                })
             }
             K::Assign { op, target, value } => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_assign(*op, target, value, &e.pos, &sites)
+                lower_trap_sites(&sites, "assignment", |sites| {
+                    self.eval_assign(*op, target, value, &e.pos, sites)
+                })
             }
             K::Cast(inner) => {
                 let v = self.eval(inner)?;
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_cast(v, &inner.ty, &e.ty, &sites)
+                lower_trap_sites(&sites, "cast", |sites| {
+                    self.eval_cast(v, &inner.ty, &e.ty, sites)
+                })
             }
             K::Call { callee, args } => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_call(callee, args, &e.ty, &e.pos, &sites, None)
+                lower_trap_sites(&sites, "call", |sites| {
+                    self.eval_call(callee, args, &e.ty, &e.pos, sites, None)
+                })
             }
             K::New { class, args } => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_new(class.0, args, &e.pos, &sites, None)
+                lower_trap_sites(&sites, "new expression", |sites| {
+                    self.eval_new(class.0, args, &e.pos, sites, None)
+                })
             }
             K::Zero => Ok(match self.ml.layouts.repr(&e.ty)? {
                 Repr::None => RV::None,
@@ -1010,16 +1024,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }),
             K::RawNew { class } => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_raw_new(class.0, &sites)
+                lower_trap_sites(&sites, "RawNew", |sites| {
+                    self.eval_raw_new(class.0, sites)
+                })
             }
             K::Field { obj, name } => {
                 let sites = e.trap_sites(self.ml.hir);
-                let (addr, off, fty) = self.field_addr(obj, name, &sites)?;
-                self.load_val(&fty, addr, off)
+                lower_trap_sites(&sites, "field read", |sites| {
+                    let (addr, off, fty) = self.field_addr(obj, name, sites)?;
+                    self.load_val(&fty, addr, off)
+                })
             }
             K::JsonResultValue(obj) => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_json_result_value(obj, &sites)
+                lower_trap_sites(&sites, "JsonResult.value", |sites| {
+                    self.eval_json_result_value(obj, sites)
+                })
             }
             K::Length(obj) => {
                 let rv = self.eval(obj)?;
@@ -1044,16 +1064,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 ..
             } => {
                 let sites = e.trap_sites(self.ml.hir);
-                let (addr, elem_ty) = self.index_addr(obj, index, &sites)?;
-                self.load_val(&elem_ty, addr, 0)
+                lower_trap_sites(&sites, "index read", |sites| {
+                    let (addr, elem_ty) = self.index_addr(obj, index, sites)?;
+                    self.load_val(&elem_ty, addr, 0)
+                })
             }
             K::ArrayLit(elems) => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_array_lit(&e.ty, elems, &sites)
+                lower_trap_sites(&sites, "array literal", |sites| {
+                    self.eval_array_lit(&e.ty, elems, sites)
+                })
             }
             K::Template(parts) => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_template(parts, &sites)
+                lower_trap_sites(&sites, "template", |sites| {
+                    self.eval_template(parts, sites)
+                })
             }
             K::Lambda {
                 params,
@@ -1159,7 +1185,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         left: &hir::Expr,
         right: &hir::Expr,
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         use hir::BinOp as B;
         // Short-circuit boolean operators.
@@ -1199,9 +1225,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return match op {
                 B::Add => {
                     let site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::Allocation { .. }))
-                        .ok_or_else(|| internal("string addition has no HIR allocation site"))?;
+                        .take_required(
+                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                            internal("string addition has no HIR allocation site"),
+                        )?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
                     let res = self
@@ -1285,9 +1312,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     }
                 } else {
                     let site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::DivisionByZero { .. }))
-                        .ok_or_else(|| internal("integer div/rem has no HIR trap site"))?;
+                        .take_required(
+                            |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                            internal("integer div/rem has no HIR trap site"),
+                        )?;
                     return self
                         .int_divrem(op == B::Div, l, r, unsigned, site)
                         .map(RV::S);
@@ -1390,7 +1418,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         rv: RV,
         from: &Type,
         to: &Type,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         // Reference narrowing: object / object|null -> reference class.
         if let Type::Class(_) = to {
@@ -1398,7 +1426,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 || matches!(from, Type::Nullable(inner) if **inner == Type::Object)
             {
                 let ptr = self.expect_s(rv)?;
-                for site in sites {
+                while let Some(site) = sites.take(|_| true) {
                     self.emit_trap_site(site, TrapOperand::Value(ptr))?;
                 }
                 return Ok(RV::S(ptr));
@@ -1495,7 +1523,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         obj: &hir::Expr,
         name: &str,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<(Value, i32, Type), String> {
         match &obj.ty {
             Type::IterResult(v) => {
@@ -1536,9 +1564,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 } else {
                     let ptr = self.expect_s(rv)?;
                     let site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
-                        .ok_or_else(|| internal("reference field has no HIR lifetime site"))?;
+                        .take_required(
+                            |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
+                            internal("reference field has no HIR lifetime site"),
+                        )?;
                     self.emit_trap_site(site, TrapOperand::Value(ptr))?;
                     Ok((ptr, off, fty))
                 }
@@ -1553,7 +1582,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn eval_json_result_value(
         &mut self,
         obj: &hir::Expr,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         let Type::Class(cid) = &obj.ty else {
             return Err(internal("JsonResult value receiver is not a class"));
@@ -1592,17 +1621,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
         let rv = self.eval(obj)?;
         let ptr = self.expect_s(rv)?;
-        for site in sites {
-            if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
-                self.emit_trap_site(site, TrapOperand::Value(ptr))?;
-            }
+        while let Some(site) =
+            sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+        {
+            self.emit_trap_site(site, TrapOperand::Value(ptr))?;
         }
         let ok = self.load_val(&Type::Bool, ptr, ok_offset)?;
         let ok = self.expect_s(ok)?;
-        for site in sites {
-            if matches!(site, hir::TrapSite::JsonResultValue { .. }) {
-                self.emit_trap_site(site, TrapOperand::Condition(ok))?;
-            }
+        while let Some(site) =
+            sites.take(|site| matches!(site, hir::TrapSite::JsonResultValue { .. }))
+        {
+            self.emit_trap_site(site, TrapOperand::Condition(ok))?;
         }
         self.load_val(&value_ty, ptr, value_offset)
     }
@@ -1613,7 +1642,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         obj: &hir::Expr,
         index: &hir::Expr,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<(Value, Type), String> {
         match &obj.ty {
             Type::FixedArray(elem, n) => {
@@ -1622,9 +1651,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
                 // HIR already made the proof-based elision decision.
-                if let Some(site) = sites
-                    .iter()
-                    .find(|site| {
+                if let Some(site) =
+                    sites.take(|site| {
                         matches!(
                             site,
                             hir::TrapSite::IndexRead { .. }
@@ -1647,17 +1675,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::Array(elem) => {
                 let rv = self.eval(obj)?;
                 let h = self.expect_s(rv)?;
-                for site in sites {
-                    if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
-                        self.emit_trap_site(site, TrapOperand::Value(h))?;
-                    }
+                while let Some(site) =
+                    sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                {
+                    self.emit_trap_site(site, TrapOperand::Value(h))?;
                 }
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
                 let site = sites
-                    .iter()
-                    .find(|site| matches!(site, hir::TrapSite::IndexRead { .. }))
-                    .ok_or_else(|| internal("dynamic index has no HIR read site"))?;
+                    .take_required(
+                        |site| matches!(site, hir::TrapSite::IndexRead { .. }),
+                        internal("dynamic index has no HIR read site"),
+                    )?;
                 let addr = self.resolve_array_elem(h, idx, site)?;
                 Ok((addr, (**elem).clone()))
             }
@@ -1668,7 +1697,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn place(
         &mut self,
         e: &hir::Expr,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<(Place, Type), String> {
         use hir::ExprKind as K;
         match &e.kind {
@@ -1696,20 +1725,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     // has been evaluated (growth-safe).
                     let rv = self.eval(obj)?;
                     let handle = self.expect_s(rv)?;
-                    for site in sites {
-                        if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
-                            self.emit_trap_site(site, TrapOperand::Value(handle))?;
-                        }
+                    while let Some(site) =
+                        sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                    {
+                        self.emit_trap_site(site, TrapOperand::Value(handle))?;
                     }
                     let idx_rv = self.eval(index)?;
                     let idx = self.expect_s(idx_rv)?;
                     let read_site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::IndexRead { .. }))
+                        .take(|site| matches!(site, hir::TrapSite::IndexRead { .. }))
                         .cloned();
                     let write_site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::IndexWrite { .. }))
+                        .take(|site| matches!(site, hir::TrapSite::IndexWrite { .. }))
                         .cloned()
                         .ok_or_else(|| internal("array assignment has no HIR write site"))?;
                     return Ok((
@@ -1722,7 +1749,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         (**elem).clone(),
                     ));
                 }
-                let (addr, elem_ty) = self.index_addr(obj, index, &sites)?;
+                let (addr, elem_ty) = self.index_addr(obj, index, sites)?;
                 Ok((Place::Mem(addr, 0), elem_ty))
             }
             other => Err(internal(format!("assignment target {other:?}"))),
@@ -1735,7 +1762,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         target: &hir::Expr,
         value: &hir::Expr,
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         let (place, ty) = self.place(target, sites)?;
         match op {
@@ -1782,7 +1809,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         l: Value,
         r: Value,
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<Value, String> {
         use hir::BinOp as B;
         let float = ty.is_float();
@@ -1796,11 +1823,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             B::Add => {
                 if *ty == Type::Str {
                     let site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::Allocation { .. }))
-                        .ok_or_else(|| {
-                            internal("string compound assignment has no HIR allocation site")
-                        })?;
+                        .take_required(
+                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                            internal(
+                                "string compound assignment has no HIR allocation site",
+                            ),
+                        )?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
                     let res = self.call_rt(
@@ -1835,17 +1863,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     self.b.ins().fdiv(l, r)
                 } else {
                     let site = sites
-                        .iter()
-                        .find(|site| matches!(site, hir::TrapSite::DivisionByZero { .. }))
-                        .ok_or_else(|| internal("integer compound div has no HIR trap site"))?;
+                        .take_required(
+                            |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                            internal("integer compound div has no HIR trap site"),
+                        )?;
                     self.int_divrem(true, l, r, unsigned, site)?
                 }
             }
             B::Rem => {
                 let site = sites
-                    .iter()
-                    .find(|site| matches!(site, hir::TrapSite::DivisionByZero { .. }))
-                    .ok_or_else(|| internal("integer compound rem has no HIR trap site"))?;
+                    .take_required(
+                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                        internal("integer compound rem has no HIR trap site"),
+                    )?;
                 self.int_divrem(false, l, r, unsigned, site)?
             }
             B::BitAnd => self.b.ins().band(l, r),
@@ -1977,12 +2007,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
         dest: Option<Value>,
     ) -> Result<RV, String> {
         let checked = sites
-            .iter()
-            .any(|site| matches!(site, hir::TrapSite::Call { .. }));
+            .take(|site| matches!(site, hir::TrapSite::Call { .. }))
+            .is_some();
         match callee {
             hir::Callee::Func(name) => {
                 let f = self.ml.hir_fn(name)?;
@@ -3493,7 +3523,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         a: hir::AmbientFn,
         args: &[hir::Expr],
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
         checked: bool,
     ) -> Result<RV, String> {
         match a {
@@ -3520,9 +3550,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     false,
                 )?;
                 let site = sites
-                    .iter()
-                    .find(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
-                    .ok_or_else(|| internal("unsafeDelete has no HIR lifetime site"))?;
+                    .take_required(
+                        |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
+                        internal("unsafeDelete has no HIR lifetime site"),
+                    )?;
                 self.emit_trap_site(site, TrapOperand::Pending)?;
                 Ok(RV::None)
             }
@@ -3537,7 +3568,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         _ret_ty: &Type,
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
         dest: Option<Value>,
         checked: bool,
     ) -> Result<RV, String> {
@@ -3545,10 +3576,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::Array(elem) => {
                 let rv = self.eval(recv)?;
                 let h = self.expect_s(rv)?;
-                for site in sites {
-                    if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
-                        self.emit_trap_site(site, TrapOperand::Value(h))?;
-                    }
+                while let Some(site) =
+                    sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                {
+                    self.emit_trap_site(site, TrapOperand::Value(h))?;
                 }
                 match name {
                     "push" => {
@@ -3586,14 +3617,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 let rv = self.eval(recv)?;
                 let frame = self.expect_s(rv)?;
-                for site in sites {
-                    match site {
+                while let Some(site) = sites.take(|site| {
+                    matches!(
+                        site,
                         hir::TrapSite::DevOnlyLifetime { .. }
-                        | hir::TrapSite::DevReloadOnlyStaleCoroutine { .. } => {
-                            self.emit_trap_site(site, TrapOperand::Value(frame))?;
-                        }
-                        _ => {}
-                    }
+                            | hir::TrapSite::DevReloadOnlyStaleCoroutine { .. }
+                    )
+                }) {
+                    self.emit_trap_site(site, TrapOperand::Value(frame))?;
                 }
                 let step_ty = Type::IterResult(y.clone());
                 let (size, align) = self.ml.layouts.size_align(&step_ty)?;
@@ -3624,10 +3655,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let this = match rv {
                     RV::A(ptr) => ptr,
                     RV::S(ptr) => {
-                        for site in sites {
-                            if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
-                                self.emit_trap_site(site, TrapOperand::Value(ptr))?;
-                            }
+                        while let Some(site) = sites
+                            .take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                        {
+                            self.emit_trap_site(site, TrapOperand::Value(ptr))?;
                         }
                         ptr
                     }
@@ -3662,7 +3693,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         cid: usize,
         args: &[hir::Expr],
         pos: &Pos,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
         dest: Option<Value>,
     ) -> Result<RV, String> {
         let hirm = self.ml.hir;
@@ -3680,9 +3711,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             slot
         } else {
             let site = sites
-                .iter()
-                .find(|site| matches!(site, hir::TrapSite::Allocation { .. }))
-                .ok_or_else(|| internal("reference new has no HIR allocation site"))?;
+                .take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("reference new has no HIR allocation site"),
+                )?;
             let size = self.iconst(types::I64, i64::from(layout.size));
             let class_v = self.iconst(types::I32, i64::from(cid as u32));
             let pid = self.pos_id(pos);
@@ -3725,9 +3757,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
         if let Some(ctor) = &class.ctor {
             let site = sites
-                .iter()
-                .find(|site| matches!(site, hir::TrapSite::Call { .. }))
-                .ok_or_else(|| internal("constructor call has no HIR call site"))?;
+                .take_required(
+                    |site| matches!(site, hir::TrapSite::Call { .. }),
+                    internal("constructor call has no HIR call site"),
+                )?;
             let mut argv = vec![self.ctx_v, this];
             self.push_args(&mut argv, &ctor.params, args)?;
             self.call_script(&FnKey::Ctor(cid), &argv, false)?;
@@ -3746,11 +3779,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn eval_raw_new(
         &mut self,
         cid: usize,
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         let site = sites
-            .first()
-            .ok_or_else(|| internal("RawNew has no HIR allocation site"))?;
+            .take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                internal("RawNew has no HIR allocation site"),
+            )?;
         let hir::TrapSite::Allocation { pos } = site else {
             return Err(internal("RawNew has a non-allocation HIR site"));
         };
@@ -3777,14 +3812,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         ty: &Type,
         elems: &[hir::Expr],
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         match ty {
             Type::Array(elem) => {
-                let mut sites = sites.iter();
                 let site = sites
-                    .next()
-                    .ok_or_else(|| internal("array literal has no HIR allocation site"))?;
+                    .take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("array literal has no HIR allocation site"),
+                    )?;
                 let hir::TrapSite::Allocation { pos } = site else {
                     return Err(internal("array literal has a non-allocation HIR site"));
                 };
@@ -3800,9 +3836,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.emit_trap_site(site, TrapOperand::Pending)?;
                 let h = res.ok_or_else(|| internal("array_new result"))?;
                 for e in elems {
-                    let site = sites.next().ok_or_else(|| {
-                        internal("array literal element has no HIR allocation site")
-                    })?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("array literal element has no HIR allocation site"),
+                    )?;
                     let hir::TrapSite::Allocation { pos } = site else {
                         return Err(internal(
                             "array literal element has a non-allocation HIR site",
@@ -3818,9 +3855,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         false,
                     )?;
                     self.emit_trap_site(site, TrapOperand::Pending)?;
-                }
-                if sites.next().is_some() {
-                    return Err(internal("array literal has unused HIR trap sites"));
                 }
                 Ok(RV::S(h))
             }
@@ -3873,29 +3907,33 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         match &e.kind {
             K::New { class, args } => {
                 let sites = e.trap_sites(self.ml.hir);
-                self.eval_new(class.0, args, &e.pos, &sites, Some(dest))?;
-                Ok(())
+                lower_trap_sites(&sites, "new expression", |sites| {
+                    self.eval_new(class.0, args, &e.pos, sites, Some(dest))?;
+                    Ok(())
+                })
             }
             K::Call { callee, args } => {
                 let sites = e.trap_sites(self.ml.hir);
-                let rv =
-                    self.eval_call(callee, args, &e.ty, &e.pos, &sites, Some(dest))?;
-                match rv {
-                    RV::A(addr) => {
-                        // Calls that take an `sret` wrote straight into
-                        // `dest` (address identical). Built-in methods
-                        // that do not — generator `.next()`, array
-                        // `.pop()` — return their own slot, so copy from
-                        // it, preserving the value.
-                        if addr != dest {
-                            let (size, align) = self.ml.layouts.size_align(ty)?;
-                            self.copy_bytes(dest, addr, size, align);
+                lower_trap_sites(&sites, "call", |sites| {
+                    let rv =
+                        self.eval_call(callee, args, &e.ty, &e.pos, sites, Some(dest))?;
+                    match rv {
+                        RV::A(addr) => {
+                            // Calls that take an `sret` wrote straight into
+                            // `dest` (address identical). Built-in methods
+                            // that do not — generator `.next()`, array
+                            // `.pop()` — return their own slot, so copy from
+                            // it, preserving the value.
+                            if addr != dest {
+                                let (size, align) = self.ml.layouts.size_align(ty)?;
+                                self.copy_bytes(dest, addr, size, align);
+                            }
+                            Ok(())
                         }
-                        Ok(())
+                        RV::None => Ok(()),
+                        other => Err(internal(format!("aggregate call yielded {other:?}"))),
                     }
-                    RV::None => Ok(()),
-                    other => Err(internal(format!("aggregate call yielded {other:?}"))),
-                }
+                })
             }
             K::ArrayLit(elems) if matches!(ty, Type::FixedArray(..)) => {
                 self.array_lit_into(ty, elems, dest)
@@ -3913,16 +3951,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn eval_template(
         &mut self,
         parts: &[hir::TplPart],
-        sites: &[hir::TrapSite],
+        sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
-        let mut sites = sites.iter();
         let mut acc: Option<Value> = None;
         for part in parts {
             let h = match part {
                 hir::TplPart::Text(t) => {
-                    let site = sites.next().ok_or_else(|| {
-                        internal("template text has no HIR allocation site")
-                    })?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("template text has no HIR allocation site"),
+                    )?;
                     self.string_literal(t.as_bytes(), site)?
                 }
                 hir::TplPart::Expr(e) => {
@@ -3930,9 +3968,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let site = if e.ty == Type::Str {
                         None
                     } else {
-                        Some(sites.next().ok_or_else(|| {
-                            internal("template formatting has no HIR allocation site")
-                        })?)
+                        Some(sites.take_required(
+                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                            internal("template formatting has no HIR allocation site"),
+                        )?)
                     };
                     self.format_value(rv, &e.ty, site)?
                 }
@@ -3941,9 +3980,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             acc = Some(match acc {
                 None => h,
                 Some(prev) => {
-                    let site = sites.next().ok_or_else(|| {
-                        internal("template concat has no HIR allocation site")
-                    })?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("template concat has no HIR allocation site"),
+                    )?;
                     let hir::TrapSite::Allocation { pos } = site else {
                         return Err(internal("template concat has a non-allocation HIR site"));
                     };
@@ -3962,15 +4002,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let result = match acc {
             Some(h) => h,
             None => {
-                let site = sites.next().ok_or_else(|| {
-                    internal("empty template has no HIR allocation site")
-                })?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("empty template has no HIR allocation site"),
+                )?;
                 self.string_literal(b"", site)?
             }
         };
-        if sites.next().is_some() {
-            return Err(internal("template has unused HIR trap sites"));
-        }
         Ok(RV::S(result))
     }
 
@@ -5061,21 +5099,24 @@ pub(crate) fn define_generator<M: Module>(
             let size_v = body.iconst(types::I64, i64::from(frame_size));
             let class_v = body.iconst(types::I32, i64::from(rtc::CLASS_GENERATOR));
             let sites = f.trap_sites();
-            let site = sites
-                .first()
-                .ok_or_else(|| internal("generator has no HIR allocation site"))?;
-            let hir::TrapSite::Allocation { pos } = site else {
-                return Err(internal("generator has a non-allocation HIR site"));
-            };
-            let pid = body.pos_id(pos);
-            let pos_v = body.iconst(types::I32, pid);
-            let res = body.call_rt(
-                body.ml.rt.alloc,
-                &[body.ctx_v, size_v, class_v, pos_v],
-                false,
-            )?;
-            body.emit_trap_site(site, TrapOperand::Pending)?;
-            let frame = res.ok_or_else(|| internal("frame alloc result"))?;
+            let frame = lower_trap_sites(&sites, "generator frame creation", |sites| {
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("generator has no HIR allocation site"),
+                )?;
+                let hir::TrapSite::Allocation { pos } = site else {
+                    return Err(internal("generator has a non-allocation HIR site"));
+                };
+                let pid = body.pos_id(pos);
+                let pos_v = body.iconst(types::I32, pid);
+                let res = body.call_rt(
+                    body.ml.rt.alloc,
+                    &[body.ctx_v, size_v, class_v, pos_v],
+                    false,
+                )?;
+                body.emit_trap_site(site, TrapOperand::Pending)?;
+                res.ok_or_else(|| internal("frame alloc result"))
+            })?;
             // state = 0 (fresh allocation is zeroed); resume pointer:
             let rref = body.ml.module.declare_func_in_func(resume_id, body.b.func);
             let raddr = body.b.ins().func_addr(types::I64, rref);

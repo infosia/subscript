@@ -74,6 +74,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t25-allocation-sites-before-second-template-fault" => {
             (TrapKind::DivisionByZero, 21)
         }
+        "t27-dynamic-value-field-write-oob" => (TrapKind::IndexOutOfBounds, 25),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -470,8 +471,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
         ids.len(),
-        25,
-        "expected exactly 25 trap entries (t01–t07 existing + t08–t25 P20 Red), found {}",
+        27,
+        "expected exactly 27 trap entries (t01–t25 runnable coverage + t26 allocation \
+         policy + t27 dynamic value-field write), found {}",
         ids.len()
     );
 
@@ -480,7 +482,10 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         // A stale coroutine exists only after two runs and a hot reload.
         // `reload.rs` drives this paired corpus source through that
         // dev-tier-only mode; a shipped C binary has no body-swap mode.
-        if id == "t24-stale-coroutine-reload" {
+        if matches!(
+            id.as_str(),
+            "t24-stale-coroutine-reload" | "t26-allocation-failure-policy"
+        ) {
             continue;
         }
         let files = trap_corpus::trap_sources(&trap, &id);
@@ -553,7 +558,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
 }
 
 #[test]
-fn p20_red_accept_entries_reach_both_generators() {
+fn p20_review_accept_entries_reach_both_generators() {
     let accept =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
     let mut failures = Vec::new();
@@ -562,6 +567,10 @@ fn p20_red_accept_entries_reach_both_generators() {
         (
             "a75-p20-array-compound-expression",
             b"17,17\n".as_slice(),
+        ),
+        (
+            "a76-p20-dynamic-value-field-write",
+            b"14,1\n".as_slice(),
         ),
     ] {
         let path = accept.join(format!("{id}.ts"));
