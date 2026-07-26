@@ -1782,6 +1782,19 @@ the claim was broader than the mechanism. The distinction matters:
 handle is a build error. If the design ends up leaning on a test to
 notice an omission, the phase has not met its exit criterion.
 
+**Scope of the guarantee, measured by the Phase Review** (2026-07-26):
+it covers a new **variant**, and initially did not cover a new **site
+of an existing variant**. Both lowerings select with
+`sites.iter().find(|site| matches!(site, TrapSite::X { .. }))`, so an
+extra site appended to some operation's sequence compiled in both
+tiers and was **silently dropped** by whichever one did not look for
+it — leaving §20.5's criterion 2 held by the differential gate rather
+than by construction, which is the distinction this section exists to
+buy. Only `eval_array_lit` and `eval_template` asserted full
+consumption. Closing that is part of the phase; the guarantee is not
+"exhaustive match" but **"every derived site is consumed"**, and the
+first is only half of the second.
+
 ### 20.2 What a trap site has to carry
 
 A boolean cannot express these; each was found in the P19 work.
