@@ -311,14 +311,16 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
     }
 
     if ck.diags.is_empty() {
-        Ok(hir::Module {
+        let mut module = hir::Module {
             classes: ck.classes,
             enums: ck.enums,
             globals: ck.globals,
             functions: ck.functions,
             foreign_fns: ck.foreign_defs,
             top_level: ck.top_level,
-        })
+        };
+        crate::trap_sites::decide_index_checks(&mut module);
+        Ok(module)
     } else {
         Err(ck.diags)
     }

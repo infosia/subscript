@@ -17,6 +17,7 @@ pub mod api_reference;
 mod ambient;
 mod check;
 mod parse;
+mod trap_sites;
 
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use types::{ClassId, EnumId, FuncType, Type};

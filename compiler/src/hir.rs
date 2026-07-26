@@ -137,6 +137,24 @@ pub struct Function {
     pub pos: Pos,
 }
 
+impl Function {
+    /// Fault points owned by entering this function rather than by one of
+    /// its body expressions.
+    ///
+    /// Generator invocation allocates its suspended frame in the generated
+    /// creator function. Ordinary functions have no function-level site.
+    #[must_use]
+    pub fn trap_sites(&self) -> Vec<TrapSite> {
+        if self.is_generator {
+            vec![TrapSite::Allocation {
+                pos: self.pos.clone(),
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
 /// One function parameter.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -250,6 +268,98 @@ pub struct Expr {
     pub ty: Type,
     /// Position of the expression.
     pub pos: Pos,
+}
+
+/// One fault point carried by typed HIR.
+///
+/// The variants describe the guard and its operand roles; a lowering
+/// combines a site with values it has already materialized. In particular,
+/// a lowering must never satisfy a site's operands by re-emitting an HIR
+/// expression. This enum deliberately is exhaustive across crates: adding a
+/// variant must make both lowering matches fail to compile until they state
+/// how the new site is handled.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrapSite {
+    /// A runtime allocation whose failure leaves the Context trapped.
+    Allocation {
+        /// Position passed to the allocating runtime operation.
+        pos: Pos,
+    },
+    /// Unwind after a call that can leave the Context trapped.
+    Call {
+        /// Position of the call.
+        pos: Pos,
+    },
+    /// The materialized integer divisor must be nonzero.
+    DivisionByZero {
+        /// Position of the division or remainder.
+        pos: Pos,
+    },
+    /// Bounds-checked read through a materialized array handle/base and
+    /// index.
+    IndexRead {
+        /// Position of the index expression.
+        pos: Pos,
+    },
+    /// Bounds-checked write through a materialized array handle/base and
+    /// index.
+    IndexWrite {
+        /// Position of the assignment target.
+        pos: Pos,
+    },
+    /// `JsonResult.value` requires the materialized sibling `ok` value.
+    JsonResultValue {
+        /// Position of the `.value` read.
+        pos: Pos,
+    },
+    /// Reference narrowing requires a non-null materialized pointer.
+    NullNarrowing {
+        /// Position of the `as` expression.
+        pos: Pos,
+    },
+    /// Reference narrowing requires the materialized allocation's class id
+    /// to match `class`.
+    ClassMismatch {
+        /// Required reference class.
+        class: ClassId,
+        /// Position of the `as` expression.
+        pos: Pos,
+    },
+    /// Q6's dev-tier-only allocation-lifetime validation.
+    ///
+    /// The releasing C tier intentionally has no corresponding check
+    /// (`compiler.md` §8.1b), but it must still match this explicit site.
+    DevOnlyLifetime {
+        /// Position of the access or delete.
+        pos: Pos,
+    },
+    /// Reload-mode-only coroutine epoch validation.
+    ///
+    /// A shipped C body cannot become stale because it has no body-swap
+    /// mode; both lowerings still match the site explicitly.
+    DevReloadOnlyStaleCoroutine {
+        /// Position of the generator `.next()` call.
+        pos: Pos,
+    },
+}
+
+impl TrapSite {
+    /// Source position owned by this individual guard/check point.
+    #[must_use]
+    pub fn pos(&self) -> &Pos {
+        match self {
+            TrapSite::Allocation { pos }
+            | TrapSite::Call { pos }
+            | TrapSite::DivisionByZero { pos }
+            | TrapSite::IndexRead { pos }
+            | TrapSite::IndexWrite { pos }
+            | TrapSite::JsonResultValue { pos }
+            | TrapSite::NullNarrowing { pos }
+            | TrapSite::ClassMismatch { pos, .. }
+            | TrapSite::DevOnlyLifetime { pos }
+            | TrapSite::DevReloadOnlyStaleCoroutine { pos } => pos,
+        }
+    }
 }
 
 /// Unary operators.
@@ -2204,14 +2314,11 @@ pub enum Callee {
 }
 
 impl Callee {
-    /// Whether invoking this callee can leave the Context trapped.
+    /// Whether this callee contributes a `TrapSite::Call`.
     ///
-    /// This is the shared dev/ship-tier check policy. Family variants
-    /// delegate to the same operation predicates that describe their
-    /// runtime calls, so adding a new trap-capable operation requires one
-    /// predicate update and both lowering tiers acquire the check.
-    #[must_use]
-    pub fn can_trap(&self) -> bool {
+    /// Kept private so `Expr::trap_sites` is the only backend-visible
+    /// answer to which checks an operation carries.
+    fn has_call_site(&self) -> bool {
         match self {
             Callee::Func(_) | Callee::Value(_) | Callee::Method { .. } | Callee::Foreign(_) => {
                 true
@@ -2340,6 +2447,11 @@ pub enum ExprKind {
         obj: Box<Expr>,
         /// Index expression (`i32`).
         index: Box<Expr>,
+        /// Whether HIR's shared interval pass retained the bounds check.
+        ///
+        /// Dynamic arrays always retain it. A `FixedArray` access may set
+        /// this false only when the index is proven in range.
+        checked: bool,
     },
     /// Array literal; the expression type says whether it constructs a
     /// dynamic array or a `FixedArray` (Q3).
@@ -2370,6 +2482,231 @@ pub enum ExprKind {
         /// Value when false.
         els: Box<Expr>,
     },
+}
+
+impl Expr {
+    /// The ordered trap sites owned directly by this operation.
+    ///
+    /// Sites in child expressions are carried by those children and occur
+    /// where normal evaluation reaches them. This method is the single HIR
+    /// policy used by both lowering tiers; neither backend decides whether
+    /// a call, literal, cast, or index operation is checked.
+    #[must_use]
+    pub fn trap_sites(&self, module: &Module) -> Vec<TrapSite> {
+        use BinOp as B;
+        use ExprKind as K;
+
+        let allocation = |pos: &Pos| TrapSite::Allocation { pos: pos.clone() };
+        let call = |pos: &Pos| TrapSite::Call { pos: pos.clone() };
+        let lifetime = |pos: &Pos| TrapSite::DevOnlyLifetime { pos: pos.clone() };
+        let class_is_reference = |id: ClassId| {
+            module
+                .classes
+                .get(id.0)
+                .is_some_and(|class| !class.is_value)
+        };
+        let reference_value = |ty: &Type| match ty {
+            Type::Class(id) => class_is_reference(*id),
+            Type::Array(_)
+            | Type::Map(..)
+            | Type::Set(_)
+            | Type::Generator(_)
+            | Type::Object => true,
+            Type::Nullable(inner) => {
+                matches!(
+                    &**inner,
+                    Type::Object
+                        | Type::Array(_)
+                        | Type::Map(..)
+                        | Type::Set(_)
+                        | Type::Generator(_)
+                ) || matches!(&**inner, Type::Class(id) if class_is_reference(*id))
+            }
+            _ => false,
+        };
+        let index_site = |target: &Expr, write: bool| {
+            let K::Index { checked, .. } = &target.kind else {
+                return None;
+            };
+            if !*checked {
+                return None;
+            }
+            Some(if write {
+                TrapSite::IndexWrite {
+                    pos: target.pos.clone(),
+                }
+            } else {
+                TrapSite::IndexRead {
+                    pos: target.pos.clone(),
+                }
+            })
+        };
+
+        match &self.kind {
+            K::Str(_) => vec![allocation(&self.pos)],
+            K::Binary { op, left, .. } if *op == B::Add && left.ty == Type::Str => {
+                vec![allocation(&self.pos)]
+            }
+            K::Binary { op, left, .. }
+                if matches!(op, B::Div | B::Rem) && left.ty.is_integer() =>
+            {
+                vec![TrapSite::DivisionByZero {
+                    pos: self.pos.clone(),
+                }]
+            }
+            K::Assign { op, target, .. } => {
+                let mut sites = Vec::new();
+                if let K::Field { obj, .. } = &target.kind {
+                    if reference_value(&obj.ty) {
+                        sites.push(lifetime(&obj.pos));
+                    }
+                }
+                if let K::Index { obj, .. } = &target.kind {
+                    if matches!(obj.ty, Type::Array(_)) {
+                        sites.push(lifetime(&obj.pos));
+                    }
+                    if matches!((&obj.ty, op), (Type::Array(_), Some(_)))
+                        || matches!((&obj.ty, op), (Type::FixedArray(..), Some(_)))
+                    {
+                        if let Some(site) = index_site(target, false) {
+                            sites.push(site);
+                        }
+                    }
+                }
+                if matches!(op, Some(B::Add)) && target.ty == Type::Str {
+                    sites.push(allocation(&target.pos));
+                } else if matches!(op, Some(B::Div | B::Rem)) && target.ty.is_integer() {
+                    sites.push(TrapSite::DivisionByZero {
+                        pos: target.pos.clone(),
+                    });
+                }
+                if let K::Index { obj, .. } = &target.kind {
+                    if matches!(obj.ty, Type::Array(_)) || op.is_none() {
+                        if let Some(site) = index_site(target, true) {
+                            sites.push(site);
+                        }
+                    }
+                }
+                sites
+            }
+            K::Cast(inner)
+                if matches!(self.ty, Type::Class(_))
+                    && (matches!(inner.ty, Type::Object)
+                        || matches!(&inner.ty, Type::Nullable(ty) if **ty == Type::Object)) =>
+            {
+                let Type::Class(class) = self.ty else {
+                    unreachable!()
+                };
+                vec![
+                    TrapSite::NullNarrowing {
+                        pos: self.pos.clone(),
+                    },
+                    lifetime(&self.pos),
+                    TrapSite::ClassMismatch {
+                        class,
+                        pos: self.pos.clone(),
+                    },
+                ]
+            }
+            K::Call { callee, .. } => {
+                let mut sites = Vec::new();
+                if matches!(callee, Callee::Ambient(AmbientFn::UnsafeDelete)) {
+                    sites.push(lifetime(&self.pos));
+                    return sites;
+                }
+                if let Callee::Method { recv, name } = callee {
+                    if reference_value(&recv.ty) {
+                        sites.push(lifetime(&recv.pos));
+                    }
+                    if name == "next" && matches!(recv.ty, Type::Generator(_)) {
+                        sites.push(TrapSite::DevReloadOnlyStaleCoroutine {
+                            pos: self.pos.clone(),
+                        });
+                    }
+                }
+                if callee.has_call_site() {
+                    sites.push(call(&self.pos));
+                }
+                sites
+            }
+            K::New { class, .. } => {
+                let Some(def) = module.classes.get(class.0) else {
+                    return Vec::new();
+                };
+                let mut sites = Vec::new();
+                if !def.is_value {
+                    sites.push(allocation(&self.pos));
+                }
+                if def.ctor.is_some() {
+                    sites.push(call(&self.pos));
+                }
+                sites
+            }
+            K::RawNew { .. } => vec![allocation(&self.pos)],
+            K::Field { obj, .. } if reference_value(&obj.ty) => vec![lifetime(&obj.pos)],
+            K::JsonResultValue(obj) => vec![
+                lifetime(&obj.pos),
+                TrapSite::JsonResultValue {
+                    pos: self.pos.clone(),
+                },
+            ],
+            K::Index { obj, checked, .. } if *checked => {
+                let mut sites = Vec::new();
+                if matches!(obj.ty, Type::Array(_)) {
+                    sites.push(lifetime(&obj.pos));
+                }
+                sites.push(TrapSite::IndexRead {
+                    pos: self.pos.clone(),
+                });
+                sites
+            }
+            K::ArrayLit(elems) if matches!(self.ty, Type::Array(_)) => {
+                let mut sites = Vec::with_capacity(elems.len() + 1);
+                sites.push(allocation(&self.pos));
+                sites.extend(elems.iter().map(|elem| allocation(&elem.pos)));
+                sites
+            }
+            K::Template(parts) => {
+                if parts.is_empty() {
+                    return vec![allocation(&self.pos)];
+                }
+                let mut sites = Vec::new();
+                for (index, part) in parts.iter().enumerate() {
+                    match part {
+                        TplPart::Text(_) => sites.push(allocation(&self.pos)),
+                        TplPart::Expr(expr) if expr.ty != Type::Str => {
+                            sites.push(allocation(&expr.pos));
+                        }
+                        TplPart::Expr(_) => {}
+                    }
+                    if index != 0 {
+                        sites.push(allocation(&self.pos));
+                    }
+                }
+                sites
+            }
+            K::Int(_)
+            | K::Float(_)
+            | K::Bool(_)
+            | K::Null
+            | K::This
+            | K::Local(_)
+            | K::Global(_)
+            | K::FuncRef(_)
+            | K::EnumMember { .. }
+            | K::Zero
+            | K::Unary { .. }
+            | K::Binary { .. }
+            | K::Cast(_)
+            | K::Field { .. }
+            | K::Length(_)
+            | K::Index { .. }
+            | K::ArrayLit(_)
+            | K::Lambda { .. }
+            | K::Yield(_)
+            | K::Cond { .. } => Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2461,24 +2798,24 @@ mod tests {
 
     #[test]
     fn callee_trap_policy_delegates_to_operation_predicates() {
-        assert!(!Callee::Ambient(AmbientFn::Print).can_trap());
-        assert!(Callee::Ambient(AmbientFn::UnsafeDelete).can_trap());
-        assert!(!Callee::Math(MathFn::Abs).can_trap());
-        assert!(Callee::Num(NumFn::ParseInt).can_trap());
-        assert!(!Callee::Num(NumFn::IsFinite).can_trap());
-        assert!(Callee::Date(DateFn::New).can_trap());
-        assert!(!Callee::Date(DateFn::Now).can_trap());
-        assert!(Callee::Json(JsonFn::Finish).can_trap());
-        assert!(Callee::Str(StrFn::CharCodeAt).can_trap());
-        assert!(!Callee::Str(StrFn::Includes).can_trap());
-        assert!(Callee::Arr(ArrFn::ForEach).can_trap());
-        assert!(!Callee::Arr(ArrFn::Reverse).can_trap());
-        assert!(Callee::Map(MapFn::Set).can_trap());
-        assert!(!Callee::Map(MapFn::Get).can_trap());
-        assert!(Callee::Set(SetFn::Union).can_trap());
-        assert!(!Callee::Set(SetFn::Has).can_trap());
-        assert!(Callee::Func("script".to_string()).can_trap());
-        assert!(Callee::Foreign("host".to_string()).can_trap());
+        assert!(!Callee::Ambient(AmbientFn::Print).has_call_site());
+        assert!(Callee::Ambient(AmbientFn::UnsafeDelete).has_call_site());
+        assert!(!Callee::Math(MathFn::Abs).has_call_site());
+        assert!(Callee::Num(NumFn::ParseInt).has_call_site());
+        assert!(!Callee::Num(NumFn::IsFinite).has_call_site());
+        assert!(Callee::Date(DateFn::New).has_call_site());
+        assert!(!Callee::Date(DateFn::Now).has_call_site());
+        assert!(Callee::Json(JsonFn::Finish).has_call_site());
+        assert!(Callee::Str(StrFn::CharCodeAt).has_call_site());
+        assert!(!Callee::Str(StrFn::Includes).has_call_site());
+        assert!(Callee::Arr(ArrFn::ForEach).has_call_site());
+        assert!(!Callee::Arr(ArrFn::Reverse).has_call_site());
+        assert!(Callee::Map(MapFn::Set).has_call_site());
+        assert!(!Callee::Map(MapFn::Get).has_call_site());
+        assert!(Callee::Set(SetFn::Union).has_call_site());
+        assert!(!Callee::Set(SetFn::Has).has_call_site());
+        assert!(Callee::Func("script".to_string()).has_call_site());
+        assert!(Callee::Foreign("host".to_string()).has_call_site());
     }
 
     #[test]

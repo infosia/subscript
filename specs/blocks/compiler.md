@@ -1791,11 +1791,13 @@ A boolean cannot express these; each was found in the P19 work.
   tiers resolved different sites and therefore reported different
   positions.
 - **Elision.** §10a lets a proven-in-range index skip its check. The
-  set of sites must therefore be **decided once, in HIR**, so both
-  tiers inherit the same decision. Today each lowering re-derives what
-  to check, which is the root of the duplication. **This is the
-  substantive part of the phase**: after it, the checks a program
-  carries are a property of the HIR rather than of either backend.
+  set of sites is therefore **decided once, in HIR**
+  (`compiler/src/trap_sites.rs`), so both tiers inherit the same
+  decision — including §10a's elision of a proven-in-range index, which
+  each lowering used to re-derive. That re-derivation was the root of
+  the duplication. **This was the substantive part of the phase**: the
+  checks a program carries are now a property of the HIR rather than of
+  either backend.
 - **Multiplicity.** A compound assignment to an array element needs
   **two** resolutions — check-and-read before the RHS, check-and-write
   after — and P19's CRITICAL 2 was exactly one of them being dropped.
@@ -1817,7 +1819,7 @@ literal, `str_concat`, `fmt_*`, array literal.
 *(Corrected 2026-07-26 by the Red stage, which measured rather than
 assumed.)* Four of those descriptions were wrong:
 
-- **Narrowing `as` is not "in two places" — the C emitter has no guard
+- **Narrowing `as` was not "in two places" — the C emitter had no guard
   at all**, only a plain cast (`cemit.rs`, `eval_cast`), whose comment
   claims the path "is not exercised by the run set". C3 says `x as C`
   "traps on `null` or on class mismatch, **in both tiers**". It does
@@ -1851,8 +1853,9 @@ must give a template the same site sequence on both tiers.
 runtime fault this section did not name and which no valid program can
 construct today. Recorded so the omission is deliberate.
 
-`Callee::can_trap()` is already shared; fold it into the same
-mechanism so there is one answer to "what can trap here", not two.
+`Callee::can_trap()` was already shared; it is **folded into
+`Expr::trap_sites()`**, so there is one answer to "what can fault
+here", not two.
 
 Where a site is **deliberately** checked on one tier only, that must be
 representable and stated rather than implicit — Q6's use-after-delete
@@ -1903,3 +1906,36 @@ Exit criteria:
    of division and indexing again — the paths P19 measured at 82
    instructions against 39. Emitted-C's ratio is reported against
    P19's 1.53×; a regression is a finding, not a cost to absorb.
+
+### 20.6 What landed
+
+**Green, 561 tests, 0 failures.** No pre-existing accept `.expected`
+moved; the only additions are `a74` and `a75`, which §20.5 named as the
+one permitted reason.
+
+**The criterion that could not be waived is met, and was demonstrated
+rather than asserted.** A throwaway `TrapSite::CompileProbe` variant
+was added, handled in HIR and in the JIT, and deliberately left out of
+the C emitter. The build failed:
+
+```
+error[E0004]: non-exhaustive patterns:
+  `&subscript_compiler::hir::TrapSite::CompileProbe { .. }` not covered
+  --> codegen/src/cemit.rs:927:15
+```
+
+Neither lowering's `match site` carries a catch-all arm, so this is
+construction and not a test that has to be remembered.
+
+`compiler/src/trap_sites.rs` derives the ordered site sequence in HIR,
+elision included. The C tier now traps on both narrowing faults,
+closing the type-safety hole the Red stage found. Template allocation
+sequences match across tiers, and `a74`/`a75` — the two pre-existing
+defects §20.4 pulled in — are fixed with JIT-derived goldens.
+
+**Emitted-C measured 1.53×, unchanged from P19: no regression.** The
+`perf-gate` command still exits non-zero because the Cranelift
+ship-AOT and dev-JIT thresholds remain missed, which is the
+pre-existing §11 situation that motivated C emission and not a P20
+finding. Recorded because a non-zero exit that is *expected* should be
+written down, or the next reader treats a real failure as routine.

@@ -667,6 +667,7 @@ impl Checker<'_> {
             kind: ExprKind::Index {
                 obj: Box::new(array()),
                 index: Box::new(index()),
+                checked: true,
             },
             ty: element.clone(),
             pos: pos.clone(),
@@ -1281,6 +1282,7 @@ impl Checker<'_> {
                     kind: ExprKind::Index {
                         obj: Box::new(value()),
                         index: Box::new(index()),
+                        checked: true,
                     },
                     ty: element.clone(),
                     pos: pos.clone(),

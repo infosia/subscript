@@ -244,7 +244,7 @@ fn a42_date_operations_are_intrinsics_and_the_type_is_nominal() {
                     walk_expr(a, dates, methods);
                 }
             }
-            hir::ExprKind::Index { obj, index } => {
+            hir::ExprKind::Index { obj, index, .. } => {
                 walk_expr(obj, dates, methods);
                 walk_expr(index, dates, methods);
             }

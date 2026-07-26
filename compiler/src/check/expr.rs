@@ -3375,6 +3375,7 @@ impl<'p> Checker<'p> {
             kind: ExprKind::Index {
                 obj: Box::new(obj),
                 index: Box::new(index),
+                checked: true,
             },
             ty: elem,
             pos,

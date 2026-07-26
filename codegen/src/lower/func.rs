@@ -46,6 +46,18 @@ enum RV {
     A(Value),
 }
 
+/// Backend values already materialized for one HIR trap site.
+///
+/// Keeping this separate from `hir::Expr` is intentional: the HIR site owns
+/// the operand role, while this value supplies the one SSA value produced by
+/// evaluation. No guard can ask the lowering to evaluate an expression a
+/// second time.
+enum TrapOperand {
+    Pending,
+    Value(Value),
+    Condition(Value),
+}
+
 /// How a by-value boundary struct returned from a foreign call reaches its
 /// language slot (§14.2). Either the callee wrote a caller `sret` slot, or
 /// the result came back in registers to be stored chunk-by-chunk.
@@ -80,112 +92,6 @@ enum Storage {
 struct Binding {
     ty: Type,
     storage: Storage,
-    /// Proven inclusive integer range of the binding's value, when one
-    /// is available (loop induction variables with constant bounds).
-    /// `None` means unproven — the value may be anything of its type.
-    /// Used only to elide provably-in-range bounds checks (§10.1); an
-    /// absent or conservative range never removes a check that could
-    /// fire.
-    range: Option<Interval>,
-}
-
-/// An inclusive integer interval `[lo, hi]`, computed in `i64`.
-///
-/// This is the lattice of the proof-based bounds-check elimination
-/// (`specs/blocks/compiler.md` §10.1): an interval is always a sound
-/// over-approximation of the values an expression can take at runtime,
-/// so a check is removed only when the whole interval is in range.
-/// Arithmetic is done in `i128` and rejected (`None`) if the result
-/// does not fit `i64`, so the interval itself never wraps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Interval {
-    lo: i64,
-    hi: i64,
-}
-
-impl Interval {
-    fn point(v: i64) -> Interval {
-        Interval { lo: v, hi: v }
-    }
-
-    /// Narrows an `i128` pair back into an `i64` interval, failing when
-    /// either end does not fit (so the interval never silently wraps).
-    fn fit(lo: i128, hi: i128) -> Option<Interval> {
-        let lo = i64::try_from(lo).ok()?;
-        let hi = i64::try_from(hi).ok()?;
-        if lo > hi {
-            return None;
-        }
-        Some(Interval { lo, hi })
-    }
-
-    fn add(self, o: Interval) -> Option<Interval> {
-        Interval::fit(
-            self.lo as i128 + o.lo as i128,
-            self.hi as i128 + o.hi as i128,
-        )
-    }
-
-    fn sub(self, o: Interval) -> Option<Interval> {
-        Interval::fit(
-            self.lo as i128 - o.hi as i128,
-            self.hi as i128 - o.lo as i128,
-        )
-    }
-
-    fn mul(self, o: Interval) -> Option<Interval> {
-        let corners = [
-            self.lo as i128 * o.lo as i128,
-            self.lo as i128 * o.hi as i128,
-            self.hi as i128 * o.lo as i128,
-            self.hi as i128 * o.hi as i128,
-        ];
-        let lo = corners.iter().copied().min()?;
-        let hi = corners.iter().copied().max()?;
-        Interval::fit(lo, hi)
-    }
-}
-
-/// Inclusive representable range of an integer type, `None` for
-/// non-integers. Used to prove an induction variable's step cannot
-/// overflow its type (which would break monotonicity and void the
-/// interval).
-fn int_type_range(ty: &Type) -> Option<Interval> {
-    Some(match ty {
-        Type::I8 => Interval {
-            lo: i64::from(i8::MIN),
-            hi: i64::from(i8::MAX),
-        },
-        Type::U8 => Interval {
-            lo: 0,
-            hi: i64::from(u8::MAX),
-        },
-        Type::I16 => Interval {
-            lo: i64::from(i16::MIN),
-            hi: i64::from(i16::MAX),
-        },
-        Type::U16 => Interval {
-            lo: 0,
-            hi: i64::from(u16::MAX),
-        },
-        Type::I32 => Interval {
-            lo: i64::from(i32::MIN),
-            hi: i64::from(i32::MAX),
-        },
-        Type::U32 => Interval {
-            lo: 0,
-            hi: i64::from(u32::MAX),
-        },
-        Type::I64 => Interval {
-            lo: i64::MIN,
-            hi: i64::MAX,
-        },
-        // u64's upper bound does not fit i64; the interval lattice is
-        // i64, so u64 induction ranges are simply not proven (rare in
-        // index position and never in the corpus).
-        Type::U64 => return None,
-        _ => return None,
-    })
 }
 
 /// An assignable location.
@@ -194,7 +100,7 @@ fn int_type_range(ty: &Type) -> Option<Interval> {
 /// moment of the access: resolving the element address early would
 /// dangle if the value expression grows the same array (its storage
 /// is reallocated on growth).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Place {
     Var(Variable),
     Pair(Variable, Variable),
@@ -202,7 +108,8 @@ enum Place {
     ArrayElem {
         handle: Value,
         index: Value,
-        pos_id: i64,
+        read_site: Option<hir::TrapSite>,
+        write_site: hir::TrapSite,
     },
 }
 
@@ -334,116 +241,6 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<&'h Type>) {
     }
 }
 
-/// True when any statement assigns (plainly or compound, `++`/`--`
-/// included — all lower to `Assign`) to a local named `name`. Used to
-/// disqualify a loop counter from range proof when the body mutates it
-/// outside the step (§10.1).
-fn stmts_assign_to(stmts: &[hir::Stmt], name: &str) -> bool {
-    stmts.iter().any(|s| stmt_assigns_to(s, name))
-}
-
-fn stmt_assigns_to(s: &hir::Stmt, name: &str) -> bool {
-    match s {
-        hir::Stmt::Let { init, .. } => expr_assigns_to(init, name),
-        hir::Stmt::Expr(e) => expr_assigns_to(e, name),
-        hir::Stmt::Return { value, .. } => {
-            value.as_ref().is_some_and(|e| expr_assigns_to(e, name))
-        }
-        hir::Stmt::If { cond, then, els, .. } => {
-            expr_assigns_to(cond, name)
-                || stmts_assign_to(then, name)
-                || els.as_ref().is_some_and(|e| stmts_assign_to(e, name))
-        }
-        hir::Stmt::While { cond, body, .. } => {
-            expr_assigns_to(cond, name) || stmts_assign_to(body, name)
-        }
-        hir::Stmt::For {
-            init, cond, step, body, ..
-        } => {
-            init.as_deref().is_some_and(|i| stmt_assigns_to(i, name))
-                || cond.as_ref().is_some_and(|e| expr_assigns_to(e, name))
-                || step.as_ref().is_some_and(|e| expr_assigns_to(e, name))
-                || stmts_assign_to(body, name)
-        }
-        hir::Stmt::Switch { disc, cases, .. } => {
-            expr_assigns_to(disc, name)
-                || cases.iter().any(|c| {
-                    c.test.as_ref().is_some_and(|e| expr_assigns_to(e, name))
-                        || stmts_assign_to(&c.body, name)
-                })
-        }
-        hir::Stmt::Block(b) => stmts_assign_to(b, name),
-        hir::Stmt::Break(_) | hir::Stmt::Continue(_) => false,
-        // `hir::Stmt` is `#[non_exhaustive]` across the crate boundary,
-        // so this arm cannot be removed. Every current variant that can
-        // carry an assignment is handled above; a future variant is
-        // treated conservatively as possibly assigning, which only
-        // declines an induction proof (soundness over optimization).
-        _ => true,
-    }
-}
-
-fn expr_assigns_to(e: &hir::Expr, name: &str) -> bool {
-    use hir::ExprKind as K;
-    match &e.kind {
-        K::Assign { op: _, target, value } => {
-            let hits_target = matches!(&target.kind, K::Local(n) if n == name);
-            hits_target || expr_assigns_to(target, name) || expr_assigns_to(value, name)
-        }
-        K::Unary { operand, .. } => expr_assigns_to(operand, name),
-        K::Binary { left, right, .. } => {
-            expr_assigns_to(left, name) || expr_assigns_to(right, name)
-        }
-        K::Cast(inner) => expr_assigns_to(inner, name),
-        K::Call { callee, args } => {
-            let in_callee = match callee {
-                hir::Callee::Value(v) => expr_assigns_to(v, name),
-                hir::Callee::Method { recv, .. } => expr_assigns_to(recv, name),
-                _ => false,
-            };
-            in_callee || args.iter().any(|a| expr_assigns_to(a, name))
-        }
-        K::New { args, .. } => args.iter().any(|a| expr_assigns_to(a, name)),
-        K::Field { obj, .. } | K::JsonResultValue(obj) => expr_assigns_to(obj, name),
-        K::Length(obj) => expr_assigns_to(obj, name),
-        K::Index { obj, index } => {
-            expr_assigns_to(obj, name) || expr_assigns_to(index, name)
-        }
-        K::ArrayLit(elems) => elems.iter().any(|x| expr_assigns_to(x, name)),
-        K::Template(parts) => parts.iter().any(|p| match p {
-            hir::TplPart::Expr(x) => expr_assigns_to(x, name),
-            _ => false,
-        }),
-        K::Cond { cond, then, els } => {
-            expr_assigns_to(cond, name)
-                || expr_assigns_to(then, name)
-                || expr_assigns_to(els, name)
-        }
-        K::Yield(arg) => arg.as_deref().is_some_and(|x| expr_assigns_to(x, name)),
-        // A lambda cannot assign to an outer mutable local: C5 forbids a
-        // capturing lambda from capturing a non-`const`, and a loop
-        // counter is mutable while it is the loop variable. So a lambda
-        // never reassigns the counter and needs no descent.
-        K::Lambda { .. } => false,
-        // Read-only leaves: none can assign to an outer local.
-        K::Int(_)
-        | K::Float(_)
-        | K::Bool(_)
-        | K::Str(_)
-        | K::Null
-        | K::This
-        | K::Local(_)
-        | K::Global(_)
-        | K::FuncRef(_)
-        | K::EnumMember { .. } => false,
-        // `hir::ExprKind` is `#[non_exhaustive]` across the crate
-        // boundary. Every current variant is handled above; a future
-        // variant is treated conservatively as possibly assigning, which
-        // only declines an induction proof (soundness over optimization).
-        _ => true,
-    }
-}
-
 fn count_yields_expr(e: &hir::Expr) -> usize {
     use hir::ExprKind as K;
     match &e.kind {
@@ -464,7 +261,7 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
         K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
-        K::Index { obj, index } => count_yields_expr(obj) + count_yields_expr(index),
+        K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
         K::Template(parts) => parts
             .iter()
@@ -575,169 +372,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
         }
         Err(internal(format!("unbound local `{name}`")))
-    }
-
-    /// Records a proven integer range on an already-bound local
-    /// (innermost binding of that name). No-op when the name is not
-    /// found, which cannot remove a check.
-    fn set_range(&mut self, name: &str, range: Interval) {
-        for scope in self.scopes.iter_mut().rev() {
-            for (n, b) in scope.iter_mut().rev() {
-                if n == name {
-                    b.range = Some(range);
-                    return;
-                }
-            }
-        }
-    }
-
-    // ----- proof-based bounds-check elimination (§10.1) -----
-
-    /// Sound over-approximation of the integer value an expression can
-    /// take at this program point, or `None` when no bound is proven.
-    /// The result is only ever used to *keep* a check (when unproven or
-    /// out of range) or *remove* one (when the whole interval is in
-    /// range), so `None` is always the safe answer.
-    fn interval_of(&self, e: &hir::Expr) -> Option<Interval> {
-        use hir::ExprKind as K;
-        if !e.ty.is_integer() {
-            return None;
-        }
-        match &e.kind {
-            K::Int(v) => Some(Interval::point(*v)),
-            K::EnumMember { value, .. } => Some(Interval::point(*value)),
-            K::Local(name) => self.lookup(name).ok().and_then(|b| b.range),
-            K::Length(obj) => match &obj.ty {
-                // A `FixedArray`'s length is its compile-time constant N.
-                Type::FixedArray(_, n) => Some(Interval::point(i64::from(*n))),
-                _ => None,
-            },
-            K::Binary { op, left, right } => {
-                let l = self.interval_of(left)?;
-                let r = self.interval_of(right)?;
-                match op {
-                    hir::BinOp::Add => l.add(r),
-                    hir::BinOp::Sub => l.sub(r),
-                    hir::BinOp::Mul => l.mul(r),
-                    _ => None,
-                }
-            }
-            K::Cast(inner) => {
-                // Value-preserving only when the source is an integer
-                // and every value of the source interval also fits the
-                // integer target (a narrowing/reinterpreting cast could
-                // change the value, so it yields no proof).
-                if !inner.ty.is_integer() {
-                    return None;
-                }
-                let iv = self.interval_of(inner)?;
-                let target = int_type_range(&e.ty)?;
-                if iv.lo >= target.lo && iv.hi <= target.hi {
-                    Some(iv)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    /// True when `index` is proven within `[0, n)` for a `FixedArray`
-    /// of length `n`, so its bounds check is provably dead and elided.
-    fn index_in_bounds(&self, index: &hir::Expr, n: u32) -> bool {
-        match self.interval_of(index) {
-            Some(iv) => iv.lo >= 0 && iv.hi < i64::from(n),
-            None => false,
-        }
-    }
-
-    /// Recognizes a count-up `for` loop whose counter has a proven,
-    /// non-wrapping range, returning `(counter name, range)`.
-    ///
-    /// Exact proof conditions (all required; any miss yields `None` and
-    /// the loop's indices stay checked):
-    /// - init is `let <name>: <int> = START` with `START` a proven
-    ///   constant;
-    /// - cond is `<name> < BOUND` or `<name> <= BOUND` with `BOUND` a
-    ///   proven interval (a constant, another proven counter, or a
-    ///   `FixedArray` length);
-    /// - step is `<name> += STEP` (which `<name>++` also lowers to) with
-    ///   `STEP` a proven positive constant;
-    /// - the body never reassigns `<name>` (so it stays monotonic);
-    /// - the counter cannot overflow its type across the range, which
-    ///   would break monotonicity.
-    ///
-    /// The range is `[START, BOUND-1]` for `<` and `[START, BOUND]` for
-    /// `<=`; the counter only enters the body while the condition holds
-    /// and only increases, so the interval covers every value the body
-    /// can observe.
-    fn induction_interval(
-        &self,
-        init: Option<&hir::Stmt>,
-        cond: Option<&hir::Expr>,
-        step: Option<&hir::Expr>,
-        body: &[hir::Stmt],
-    ) -> Option<(String, Interval)> {
-        use hir::ExprKind as K;
-        let (name, ty, start_iv) = match init? {
-            hir::Stmt::Let { name, ty, init, .. } if ty.is_integer() => {
-                (name.clone(), ty.clone(), self.interval_of(init)?)
-            }
-            _ => return None,
-        };
-        // A constant start.
-        if start_iv.lo != start_iv.hi {
-            return None;
-        }
-        let start = start_iv.lo;
-        // cond: name </<= BOUND.
-        let (op, bound_iv) = match &cond?.kind {
-            K::Binary { op, left, right } => match &left.kind {
-                K::Local(n) if *n == name => (*op, self.interval_of(right)?),
-                _ => return None,
-            },
-            _ => return None,
-        };
-        let hi = match op {
-            hir::BinOp::Lt => bound_iv.hi.checked_sub(1)?,
-            hir::BinOp::Le => bound_iv.hi,
-            _ => return None,
-        };
-        // step: name += STEP, STEP a positive constant.
-        let step_iv = match &step?.kind {
-            K::Assign {
-                op: Some(hir::BinOp::Add),
-                target,
-                value,
-            } => match &target.kind {
-                K::Local(n) if *n == name => self.interval_of(value)?,
-                _ => return None,
-            },
-            _ => return None,
-        };
-        if step_iv.lo != step_iv.hi || step_iv.lo <= 0 {
-            return None;
-        }
-        let stepv = step_iv.lo;
-        // Empty or reversed range: the body is dead; keep intervals
-        // well-formed by declining the proof.
-        if start > hi {
-            return None;
-        }
-        // The counter reaches at most `hi` inside the body, then the
-        // step computes `hi + STEP`; that must not overflow the type,
-        // or the counter could wrap to a value below `start` on a later
-        // iteration and violate the lower bound.
-        let tr = int_type_range(&ty)?;
-        if start < tr.lo || hi.checked_add(stepv)? > tr.hi {
-            return None;
-        }
-        // The counter must not be reassigned in the body (the step is
-        // the only permitted mutation), or it is no longer monotonic.
-        if stmts_assign_to(body, &name) {
-            return None;
-        }
-        Some((name, Interval { lo: start, hi }))
     }
 
     fn iconst(&mut self, t: types::Type, v: i64) -> Value {
@@ -946,6 +580,91 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.guard(ok, TrapKind::StaleCoroutine, pos)
     }
 
+    /// Lowers one explicit HIR trap site.
+    ///
+    /// This match must stay exhaustive. Adding a `TrapSite` variant without
+    /// teaching this lowering what it means is therefore a compile error.
+    fn emit_trap_site(
+        &mut self,
+        site: &hir::TrapSite,
+        operand: TrapOperand,
+    ) -> Result<(), String> {
+        let value = |operand: TrapOperand, what: &str| match operand {
+            TrapOperand::Value(value) | TrapOperand::Condition(value) => Ok(value),
+            TrapOperand::Pending => Err(internal(format!("{what} trap operand"))),
+        };
+        match site {
+            hir::TrapSite::Allocation { .. } | hir::TrapSite::Call { .. } => {
+                if !matches!(operand, TrapOperand::Pending) {
+                    return Err(internal("pending-trap site received a value"));
+                }
+                self.trap_check();
+                Ok(())
+            }
+            hir::TrapSite::DivisionByZero { pos } => {
+                let divisor = value(operand, "division")?;
+                let nonzero = self
+                    .b
+                    .ins()
+                    .icmp_imm(IntCC::NotEqual, divisor, 0);
+                self.guard(nonzero, TrapKind::DivisionByZero, pos)
+            }
+            hir::TrapSite::IndexRead { pos } | hir::TrapSite::IndexWrite { pos } => {
+                match operand {
+                    TrapOperand::Pending => {
+                        self.trap_check();
+                        Ok(())
+                    }
+                    TrapOperand::Value(condition) | TrapOperand::Condition(condition) => {
+                        self.guard(condition, TrapKind::IndexOutOfBounds, pos)
+                    }
+                }
+            }
+            hir::TrapSite::JsonResultValue { pos } => {
+                let condition = value(operand, "JsonResult.value")?;
+                self.guard(condition, TrapKind::JsonResultValue, pos)
+            }
+            hir::TrapSite::NullNarrowing { pos } => {
+                let pointer = value(operand, "null narrowing")?;
+                let nonnull = self
+                    .b
+                    .ins()
+                    .icmp_imm(IntCC::NotEqual, pointer, 0);
+                self.guard(nonnull, TrapKind::NullNarrowing, pos)
+            }
+            hir::TrapSite::ClassMismatch { class, pos } => {
+                let pointer = value(operand, "class narrowing")?;
+                let class_id = self.b.ins().load(
+                    types::I32,
+                    flags(),
+                    pointer,
+                    rtc::CLASS_ID_OFFSET,
+                );
+                let matches = self.b.ins().icmp_imm(
+                    IntCC::Equal,
+                    class_id,
+                    i64::from(class.0 as u32),
+                );
+                self.guard(matches, TrapKind::ClassMismatch, pos)
+            }
+            hir::TrapSite::DevOnlyLifetime { pos } => {
+                match operand {
+                    TrapOperand::Pending => {
+                        self.trap_check();
+                        Ok(())
+                    }
+                    TrapOperand::Value(pointer) | TrapOperand::Condition(pointer) => {
+                        self.live_check(pointer, pos)
+                    }
+                }
+            }
+            hir::TrapSite::DevReloadOnlyStaleCoroutine { pos } => {
+                let frame = value(operand, "stale coroutine")?;
+                self.reload_epoch_check(frame, pos)
+            }
+        }
+    }
+
     // ----- calls -----
 
     fn call_rt(
@@ -1044,14 +763,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         handle: Value,
         index: Value,
-        pos_id: i64,
+        site: &hir::TrapSite,
     ) -> Result<Value, String> {
+        let pos_id = self.pos_id(site.pos());
         let pos_v = self.iconst(types::I32, pos_id);
         let r = self.call_rt(
             self.ml.rt.array_ptr,
             &[self.ctx_v, handle, index, pos_v],
-            true,
+            false,
         )?;
+        self.emit_trap_site(site, TrapOperand::Pending)?;
         r.ok_or_else(|| internal("array_ptr result"))
     }
 
@@ -1067,9 +788,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Place::ArrayElem {
                 handle,
                 index,
-                pos_id,
+                read_site,
+                ..
             } => {
-                let addr = self.resolve_array_elem(handle, index, pos_id)?;
+                let site = read_site
+                    .as_ref()
+                    .ok_or_else(|| internal("array place read has no HIR site"))?;
+                let addr = self.resolve_array_elem(handle, index, site)?;
                 self.load_val(ty, addr, 0)
             }
         }
@@ -1092,9 +817,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Place::ArrayElem {
                 handle,
                 index,
-                pos_id,
+                write_site,
+                ..
             } => {
-                let addr = self.resolve_array_elem(handle, index, pos_id)?;
+                let addr = self.resolve_array_elem(handle, index, &write_site)?;
                 self.store_val(ty, addr, 0, rv)
             }
         }
@@ -1158,7 +884,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let binding = Binding {
             ty: ty.clone(),
             storage,
-            range: None,
         };
         let place = self.place_of_binding(&binding)?;
         match place {
@@ -1202,7 +927,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Bool(v) => Ok(RV::S(self.iconst(types::I8, i64::from(*v)))),
             K::Str(s) => {
-                let h = self.string_literal(s.as_bytes(), &e.pos)?;
+                let sites = e.trap_sites(self.ml.hir);
+                let site = sites
+                    .first()
+                    .ok_or_else(|| internal("string literal has no HIR allocation site"))?;
+                let h = self.string_literal(s.as_bytes(), site)?;
                 Ok(RV::S(h))
             }
             K::Null => Ok(RV::S(self.iconst(types::I64, 0))),
@@ -1248,14 +977,27 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     _ => return Err(internal("unknown unary operator")),
                 }))
             }
-            K::Binary { op, left, right } => self.eval_binary(*op, left, right, &e.pos),
-            K::Assign { op, target, value } => self.eval_assign(*op, target, value, &e.pos),
+            K::Binary { op, left, right } => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_binary(*op, left, right, &e.pos, &sites)
+            }
+            K::Assign { op, target, value } => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_assign(*op, target, value, &e.pos, &sites)
+            }
             K::Cast(inner) => {
                 let v = self.eval(inner)?;
-                self.eval_cast(v, &inner.ty, &e.ty, &e.pos)
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_cast(v, &inner.ty, &e.ty, &sites)
             }
-            K::Call { callee, args } => self.eval_call(callee, args, &e.ty, &e.pos, None),
-            K::New { class, args } => self.eval_new(class.0, args, &e.pos, None),
+            K::Call { callee, args } => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_call(callee, args, &e.ty, &e.pos, &sites, None)
+            }
+            K::New { class, args } => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_new(class.0, args, &e.pos, &sites, None)
+            }
             K::Zero => Ok(match self.ml.layouts.repr(&e.ty)? {
                 Repr::None => RV::None,
                 Repr::Scalar(ty) => RV::S(self.zero_of(ty)),
@@ -1266,12 +1008,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     RV::A(slot)
                 }
             }),
-            K::RawNew { class } => self.eval_raw_new(class.0, &e.pos),
+            K::RawNew { class } => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_raw_new(class.0, &sites)
+            }
             K::Field { obj, name } => {
-                let (addr, off, fty) = self.field_addr(obj, name)?;
+                let sites = e.trap_sites(self.ml.hir);
+                let (addr, off, fty) = self.field_addr(obj, name, &sites)?;
                 self.load_val(&fty, addr, off)
             }
-            K::JsonResultValue(obj) => self.eval_json_result_value(obj, &e.pos),
+            K::JsonResultValue(obj) => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_json_result_value(obj, &sites)
+            }
             K::Length(obj) => {
                 let rv = self.eval(obj)?;
                 match &obj.ty {
@@ -1289,12 +1038,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     other => Err(internal(format!("length of {other:?}"))),
                 }
             }
-            K::Index { obj, index } => {
-                let (addr, elem_ty) = self.index_addr(obj, index, &e.pos)?;
+            K::Index {
+                obj,
+                index,
+                ..
+            } => {
+                let sites = e.trap_sites(self.ml.hir);
+                let (addr, elem_ty) = self.index_addr(obj, index, &sites)?;
                 self.load_val(&elem_ty, addr, 0)
             }
-            K::ArrayLit(elems) => self.eval_array_lit(&e.ty, elems, &e.pos),
-            K::Template(parts) => self.eval_template(parts, &e.pos),
+            K::ArrayLit(elems) => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_array_lit(&e.ty, elems, &sites)
+            }
+            K::Template(parts) => {
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_template(parts, &sites)
+            }
             K::Lambda {
                 params,
                 ret,
@@ -1349,14 +1109,26 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
-    fn string_literal(&mut self, bytes: &[u8], pos: &Pos) -> Result<Value, String> {
+    fn string_literal(
+        &mut self,
+        bytes: &[u8],
+        site: &hir::TrapSite,
+    ) -> Result<Value, String> {
+        let hir::TrapSite::Allocation { pos } = site else {
+            return Err(internal("string literal has a non-allocation HIR site"));
+        };
         let data = self.ml.literal_data(bytes)?;
         let gv = self.ml.module.declare_data_in_func(data, self.b.func);
         let addr = self.b.ins().symbol_value(types::I64, gv);
         let len = self.iconst(types::I64, bytes.len() as i64);
         let pid = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pid);
-        let r = self.call_rt(self.ml.rt.str_lit, &[self.ctx_v, addr, len, pos_v], true)?;
+        let r = self.call_rt(
+            self.ml.rt.str_lit,
+            &[self.ctx_v, addr, len, pos_v],
+            false,
+        )?;
+        self.emit_trap_site(site, TrapOperand::Pending)?;
         r.ok_or_else(|| internal("str_lit result"))
     }
 
@@ -1387,6 +1159,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         left: &hir::Expr,
         right: &hir::Expr,
         pos: &Pos,
+        sites: &[hir::TrapSite],
     ) -> Result<RV, String> {
         use hir::BinOp as B;
         // Short-circuit boolean operators.
@@ -1425,10 +1198,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let r = self.expect_s(r)?;
             return match op {
                 B::Add => {
+                    let site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::Allocation { .. }))
+                        .ok_or_else(|| internal("string addition has no HIR allocation site"))?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
                     let res = self
-                        .call_rt(self.ml.rt.str_concat, &[self.ctx_v, l, r, pos_v], true)?;
+                        .call_rt(self.ml.rt.str_concat, &[self.ctx_v, l, r, pos_v], false)?;
+                    self.emit_trap_site(site, TrapOperand::Pending)?;
                     res.map(RV::S).ok_or_else(|| internal("concat result"))
                 }
                 B::Eq | B::Ne => {
@@ -1506,7 +1284,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         return Err(internal("float remainder"));
                     }
                 } else {
-                    return self.int_divrem(op == B::Div, l, r, unsigned, pos).map(RV::S);
+                    let site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::DivisionByZero { .. }))
+                        .ok_or_else(|| internal("integer div/rem has no HIR trap site"))?;
+                    return self
+                        .int_divrem(op == B::Div, l, r, unsigned, site)
+                        .map(RV::S);
                 }
             }
             B::Eq | B::Ne | B::Lt | B::Le | B::Gt | B::Ge => {
@@ -1564,10 +1348,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         l: Value,
         r: Value,
         unsigned: bool,
-        pos: &Pos,
+        site: &hir::TrapSite,
     ) -> Result<Value, String> {
-        let nonzero = self.b.ins().icmp_imm(IntCC::NotEqual, r, 0);
-        self.guard(nonzero, TrapKind::DivisionByZero, pos)?;
+        self.emit_trap_site(site, TrapOperand::Value(r))?;
         if unsigned {
             return Ok(if is_div {
                 self.b.ins().udiv(l, r)
@@ -1602,25 +1385,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(self.b.block_params(merge)[0])
     }
 
-    fn eval_cast(&mut self, rv: RV, from: &Type, to: &Type, pos: &Pos) -> Result<RV, String> {
+    fn eval_cast(
+        &mut self,
+        rv: RV,
+        from: &Type,
+        to: &Type,
+        sites: &[hir::TrapSite],
+    ) -> Result<RV, String> {
         // Reference narrowing: object / object|null -> reference class.
-        if let Type::Class(cid) = to {
+        if let Type::Class(_) = to {
             if matches!(from, Type::Object)
                 || matches!(from, Type::Nullable(inner) if **inner == Type::Object)
             {
                 let ptr = self.expect_s(rv)?;
-                let nonnull = self.b.ins().icmp_imm(IntCC::NotEqual, ptr, 0);
-                self.guard(nonnull, TrapKind::NullNarrowing, pos)?;
-                self.live_check(ptr, pos)?;
-                let class_id = self
-                    .b
-                    .ins()
-                    .load(types::I32, flags(), ptr, rtc::CLASS_ID_OFFSET);
-                let ok = self
-                    .b
-                    .ins()
-                    .icmp_imm(IntCC::Equal, class_id, i64::from(cid.0 as u32));
-                self.guard(ok, TrapKind::ClassMismatch, pos)?;
+                for site in sites {
+                    self.emit_trap_site(site, TrapOperand::Value(ptr))?;
+                }
                 return Ok(RV::S(ptr));
             }
         }
@@ -1715,6 +1495,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         obj: &hir::Expr,
         name: &str,
+        sites: &[hir::TrapSite],
     ) -> Result<(Value, i32, Type), String> {
         match &obj.ty {
             Type::IterResult(v) => {
@@ -1754,7 +1535,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     Ok((base, off, fty))
                 } else {
                     let ptr = self.expect_s(rv)?;
-                    self.live_check(ptr, &obj.pos)?;
+                    let site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                        .ok_or_else(|| internal("reference field has no HIR lifetime site"))?;
+                    self.emit_trap_site(site, TrapOperand::Value(ptr))?;
                     Ok((ptr, off, fty))
                 }
             }
@@ -1765,7 +1550,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// Reads a `JsonResult<T>` payload after checking its sibling `ok`
     /// field. The checker emits this HIR form only for the exact
     /// monomorphized two-field result class.
-    fn eval_json_result_value(&mut self, obj: &hir::Expr, pos: &Pos) -> Result<RV, String> {
+    fn eval_json_result_value(
+        &mut self,
+        obj: &hir::Expr,
+        sites: &[hir::TrapSite],
+    ) -> Result<RV, String> {
         let Type::Class(cid) = &obj.ty else {
             return Err(internal("JsonResult value receiver is not a class"));
         };
@@ -1803,10 +1592,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
         let rv = self.eval(obj)?;
         let ptr = self.expect_s(rv)?;
-        self.live_check(ptr, &obj.pos)?;
+        for site in sites {
+            if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
+                self.emit_trap_site(site, TrapOperand::Value(ptr))?;
+            }
+        }
         let ok = self.load_val(&Type::Bool, ptr, ok_offset)?;
         let ok = self.expect_s(ok)?;
-        self.guard(ok, TrapKind::JsonResultValue, pos)?;
+        for site in sites {
+            if matches!(site, hir::TrapSite::JsonResultValue { .. }) {
+                self.emit_trap_site(site, TrapOperand::Condition(ok))?;
+            }
+        }
         self.load_val(&value_ty, ptr, value_offset)
     }
 
@@ -1816,7 +1613,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         obj: &hir::Expr,
         index: &hir::Expr,
-        pos: &Pos,
+        sites: &[hir::TrapSite],
     ) -> Result<(Value, Type), String> {
         match &obj.ty {
             Type::FixedArray(elem, n) => {
@@ -1824,19 +1621,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let base = self.expect_a(rv)?;
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
-                // Proof-based elision (§10.1): emit the check only when
-                // the index is not proven in `[0, n)`. A proven index
-                // has no reachable trap, so removing it changes no
-                // observable behaviour; an unproven one keeps the
-                // unsigned compare, which rejects negatives and `>= n`
-                // at once. The branch, not just the compare, is what
-                // forecloses vectorization of the inner loop.
-                if !self.index_in_bounds(index, *n) {
+                // HIR already made the proof-based elision decision.
+                if let Some(site) = sites
+                    .iter()
+                    .find(|site| {
+                        matches!(
+                            site,
+                            hir::TrapSite::IndexRead { .. }
+                                | hir::TrapSite::IndexWrite { .. }
+                        )
+                    })
+                {
                     let ok = self
                         .b
                         .ins()
                         .icmp_imm(IntCC::UnsignedLessThan, idx, i64::from(*n));
-                    self.guard(ok, TrapKind::IndexOutOfBounds, pos)?;
+                    self.emit_trap_site(site, TrapOperand::Condition(ok))?;
                 }
                 let stride = self.ml.layouts.stride(elem)?;
                 let idx64 = self.b.ins().uextend(types::I64, idx);
@@ -1847,17 +1647,29 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::Array(elem) => {
                 let rv = self.eval(obj)?;
                 let h = self.expect_s(rv)?;
+                for site in sites {
+                    if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
+                        self.emit_trap_site(site, TrapOperand::Value(h))?;
+                    }
+                }
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
-                let pid = self.pos_id(pos);
-                let addr = self.resolve_array_elem(h, idx, pid)?;
+                let site = sites
+                    .iter()
+                    .find(|site| matches!(site, hir::TrapSite::IndexRead { .. }))
+                    .ok_or_else(|| internal("dynamic index has no HIR read site"))?;
+                let addr = self.resolve_array_elem(h, idx, site)?;
                 Ok((addr, (**elem).clone()))
             }
             other => Err(internal(format!("index on {other:?}"))),
         }
     }
 
-    fn place(&mut self, e: &hir::Expr) -> Result<(Place, Type), String> {
+    fn place(
+        &mut self,
+        e: &hir::Expr,
+        sites: &[hir::TrapSite],
+    ) -> Result<(Place, Type), String> {
         use hir::ExprKind as K;
         match &e.kind {
             K::Local(name) => {
@@ -1870,29 +1682,47 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok((Place::Mem(addr, 0), ty))
             }
             K::Field { obj, name } => {
-                let (addr, off, fty) = self.field_addr(obj, name)?;
+                let (addr, off, fty) = self.field_addr(obj, name, sites)?;
                 Ok((Place::Mem(addr, off), fty))
             }
-            K::Index { obj, index } => {
+            K::Index {
+                obj,
+                index,
+                ..
+            } => {
                 if let Type::Array(elem) = &obj.ty {
                     // Deferred: the element address is resolved at the
                     // moment of the access, after the assigned value
                     // has been evaluated (growth-safe).
                     let rv = self.eval(obj)?;
                     let handle = self.expect_s(rv)?;
+                    for site in sites {
+                        if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
+                            self.emit_trap_site(site, TrapOperand::Value(handle))?;
+                        }
+                    }
                     let idx_rv = self.eval(index)?;
                     let idx = self.expect_s(idx_rv)?;
-                    let pid = self.pos_id(&e.pos);
+                    let read_site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::IndexRead { .. }))
+                        .cloned();
+                    let write_site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::IndexWrite { .. }))
+                        .cloned()
+                        .ok_or_else(|| internal("array assignment has no HIR write site"))?;
                     return Ok((
                         Place::ArrayElem {
                             handle,
                             index: idx,
-                            pos_id: pid,
+                            read_site,
+                            write_site,
                         },
                         (**elem).clone(),
                     ));
                 }
-                let (addr, elem_ty) = self.index_addr(obj, index, &e.pos)?;
+                let (addr, elem_ty) = self.index_addr(obj, index, &sites)?;
                 Ok((Place::Mem(addr, 0), elem_ty))
             }
             other => Err(internal(format!("assignment target {other:?}"))),
@@ -1905,8 +1735,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         target: &hir::Expr,
         value: &hir::Expr,
         pos: &Pos,
+        sites: &[hir::TrapSite],
     ) -> Result<RV, String> {
-        let (place, ty) = self.place(target)?;
+        let (place, ty) = self.place(target, sites)?;
         match op {
             None => {
                 // §10.2: when the target is an aggregate at a stable
@@ -1931,11 +1762,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(rv)
             }
             Some(bin) => {
-                let cur = self.read_place(place, &ty)?;
+                let cur = self.read_place(place.clone(), &ty)?;
                 let cur_v = self.expect_s(cur)?;
                 let rhs = self.eval(value)?;
                 let rhs_v = self.expect_s(rhs)?;
-                let combined = self.apply_binop(bin, &ty, cur_v, rhs_v, pos)?;
+                let combined = self.apply_binop(bin, &ty, cur_v, rhs_v, pos, sites)?;
                 self.write_place(place, &ty, RV::S(combined))?;
                 Ok(RV::S(combined))
             }
@@ -1951,6 +1782,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         l: Value,
         r: Value,
         pos: &Pos,
+        sites: &[hir::TrapSite],
     ) -> Result<Value, String> {
         use hir::BinOp as B;
         let float = ty.is_float();
@@ -1963,10 +1795,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(match op {
             B::Add => {
                 if *ty == Type::Str {
+                    let site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::Allocation { .. }))
+                        .ok_or_else(|| {
+                            internal("string compound assignment has no HIR allocation site")
+                        })?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    let res =
-                        self.call_rt(self.ml.rt.str_concat, &[self.ctx_v, l, r, pos_v], true)?;
+                    let res = self.call_rt(
+                        self.ml.rt.str_concat,
+                        &[self.ctx_v, l, r, pos_v],
+                        false,
+                    )?;
+                    self.emit_trap_site(site, TrapOperand::Pending)?;
                     res.ok_or_else(|| internal("concat result"))?
                 } else if float {
                     self.b.ins().fadd(l, r)
@@ -1992,10 +1834,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 if float {
                     self.b.ins().fdiv(l, r)
                 } else {
-                    self.int_divrem(true, l, r, unsigned, pos)?
+                    let site = sites
+                        .iter()
+                        .find(|site| matches!(site, hir::TrapSite::DivisionByZero { .. }))
+                        .ok_or_else(|| internal("integer compound div has no HIR trap site"))?;
+                    self.int_divrem(true, l, r, unsigned, site)?
                 }
             }
-            B::Rem => self.int_divrem(false, l, r, unsigned, pos)?,
+            B::Rem => {
+                let site = sites
+                    .iter()
+                    .find(|site| matches!(site, hir::TrapSite::DivisionByZero { .. }))
+                    .ok_or_else(|| internal("integer compound rem has no HIR trap site"))?;
+                self.int_divrem(false, l, r, unsigned, site)?
+            }
             B::BitAnd => self.b.ins().band(l, r),
             B::BitOr => self.b.ins().bor(l, r),
             B::BitXor => self.b.ins().bxor(l, r),
@@ -2125,9 +1977,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
+        sites: &[hir::TrapSite],
         dest: Option<Value>,
     ) -> Result<RV, String> {
-        let checked = callee.can_trap();
+        let checked = sites
+            .iter()
+            .any(|site| matches!(site, hir::TrapSite::Call { .. }));
         match callee {
             hir::Callee::Func(name) => {
                 let f = self.ml.hir_fn(name)?;
@@ -2152,7 +2007,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
                 self.shape_results(&ret, &res, sret)
             }
-            hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos, checked),
+            hir::Callee::Ambient(a) => {
+                self.eval_ambient(*a, args, pos, sites, checked)
+            }
             hir::Callee::Math(f) => self.eval_math(*f, args, checked),
             hir::Callee::Num(f) => self.eval_num(*f, args, pos, checked),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
@@ -2192,7 +2049,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.shape_results(&ft.ret, &res, sret)
             }
             hir::Callee::Method { recv, name } => {
-                self.eval_method(recv, name, args, ret_ty, pos, dest, checked)
+                self.eval_method(recv, name, args, ret_ty, pos, sites, dest, checked)
             }
             hir::Callee::Foreign(name) => {
                 self.eval_foreign_call(name, args, pos, checked)
@@ -3636,6 +3493,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         a: hir::AmbientFn,
         args: &[hir::Expr],
         pos: &Pos,
+        sites: &[hir::TrapSite],
         checked: bool,
     ) -> Result<RV, String> {
         match a {
@@ -3659,8 +3517,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.call_rt(
                     self.ml.rt.delete,
                     &[self.ctx_v, ptr, pos_v],
-                    checked,
+                    false,
                 )?;
+                let site = sites
+                    .iter()
+                    .find(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                    .ok_or_else(|| internal("unsafeDelete has no HIR lifetime site"))?;
+                self.emit_trap_site(site, TrapOperand::Pending)?;
                 Ok(RV::None)
             }
             _ => Err(internal("unknown ambient function")),
@@ -3674,6 +3537,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         args: &[hir::Expr],
         _ret_ty: &Type,
         pos: &Pos,
+        sites: &[hir::TrapSite],
         dest: Option<Value>,
         checked: bool,
     ) -> Result<RV, String> {
@@ -3681,6 +3545,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::Array(elem) => {
                 let rv = self.eval(recv)?;
                 let h = self.expect_s(rv)?;
+                for site in sites {
+                    if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
+                        self.emit_trap_site(site, TrapOperand::Value(h))?;
+                    }
+                }
                 match name {
                     "push" => {
                         let arg = args.first().ok_or_else(|| internal("push arity"))?;
@@ -3717,8 +3586,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 let rv = self.eval(recv)?;
                 let frame = self.expect_s(rv)?;
-                self.live_check(frame, pos)?;
-                self.reload_epoch_check(frame, pos)?;
+                for site in sites {
+                    match site {
+                        hir::TrapSite::DevOnlyLifetime { .. }
+                        | hir::TrapSite::DevReloadOnlyStaleCoroutine { .. } => {
+                            self.emit_trap_site(site, TrapOperand::Value(frame))?;
+                        }
+                        _ => {}
+                    }
+                }
                 let step_ty = Type::IterResult(y.clone());
                 let (size, align) = self.ml.layouts.size_align(&step_ty)?;
                 let slot = self.temp_slot(size, align);
@@ -3748,7 +3624,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let this = match rv {
                     RV::A(ptr) => ptr,
                     RV::S(ptr) => {
-                        self.live_check(ptr, &recv.pos)?;
+                        for site in sites {
+                            if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
+                                self.emit_trap_site(site, TrapOperand::Value(ptr))?;
+                            }
+                        }
                         ptr
                     }
                     other => return Err(internal(format!("receiver {other:?}"))),
@@ -3782,6 +3662,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         cid: usize,
         args: &[hir::Expr],
         pos: &Pos,
+        sites: &[hir::TrapSite],
         dest: Option<Value>,
     ) -> Result<RV, String> {
         let hirm = self.ml.hir;
@@ -3798,6 +3679,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.zero_bytes(slot, layout.size, layout.align);
             slot
         } else {
+            let site = sites
+                .iter()
+                .find(|site| matches!(site, hir::TrapSite::Allocation { .. }))
+                .ok_or_else(|| internal("reference new has no HIR allocation site"))?;
             let size = self.iconst(types::I64, i64::from(layout.size));
             let class_v = self.iconst(types::I32, i64::from(cid as u32));
             let pid = self.pos_id(pos);
@@ -3805,8 +3690,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let res = self.call_rt(
                 self.ml.rt.alloc,
                 &[self.ctx_v, size, class_v, pos_v],
-                true,
+                false,
             )?;
+            self.emit_trap_site(site, TrapOperand::Pending)?;
             res.ok_or_else(|| internal("alloc result"))?
         };
         // Declared field initializers, in declaration order.
@@ -3838,9 +3724,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
         }
         if let Some(ctor) = &class.ctor {
+            let site = sites
+                .iter()
+                .find(|site| matches!(site, hir::TrapSite::Call { .. }))
+                .ok_or_else(|| internal("constructor call has no HIR call site"))?;
             let mut argv = vec![self.ctx_v, this];
             self.push_args(&mut argv, &ctor.params, args)?;
-            self.call_script(&FnKey::Ctor(cid), &argv, true)?;
+            self.call_script(&FnKey::Ctor(cid), &argv, false)?;
+            self.emit_trap_site(site, TrapOperand::Pending)?;
         }
         Ok(if layout.is_value {
             RV::A(this)
@@ -3852,7 +3743,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// Allocates a zeroed reference-class payload without running source
     /// field initializers or its constructor. Only checker-generated
     /// JSON.parse construction uses this path.
-    fn eval_raw_new(&mut self, cid: usize, pos: &Pos) -> Result<RV, String> {
+    fn eval_raw_new(
+        &mut self,
+        cid: usize,
+        sites: &[hir::TrapSite],
+    ) -> Result<RV, String> {
+        let site = sites
+            .first()
+            .ok_or_else(|| internal("RawNew has no HIR allocation site"))?;
+        let hir::TrapSite::Allocation { pos } = site else {
+            return Err(internal("RawNew has a non-allocation HIR site"));
+        };
         let layout = self.ml.layouts.class(cid)?.clone();
         if layout.is_value {
             return Err(internal("raw allocation requested for a value class"));
@@ -3861,28 +3762,65 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let class_v = self.iconst(types::I32, i64::from(cid as u32));
         let pos_id = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pos_id);
-        let result = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], true)?;
+        let result = self.call_rt(
+            self.ml.rt.alloc,
+            &[self.ctx_v, size, class_v, pos_v],
+            false,
+        )?;
+        self.emit_trap_site(site, TrapOperand::Pending)?;
         Ok(RV::S(result.ok_or_else(|| {
             internal("raw JSON object allocation result")
         })?))
     }
 
-    fn eval_array_lit(&mut self, ty: &Type, elems: &[hir::Expr], pos: &Pos) -> Result<RV, String> {
+    fn eval_array_lit(
+        &mut self,
+        ty: &Type,
+        elems: &[hir::Expr],
+        sites: &[hir::TrapSite],
+    ) -> Result<RV, String> {
         match ty {
             Type::Array(elem) => {
+                let mut sites = sites.iter();
+                let site = sites
+                    .next()
+                    .ok_or_else(|| internal("array literal has no HIR allocation site"))?;
+                let hir::TrapSite::Allocation { pos } = site else {
+                    return Err(internal("array literal has a non-allocation HIR site"));
+                };
                 let stride = self.ml.layouts.stride(elem)?;
                 let stride_v = self.iconst(types::I64, i64::from(stride));
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res =
-                    self.call_rt(self.ml.rt.array_new, &[self.ctx_v, stride_v, pos_v], true)?;
+                let res = self.call_rt(
+                    self.ml.rt.array_new,
+                    &[self.ctx_v, stride_v, pos_v],
+                    false,
+                )?;
+                self.emit_trap_site(site, TrapOperand::Pending)?;
                 let h = res.ok_or_else(|| internal("array_new result"))?;
                 for e in elems {
+                    let site = sites.next().ok_or_else(|| {
+                        internal("array literal element has no HIR allocation site")
+                    })?;
+                    let hir::TrapSite::Allocation { pos } = site else {
+                        return Err(internal(
+                            "array literal element has a non-allocation HIR site",
+                        ));
+                    };
                     let rv = self.eval(e)?;
                     let src = self.materialize(rv, elem)?;
-                    let pid = self.pos_id(&e.pos);
+                    let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    self.call_rt(self.ml.rt.array_push, &[self.ctx_v, h, src, pos_v], true)?;
+                    self.call_rt(
+                        self.ml.rt.array_push,
+                        &[self.ctx_v, h, src, pos_v],
+                        false,
+                    )?;
+                    self.emit_trap_site(site, TrapOperand::Pending)?;
+                }
+                if sites.next().is_some() {
+                    return Err(internal("array literal has unused HIR trap sites"));
                 }
                 Ok(RV::S(h))
             }
@@ -3934,11 +3872,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         use hir::ExprKind as K;
         match &e.kind {
             K::New { class, args } => {
-                self.eval_new(class.0, args, &e.pos, Some(dest))?;
+                let sites = e.trap_sites(self.ml.hir);
+                self.eval_new(class.0, args, &e.pos, &sites, Some(dest))?;
                 Ok(())
             }
             K::Call { callee, args } => {
-                let rv = self.eval_call(callee, args, &e.ty, &e.pos, Some(dest))?;
+                let sites = e.trap_sites(self.ml.hir);
+                let rv =
+                    self.eval_call(callee, args, &e.ty, &e.pos, &sites, Some(dest))?;
                 match rv {
                     RV::A(addr) => {
                         // Calls that take an `sret` wrote straight into
@@ -3969,44 +3910,91 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
-    fn eval_template(&mut self, parts: &[hir::TplPart], pos: &Pos) -> Result<RV, String> {
+    fn eval_template(
+        &mut self,
+        parts: &[hir::TplPart],
+        sites: &[hir::TrapSite],
+    ) -> Result<RV, String> {
+        let mut sites = sites.iter();
         let mut acc: Option<Value> = None;
         for part in parts {
             let h = match part {
-                hir::TplPart::Text(t) => self.string_literal(t.as_bytes(), pos)?,
+                hir::TplPart::Text(t) => {
+                    let site = sites.next().ok_or_else(|| {
+                        internal("template text has no HIR allocation site")
+                    })?;
+                    self.string_literal(t.as_bytes(), site)?
+                }
                 hir::TplPart::Expr(e) => {
                     let rv = self.eval(e)?;
-                    self.format_value(rv, &e.ty, &e.pos)?
+                    let site = if e.ty == Type::Str {
+                        None
+                    } else {
+                        Some(sites.next().ok_or_else(|| {
+                            internal("template formatting has no HIR allocation site")
+                        })?)
+                    };
+                    self.format_value(rv, &e.ty, site)?
                 }
                 other => return Err(internal(format!("template part {other:?}"))),
             };
             acc = Some(match acc {
                 None => h,
                 Some(prev) => {
+                    let site = sites.next().ok_or_else(|| {
+                        internal("template concat has no HIR allocation site")
+                    })?;
+                    let hir::TrapSite::Allocation { pos } = site else {
+                        return Err(internal("template concat has a non-allocation HIR site"));
+                    };
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
                     let res = self.call_rt(
                         self.ml.rt.str_concat,
                         &[self.ctx_v, prev, h, pos_v],
-                        true,
+                        false,
                     )?;
+                    self.emit_trap_site(site, TrapOperand::Pending)?;
                     res.ok_or_else(|| internal("concat result"))?
                 }
             });
         }
-        match acc {
-            Some(h) => Ok(RV::S(h)),
-            None => Ok(RV::S(self.string_literal(b"", pos)?)),
+        let result = match acc {
+            Some(h) => h,
+            None => {
+                let site = sites.next().ok_or_else(|| {
+                    internal("empty template has no HIR allocation site")
+                })?;
+                self.string_literal(b"", site)?
+            }
+        };
+        if sites.next().is_some() {
+            return Err(internal("template has unused HIR trap sites"));
         }
+        Ok(RV::S(result))
     }
 
     /// Q14 formatting of one interpolated value into a string handle.
-    fn format_value(&mut self, rv: RV, ty: &Type, pos: &Pos) -> Result<Value, String> {
+    fn format_value(
+        &mut self,
+        rv: RV,
+        ty: &Type,
+        site: Option<&hir::TrapSite>,
+    ) -> Result<Value, String> {
         let v = self.expect_s(rv)?;
+        if *ty == Type::Str {
+            if site.is_some() {
+                return Err(internal("string interpolation has an allocation site"));
+            }
+            return Ok(v);
+        }
+        let site = site.ok_or_else(|| internal("formatting has no HIR allocation site"))?;
+        let hir::TrapSite::Allocation { pos } = site else {
+            return Err(internal("formatting has a non-allocation HIR site"));
+        };
         let pid = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pid);
         let (f, arg) = match ty {
-            Type::Str => return Ok(v),
             Type::I8 | Type::I16 => {
                 let wide = self.b.ins().sextend(types::I32, v);
                 (self.ml.rt.fmt_i32, wide)
@@ -4033,7 +4021,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             other => return Err(internal(format!("interpolation of {other:?}"))),
         };
-        let res = self.call_rt(f, &[self.ctx_v, arg, pos_v], true)?;
+        let res = self.call_rt(f, &[self.ctx_v, arg, pos_v], false)?;
+        self.emit_trap_site(site, TrapOperand::Pending)?;
         res.ok_or_else(|| internal("fmt result"))
     }
 
@@ -4255,18 +4244,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.scope_push();
                 if let Some(i) = init {
                     self.lower_stmt(i)?;
-                }
-                // §10.1: if this is a counted loop over a constant range
-                // whose counter the body never reassigns, publish the
-                // counter's proven interval so indexing inside the body
-                // can drop the bounds check.
-                if let Some((name, range)) = self.induction_interval(
-                    init.as_deref(),
-                    cond.as_ref(),
-                    step.as_ref(),
-                    body,
-                ) {
-                    self.set_range(&name, range);
                 }
                 let hdr = self.b.create_block();
                 let body_blk = self.b.create_block();
@@ -4633,7 +4610,6 @@ fn bind_params<M: Module>(
             Binding {
                 ty: p.ty.clone(),
                 storage,
-                range: None,
             },
         );
     }
@@ -4754,7 +4730,6 @@ fn define_lambda<M: Module>(
                 Binding {
                     ty: ty.clone(),
                     storage: Storage::Addr(addr),
-                    range: None,
                 },
             );
         }
@@ -5085,13 +5060,21 @@ pub(crate) fn define_generator<M: Module>(
             };
             let size_v = body.iconst(types::I64, i64::from(frame_size));
             let class_v = body.iconst(types::I32, i64::from(rtc::CLASS_GENERATOR));
-            let pid = body.pos_id(&f.pos);
+            let sites = f.trap_sites();
+            let site = sites
+                .first()
+                .ok_or_else(|| internal("generator has no HIR allocation site"))?;
+            let hir::TrapSite::Allocation { pos } = site else {
+                return Err(internal("generator has a non-allocation HIR site"));
+            };
+            let pid = body.pos_id(pos);
             let pos_v = body.iconst(types::I32, pid);
             let res = body.call_rt(
                 body.ml.rt.alloc,
                 &[body.ctx_v, size_v, class_v, pos_v],
-                true,
+                false,
             )?;
+            body.emit_trap_site(site, TrapOperand::Pending)?;
             let frame = res.ok_or_else(|| internal("frame alloc result"))?;
             // state = 0 (fresh allocation is zeroed); resume pointer:
             let rref = body.ml.module.declare_func_in_func(resume_id, body.b.func);
@@ -5207,7 +5190,6 @@ pub(crate) fn define_generator<M: Module>(
                     Binding {
                         ty: p.ty.clone(),
                         storage: Storage::Frame(*off),
-                        range: None,
                     },
                 );
             }
