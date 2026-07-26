@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer and §18.2b `sub_rt_ctx_clear_trap`). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1279,6 +1279,66 @@ when no trap is pending and `TrapKind` starts at 1 — or registers an
 observer (§18.2) and tests its own flag. This is stated because
 getting it wrong is silent: the host reads a plausible zero and
 carries on.
+
+### 18.2d Memory accounting — `sub_rt_ctx_live_*` / `sub_rt_ctx_reserved_bytes`
+
+```c
+uint64_t sub_rt_ctx_live_allocations(const Context*);
+uint64_t sub_rt_ctx_live_bytes(const Context*);
+uint64_t sub_rt_ctx_reserved_bytes(const Context*);
+```
+
+Owner decision 2026-07-26, and this closes a larger gap than §18.2's.
+**Invariant 2 — no implicit GC — makes explicit lifetime management
+the memory model's centre, and the host had no way to measure whether
+it was working.** A script that forgets `unsafeDelete` and leaks a
+little every frame is invisible from outside: `Context::live_count`
+and `is_live` existed but were Rust-side only. The P15 review found a
+container retaining 8.4 MB after churn; a benchmark caught it, and a
+production host embedding the same build could not have.
+
+- `live_allocations` — count of live allocations. **Tier-independent**:
+  the same program has the same number of live objects on both tiers,
+  so a host may compare dev and ship figures and a difference is a
+  defect.
+- `live_bytes` — payload bytes of those allocations.
+- `reserved_bytes` — what the Context holds from the system: chunk
+  capacity plus large allocations. This is the figure a memory budget
+  is written against, and the one that moves when memory is freed to a
+  free list but not returned.
+
+**`live_bytes` and `reserved_bytes` are tier-dependent, and that is
+not a defect.** The two tiers have different allocators — the ship
+tier (§8.1b) bump-allocates fixed-size blocks in size-class chunks and
+therefore rounds every payload up, while the dev tier allocates exact
+payloads. A host comparing byte figures across tiers will see them
+differ; only the **count** is comparable. Stating this is the point of
+the entry, because a host that assumed otherwise would chase a
+non-bug.
+
+**Cost.** `reserved_bytes` is O(chunks) and cheap. `live_allocations`
+and `live_bytes` walk live blocks on the ship tier and are **O(live
+blocks)** — they are diagnostics, not per-frame counters. The contract
+deliberately does **not** add running counters maintained in
+`alloc`/`delete`: that would make the figures O(1) at the price of an
+invariant that must stay correct across delete, chunk reuse and
+`collect()`, and a memory statistic that can itself drift is worse
+than one that is slow.
+
+Read-only: none of the three can change script-visible output, so
+§0.3 determinism and the golden corpus are unaffected. A host that
+makes decisions from them introduces its own nondeterminism, exactly
+as reading a clock does; that is the host's to own.
+
+**Gate.** Across both tiers, `live_allocations` agrees for the same
+program at the same point. A program that allocates N objects and
+deletes M reports N−M. After a trapped run followed by
+`sub_rt_ctx_clear_trap`, the figures are unchanged by the clear —
+which is what makes §18.2b's "clearing rolls nothing back" claim
+**host-verifiable** rather than only provable inside the runtime's own
+tests. `reserved_bytes` never decreases across a `delete` alone
+(memory returns to a free list, not to the system), which is the
+property that would have surfaced the P15 retention from outside.
 
 ### 18.3 Why there is no in-language observer
 
