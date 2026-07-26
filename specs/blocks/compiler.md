@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1753,3 +1753,110 @@ A real unwind in the ship tier would cost nothing per check. It is
 rejected: it skips `shadow_pop`, corrupting the shadow stack that the
 GC roots depend on, and breaks the "generated code never unwinds"
 property that `codegen/src/jit.rs`'s SAFETY comments rely on.
+
+## 20. P20 — the trap-site IR
+
+Owner decision 2026-07-26, after P19's Phase Review. P19 made the two
+tiers agree on *call* trap sites by giving them one shared predicate,
+`Callee::can_trap()`. About ten **non-call** trap sites were left as
+hard-coded policy in each lowering — and **both of P19's own CRITICALs
+were instances of that duplication failing**, so this is a demonstrated
+hazard, not a tidiness argument.
+
+### 20.1 The property to buy
+
+**It must be impossible to add a trap-capable operation that one tier
+checks and the other does not.**
+
+"Impossible", not "tested". P19's §19.7 originally claimed the
+`Callee` predicate delivered this "by construction"; the review showed
+the claim was broader than the mechanism. The distinction matters:
+
+- a coverage test is **remembering** — it catches the omission only if
+  someone extends the test alongside the operation;
+- an **exhaustive match over an explicit IR node** is *construction* —
+  adding a variant fails to compile in both lowerings, before any test
+  runs.
+
+**P20 delivers the second.** A `TrapSite` that either lowering does not
+handle is a build error. If the design ends up leaning on a test to
+notice an omission, the phase has not met its exit criterion.
+
+### 20.2 What a trap site has to carry
+
+A boolean cannot express these; each was found in the P19 work.
+
+- **Position.** Each guard reports its own `pos_id`. P19's CRITICAL 2
+  diverged in the *trap tuple*, not only in stdout, because the two
+  tiers resolved different sites and therefore reported different
+  positions.
+- **Elision.** §10a lets a proven-in-range index skip its check. The
+  set of sites must therefore be **decided once, in HIR**, so both
+  tiers inherit the same decision. Today each lowering re-derives what
+  to check, which is the root of the duplication. **This is the
+  substantive part of the phase**: after it, the checks a program
+  carries are a property of the HIR rather than of either backend.
+- **Multiplicity.** A compound assignment to an array element needs
+  **two** resolutions — check-and-read before the RHS, check-and-write
+  after — and P19's CRITICAL 2 was exactly one of them being dropped.
+  A template literal or an array literal carries several sites. One
+  operation therefore maps to a *sequence* of sites, not to a flag.
+- **Operands.** A site owns the values its guard tests. P19's
+  CRITICAL 1 was an operand string interpolated twice, calling a
+  call-valued divisor twice — the guard must hold a materialized
+  operand, not a re-emittable expression.
+
+### 20.3 Sites in scope
+
+The non-call sites P19 left in two places: integer div/rem, index read,
+index write, `JsonResult.value`, narrowing `as` (null and class
+mismatch), use-after-delete, stale-coroutine, allocation failure, and
+the allocation-bearing literals — string literal, `str_concat`, `fmt_*`,
+array literal.
+
+`Callee::can_trap()` is already shared; fold it into the same
+mechanism so there is one answer to "what can trap here", not two.
+
+Where a site is **deliberately** checked on one tier only, that must be
+representable and stated rather than implicit — Q6's use-after-delete
+carve-out (§8.1b) is the existing case, and the review confirmed it is
+contracted rather than accidental.
+
+### 20.4 Two pre-existing defects, in scope
+
+Both were found by P19's review, both reproduce before P19, and both
+live in the index/compound-assign path this phase restructures.
+Fixing them elsewhere would mean touching that path twice.
+
+- `xs[i] += "s"` on a `string[]` emits invalid C — `*p = *p + v` on
+  `void*`; there is no `Type::Str` arm.
+- `(xs[i] += v)` in expression position fails the ship tier with an
+  internal lowering error where the dev tier compiles it.
+
+### 20.5 Corpus and gate (pre-registered)
+
+**Red first.** Before the IR lands, add trap-corpus entries for every
+site in §20.3 that has no coverage today, plus accept entries for
+§20.4. Entries whose two tiers already agree stay green and are
+regression cover; any that diverge are the phase's work.
+
+Exit criteria:
+
+1. **A `TrapSite` variant that a lowering does not handle fails to
+   compile.** Demonstrate it — the tracking entry records what the
+   build error looks like when a variant is added and one arm is left
+   out. This is the phase's reason to exist and the one criterion that
+   cannot be waived.
+2. The set of emitted checks is derived from HIR, and elision (§10a)
+   is decided there. Both tiers emit checks for the same sites on the
+   same program.
+3. Every §20.3 site has trap-corpus coverage comparing
+   `(kind, message, position, pre-fault stdout)` across tiers.
+4. §20.4's two defects fixed, with corpus entries.
+5. Standing gate green; `tsc` clean; no accept `.expected` moves
+   except where §20.4's fixes make a previously-invalid program valid,
+   which must be named in the tracking entry.
+6. **Benchmarks re-run and recorded.** This phase moves the emission
+   of division and indexing again — the paths P19 measured at 82
+   instructions against 39. Emitted-C's ratio is reported against
+   P19's 1.53×; a regression is a finding, not a cost to absorb.
