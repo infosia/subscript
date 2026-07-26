@@ -1660,20 +1660,36 @@ non-trapping behaviour did not move.
   was measurably slower and was removed. Both tiers now stop at the
   fault for the same reason.
 
-**Open: the emitted-C ratio.** This run measured emitted-C at **1.53×**
-hand-written C, against the **1.05×** this document and CLAUDE.md cite
-as the evidence for choosing C emission as the ship tier. The run is
-valid under the ±20% rule (spreads 0.6–2.0%).
+**P19 did not regress emitted C — it made it 2.4× faster.** Measured as
+a controlled pair, both runs by the orchestrator, same machine, same
+session, `--warmup 12 --timed 15`, both valid under the ±20% rule:
 
-Attribution is **not yet established** and must not be assumed either
-way. Two facts bear on it: earlier the same day, **before** any P19
-change, the same harness measured 1.54× (a run the harness voided) and
-1.87× (valid) on this machine — so the 1.05× figure was already not
-reproducing here, and a P19 cause is not the only explanation. The
-`p9-stdlib.md` carried-forward item already records that drift as
-needing an idle-machine re-measurement. A controlled same-session
-comparison against the pre-P19 commit is the measurement that settles
-it; until it is done this section claims nothing.
+| tree | emitted-C median | C baseline | ×C |
+|---|---:|---:|---:|
+| pre-P19 (`a757939`, git worktree) | 14.75 ms | 4.04 ms | **3.65×** |
+| post-P19 (`08be75d`) | 6.08 ms | 3.97 ms | **1.53×** |
+
+The C baselines agree to 1.7%, which is the control that makes the
+comparison mean anything.
+
+The result is the opposite of the expected direction and the mechanism
+is clear: `ss_arr_at` was an **out-of-line call per array element
+access** that the range analysis could not prove away, and `a22` is
+matrix propagation, so indexing is its inner loop. Replacing that call
+with an inline check is a large win. Adding trap checks made the
+emitted C faster because it removed more calls than it added.
+
+**Still open: the gap to 1.05×.** 1.53× does not reach the figure this
+document and CLAUDE.md cite as the evidence for choosing C emission,
+and P19 is not the cause — pre-P19 was worse. A **separate** regression
+exists between the two, and a second discrepancy points at where:
+earlier the same day the same harness measured **1.87×** on a tree
+predating P13, against **3.65×** at `a757939`. The commits between them
+are P13's two stages, its review fixes, and the host trap API — none of
+which `a22` exercises, since it uses no JSON and no host API. That
+makes the emitted-C **preamble** the thing to look at, the host-header
+work having changed how the emitted translation unit declares the
+runtime. Under measurement; this section will not guess at it.
 
 Cross-language timings are **not reported**: the run matched all nine
 checksums but was voided by the harness on C-subject spread (27–97%)
