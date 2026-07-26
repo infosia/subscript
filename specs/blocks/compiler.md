@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1424,11 +1424,12 @@ tests. `reserved_bytes` never decreases across a `delete` alone
 (memory returns to a free list, not to the system), which is the
 property that would have surfaced the P15 retention from outside.
 
-### 18.2e Per-allocation attribution — queued, not yet contracted
+### 18.2e Per-allocation attribution — superseded by §21.2
 
-Owner decision 2026-07-26: **do this after the current phase.**
-Recorded here so the finding is not lost; the contract is not written
-yet and nothing below is binding.
+**Contracted in §21.2**, folded into P21 with allocator fault
+injection because both touch `Context::alloc` and the allocation
+header. The finding that motivated it is kept below; the design lives
+in §21.2.
 
 The question was whether a live-allocation figure could name the
 script variable behind it. **It cannot, and the obstacle is not
@@ -1952,3 +1953,159 @@ ship-AOT and dev-JIT thresholds remain missed, which is the
 pre-existing §11 situation that motivated C emission and not a P20
 finding. Recorded because a non-zero exit that is *expected* should be
 written down, or the next reader treats a real failure as routine.
+
+## 21. P21 — the allocation path: fault injection and per-allocation attribution
+
+Owner decision 2026-07-26. Two items that arrived separately and are
+done together because **both touch `Context::alloc` and the 16-byte
+allocation header**, and §20.4's rationale applies unchanged: splitting
+them means touching that path twice.
+
+§18.2e is superseded by §21.2.
+
+### 21.1 Allocator fault injection
+
+**The gap.** `TrapKind::AllocationFailure` has six raise points across
+the two allocator modes and **no corpus program can reach any of
+them**: there is no source-level memory quota, and exhausting real
+memory is neither safe nor deterministic under overcommit. P20's `t26`
+records the gap; the site is represented in the IR and unverified.
+
+**Why this is not tidiness.** Three things are currently untested, and
+the third has already happened once:
+
+1. **The two tiers have different allocators** — the dev tier makes an
+   individual system allocation per object tracked in a map; the ship
+   tier (§8.1b) bump-allocates size-class blocks in chunks, with
+   individual allocations above `LARGEST_BLOCK`. For the same program
+   they fail at different moments, and a single object allocation can
+   surface on the ship tier as a *chunk* allocation failing.
+2. **`alloc` returns null on failure and the check happens after.**
+   Generated code therefore holds a null payload for a window. That is
+   the shape P19 found with `ss_scratch` — a fault recorded, then
+   execution continuing through a poisoned value, which there wrote 320
+   bytes into a 256-byte buffer. Nothing looks at this one.
+3. **Allocation *sequences* differed between the tiers until P20**,
+   which removed a C-only empty-string allocation emitted per non-empty
+   template — 9 fault points against 7 for `` `x${a}y${a}` ``. Only the
+   differential gate holds them equal now.
+
+**The knob.**
+
+```c
+void sub_rt_ctx_fail_alloc_after(Context*, uint64_t n);
+```
+
+The Context refuses the **n-th subsequent allocation**. This is the
+same shape as `sub_rt_ctx_set_now` and `sub_rt_ctx_seed_random`
+(§18.1): a host knob that pins a nondeterministic input so tests and
+replays reproduce, which §0.3 already establishes as the pattern.
+
+**Count, not bytes — and the reason is measured.** §18.2d established
+that `live_allocations` is tier-independent while `live_bytes` and
+`reserved_bytes` are not, the ship tier rounding to size classes.
+So "fail the n-th allocation" gives both tiers **the same failure
+point**; "fail past n bytes" would give them different ones and could
+not be compared at all.
+
+**Expect the first run to find divergences, and treat that as the
+point.** Injection by count *is* a test of allocation-sequence parity.
+Item 3 above shows the sequences were unequal as recently as P20, and
+nothing but the differential gate holds them equal now.
+
+**What it does not cover**, stated so the limit is not mistaken for
+coverage: real out-of-memory under overcommit stays untestable. This
+measures **the language's response** to a refused allocation, not the
+operating system's behaviour — which is the part that matters, since
+the question is whether both tiers report the same tuple at the same
+point and neither continues through the null.
+
+**Check first, before building anything:** the "not representable"
+raise point (`Layout::from_size_align` failing) may already be
+reachable from source through a sufficiently large `FixedArray<T, N>`,
+since the checker reads `N` from the annotation. If it is, that one
+site can be tested today and the injection work shrinks. Report the
+answer either way.
+
+### 21.2 Per-allocation attribution (supersedes §18.2e)
+
+**A live-allocation figure cannot name the script variable behind it,
+and the obstacle is definitional, not cost**: an allocation is not
+bound to a variable — values move between variables and into fields and
+arrays — and a leaked allocation is usually reachable from no named
+variable at all, which is why it leaked.
+
+The **allocation site** is both available and better suited. A loop
+allocating ten thousand times has one site and no useful name.
+
+Two facts make this nearly free:
+
+- the 16-byte header holds a state word and a `class_id`, with **four
+  bytes unused**;
+- `alloc(size, class_id, pos_id)` **already receives** the site's
+  `pos_id` and discards it, using it only if the allocation fails.
+
+So storing it costs no space and one `u32` store.
+
+```c
+typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id,
+                                     uint32_t pos_id, uint64_t payload_bytes);
+uint64_t sub_rt_ctx_visit_live_allocations(
+    const Context*, sub_rt_alloc_visitor, void* userdata);
+```
+
+Read-only, like §18.2d's three figures, and with the same cost
+character: O(live blocks), a diagnostic rather than a per-frame
+counter.
+
+**Two things this phase must settle, not assume:**
+
+- **The `class_id` and position tables belong to the compiler, not the
+  Context.** §18.1 records the same problem for a trap's `pos_id`: a
+  host cannot turn either id into a name without an artifact this
+  repository does not emit. Emit it, on the same principle as §18.1b's
+  generated header — **generated, never hand-written**, with a
+  byte-identical regeneration test. A hand-kept table drifts from the
+  ids it claims to describe.
+- **The extra store lands in the ship tier's arena path** (§8.1b),
+  which is performance-sensitive; that tier's justification is that
+  emitted C is close to hand-written C. One `u32` store per allocation
+  is expected to be negligible — **measure it, do not assert it.**
+
+### 21.3 Corpus and gate (pre-registered)
+
+**Fault injection.** Trap-corpus entries covering an allocation failure
+in each distinguishable position — a reference-class `new`, an array
+literal, a `push` that grows, a string concatenation, a template, a
+generator frame, and the checker-generated JSON `RawNew`. Each compares
+`(kind, message, position, pre-fault stdout)` across tiers, which is
+what P20 made possible. `t26`'s policy-only record is replaced by real
+entries for every site injection can reach; any that remain
+unreachable keep a policy record saying so.
+
+**The null-continuation question is a gate item, not an aside.** For
+each entry, the generated code must not read or write through the null
+payload between the failed allocation and the check. Demonstrate it —
+AddressSanitizer on the ship tier, as P19's review did for the
+320-byte case.
+
+**Attribution.** An accept entry is not the right shape, since the
+output is host-side. A both-tier host test allocates a known
+population from known sites, visits, and asserts the `(class_id,
+pos_id, bytes)` triples. `live_allocations` agreeing across tiers is
+§18.2d's contract and this test inherits it.
+
+Exit criteria:
+
+1. Every allocation-failure site injection can reach is covered, on
+   both tiers, with identical tuples — or is recorded as unreachable
+   with the reason.
+2. No entry continues through the null payload; ASan clean.
+3. The visitor reports the allocating site, and the generated id tables
+   let a host resolve `class_id` and `pos_id` to names.
+4. The regeneration test for those tables is byte-identical, as
+   §18.1b's header is.
+5. Standing gate green; `tsc` clean; no accept `.expected` moves.
+6. **Benchmarks re-run.** The `u32` store is on the ship tier's
+   allocation path. Report emitted-C against P20's 1.53×; a regression
+   is a finding, not a cost to absorb.
