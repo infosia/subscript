@@ -171,6 +171,26 @@ mod tests {
     }
 
     #[test]
+    fn oversized_fixed_array_is_rejected_before_layout() {
+        let err = run(
+            "@CStruct\nclass Big {\n  data: FixedArray<u8, 4294967295>;\n}\n\
+             export function main(): void {\n  const b: Big = new Big();\n  \
+             print(`${b.data.length}`);\n}\n",
+        );
+        match err {
+            Err(RunError::Rejected(diagnostics)) => {
+                assert_eq!(diagnostics[0].code, subscript_compiler::RuleCode::S100);
+                assert_eq!(
+                    (diagnostics[0].pos.line, diagnostics[0].pos.col),
+                    (3, 9)
+                );
+                assert!(diagnostics[0].message.contains("2147483647 bytes"));
+            }
+            other => panic!("expected a checker rejection, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn sized_arithmetic_and_q14_formatting() {
         let out = run_ok(
             "export function main(): void {\n  const a: i32 = -7;\n  const b: u32 = 4294967295;\n  const c: i64 = 1;\n  let d: u64 = 0;\n  d -= 1;\n  print(`${a},${b},${c - 2},${d}`);\n}\n",

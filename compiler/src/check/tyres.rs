@@ -174,7 +174,27 @@ impl<'p> Checker<'p> {
                         return Type::Error;
                     }
                 };
-                return Type::FixedArray(Box::new(elem), len);
+                let fixed = Type::FixedArray(Box::new(elem), len);
+                match super::layout::class_independent_layout(&fixed) {
+                    super::layout::IndependentLayout::Fits => return fixed,
+                    super::layout::IndependentLayout::TooLarge => {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "`FixedArray` byte size exceeds the supported aggregate limit \
+                                 of {} bytes",
+                                crate::types::MAX_AGGREGATE_BYTES
+                            ),
+                            pos,
+                        );
+                        return Type::Error;
+                    }
+                    super::layout::IndependentLayout::DependsOnClass => {
+                        self.pending_layouts
+                            .push((fixed.clone(), pos, "`FixedArray` byte size"));
+                        return fixed;
+                    }
+                }
             }
             "Array" => {
                 if let Some(args) = &r.type_params {

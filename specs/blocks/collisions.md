@@ -134,6 +134,35 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 
 ## 2. Q-register resolutions not covered above
 
+- **Q29 (the aggregate size limit)** — every aggregate a program can
+  declare — a `FixedArray`, a `@CStruct` value class, a closure
+  environment, a generator frame, a coroutine step result — has a
+  **total size limit of `i32::MAX` bytes (2 147 483 647)**, enforced by
+  the checker with S100 at the position of the offending
+  `FixedArray` type, field, or `.next` member, and naming the limit in
+  the message.
+
+  The number is not arbitrary: Cranelift addresses class fields, frame
+  slots and globals with a **signed 32-bit displacement**, so an
+  aggregate past that bound has no valid offset in the dev tier.
+
+  *(Added 2026-07-26. Before it, a program the checker accepted could
+  **panic the compiler** — `@CStruct class Big { data:
+  FixedArray<u8, 4294967295>; }` reached `attempt to add with overflow`
+  in codegen's layout arithmetic. That violates core principle 5, and
+  the shape was reachable from source **by construction** rather than
+  by accident: layout multiplies an element size by a length taken from
+  a source annotation. Found while checking whether P21's allocation
+  fault-injection work could reach the "not representable" raise point
+  without new machinery — it could not, but it found this instead.)*
+
+  The check lives in the checker, where every other size rule lives
+  (C3's out-of-range literals, C4's contextual typing, the existing
+  `FixedArray` length-mismatch check), so the user gets a source
+  position. Codegen's layout arithmetic is **also** fully checked and
+  returns `Err` rather than panicking, so HIR that reaches it by some
+  other route still cannot crash the compiler.
+
 - **Q3 (`FixedArray`)** — ambient
   `interface FixedArray<T, N extends number> { [index: number]: T;
   readonly length: i32; }`. `N` is not used structurally (a plain array

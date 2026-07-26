@@ -2,6 +2,13 @@
 
 use std::fmt;
 
+/// Maximum supported byte size of one aggregate layout.
+///
+/// Cranelift memory operations use signed 32-bit direct displacements
+/// for class, frame, and global offsets, so every aggregate and every
+/// accumulated layout must fit in `i32::MAX` bytes.
+pub const MAX_AGGREGATE_BYTES: u32 = i32::MAX as u32;
+
 /// Index of a class definition inside [`crate::hir::Module::classes`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClassId(pub usize);
@@ -231,6 +238,11 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aggregate_limit_matches_the_backend_displacement_range() {
+        assert_eq!(MAX_AGGREGATE_BYTES, 2_147_483_647);
+    }
 
     #[test]
     fn sized_numerics_are_distinct() {

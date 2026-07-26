@@ -75,6 +75,31 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r59-json-stringify-function.ts", RuleCode::S014, 12),
     ("r60-json-parse-no-context.ts", RuleCode::S014, 8),
     ("r61-json-parse-date.ts", RuleCode::S014, 8),
+    (
+        "r62-cstruct-fixed-array-layout-too-large.ts",
+        RuleCode::S100,
+        8,
+    ),
+    (
+        "r63-local-fixed-array-layout-too-large.ts",
+        RuleCode::S100,
+        7,
+    ),
+    (
+        "r64-nested-fixed-array-layout-too-large.ts",
+        RuleCode::S100,
+        7,
+    ),
+    (
+        "r65-cstruct-field-offset-layout-too-large.ts",
+        RuleCode::S100,
+        9,
+    ),
+    (
+        "r66-coroutine-step-layout-too-large.ts",
+        RuleCode::S100,
+        11,
+    ),
 ];
 
 #[test]
@@ -149,6 +174,11 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 
 #[test]
 fn reject_table_covers_every_corpus_entry() {
+    assert_eq!(
+        EXPECTED.len(),
+        63,
+        "expected the 58 standing reject entries plus five aggregate-layout entries"
+    );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
         .expect("read corpus/reject")
@@ -160,6 +190,34 @@ fn reject_table_covers_every_corpus_entry() {
     let mut expected: Vec<String> = EXPECTED.iter().map(|(f, _, _)| f.to_string()).collect();
     expected.sort();
     assert_eq!(entries, expected, "reject corpus and test table disagree");
+}
+
+#[test]
+fn aggregate_layout_rejections_pin_the_exact_construct_and_limit() {
+    let dir = corpus_dir().join("reject");
+    for (file, line, col) in [
+        ("r62-cstruct-fixed-array-layout-too-large.ts", 8, 9),
+        ("r63-local-fixed-array-layout-too-large.ts", 7, 15),
+        ("r64-nested-fixed-array-layout-too-large.ts", 7, 17),
+        ("r65-cstruct-field-offset-layout-too-large.ts", 9, 3),
+        ("r66-coroutine-step-layout-too-large.ts", 11, 23),
+    ] {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("oversized aggregate must be rejected");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{file}");
+        assert_eq!(
+            (diagnostics[0].pos.line, diagnostics[0].pos.col),
+            (line, col),
+            "{file}: diagnostic must point at the size-bearing construct"
+        );
+        assert!(
+            diagnostics[0].message.contains("2147483647 bytes"),
+            "{file}: diagnostic must state the aggregate byte limit: {}",
+            diagnostics[0].message
+        );
+    }
 }
 
 #[test]

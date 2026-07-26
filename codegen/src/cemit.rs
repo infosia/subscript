@@ -85,13 +85,28 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 
 use subscript_compiler::hir;
-use subscript_compiler::types::{ClassId, FuncType, Type};
+use subscript_compiler::types::{ClassId, FuncType, Type, MAX_AGGREGATE_BYTES};
 use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
 use crate::layout::{is_managed, managed_words, Layouts};
 use crate::trap_sites::{lower_trap_sites, TrapSiteConsumer};
+
+fn checked_shadow_words(left: u32, right: u32) -> Result<u32, String> {
+    let words = left
+        .checked_add(right)
+        .ok_or_else(|| "C emitter shadow-frame word count overflows u32".to_string())?;
+    let maximum = MAX_AGGREGATE_BYTES / 8;
+    if words <= maximum {
+        Ok(words)
+    } else {
+        Err(format!(
+            "C emitter shadow frame exceeds the supported aggregate limit of \
+             {MAX_AGGREGATE_BYTES} bytes"
+        ))
+    }
+}
 
 /// An emitted C translation unit plus the trap position table its
 /// `pos_id` arguments index (mirrors [`crate::AotObject::positions`]),
@@ -865,7 +880,7 @@ impl<'m> Emitter<'m> {
             }
             let access = self.root_slot_store(out, &p.ty, slot, &sanitize(&p.name), depth)?;
             self.managed_scope.push((p.name.clone(), access));
-            slot += w;
+            slot = checked_shadow_words(slot, w)?;
         }
         self.shadow_cursor = slot;
         Ok(())
@@ -1081,12 +1096,12 @@ impl<'m> Emitter<'m> {
     fn shadow_words(&self, params: &[hir::Param], body: &[hir::Stmt]) -> Result<u32, String> {
         let mut n = 0u32;
         for p in params {
-            n += managed_words(&self.layouts, &p.ty)?;
+            n = checked_shadow_words(n, managed_words(&self.layouts, &p.ty)?)?;
         }
         let mut lets: Vec<(&str, &Type)> = Vec::new();
         walk_lets(body, &mut lets);
         for (_, ty) in lets {
-            n += managed_words(&self.layouts, ty)?;
+            n = checked_shadow_words(n, managed_words(&self.layouts, ty)?)?;
         }
         Ok(n)
     }
@@ -1227,7 +1242,7 @@ impl<'m> Emitter<'m> {
         if self.needs_rooting(ty)? {
             let w = managed_words(&self.layouts, ty)?;
             let slot = self.shadow_cursor;
-            self.shadow_cursor += w;
+            self.shadow_cursor = checked_shadow_words(self.shadow_cursor, w)?;
             self.local_types.push((name.to_string(), ty.clone()));
             let v = self.eval(init, out, depth)?;
             let access = self.root_slot_store(out, ty, slot, &v, depth)?;
@@ -5506,6 +5521,12 @@ mod tests {
 
     fn emit(src: &str) -> String {
         emit_c(&module_of(src)).expect("emit").source
+    }
+
+    #[test]
+    fn shadow_frame_word_arithmetic_reports_overflow() {
+        assert!(checked_shadow_words(MAX_AGGREGATE_BYTES / 8, 1).is_err());
+        assert!(checked_shadow_words(u32::MAX, 1).is_err());
     }
 
     #[test]

@@ -15,6 +15,7 @@
 
 use cranelift_codegen::ir::types;
 use subscript_compiler::hir;
+use subscript_compiler::types::MAX_AGGREGATE_BYTES;
 use subscript_compiler::Type;
 
 use crate::lower::internal;
@@ -160,9 +161,42 @@ pub fn value_class_layouts(module: &hir::Module) -> Result<Vec<StructLayout>, St
     Ok(out)
 }
 
-fn round_up(v: u32, align: u32) -> u32 {
-    debug_assert!(align.is_power_of_two());
-    (v + align - 1) & !(align - 1)
+fn ensure_supported_size(size: u32, context: &str) -> Result<u32, String> {
+    if size <= MAX_AGGREGATE_BYTES {
+        Ok(size)
+    } else {
+        Err(internal(format!(
+            "{context} is {size} bytes; maximum supported aggregate size is \
+             {MAX_AGGREGATE_BYTES} bytes"
+        )))
+    }
+}
+
+fn checked_add_size(left: u32, right: u32, context: &str) -> Result<u32, String> {
+    let size = left
+        .checked_add(right)
+        .ok_or_else(|| internal(format!("{context} overflows u32")))?;
+    ensure_supported_size(size, context)
+}
+
+fn checked_mul_size(left: u32, right: u32, context: &str) -> Result<u32, String> {
+    let size = left
+        .checked_mul(right)
+        .ok_or_else(|| internal(format!("{context} overflows u32")))?;
+    ensure_supported_size(size, context)
+}
+
+fn round_up(value: u32, align: u32) -> Result<u32, String> {
+    if !align.is_power_of_two() {
+        return Err(internal(format!("invalid layout alignment {align}")));
+    }
+    let mask = align
+        .checked_sub(1)
+        .ok_or_else(|| internal("zero layout alignment"))?;
+    let sum = value
+        .checked_add(mask)
+        .ok_or_else(|| internal(format!("rounding {value} to alignment {align} overflows u32")))?;
+    ensure_supported_size(sum & !mask, "aligned aggregate layout")
 }
 
 /// Build-time state: memoized class layouts plus an in-progress set
@@ -196,12 +230,12 @@ impl<'m> Builder<'m> {
         let mut field_offsets = Vec::with_capacity(class.fields.len());
         for field in &class.fields {
             let (fs, fa) = self.size_align(&field.ty)?;
-            size = round_up(size, fa);
+            size = round_up(size, fa)?;
             field_offsets.push(size);
-            size += fs;
+            size = checked_add_size(size, fs, "class field layout")?;
             align = align.max(fa);
         }
-        size = round_up(size.max(1), align);
+        size = round_up(size.max(1), align)?;
         let layout = ClassLayout {
             size,
             align,
@@ -231,12 +265,15 @@ impl<'m> Builder<'m> {
             }
             Type::FixedArray(elem, n) => {
                 let (es, ea) = self.size_align(elem)?;
-                (round_up(es, ea) * n, ea)
+                let stride = round_up(es, ea)?;
+                (checked_mul_size(stride, *n, "FixedArray byte size")?, ea)
             }
             Type::IterResult(v) => {
                 let (vs, va) = self.size_align(v)?;
                 let a = va.max(1);
-                (round_up(round_up(1, a) + vs, a), a)
+                let value_offset = round_up(1, a)?;
+                let end = checked_add_size(value_offset, vs, "IterResult layout")?;
+                (round_up(end, a)?, a)
             }
             other => scalar_size_align(other)?,
         })
@@ -307,12 +344,15 @@ impl Layouts {
             }
             Type::FixedArray(elem, n) => {
                 let (es, ea) = self.size_align(elem)?;
-                (round_up(es, ea) * n, ea)
+                let stride = round_up(es, ea)?;
+                (checked_mul_size(stride, *n, "FixedArray byte size")?, ea)
             }
             Type::IterResult(v) => {
                 let (vs, va) = self.size_align(v)?;
                 let a = va.max(1);
-                (round_up(round_up(1, a) + vs, a), a)
+                let value_offset = round_up(1, a)?;
+                let end = checked_add_size(value_offset, vs, "IterResult layout")?;
+                (round_up(end, a)?, a)
             }
             other => scalar_size_align(other)?,
         })
@@ -321,14 +361,14 @@ impl Layouts {
     /// Element stride of an array/FixedArray element type.
     pub fn stride(&self, elem: &Type) -> Result<u32, String> {
         let (s, a) = self.size_align(elem)?;
-        Ok(round_up(s, a))
+        round_up(s, a)
     }
 
     /// Byte offset of the `value` field inside `IterResult<T>`
     /// (`done` is at offset 0).
     pub fn iter_result_value_offset(&self, value_ty: &Type) -> Result<u32, String> {
         let (_, va) = self.size_align(value_ty)?;
-        Ok(round_up(1, va.max(1)))
+        round_up(1, va.max(1))
     }
 
     /// The runtime representation of a type.
@@ -420,7 +460,7 @@ pub(crate) fn managed_words(layouts: &Layouts, ty: &Type) -> Result<u32, String>
     }
     if has_managed_interior(layouts, ty)? {
         let (size, _) = layouts.size_align(ty)?;
-        return Ok(round_up(size, 8) / 8);
+        return Ok(round_up(size, 8)? / 8);
     }
     Ok(0)
 }
@@ -477,6 +517,26 @@ mod tests {
             (64, 4)
         );
         assert_eq!(layouts.class(0).expect("class 0").size, 64);
+    }
+
+    #[test]
+    fn oversized_fixed_array_layout_is_an_error_not_a_panic() {
+        let layouts = layouts_of("export function main(): void {}\n");
+        let error = layouts
+            .size_align(&Type::FixedArray(Box::new(Type::U8), u32::MAX))
+            .expect_err("oversized FixedArray must fail layout");
+        assert!(
+            error.contains("maximum supported aggregate size"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn every_layout_arithmetic_shape_reports_overflow() {
+        assert!(round_up(u32::MAX, 1).is_err());
+        assert!(round_up(u32::MAX, 8).is_err());
+        assert!(checked_add_size(MAX_AGGREGATE_BYTES, 1, "test layout").is_err());
+        assert!(checked_mul_size(MAX_AGGREGATE_BYTES, 2, "test layout").is_err());
     }
 
     #[test]

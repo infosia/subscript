@@ -4376,7 +4376,30 @@ impl<'p> Checker<'p> {
             Type::Generator(y) => match name.as_str() {
                 "next" => {
                     let args = self.check_args(&[], &c.args, fx, &pos, "next");
-                    mk(recv, args, Type::IterResult(y.clone()), pos)
+                    let step = Type::IterResult(y.clone());
+                    match super::layout::class_independent_layout(&step) {
+                        super::layout::IndependentLayout::Fits => mk(recv, args, step, pos),
+                        super::layout::IndependentLayout::TooLarge => {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "coroutine step-result layout exceeds the supported \
+                                     aggregate limit of {} bytes",
+                                    crate::types::MAX_AGGREGATE_BYTES
+                                ),
+                                prop_pos,
+                            );
+                            self.err_expr(pos)
+                        }
+                        super::layout::IndependentLayout::DependsOnClass => {
+                            self.pending_layouts.push((
+                                step.clone(),
+                                prop_pos,
+                                "coroutine step-result layout",
+                            ));
+                            mk(recv, args, step, pos)
+                        }
+                    }
                 }
                 other => {
                     self.error(

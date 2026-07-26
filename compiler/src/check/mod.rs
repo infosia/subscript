@@ -9,6 +9,7 @@
 
 mod expr;
 mod json;
+mod layout;
 mod stmt;
 mod tyres;
 
@@ -235,6 +236,9 @@ pub(crate) struct Checker<'p> {
     /// `object` assertion long enough for the Q28 call to issue its
     /// required S014 instead of an unrelated general-type diagnostic.
     pub in_json_argument: bool,
+    /// Aggregate type annotations whose byte size depends on a class
+    /// layout and must therefore be checked after signature resolution.
+    pub pending_layouts: Vec<(Type, Pos, &'static str)>,
     /// Mirror flag members: an ambient `declare const X = <int literal>;`
     /// (§13.2) folds to its C `static const` value at each reference, so
     /// both tiers emit an immediate rather than reading a runtime global.
@@ -273,6 +277,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         in_boundary: false,
         in_assoc_key: false,
         in_json_argument: false,
+        pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
     };
 
@@ -309,6 +314,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
             ck.check_bodies(i);
         }
     }
+    ck.validate_layouts();
 
     if ck.diags.is_empty() {
         let mut module = hir::Module {

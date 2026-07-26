@@ -45,6 +45,7 @@ use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Configurable;
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use subscript_compiler::{hir, Pos, Type};
+use subscript_compiler::types::MAX_AGGREGATE_BYTES;
 
 use crate::layout::{Layouts, Repr};
 
@@ -235,6 +236,44 @@ pub(crate) struct ModLower<'a, M: Module> {
 /// guaranteed does not hold; never a user-facing diagnostic).
 pub(crate) fn internal(msg: impl Into<String>) -> String {
     format!("internal lowering error: {}", msg.into())
+}
+
+fn ensure_layout_size(size: u32, context: &str) -> Result<u32, String> {
+    if size <= MAX_AGGREGATE_BYTES {
+        Ok(size)
+    } else {
+        Err(internal(format!(
+            "{context} is {size} bytes; maximum supported aggregate size is \
+             {MAX_AGGREGATE_BYTES} bytes"
+        )))
+    }
+}
+
+pub(super) fn checked_layout_add(left: u32, right: u32, context: &str) -> Result<u32, String> {
+    let size = left
+        .checked_add(right)
+        .ok_or_else(|| internal(format!("{context} overflows u32")))?;
+    ensure_layout_size(size, context)
+}
+
+pub(super) fn checked_layout_mul(left: u32, right: u32, context: &str) -> Result<u32, String> {
+    let size = left
+        .checked_mul(right)
+        .ok_or_else(|| internal(format!("{context} overflows u32")))?;
+    ensure_layout_size(size, context)
+}
+
+pub(super) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u32, String> {
+    if !align.is_power_of_two() {
+        return Err(internal(format!("{context} has invalid alignment {align}")));
+    }
+    let mask = align
+        .checked_sub(1)
+        .ok_or_else(|| internal(format!("{context} has zero alignment")))?;
+    let sum = value
+        .checked_add(mask)
+        .ok_or_else(|| internal(format!("{context} overflows u32 during alignment")))?;
+    ensure_layout_size(sum & !mask, context)
 }
 
 /// Whether the dev-JIT boundary marshaler may pass a **boundary struct by
@@ -848,9 +887,10 @@ pub(crate) fn lower_module_with<M: Module>(
         let (size, align) = (size.max(1), align.max(1));
         let slot = if opts.reload {
             globals_align = globals_align.max(align);
-            globals_size = globals_size.next_multiple_of(align);
+            globals_size = round_up_layout(globals_size, align, "reload globals layout")?;
             let at = globals_size;
-            globals_size += size;
+            globals_size =
+                checked_layout_add(globals_size, size, "reload globals layout")?;
             GlobalSlot::Offset(at)
         } else {
             let name = format!("ss_g{gi}");
@@ -868,7 +908,11 @@ pub(crate) fn lower_module_with<M: Module>(
         };
         ml.globals.insert(g.name.clone(), (slot, g.ty.clone()));
     }
-    globals_size = globals_size.next_multiple_of(globals_align);
+    globals_size = round_up_layout(
+        globals_size,
+        globals_align,
+        "final reload globals layout",
+    )?;
 
     // Declare every script function up front so bodies can call in any
     // order. Symbol names are index-based (stable and linker-clean for
@@ -986,7 +1030,10 @@ pub(crate) fn lower_module_with<M: Module>(
 
 #[cfg(test)]
 mod tests {
-    use super::boundary_struct_by_value_supported;
+    use super::{
+        boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul,
+        round_up_layout,
+    };
     use std::str::FromStr;
     use target_lexicon::Triple;
 
@@ -1009,5 +1056,12 @@ mod tests {
             !boundary_struct_by_value_supported(&sysv),
             "x86_64-unknown-linux-gnu (SysV) must be unsupported by the by-value struct path"
         );
+    }
+
+    #[test]
+    fn accumulated_lowering_layouts_report_overflow() {
+        assert!(round_up_layout(u32::MAX, 8, "test layout").is_err());
+        assert!(checked_layout_add(i32::MAX as u32, 1, "test layout").is_err());
+        assert!(checked_layout_mul(i32::MAX as u32, 8, "test layout").is_err());
     }
 }

@@ -31,7 +31,9 @@ use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
 use crate::layout::{has_managed_interior, is_managed, is_unsigned, managed_words, Repr};
-use crate::lower::{internal, FnKey, GlobalSlot, ModLower};
+use crate::lower::{
+    checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
+};
 use crate::trap_sites::{lower_trap_sites, TrapSiteConsumer};
 
 /// A computed value.
@@ -183,10 +185,6 @@ fn indirect_target<M: Module>(
 
 fn align_shift(align: u32) -> u8 {
     align.max(1).trailing_zeros() as u8
-}
-
-fn round_up(v: u32, a: u32) -> u32 {
-    (v + a - 1) & !(a - 1)
 }
 
 /// True when a struct return's flattened leaf scalars form a pure
@@ -2257,7 +2255,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             // The register image is up to `chunks.len() * 8` bytes; the slot
             // is sized to hold whole eightbyte stores without overrunning
             // (only the struct's own `size` bytes are ever read back).
-            let slot = self.temp_slot(chunks.len() as u32 * 8, align.max(8));
+            let chunk_count = u32::try_from(chunks.len())
+                .map_err(|_| internal("struct-return chunk count does not fit in u32"))?;
+            let slot_size = checked_layout_mul(chunk_count, 8, "struct-return register image")?;
+            let slot = self.temp_slot(slot_size, align.max(8));
             Ok(StructRet::Reg { slot, chunks })
         } else {
             let slot = self.temp_slot(size, align);
@@ -2526,7 +2527,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .get(i)
                 .ok_or_else(|| internal("boundary field offset"))? as i32;
             let (cs, ca) = self.boundary_c_field(&field.ty)?;
-            coff = round_up(coff, ca);
+            coff = round_up_layout(coff, ca, "boundary C struct layout")?;
             struct_align = struct_align.max(ca);
             match &field.ty {
                 Type::Func(_) => {
@@ -2538,7 +2539,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         .declare_func_in_func(self.ml.rt.cb_trampoline, self.b.func);
                     let tramp = self.b.ins().func_addr(types::I64, tref);
                     comps.push((coff, types::I64, tramp));
-                    coff += cs;
+                    coff = checked_layout_add(coff, cs, "boundary C struct layout")?;
                     // The callback field is followed by one or two userdata
                     // slots (§14.4). The first is required; the second is
                     // present in a two-userdata callback-info. Both are bound
@@ -2575,20 +2576,24 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         .ok_or_else(|| internal("cb_bind result"))?;
                     // First userdata C slot → the binding.
                     let (uds1, uda1) = self.boundary_c_field(&ud1_field.ty)?;
-                    coff = round_up(coff, uda1);
+                    coff =
+                        round_up_layout(coff, uda1, "boundary callback userdata layout")?;
                     struct_align = struct_align.max(uda1);
                     comps.push((coff, types::I64, record));
-                    coff += uds1;
+                    coff =
+                        checked_layout_add(coff, uds1, "boundary callback userdata layout")?;
                     if has_ud2 {
                         // Second userdata C slot → null (the binding carries
                         // the real second userdata).
                         let ud2_field = &class.fields[i + 2];
                         let (uds2, uda2) = self.boundary_c_field(&ud2_field.ty)?;
-                        coff = round_up(coff, uda2);
+                        coff =
+                            round_up_layout(coff, uda2, "boundary callback userdata layout")?;
                         struct_align = struct_align.max(uda2);
                         let nullv = self.iconst(types::I64, 0);
                         comps.push((coff, types::I64, nullv));
-                        coff += uds2;
+                        coff =
+                            checked_layout_add(coff, uds2, "boundary callback userdata layout")?;
                         i += 3;
                     } else {
                         i += 2;
@@ -2609,8 +2614,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         .ok_or_else(|| internal("array_len result"))?;
                     let count = self.b.ins().uextend(types::I64, len32);
                     comps.push((coff, types::I64, count));
-                    comps.push((coff + 8, types::I64, data));
-                    coff += cs;
+                    let data_offset =
+                        checked_layout_add(coff, 8, "boundary array descriptor layout")?;
+                    comps.push((data_offset, types::I64, data));
+                    coff = checked_layout_add(coff, cs, "boundary C struct layout")?;
                     i += 1;
                 }
                 other => {
@@ -2624,12 +2631,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     };
                     let v = self.expect_s(rv)?;
                     comps.push((coff, clif, v));
-                    coff += cs;
+                    coff = checked_layout_add(coff, cs, "boundary C struct layout")?;
                     i += 1;
                 }
             }
         }
-        let total = round_up(coff, struct_align.max(1));
+        let total = round_up_layout(
+            coff,
+            struct_align.max(1),
+            "final boundary C struct layout",
+        )?;
         self.push_aggregate_abi(sig, argv, &comps, total, struct_align.max(1));
         Ok(())
     }
@@ -3884,7 +3895,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let stride = self.ml.layouts.stride(elem)?;
         for (i, e) in elems.iter().enumerate() {
             let rv = self.eval(e)?;
-            self.store_val(elem, dest, (i as u32 * stride) as i32, rv)?;
+            let index = u32::try_from(i)
+                .map_err(|_| internal("FixedArray literal index does not fit in u32"))?;
+            let offset = checked_layout_mul(index, stride, "FixedArray literal offset")?;
+            let offset = i32::try_from(offset)
+                .map_err(|_| internal("FixedArray literal offset does not fit in i32"))?;
+            self.store_val(elem, dest, offset, rv)?;
         }
         Ok(())
     }
@@ -4080,15 +4096,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         for name in captures {
             let binding = self.lookup(name)?;
             let (s, a) = self.ml.layouts.size_align(&binding.ty)?;
-            off = round_up(off, a);
+            off = round_up_layout(off, a, "closure environment layout")?;
             cap_info.push((name.clone(), binding.ty.clone(), off));
-            off += s;
+            off = checked_layout_add(off, s, "closure environment layout")?;
             env_align = env_align.max(a);
         }
         let env = if captures.is_empty() {
             self.iconst(types::I64, 0)
         } else {
-            let slot = self.temp_slot(round_up(off.max(1), env_align), env_align);
+            let size =
+                round_up_layout(off.max(1), env_align, "final closure environment layout")?;
+            let slot = self.temp_slot(size, env_align);
             for (name, ty, at) in &cap_info {
                 let binding = self.lookup(name)?;
                 let rv = self.read_binding(&binding)?;
@@ -4564,10 +4582,10 @@ fn shadow_words<M: Module>(
     walk_lets(body, &mut lets);
     let mut n = 0u32;
     for p in params {
-        n += managed_words(&ml.layouts, &p.ty)?;
+        n = checked_layout_add(n, managed_words(&ml.layouts, &p.ty)?, "shadow word count")?;
     }
     for t in lets {
-        n += managed_words(&ml.layouts, t)?;
+        n = checked_layout_add(n, managed_words(&ml.layouts, t)?, "shadow word count")?;
     }
     Ok(n)
 }
@@ -4580,8 +4598,9 @@ fn shadow_prologue<M: Module>(
     if slots == 0 {
         return Ok(());
     }
-    let base = body.temp_slot(slots * 8, 8);
-    body.zero_bytes(base, slots * 8, 8);
+    let bytes = checked_layout_mul(slots, 8, "shadow frame byte size")?;
+    let base = body.temp_slot(bytes, 8);
+    body.zero_bytes(base, bytes, 8);
     let n = body.iconst(types::I64, i64::from(slots));
     body.call_rt(body.ml.rt.shadow_push, &[body.ctx_v, base, n], false)?;
     body.shadow_base = Some(base);
@@ -5036,20 +5055,21 @@ fn generator_frame<M: Module>(
     let mut param_offsets = Vec::new();
     for p in &f.params {
         let (s, a) = ml.layouts.size_align(&p.ty)?;
-        off = round_up(off, a.max(1));
+        off = round_up_layout(off, a.max(1), "generator parameter layout")?;
         param_offsets.push(off);
-        off += s.max(1);
+        off = checked_layout_add(off, s.max(1), "generator parameter layout")?;
     }
     let mut lets: Vec<&Type> = Vec::new();
     walk_lets(&f.body, &mut lets);
     let mut let_offsets = Vec::new();
     for t in lets {
         let (s, a) = ml.layouts.size_align(t)?;
-        off = round_up(off, a.max(1));
+        off = round_up_layout(off, a.max(1), "generator local layout")?;
         let_offsets.push(off);
-        off += s.max(1);
+        off = checked_layout_add(off, s.max(1), "generator local layout")?;
     }
-    Ok((param_offsets, let_offsets, round_up(off, 8)))
+    let size = round_up_layout(off, 8, "final generator frame layout")?;
+    Ok((param_offsets, let_offsets, size))
 }
 
 /// Defines the creator and resume functions of a `function*` (C8).
