@@ -26,6 +26,58 @@ fn trap_outcome(report: TrapReport) -> TrapOutcome {
     )
 }
 
+fn render_run(result: &Result<Vec<u8>, RunError>) -> String {
+    match result {
+        Ok(stdout) => format!(
+            "Complete(stdout={:?})",
+            String::from_utf8_lossy(stdout)
+        ),
+        Err(RunError::Trap(report)) => format!(
+            "Trap(kind={}, message={:?}, position={}, stdout={:?})",
+            report.rule,
+            report.message,
+            report.pos,
+            String::from_utf8_lossy(&report.stdout)
+        ),
+        Err(other) => format!("Error({other})"),
+    }
+}
+
+fn trap_expectation(id: &str) -> (TrapKind, u32) {
+    match id {
+        "t01-json-result-value" => (TrapKind::JsonResultValue, 9),
+        "t02-statements-after-fault" => (TrapKind::IndexOutOfBounds, 10),
+        "t03-loop-stops-at-fault" => (TrapKind::IndexOutOfBounds, 13),
+        "t04-call-after-fault" => (TrapKind::IndexOutOfBounds, 15),
+        "t05-foreach-callback-fault" => (TrapKind::IndexOutOfBounds, 13),
+        "t06-push-after-fault" => (TrapKind::IndexOutOfBounds, 11),
+        "t07-p19-compound-assign-ordering" => (TrapKind::IndexOutOfBounds, 10),
+        "t08-div-zero-expression"
+        | "t09-rem-zero-expression"
+        | "t10-div-zero-loop-condition"
+        | "t11-rem-zero-loop-condition"
+        | "t12-div-zero-array-element"
+        | "t13-rem-zero-array-element" => (TrapKind::DivisionByZero, 10),
+        "t14-div-zero-call-divisor" | "t15-rem-zero-call-divisor" => {
+            (TrapKind::DivisionByZero, 14)
+        }
+        "t16-array-write-oob" => (TrapKind::IndexOutOfBounds, 11),
+        "t17-fixed-array-read-oob" | "t18-fixed-array-write-oob" => {
+            (TrapKind::IndexOutOfBounds, 8)
+        }
+        "t19-array-compound-second-write-oob" => (TrapKind::IndexOutOfBounds, 16),
+        "t20-narrow-null" => (TrapKind::NullNarrowing, 20),
+        "t21-narrow-class-mismatch" => (TrapKind::ClassMismatch, 27),
+        "t22-double-delete-q6" => (TrapKind::DoubleDelete, 19),
+        "t23-use-after-delete-q6" => (TrapKind::UseAfterDelete, 23),
+        "t24-stale-coroutine-reload" => (TrapKind::StaleCoroutine, 19),
+        "t25-allocation-sites-before-second-template-fault" => {
+            (TrapKind::DivisionByZero, 21)
+        }
+        other => panic!("{other}: trap corpus entry has no exact expectation"),
+    }
+}
+
 fn assert_trap_outcomes_identical(context: &str, outcomes: &[TrapOutcome]) {
     assert_eq!(
         outcomes.len(),
@@ -418,66 +470,126 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
         ids.len(),
-        7,
-        "expected exactly the seven committed trap entries (t01 P13 JsonResult.value + five P19 \
-         unwind probes + one P19 review compound-assignment ordering probe), found {}",
+        25,
+        "expected exactly 25 trap entries (t01–t07 existing + t08–t25 P20 Red), found {}",
         ids.len()
     );
 
-    let mut divergences = Vec::new();
+    let mut failures = Vec::new();
     for id in ids {
+        // A stale coroutine exists only after two runs and a hot reload.
+        // `reload.rs` drives this paired corpus source through that
+        // dev-tier-only mode; a shipped C binary has no body-swap mode.
+        if id == "t24-stale-coroutine-reload" {
+            continue;
+        }
         let files = trap_corpus::trap_sources(&trap, &id);
         let expected = trap_corpus::trap_expected(&trap, &id);
-        let mut outcomes = Vec::new();
-        for (tier, result) in [
-            ("dev-JIT", run_jit(&files)),
-            ("ship-C-AOT", run_c_aot(&files)),
-        ] {
-            match result {
-                Err(RunError::Trap(report)) => {
-                    assert_eq!(report.pos.file, format!("{id}.ts"), "{tier}: {id}");
-                    if id == "t01-json-result-value" {
-                        assert_eq!(report.rule, TrapKind::JsonResultValue, "{tier}: {id}");
-                        assert_eq!(
-                            report.message,
-                            "`JsonResult.value` read when `ok` is false",
-                            "{tier}: {id}"
-                        );
-                        assert_eq!(report.pos.line, 9, "{tier}: {id}");
-                    } else {
-                        assert_eq!(report.rule, TrapKind::IndexOutOfBounds, "{tier}: {id}");
-                    }
-                    outcomes.push(trap_outcome(report));
+        let expected_file = format!("{id}.ts");
+        let (expected_kind, expected_line) = trap_expectation(&id);
+        let jit = run_jit(&files);
+        let ship = run_c_aot(&files);
+
+        match &jit {
+            Err(RunError::Trap(report)) => {
+                if report.rule != expected_kind
+                    || report.pos.file != expected_file
+                    || report.pos.line != expected_line
+                {
+                    failures.push(format!(
+                        "{id}: dev-JIT trap differs from the corpus intent\n  expected kind={expected_kind}, \
+                         position={expected_file}:{expected_line}\n  actual   {}",
+                        render_run(&jit)
+                    ));
                 }
-                other => {
-                    panic!("{tier}: {id}: expected a runtime trap, got {other:?}")
+                if report.stdout != expected {
+                    failures.push(format!(
+                        "{id}: dev-JIT stdout differs from its JIT-generated .expected\n  dev-JIT = \
+                         {:?}\n  expected = {:?}",
+                        String::from_utf8_lossy(&report.stdout),
+                        String::from_utf8_lossy(&expected)
+                    ));
                 }
             }
+            _ => failures.push(format!(
+                "{id}: dev-JIT did not produce the intended trap\n  {}",
+                render_run(&jit)
+            )),
         }
-        assert_eq!(
-            outcomes[0].0, outcomes[1].0,
-            "{id}: tiers disagree on the trap tuple"
+
+        println!(
+            "{id}:\n  dev-JIT    {}\n  ship-C-AOT {}",
+            render_run(&jit),
+            render_run(&ship)
         );
-        assert_eq!(
-            outcomes[0].1,
-            expected,
-            "{id}: dev-JIT stdout differs from its dev-generated .expected\n  dev-JIT stdout = \
-             {:?}\n  expected stdout = {:?}",
-            String::from_utf8_lossy(&outcomes[0].1),
-            String::from_utf8_lossy(&expected)
-        );
-        if outcomes[1].1 != expected {
-            divergences.push(format!(
-                "{id}: dev-JIT/.expected = {:?}, ship-C-AOT = {:?}",
-                String::from_utf8_lossy(&expected),
-                String::from_utf8_lossy(&outcomes[1].1)
+
+        // Q6/§8.1b explicitly makes double-delete and use-after-delete
+        // undefined in the releasing ship runtime. Execute that column
+        // so its observed behavior stays visible, but contract only the
+        // dev-JIT trap and golden rather than asserting tier agreement.
+        if matches!(
+            id.as_str(),
+            "t22-double-delete-q6" | "t23-use-after-delete-q6"
+        ) {
+            continue;
+        }
+
+        match (&jit, &ship) {
+            (Err(RunError::Trap(dev)), Err(RunError::Trap(c))) if dev == c => {}
+            _ => failures.push(format!(
+                "{id}: tiers disagree on (kind, message, position, pre-fault stdout)\n  dev-JIT    \
+                 {}\n  ship-C-AOT {}",
+                render_run(&jit),
+                render_run(&ship)
+            )),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} trap-corpus failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn p20_red_accept_entries_reach_both_generators() {
+    let accept =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
+    let mut failures = Vec::new();
+    for (id, expected) in [
+        ("a74-p20-string-array-compound", b"as\n".as_slice()),
+        (
+            "a75-p20-array-compound-expression",
+            b"17,17\n".as_slice(),
+        ),
+    ] {
+        let path = accept.join(format!("{id}.ts"));
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let files = [SourceFile::new(format!("{id}.ts"), source)];
+        let jit = run_jit(&files);
+        let ship = run_c_aot(&files);
+        if !matches!(&jit, Ok(stdout) if stdout == expected) {
+            failures.push(format!(
+                "{id}: dev-JIT did not print {:?}: {}",
+                String::from_utf8_lossy(expected),
+                render_run(&jit)
+            ));
+        }
+        if !matches!(&ship, Ok(stdout) if stdout == expected) {
+            failures.push(format!(
+                "{id}: ship-C-AOT did not print {:?}: {}",
+                String::from_utf8_lossy(expected),
+                render_run(&ship)
             ));
         }
     }
     assert!(
-        divergences.is_empty(),
-        "trap corpus stdout divergences:\n{}",
-        divergences.join("\n")
+        failures.is_empty(),
+        "{} P20 Red accept failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
     );
 }
 

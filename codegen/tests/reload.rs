@@ -4,10 +4,15 @@
 //! trap — plus the standing check that reload-mode lowering reproduces
 //! the committed goldens.
 //!
-//! The programs are written inline: they are reload *demos*, not corpus
-//! entries, and each one exists as two source revisions.
+//! Most programs are written inline because each exists as two source
+//! revisions. P20's stale-coroutine trap is the exception: its first
+//! revision and JIT stdout live in `corpus/trap`, while this test derives
+//! the body-only replacement that makes the saved coroutine stale.
 
 mod corpus;
+#[allow(dead_code)]
+#[path = "support/trap_corpus.rs"]
+mod trap_corpus;
 
 use subscript_codegen::{ReloadError, ReloadSession, RunError};
 use subscript_compiler::SourceFile;
@@ -203,54 +208,32 @@ export function main(): void {
 
 // ----- (c) stale coroutine -----
 
-const COROUTINE_V1: &str = "\
-function* counting() {
-  let i: i32 = 0;
-  while (i < 100) {
-    yield i;
-    i += 1;
-  }
-}
-let live: Generator<i32> = counting();
-export function main(): void {
-  const s = live.next();
-  print(`${s.value}`);
-}
-";
-
-const COROUTINE_V2: &str = "\
-function* counting() {
-  let i: i32 = 0;
-  while (i < 100) {
-    yield i * 2;
-    i += 1;
-  }
-}
-let live: Generator<i32> = counting();
-export function main(): void {
-  const s = live.next();
-  print(`v2 ${s.value}`);
-}
-";
-
 #[test]
 fn coroutine_suspended_across_a_swap_traps_on_resume() {
-    let mut s = ReloadSession::new(&files(COROUTINE_V1)).expect("session");
+    let trap = trap_corpus::corpus_trap();
+    let id = "t24-stale-coroutine-reload";
+    let v1 = trap_corpus::trap_sources(&trap, id);
+    let expected = trap_corpus::trap_expected(&trap, id);
+    let v2 = vec![SourceFile::new(
+        format!("{id}.ts"),
+        v1[0].source.replace("yield i;", "yield i * 2;"),
+    )];
+    let mut s = ReloadSession::new(&v1).expect("session");
     s.call_main().expect("first resume");
     s.call_main().expect("second resume");
-    assert_eq!(output(&mut s), "0\n1\n");
+    assert_eq!(s.take_output(), expected);
 
-    s.reload(&files(COROUTINE_V2)).expect("body edit is accepted");
+    s.reload(&v2).expect("body edit is accepted");
 
     // `live` was created before the swap and is suspended inside a
     // body that no longer exists; resuming it traps at the `.next()`
-    // position (line 10 of the post-swap source).
+    // position in the corpus source.
     match s.call_main() {
         Err(RunError::Trap(t)) => {
             assert_eq!(t.rule, TrapKind::StaleCoroutine);
             assert_eq!(t.message, "stale coroutine after reload");
-            assert_eq!(t.pos.file, "live.ts");
-            assert_eq!(t.pos.line, 10);
+            assert_eq!(t.pos.file, format!("{id}.ts"));
+            assert_eq!(t.pos.line, 19);
         }
         other => panic!("expected a stale-coroutine trap, got {other:?}"),
     }

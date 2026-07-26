@@ -1810,9 +1810,46 @@ A boolean cannot express these; each was found in the P19 work.
 
 The non-call sites P19 left in two places: integer div/rem, index read,
 index write, `JsonResult.value`, narrowing `as` (null and class
-mismatch), use-after-delete, stale-coroutine, allocation failure, and
-the allocation-bearing literals — string literal, `str_concat`, `fmt_*`,
-array literal.
+mismatch), the `unsafeDelete` lifetime checks, stale-coroutine,
+allocation failure, and the allocation-bearing literals — string
+literal, `str_concat`, `fmt_*`, array literal.
+
+*(Corrected 2026-07-26 by the Red stage, which measured rather than
+assumed.)* Four of those descriptions were wrong:
+
+- **Narrowing `as` is not "in two places" — the C emitter has no guard
+  at all**, only a plain cast (`cemit.rs`, `eval_cast`), whose comment
+  claims the path "is not exercised by the run set". C3 says `x as C`
+  "traps on `null` or on class mismatch, **in both tiers**". It does
+  not, and the Red stage reached it from a corpus program through the
+  ambient host-boundary callback types — which is where C7 admits
+  `object | null` in the first place, so the path is reachable **by
+  design**, not by accident. **This is elevated to the first item of
+  stage Green**: it is not a reporting difference but a type-safety
+  hole — the ship tier hands back a class-typed reference to an object
+  that is not that class, unchecked. P19's review had assessed it as
+  unreachable; that assessment was about the run set, not the language.
+- **Stale-coroutine exists only under the JIT's reload mode.** The C
+  tier has no body-swap mode, so there is no tuple to compare.
+- **Allocation failure is not corpus-reachable**: there is no
+  source-level memory quota and no allocator fault injection, and
+  exhausting real memory is neither safe nor deterministic under
+  overcommit. It stays in scope for the IR but cannot be corpus-tested;
+  a fault-injection hook is the follow-up if it is wanted.
+- **The allocation-bearing list is incomplete.** It omits reference
+  class `new` and its constructor unwind, the checker-generated JSON
+  `RawNew`, and generator-frame creation — all non-call HIR paths with
+  hard-coded checks. Add them.
+
+**A C-only fault point, found by the Red stage and in scope:** every
+**non-empty** template in the C emitter emits a checked empty-string
+allocation the JIT does not, so the two tiers differ in both the number
+and the placement of allocation fault points inside a template. The IR
+must give a template the same site sequence on both tiers.
+
+`InvalidDelete` — releasing a pointer the Context does not own — is a
+runtime fault this section did not name and which no valid program can
+construct today. Recorded so the omission is deliberate.
 
 `Callee::can_trap()` is already shared; fold it into the same
 mechanism so there is one answer to "what can trap here", not two.
@@ -1851,7 +1888,13 @@ Exit criteria:
    is decided there. Both tiers emit checks for the same sites on the
    same program.
 3. Every §20.3 site has trap-corpus coverage comparing
-   `(kind, message, position, pre-fault stdout)` across tiers.
+   `(kind, message, position, pre-fault stdout)` across tiers —
+   **except** the three the Red stage showed cannot be compared:
+   stale-coroutine (no C mode), the Q6 lifetime checks (§8.1b makes
+   the C side unspecified by contract), and allocation failure (not
+   reachable without fault injection). Each of those carries an entry
+   recording *why* it is not compared, so an unverified site is visible
+   rather than absent.
 4. §20.4's two defects fixed, with corpus entries.
 5. Standing gate green; `tsc` clean; no accept `.expected` moves
    except where §20.4's fixes make a previously-invalid program valid,
