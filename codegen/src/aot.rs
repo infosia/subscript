@@ -517,7 +517,7 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     if run.status.success() {
         return Ok(run.stdout);
     }
-    match parse_trap(&run.stderr, &object.positions) {
+    match parse_trap(&run.stderr, &object.positions, &run.stdout) {
         Some(report) => Err(RunError::Trap(report)),
         None => Err(RunError::Internal(internal(format!(
             "linked program exited with {}: {}",
@@ -544,8 +544,9 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 ///
 /// [`RunError::Rejected`] when the checker rejects the program,
 /// [`RunError::Trap`] when the linked program trapped (mapped back
-/// through the emitted position table), [`RunError::Internal`] on
-/// emission, toolchain, compile, link, or execution failures.
+/// through the emitted position table, with pre-trap stdout),
+/// [`RunError::Internal`] on emission, toolchain, compile, link, or
+/// execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
     let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
@@ -606,7 +607,7 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     if run.status.success() {
         return Ok(run.stdout);
     }
-    match parse_trap(&run.stderr, &program.positions) {
+    match parse_trap(&run.stderr, &program.positions, &run.stdout) {
         Some(report) => Err(RunError::Trap(report)),
         None => Err(RunError::Internal(internal(format!(
             "linked C program exited with {}: {}",
@@ -619,7 +620,7 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 /// Parses the entry program's `trap <kind> <pos_id> <message>` line
 /// back into a report, resolving the position through the table the
 /// lowering produced for this object.
-fn parse_trap(stderr: &[u8], positions: &[Pos]) -> Option<TrapReport> {
+fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapReport> {
     let text = std::str::from_utf8(stderr).ok()?;
     let line = text.lines().find(|l| l.starts_with("trap "))?;
     let mut parts = line.splitn(4, ' ');
@@ -634,6 +635,7 @@ fn parse_trap(stderr: &[u8], positions: &[Pos]) -> Option<TrapReport> {
             .get(pos_id)
             .cloned()
             .unwrap_or_else(|| Pos::new(String::new(), 0, 0)),
+        stdout: stdout.to_vec(),
     })
 }
 
@@ -1044,11 +1046,13 @@ int main(void) {
 
     #[test]
     fn trap_line_parsing_is_total() {
-        assert!(parse_trap(b"", &[]).is_none());
-        assert!(parse_trap(b"something else\n", &[]).is_none());
-        assert!(parse_trap(b"trap 999 0 unknown\n", &[]).is_none());
-        let r = parse_trap(b"trap 2 0 pop() on an empty array\n", &[]).expect("parsed");
+        assert!(parse_trap(b"", &[], b"").is_none());
+        assert!(parse_trap(b"something else\n", &[], b"").is_none());
+        assert!(parse_trap(b"trap 999 0 unknown\n", &[], b"").is_none());
+        let r =
+            parse_trap(b"trap 2 0 pop() on an empty array\n", &[], b"before\n").expect("parsed");
         assert_eq!(r.rule, TrapKind::EmptyPop);
         assert!(r.message.contains("empty"));
+        assert_eq!(r.stdout, b"before\n");
     }
 }

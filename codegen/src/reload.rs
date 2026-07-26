@@ -615,7 +615,8 @@ impl ReloadSession {
     }
 
     /// Turns a pending Context trap into a [`RunError::Trap`] with its
-    /// TS position resolved through the current position table.
+    /// TS position resolved through the current position table and the
+    /// current stdout sink captured without draining the session.
     fn check_trap(&self) -> Result<(), RunError> {
         match self.ctx.trap_record() {
             None => Ok(()),
@@ -627,6 +628,7 @@ impl ReloadSession {
                     .get(r.pos_id as usize)
                     .cloned()
                     .unwrap_or_else(|| Pos::new(String::new(), 0, 0)),
+                stdout: self.ctx.stdout_bytes().to_vec(),
             })),
         }
     }

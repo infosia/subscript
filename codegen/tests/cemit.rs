@@ -13,9 +13,34 @@
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
-use subscript_codegen::{run_c_aot, run_jit, RunError};
+use subscript_codegen::{run_c_aot, run_jit, RunError, TrapReport};
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
+
+type TrapOutcome = ((TrapKind, String, subscript_compiler::Pos), Vec<u8>);
+
+fn trap_outcome(report: TrapReport) -> TrapOutcome {
+    (
+        (report.rule, report.message, report.pos),
+        report.stdout,
+    )
+}
+
+fn assert_trap_outcomes_identical(context: &str, outcomes: &[TrapOutcome]) {
+    assert_eq!(
+        outcomes.len(),
+        2,
+        "{context}: expected one trap outcome from each tier"
+    );
+    assert_eq!(
+        outcomes[0],
+        outcomes[1],
+        "{context}: tiers disagree on (trap tuple, stdout)\n  dev-JIT stdout   = {:?}\n  \
+         ship-C-AOT stdout = {:?}",
+        String::from_utf8_lossy(&outcomes[0].1),
+        String::from_utf8_lossy(&outcomes[1].1)
+    );
+}
 
 /// Asserts the dev-JIT and ship-C-AOT tiers print identical bytes for an
 /// inline single-file program (the cross-tier invariant, §11).
@@ -166,16 +191,19 @@ fn ship_c_aot_reports_a_date_range_trap_with_its_position() {
         "test.ts",
         "export function main(): void {\n  const d: Date = new Date(8640000000000001);\n  print(d.toISOString());\n}\n",
     )];
+    let mut outcomes = Vec::new();
     for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::DateRange, "{tier}");
                 assert_eq!(t.pos.file, "test.ts", "{tier}");
                 assert_eq!(t.pos.line, 2, "{tier}");
+                outcomes.push(trap_outcome(t));
             }
             other => panic!("{tier}: expected a DateRange trap, got {other:?}"),
         }
     }
+    assert_trap_outcomes_identical("Date constructor range trap", &outcomes);
 }
 
 #[test]
@@ -186,37 +214,40 @@ fn ship_c_aot_reports_a_to_iso_year_range_trap() {
         "test.ts",
         "export function main(): void {\n  const d: Date = new Date(8640000000000000);\n  print(d.toISOString());\n}\n",
     )];
+    let mut outcomes = Vec::new();
     for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::DateRange, "{tier}");
                 assert_eq!(t.pos.line, 3, "{tier}");
+                outcomes.push(trap_outcome(t));
             }
             other => panic!("{tier}: expected a DateRange trap, got {other:?}"),
         }
     }
+    assert_trap_outcomes_identical("Date.toISOString year range trap", &outcomes);
 }
 
 /// Asserts both tiers trap with [`TrapKind::StrRange`] at `line` and
-/// with **identical** kind/message/position (stdlib.md §8: the four Q21
-/// trap paths report identically across tiers; the message text itself
-/// comes from the one shared runtime, so equality here pins that no
-/// tier adds its own wording).
+/// with **identical** kind/message/position and pre-trap stdout
+/// (stdlib.md §8: the four Q21 trap paths report identically across
+/// tiers; the message text itself comes from the one shared runtime, so
+/// equality here pins that no tier adds its own wording).
 fn assert_str_range_trap_identical(src: &str, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
-    let mut reports = Vec::new();
+    let mut outcomes = Vec::new();
     for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::StrRange, "{tier}");
                 assert_eq!(t.pos.file, "test.ts", "{tier}");
                 assert_eq!(t.pos.line, line, "{tier}");
-                reports.push((t.rule, t.message, t.pos));
+                outcomes.push(trap_outcome(t));
             }
             other => panic!("{tier}: expected a StrRange trap, got {other:?}"),
         }
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    assert_trap_outcomes_identical("String range trap", &outcomes);
 }
 
 #[test]
@@ -294,10 +325,11 @@ fn string_methods_match_across_tiers_without_a_golden() {
 }
 
 /// Asserts a Q25/Q26 programmer-error range trap has the same
-/// kind/message/position tuple on the dev-JIT and ship-C-AOT tiers.
+/// (kind/message/position tuple, pre-trap stdout) on the dev-JIT and
+/// ship-C-AOT tiers.
 fn assert_number_range_trap_identical(src: &str, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
-    let mut reports = Vec::new();
+    let mut outcomes = Vec::new();
     for (tier, result) in [
         ("dev-JIT", run_jit(&files)),
         ("ship-C-AOT", run_c_aot(&files)),
@@ -307,12 +339,12 @@ fn assert_number_range_trap_identical(src: &str, line: u32) {
                 assert_eq!(report.rule, TrapKind::NumberRange, "{tier}");
                 assert_eq!(report.pos.file, "test.ts", "{tier}");
                 assert_eq!(report.pos.line, line, "{tier}");
-                reports.push((report.rule, report.message, report.pos));
+                outcomes.push(trap_outcome(report));
             }
             other => panic!("{tier}: expected a NumberRange trap, got {other:?}"),
         }
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    assert_trap_outcomes_identical("Number range trap", &outcomes);
 }
 
 #[test]
@@ -331,11 +363,11 @@ fn to_fixed_out_of_range_digits_trap_identically() {
     );
 }
 
-/// Asserts a P13 JSON trap has a tuple-identical report on both lowering
-/// tiers.
+/// Asserts a P13 JSON trap has an identical tuple and pre-trap stdout on
+/// both lowering tiers.
 fn assert_json_trap_identical(src: &str, kind: TrapKind, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
-    let mut reports = Vec::new();
+    let mut outcomes = Vec::new();
     for (tier, result) in [
         ("dev-JIT", run_jit(&files)),
         ("ship-C-AOT", run_c_aot(&files)),
@@ -345,12 +377,12 @@ fn assert_json_trap_identical(src: &str, kind: TrapKind, line: u32) {
                 assert_eq!(report.rule, kind, "{tier}");
                 assert_eq!(report.pos.file, "test.ts", "{tier}");
                 assert_eq!(report.pos.line, line, "{tier}");
-                reports.push((report.rule, report.message, report.pos));
+                outcomes.push(trap_outcome(report));
             }
             other => panic!("{tier}: expected a {kind} trap, got {other:?}"),
         }
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    assert_trap_outcomes_identical("JSON trap", &outcomes);
 }
 
 #[test]
@@ -381,42 +413,72 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 }
 
 #[test]
-fn json_result_value_trap_corpus_entry_is_identical() {
+fn trap_corpus_entries_match_dev_stdout_and_expose_ship_divergences() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
         ids.len(),
-        1,
-        "expected exactly the one committed trap entry (t01 P13 JsonResult.value), found {}",
+        6,
+        "expected exactly the six committed trap entries (t01 P13 JsonResult.value + five P19 \
+         unwind probes), found {}",
         ids.len()
     );
 
+    let mut divergences = Vec::new();
     for id in ids {
         let files = trap_corpus::trap_sources(&trap, &id);
-        let mut reports = Vec::new();
+        let expected = trap_corpus::trap_expected(&trap, &id);
+        let mut outcomes = Vec::new();
         for (tier, result) in [
             ("dev-JIT", run_jit(&files)),
             ("ship-C-AOT", run_c_aot(&files)),
         ] {
             match result {
                 Err(RunError::Trap(report)) => {
-                    assert_eq!(report.rule, TrapKind::JsonResultValue, "{tier}: {id}");
-                    assert_eq!(
-                        report.message,
-                        "`JsonResult.value` read when `ok` is false",
-                        "{tier}: {id}"
-                    );
                     assert_eq!(report.pos.file, format!("{id}.ts"), "{tier}: {id}");
-                    assert_eq!(report.pos.line, 9, "{tier}: {id}");
-                    reports.push((report.rule, report.message, report.pos));
+                    if id == "t01-json-result-value" {
+                        assert_eq!(report.rule, TrapKind::JsonResultValue, "{tier}: {id}");
+                        assert_eq!(
+                            report.message,
+                            "`JsonResult.value` read when `ok` is false",
+                            "{tier}: {id}"
+                        );
+                        assert_eq!(report.pos.line, 9, "{tier}: {id}");
+                    } else {
+                        assert_eq!(report.rule, TrapKind::IndexOutOfBounds, "{tier}: {id}");
+                    }
+                    outcomes.push(trap_outcome(report));
                 }
                 other => {
-                    panic!("{tier}: {id}: expected a JsonResultValue trap, got {other:?}")
+                    panic!("{tier}: {id}: expected a runtime trap, got {other:?}")
                 }
             }
         }
-        assert_eq!(reports[0], reports[1], "{id}: tiers disagree on trap report");
+        assert_eq!(
+            outcomes[0].0, outcomes[1].0,
+            "{id}: tiers disagree on the trap tuple"
+        );
+        assert_eq!(
+            outcomes[0].1,
+            expected,
+            "{id}: dev-JIT stdout differs from its dev-generated .expected\n  dev-JIT stdout = \
+             {:?}\n  expected stdout = {:?}",
+            String::from_utf8_lossy(&outcomes[0].1),
+            String::from_utf8_lossy(&expected)
+        );
+        if outcomes[1].1 != expected {
+            divergences.push(format!(
+                "{id}: dev-JIT/.expected = {:?}, ship-C-AOT = {:?}",
+                String::from_utf8_lossy(&expected),
+                String::from_utf8_lossy(&outcomes[1].1)
+            ));
+        }
     }
+    assert!(
+        divergences.is_empty(),
+        "trap corpus stdout divergences:\n{}",
+        divergences.join("\n")
+    );
 }
 
 #[test]
@@ -482,24 +544,24 @@ fn array_trapping_map_callback_reports_identically_across_tiers() {
     // stdlib.md §9 gate: a callback that traps mid-`map` (an OOB index
     // inside the closure at v == 3) aborts the iteration in the shared
     // runtime; the standing post-call trap check surfaces it on both
-    // tiers with an identical kind/message/position tuple.
+    // tiers with an identical (kind/message/position tuple, stdout).
     let files = [SourceFile::new(
         "test.ts",
         "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const ys: i32[] = xs.map((v: i32): i32 => xs[v + 1]);\n  print(`${ys.length}`);\n}\n",
     )];
-    let mut reports = Vec::new();
+    let mut outcomes = Vec::new();
     for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
                 assert_eq!(t.pos.file, "test.ts", "{tier}");
                 assert_eq!(t.pos.line, 3, "{tier}");
-                reports.push((t.rule, t.message, t.pos));
+                outcomes.push(trap_outcome(t));
             }
             other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
         }
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    assert_trap_outcomes_identical("Array.map callback trap", &outcomes);
 }
 
 #[test]
@@ -508,7 +570,7 @@ fn array_empty_shift_reports_identically_across_tiers() {
         "test.ts",
         "export function main(): void {\n  const xs: i32[] = [];\n  print(`${xs.shift()}`);\n}\n",
     )];
-    let mut reports = Vec::new();
+    let mut outcomes = Vec::new();
     for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
         match result {
             Err(RunError::Trap(t)) => {
@@ -516,12 +578,12 @@ fn array_empty_shift_reports_identically_across_tiers() {
                 assert_eq!(t.message, "shift() on an empty array", "{tier}");
                 assert_eq!(t.pos.file, "test.ts", "{tier}");
                 assert_eq!(t.pos.line, 3, "{tier}");
-                reports.push((t.rule, t.message, t.pos));
+                outcomes.push(trap_outcome(t));
             }
             other => panic!("{tier}: expected an empty-array trap, got {other:?}"),
         }
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    assert_trap_outcomes_identical("Array.shift trap", &outcomes);
 }
 
 #[test]
@@ -536,32 +598,32 @@ fn array_methods_match_across_tiers_without_a_golden() {
 }
 
 /// Asserts both tiers abort an `Array` callback method with the same
-/// out-of-bounds trap tuple (kind, message, position) — stdlib.md §9's
-/// callback-trap rule, for the methods the `map` test above does not
-/// cover.
+/// out-of-bounds trap tuple (kind, message, position) and pre-trap
+/// stdout — stdlib.md §9's callback-trap rule, for the methods the `map`
+/// test above does not cover.
 fn assert_callback_trap_identical(src: &str, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
-    let mut reports = Vec::new();
+    let mut outcomes = Vec::new();
     for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
                 assert_eq!(t.pos.file, "test.ts", "{tier}");
                 assert_eq!(t.pos.line, line, "{tier}");
-                reports.push((t.rule, t.message, t.pos));
+                outcomes.push(trap_outcome(t));
             }
             other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
         }
     }
-    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+    assert_trap_outcomes_identical("Array callback trap", &outcomes);
 }
 
 #[test]
 fn array_trapping_callbacks_report_identically_across_tiers() {
     // The remaining seven closure methods (`map` has its own test): a
     // callback that indexes past the end aborts the iteration in the
-    // shared runtime and surfaces the identical trap tuple on both
-    // tiers. `sort`'s additional §9 guarantee — a comparator trap
+    // shared runtime and surfaces the identical trap tuple and stdout
+    // on both tiers. `sort`'s additional §9 guarantee — a comparator trap
     // leaves the receiver byte-identical — is not observable in-language
     // (the trap returns from the function), so it is pinned in the
     // shared runtime instead (`arrops.rs`, `callback_traps_abort_...`).
@@ -628,7 +690,7 @@ fn map_and_set_trapping_foreach_callbacks_report_identically() {
         "export function main(): void {\n  const probe: i32[] = [7];\n  const set: Set<i32> = new Set<i32>();\n  set.add(1);\n  set.forEach((key: i32): void => { print(`${probe[key + 1]}`); });\n}\n",
     ] {
         let files = [SourceFile::new("test.ts", src)];
-        let mut reports = Vec::new();
+        let mut outcomes = Vec::new();
         for (tier, result) in [
             ("dev-JIT", run_jit(&files)),
             ("ship-C-AOT", run_c_aot(&files)),
@@ -638,12 +700,12 @@ fn map_and_set_trapping_foreach_callbacks_report_identically() {
                     assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
                     assert_eq!(t.pos.file, "test.ts", "{tier}");
                     assert_eq!(t.pos.line, 5, "{tier}");
-                    reports.push((t.rule, t.message, t.pos));
+                    outcomes.push(trap_outcome(t));
                 }
                 other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
             }
         }
-        assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+        assert_trap_outcomes_identical("Map/Set forEach callback trap", &outcomes);
     }
 }
 
@@ -1073,31 +1135,41 @@ fn ship_c_aot_reports_an_out_of_bounds_trap_with_its_position() {
     // The index is a parameter — the FixedArray bounds analysis cannot
     // prove it in range, so the check stays and fires at the indexing
     // expression's TS position.
-    let err = run_c_aot(&[SourceFile::new(
+    let files = [SourceFile::new(
         "test.ts",
         "function at(xs: FixedArray<i32, 3>, i: i32): i32 {\n  return xs[i];\n}\nexport function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${at(xs, 5)}`);\n}\n",
-    )]);
-    match err {
-        Err(RunError::Trap(t)) => {
-            assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
-            assert_eq!(t.pos.file, "test.ts");
-            assert_eq!(t.pos.line, 2);
+    )];
+    let mut outcomes = Vec::new();
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
+                assert_eq!(t.pos.file, "test.ts", "{tier}");
+                assert_eq!(t.pos.line, 2, "{tier}");
+                outcomes.push(trap_outcome(t));
+            }
+            other => panic!("{tier}: expected an out-of-bounds trap, got {other:?}"),
         }
-        other => panic!("expected an out-of-bounds trap, got {other:?}"),
     }
+    assert_trap_outcomes_identical("FixedArray index trap", &outcomes);
 }
 
 #[test]
 fn ship_c_aot_reports_a_division_by_zero_trap() {
-    let err = run_c_aot(&[SourceFile::new(
+    let files = [SourceFile::new(
         "test.ts",
         "function f(d: i32): i32 {\n  return 10 / d;\n}\nexport function main(): void {\n  print(`${f(0)}`);\n}\n",
-    )]);
-    match err {
-        Err(RunError::Trap(t)) => {
-            assert_eq!(t.rule, TrapKind::DivisionByZero);
-            assert_eq!(t.pos.line, 2);
+    )];
+    let mut outcomes = Vec::new();
+    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+        match result {
+            Err(RunError::Trap(t)) => {
+                assert_eq!(t.rule, TrapKind::DivisionByZero, "{tier}");
+                assert_eq!(t.pos.line, 2, "{tier}");
+                outcomes.push(trap_outcome(t));
+            }
+            other => panic!("{tier}: expected a division-by-zero trap, got {other:?}"),
         }
-        other => panic!("expected a division-by-zero trap, got {other:?}"),
     }
+    assert_trap_outcomes_identical("division-by-zero trap", &outcomes);
 }

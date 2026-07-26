@@ -12,12 +12,13 @@ pub fn corpus_trap() -> PathBuf {
 
 /// Every trap entry id, sorted.
 ///
-/// The trap category contains only single-file `.ts` entries and no
-/// `.expected` files. Rejecting every other directory member makes the
-/// returned count an exact enumeration of the category, rather than a
-/// count that silently ignores unrecognized files.
+/// The trap category contains paired single-file `.ts` and `.expected`
+/// entries. Rejecting every other directory member and incomplete pair
+/// makes the returned count an exact enumeration of the category,
+/// rather than a count that silently ignores unrecognized files.
 pub fn trap_ids(trap: &Path) -> Vec<String> {
-    let mut ids = Vec::new();
+    let mut source_ids = Vec::new();
+    let mut expected_ids = Vec::new();
     for entry in fs::read_dir(trap).expect("read corpus/trap") {
         let entry = entry.expect("read corpus/trap entry");
         assert!(
@@ -26,17 +27,26 @@ pub fn trap_ids(trap: &Path) -> Vec<String> {
             entry.path().display()
         );
         let name = entry.file_name().to_string_lossy().into_owned();
-        let id = name
-            .strip_suffix(".ts")
-            .unwrap_or_else(|| panic!("{name}: trap corpus contains only .ts entries"));
+        let (id, ids) = if let Some(id) = name.strip_suffix(".ts") {
+            (id, &mut source_ids)
+        } else if let Some(id) = name.strip_suffix(".expected") {
+            (id, &mut expected_ids)
+        } else {
+            panic!("{name}: trap corpus contains only paired .ts and .expected entries");
+        };
         assert!(
             id.starts_with('t'),
             "{name}: trap corpus ids must start with `t`"
         );
         ids.push(id.to_string());
     }
-    ids.sort();
-    ids
+    source_ids.sort();
+    expected_ids.sort();
+    assert_eq!(
+        source_ids, expected_ids,
+        "trap corpus .ts and .expected ids must be paired exactly"
+    );
+    source_ids
 }
 
 /// Loads one single-file trap corpus entry.
@@ -45,4 +55,10 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
     let text = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read trap entry {}: {e}", path.display()));
     vec![SourceFile::new(format!("{id}.ts"), text)]
+}
+
+/// Loads the exact dev-tier stdout expected before a trap.
+pub fn trap_expected(trap: &Path, id: &str) -> Vec<u8> {
+    let path = trap.join(format!("{id}.expected"));
+    fs::read(&path).unwrap_or_else(|e| panic!("read trap golden {}: {e}", path.display()))
 }

@@ -45,10 +45,23 @@ corpus/
   `codegen/tests/cemit.rs`, puts that behaviour where the corpus cannot
   see it.)*
 
-  A trap entry has **no `.expected` file**: its observable result is
-  the trap tuple, not stdout. The gate asserts the tuple —
-  `(kind, message, position)` — is **identical on both tiers**, which
-  is the same standing requirement every other trap carries.
+  A trap entry **carries an `.expected`** holding the stdout produced
+  **before** the fault, and the gate asserts both it and the trap tuple
+  `(kind, message, position)` are **identical on both tiers**.
+
+  *(Revised 2026-07-26, hours after the category was created. The
+  original rule said a trap entry had no `.expected` because "its
+  observable result is the trap tuple, not stdout". That was wrong, and
+  wrong in the most expensive way: it told the gate not to look at the
+  one place a measured cross-tier divergence lives. `compiler.md` §19
+  records it — of 19 trapping programs 14 differ in stdout between the
+  tiers, a loop containing a fault runs to completion on the ship tier,
+  and live Context state diverges. The rule was written the same day as
+  the finding and had no measurement behind it.)*
+
+  The `.expected` is captured from the **dev tier**, which
+  `compiler.md` §19.3 makes the reference: C6 says a fault stops the
+  Context, and the dev tier is the one that does.
 
   **The directory must be enumerated with an exact count assertion**,
   as `corpus/accept/`'s goldens are, so an entry cannot be deleted

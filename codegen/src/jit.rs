@@ -23,6 +23,8 @@ pub struct TrapReport {
     /// TS position of the faulting construct (from the position table
     /// the compiler embeds).
     pub pos: Pos,
+    /// Exact stdout bytes produced before the Context stopped.
+    pub stdout: Vec<u8>,
 }
 
 impl std::fmt::Display for TrapReport {
@@ -31,7 +33,7 @@ impl std::fmt::Display for TrapReport {
     }
 }
 
-/// Why a run produced no output.
+/// Why a run did not complete normally.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RunError {
@@ -570,20 +572,23 @@ fn run_entry(module: &JITModule, lowered: &Lowered) -> Result<(Vec<u8>, Duration
         }
     }
 
-    match ctx.trap_record() {
-        Some(r) => {
-            let pos = lowered
-                .positions
-                .get(r.pos_id as usize)
-                .cloned()
-                .unwrap_or_else(|| Pos::new(String::new(), 0, 0));
-            Err(RunError::Trap(TrapReport {
-                rule: r.kind,
-                message: r.message.clone(),
-                pos,
-            }))
-        }
-        None => Ok((ctx.take_stdout(), elapsed)),
+    let trap = ctx.trap_record().map(|r| {
+        let pos = lowered
+            .positions
+            .get(r.pos_id as usize)
+            .cloned()
+            .unwrap_or_else(|| Pos::new(String::new(), 0, 0));
+        (r.kind, r.message.clone(), pos)
+    });
+    let stdout = ctx.take_stdout();
+    match trap {
+        Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
+            rule,
+            message,
+            pos,
+            stdout,
+        })),
+        None => Ok((stdout, elapsed)),
     }
 }
 
@@ -595,7 +600,8 @@ fn run_entry(module: &JITModule, lowered: &Lowered) -> Result<(Vec<u8>, Duration
 ///
 /// [`RunError::Rejected`] when the checker rejects the program,
 /// [`RunError::Trap`] when the run trapped (rule + message + TS
-/// position), [`RunError::Internal`] on backend failures.
+/// position + pre-trap stdout), [`RunError::Internal`] on backend
+/// failures.
 pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     let (module, lowered) = compile_jit(files)?;
     let outcome = run_entry(&module, &lowered).map(|(out, _)| out);
