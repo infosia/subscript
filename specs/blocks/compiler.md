@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -1186,9 +1186,12 @@ The sequence, from fault to the host getting control back:
    none is stored yet**, and sets `trap_flag = 1` **unconditionally**.
 3. **The observer fires here.**
 4. The runtime function returns a placeholder to generated code.
-5. Generated code checks the trap flag after every script call and,
-   seeing it set, pops its shadow frame and returns early — zero for a
-   non-`void` return, `1` for a generator.
+5. Generated code checks the trap flag after every **fault-capable**
+   call and, seeing it set, pops its shadow frame and returns early —
+   zero for a non-`void` return, `1` for a generator. *(Corrected
+   2026-07-26: this said "after every script call", contradicting
+   §18.2b two sections later. The dev tier implements fault-capable;
+   the ship tier implements neither, which is P19 — §19.)*
 6. Every caller repeats step 5, up every live frame.
 7. The tier entry reads the record and reports `RunError::Trap`.
 
@@ -1501,3 +1504,135 @@ frame returns 0 and leaves the trap pending; and asserts that live
 allocations, the reload epoch and the stdout sink are unchanged across
 the clear — the property that makes "no rollback" true rather than
 merely claimed. Both tiers.
+
+## 19. P19 — trap unwind parity (CRITICAL)
+
+Found 2026-07-26 by a fresh no-context investigation, opened as its own
+phase because it predates P13 and P18 and is larger than either.
+
+### 19.1 What is wrong
+
+**The two tiers execute different amounts of code between a fault and
+the stop, and therefore produce different output.** Measured: of 19
+trapping programs, **14 differ in stdout bytes** between dev-JIT and
+ship-C-AOT. Trap tuples agree in every case; only what happens before
+the stop differs.
+
+The bound is not "one statement". It is **the end of the enclosing
+function**:
+
+- a loop containing the fault **runs to completion** (5 and 4
+  iterations measured), and the statements after it execute;
+- execution **enters another script function and completes its body**;
+- an array is **pushed to twice after the fault**, its length going
+  0 → 2 where the dev tier leaves it 0 — so **live Context state
+  diverges**, not only stdout.
+
+**And the continuation path corrupts memory.** An out-of-range write to
+a 320-byte `@CStruct` array element goes through `ss_arr_at`, which
+records the trap and then returns `ss_scratch` — `static unsigned char
+ss_scratch[256]` — and the caller writes 320 bytes into it.
+AddressSanitizer reports `global-buffer-overflow`. The dev tier branches
+to unwind before the address is computed and never reaches the store.
+**This write happens only on the post-trap path.**
+
+### 19.2 Why the gate did not catch it
+
+Three independent reasons, each sufficient:
+
+1. `corpus.md`'s determinism rule requires every accept program to
+   terminate with deterministic output, so **a trapping program cannot
+   be an accept entry** and never reaches the golden comparison.
+2. `corpus.md` states, for the `trap/` category added the same day,
+   that a trap entry's "observable result is the trap tuple, **not
+   stdout**". The gate was told not to look.
+3. **The API discards it**: `run_jit` drops the Context on the
+   `RunError::Trap` path, and `run_c_aot` returns `run.stdout` only on
+   success. The 25 trap-parity tests in `codegen/tests/cemit.rs` use
+   these two functions and compare tuples alone. Comparing pre-trap
+   output is not currently possible.
+
+So the founding invariant — dev-JIT ≡ ship-C-AOT, byte-exact — fails
+for a whole class of programs that the gate structurally excludes.
+
+### 19.3 The rule, and which tier is right
+
+**The dev tier is the reference.** `collisions.md` C6 says a fault
+means "the Context stops", and the dev tier implements that: `guard()`
+branches to unwind at the fault point, and `trap_check()` follows every
+call that can leave the Context trapped, selected by the shared
+predicates `ArrFn::can_trap()`, `StrFn::takes_pos_id()`,
+`MapFn`/`SetFn::can_trap()`, `NumFn::takes_pos_id()`.
+
+**The ship tier consults none of those predicates.** `cemit.rs` never
+references `can_trap()`; it emits a check after script calls,
+constructors, value-position `pop`, generator `.next()` and
+`JsonResult.value`, and after nothing else — not after `Callee::Str`,
+`Arr`, `Map`, `Set`, `Math`, `Num`, `Foreign`, not after
+statement-position `push`/`pop`, allocation, `delete` or string
+formatting, and not on a loop back-edge.
+
+The fix is structural, not a longer list: **both tiers consult one
+shared predicate.** A trap-capable operation added later must become
+checked in both tiers by construction, which is the only way this stays
+fixed.
+
+### 19.4 Two contradictions in this document, both to be resolved here
+
+- §18.2a step 5 says generated code checks the flag "after every
+  **script call**". §18.2b says "after every **fault-capable call** —
+  so the *next* exported call unwinds immediately, executing nothing".
+  These disagree with each other; the dev tier implements the second,
+  the ship tier neither. **The second is correct** and §18.2a is to be
+  amended, not the reverse.
+- C6's "the Context stops" is true of the dev tier and false of the
+  ship tier. C6 is right; the ship tier is wrong.
+
+### 19.5 Staging — the gate first
+
+**Stage B (Red) — make the divergence visible.** Return the stdout sink
+on the trap path from both `run_jit` and `run_c_aot`; allow a
+`corpus/trap/` entry to carry an `.expected`; amend `corpus.md`'s
+"tuple, not stdout" rule; change the 25 trap-parity tests to compare
+`(tuple, stdout)`. Expected outcome: **a large number of failures.**
+That is the point — this stage is not expected to be green.
+
+**Stage A (Green) — make the tiers agree.**
+
+1. **Read the trap flag inline.** The ship tier's checks currently call
+   `sub_rt_ctx_trap_kind`, an out-of-line `extern` that the link cannot
+   inline (no LTO). Measured, 50M iterations, arm64 `-O2`: an inline
+   load of the flag costs **≈0.56 ns** per check against **≈6.4 ns**
+   for the call — about 11×. Do this **before** raising check density,
+   or the density increase pays eleven times over.
+
+   The flag is at Context offset 0, already contracted
+   (`Context::trap_flag_offset`) with a test proving the offset, and
+   the dev tier already loads it directly. This makes emitted C assume
+   the Context layout, which is a **deliberate exception** to §18.1b's
+   rule that the generated header is the sole expression of the ABI;
+   the exception is recorded rather than left implicit.
+
+2. **Share the predicate** (§19.3) so both tiers check the same set.
+
+3. **Inline the checks inside the helper functions.**
+   `ss_sdiv_*`/`ss_udiv_*` (16 of them) and `ss_arr_at`/`ss_fa_at`
+   **cannot be fixed as functions** — a C function cannot make its
+   caller return. The check must be expanded at the call site. **The
+   `ss_scratch` corruption closes only this way**; widening the buffer
+   would relieve the symptom while leaving a store executing after a
+   fault.
+
+**Benchmarks are a gate item here, not a formality**, unlike the two
+phases before it: this phase changes emitted code on the hottest paths
+(division, indexing) and the ship tier's justification is that emitted
+C measures 1.05× hand-written C. Re-run `perf-gate` and the
+cross-language suite, and record the rows. A regression is a finding,
+not an acceptable cost, without an explicit owner decision.
+
+### 19.6 Rejected: `setjmp`/`longjmp`
+
+A real unwind in the ship tier would cost nothing per check. It is
+rejected: it skips `shadow_pop`, corrupting the shadow stack that the
+GC roots depend on, and breaks the "generated code never unwinds"
+property that `codegen/src/jit.rs`'s SAFETY comments rely on.
