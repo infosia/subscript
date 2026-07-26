@@ -5,9 +5,23 @@ use std::fmt;
 /// Maximum supported byte size of one aggregate layout.
 ///
 /// Cranelift memory operations use signed 32-bit direct displacements
-/// for class, frame, and global offsets, so every aggregate and every
-/// accumulated layout must fit in `i32::MAX` bytes.
+/// for class, frame, and global offsets, so no offset within one
+/// aggregate may exceed `i32::MAX`.
 pub const MAX_AGGREGATE_BYTES: u32 = i32::MAX as u32;
+
+/// Cranelift's required stack-frame alignment on the supported 64-bit
+/// targets.
+pub const CRANELIFT_FRAME_ALIGNMENT: u32 = 16;
+
+/// Maximum supported accumulated Cranelift frame storage.
+///
+/// The aarch64 ABI lowering adjusts the stack pointer with a signed
+/// 32-bit amount after rounding the frame to
+/// [`CRANELIFT_FRAME_ALIGNMENT`]. This is therefore the greatest
+/// frame-aligned value representable by a positive `i32`, derived by
+/// clearing the alignment bits of `i32::MAX`.
+pub const MAX_FRAME_BYTES: u32 =
+    (i32::MAX as u32) & !(CRANELIFT_FRAME_ALIGNMENT - 1);
 
 /// Index of a class definition inside [`crate::hir::Module::classes`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -100,6 +114,32 @@ pub struct FuncType {
     pub params: Vec<Type>,
     /// Return type.
     pub ret: Type,
+}
+
+/// C-ABI size and alignment of every type whose in-memory layout does
+/// not depend on a class definition or nested aggregate.
+///
+/// The checker and backend both use this table; keeping it here makes
+/// scalar layout agreement structural rather than test-only.
+#[must_use]
+pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
+    Some(match ty {
+        Type::Bool | Type::I8 | Type::U8 => (1, 1),
+        Type::I16 | Type::U16 | Type::F16 => (2, 2),
+        Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
+        Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
+        Type::Str
+        | Type::Object
+        | Type::Array(_)
+        | Type::Map(..)
+        | Type::Set(_)
+        | Type::Generator(_)
+        | Type::Nullable(_)
+        | Type::Null => (8, 8),
+        Type::Func(_) => (16, 8),
+        Type::Void | Type::Error => (0, 1),
+        Type::Class(_) | Type::FixedArray(..) | Type::IterResult(_) => return None,
+    })
 }
 
 impl Type {
@@ -242,6 +282,12 @@ mod tests {
     #[test]
     fn aggregate_limit_matches_the_backend_displacement_range() {
         assert_eq!(MAX_AGGREGATE_BYTES, 2_147_483_647);
+        assert_eq!(CRANELIFT_FRAME_ALIGNMENT, 16);
+        assert_eq!(MAX_FRAME_BYTES, 2_147_483_632);
+        assert_eq!(
+            MAX_FRAME_BYTES,
+            MAX_AGGREGATE_BYTES & !(CRANELIFT_FRAME_ALIGNMENT - 1)
+        );
     }
 
     #[test]

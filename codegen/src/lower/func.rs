@@ -27,6 +27,9 @@ use cranelift_codegen::ir::{
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
 use subscript_compiler::{hir, Pos, Type};
+use subscript_compiler::types::{
+    CRANELIFT_FRAME_ALIGNMENT, MAX_FRAME_BYTES,
+};
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
@@ -238,6 +241,39 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<&'h Type>) {
             _ => {}
         }
     }
+}
+
+/// Verifies the exact explicit-slot layout before handing a function to
+/// Cranelift. The checker owns source diagnostics for this bound; this
+/// second line of defense covers HIR constructed by another route and
+/// makes the invariant safe in release builds too.
+fn ensure_explicit_frame_supported(
+    function: &cranelift_codegen::ir::Function,
+    context: &str,
+) -> Result<(), String> {
+    let align_up = |value: u64, align: u64| {
+        let mask = align.checked_sub(1)?;
+        value.checked_add(mask).map(|sum| sum & !mask)
+    };
+    let mut end = 0u64;
+    for data in function.sized_stack_slots.values() {
+        let requested = 1u32
+            .checked_shl(u32::from(data.align_shift))
+            .ok_or_else(|| internal(format!("{context} has invalid stack-slot alignment")))?;
+        let align = u64::from(requested.max(8));
+        end = align_up(end, align)
+            .and_then(|start| start.checked_add(u64::from(data.size)))
+            .ok_or_else(|| internal(format!("{context} stack-frame size overflows u64")))?;
+    }
+    let final_size = align_up(end, u64::from(CRANELIFT_FRAME_ALIGNMENT))
+        .ok_or_else(|| internal(format!("{context} stack-frame size overflows u64")))?;
+    if final_size > u64::from(MAX_FRAME_BYTES) {
+        return Err(internal(format!(
+            "{context} explicit stack frame is {final_size} bytes after ABI alignment; \
+             maximum supported frame size is {MAX_FRAME_BYTES} bytes"
+        )));
+    }
+    Ok(())
 }
 
 fn count_yields_expr(e: &hir::Expr) -> usize {
@@ -4085,7 +4121,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         params: &[hir::Param],
         ret: &Type,
         body: &[hir::Stmt],
-        captures: &[String],
+        captures: &[hir::Capture],
         pos: &Pos,
     ) -> Result<RV, String> {
         // Environment layout: captured values in capture order,
@@ -4093,11 +4129,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let mut cap_info: Vec<(String, Type, u32)> = Vec::new();
         let mut off = 0u32;
         let mut env_align = 1u32;
-        for name in captures {
-            let binding = self.lookup(name)?;
-            let (s, a) = self.ml.layouts.size_align(&binding.ty)?;
+        for capture in captures {
+            let binding = self.lookup(&capture.name)?;
+            debug_assert_eq!(binding.ty, capture.ty);
+            let (s, a) = self.ml.layouts.size_align(&capture.ty)?;
             off = round_up_layout(off, a, "closure environment layout")?;
-            cap_info.push((name.clone(), binding.ty.clone(), off));
+            cap_info.push((capture.name.clone(), capture.ty.clone(), off));
             off = checked_layout_add(off, s, "closure environment layout")?;
             env_align = env_align.max(a);
         }
@@ -4720,6 +4757,7 @@ pub(crate) fn define_function<M: Module>(
         body.lower_stmts(&f.body)?;
         body.finish()?;
     }
+    ensure_explicit_frame_supported(&cctx.func, &format!("{key:?}"))?;
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define {key:?}: {e}")))?;
@@ -4793,6 +4831,7 @@ fn define_lambda<M: Module>(
         body.lower_stmts(stmts)?;
         body.finish()?;
     }
+    ensure_explicit_frame_supported(&cctx.func, &name)?;
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define {name}: {e}")))?;
@@ -4887,6 +4926,7 @@ fn define_assoc_bridge<M: Module>(
         b.seal_all_blocks();
         b.finalize();
     }
+    ensure_explicit_frame_supported(&cctx.func, &name)?;
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define {name}: {e}")))?;
@@ -4977,6 +5017,7 @@ fn define_group_bridge<M: Module>(
         b.seal_all_blocks();
         b.finalize();
     }
+    ensure_explicit_frame_supported(&cctx.func, &name)?;
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define {name}: {e}")))?;
@@ -5039,6 +5080,7 @@ pub(crate) fn wrapper_for<M: Module>(
         b.seal_all_blocks();
         b.finalize();
     }
+    ensure_explicit_frame_supported(&cctx.func, &sym)?;
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define {sym}: {e}")))?;
@@ -5177,6 +5219,7 @@ pub(crate) fn define_generator<M: Module>(
             body.term = true;
             body.finish()?;
         }
+        ensure_explicit_frame_supported(&cctx.func, "generator creator")?;
         ml.module
             .define_function(creator_id, &mut cctx)
             .map_err(|e| internal(format!("define creator: {e}")))?;
@@ -5257,6 +5300,7 @@ pub(crate) fn define_generator<M: Module>(
             body.lower_stmts(&f.body)?;
             body.finish()?;
         }
+        ensure_explicit_frame_supported(&cctx.func, "generator resume")?;
         ml.module
             .define_function(resume_id, &mut cctx)
             .map_err(|e| internal(format!("define resume: {e}")))?;
@@ -5317,6 +5361,7 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
         }
         body.finish()?;
     }
+    ensure_explicit_frame_supported(&cctx.func, "module initializer")?;
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define init: {e}")))?;
@@ -5326,8 +5371,35 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
 
 #[cfg(test)]
 mod hfa_tests {
-    use super::is_pure_hfa_leaves;
-    use cranelift_codegen::ir::types;
+    use super::{
+        ensure_explicit_frame_supported, is_pure_hfa_leaves,
+    };
+    use cranelift_codegen::ir::{
+        types, Function, StackSlotData, StackSlotKind,
+    };
+    use subscript_compiler::types::MAX_FRAME_BYTES;
+
+    #[test]
+    fn explicit_frame_guard_pins_the_aarch64_boundary() {
+        let mut supported = Function::new();
+        supported.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            MAX_FRAME_BYTES,
+            0,
+        ));
+        ensure_explicit_frame_supported(&supported, "boundary")
+            .expect("greatest supported aligned frame");
+
+        let mut rejected = Function::new();
+        rejected.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            MAX_FRAME_BYTES + 1,
+            0,
+        ));
+        let error = ensure_explicit_frame_supported(&rejected, "boundary")
+            .expect_err("next byte rounds the frame to 2^31");
+        assert!(error.contains("2147483632"), "{error}");
+    }
 
     #[test]
     fn pure_float_aggregates_are_hfas() {

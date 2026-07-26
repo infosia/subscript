@@ -73,6 +73,36 @@ mod tests {
     }
 
     #[test]
+    fn oversized_accumulated_frame_is_rejected_before_cranelift() {
+        let source = "\
+@CStruct
+class Accumulated { prefix: FixedArray<u8, 2147483640>; }
+export function main(): void {
+  const a: Accumulated = new Accumulated();
+  print(`${a.prefix.length}`);
+}
+";
+        let files = [SourceFile::new("frame.ts", source)];
+        for result in [
+            run_jit(&files).map(|_| ()),
+            emit_object(&files, None).map(|_| ()),
+        ] {
+            match result {
+                Err(RunError::Rejected(diagnostics)) => {
+                    assert!(
+                        diagnostics.iter().any(|diagnostic| {
+                            diagnostic.code == subscript_compiler::RuleCode::S100
+                                && diagnostic.message.contains("2147483632 bytes")
+                        }),
+                        "missing frame-limit S100: {diagnostics:?}"
+                    );
+                }
+                other => panic!("oversized frame reached a backend: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn date_field_codes_agree_between_compiler_and_runtime() {
         // The sub_rt_date_get contract: the checker/codegen field codes
         // (hir::DateFn::field_code) and the runtime's FIELD_* constants

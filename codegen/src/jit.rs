@@ -768,9 +768,12 @@ pub(crate) fn memory_accounting_after_run(
 }
 
 #[cfg(test)]
+type AllocationAttribution = (Vec<(u32, u32, u64)>, Vec<Pos>);
+
+#[cfg(test)]
 pub(crate) fn allocation_attribution_after_run(
     files: &[SourceFile],
-) -> Result<(Vec<(u32, u32, u64)>, Vec<Pos>), RunError> {
+) -> Result<AllocationAttribution, RunError> {
     unsafe extern "C" fn collect(
         userdata: *mut std::ffi::c_void,
         class_id: u32,

@@ -134,7 +134,7 @@ pub(crate) struct Frame {
     pub is_generator: bool,
     pub yield_ty: Option<Type>,
     pub is_lambda: bool,
-    pub captures: Vec<String>,
+    pub captures: Vec<hir::Capture>,
     pub this_ty: Option<Type>,
 }
 
@@ -1709,8 +1709,11 @@ impl<'p> Checker<'p> {
                     break;
                 }
                 if frame.is_lambda {
-                    if !frame.captures.iter().any(|c| c == name) {
-                        frame.captures.push(name.to_string());
+                    if !frame.captures.iter().any(|capture| capture.name == name) {
+                        frame.captures.push(hir::Capture {
+                            name: name.to_string(),
+                            ty: local.ty.clone(),
+                        });
                     }
                     remaining -= 1;
                 }

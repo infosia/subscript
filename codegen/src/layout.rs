@@ -15,7 +15,9 @@
 
 use cranelift_codegen::ir::types;
 use subscript_compiler::hir;
-use subscript_compiler::types::MAX_AGGREGATE_BYTES;
+use subscript_compiler::types::{
+    scalar_size_align as compiler_scalar_size_align, MAX_AGGREGATE_BYTES,
+};
 use subscript_compiler::Type;
 
 use crate::lower::internal;
@@ -282,24 +284,8 @@ impl<'m> Builder<'m> {
 
 /// Size/alignment of every non-class, non-nested type.
 fn scalar_size_align(ty: &Type) -> Result<(u32, u32), String> {
-    Ok(match ty {
-        Type::Bool | Type::I8 | Type::U8 => (1, 1),
-        Type::I16 | Type::U16 | Type::F16 => (2, 2),
-        Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
-        // Date erases to i64 epoch milliseconds (stdlib.md §3).
-        Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
-        Type::Str
-        | Type::Object
-        | Type::Array(_)
-        | Type::Map(..)
-        | Type::Set(_)
-        | Type::Generator(_)
-        | Type::Nullable(_)
-        | Type::Null => (8, 8),
-        Type::Func(_) => (16, 8),
-        Type::Void | Type::Error => (0, 1),
-        other => return Err(internal(format!("unsized type {other:?}"))),
-    })
+    compiler_scalar_size_align(ty)
+        .ok_or_else(|| internal(format!("unsized type {ty:?}")))
 }
 
 impl Layouts {

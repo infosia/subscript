@@ -134,17 +134,69 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 
 ## 2. Q-register resolutions not covered above
 
-- **Q29 (the aggregate size limit)** — every aggregate a program can
-  declare — a `FixedArray`, a `@CStruct` value class, a closure
-  environment, a generator frame, a coroutine step result — has a
-  **total size limit of `i32::MAX` bytes (2 147 483 647)**, enforced by
-  the checker with S100 at the position of the offending
-  `FixedArray` type, field, or `.next` member, and naming the limit in
-  the message.
+- **Q29 (the size limits)** — **two** limits, because two different
+  things overflow. *(Revised 2026-07-26 after the P21 Phase Review; the
+  first version had one limit and was wrong in both directions — see
+  below.)*
 
-  The number is not arbitrary: Cranelift addresses class fields, frame
-  slots and globals with a **signed 32-bit displacement**, so an
-  aggregate past that bound has no valid offset in the dev tier.
+  1. **A single aggregate: 2 147 483 647 bytes (`i32::MAX`).** Bounds
+     one independently addressable aggregate. Cranelift addresses class
+     fields, frame slots and globals with a **signed 32-bit
+     displacement**, so an aggregate past this has no valid offset.
+  2. **Accumulated Cranelift stack-frame storage: 2 147 483 632 bytes.**
+     Derived, not chosen: the AArch64 ABI aligns the frame to 16 bytes,
+     so the largest representable aligned frame is
+     `floor((2^31 − 1) / 16) × 16 = 2^31 − 16`. Anything larger rounds
+     up to at least `2^31`, where the ABI's negation of the offset
+     overflows.
+
+  Reference-class fields are subject to (1) but not (2) unless an
+  instance actually occupies stack-frame storage — the exposure is
+  stack-frame layout, and a large reference-class shape compiles.
+
+  **Enforced by the checker**, with S100 at the responsible position
+  and the limit named in the message, for: `FixedArray` layouts
+  including nested and class-dependent ones; `@CStruct` value-class
+  layouts; reference-class object layouts; `.next` `IterResult<T>`
+  layouts; **closure environments**, by the resolved types of captured
+  values; **generator frames**, including header, parameters and
+  locals; and the accumulated stack-frame storage of (2).
+
+  *(Added 2026-07-26. Before it, a program the checker accepted could
+  **panic the compiler** — `@CStruct class Big { data:
+  FixedArray<u8, 4294967295>; }` reached `attempt to add with overflow`
+  in codegen's layout arithmetic. That violates core principle 5, and
+  the shape was reachable from source **by construction** rather than
+  by accident: layout multiplies an element size by a length taken from
+  a source annotation. Found while checking whether P21's allocation
+  fault-injection work could reach the "not representable" raise point
+  without new machinery — it could not, but it found this instead.)*
+
+  **The first revision of this entry did not achieve its own stated
+  purpose, and the Phase Review measured it.** Two defects:
+
+  - It set the limit at `i32::MAX` and bounded **one aggregate rather
+    than the frame**, so `FixedArray<u8, 2147483640>` in a `@CStruct`
+    local still panicked — `attempt to negate with overflow` in
+    Cranelift's aarch64 ABI. The bisected boundary was 2 147 483 632,
+    which is now limit (2). **The value this entry used as its own
+    example, `i32::MAX`, was itself a panicking input.** And the
+    workspace has no `[profile.release]`, so with `overflow-checks`
+    off a release-built compiler would have **wrapped that negation
+    instead of panicking, emitting a wrong stack offset silently** —
+    the debug panic was the friendly face of it.
+  - It **claimed checker enforcement for closure environments and
+    generator frames when neither was checked.** They were summed only
+    in codegen, so the user got an internal compiler error instead of
+    a positioned S100 — and worse, the **ship tier accepted programs
+    the dev tier refused to compile**, which the two-tier equivalence
+    premise forbids.
+
+  The scalar layout table is now **shared between the checker and
+  codegen** rather than duplicated. It was byte-for-byte identical in
+  two crates with no test that they agreed, and a drift would move the
+  checker's enforced limit off the backend's real bound — which is
+  exactly how the first revision failed.
 
   *(Added 2026-07-26. Before it, a program the checker accepted could
   **panic the compiler** — `@CStruct class Big { data:

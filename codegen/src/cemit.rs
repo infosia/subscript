@@ -4299,7 +4299,7 @@ impl<'m> Emitter<'m> {
         Ok(format!("{ret}(*)({})", parts.join(", ")))
     }
 
-    fn eval_lambda(&mut self, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], captures: &[String], out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_lambda(&mut self, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], captures: &[hir::Capture], out: &mut String, depth: usize) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
         let name = format!("ss_lambda{n}");
@@ -4308,11 +4308,10 @@ impl<'m> Emitter<'m> {
 
         // Environment: captured values by value (C5), non-escaping so it
         // may live in the creating frame.
-        let mut cap_tys: Vec<(String, Type)> = Vec::new();
-        for cap in captures {
-            let ty = self.capture_type(cap)?;
-            cap_tys.push((cap.clone(), ty));
-        }
+        let cap_tys: Vec<(String, Type)> = captures
+            .iter()
+            .map(|capture| (capture.name.clone(), capture.ty.clone()))
+            .collect();
         let env_expr = if captures.is_empty() {
             "((void*)0)".to_string()
         } else {
@@ -4388,17 +4387,6 @@ impl<'m> Emitter<'m> {
         self.has_shadow = saved_has;
         self.current_ret = saved_ret;
         Ok(())
-    }
-
-    /// The declared type of a captured local, from the enclosing
-    /// function's scope (C2).
-    fn capture_type(&self, name: &str) -> Result<Type, String> {
-        for (n, t) in self.local_types.iter().rev() {
-            if n == name {
-                return Ok(t.clone());
-            }
-        }
-        Err(format!("captured local `{name}` has no known type"))
     }
 
     // ----- generators -----

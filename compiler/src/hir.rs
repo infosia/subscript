@@ -169,6 +169,16 @@ pub struct Param {
     pub pos: Pos,
 }
 
+/// One immutable local copied by value into a closure environment.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct Capture {
+    /// Captured local name.
+    pub name: String,
+    /// Resolved type stored in the environment.
+    pub ty: Type,
+}
+
 /// A checked statement.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -2468,8 +2478,9 @@ pub enum ExprKind {
         /// Body statements (an expression body becomes a single
         /// `return`).
         body: Vec<Stmt>,
-        /// Names of captured `const` locals, empty when non-capturing.
-        captures: Vec<String>,
+        /// Captured `const` locals and their resolved storage types,
+        /// empty when non-capturing.
+        captures: Vec<Capture>,
     },
     /// `yield` inside a generator (C8).
     Yield(Option<Box<Expr>>),

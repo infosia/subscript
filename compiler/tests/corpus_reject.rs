@@ -100,6 +100,31 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         11,
     ),
+    (
+        "r67-frame-local-boundary-too-large.ts",
+        RuleCode::S100,
+        7,
+    ),
+    (
+        "r68-cstruct-stack-frame-too-large.ts",
+        RuleCode::S100,
+        12,
+    ),
+    (
+        "r69-closure-environment-layout-too-large.ts",
+        RuleCode::S100,
+        12,
+    ),
+    (
+        "r70-generator-frame-layout-too-large.ts",
+        RuleCode::S100,
+        8,
+    ),
+    (
+        "r71-accumulated-frame-locals-too-large.ts",
+        RuleCode::S100,
+        11,
+    ),
 ];
 
 #[test]
@@ -176,8 +201,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         EXPECTED.len(),
-        63,
-        "expected the 58 standing reject entries plus five aggregate-layout entries"
+        68,
+        "expected the 58 standing reject entries plus ten aggregate/frame-layout entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -218,6 +243,81 @@ fn aggregate_layout_rejections_pin_the_exact_construct_and_limit() {
             diagnostics[0].message
         );
     }
+}
+
+#[test]
+fn frame_and_synthesized_aggregate_rejections_are_checker_diagnostics() {
+    let dir = corpus_dir().join("reject");
+    for (file, line, col, required) in [
+        (
+            "r67-frame-local-boundary-too-large.ts",
+            7,
+            9,
+            "2147483632 bytes",
+        ),
+        (
+            "r68-cstruct-stack-frame-too-large.ts",
+            12,
+            9,
+            "2147483632 bytes",
+        ),
+        (
+            "r69-closure-environment-layout-too-large.ts",
+            12,
+            27,
+            "closure environment",
+        ),
+        (
+            "r70-generator-frame-layout-too-large.ts",
+            8,
+            3,
+            "generator frame",
+        ),
+        (
+            "r71-accumulated-frame-locals-too-large.ts",
+            11,
+            9,
+            "2147483632 bytes",
+        ),
+    ] {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("oversized frame/environment must be rejected by the checker");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{file}");
+        assert_eq!(
+            (diagnostics[0].pos.line, diagnostics[0].pos.col),
+            (line, col),
+            "{file}: diagnostic must point at the source construct that crosses the limit"
+        );
+        assert!(
+            diagnostics[0].message.contains(required),
+            "{file}: diagnostic must contain {required:?}: {}",
+            diagnostics[0].message
+        );
+    }
+}
+
+#[test]
+fn frame_limit_is_abi_derived_without_lowering_the_heap_aggregate_limit() {
+    let boundary = "\
+function probe(input: FixedArray<u8, 2147483632>): void {
+  const data: FixedArray<u8, 2147483632> = input;
+}
+export function main(): void {}
+";
+    check_program(&[SourceFile::new("boundary.ts", boundary)])
+        .expect("the greatest 16-byte-aligned signed-i32 frame must check");
+
+    let heap_only = "\
+class RefBig {
+  prefix: FixedArray<u8, 2147483640>;
+  tag: i32;
+}
+export function main(): void {}
+";
+    check_program(&[SourceFile::new("heap-only.ts", heap_only)])
+        .expect("a non-stack reference-class allocation retains the aggregate limit");
 }
 
 #[test]

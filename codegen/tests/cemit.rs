@@ -85,6 +85,12 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t31-allocation-failure-template" => (TrapKind::AllocationFailure, 10),
         "t32-allocation-failure-generator-frame" => (TrapKind::AllocationFailure, 7),
         "t33-allocation-failure-json-raw-new" => (TrapKind::AllocationFailure, 18),
+        "t35-allocation-failure-map-new" | "t36-allocation-failure-set-new" => {
+            (TrapKind::AllocationFailure, 9)
+        }
+        "t37-allocation-failure-map-grow" | "t38-allocation-failure-set-grow" => {
+            (TrapKind::AllocationFailure, 10)
+        }
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -97,6 +103,8 @@ fn allocation_failure_count(id: &str) -> Option<u64> {
         "t31-allocation-failure-template" => Some(5),
         "t32-allocation-failure-generator-frame" => Some(2),
         "t33-allocation-failure-json-raw-new" => Some(5),
+        "t35-allocation-failure-map-new" | "t36-allocation-failure-set-new" => Some(2),
+        "t37-allocation-failure-map-grow" | "t38-allocation-failure-set-grow" => Some(3),
         _ => None,
     }
 }
@@ -493,8 +501,8 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
         ids.len(),
-        34,
-        "expected exactly 34 trap entries (t01–t33 runnable coverage + t34 \
+        38,
+        "expected exactly 38 trap entries (t01–t33 and t35–t38 runnable coverage + t34 \
          unrepresentable-layout policy), found {}",
         ids.len()
     );
@@ -542,6 +550,19 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                          {:?}\n  expected = {:?}",
                         String::from_utf8_lossy(&report.stdout),
                         String::from_utf8_lossy(&expected)
+                    ));
+                }
+                if matches!(
+                    id.as_str(),
+                    "t35-allocation-failure-map-new"
+                        | "t36-allocation-failure-set-new"
+                        | "t37-allocation-failure-map-grow"
+                        | "t38-allocation-failure-set-grow"
+                ) && report.message != "injected allocation failure"
+                {
+                    failures.push(format!(
+                        "{id}: Context::trap must preserve the first, injected message; got {:?}",
+                        report.message
                     ));
                 }
             }
