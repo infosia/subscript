@@ -1,6 +1,6 @@
 # Cross-language benchmarks — contract
 
-Status: Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
+Status: Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
 subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
@@ -38,10 +38,51 @@ themselves and print `<checksum> <median_seconds>`.
 
 ## Timing methodology (mirrors `compiler.md` §9)
 
-- Each subject: **≥3 warm-up runs discarded, ≥11 timed runs, report the
-  median**; also record min/max. A spread wider than ±20% of the median
-  invalidates the run (machine too noisy) and it is redone with more
-  warm-up.
+- Each subject: **≥11 timed runs, report the median**; also record
+  min/max and **every sample**. A spread wider than ±20% of the median
+  invalidates that subject's timing, which is withheld.
+
+- **Warm-up is a time floor, not a count: ≥200 ms of measured warm-up
+  execution**, and ≥3 iterations. *(Revised 2026-07-27; it said "≥3
+  warm-up runs discarded" and was wrong twice over.)*
+
+  A count cannot express "reach steady state" across a suite whose
+  per-iteration cost spans 3.7 ms to 125 ms. Measured on the arm64 dev
+  machine: the CPU ramps **2.14 → 3.50 GHz, a factor of 1.63, over
+  ~70 ms** of continuous load, and `cpu/wall ≥ 0.9996` on every sample
+  says the thread is never descheduled — the clock is simply low, so
+  this is DVFS and not contention. 200 ms is about three times the
+  measured ramp.
+
+  This is not only about the ±20% gate. Under-warmed, `fib-recursive`'s
+  C median measured **4.45 ms against 3.65 ms** warm — the *published
+  number* was ~20% pessimistic, not merely noisy.
+
+- **A subject must report its measured warm-up time, and the runner
+  rejects the subject if it is under the floor.** This exists because
+  the floor was silently zero for three of ten C workloads and three
+  full-suite runs could not diagnose it.
+
+  `clang -O2` **deleted the warm-up loop entirely** in `fib-loop`,
+  `mandelbrot` and `primes`: their `workload()` takes no argument,
+  touches no memory and has no side effect, so it is provably pure and
+  terminating, and the loop's only result is overwritten by the timed
+  loop. Verified by wall time at `--warmup 0` against `--warmup 200`:
+  `fib-loop` 0.63 s → 0.09 s and `primes` 0.44 s → 0.06 s — no work
+  added — while `sort` went 0.40 s → 3.10 s, which is the 200
+  iterations actually running.
+
+  The three that survived did so **by accident**: `sort`, `tree`,
+  `particles`, `callbacks` and `collect` touch the heap, `queen` has a
+  `volatile` guarding against constant-folding, and `fib-recursive` is
+  recursive so termination cannot be proven. Nothing in the harness
+  was keeping warm-up alive.
+
+  Each C harness therefore writes its warm-up result to a `volatile`
+  sink. **This is not a workaround for the optimizer — it is what makes
+  the contract's own requirement true**, and the reported warm-up time
+  is what proves it stayed true.
+
 - Only the **workload execution** is timed — not process start-up,
   compilation, JIT warm-up, Context creation, or I/O.
 - One machine, one session; the runner records the machine (host, CPU, AC
