@@ -3,7 +3,7 @@
 Status: Rev 0, 2026-07-22, seeded at P0 of
 `specs/subscript-project-plan.md`. The corpus is the language's executable
 definition (CLAUDE.md, core principle 2). This document is the contract
-for `corpus/accept/` and `corpus/reject/`; the program files are
+for `corpus/accept/`, `corpus/reject/` and `corpus/trap/`; the program files are
 maintained against it.
 
 ## 1. Layout and file conventions
@@ -12,6 +12,7 @@ maintained against it.
 corpus/
   accept/   a01-hello.ts … a24-particle-system.ts
   reject/   r01-any.ts … r14-async.ts
+  trap/     t01-json-result-value.ts …
 ```
 
 - One program per file unless the entry explicitly tests multi-file modules
@@ -30,6 +31,35 @@ corpus/
 
 - Reject entries add one line: `// expected-error: <one-line description of
   the diagnostic the compiler must produce>`.
+- **Trap entries** (`corpus/trap/`, `t<nn>-<slug>.ts`) add one line:
+  `// expected-trap: <rule> at <where>`. A trap entry is a program that
+  **compiles and then faults at runtime**, which neither `accept/` nor
+  `reject/` can express: an accept entry must terminate with
+  deterministic output, and a reject entry never runs.
+
+  *(Category added 2026-07-26, with P13's `JsonResult.value` guard. It
+  was created by an implementer without a contract; contracted here
+  rather than reverted, because a trap is language-visible behaviour
+  and belongs in the executable definition — CLAUDE.md principle 2 —
+  and because the alternative in use, 25 inline source strings in
+  `codegen/tests/cemit.rs`, puts that behaviour where the corpus cannot
+  see it.)*
+
+  A trap entry has **no `.expected` file**: its observable result is
+  the trap tuple, not stdout. The gate asserts the tuple —
+  `(kind, message, position)` — is **identical on both tiers**, which
+  is the same standing requirement every other trap carries.
+
+  **The directory must be enumerated with an exact count assertion**,
+  as `corpus/accept/`'s goldens are, so an entry cannot be deleted
+  without failing a test. A category under `corpus/` that nothing
+  counts has the appearance of the executable definition's guarantee
+  without its substance.
+
+  The 25 trap-parity tests currently written as inline strings in
+  `codegen/tests/cemit.rs` are candidates to migrate here. They are
+  **not** migrated yet; recorded so the split is a known state rather
+  than an accident.
 - Multi-file entries: each file's `// corpus:` id includes the filename,
   e.g. `accept/a19-modules/main`.
 - **Determinism rule:** every accept program terminates and writes a
