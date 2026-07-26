@@ -24,6 +24,9 @@ struct Function {
 pub fn render() -> Result<String, String> {
     let observer_docs = docs_for(CONTEXT_SOURCE, "pub type TrapObserver")?;
     let observer = parse_fn_type(CONTEXT_SOURCE, "TrapObserver")?;
+    let allocation_visitor_docs =
+        docs_for(CONTEXT_SOURCE, "pub type AllocationVisitor")?;
+    let allocation_visitor = parse_fn_type(CONTEXT_SOURCE, "AllocationVisitor")?;
     let entry_docs = docs_for(CONTEXT_SOURCE, "pub type ScriptMainEntry")?;
     let entry = parse_fn_type(CONTEXT_SOURCE, "ScriptMainEntry")?;
     let mut functions = parse_functions(FFI_SOURCE, "sub_rt_ctx_")?;
@@ -46,6 +49,13 @@ pub fn render() -> Result<String, String> {
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("sub_rt_trap_observer", &observer)?);
+    out.push_str(";\n\n");
+    push_comment(&mut out, &allocation_visitor_docs);
+    out.push_str("typedef ");
+    out.push_str(&c_fn_pointer(
+        "sub_rt_alloc_visitor",
+        &allocation_visitor,
+    )?);
     out.push_str(";\n\n");
     push_comment(&mut out, &entry_docs);
     out.push_str("typedef ");
@@ -232,6 +242,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "*const u8" => Ok("const uint8_t*"),
         "*mut c_void" | "*mut std::ffi::c_void" => Ok("void*"),
         "Option<TrapObserver>" => Ok("sub_rt_trap_observer"),
+        "Option<AllocationVisitor>" => Ok("sub_rt_alloc_visitor"),
         other => Err(format!(
             "host header: Rust type `{other}` has no explicit C spelling"
         )),

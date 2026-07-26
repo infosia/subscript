@@ -28,6 +28,16 @@ typedef struct Context Context;
 typedef void (*sub_rt_trap_observer)(void* userdata, uint32_t kind, uint32_t pos_id, const uint8_t* message, uint64_t message_len);
 
 /**
+ * Host callback invoked once for each live Context allocation.
+ *
+ * `payload_bytes` follows the same tier policy as
+ * [`Context::live_bytes`]: exact requested bytes in the development
+ * tier and for ship-tier large allocations, size-class payload capacity
+ * for ship-tier arena blocks.
+ */
+typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id, uint32_t pos_id, uint64_t payload_bytes);
+
+/**
  * C calling convention shared by the module initializer (`ss_init`)
  * and the required exported `main(): void` (`ss_export_main`).
  *
@@ -49,6 +59,7 @@ void ss_export_main(Context* ctx);
 int32_t sub_rt_ctx_clear_trap(Context* ctx);
 void sub_rt_ctx_enter_script(Context* ctx);
 void sub_rt_ctx_exit_script(Context* ctx);
+void sub_rt_ctx_fail_alloc_after(Context* ctx, uint64_t n);
 uint64_t sub_rt_ctx_live_allocations(const Context* ctx);
 uint64_t sub_rt_ctx_live_bytes(const Context* ctx);
 Context* sub_rt_ctx_new(void);
@@ -61,6 +72,7 @@ const uint8_t* sub_rt_ctx_stdout(const Context* ctx, uint64_t* len);
 uint32_t sub_rt_ctx_trap_kind(const Context* ctx);
 const uint8_t* sub_rt_ctx_trap_message(const Context* ctx, uint64_t* len);
 uint32_t sub_rt_ctx_trap_pos_id(const Context* ctx);
+uint64_t sub_rt_ctx_visit_live_allocations(const Context* ctx, sub_rt_alloc_visitor visitor, void* userdata);
 
 #ifdef __cplusplus
 } /* extern "C" */

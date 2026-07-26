@@ -13,7 +13,10 @@
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
-use subscript_codegen::{run_c_aot, run_jit, RunError, TrapReport};
+use subscript_codegen::{
+    run_c_aot, run_c_aot_with_alloc_failure, run_jit,
+    run_jit_with_alloc_failure, RunError, TrapReport,
+};
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
 
@@ -74,8 +77,27 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t25-allocation-sites-before-second-template-fault" => {
             (TrapKind::DivisionByZero, 21)
         }
+        "t26-allocation-failure-new" => (TrapKind::AllocationFailure, 17),
         "t27-dynamic-value-field-write-oob" => (TrapKind::IndexOutOfBounds, 25),
+        "t28-allocation-failure-array-literal" => (TrapKind::AllocationFailure, 9),
+        "t29-allocation-failure-push-grow" => (TrapKind::AllocationFailure, 10),
+        "t30-allocation-failure-string-concat" => (TrapKind::AllocationFailure, 11),
+        "t31-allocation-failure-template" => (TrapKind::AllocationFailure, 10),
+        "t32-allocation-failure-generator-frame" => (TrapKind::AllocationFailure, 7),
+        "t33-allocation-failure-json-raw-new" => (TrapKind::AllocationFailure, 18),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
+    }
+}
+
+fn allocation_failure_count(id: &str) -> Option<u64> {
+    match id {
+        "t26-allocation-failure-new" | "t28-allocation-failure-array-literal" => Some(2),
+        "t29-allocation-failure-push-grow" => Some(3),
+        "t30-allocation-failure-string-concat" => Some(4),
+        "t31-allocation-failure-template" => Some(5),
+        "t32-allocation-failure-generator-frame" => Some(2),
+        "t33-allocation-failure-json-raw-new" => Some(5),
+        _ => None,
     }
 }
 
@@ -471,9 +493,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let ids = trap_corpus::trap_ids(&trap);
     assert_eq!(
         ids.len(),
-        27,
-        "expected exactly 27 trap entries (t01–t25 runnable coverage + t26 allocation \
-         policy + t27 dynamic value-field write), found {}",
+        34,
+        "expected exactly 34 trap entries (t01–t33 runnable coverage + t34 \
+         unrepresentable-layout policy), found {}",
         ids.len()
     );
 
@@ -484,7 +506,8 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         // dev-tier-only mode; a shipped C binary has no body-swap mode.
         if matches!(
             id.as_str(),
-            "t24-stale-coroutine-reload" | "t26-allocation-failure-policy"
+            "t24-stale-coroutine-reload"
+                | "t34-allocation-failure-unrepresentable-policy"
         ) {
             continue;
         }
@@ -492,8 +515,14 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         let expected = trap_corpus::trap_expected(&trap, &id);
         let expected_file = format!("{id}.ts");
         let (expected_kind, expected_line) = trap_expectation(&id);
-        let jit = run_jit(&files);
-        let ship = run_c_aot(&files);
+        let (jit, ship) = if let Some(n) = allocation_failure_count(&id) {
+            (
+                run_jit_with_alloc_failure(&files, n),
+                run_c_aot_with_alloc_failure(&files, n),
+            )
+        } else {
+            (run_jit(&files), run_c_aot(&files))
+        };
 
         match &jit {
             Err(RunError::Trap(report)) => {
@@ -1187,6 +1216,29 @@ fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
         "ship-C-AOT printed {:?}, golden is {:?}",
         String::from_utf8_lossy(&out),
         String::from_utf8_lossy(A22_GOLDEN)
+    );
+}
+
+#[test]
+fn allocation_metadata_regenerates_byte_identically() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = include_str!("../../corpus/accept/a15-manual-lifetime.ts");
+    let hir = check_program(&[SourceFile::new("a15-manual-lifetime.ts", source)])
+        .expect("metadata fixture checks");
+    let program = emit_c(&hir).expect("metadata fixture emits");
+    assert_eq!(
+        program.allocation_metadata_header.as_bytes(),
+        include_bytes!("fixtures/p21-allocation-metadata.h"),
+        "generated allocation metadata header drifted"
+    );
+    assert_eq!(
+        program
+            .allocation_metadata_source
+            .as_bytes(),
+        include_bytes!("fixtures/p21-allocation-metadata.inc"),
+        "generated allocation class/position tables drifted"
     );
 }
 

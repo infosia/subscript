@@ -37,11 +37,13 @@ mod reload;
 mod trap_sites;
 
 pub use aot::{
-    emit_object, run_aot, run_c_aot, runtime_staticlib_path, AotObject, AOT_ENTRY_C, HOST_HEADER_C,
-    RUNTIME_STATICLIB_ENV,
+    emit_object, run_aot, run_c_aot, run_c_aot_with_alloc_failure, runtime_staticlib_path,
+    AotObject, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
 };
 pub use cemit::{emit_c, CProgram};
-pub use jit::{jit_bench, run_jit, BenchSamples, RunError, TrapReport};
+pub use jit::{
+    jit_bench, run_jit, run_jit_with_alloc_failure, BenchSamples, RunError, TrapReport,
+};
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 

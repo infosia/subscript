@@ -548,6 +548,31 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 /// [`RunError::Internal`] on emission, toolchain, compile, link, or
 /// execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
+    run_c_aot_configured(files, None)
+}
+
+/// Runs the emitted-C ship tier while refusing the `n`-th object-level
+/// Context allocation after Context creation.
+///
+/// The injected fault is armed before `ss_init`, so module-initializer
+/// allocations are part of the count. When
+/// `SUBSCRIPT_C_AOT_ASAN` is set, the generated C and host entry are
+/// compiled and linked with AddressSanitizer.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_c_aot`].
+pub fn run_c_aot_with_alloc_failure(
+    files: &[SourceFile],
+    n: u64,
+) -> Result<Vec<u8>, RunError> {
+    run_c_aot_configured(files, Some(n))
+}
+
+fn run_c_aot_configured(
+    files: &[SourceFile],
+    fail_alloc_after: Option<u64>,
+) -> Result<Vec<u8>, RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
     let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
     let staticlib = runtime_staticlib()?;
@@ -559,11 +584,30 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         .path
         .join(format!("program{}", std::env::consts::EXE_SUFFIX));
     write_file(&src_path, program.source.as_bytes())?;
-    write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
+    let entry = if let Some(n) = fail_alloc_after {
+        let anchor = "    call_script_entry(ctx, ss_init);";
+        if !AOT_ENTRY_C.contains(anchor) {
+            return Err(RunError::Internal(internal(
+                "AOT entry allocation-fault anchor moved",
+            )));
+        }
+        AOT_ENTRY_C.replace(
+            anchor,
+            &format!(
+                "    sub_rt_ctx_fail_alloc_after(ctx, {n}u);\n\
+                 {anchor}"
+            ),
+        )
+    } else {
+        AOT_ENTRY_C.to_string()
+    };
+    write_file(&entry_path, entry.as_bytes())?;
 
     let interop = interop_dir();
     let cc = host_c_compiler();
-    let compile = Command::new(&cc)
+    let address_sanitizer = std::env::var_os("SUBSCRIPT_C_AOT_ASAN").is_some();
+    let mut command = Command::new(&cc);
+    command
         // The emitted ship C targets C11 (compiler block §11); the
         // language's C-ABI layout, compound literals, `_Alignof`, and
         // `<stdbool.h>`/`<stdint.h>` types are all C11. Pinning the
@@ -576,6 +620,12 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         // signed overflow defined rather than C undefined behaviour.
         .arg("-fwrapv")
         .arg("-ffp-contract=off")
+        .args(
+            address_sanitizer
+                .then_some(["-fsanitize=address", "-fno-omit-frame-pointer"])
+                .into_iter()
+                .flatten(),
+        )
         .arg("-I")
         .arg(&interop)
         .arg(&src_path)
@@ -584,7 +634,8 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
         .arg(&staticlib)
         .args(runtime_system_libs())
         .arg("-o")
-        .arg(&exe_path)
+        .arg(&exe_path);
+    let compile = command
         .output()
         .map_err(|e| {
             RunError::Internal(internal(format!(
@@ -658,11 +709,17 @@ mod tests {
         let dir = TempDir::new("host-api-test").expect("temp dir");
         let src_path = dir.path.join("program.c");
         let entry_path = dir.path.join("entry.c");
+        let metadata_path = dir.path.join("allocation-metadata.h");
         let exe_path = dir
             .path
             .join(format!("program{}", std::env::consts::EXE_SUFFIX));
         write_file(&src_path, program.source.as_bytes()).expect("write program.c");
         write_file(&entry_path, entry.as_bytes()).expect("write entry.c");
+        write_file(
+            &metadata_path,
+            program.allocation_metadata_header.as_bytes(),
+        )
+        .expect("write allocation-metadata.h");
 
         let interop = interop_dir();
         let cc = host_c_compiler();
@@ -671,6 +728,8 @@ mod tests {
             .arg("-O2")
             .arg("-fwrapv")
             .arg("-ffp-contract=off")
+            .arg("-I")
+            .arg(&dir.path)
             .arg("-I")
             .arg(&interop)
             .arg(&src_path)
@@ -1021,6 +1080,284 @@ int main(void) {
             "host memory accounting: dev=({}, {}, {}), ship=({}, {}, {})",
             dev.0, dev.1, dev.2, ship.0, ship.1, ship.2
         );
+    }
+
+    #[test]
+    fn host_allocation_attribution_reports_known_sites_on_both_tiers() {
+        let program = sources(
+            "class Cell {\n\
+               value: i32;\n\
+               constructor(value: i32) { this.value = value; }\n\
+             }\n\
+             export function main(): void {\n\
+               const cell: Cell = new Cell(7);\n\
+               const values: i32[] = [];\n\
+               values.push(cell.value);\n\
+             }\n",
+        );
+        let (dev, dev_positions) =
+            crate::jit::allocation_attribution_after_run(&program)
+                .expect("dev attribution");
+
+        let entry = host_entry(
+            r#"
+#include "allocation-metadata.h"
+#include <stdio.h>
+#include <string.h>
+
+struct triple {
+    uint32_t class_id;
+    uint32_t pos_id;
+    uint64_t bytes;
+};
+
+struct observed {
+    struct triple triples[8];
+    uint64_t count;
+};
+
+static void visit(
+    void* userdata, uint32_t class_id, uint32_t pos_id,
+    uint64_t payload_bytes) {
+    struct observed* observed = (struct observed*)userdata;
+    if (observed->count < 8) {
+        struct triple* triple = &observed->triples[observed->count];
+        triple->class_id = class_id;
+        triple->pos_id = pos_id;
+        triple->bytes = payload_bytes;
+    }
+    observed->count += 1;
+}
+
+static const char* class_name(uint32_t class_id) {
+    for (uint64_t i = 0; i < ss_alloc_class_count; ++i) {
+        if (ss_alloc_classes[i].class_id == class_id) {
+            return ss_alloc_classes[i].name;
+        }
+    }
+    return NULL;
+}
+
+static void call_entry(Context* ctx, sub_script_main_entry entry) {
+    sub_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    sub_rt_ctx_exit_script(ctx);
+}
+
+int main(void) {
+    Context* ctx = sub_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    call_entry(ctx, ss_init);
+    if (sub_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, ss_export_main);
+    if (sub_rt_ctx_trap_kind(ctx) != 0) {
+        sub_rt_ctx_release(ctx);
+        return 3;
+    }
+
+    struct observed observed = {0};
+    uint64_t visited =
+        sub_rt_ctx_visit_live_allocations(ctx, visit, &observed);
+    if (visited != 3 || observed.count != 3 ||
+        sub_rt_ctx_live_allocations(ctx) != 3) {
+        sub_rt_ctx_release(ctx);
+        return 4;
+    }
+
+    for (uint64_t i = 0; i < observed.count; ++i) {
+        const struct triple* triple = &observed.triples[i];
+        if (triple->pos_id >= ss_alloc_position_count) {
+            sub_rt_ctx_release(ctx);
+            return 5;
+        }
+        const char* name = class_name(triple->class_id);
+        const sub_alloc_position_info* pos =
+            &ss_alloc_positions[triple->pos_id];
+        uint32_t expected_line = 0;
+        if (triple->class_id == 0 && name != NULL &&
+            strcmp(name, "Cell") == 0) {
+            expected_line = 6;
+        } else if (triple->class_id == 4294967042u && name != NULL &&
+                   strcmp(name, "Array") == 0) {
+            expected_line = 7;
+        } else if (triple->class_id == 4294967043u && name != NULL &&
+                   strcmp(name, "ArrayData") == 0) {
+            expected_line = 8;
+        } else {
+            sub_rt_ctx_release(ctx);
+            return 6;
+        }
+        if (strcmp(pos->file, "test.ts") != 0 ||
+            pos->line != expected_line) {
+            sub_rt_ctx_release(ctx);
+            return 7;
+        }
+        printf("%u %u %llu\n", triple->class_id, triple->pos_id,
+               (unsigned long long)triple->bytes);
+    }
+    sub_rt_ctx_release(ctx);
+    return 0;
+}
+"#,
+        );
+        let run = run_c_aot_with_entry(&program, &entry);
+        assert!(
+            run.status.success(),
+            "ship attribution host exited with {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let values: Vec<u64> = String::from_utf8(run.stdout)
+            .expect("ship attribution output is UTF-8")
+            .split_whitespace()
+            .map(|value| value.parse().expect("ship attribution integer"))
+            .collect();
+        assert_eq!(values.len(), 9);
+        let mut ship: Vec<(u32, u32, u64)> = values
+            .chunks_exact(3)
+            .map(|v| (v[0] as u32, v[1] as u32, v[2]))
+            .collect();
+        ship.sort_unstable();
+
+        assert_eq!(
+            dev,
+            vec![
+                (0, 0, 4),
+                (0xFFFF_FF02, 1, 32),
+                (0xFFFF_FF03, 4, 16),
+            ],
+            "dev attribution triples changed"
+        );
+        assert_eq!(
+            ship,
+            vec![
+                (0, 0, 16),
+                (0xFFFF_FF02, 1, 48),
+                (0xFFFF_FF03, 2, 16),
+            ],
+            "ship attribution triples changed"
+        );
+        let dev_sites: Vec<(u32, &str, u32)> = dev
+            .iter()
+            .map(|&(class_id, pos_id, _)| {
+                let pos = &dev_positions[pos_id as usize];
+                (class_id, pos.file.as_str(), pos.line)
+            })
+            .collect();
+        assert_eq!(
+            dev_sites,
+            vec![
+                (0, "test.ts", 6),
+                (0xFFFF_FF02, "test.ts", 7),
+                (0xFFFF_FF03, "test.ts", 8),
+            ],
+            "dev position table did not resolve the known sites"
+        );
+        eprintln!("allocation attribution: dev={dev:?}, ship={ship:?}");
+    }
+
+    #[test]
+    fn allocation_corpus_object_request_counts_match_across_tiers() {
+        let entry = host_entry(
+            r#"
+#include <stdio.h>
+
+static void call_entry(Context* ctx, sub_script_main_entry entry) {
+    sub_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    sub_rt_ctx_exit_script(ctx);
+}
+
+int main(void) {
+    Context* ctx = sub_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    call_entry(ctx, ss_init);
+    if (sub_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, ss_export_main);
+    if (sub_rt_ctx_trap_kind(ctx) != 0) {
+        sub_rt_ctx_release(ctx);
+        return 3;
+    }
+    printf("%llu\n",
+        (unsigned long long)sub_rt_ctx_live_allocations(ctx));
+    sub_rt_ctx_release(ctx);
+    return 0;
+}
+"#,
+        );
+        let cases = [
+            (
+                "t26-allocation-failure-new",
+                include_str!("../../corpus/trap/t26-allocation-failure-new.ts"),
+                3,
+            ),
+            (
+                "t28-allocation-failure-array-literal",
+                include_str!(
+                    "../../corpus/trap/t28-allocation-failure-array-literal.ts"
+                ),
+                4,
+            ),
+            (
+                "t29-allocation-failure-push-grow",
+                include_str!(
+                    "../../corpus/trap/t29-allocation-failure-push-grow.ts"
+                ),
+                4,
+            ),
+            (
+                "t30-allocation-failure-string-concat",
+                include_str!(
+                    "../../corpus/trap/t30-allocation-failure-string-concat.ts"
+                ),
+                4,
+            ),
+            (
+                "t31-allocation-failure-template",
+                include_str!(
+                    "../../corpus/trap/t31-allocation-failure-template.ts"
+                ),
+                6,
+            ),
+            (
+                "t32-allocation-failure-generator-frame",
+                include_str!(
+                    "../../corpus/trap/t32-allocation-failure-generator-frame.ts"
+                ),
+                3,
+            ),
+            (
+                "t33-allocation-failure-json-raw-new",
+                include_str!(
+                    "../../corpus/trap/t33-allocation-failure-json-raw-new.ts"
+                ),
+                6,
+            ),
+        ];
+
+        for (id, source, expected) in cases {
+            let files = vec![SourceFile::new(format!("{id}.ts"), source)];
+            let dev =
+                crate::jit::memory_accounting_after_run(&files)
+                    .expect("dev allocation count")
+                    .0;
+            let run = run_c_aot_with_entry(&files, &entry);
+            assert!(
+                run.status.success(),
+                "{id}: ship allocation-count host exited with {}: {}",
+                run.status,
+                String::from_utf8_lossy(&run.stderr)
+            );
+            let ship: u64 = String::from_utf8(run.stdout)
+                .expect("ship count output is UTF-8")
+                .trim()
+                .parse()
+                .expect("ship allocation count");
+            eprintln!("{id}: object allocation requests dev={dev}, ship={ship}");
+            assert_eq!(dev, expected, "{id}: dev exact allocation count changed");
+            assert_eq!(
+                ship, expected,
+                "{id}: ship exact allocation count changed"
+            );
+        }
     }
 
     #[test]

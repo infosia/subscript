@@ -545,11 +545,18 @@ unsafe fn call_script_entry(entry: *const u8, ctx: &mut Context) {
 /// module's global setup, not the workload (`specs/blocks/compiler.md`
 /// §9). Running it before every call also restores the module globals,
 /// so repeated calls of the same `main` are the same computation.
-fn run_entry(module: &JITModule, lowered: &Lowered) -> Result<(Vec<u8>, Duration), RunError> {
+fn run_entry(
+    module: &JITModule,
+    lowered: &Lowered,
+    fail_alloc_after: Option<u64>,
+) -> Result<(Vec<u8>, Duration), RunError> {
     let init_ptr = module.get_finalized_function(lowered.init);
     let main_ptr = module.get_finalized_function(lowered.main);
 
     let mut ctx = Context::new();
+    if let Some(n) = fail_alloc_after {
+        ctx.fail_alloc_after(n);
+    }
     let mut elapsed = Duration::ZERO;
     {
         // SAFETY: `init_ptr`/`main_ptr` are finalized JIT code for
@@ -604,7 +611,28 @@ fn run_entry(module: &JITModule, lowered: &Lowered) -> Result<(Vec<u8>, Duration
 /// failures.
 pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     let (module, lowered) = compile_jit(files)?;
-    let outcome = run_entry(&module, &lowered).map(|(out, _)| out);
+    let outcome = run_entry(&module, &lowered, None).map(|(out, _)| out);
+    // SAFETY: all executions above have returned and no pointer into
+    // the JIT-allocated code/data survives (the Context held none).
+    unsafe { module.free_memory() };
+    outcome
+}
+
+/// Runs the dev tier while refusing the `n`-th object-level Context
+/// allocation after Context creation.
+///
+/// The injected fault is armed before `ss_init`, so module-initializer
+/// allocations are part of the count.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_jit`].
+pub fn run_jit_with_alloc_failure(
+    files: &[SourceFile],
+    n: u64,
+) -> Result<Vec<u8>, RunError> {
+    let (module, lowered) = compile_jit(files)?;
+    let outcome = run_entry(&module, &lowered, Some(n)).map(|(out, _)| out);
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
     unsafe { module.free_memory() };
@@ -662,7 +690,7 @@ pub fn jit_bench(
     let mut stdout: Option<Vec<u8>> = None;
     let mut failure: Option<RunError> = None;
     for run in 0..warmup + timed {
-        match run_entry(&module, &lowered) {
+        match run_entry(&module, &lowered, None) {
             Ok((out, elapsed)) => {
                 match &stdout {
                     Some(first) if first != &out => {
@@ -735,6 +763,67 @@ pub(crate) fn memory_accounting_after_run(
         }
     };
     // SAFETY: all entries returned and no code pointer survives.
+    unsafe { module.free_memory() };
+    result
+}
+
+#[cfg(test)]
+pub(crate) fn allocation_attribution_after_run(
+    files: &[SourceFile],
+) -> Result<(Vec<(u32, u32, u64)>, Vec<Pos>), RunError> {
+    unsafe extern "C" fn collect(
+        userdata: *mut std::ffi::c_void,
+        class_id: u32,
+        pos_id: u32,
+        payload_bytes: u64,
+    ) {
+        // SAFETY: this helper passes a live Vec of this exact type.
+        let triples = unsafe {
+            &mut *userdata.cast::<Vec<(u32, u32, u64)>>()
+        };
+        triples.push((class_id, pos_id, payload_bytes));
+    }
+
+    let (module, lowered) = compile_jit(files)?;
+    let init = module.get_finalized_function(lowered.init);
+    let main = module.get_finalized_function(lowered.main);
+    let mut ctx = Context::new();
+    // SAFETY: both pointers are finalized entries and the module remains
+    // live through the calls.
+    unsafe {
+        call_script_entry(init, &mut ctx);
+        if !ctx.trapped() {
+            call_script_entry(main, &mut ctx);
+        }
+    }
+    let result = match ctx.trap_record() {
+        Some(record) => Err(RunError::Internal(internal(format!(
+            "attribution probe trapped: {}",
+            record.message
+        )))),
+        None => {
+            let mut triples = Vec::new();
+            let p: *const Context = &*ctx;
+            // SAFETY: shared host inspection after every script entry
+            // returned; callback userdata is a live Vec.
+            let visited = unsafe {
+                ffi::sub_rt_ctx_visit_live_allocations(
+                    p,
+                    Some(collect),
+                    (&mut triples as *mut Vec<(u32, u32, u64)>).cast(),
+                )
+            };
+            if visited as usize != triples.len() {
+                Err(RunError::Internal(internal(
+                    "allocation visitor count differs from callbacks",
+                )))
+            } else {
+                triples.sort_unstable();
+                Ok((triples, lowered.positions.clone()))
+            }
+        }
+    };
+    // SAFETY: all entries and callbacks returned; no code pointer survives.
     unsafe { module.free_memory() };
     result
 }

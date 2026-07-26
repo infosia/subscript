@@ -73,6 +73,13 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     println!("wrote {} ({} bytes)", src.display(), program.source.len());
+
+    let metadata = out_dir.join(format!("{id}.alloc.h"));
+    if let Err(e) = fs::write(&metadata, program.allocation_metadata_header.as_bytes()) {
+        eprintln!("emit-c: write {}: {e}", metadata.display());
+        return ExitCode::from(2);
+    }
+    println!("wrote {}", metadata.display());
     ExitCode::SUCCESS
 }
 

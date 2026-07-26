@@ -7,10 +7,10 @@
 //!
 //! Every allocation is `HEADER_SIZE` bytes of header followed by the
 //! payload; handles held by script code are payload pointers. The
-//! header holds a state word (`LIVE_STATE` / `DEAD_STATE`) and the
-//! class id; generated code reads both directly (use-after-delete
-//! checks, checked `as` narrowing), so their offsets are part of the
-//! runtime's ABI contract.
+//! header holds a state word (`LIVE_STATE` / `DEAD_STATE`), the class
+//! id, and the allocating source-position id; generated code reads the
+//! first two directly (use-after-delete checks, checked `as` narrowing),
+//! so their offsets are part of the runtime's ABI contract.
 //!
 //! Development-tier policy: `unsafeDelete` and `collect()` mark an
 //! allocation dead and poison its header but keep the bytes until the
@@ -64,6 +64,19 @@ pub type TrapObserver = unsafe extern "C" fn(
     message_len: u64,
 );
 
+/// Host callback invoked once for each live Context allocation.
+///
+/// `payload_bytes` follows the same tier policy as
+/// [`Context::live_bytes`]: exact requested bytes in the development
+/// tier and for ship-tier large allocations, size-class payload capacity
+/// for ship-tier arena blocks.
+pub type AllocationVisitor = unsafe extern "C" fn(
+    userdata: *mut c_void,
+    class_id: u32,
+    pos_id: u32,
+    payload_bytes: u64,
+);
+
 /// C calling convention shared by the module initializer (`ss_init`)
 /// and the required exported `main(): void` (`ss_export_main`).
 ///
@@ -85,6 +98,8 @@ pub const DEAD_STATE: u64 = 0x5355_4253_4445_4144; // "SUBSDEAD"
 pub const STATE_OFFSET: i32 = -16;
 /// Byte offset of the class id relative to the payload pointer.
 pub const CLASS_ID_OFFSET: i32 = -8;
+/// Byte offset of the allocating position id relative to the payload pointer.
+pub const POS_ID_OFFSET: i32 = -4;
 
 /// Class id used for string allocations.
 pub const CLASS_STRING: u32 = 0xFFFF_FF01;
@@ -258,6 +273,11 @@ pub struct Context {
     // The `Date.now` source (stdlib.md §3): `Some` pins the clock
     // (tests, replays); `None` reads the system UTC clock.
     now_override: Option<i64>,
+    // One-shot object-request allocation fault. `Some(n)` refuses the
+    // n-th subsequent Context::alloc request; underlying arena chunk
+    // allocations are deliberately not counted because their sequence
+    // is tier-specific.
+    alloc_fail_countdown: Option<u64>,
     // ----- ship-tier arena state (§8.1b); empty on the dev tier -----
     // Every chunk, in creation order.
     chunks: Vec<Chunk>,
@@ -322,6 +342,7 @@ impl Context {
             release_on_delete,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             now_override: None,
+            alloc_fail_countdown: None,
             chunks: Vec::new(),
             chunk_map: Vec::new(),
             free_heads: [0; NUM_CLASSES],
@@ -601,12 +622,31 @@ impl Context {
 
     // ----- allocation -----
 
+    /// Refuses the `n`-th subsequent object-level allocation request.
+    ///
+    /// `n == 0` disables a pending fault. A fired fault is one-shot.
+    pub fn fail_alloc_after(&mut self, n: u64) {
+        self.alloc_fail_countdown = (n != 0).then_some(n);
+    }
+
     /// Allocates `size` payload bytes tagged `class_id`; returns the
     /// zeroed payload pointer, or null after recording an
     /// allocation-failure trap. Dev tier: an individual system
     /// allocation tracked in the map. Ship tier: served from the arena
     /// (§8.1b).
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
+        if let Some(remaining) = self.alloc_fail_countdown {
+            if remaining == 1 {
+                self.alloc_fail_countdown = None;
+                self.trap(
+                    TrapKind::AllocationFailure,
+                    "injected allocation failure",
+                    pos_id,
+                );
+                return std::ptr::null_mut();
+            }
+            self.alloc_fail_countdown = Some(remaining - 1);
+        }
         if self.release_on_delete {
             return self.arena_alloc(size, class_id, pos_id);
         }
@@ -634,6 +674,7 @@ impl Context {
         unsafe {
             (base as *mut u64).write(LIVE_STATE);
             (base.add(8) as *mut u32).write(class_id);
+            (base.add(12) as *mut u32).write(pos_id);
         }
         // SAFETY: HEADER_SIZE <= total.
         let payload = unsafe { base.add(HEADER_SIZE) };
@@ -688,7 +729,7 @@ impl Context {
                 let base = payload.sub(HEADER_SIZE);
                 (base as *mut u64).write(LIVE_STATE);
                 (base.add(8) as *mut u32).write(class_id);
-                (base.add(12) as *mut u32).write(size as u32);
+                (base.add(12) as *mut u32).write(pos_id);
             }
             return payload;
         }
@@ -710,7 +751,7 @@ impl Context {
             let base = chunk.base.add(chunk.bump * block_size);
             (base as *mut u64).write(LIVE_STATE);
             (base.add(8) as *mut u32).write(class_id);
-            (base.add(12) as *mut u32).write(size as u32);
+            (base.add(12) as *mut u32).write(pos_id);
             base.add(HEADER_SIZE)
         };
         chunk.bump += 1;
@@ -760,9 +801,9 @@ impl Context {
     }
 
     /// Large-allocation path: an individual system allocation recorded in
-    /// `large`. The header carries state and class id for generated code;
-    /// the payload size lives in the record (the spare header word stays
-    /// zero — a large payload may exceed `u32`).
+    /// `large`. The header carries state, class id, and allocating position
+    /// id; the payload size lives in the record (a large payload may exceed
+    /// `u32`).
     fn arena_alloc_large(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
         let total = HEADER_SIZE.saturating_add(size.max(1));
         let Ok(layout) = Layout::from_size_align(total, 16) else {
@@ -788,6 +829,7 @@ impl Context {
         let payload = unsafe {
             (base as *mut u64).write(LIVE_STATE);
             (base.add(8) as *mut u32).write(class_id);
+            (base.add(12) as *mut u32).write(pos_id);
             base.add(HEADER_SIZE)
         };
         self.large.insert(
@@ -1079,6 +1121,100 @@ impl Context {
             .fold(0usize, |sum, a| sum.saturating_add(a.layout.size()))
     }
 
+    /// Visits every live allocation and returns the number visited.
+    ///
+    /// The iteration order is unspecified. A null visitor performs no
+    /// callbacks and returns zero.
+    ///
+    /// # Safety
+    ///
+    /// `visitor`, when present, must be callable with `userdata` for the
+    /// duration of this call.
+    pub unsafe fn visit_live_allocations(
+        &self,
+        visitor: Option<AllocationVisitor>,
+        userdata: *mut c_void,
+    ) -> u64 {
+        let Some(visitor) = visitor else {
+            return 0;
+        };
+        let mut count = 0u64;
+        if self.release_on_delete {
+            for chunk in &self.chunks {
+                for bi in 0..chunk.bump {
+                    // SAFETY: `bi < bump`, so the complete header lies
+                    // inside this Context-owned chunk.
+                    let base = unsafe { chunk.base.add(bi * chunk.block_size) };
+                    // SAFETY: the state word lies in the header.
+                    if unsafe { (base as *const u64).read() } != LIVE_STATE {
+                        continue;
+                    }
+                    // SAFETY: class_id and pos_id are initialized header
+                    // words for every live block.
+                    let (class_id, pos_id) = unsafe {
+                        (
+                            (base.add(8) as *const u32).read(),
+                            (base.add(12) as *const u32).read(),
+                        )
+                    };
+                    // SAFETY: the host supplied `visitor` and its userdata.
+                    unsafe {
+                        visitor(
+                            userdata,
+                            class_id,
+                            pos_id,
+                            (chunk.block_size - HEADER_SIZE) as u64,
+                        )
+                    };
+                    count += 1;
+                }
+            }
+            for allocation in self.large.values() {
+                // Every retained large record is live. The complete
+                // header was initialized by `arena_alloc_large`.
+                let (class_id, pos_id) = unsafe {
+                    (
+                        (allocation.base.add(8) as *const u32).read(),
+                        (allocation.base.add(12) as *const u32).read(),
+                    )
+                };
+                // SAFETY: the host supplied `visitor` and its userdata.
+                unsafe {
+                    visitor(
+                        userdata,
+                        class_id,
+                        pos_id,
+                        allocation.payload_size as u64,
+                    )
+                };
+                count += 1;
+            }
+            return count;
+        }
+
+        for allocation in self.allocations.values().filter(|a| a.live) {
+            // SAFETY: a live retained allocation owns a fully initialized
+            // header for the lifetime of the Context.
+            let (class_id, pos_id) = unsafe {
+                (
+                    (allocation.base.add(8) as *const u32).read(),
+                    (allocation.base.add(12) as *const u32).read(),
+                )
+            };
+            // SAFETY: the host supplied `visitor` and its userdata.
+            unsafe {
+                visitor(
+                    userdata,
+                    class_id,
+                    pos_id,
+                    allocation.payload_size as u64,
+                )
+            };
+            count += 1;
+        }
+        count
+    }
+
     // ----- roots and collection -----
 
     /// Registers a permanent root range: `words` consecutive 8-byte
@@ -1166,19 +1302,20 @@ impl Context {
     /// is stamped `MARK_STATE` and its payload words are pushed.
     fn arena_mark(&mut self, work: &mut Vec<usize>) {
         while let Some(addr) = work.pop() {
-            let (block, payload_size) = if let Some((block, _)) = self.arena_lookup_block(addr) {
+            let (block, payload_size) = if let Some((block, class)) =
+                self.arena_lookup_block(addr)
+            {
                 // SAFETY: `block` heads a block inside an owned chunk;
-                // the header reads stay inside it.
+                // the state read stays inside it.
                 let state = unsafe { (block as *const u64).read() };
                 if state != LIVE_STATE {
                     // Dead, free-listed, or already marked.
                     continue;
                 }
-                // Classed blocks carry their exact payload size in the
-                // spare header word.
-                // SAFETY: as above.
-                let size = unsafe { (block.add(12) as *const u32).read() } as usize;
-                (block, size)
+                // Allocation zeroes the complete size-class payload
+                // capacity, so conservatively tracing its padding is safe.
+                // The final header word now carries allocation attribution.
+                (block, (SMALLEST_BLOCK << class) - HEADER_SIZE)
             } else if let Some(a) = self.large.get(&addr) {
                 // SAFETY: `base` heads an owned large allocation.
                 let state = unsafe { (a.base as *const u64).read() };
@@ -1736,16 +1873,91 @@ mod tests {
     #[test]
     fn alloc_is_zeroed_tagged_and_live() {
         let mut ctx = Context::new();
-        let p = ctx.alloc(24, 3, 0);
+        let p = ctx.alloc(24, 3, 41);
         assert!(!p.is_null());
         assert!(ctx.is_live(p as usize));
         // SAFETY: p is a fresh 24-byte payload with a 16-byte header.
         unsafe {
             assert_eq!((p.offset(STATE_OFFSET as isize) as *const u64).read(), LIVE_STATE);
             assert_eq!((p.offset(CLASS_ID_OFFSET as isize) as *const u32).read(), 3);
+            assert_eq!((p.offset(POS_ID_OFFSET as isize) as *const u32).read(), 41);
             for i in 0..24 {
                 assert_eq!(p.add(i).read(), 0);
             }
+        }
+    }
+
+    #[test]
+    fn allocation_fault_counts_object_requests_identically_in_both_tiers() {
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            ctx.fail_alloc_after(2);
+            assert!(!ctx.alloc(8, 1, 10).is_null(), "{tier}: first request");
+            assert!(ctx.alloc(5000, 2, 11).is_null(), "{tier}: second request");
+            let trap = ctx.trap_record().expect("injected allocation trap");
+            assert_eq!(trap.kind, TrapKind::AllocationFailure, "{tier}");
+            assert_eq!(trap.pos_id, 11, "{tier}");
+            assert_eq!(trap.message, "injected allocation failure", "{tier}");
+
+            ctx.clear_trap();
+            assert!(
+                !ctx.alloc(8, 3, 12).is_null(),
+                "{tier}: fired fault is one-shot"
+            );
+            ctx.fail_alloc_after(0);
+            assert!(
+                !ctx.alloc(8, 4, 13).is_null(),
+                "{tier}: zero disables injection"
+            );
+        }
+    }
+
+    #[test]
+    fn live_allocation_visitor_reports_class_position_and_tier_bytes() {
+        unsafe extern "C" fn collect(
+            userdata: *mut c_void,
+            class_id: u32,
+            pos_id: u32,
+            payload_bytes: u64,
+        ) {
+            // SAFETY: the test passes a live Vec of this exact type.
+            let triples =
+                unsafe { &mut *userdata.cast::<Vec<(u32, u32, u64)>>() };
+            triples.push((class_id, pos_id, payload_bytes));
+        }
+
+        for (tier, mut ctx, expected) in [
+            (
+                "dev",
+                Context::new(),
+                vec![(10u32, 20u32, 1u64), (12u32, 22u32, 5000u64)],
+            ),
+            (
+                "ship",
+                Context::new_releasing(),
+                vec![(10u32, 20u32, 16u64), (12u32, 22u32, 5000u64)],
+            ),
+        ] {
+            let first = ctx.alloc(1, 10, 20);
+            let deleted = ctx.alloc(40, 11, 21);
+            let large = ctx.alloc(5000, 12, 22);
+            assert!(!first.is_null() && !deleted.is_null() && !large.is_null());
+            ctx.delete(deleted as usize, 23);
+
+            let mut triples = Vec::new();
+            // SAFETY: `collect` receives a live Vec as userdata.
+            let visited = unsafe {
+                ctx.visit_live_allocations(
+                    Some(collect),
+                    (&mut triples as *mut Vec<(u32, u32, u64)>).cast(),
+                )
+            };
+            triples.sort_unstable();
+            assert_eq!(visited, 2, "{tier}");
+            assert_eq!(triples, expected, "{tier}");
+            assert_eq!(visited as usize, ctx.live_count(), "{tier}");
         }
     }
 

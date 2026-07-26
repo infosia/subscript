@@ -17,7 +17,7 @@
 //! the script ran under the emitted trap-check discipline, so a null
 //! result from a trapping function is never fed into another call.
 
-use crate::context::{CallbackBinding, Context, TrapObserver};
+use crate::context::{AllocationVisitor, CallbackBinding, Context, TrapObserver};
 use crate::trap::TrapKind;
 
 /// Narrows an `f64` to raw IEEE 754 binary16 storage bits using
@@ -2796,6 +2796,21 @@ pub unsafe extern "C" fn sub_rt_ctx_set_now(ctx: *mut Context, ms: i64) {
     unsafe { &mut *ctx }.set_now(ms);
 }
 
+/// Refuses the `n`-th subsequent object-level Context allocation.
+///
+/// The count is independent of the allocator tier: arena chunk
+/// allocations are implementation details and are not counted. `n == 0`
+/// disables a pending injected failure.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_fail_alloc_after(ctx: *mut Context, n: u64) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.fail_alloc_after(n);
+}
+
 // ----- arrays (Q4) -----
 
 /// Allocates an empty dynamic array of `elem_size`-byte elements.
@@ -4073,6 +4088,27 @@ pub unsafe extern "C" fn sub_rt_ctx_live_bytes(ctx: *const Context) -> u64 {
 pub unsafe extern "C" fn sub_rt_ctx_reserved_bytes(ctx: *const Context) -> u64 {
     // SAFETY: shared Context contract.
     unsafe { &*ctx }.reserved_bytes() as u64
+}
+
+/// Visits each live Context-owned allocation and returns the number visited.
+///
+/// The callback receives the allocation's class id, allocating position
+/// id, and tier-specific payload byte figure. The iteration order is
+/// unspecified. A null visitor returns zero without visiting.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract. `visitor`, when present,
+/// must be callable with `userdata` for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_visit_live_allocations(
+    ctx: *const Context,
+    visitor: Option<AllocationVisitor>,
+    userdata: *mut std::ffi::c_void,
+) -> u64 {
+    // SAFETY: shared Context contract plus the callback/userdata contract
+    // documented above.
+    unsafe { (&*ctx).visit_live_allocations(visitor, userdata) }
 }
 
 #[cfg(test)]

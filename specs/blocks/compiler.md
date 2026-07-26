@@ -2038,14 +2038,35 @@ variable at all, which is why it leaked.
 The **allocation site** is both available and better suited. A loop
 allocating ten thousand times has one site and no useful name.
 
-Two facts make this nearly free:
+`alloc(size, class_id, pos_id)` **already receives** the site's
+`pos_id` and discards it, using it only if the allocation fails, so no
+new value has to be threaded anywhere.
 
-- the 16-byte header holds a state word and a `class_id`, with **four
-  bytes unused**;
-- `alloc(size, class_id, pos_id)` **already receives** the site's
-  `pos_id` and discards it, using it only if the allocation fails.
+**The header's fourth word was not free, and this section said it
+was.** *(Corrected 2026-07-26 during implementation.)* On the ship tier
+that word held each classed block's **exact requested payload size**,
+and `collect`'s mark phase read it to know how far to trace. Storing
+`pos_id` takes it, so the mark phase now traces **the whole size-class
+payload capacity** instead.
 
-So storing it costs no space and one `u32` store.
+That is safe, and the safety is a property of the allocator rather than
+an assumption: a fresh block comes from an `alloc_zeroed` chunk, and a
+block reused from a free list is re-zeroed across its **full capacity**
+(`write_bytes(payload, 0, block_size - HEADER_SIZE)`) before the header
+is re-armed. The padding a conservative trace now reads is therefore
+always zero.
+
+The cost is real and bounded: `collect` scans up to the size-class
+rounding of each block rather than its exact request — at most a factor
+of two, on an operation that never runs unbidden (invariant 2). The
+alternative, widening the header to 24 bytes, costs every allocation 8
+bytes to save an explicitly-invoked operation some scanning, which is
+the worse trade. **Recorded rather than left silent, because a future
+reader finding `collect` tracing padding should find the reason here.**
+
+Only the dev tier and the ship tier's large-allocation path add a
+genuinely new store; for classed blocks the store replaces one that was
+already there.
 
 ```c
 typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id,
