@@ -1398,6 +1398,51 @@ tests. `reserved_bytes` never decreases across a `delete` alone
 (memory returns to a free list, not to the system), which is the
 property that would have surfaced the P15 retention from outside.
 
+### 18.2e Per-allocation attribution — queued, not yet contracted
+
+Owner decision 2026-07-26: **do this after the current phase.**
+Recorded here so the finding is not lost; the contract is not written
+yet and nothing below is binding.
+
+The question was whether a live-allocation figure could name the
+script variable behind it. **It cannot, and the obstacle is not
+cost**: an allocation is not bound to a variable — values move between
+variables and into fields and arrays — so "the variable naming this
+allocation" is not well defined, and a leaked allocation is usually
+reachable from no named variable at all, which is why it leaked.
+
+What *is* available is better suited to the purpose. Each allocation
+carries a 16-byte header holding a state word and a `class_id`, with
+**four bytes unused**. And `alloc(size, class_id, pos_id)` already
+receives `pos_id` — the compiler position-table index for the
+allocation **site** — and currently discards it, using it only if the
+allocation itself fails. Storing it costs no space and one `u32` store.
+
+An allocation site discriminates where a variable name would not: a
+loop allocating ten thousand times has one site and no useful name.
+
+Sketch, to be settled when this is contracted:
+
+```c
+typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id,
+                                     uint32_t pos_id, uint64_t payload_bytes);
+uint64_t sub_rt_ctx_visit_live_allocations(
+    const Context*, sub_rt_alloc_visitor, void* userdata);
+```
+
+Two things to settle then, both of which the sketch does not answer:
+
+- **The `class_id` and position tables are the compiler's, not the
+  Context's.** §18.1 already records this for a trap's `pos_id`. A
+  host cannot turn either id into a name without an artifact this
+  repository does not currently emit — the same gap as §18.1b's
+  missing header, and it should be closed the same way.
+- **The extra store lands in the ship tier's arena path (§8.1b)**,
+  which is performance-sensitive; that tier's justification is that
+  emitted C is close to hand-written C. One `u32` store per allocation
+  is expected to be negligible, but it is to be **measured**, not
+  asserted.
+
 ### 18.3 Why there is no in-language observer
 
 A script cannot observe its own traps, and this is deliberate rather
