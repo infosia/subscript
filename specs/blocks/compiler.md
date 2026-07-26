@@ -1168,10 +1168,60 @@ having to poll the trap flag after every call into script.
   golden corpus are unaffected. The observer receives copies and no
   mutable Context handle.
 
+### 18.2a Exactly when it fires, and what is true at that moment
+
+The sequence, from fault to the host getting control back:
+
+1. A runtime function, or an emitted check calling `sub_rt_trap`,
+   detects the fault.
+2. `Context::trap(kind, message, pos_id)` stores a `TrapRecord` **if
+   none is stored yet**, and sets `trap_flag = 1` **unconditionally**.
+3. **The observer fires here.**
+4. The runtime function returns a placeholder to generated code.
+5. Generated code checks the trap flag after every script call and,
+   seeing it set, pops its shadow frame and returns early — zero for a
+   non-`void` return, `1` for a generator.
+6. Every caller repeats step 5, up every live frame.
+7. The tier entry reads the record and reports `RunError::Trap`.
+
+At step 3, therefore:
+
+- **Every script frame is still live.** Nothing has unwound; the host
+  call site that entered script is still below on the stack.
+- **The record is already stored and the flag already set.** The
+  observer sees exactly what the §18.1 accessors will report later,
+  not a provisional state.
+- **The shadow stack still holds every frame**, since `shadow_pop`
+  happens during the unwind at step 5.
+
+**The call must sit inside the `trap.is_none()` branch, not beside
+it**, and the difference is observable. Runtime functions stay callable
+on the unwind path and may detect further faults; those later
+`trap()` calls are ignored for the record but still set the flag.
+Firing outside the branch would report them too, contradicting
+"at most once per run" and handing the host arguments that do not
+match the record.
+
+**Message lifetime.** The observer receives a pointer into the stored
+record, which lives on the Context until it is released or reset — not
+a borrow valid only for the callback. The host is not obliged to copy.
+
+**Re-entrancy is a memory-safety requirement, not a convention.** The
+observer runs inside `Context::trap`, which holds `&mut self`. An
+observer that calls any `sub_rt_*` function taking the Context creates
+an aliasing violation across the FFI boundary — undefined behaviour,
+not merely a semantic error. The C header must say so.
+
+**Cost when no observer is registered:** one null check *per trap*,
+not per call. Traps are rare; this is not a hot path.
+
 **Implementation.** All trap sites — 70 across the runtime at the time
 of writing — funnel through the single `Context::trap`, so the
 observer has exactly one call site. Nothing in generated code changes,
-and neither tier's lowering is touched.
+and neither tier's lowering is touched. This is also why §18.4's
+both-tier test is not checking that the hook mechanism differs between
+tiers — it cannot — but that the two tiers **agree on which fault is
+the originating one**.
 
 ### 18.3 Why there is no in-language observer
 
