@@ -49,6 +49,12 @@ pub(crate) const NUMBER_U64: u32 = 7;
 pub(crate) const NUMBER_F32: u32 = 8;
 pub(crate) const NUMBER_F64: u32 = 9;
 
+/// Maximum number of nested JSON arrays/objects accepted from input.
+///
+/// Parsing uses recursive descent, so this bounds stack use for
+/// host-provided documents. A scalar at the root has depth zero.
+pub(crate) const MAX_JSON_DEPTH: usize = 128;
+
 #[derive(Debug, Clone, PartialEq)]
 struct JsonNumber {
     text: String,
@@ -351,7 +357,7 @@ impl<'a> Parser<'a> {
 
     fn parse(mut self) -> Option<JsonDocument> {
         self.ws();
-        let root = self.value()?;
+        let root = self.value(0)?;
         self.ws();
         (self.at == self.bytes.len()).then_some(JsonDocument {
             root,
@@ -359,7 +365,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn value(&mut self) -> Option<u64> {
+    fn value(&mut self, depth: usize) -> Option<u64> {
         self.ws();
         match self.peek()? {
             b'n' => {
@@ -378,8 +384,8 @@ impl<'a> Parser<'a> {
                 let value = self.string_value()?;
                 self.push(JsonValue::String(value))
             }
-            b'[' => self.array(),
-            b'{' => self.object(),
+            b'[' if depth < MAX_JSON_DEPTH => self.array(depth + 1),
+            b'{' if depth < MAX_JSON_DEPTH => self.object(depth + 1),
             b'-' | b'0'..=b'9' => {
                 let value = self.number_value()?;
                 self.push(JsonValue::Number(value))
@@ -388,7 +394,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn array(&mut self) -> Option<u64> {
+    fn array(&mut self, depth: usize) -> Option<u64> {
         self.take(b'[')?;
         self.ws();
         let mut values = Vec::new();
@@ -396,7 +402,7 @@ impl<'a> Parser<'a> {
             return self.push(JsonValue::Array(values));
         }
         loop {
-            values.push(self.value()?);
+            values.push(self.value(depth)?);
             self.ws();
             if self.consume(b']') {
                 break;
@@ -406,7 +412,7 @@ impl<'a> Parser<'a> {
         self.push(JsonValue::Array(values))
     }
 
-    fn object(&mut self) -> Option<u64> {
+    fn object(&mut self, depth: usize) -> Option<u64> {
         self.take(b'{')?;
         self.ws();
         let mut fields = Vec::new();
@@ -418,7 +424,7 @@ impl<'a> Parser<'a> {
             let key = self.string_value()?;
             self.ws();
             self.take(b':')?;
-            let value = self.value()?;
+            let value = self.value(depth)?;
             fields.push((key, value));
             self.ws();
             if self.consume(b'}') {
@@ -841,6 +847,23 @@ mod tests {
         ] {
             assert_eq!(parsers.begin(malformed), 0, "{malformed:?}");
         }
+    }
+
+    #[test]
+    fn parser_rejects_input_past_the_depth_limit_without_overflowing() {
+        let accepted = format!(
+            "{}0{}",
+            "[".repeat(MAX_JSON_DEPTH),
+            "]".repeat(MAX_JSON_DEPTH)
+        );
+        let rejected = format!(
+            "{}0{}",
+            "[".repeat(MAX_JSON_DEPTH + 1),
+            "]".repeat(MAX_JSON_DEPTH + 1)
+        );
+        let mut parsers = JsonParsers::default();
+        assert_ne!(parsers.begin(accepted.as_bytes()), 0);
+        assert_eq!(parsers.begin(rejected.as_bytes()), 0);
     }
 
     #[test]

@@ -1,6 +1,7 @@
-// node: v24.18.0
-// purpose: Covers typed JSON.parse success, data failures, duplicate keys,
-//          negative zero, f64 precision loss, and non-finite input rejection.
+// corpus: accept/a71-json-parse
+// purpose: Covers typed JSON.parse success, data failures, and numeric edges.
+// exercises: JSON, typed parse, JsonResult, duplicate keys, numeric ranges
+// questions: Q28, Q5, Q6
 
 class Config {
   name: string;

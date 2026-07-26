@@ -64,6 +64,9 @@ pub enum TrapKind {
     /// `JSON.stringify` revisited a reference already on the active
     /// serialization path, proving a cyclic object graph.
     JsonCycle = 17,
+    /// A program read `JsonResult<T>.value` after parsing or static-type
+    /// validation failed and `ok` was false.
+    JsonResultValue = 18,
 }
 
 impl TrapKind {
@@ -88,6 +91,7 @@ impl TrapKind {
             15 => TrapKind::NumberRange,
             16 => TrapKind::JsonNumber,
             17 => TrapKind::JsonCycle,
+            18 => TrapKind::JsonResultValue,
             _ => return None,
         })
     }
@@ -113,6 +117,7 @@ impl TrapKind {
             TrapKind::NumberRange => "number-range",
             TrapKind::JsonNumber => "json-non-finite-number",
             TrapKind::JsonCycle => "json-cycle",
+            TrapKind::JsonResultValue => "json-result-value",
         }
     }
 }
@@ -154,7 +159,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=15u32 {
+        for v in 1..=18u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

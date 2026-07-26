@@ -125,6 +125,7 @@ pub unsafe extern "C" fn sub_rt_trap(ctx: *mut Context, kind: u32, pos_id: u32) 
         TrapKind::DivisionByZero => "integer division by zero",
         TrapKind::Internal => "unknown trap kind raised by generated code",
         TrapKind::StaleCoroutine => "stale coroutine after reload",
+        TrapKind::JsonResultValue => "`JsonResult.value` read when `ok` is false",
         other => other.rule(),
     };
     ctx.trap(kind, message, pos_id);

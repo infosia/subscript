@@ -1,0 +1,3 @@
+lone-surrogate-ok=false
+f32-overflow-ok=false
+depth-limit-ok=false

@@ -106,6 +106,38 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
         javascript_outcome: WitnessOutcome::Value("null\n"),
     },
     DivergenceWitness {
+        id: "q5-json-parse-lone-surrogate",
+        surface: "`JSON.parse<string>` of a lone UTF-16 surrogate",
+        q_rule: "Q5 and Q28",
+        summary: "subscript reports a failed parse because its UTF-8 string type cannot represent a lone surrogate; JavaScript returns a UTF-16 string containing it.",
+        subscript: r#"export function main(): void {
+  const result: JsonResult<string> = JSON.parse<string>('"\\ud800"');
+  print(`${result.ok}`);
+  unsafeDelete(result);
+}
+"#,
+        javascript: r#"console.log(JSON.parse('"\\ud800"'));
+"#,
+        subscript_outcome: WitnessOutcome::Value("false\n"),
+        javascript_outcome: WitnessOutcome::Value("�\n"),
+    },
+    DivergenceWitness {
+        id: "q28-json-parse-f32-range",
+        surface: "`JSON.parse<f32>(\"1e39\")`",
+        q_rule: "Q28",
+        summary: "subscript reports a failed parse when a finite JSON number overflows the statically requested f32 target; JavaScript has only binary64 and returns the value.",
+        subscript: r#"export function main(): void {
+  const result: JsonResult<f32> = JSON.parse<f32>("1e39");
+  print(`${result.ok}`);
+  unsafeDelete(result);
+}
+"#,
+        javascript: r#"console.log(JSON.parse("1e39"));
+"#,
+        subscript_outcome: WitnessOutcome::Value("false\n"),
+        javascript_outcome: WitnessOutcome::Value("1e+39\n"),
+    },
+    DivergenceWitness {
         id: "q5-string-length",
         surface: "`string.length`",
         q_rule: "Q5",

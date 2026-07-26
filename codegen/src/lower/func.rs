@@ -404,7 +404,7 @@ fn expr_assigns_to(e: &hir::Expr, name: &str) -> bool {
             in_callee || args.iter().any(|a| expr_assigns_to(a, name))
         }
         K::New { args, .. } => args.iter().any(|a| expr_assigns_to(a, name)),
-        K::Field { obj, .. } => expr_assigns_to(obj, name),
+        K::Field { obj, .. } | K::JsonResultValue(obj) => expr_assigns_to(obj, name),
         K::Length(obj) => expr_assigns_to(obj, name),
         K::Index { obj, index } => {
             expr_assigns_to(obj, name) || expr_assigns_to(index, name)
@@ -462,7 +462,7 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
             n
         }
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
-        K::Field { obj, .. } => count_yields_expr(obj),
+        K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
@@ -1268,6 +1268,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let (addr, off, fty) = self.field_addr(obj, name)?;
                 self.load_val(&fty, addr, off)
             }
+            K::JsonResultValue(obj) => self.eval_json_result_value(obj, &e.pos),
             K::Length(obj) => {
                 let rv = self.eval(obj)?;
                 match &obj.ty {
@@ -1756,6 +1757,54 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             other => Err(internal(format!("field access on {other:?}"))),
         }
+    }
+
+    /// Reads a `JsonResult<T>` payload after checking its sibling `ok`
+    /// field. The checker emits this HIR form only for the exact
+    /// monomorphized two-field result class.
+    fn eval_json_result_value(&mut self, obj: &hir::Expr, pos: &Pos) -> Result<RV, String> {
+        let Type::Class(cid) = &obj.ty else {
+            return Err(internal("JsonResult value receiver is not a class"));
+        };
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid.0)
+            .ok_or_else(|| internal("JsonResult class id out of range"))?;
+        let ok_index = class
+            .fields
+            .iter()
+            .position(|field| field.name == "ok" && field.ty == Type::Bool)
+            .ok_or_else(|| internal("JsonResult is missing its boolean ok field"))?;
+        let value_index = class
+            .fields
+            .iter()
+            .position(|field| field.name == "value")
+            .ok_or_else(|| internal("JsonResult is missing its value field"))?;
+        let value_ty = class.fields[value_index].ty.clone();
+        let layout = self.ml.layouts.class(cid.0)?;
+        if layout.is_value {
+            return Err(internal("JsonResult unexpectedly has value-class layout"));
+        }
+        let ok_offset = *layout
+            .field_offsets
+            .get(ok_index)
+            .ok_or_else(|| internal("JsonResult ok field offset out of range"))?
+            as i32;
+        let value_offset = *layout
+            .field_offsets
+            .get(value_index)
+            .ok_or_else(|| internal("JsonResult value field offset out of range"))?
+            as i32;
+
+        let rv = self.eval(obj)?;
+        let ptr = self.expect_s(rv)?;
+        self.live_check(ptr, &obj.pos)?;
+        let ok = self.load_val(&Type::Bool, ptr, ok_offset)?;
+        let ok = self.expect_s(ok)?;
+        self.guard(ok, TrapKind::JsonResultValue, pos)?;
+        self.load_val(&value_ty, ptr, value_offset)
     }
 
     /// Element address for indexing; bounds-checked. Returns

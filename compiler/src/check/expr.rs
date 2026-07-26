@@ -20,6 +20,7 @@ pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
         ExprKind::Local(n) | ExprKind::Global(n) => Some(n.clone()),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => path_key(obj).map(|p| format!("{}.{}", p, name)),
+        ExprKind::JsonResultValue(obj) => path_key(obj).map(|p| format!("{p}.value")),
         _ => None,
     }
 }
@@ -3402,6 +3403,18 @@ impl<'p> Checker<'p> {
                     .find(|f| f.name == name)
                     .map(|f| f.ty.clone());
                 if let Some(ty) = field {
+                    if !for_write
+                        && name == "value"
+                        && self
+                            .json_result_value_type(&Type::Class(id))
+                            .is_some()
+                    {
+                        return hir::Expr {
+                            kind: ExprKind::JsonResultValue(Box::new(obj)),
+                            ty,
+                            pos: prop_pos,
+                        };
+                    }
                     return hir::Expr {
                         kind: ExprKind::Field {
                             obj: Box::new(obj),

@@ -42,7 +42,7 @@ impl Checker<'_> {
         id
     }
 
-    fn json_result_value_type(&self, ty: &Type) -> Option<Type> {
+    pub(super) fn json_result_value_type(&self, ty: &Type) -> Option<Type> {
         let Type::Class(id) = ty else {
             return None;
         };
@@ -142,7 +142,18 @@ impl Checker<'_> {
         }
 
         let tracked = self.json_type_can_cycle(&value.ty);
-        let wrapper = self.synthesize_json_serializer(&value.ty, tracked, pos.clone());
+        let wrapper =
+            match self.synthesize_json_serializer(&value.ty, tracked, pos.clone()) {
+                Ok(wrapper) => wrapper,
+                Err(detail) => {
+                    self.error(
+                        RuleCode::S014,
+                        format!("cannot generate `JSON.stringify` helper: {detail}"),
+                        member_pos,
+                    );
+                    return self.err_expr(pos);
+                }
+            };
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(wrapper),
@@ -250,7 +261,17 @@ impl Checker<'_> {
         }
 
         let result_id = self.instantiate_json_result(&target, pos.clone());
-        let wrapper = self.synthesize_json_parser(&target, result_id, pos.clone());
+        let wrapper = match self.synthesize_json_parser(&target, result_id, pos.clone()) {
+            Ok(wrapper) => wrapper,
+            Err(detail) => {
+                self.error(
+                    RuleCode::S014,
+                    format!("cannot generate `JSON.parse` helper: {detail}"),
+                    member_pos,
+                );
+                return self.err_expr(pos);
+            }
+        };
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(wrapper),
@@ -401,7 +422,12 @@ impl Checker<'_> {
     /// graph to HIR, returning the wrapper name used at the original call
     /// site. Per-call generation keeps every possible trap pinned to the
     /// exact source position that requested serialization.
-    fn synthesize_json_serializer(&mut self, root: &Type, tracked: bool, pos: Pos) -> String {
+    fn synthesize_json_serializer(
+        &mut self,
+        root: &Type,
+        tracked: bool,
+        pos: Pos,
+    ) -> Result<String, String> {
         let call_id = self.functions.len();
         let mut types = Vec::new();
         self.collect_json_types(root, &mut types);
@@ -410,7 +436,7 @@ impl Checker<'_> {
             .collect();
 
         for (index, ty) in types.iter().enumerate() {
-            let body = self.json_helper_body(ty, tracked, &types, &names, &pos);
+            let body = self.json_helper_body(ty, tracked, &types, &names, &pos)?;
             self.functions.push(hir::Function {
                 name: names[index].clone(),
                 exported: false,
@@ -436,7 +462,7 @@ impl Checker<'_> {
             Type::U64,
             &pos,
         );
-        let root_helper = names[json_type_index(&types, root)].clone();
+        let root_helper = names[json_type_index(&types, root)?].clone();
         let body = vec![
             hir::Stmt::Let {
                 name: "builder".to_string(),
@@ -473,7 +499,7 @@ impl Checker<'_> {
             body,
             pos,
         });
-        wrapper
+        Ok(wrapper)
     }
 
     fn collect_json_types(&self, ty: &Type, out: &mut Vec<Type>) {
@@ -501,7 +527,7 @@ impl Checker<'_> {
         types: &[Type],
         names: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let builder = || json_local("builder", Type::U64, pos);
         let value = || json_local("value", ty.clone(), pos);
         let append = |function: JsonFn, argument: hir::Expr| {
@@ -513,23 +539,23 @@ impl Checker<'_> {
             ))
         };
         match ty {
-            Type::I8 | Type::I16 => vec![append(
+            Type::I8 | Type::I16 => Ok(vec![append(
                 JsonFn::I32,
                 json_cast(value(), Type::I32, pos),
-            )],
-            Type::U8 | Type::U16 => vec![append(
+            )]),
+            Type::U8 | Type::U16 => Ok(vec![append(
                 JsonFn::U32,
                 json_cast(value(), Type::U32, pos),
-            )],
-            Type::I32 => vec![append(JsonFn::I32, value())],
-            Type::U32 => vec![append(JsonFn::U32, value())],
-            Type::I64 => vec![append(JsonFn::I64, value())],
-            Type::U64 => vec![append(JsonFn::U64, value())],
-            Type::F32 => vec![append(JsonFn::F32, value())],
-            Type::F64 => vec![append(JsonFn::F64, value())],
-            Type::Bool => vec![append(JsonFn::Bool, value())],
-            Type::Str => vec![append(JsonFn::Str, value())],
-            Type::Date => vec![append(JsonFn::Date, value())],
+            )]),
+            Type::I32 => Ok(vec![append(JsonFn::I32, value())]),
+            Type::U32 => Ok(vec![append(JsonFn::U32, value())]),
+            Type::I64 => Ok(vec![append(JsonFn::I64, value())]),
+            Type::U64 => Ok(vec![append(JsonFn::U64, value())]),
+            Type::F32 => Ok(vec![append(JsonFn::F32, value())]),
+            Type::F64 => Ok(vec![append(JsonFn::F64, value())]),
+            Type::Bool => Ok(vec![append(JsonFn::Bool, value())]),
+            Type::Str => Ok(vec![append(JsonFn::Str, value())]),
+            Type::Date => Ok(vec![append(JsonFn::Date, value())]),
             Type::Array(element) | Type::FixedArray(element, _) => {
                 self.json_array_body(ty, element, types, names, pos)
             }
@@ -549,7 +575,7 @@ impl Checker<'_> {
                     pos: pos.clone(),
                 };
                 let narrowed = json_local("value", (**inner).clone(), pos);
-                vec![hir::Stmt::If {
+                Ok(vec![hir::Stmt::If {
                     cond,
                     then: vec![hir::Stmt::Expr(json_call(
                         JsonFn::Null,
@@ -558,16 +584,16 @@ impl Checker<'_> {
                         pos,
                     ))],
                     els: Some(vec![hir::Stmt::Expr(script_call(
-                        names[json_type_index(types, inner)].clone(),
+                        names[json_type_index(types, inner)?].clone(),
                         vec![builder(), narrowed],
                         Type::Void,
                         pos,
                     ))]),
                     pos: pos.clone(),
-                }]
+                }])
             }
             Type::Class(id) => {
-                let object = self.json_object_body(*id, types, names, pos);
+                let object = self.json_object_body(*id, types, names, pos)?;
                 if !self.classes[id.0].is_value && tracked {
                     let visit = json_call(
                         JsonFn::Visit,
@@ -582,17 +608,17 @@ impl Checker<'_> {
                         Type::Void,
                         pos,
                     )));
-                    vec![hir::Stmt::If {
+                    Ok(vec![hir::Stmt::If {
                         cond: visit,
                         then,
                         els: None,
                         pos: pos.clone(),
-                    }]
+                    }])
                 } else {
-                    object
+                    Ok(object)
                 }
             }
-            other => panic!("checker generated JSON helper for rejected type {other:?}"),
+            other => Err(format!("rejected JSON serializer type {other:?}")),
         }
     }
 
@@ -603,7 +629,7 @@ impl Checker<'_> {
         types: &[Type],
         names: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let builder = || json_local("builder", Type::U64, pos);
         let array = || json_local("value", array_ty.clone(), pos);
         let index = || json_local("index", Type::I32, pos);
@@ -654,7 +680,8 @@ impl Checker<'_> {
             ty: Type::I32,
             pos: pos.clone(),
         };
-        vec![
+        let element_helper = names[json_type_index(types, element)?].clone();
+        Ok(vec![
             raw("["),
             hir::Stmt::Let {
                 name: "index".to_string(),
@@ -673,7 +700,7 @@ impl Checker<'_> {
                         pos: pos.clone(),
                     },
                     hir::Stmt::Expr(script_call(
-                        names[json_type_index(types, element)].clone(),
+                        element_helper,
                         vec![builder(), indexed],
                         Type::Void,
                         pos,
@@ -683,7 +710,7 @@ impl Checker<'_> {
                 pos: pos.clone(),
             },
             raw("]"),
-        ]
+        ])
     }
 
     fn json_object_body(
@@ -692,7 +719,7 @@ impl Checker<'_> {
         types: &[Type],
         names: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let builder = || json_local("builder", Type::U64, pos);
         let object = || json_local("value", Type::Class(id), pos);
         let raw = |text: &str| {
@@ -724,17 +751,22 @@ impl Checker<'_> {
                 pos: pos.clone(),
             };
             body.push(hir::Stmt::Expr(script_call(
-                names[json_type_index(types, &field.ty)].clone(),
+                names[json_type_index(types, &field.ty)?].clone(),
                 vec![builder(), field_value],
                 Type::Void,
                 pos,
             )));
         }
         body.push(raw("}"));
-        body
+        Ok(body)
     }
 
-    fn synthesize_json_parser(&mut self, root: &Type, result_id: ClassId, pos: Pos) -> String {
+    fn synthesize_json_parser(
+        &mut self,
+        root: &Type,
+        result_id: ClassId,
+        pos: Pos,
+    ) -> Result<String, String> {
         let call_id = self.functions.len();
         let mut types = Vec::new();
         self.collect_json_types(root, &mut types);
@@ -746,7 +778,7 @@ impl Checker<'_> {
             .collect();
 
         for (index, ty) in types.iter().enumerate() {
-            let body = self.json_validation_body(ty, &types, &validators, &pos);
+            let body = self.json_validation_body(ty, &types, &validators, &pos)?;
             self.functions.push(hir::Function {
                 name: validators[index].clone(),
                 exported: false,
@@ -761,7 +793,7 @@ impl Checker<'_> {
             });
         }
         for (index, ty) in types.iter().enumerate() {
-            let body = self.json_construction_body(ty, &types, &constructors, &pos);
+            let body = self.json_construction_body(ty, &types, &constructors, &pos)?;
             self.functions.push(hir::Function {
                 name: constructors[index].clone(),
                 exported: false,
@@ -780,7 +812,7 @@ impl Checker<'_> {
         let result = || json_local("result", result_ty.clone(), &pos);
         let parser = || json_local("parser", Type::U64, &pos);
         let node = || json_local("node", Type::U64, &pos);
-        let root_index = json_type_index(&types, root);
+        let root_index = json_type_index(&types, root)?;
         let assign_ok = json_assign(
             json_field(result(), "ok", Type::Bool, &pos),
             json_bool(true, &pos),
@@ -870,7 +902,7 @@ impl Checker<'_> {
             ],
             pos,
         });
-        wrapper
+        Ok(wrapper)
     }
 
     fn json_validation_body(
@@ -879,7 +911,7 @@ impl Checker<'_> {
         types: &[Type],
         validators: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let parser = || json_local("parser", Type::U64, pos);
         let node = || json_local("node", Type::U64, pos);
         let kind = |code: i64| {
@@ -895,27 +927,27 @@ impl Checker<'_> {
             pos: pos.clone(),
         };
         if let Some(target) = json_number_target(ty) {
-            return vec![return_value(json_call(
+            return Ok(vec![return_value(json_call(
                 JsonFn::ParseNumberFits,
                 vec![parser(), node(), json_int(target, pos)],
                 Type::Bool,
                 pos,
-            ))];
+            ))]);
         }
         match ty {
-            Type::Bool => vec![return_value(kind(1))],
-            Type::Str => vec![return_value(kind(3))],
-            Type::Nullable(inner) => vec![hir::Stmt::If {
+            Type::Bool => Ok(vec![return_value(kind(1))]),
+            Type::Str => Ok(vec![return_value(kind(3))]),
+            Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
                 cond: kind(0),
                 then: vec![return_value(json_bool(true, pos))],
                 els: Some(vec![return_value(script_call(
-                    validators[json_type_index(types, inner)].clone(),
+                    validators[json_type_index(types, inner)?].clone(),
                     vec![parser(), node()],
                     Type::Bool,
                     pos,
                 ))]),
                 pos: pos.clone(),
-            }],
+            }]),
             Type::Array(element) | Type::FixedArray(element, _) => {
                 self.json_array_validation_body(ty, element, types, validators, pos)
             }
@@ -942,7 +974,7 @@ impl Checker<'_> {
                     ));
                     body.push(json_return_false_unless(
                         script_call(
-                            validators[json_type_index(types, &field.ty)].clone(),
+                            validators[json_type_index(types, &field.ty)?].clone(),
                             vec![parser(), local],
                             Type::Bool,
                             pos,
@@ -951,9 +983,9 @@ impl Checker<'_> {
                     ));
                 }
                 body.push(return_value(json_bool(true, pos)));
-                body
+                Ok(body)
             }
-            other => panic!("checker generated JSON validator for rejected type {other:?}"),
+            other => Err(format!("rejected JSON validator type {other:?}")),
         }
     }
 
@@ -964,7 +996,7 @@ impl Checker<'_> {
         types: &[Type],
         validators: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let parser = || json_local("parser", Type::U64, pos);
         let node = || json_local("node", Type::U64, pos);
         let index = || json_local("index", Type::I32, pos);
@@ -1022,12 +1054,13 @@ impl Checker<'_> {
             Type::U64,
             pos,
         );
+        let element_validator = validators[json_type_index(types, element)?].clone();
         body.push(hir::Stmt::While {
             cond: json_binary(BinOp::Lt, index(), len(), Type::Bool, pos),
             body: vec![
                 json_return_false_unless(
                     script_call(
-                        validators[json_type_index(types, element)].clone(),
+                        element_validator,
                         vec![parser(), child],
                         Type::Bool,
                         pos,
@@ -1042,7 +1075,7 @@ impl Checker<'_> {
             value: Some(json_bool(true, pos)),
             pos: pos.clone(),
         });
-        body
+        Ok(body)
     }
 
     fn json_construction_body(
@@ -1051,7 +1084,7 @@ impl Checker<'_> {
         types: &[Type],
         constructors: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let parser = || json_local("parser", Type::U64, pos);
         let node = || json_local("node", Type::U64, pos);
         let return_value = |value: hir::Expr| hir::Stmt::Return {
@@ -1061,11 +1094,11 @@ impl Checker<'_> {
         if let Some(target) = json_number_target(ty) {
             if matches!(ty, Type::F32 | Type::F64) {
                 let number = json_call(JsonFn::ParseNumber, vec![parser(), node()], Type::F64, pos);
-                return vec![return_value(if *ty == Type::F64 {
+                return Ok(vec![return_value(if *ty == Type::F64 {
                     number
                 } else {
                     json_cast(number, ty.clone(), pos)
-                })];
+                })]);
             }
             let integer = json_call(
                 JsonFn::ParseInteger,
@@ -1073,26 +1106,26 @@ impl Checker<'_> {
                 Type::U64,
                 pos,
             );
-            return vec![return_value(if *ty == Type::U64 {
+            return Ok(vec![return_value(if *ty == Type::U64 {
                 integer
             } else {
                 json_cast(integer, ty.clone(), pos)
-            })];
+            })]);
         }
         match ty {
-            Type::Bool => vec![return_value(json_call(
+            Type::Bool => Ok(vec![return_value(json_call(
                 JsonFn::ParseBool,
                 vec![parser(), node()],
                 Type::Bool,
                 pos,
-            ))],
-            Type::Str => vec![return_value(json_call(
+            ))]),
+            Type::Str => Ok(vec![return_value(json_call(
                 JsonFn::ParseString,
                 vec![parser(), node()],
                 Type::Str,
                 pos,
-            ))],
-            Type::Nullable(inner) => vec![hir::Stmt::If {
+            ))]),
+            Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
                 cond: json_call(
                     JsonFn::ParseIsKind,
                     vec![parser(), node(), json_int(0, pos)],
@@ -1105,13 +1138,13 @@ impl Checker<'_> {
                     pos: pos.clone(),
                 })],
                 els: Some(vec![return_value(script_call(
-                    constructors[json_type_index(types, inner)].clone(),
+                    constructors[json_type_index(types, inner)?].clone(),
                     vec![parser(), node()],
                     (**inner).clone(),
                     pos,
                 ))]),
                 pos: pos.clone(),
-            }],
+            }]),
             Type::Array(element) | Type::FixedArray(element, _) => {
                 self.json_array_construction_body(ty, element, types, constructors, pos)
             }
@@ -1141,7 +1174,7 @@ impl Checker<'_> {
                         pos,
                     );
                     let constructed = script_call(
-                        constructors[json_type_index(types, &field.ty)].clone(),
+                        constructors[json_type_index(types, &field.ty)?].clone(),
                         vec![parser(), field_node],
                         field.ty.clone(),
                         pos,
@@ -1154,9 +1187,9 @@ impl Checker<'_> {
                     )));
                 }
                 body.push(return_value(value()));
-                body
+                Ok(body)
             }
-            other => panic!("checker generated JSON constructor for rejected type {other:?}"),
+            other => Err(format!("rejected JSON constructor type {other:?}")),
         }
     }
 
@@ -1167,29 +1200,34 @@ impl Checker<'_> {
         types: &[Type],
         constructors: &[String],
         pos: &Pos,
-    ) -> Vec<hir::Stmt> {
+    ) -> Result<Vec<hir::Stmt>, String> {
         let parser = || json_local("parser", Type::U64, pos);
         let node = || json_local("node", Type::U64, pos);
         let value = || json_local("value", array_ty.clone(), pos);
         let index = || json_local("index", Type::I32, pos);
-        let length = match array_ty {
-            Type::FixedArray(_, length) => json_int(i64::from(*length), pos),
-            Type::Array(_) => json_call(
-                JsonFn::ParseArrayLen,
-                vec![parser(), node()],
-                Type::I32,
-                pos,
+        let (length, init) = match array_ty {
+            Type::FixedArray(_, length) => (
+                json_int(i64::from(*length), pos),
+                json_zero(array_ty.clone(), pos),
             ),
-            _ => unreachable!("JSON array construction type"),
-        };
-        let init = match array_ty {
-            Type::FixedArray(..) => json_zero(array_ty.clone(), pos),
-            Type::Array(_) => hir::Expr {
-                kind: ExprKind::ArrayLit(Vec::new()),
-                ty: array_ty.clone(),
-                pos: pos.clone(),
-            },
-            _ => unreachable!("JSON array construction type"),
+            Type::Array(_) => (
+                json_call(
+                    JsonFn::ParseArrayLen,
+                    vec![parser(), node()],
+                    Type::I32,
+                    pos,
+                ),
+                hir::Expr {
+                    kind: ExprKind::ArrayLit(Vec::new()),
+                    ty: array_ty.clone(),
+                    pos: pos.clone(),
+                },
+            ),
+            other => {
+                return Err(format!(
+                    "JSON array constructor received non-array type {other:?}"
+                ))
+            }
         };
         let mut body = vec![
             hir::Stmt::Let {
@@ -1221,7 +1259,7 @@ impl Checker<'_> {
             pos,
         );
         let child = script_call(
-            constructors[json_type_index(types, element)].clone(),
+            constructors[json_type_index(types, element)?].clone(),
             vec![parser(), child_node],
             element.clone(),
             pos,
@@ -1251,7 +1289,11 @@ impl Checker<'_> {
                 element.clone(),
                 pos,
             ),
-            _ => unreachable!("JSON array construction type"),
+            other => {
+                return Err(format!(
+                    "JSON array store received non-array type {other:?}"
+                ))
+            }
         };
         body.push(hir::Stmt::While {
             cond: json_binary(
@@ -1271,15 +1313,15 @@ impl Checker<'_> {
             value: Some(value()),
             pos: pos.clone(),
         });
-        body
+        Ok(body)
     }
 }
 
-fn json_type_index(types: &[Type], ty: &Type) -> usize {
+fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, String> {
     types
         .iter()
         .position(|candidate| candidate == ty)
-        .expect("JSON type graph is closed")
+        .ok_or_else(|| format!("JSON type graph is missing {ty:?}"))
 }
 
 fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {

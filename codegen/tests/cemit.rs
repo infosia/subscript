@@ -378,6 +378,53 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 }
 
 #[test]
+fn json_result_value_trap_corpus_entry_is_identical() {
+    let source = include_str!("../../corpus/trap/t01-json-result-value.ts");
+    let files = [SourceFile::new("t01-json-result-value.ts", source)];
+    let mut reports = Vec::new();
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
+        match result {
+            Err(RunError::Trap(report)) => {
+                assert_eq!(report.rule, TrapKind::JsonResultValue, "{tier}");
+                assert_eq!(
+                    report.message,
+                    "`JsonResult.value` read when `ok` is false",
+                    "{tier}"
+                );
+                assert_eq!(report.pos.file, "t01-json-result-value.ts", "{tier}");
+                assert_eq!(report.pos.line, 9, "{tier}");
+                reports.push((report.rule, report.message, report.pos));
+            }
+            other => panic!("{tier}: expected a JsonResultValue trap, got {other:?}"),
+        }
+    }
+    assert_eq!(reports[0], reports[1], "tiers disagree on the trap report");
+}
+
+#[test]
+fn failed_json_result_string_and_reference_payloads_trap_identically() {
+    for (source, line) in [
+        (
+            "export function main(): void {\n  const failed: JsonResult<string> = JSON.parse<string>(\"nope\");\n  print(failed.value);\n}\n",
+            3,
+        ),
+        (
+            "class Box {\n  name: string;\n  constructor() { this.name = \"box\"; }\n}\nexport function main(): void {\n  const failed: JsonResult<Box> = JSON.parse<Box>(\"nope\");\n  print(failed.value.name);\n}\n",
+            7,
+        ),
+        (
+            "class Box {\n  name: string;\n  constructor() { this.name = \"box\"; }\n}\nfunction read(result: JsonResult<Box>): Box {\n  return result.value;\n}\nexport function main(): void {\n  const failed: JsonResult<Box> = JSON.parse<Box>(\"nope\");\n  print(read(failed).name);\n}\n",
+            6,
+        ),
+    ] {
+        assert_json_trap_identical(source, TrapKind::JsonResultValue, line);
+    }
+}
+
+#[test]
 fn acyclic_json_serializer_emits_no_tracking_operations() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

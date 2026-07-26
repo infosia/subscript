@@ -871,7 +871,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
     out.push(ApiItem {
         group: "JSON",
         signature: "parse<T>(text: string): JsonResult<T>".to_string(),
-        summary: "Parses and validates one statically known P13 type; malformed or mismatched data returns ok=false, and the caller releases the result with unsafeDelete.",
+        summary: "Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with unsafeDelete.",
     });
     out.extend([
         ApiItem {
@@ -882,7 +882,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         ApiItem {
             group: "JsonResult<T>",
             signature: "value: T".to_string(),
-            summary: "Carries the parsed value on success and is zero-initialized but unreadable on failure.",
+            summary: "Carries the parsed value on success; reading it when ok is false traps.",
         },
     ]);
     out.extend([

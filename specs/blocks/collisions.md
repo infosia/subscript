@@ -586,6 +586,17 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   obligation, stated rather than hidden. `ok` is `false` both for
   malformed text and for well-formed text that does not match `T`.
 
+  **Reading `JsonResult.value` when `ok` is `false` traps**
+  (`json-result-value`, both tiers). The contract first said only that
+  the field "must not be read"; the P13 review measured that a failed
+  scalar parse was byte-identical to a successful parse of `0`, and
+  that a reference-class read segfaulted — the zeroed-miss pattern this
+  register refuses elsewhere, mitigated by a sentence. The trap fires
+  on a programmer error, not on data, so failure-as-data stands.
+  **Input nesting is capped at 128**; deeper input is an ordinary
+  `ok = false`, after the review found unbounded recursion aborting the
+  host process on a 20 000-deep document.
+
   **Integer `parse` targets are converted from the number's text, not
   through `f64`** — an `i64` target given `9007199254740993` yields
   that value, not `…92`. The stage-2 implementation initially routed

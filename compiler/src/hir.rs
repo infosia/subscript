@@ -2276,6 +2276,9 @@ pub enum ExprKind {
         /// Field name.
         name: String,
     },
+    /// Checked read of `JsonResult<T>.value`. Both backends guard the
+    /// ordinary field load with the sibling `ok` field.
+    JsonResultValue(Box<Expr>),
     /// `length` of an array, `FixedArray`, or string.
     Length(Box<Expr>),
     /// Index access `obj[i]`.

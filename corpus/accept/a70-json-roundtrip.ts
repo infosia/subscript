@@ -1,6 +1,7 @@
-// node: v24.18.0
-// purpose: Round-trips every P13 stage-1 serializable family except Date,
-//          whose JSON representation is only an untagged ISO string.
+// corpus: accept/a70-json-roundtrip
+// purpose: Round-trips every P13 serializable family except untagged Date.
+// exercises: JSON, typed parse, stringify, JsonResult, static type validation
+// questions: Q28, Q6, Q14, Q5
 
 @CStruct
 class Point {

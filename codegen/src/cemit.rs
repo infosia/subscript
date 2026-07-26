@@ -87,6 +87,7 @@ use subscript_compiler::hir;
 use subscript_compiler::types::{ClassId, FuncType, Type};
 use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
+use subscript_runtime::TrapKind;
 
 use crate::layout::{is_managed, managed_words, Layouts};
 
@@ -256,7 +257,7 @@ fn expr_assigns_to(e: &hir::Expr, name: &str) -> bool {
             in_callee || args.iter().any(|a| expr_assigns_to(a, name))
         }
         K::New { args, .. } => args.iter().any(|a| expr_assigns_to(a, name)),
-        K::Field { obj, .. } => expr_assigns_to(obj, name),
+        K::Field { obj, .. } | K::JsonResultValue(obj) => expr_assigns_to(obj, name),
         K::Length(obj) => expr_assigns_to(obj, name),
         K::Index { obj, index } => {
             expr_assigns_to(obj, name) || expr_assigns_to(index, name)
@@ -390,6 +391,8 @@ struct Emitter<'m> {
     /// True when the current function pushed a shadow frame (so its exits
     /// pop it).
     has_shadow: bool,
+    /// Source-level return type of the current emitted function.
+    current_ret: Type,
     /// Trap position table.
     positions: Vec<Pos>,
     /// Fresh-temporary counter.
@@ -424,6 +427,7 @@ impl<'m> Emitter<'m> {
             managed_scope: Vec::new(),
             shadow_cursor: 0,
             has_shadow: false,
+            current_ret: Type::Void,
             positions: Vec::new(),
             tmp: 0,
             label: 0,
@@ -913,7 +917,18 @@ impl<'m> Emitter<'m> {
         let sig = self.ctor_signature(ci, c)?;
         let cname = self.class_name(ClassId(ci))?;
         let _ = writeln!(out, "{sig} {{");
-        self.begin_fn(if c.is_value { ThisCtx::ValueLValue } else { ThisCtx::Reference });
+        self.begin_fn(
+            if c.is_value {
+                ThisCtx::ValueLValue
+            } else {
+                ThisCtx::Reference
+            },
+            if c.is_value {
+                Type::Class(ClassId(ci))
+            } else {
+                Type::Void
+            },
+        );
         if c.is_value {
             let _ = writeln!(out, "    {cname} _this;");
             let _ = writeln!(out, "    memset(&_this, 0, sizeof _this);");
@@ -962,7 +977,14 @@ impl<'m> Emitter<'m> {
         let sig = self.method_signature(ci, m)?;
         let is_value = self.class(ClassId(ci))?.is_value;
         let _ = writeln!(out, "{sig} {{");
-        self.begin_fn(if is_value { ThisCtx::ValuePtr } else { ThisCtx::Reference });
+        self.begin_fn(
+            if is_value {
+                ThisCtx::ValuePtr
+            } else {
+                ThisCtx::Reference
+            },
+            m.ret.clone(),
+        );
         self.emit_prologue(out, &m.params, &m.body, 1)?;
         self.emit_block(out, &m.body, 1)?;
         self.emit_exit(out, &m.ret, 1)?;
@@ -973,7 +995,7 @@ impl<'m> Emitter<'m> {
     fn emit_function(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
         let sig = self.fn_signature(f)?;
         let _ = writeln!(out, "{sig} {{");
-        self.begin_fn(ThisCtx::None);
+        self.begin_fn(ThisCtx::None, f.ret.clone());
         self.emit_prologue(out, &f.params, &f.body, 1)?;
         self.emit_block(out, &f.body, 1)?;
         self.emit_exit(out, &f.ret, 1)?;
@@ -982,7 +1004,7 @@ impl<'m> Emitter<'m> {
     }
 
     /// Resets per-function emitter state.
-    fn begin_fn(&mut self, this: ThisCtx) {
+    fn begin_fn(&mut self, this: ThisCtx, ret: Type) {
         self.ranges.clear();
         self.this = this;
         self.gen = None;
@@ -991,6 +1013,7 @@ impl<'m> Emitter<'m> {
         self.managed_scope.clear();
         self.shadow_cursor = 0;
         self.has_shadow = false;
+        self.current_ret = ret;
     }
 
     /// Emits the shadow-frame prologue and records parameter types (M1,
@@ -1050,6 +1073,22 @@ impl<'m> Emitter<'m> {
         if self.has_shadow {
             let _ = writeln!(out, "{}sub_rt_shadow_pop(ctx);", indent(depth));
         }
+    }
+
+    /// Returns from the current emitted function after a trap, matching
+    /// the dev tier's per-frame unwind. The caller checks the Context
+    /// trap flag after every script call and continues unwinding.
+    fn emit_trap_return(&mut self, out: &mut String, depth: usize) -> Result<(), String> {
+        self.emit_shadow_pop(out, depth);
+        if self.gen.is_some() {
+            let _ = writeln!(out, "{}return 1;", indent(depth));
+        } else if self.current_ret == Type::Void {
+            let _ = writeln!(out, "{}return;", indent(depth));
+        } else {
+            let zero = self.zero_value(&self.current_ret.clone())?;
+            let _ = writeln!(out, "{}return {zero};", indent(depth));
+        }
+        Ok(())
     }
 
     /// Function exit on the fall-through path: pop the shadow frame, then
@@ -1125,7 +1164,7 @@ impl<'m> Emitter<'m> {
 
     fn emit_init(&mut self, out: &mut String) -> Result<(), String> {
         let _ = writeln!(out, "void ss_init(void* ctx) {{");
-        self.begin_fn(ThisCtx::None);
+        self.begin_fn(ThisCtx::None, Type::Void);
         let globals: Vec<hir::Global> = self.module.globals.to_vec();
         for g in &globals {
             let v = self.eval(&g.init, out, 1)?;
@@ -1737,6 +1776,7 @@ impl<'m> Emitter<'m> {
                 ))
             }
             K::Field { obj, name } => self.eval_field(obj, name, out, depth),
+            K::JsonResultValue(obj) => self.eval_json_result_value(obj, out, depth, &e.pos),
             K::Length(obj) => match &obj.ty {
                 Type::Array(_) => {
                     let h = self.eval(obj, out, depth)?;
@@ -2001,6 +2041,42 @@ impl<'m> Emitter<'m> {
         }
     }
 
+    /// Emits the guarded read of a `JsonResult<T>` payload. A failed
+    /// guard returns immediately from the current C function so no
+    /// zeroed reference payload can be dereferenced after the trap.
+    fn eval_json_result_value(
+        &mut self,
+        obj: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+        pos: &Pos,
+    ) -> Result<String, String> {
+        let Type::Class(id) = &obj.ty else {
+            return Err("JsonResult value receiver is not a class".to_string());
+        };
+        let class = self.class(*id)?;
+        if class.is_value
+            || class.fields.len() != 2
+            || class.fields[0].name != "ok"
+            || class.fields[0].ty != Type::Bool
+            || class.fields[1].name != "value"
+        {
+            return Err("JsonResult value receiver has an invalid layout".to_string());
+        }
+        let cname = self.class_name(*id)?;
+        let base = self.eval_pinned(obj, out, depth)?;
+        let pid = self.pos_id(pos);
+        let ind = indent(depth);
+        let _ = writeln!(
+            out,
+            "{ind}if (!(({cname}*)({base}))->ok) {{ sub_rt_trap(ctx, {}u, {pid}u);",
+            TrapKind::JsonResultValue as u32
+        );
+        self.emit_trap_return(out, depth + 1)?;
+        let _ = writeln!(out, "{ind}}}");
+        Ok(format!("(({cname}*)({base}))->value"))
+    }
+
     fn eval_index(&mut self, obj: &hir::Expr, index: &hir::Expr, pos: &Pos, out: &mut String, depth: usize) -> Result<String, String> {
         match &obj.ty {
             Type::FixedArray(elem, n) => {
@@ -2130,7 +2206,8 @@ impl<'m> Emitter<'m> {
                 let f = self.hir_fn(name)?;
                 let argv = self.call_args(&f.params.clone(), args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                Ok(format!("ss_fn_{}(ctx{sep}{argv})", sanitize(name)))
+                let call = format!("ss_fn_{}(ctx{sep}{argv})", sanitize(name));
+                self.eval_checked_script_call(call, ret_ty, out, depth)
             }
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
@@ -2146,9 +2223,13 @@ impl<'m> Emitter<'m> {
                 let mut parts = vec![format!("({fvt}).env")];
                 let argv: Vec<&hir::Expr> = ft.params.iter().zip(args).map(|(_, a)| a).collect();
                 parts.extend(self.eval_operands(&argv, out, depth)?);
-                Ok(format!("(({cast})({fvt}).code)(ctx, {})", parts.join(", ")))
+                let call = format!("(({cast})({fvt}).code)(ctx, {})", parts.join(", "));
+                self.eval_checked_script_call(call, ret_ty, out, depth)
             }
-            hir::Callee::Method { recv, name } => self.eval_method(recv, name, args, ret_ty, pos, out, depth),
+            hir::Callee::Method { recv, name } => {
+                let call = self.eval_method(recv, name, args, ret_ty, pos, out, depth)?;
+                self.eval_checked_script_call(call, ret_ty, out, depth)
+            }
             hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, out, depth),
             // A Math intrinsic (stdlib.md §1) calls its opaque runtime
             // symbol — never a bare libm call, which clang would
@@ -2267,6 +2348,31 @@ impl<'m> Emitter<'m> {
             hir::Callee::Set(f) => self.eval_set_call(*f, args, ret_ty, pos, out, depth),
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
+    }
+
+    /// Materializes one script-call result, checks the Context trap flag,
+    /// and unwinds the current C frame before the result can be consumed.
+    fn eval_checked_script_call(
+        &mut self,
+        call: String,
+        ret_ty: &Type,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let ind = indent(depth);
+        let result = if *ret_ty == Type::Void {
+            let _ = writeln!(out, "{ind}{call};");
+            String::new()
+        } else {
+            let temp = self.fresh_tmp();
+            let cty = self.ctype(ret_ty)?;
+            let _ = writeln!(out, "{ind}{cty} {temp} = {call};");
+            temp
+        };
+        let _ = writeln!(out, "{ind}if (sub_rt_ctx_trap_kind(ctx) != 0u) {{");
+        self.emit_trap_return(out, depth + 1)?;
+        let _ = writeln!(out, "{ind}}}");
+        Ok(result)
     }
 
     /// Emits an `Array` method intrinsic call (stdlib.md §9, Q22). The
@@ -3185,14 +3291,16 @@ impl<'m> Emitter<'m> {
         if self.is_value_class(class)? {
             if ctor.is_some() {
                 let sep = if argv.is_empty() { "" } else { ", " };
-                Ok(format!("ss_ctor{}(ctx{sep}{argv})", class.0))
+                let call = format!("ss_ctor{}(ctx{sep}{argv})", class.0);
+                self.eval_checked_script_call(call, &Type::Class(class), out, depth)
             } else {
                 Ok(format!("({}){{0}}", self.class_name(class)?))
             }
         } else {
             let pid = self.pos_id(pos);
             let sep = if argv.is_empty() { "" } else { ", " };
-            Ok(format!("ss_new{}(ctx, {pid}u{sep}{argv})", class.0))
+            let call = format!("ss_new{}(ctx, {pid}u{sep}{argv})", class.0);
+            self.eval_checked_script_call(call, &Type::Class(class), out, depth)
         }
     }
 
@@ -3285,10 +3393,12 @@ impl<'m> Emitter<'m> {
         let saved_ms = std::mem::take(&mut self.managed_scope);
         let saved_cursor = self.shadow_cursor;
         let saved_has = self.has_shadow;
+        let saved_ret = self.current_ret.clone();
         let saved_ranges = std::mem::take(&mut self.ranges);
         self.this = ThisCtx::None;
         self.shadow_cursor = 0;
         self.has_shadow = false;
+        self.current_ret = ret.clone();
 
         let mut fbody = String::new();
         if !caps.is_empty() {
@@ -3316,6 +3426,7 @@ impl<'m> Emitter<'m> {
         self.managed_scope = saved_ms;
         self.shadow_cursor = saved_cursor;
         self.has_shadow = saved_has;
+        self.current_ret = saved_ret;
         self.ranges = saved_ranges;
         Ok(())
     }
@@ -3422,7 +3533,7 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "    }}");
         let _ = writeln!(out, "    _gstart: ;");
 
-        self.begin_fn(ThisCtx::None);
+        self.begin_fn(ThisCtx::None, Type::I32);
         self.gen = Some(GenState {
             yields: 0,
             let_cursor: 0,
@@ -3672,7 +3783,7 @@ fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
                 collect_aggr_expr(a, set);
             }
         }
-        K::Field { obj, .. } => collect_aggr_expr(obj, set),
+        K::Field { obj, .. } | K::JsonResultValue(obj) => collect_aggr_expr(obj, set),
         K::Length(obj) => collect_aggr_expr(obj, set),
         K::Index { obj, index } => {
             collect_aggr_expr(obj, set);
@@ -3807,7 +3918,7 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
             n
         }
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
-        K::Field { obj, .. } => count_yields_expr(obj),
+        K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
@@ -4075,6 +4186,7 @@ extern void sub_rt_collect(void* ctx);
 extern void* sub_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
 extern void sub_rt_delete(void* ctx, void* payload, uint32_t pos_id);
 extern void sub_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
+extern uint32_t sub_rt_ctx_trap_kind(const void* ctx);
 extern void sub_rt_root_add(void* ctx, void* base, uint64_t words);
 extern void sub_rt_shadow_push(void* ctx, void* base, uint64_t slots);
 extern void sub_rt_shadow_pop(void* ctx);

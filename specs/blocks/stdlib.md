@@ -982,8 +982,36 @@ for most `T`. Extending that whitelist is a type-system change and is
 
 `ok` is `false` for malformed JSON **and** for well-formed JSON that
 does not match `T` — a missing field, a wrong type, an array of the
-wrong element type. When `ok` is `false`, `value` is zero-initialized
-and must not be read; the contract does not promise a partial parse.
+wrong element type. The contract does not promise a partial parse.
+
+**Reading `value` when `ok` is `false` traps** (owner decision
+2026-07-26; `TrapKind::JsonResultValue`, rule `json-result-value`,
+position the `.value` member, identical on both tiers). *(This entry
+previously said `value` "is zero-initialized and must not be read".
+That was prose where a checker was needed, and the P13 Phase Review
+measured what it cost: `JSON.parse<i32>("nope")` gave `ok=false
+value=0`, byte-identical to a successful parse of `0`, and for a
+reference-class `T` the read **segfaulted** on both tiers rather than
+trapping. It was the very pattern §10.5 rejected — "returning a zeroed
+`V` on a miss is silently wrong for a program that stores zero as a
+real value" — adopted here and mitigated only by a sentence.)*
+
+The trap does not contradict this section's failure-as-data decision:
+it fires on a **programmer error**, reading a result without checking
+it, not on the data. `if (r.ok) { … r.value … }` is unaffected and the
+checked path costs one branch.
+
+**Input nesting is limited to `MAX_JSON_DEPTH = 128`.** Deeper input is
+an ordinary malformed document — `ok = false`, no trap. *(Added
+2026-07-26. The Phase Review found the parser was unbounded recursive
+descent over input depth: a 20 000-deep document overflowed the stack
+and **aborted the host process**, with no trap, no `ok = false` and no
+report. That is the opposite of what this section chose failure-as-data
+for, and a hard abort in library code reached from data.)* The
+serializer recurses per value depth as well, so a sufficiently deep
+script-authored graph can still exhaust the stack; that input is
+script-authored rather than host data, so invariant 6 covers it, and it
+is recorded as open rather than fixed.
 
 Measured on node v24.18.0, and matched here: a **duplicate key takes
 the last occurrence**; `-0` parses to `-0`; integers beyond `2^53`
@@ -1004,6 +1032,16 @@ an integer or does not fit. `f32`/`f64` targets keep the `f64` path,
 where inexactness is the type's, not the parser's:
 `JSON.parse<f64>("9007199254740993")` yielding `…92` is correct and
 `JSON.parse<i64>` of the same text yielding `…92` was not.
+
+Two further `ok = false` rules, both measured against node v24.18.0 and
+both distinct from the `1e400` case above:
+
+- `JSON.parse<string>` of a **lone surrogate** (`"\ud800"`) fails. Node
+  yields a one-code-unit string; there is no representable value here
+  (Q5), so failure is the only honest answer. §13.2a records that
+  `stringify` has no analogue for this; the parse side is this rule.
+- `JSON.parse<f32>("1e39")` fails: **finite in `f64`, overflowing
+  `f32`**. The target's width decides, not `f64`'s.
 
 **`Date` is rejected as a `parse` target (S014)**, while staying
 accepted for `stringify`. A `Date` serializes to an untagged ISO

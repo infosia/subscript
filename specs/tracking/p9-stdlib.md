@@ -1009,3 +1009,82 @@ Recorded as §13.4a. The corpus entry shows `-0` coming back as `0`
 rather than omitting the case.
 
 **Phase Review pending** before P13 is marked COMPLETE.
+
+## P13 Phase Review (2026-07-26) — findings and disposition
+
+Fresh no-context review of `b6ca729..f4899da`. **CRITICAL: none.
+MAJOR: 3. MINOR: 5.** The review re-generated all three goldens on
+node v24.18.0 (all matched), ran ~20 probe programs through **both**
+tiers, and confirmed §13.1's no-RTTI premise, §13.2's two serializer
+shapes (measured by counting `begin` vs `begin_tracked` call sites in
+emitted C across five type-graph shapes — neither over- nor
+under-conservative), §13.2a's escape set, failure-as-data on ten
+malformed inputs, a 318-case integer-exactness fuzz against Python
+`Decimal`, and trap parity.
+
+### MAJOR 1 — deeply nested input aborted the host process
+
+`Parser::value` was unbounded recursive descent over **input** depth.
+Reproduced by the orchestrator: a 20 000-deep document gives
+`fatal runtime error: stack overflow, aborting` on the dev tier and
+SIGSEGV on the ship tier. Node parses 200 000 deep.
+
+This was the opposite of what §13.4 chose failure-as-data *for*. The
+section's own justification is that JSON crosses the host boundary and
+"a malformed one must be reportable rather than stopping the Context";
+here it did not stop the Context, it killed the host process, with no
+trap, no `ok = false` and no report — and it was a hard abort in
+library code reached from **data**, against core principle 5.
+
+Fixed: `MAX_JSON_DEPTH = 128`; deeper input is an ordinary
+`ok = false`. The implementer chose a limit over an iterative rewrite
+on change-surface grounds and said so.
+
+**Still open, and recorded rather than fixed:** the *serializer*
+recurses per value depth too, so a deep enough script-authored graph
+exhausts the stack. That input is script-authored, so invariant 6
+covers it — but a host abort still contradicts the trap model, and it
+should be fixed separately.
+
+### MAJOR 2 — `value` was readable without checking `ok`
+
+Measured: `JSON.parse<i32>("nope")` gave `ok=false value=0`,
+**byte-identical** to a successful parse of `0`; for a reference-class
+`T` the read **segfaulted** on both tiers. The contract had said only
+that `value` "must not be read" — prose where a checker was needed,
+and the exact pattern §10.5 rejects.
+
+Fixed per owner decision: the read traps
+(`TrapKind::JsonResultValue`). It fires on a programmer error —
+reading a result without checking it — not on data, so §13.4's
+failure-as-data decision is untouched.
+
+### MAJOR 3 — benchmark gate
+
+Same omission as P18, and the review noted in advance that no
+`perf-gate` subject or workload exercises `JSON`, so a run would
+satisfy §13.5 formally and prove nothing. Carried forward with P18's
+identical item rather than being run for the form of it.
+
+### MINOR disposition
+
+Golden floor raised and changed from `>=` to `== 72` — the implementer
+argued an exact count also forces an unrecorded *addition* to be
+declared, which is right and stronger than what was asked. Production
+`panic!`/`unreachable!`/`expect` in `check/json.rs` converted to the
+diagnostic path. Two unrecorded parse divergences (lone surrogate,
+`f32` overflow of an `f64`-finite value) now have corpus coverage and
+contract text. Four corpus headers brought into convention.
+
+### Corpus category created without a contract
+
+The fix introduced `corpus/trap/`, which nothing enumerated —
+appearance of the executable definition's guarantee without its
+substance, the same defect as the golden floor MINOR. **Contracted**
+in `corpus.md` rather than reverted, since a trap is language-visible
+behaviour, with an exact count assertion required. The 25 trap-parity
+tests still written as inline strings in `cemit.rs` are recorded as
+migration candidates.
+
+**P13 is COMPLETE** once the count assertion for `corpus/trap/` lands
+with the trap-observer work.

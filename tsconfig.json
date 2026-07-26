@@ -12,6 +12,7 @@
   "include": [
     "prelude/**/*.d.ts",
     "corpus/accept/**/*.ts",
+    "corpus/trap/**/*.ts",
     "corpus/interop/**/*.d.ts",
     "corpus/interop/**/*.ts"
   ]
