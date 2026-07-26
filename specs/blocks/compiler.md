@@ -413,10 +413,22 @@ pins *how* the numbers are produced, before any number exists.
   start-up, compilation, linking, JIT warm-up, and I/O. All three
   subjects (C, ship-AOT, dev-JIT) time the same span by the same
   clock class (monotonic).
-- **Procedure**: at least 3 warm-up runs discarded, then at least 11
-  timed runs; the reported figure is the **median**. Report the median
-  and the min/max spread for each subject; a spread wider than ±20% of
-  the median invalidates the run (machine too noisy) and it is redone.
+- **Procedure**: warm up for **at least 200 ms of measured execution
+  and at least 3 iterations**, discard it, then at least 11 timed runs;
+  the reported figure is the **median**. Report the median, the min/max
+  spread and **every sample** for each subject; a spread wider than
+  ±20% of the median invalidates that subject's timing, which is
+  withheld. **A subject must report its measured warm-up time and is
+  rejected below the floor.**
+
+  *(Revised 2026-07-27; this said "at least 3 warm-up runs discarded"
+  and min/max-only reporting. `benchmarks.md` Rev 3 has the evidence:
+  `clang -O2` was deleting the warm-up loop outright in three of ten C
+  workloads, so a count-based rule was satisfied while zero warm-up
+  ran, and min/max alone could not distinguish a cold first sample from
+  scattered noise. A count also cannot express "reach steady state"
+  across per-iteration costs spanning 3.7 ms to 125 ms, and this
+  machine's DVFS ramp is ~70 ms.)*
 - **One session, one machine**: all three subjects are measured in the
   same session on the same machine, with the machine's state described
   in the tracking entry (host, CPU, whether on AC power). Numbers from

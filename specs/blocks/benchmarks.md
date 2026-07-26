@@ -72,7 +72,7 @@ themselves and print `<checksum> <median_seconds>`.
   added — while `sort` went 0.40 s → 3.10 s, which is the 200
   iterations actually running.
 
-  The three that survived did so **by accident**: `sort`, `tree`,
+  The seven that survived did so **by accident**: `sort`, `tree`,
   `particles`, `callbacks` and `collect` touch the heap, `queen` has a
   `volatile` guarding against constant-folding, and `fib-recursive` is
   recursive so termination cannot be proven. Nothing in the harness
