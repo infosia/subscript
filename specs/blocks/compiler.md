@@ -1679,17 +1679,35 @@ matrix propagation, so indexing is its inner loop. Replacing that call
 with an inline check is a large win. Adding trap checks made the
 emitted C faster because it removed more calls than it added.
 
-**Still open: the gap to 1.05×.** 1.53× does not reach the figure this
-document and CLAUDE.md cite as the evidence for choosing C emission,
-and P19 is not the cause — pre-P19 was worse. A **separate** regression
-exists between the two, and a second discrepancy points at where:
-earlier the same day the same harness measured **1.87×** on a tree
-predating P13, against **3.65×** at `a757939`. The commits between them
-are P13's two stages, its review fixes, and the host trap API — none of
-which `a22` exercises, since it uses no JSON and no host API. That
-makes the emitted-C **preamble** the thing to look at, the host-header
-work having changed how the emitted translation unit declares the
-runtime. Under measurement; this section will not guess at it.
+**The gap to 1.05× is closed as a question: there is no regression to
+fix, and 1.05× is not a target to return to.** Bisected on the same
+machine, with the trap checks emitted into `a22` counted directly:
+
+| tree | out-of-line checks | inline checks | ×C |
+|---|---:|---:|---:|
+| pre-P13 (`4486b8d`) | **0** | 0 | 1.87× |
+| post-P13 (`a7a4ea8`) | 15 | 0 | 3.74× |
+| pre-P19 (`a757939`) | 15 | 0 | 3.65× |
+| post-P19 (`08be75d`) | 1 | 24 | **1.53×** |
+
+**The emitted C had no trap check at all before P13.** P13 added the
+checking that C6 requires after a script call and paid for it in the
+out-of-line form — that is the 1.87× → 3.74× step, and it was the price
+of correctness rather than a defect. P19 then fixed the form and
+widened the coverage: **25 checks against P13's 15, and 2.4× faster**.
+
+Post-P19 is also faster than the tree that had **no** checks, because
+removing `ss_arr_at`'s per-access call outweighed adding 25 trap
+checks.
+
+So **1.05× was measured on an emitter that did not do the checking the
+language requires**, and comparing 1.53× against it compares two
+different correctness levels. The §3 threshold of 1.50× is very nearly
+met with correct semantics, which is the comparison that means
+something. CLAUDE.md's citation of 1.05× as the evidence for choosing C
+emission should be read as historical; the decision it supports is
+unaffected, since emitted C is still ~15× faster than the Cranelift
+AOT path it replaced.
 
 Cross-language timings are **not reported**: the run matched all nine
 checksums but was voided by the harness on C-subject spread (27–97%)
