@@ -1,4 +1,4 @@
-# P24 — two monotonic costs under invariant 2. IN PROGRESS
+# P24 — two monotonic costs under invariant 2. COMPLETE 2026-07-27
 
 Contract: `specs/blocks/compiler.md` §22, with §22.5 recording what
 landed. Two items carried forward from P21 and P23, scheduled together
@@ -92,13 +92,17 @@ it: padding does not reproduce it.
 
 ## Gate
 
-`cargo test --offline --workspace` **602 passed, 0 failed, 1 ignored**
-(a release-only timing probe); build zero warnings; 87 goldens
+`cargo test --offline --workspace` **604 passed, 0 failed, 1 ignored**
+(a release-only timing probe); build zero warnings; **88 goldens**
 byte-exact across dev-JIT ≡ ship-C-AOT ≡ golden; `tsc` exit 0; clippy
 at its 16-warning codegen baseline; `git diff --check` clean. No
 pre-existing accept `.expected` moved. a84–a87 pin BMP, repeated
-astral, mixed and distinct-astral iteration; all four goldens are
-byte-identical to node.
+astral, mixed and distinct-astral iteration; a88 puts the
+never-swept-intern property under the differential gate. All five
+goldens are byte-identical to node.
+
+*(602 and 87 at the implementation commit; the review's MINOR fixes
+added a88 and two runtime tests.)*
 
 perf-gate emitted-C reads **1.54× / 1.53× / 1.52×** across three valid
 runs against P21's 1.52× — not distinguishable. A fourth run was void
@@ -120,4 +124,32 @@ with the tagged range, the sweep is flat, and the corpus matches node.
 **All four MAJORs were about the record, not the behaviour** — an
 unguarded 4 MB win, an unimplemented and unwithdrawn contract clause,
 spec text still describing the deleted static, and the wrong cause
-recorded for the ship movement.
+recorded for the ship movement. All closed.
+
+**The 4 MB win was measured and unguarded**, which is the phase's own
+version of the gap it was fixing. `regex-size-gate` asserted only the
+matched-pair delta and the `regress` figure — and both sides of the
+pair link the table, so its return cancels. Run against the pre-P24
+tree with all 4,456,448 B present, the gate exited **0**. It now
+asserts the absolute baseline, and that assertion was **watched firing**
+against `11de8ed` (exit 1, "baseline side moved up by 4226960 B")
+rather than assumed. A guard nobody has seen fire is the same gap.
+
+**§22.2's `reserve` fold-in was withdrawn on measurement**, not
+dropped: Part B removed its premise. The map's capacity grew
+229,376 → 458,752 → 917,504 only because dead entries stayed in it, and
+reserving the pre-P24 peak the finding pointed at is now the *worst* of
+four settings — 215.524 ms against 208.092 as built.
+
+## Carried forward
+
+- **The published ship `tree` row is layout-sensitive by ±24%** with no
+  semantic content behind it (`benchmarks.md` carries the caveat). No
+  workload in the suite is insulated from `Context`'s size, and nothing
+  detects when a row moves for that reason. A future phase reading any
+  alloc/delete row as a runtime property will be misled the same way
+  this one nearly was.
+- **`for…of` over CESU-8 lone surrogates** yields three U+FFFD where
+  node yields one lone-surrogate unit. Unreachable from valid source
+  and unchanged by P24; the day a host-facing byte-to-string API
+  exists, that API defines its own invalid-byte semantics.

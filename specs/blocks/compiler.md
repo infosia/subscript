@@ -2246,9 +2246,33 @@ and report it** rather than bounding the poison window; a smaller,
 correct win is preferred to a larger one that quietly narrows a
 guarantee.
 
-**Fold in the adjacent measured finding:** reserving the `allocations`
-map avoids two rehashes, worth **~15 ms of 229 ms** on the same
-workload. It is the same structure and the same measurement run.
+~~**Fold in the adjacent measured finding:** reserving the
+`allocations` map avoids two rehashes, worth **~15 ms of 229 ms** on
+the same workload.~~
+
+**Withdrawn 2026-07-27, on measurement: the segregation above removed
+the rehashes this clause was written to avoid.** Pre-P24 the map's
+capacity grew `229,376 → 458,752 → 917,504` because dead entries stayed
+in it; Part B leaves the live set only, and one bounded rebuild from
+tombstone pressure.
+
+Re-measured on the same `collect` workload:
+
+| `reserve` | median |
+|---:|---:|
+| 0 (as built) | 208.092 ms |
+| 120,005 | 204.300 ms |
+| 240,000 | 201.089 ms |
+| **720,005** — the pre-P24 peak this clause implied | **215.524 ms** |
+
+**Reserving the figure the original finding pointed at is now the worst
+of the four.** A 240,000 reserve does buy ~7 ms, but it pre-pays a
+workload-shaped map on **every** dev Context, and Context construction
+sits outside the measured span — so that number is a different trade
+from the one this clause described, and is not adopted by default.
+
+A clause whose premise a later change removes is withdrawn with the
+measurement, not quietly dropped.
 
 *(A third finding from that run — setting any explicit QoS class makes
 `particles` 9.5% faster, 622 → 563 ms — is benchmark-harness hygiene,
@@ -2305,8 +2329,11 @@ should do.
 
 ### 22.5 What landed
 
-Both parts landed as contracted. Every §22.4 criterion was measured and
-met; `specs/tracking/p24-monotonic-costs.md` carries the numbers.
+Both parts landed. Every §22.4 criterion was measured and met;
+`specs/tracking/p24-monotonic-costs.md` carries the numbers. **One
+clause of §22.2 did not land and is withdrawn there with its
+re-measurement** — the map `reserve` fold-in, whose premise Part B
+itself removed.
 
 **The astral range is gone and the guarantee it bought is narrower than
 §14.3 said.** `stdlib.md` §14.3 was headed "the loop allocates nothing"
