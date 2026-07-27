@@ -64,6 +64,16 @@ commit.
 - **JS semantics.** No `any`, no prototype mutation, no `eval`. The subset
   is defined by the collision table (`specs/blocks/collisions.md`), not by
   JS's spec.
+- **Upstreaming to external projects.** *(Owner, 2026-07-27 — a
+  principle, not a scheduling decision.)* When this project must change
+  a dependency, it forks and pins the fork. It does not open pull
+  requests, negotiate APIs, or carry patches toward acceptance
+  upstream. Acceptance and timing would be outside this project's
+  control, and a patch shaped for upstream's other users is a different
+  and larger patch than the one this project needs. A fork is expected
+  to persist; "upstream it later" is not a plan this project makes.
+  Forks are still cited by URL and pinned by commit — the rule against
+  filesystem paths is unaffected.
 - **Being a standalone program runtime.** subscript is embedded by
   construction: the host owns the main loop and calls exported functions,
   and platform capabilities (files, sockets, devices, threads) are the

@@ -1275,8 +1275,15 @@ in favour of adoption:
   vendored tree reports the following.)*
 
   **Overhead on the vendored tree: 2–7%, and free on a literal.**
-  Control ratios between two unmodified builds run 0.950–1.009, so
-  anything under about 5% overlaps build noise:
+  *(A dated one-off, measured 2026-07-27 against the pinned commit,
+  kept as one by decision — owner, 2026-07-27. Reproducing it needs a
+  second build of unpatched `regress` at the same commit, which is
+  machinery this project would maintain only to re-confirm a number
+  nothing depends on. **Re-measure when the patch is ported to a new
+  base**, which is the only event that can move it, and when a
+  performance question actually turns on it.)* Control ratios between
+  two unmodified builds run 0.950–1.009, so anything under about 5%
+  overlaps build noise:
 
   | pattern | control B/A | patched/A | patched/B |
   |---|---:|---:|---:|
@@ -1311,6 +1318,12 @@ in favour of adoption:
   So the budget's guarantee is that a pathological pattern becomes
   **linear rather than exponential**, not that a call fits a frame. A
   host that feeds megabytes to a regex still needs to think about it.
+
+  **Both stay uncharged, by decision** (owner, 2026-07-27). Charging
+  the prefix search would move the fork further from its base for a
+  bound the contract does not claim — the guarantee is the shape of the
+  growth, and this text is the whole of what a host is owed. The
+  behaviour is measured and stated; it is not an open item.
 
   The decision is unchanged by any of this — 2–7% against a 650 ms hang
   from a 25-byte string is not a close call — but the contract cites
@@ -1523,10 +1536,15 @@ Measured on 1000 short subjects with `^enemy_(\d+)_hp(\d+)$`:
 Recompiling is **7× worse** and costs 16% of a 16.7 ms frame for a
 thousand matches. A compiled `RegExp` is cached in Context memory and a
 literal is compiled once; this is required, not an optimization to
-consider later. *(The recompiling row is a property of a build that
-does not cache. It is not reachable through the shipped API, because
-compilation always goes through the cache — so the row states why the
-cache is contract, not a behaviour a test can observe.)*
+consider later.
+
+**This table is a dated one-off and stays one, by decision** (owner,
+2026-07-27, under §15.7's rule). The recompiling row describes a build
+that does not cache, and **no shipped API reaches it** — compilation
+always goes through the cache — so there is no behaviour a test could
+observe. The row states why the cache is contract; it is not a
+measurement anything can drift away from. Measured 2026-07-27 on the
+vendored tree.
 
 #### 15.5a Lifetime — the cache is bounded by patterns, the handle is not exempt from `collect`
 
@@ -1658,17 +1676,18 @@ Regex::find_from_budgeted(&self, text: &str, start: usize, budget: u64)
   non-empty subject, matching ECMA: `"ab".split(/(?:)/)` is
   `["a","b"]`, not `["a","b",""]`.
 
-**Upstreaming as-is is unlikely.** Upstream would want one
-fuel/cancellation API across the iterator, ASCII, UTF-16 and PikeVM
-paths, not a UTF-8 one-shot, and would want a policy for charging the
-prefix search and backreferences. That does not gate P23 (§15.6), but
-it is why the fork is expected to persist rather than being a short
-detour.
+**The fork is permanent, and that is the project's rule rather than a
+judgement about this patch.** CLAUDE.md's non-goals forbid upstreaming
+outright (owner, 2026-07-27): this project forks and pins, and does not
+carry patches toward acceptance. The reasoning is visible here — a
+patch shaped for upstream would have to be one fuel/cancellation API
+across the iterator, ASCII, UTF-16 and PikeVM paths rather than a UTF-8
+one-shot, plus a policy for the prefix search and backreferences, which
+is a different and larger patch than the one this project needs.
 
-Upstreaming the budget remains worth doing — it would return the
-dependency to a plain version pin and benefits other users — but
-acceptance and timing are outside this project's control, so it does
-not gate P23.
+*(This section previously said upstreaming "remains worth doing" and
+did not gate P23. The first half is now retracted as policy; the second
+was always true.)*
 
 **Sequencing.** The patch is authored and reviewed here first; the fork
 and its push are the owner's (network operations are, CLAUDE.md). P23

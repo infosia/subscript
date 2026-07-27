@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 19, 2026-07-25 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 24, 2026-07-27 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting; Rev 24, 2026-07-27, adds the §22 P24 contract for two monotonic costs under invariant 2 — the 4.25 MiB code-point table and the dev tier's cumulative-allocation sweep). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -2142,3 +2142,163 @@ Exit criteria:
 6. **Benchmarks re-run.** The `u32` store is on the ship tier's
    allocation path. Report emitted-C against P20's 1.53×; a regression
    is a finding, not a cost to absorb.
+
+## 22. P24 — two monotonic costs under invariant 2
+
+Both items were found by measurement in earlier phases, recorded as
+carried forward, and scheduled together on 2026-07-27 (owner) because
+they are the same defect wearing different clothes: **something inside
+the Context grows without bound in a way the program cannot control,
+and no gate can see it.** One is binary size charged to every shipped
+program; the other is `collect()` time charged to every long-running
+host.
+
+Neither is a bug in what the code computes. Both are bugs in what it
+costs, which is why the corpus never noticed.
+
+### 22.1 The code-point table (`stdlib.md` §15.1, P23 carried forward)
+
+`context::CODE_POINT_UTF8` is `[u32; 0x110000]` — **4,456,448 B**, the
+UTF-8 bytes of every Unicode scalar at a stable address. It is the
+largest single item in a shipped binary, **7× the regex engine**, and
+every program that touches a string links it.
+
+**It exists to supply an address, not a computation.** Encoding a
+scalar to UTF-8 is a handful of instructions; `str_bytes` returns
+`&[u8]`, a borrow, so the bytes must live somewhere addressable, and
+the handle `sub_rt_str_iter_code_point` hands out is a tagged integer
+rather than a pointer into real memory.
+
+**Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over a
+string, and `stdlib.md` §14.3's guarantee that the loop allocates
+nothing. `charAt` calls `alloc_str` and always has. *(Both §15.1 and
+the runtime's doc comment said `charAt`; corrected 2026-07-27.)*
+
+**The astral range is the entire cost:**
+
+| | scalars | bytes |
+|---|---:|---:|
+| BMP (`< 0x10000`) | 65,536 | 262,144 |
+| **astral (`≥ 0x10000`)** | **1,048,576** | **4,194,304** |
+
+#### What must hold
+
+1. **BMP loses nothing.** Every scalar below `0x10000` — all Latin,
+   Greek, Cyrillic, Arabic, Hebrew, Devanagari, kana, common CJK,
+   Hangul — keeps its static-table address and allocates nothing. That
+   is essentially all text.
+2. **Astral is bounded by distinct scalars used, not by iterations.**
+   A per-Context intern map: the first occurrence of an astral scalar
+   allocates its bytes, every later occurrence returns the same handle.
+   A ten-thousand-iteration loop over `"😀"` repeated allocates
+   **once**.
+
+   This is the bound `stdlib.md` §15.5a already gives the
+   compiled-pattern cache, and it is chosen for the same reason: a
+   per-iteration allocation under invariant 2 accumulates until
+   `collect()`, which is the defect §15.5a was written for.
+3. **The intern map is Context-owned and is not swept.** No program
+   reference reaches it, so a sweep would free bytes a live handle
+   still points at. It lives and dies with the Context, like the
+   compiled-pattern cache.
+4. **`str_bytes` stays total.** A handle for an astral scalar that was
+   interned in one Context must not be read against another.
+
+**The honest bound, stated rather than glossed:** a program iterating a
+string containing a million *distinct* astral scalars allocates a
+million times. That is not a shape any real text has, and it is the
+price of not carrying 4 MB in every binary.
+
+### 22.2 The dev-tier allocation map (`p4-performance.md`, P21 carried forward)
+
+The dev tier realizes `unsafeDelete`/`collect` by **retain-and-poison**
+(§8.1a): freed bytes stay owned by the Context with a dead header, so a
+stale handle traps instead of reading reused memory. §8.1a accepted the
+*memory* cost of that retention as the price of the guarantee.
+
+**What was not anticipated is that the retention also costs sweep
+time.** Dead entries stay in the same map the sweep walks, so **sweep
+is proportional to every allocation ever made**, not to what is live.
+Measured inside one run as entries grow 120,005 → 720,005: sweep
+**0.73 → 3.48 ms, linear**, while mark stays 14–16 ms because mark *is*
+proportional to live data.
+
+A host calling `collect()` per level transition or inside a frame
+budget therefore sees its collect cost **rise monotonically for the
+lifetime of the Context, regardless of how much is live.** `a16`, `a51`
+and `a70` allocate too little to show it; a real embedding would not.
+
+#### The fix must not weaken the guarantee
+
+The obvious fix — dropping dead entries — trades the diagnostic away,
+and the diagnostic is what §8.1a bought the retention for. It is not
+acceptable here.
+
+**The defect is that dead entries sit in the swept structure, not that
+they exist.** Segregate them: a sweep that walks only live entries is
+proportional to the live set, and every dead entry stays exactly as
+poisoned and as trappable as it is today. Memory retention is
+unchanged — that cost §8.1a already accepted and this phase does not
+reopen.
+
+If segregation proves impossible without changing what traps, **stop
+and report it** rather than bounding the poison window; a smaller,
+correct win is preferred to a larger one that quietly narrows a
+guarantee.
+
+**Fold in the adjacent measured finding:** reserving the `allocations`
+map avoids two rehashes, worth **~15 ms of 229 ms** on the same
+workload. It is the same structure and the same measurement run.
+
+*(A third finding from that run — setting any explicit QoS class makes
+`particles` 9.5% faster, 622 → 563 ms — is benchmark-harness hygiene,
+not runtime behaviour. It belongs to `benchmarks.md`, not here.)*
+
+### 22.3 Corpus and gate (pre-registered)
+
+**Accept.** A `for…of` over a string of BMP scalars asserting the
+existing output unchanged; one over a string of repeated astral scalars
+(the interning case); one mixing BMP and astral; one over a string of
+several *distinct* astral scalars. Each pinned on both tiers.
+
+**Attribution, not a corpus entry**, for the allocation counts, since
+the observable is host-side: a both-tier test asserting that iterating
+`n` repetitions of one astral scalar performs **one** allocation, and
+that BMP iteration performs **none** — using
+`sub_rt_ctx_visit_live_allocations` (§21.2), which already reports
+`(class_id, pos_id, payload_bytes)`.
+
+**Traps.** None new. A malformed handle is `str_bytes`'s existing
+contract.
+
+**Gate.** The standing differential gate byte-exact on both tiers;
+`tsc` clean; no pre-existing accept `.expected` moves — a golden that
+moves here means iteration output changed, which nothing in this phase
+should do.
+
+### 22.4 Exit criteria (kill or pass, pre-registered)
+
+1. **Binary size drops by 4,194,304 B ± 64 KB**, measured by the
+   `regex-size-gate` matched pair (`stdlib.md` §15.7). Both reference
+   constants in that gate move; **that is the expected result, not
+   drift**, and the commit must say so. A drop materially smaller than
+   4 MB means the astral table is still reachable from somewhere and is
+   a finding.
+2. **BMP `for…of` allocates nothing**, asserted by the attribution
+   test, and its emitted C is unchanged on the ship tier.
+3. **Astral `for…of` allocates once per distinct scalar**, asserted by
+   the same test across at least 1000 iterations.
+4. **Sweep time is proportional to live entries, not to cumulative
+   allocations.** Re-run the measurement that found it: as entries grow
+   120,005 → 720,005 with the live set held constant, sweep must stay
+   **flat within noise** instead of going 0.73 → 3.48 ms. A sweep that
+   still grows linearly fails this phase.
+5. **Every dev-tier use-after-delete that traps today still traps**,
+   with the same kind, message and position, at every distance from the
+   free — including one deleted before 700,000 subsequent allocations.
+   This is the guarantee §8.1a bought and the one this phase is most
+   likely to break.
+6. **Benchmarks re-run.** Report emitted-C against P21's 1.52× and the
+   `collect` workload against its recorded figure. A regression is a
+   finding, not a cost to absorb.
+7. Standing gate green; `tsc` clean; clippy at its baseline.
