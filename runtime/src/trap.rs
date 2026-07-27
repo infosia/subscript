@@ -182,6 +182,13 @@ mod tests {
     }
 
     #[test]
+    fn regex_error_kind_has_stable_number_and_rule() {
+        assert_eq!(TrapKind::Regex as u32, 19);
+        assert_eq!(TrapKind::from_u32(19), Some(TrapKind::Regex));
+        assert_eq!(TrapKind::Regex.rule(), "regex-error");
+    }
+
+    #[test]
     fn record_carries_kind_message_pos() {
         let r = TrapRecord::new(TrapKind::EmptyPop, "pop on empty array", 7);
         assert_eq!(r.kind, TrapKind::EmptyPop);

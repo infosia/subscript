@@ -701,9 +701,6 @@ mod tests {
                 "function read(match: RegExpMatchArray): void {\n  print(`${match.groups}`);\n}\nexport function main(): void {}\n"
                     .to_string()
             }
-            ("string", "search") => {
-                "export function main(): void {\n  print(`${\"x\".search(/x/)}`);\n}\n".to_string()
-            }
             ("string", member) => format!(
                 "export function main(): void {{\n  const value: string = \"x\";\n  value.{member}();\n}}\n"
             ),

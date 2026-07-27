@@ -102,10 +102,12 @@ fn normalized_source(pattern: &str) -> Vec<u8> {
         return b"(?:)".to_vec();
     }
     let mut source = Vec::with_capacity(pattern.len());
-    let mut preceding_backslashes = 0usize;
+    let mut escaped = false;
+    let mut in_class = false;
+    let mut first_in_class = false;
     for ch in pattern.chars() {
         match ch {
-            '/' if preceding_backslashes % 2 == 0 => source.extend_from_slice(b"\\/"),
+            '/' if !escaped && !in_class => source.extend_from_slice(b"\\/"),
             '\n' => source.extend_from_slice(b"\\n"),
             '\r' => source.extend_from_slice(b"\\r"),
             '\u{2028}' => source.extend_from_slice(b"\\u2028"),
@@ -115,10 +117,31 @@ fn normalized_source(pattern: &str) -> Vec<u8> {
                 source.extend_from_slice(ch.encode_utf8(&mut utf8).as_bytes());
             }
         }
+
+        if escaped {
+            escaped = false;
+            if in_class {
+                first_in_class = false;
+            }
+            continue;
+        }
         if ch == '\\' {
-            preceding_backslashes += 1;
-        } else {
-            preceding_backslashes = 0;
+            escaped = true;
+            continue;
+        }
+        if in_class {
+            if ch == ']' {
+                if first_in_class {
+                    first_in_class = false;
+                } else {
+                    in_class = false;
+                }
+            } else if !(first_in_class && ch == '^') {
+                first_in_class = false;
+            }
+        } else if ch == '[' {
+            in_class = true;
+            first_in_class = true;
         }
     }
     source
@@ -151,6 +174,14 @@ impl RegexStore {
         if let Some(value) = self.values.get_mut(&(handle as usize)) {
             value.last_match = found;
         }
+    }
+
+    pub(crate) fn value_handles(&self) -> Vec<usize> {
+        self.values.keys().copied().collect()
+    }
+
+    pub(crate) fn remove_value(&mut self, handle: usize) {
+        self.values.remove(&handle);
     }
 }
 
@@ -208,6 +239,11 @@ fn text_parts(
 unsafe fn text_from_parts<'a>(data: *const u8, len: usize) -> &'a str {
     // SAFETY: `text_parts` validated the bytes. Context allocations are
     // stable and no regex scalar operation deletes or collects strings.
+    // Miri's Stacked Borrows model flags the synthetic lifetime because
+    // the two callers subsequently borrow the owning Context mutably.
+    // Those callers only mutate regex/trap state, which is disjoint from
+    // the separately allocated string payload, and neither calls an
+    // allocation, delete, or collection operation while `str` is live.
     unsafe {
         std::str::from_utf8_unchecked(std::slice::from_raw_parts(data, len))
     }
@@ -600,7 +636,16 @@ pub(crate) fn split(
 }
 
 /// Returns one recorded capture boundary, or -1.
-pub(crate) fn match_boundary(ctx: &mut Context, regex: *const u8, group: i32, end: bool) -> i32 {
+pub(crate) fn match_boundary(
+    ctx: &mut Context,
+    regex: *const u8,
+    group: i32,
+    end: bool,
+    pos_id: u32,
+) -> i32 {
+    if matcher(ctx, regex, pos_id).is_none() {
+        return -1;
+    }
     if group < 0 {
         return -1;
     }
@@ -678,8 +723,79 @@ mod tests {
         assert_eq!(ctx.regex_store().compilations, 1);
         let subject = string(&mut ctx, "ba");
         assert_eq!(test(&mut ctx, first, subject, 0), 1);
-        assert_eq!(match_boundary(&mut ctx, first, 1, false), 1);
-        assert_eq!(match_boundary(&mut ctx, second, 1, false), -1);
+        assert_eq!(match_boundary(&mut ctx, first, 1, false, 0), 1);
+        assert_eq!(match_boundary(&mut ctx, second, 1, false, 0), -1);
+    }
+
+    #[test]
+    fn collection_reclaims_handle_state_but_retains_compiled_patterns() {
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let handle = regex(&mut ctx, "(a)", "");
+            let subject = string(&mut ctx, "ba");
+            assert_eq!(test(&mut ctx, handle, subject, 0), 1, "{tier}");
+            assert_eq!(ctx.regex_store().values.len(), 1, "{tier}");
+            assert_eq!(ctx.regex_store().compilations, 1, "{tier}");
+
+            let mut root = handle as usize;
+            let root_ptr = &mut root as *mut usize;
+            ctx.root_add(root_ptr as usize, 1);
+            ctx.collect();
+            assert!(ctx.is_live(handle as usize), "{tier}");
+            assert_eq!(ctx.regex_store().values.len(), 1, "{tier}");
+            assert_eq!(
+                match_boundary(&mut ctx, handle, 1, false, 0),
+                1,
+                "{tier}"
+            );
+
+            // SAFETY: `root` remains live and registered for this test.
+            unsafe { root_ptr.write(0) };
+            ctx.collect();
+            assert!(!ctx.is_live(handle as usize), "{tier}");
+            assert!(ctx.regex_store().values.is_empty(), "{tier}");
+            assert_eq!(ctx.regex_store().compilations, 1, "{tier}");
+
+            let replacement = regex(&mut ctx, "(a)", "");
+            assert!(!replacement.is_null(), "{tier}");
+            assert_eq!(ctx.regex_store().compilations, 1, "{tier}");
+            assert_eq!(ctx.regex_store().values.len(), 1, "{tier}");
+            ctx.delete(replacement as usize, 0);
+            assert!(ctx.regex_store().values.is_empty(), "{tier}");
+        }
+    }
+
+    #[test]
+    fn metadata_and_match_boundaries_check_handle_liveness() {
+        let mut ctx = Context::new();
+        let deleted = regex(&mut ctx, "a", "");
+        ctx.delete(deleted as usize, 0);
+
+        assert!(source(&mut ctx, deleted, 11).is_null());
+        assert_eq!(
+            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
+            Some((TrapKind::UseAfterDelete, 11))
+        );
+        ctx.clear_trap();
+
+        assert!(flags(&mut ctx, deleted, 12).is_null());
+        assert_eq!(
+            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
+            Some((TrapKind::UseAfterDelete, 12))
+        );
+        ctx.clear_trap();
+
+        let collected = regex(&mut ctx, "(a)", "");
+        let subject = string(&mut ctx, "ba");
+        assert_eq!(test(&mut ctx, collected, subject, 0), 1);
+        ctx.collect();
+        assert_eq!(match_boundary(&mut ctx, collected, 1, false, 13), -1);
+        assert_eq!(
+            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
+            Some((TrapKind::UseAfterDelete, 13))
+        );
     }
 
     #[test]
@@ -743,8 +859,8 @@ mod tests {
         assert!(!result.is_null());
         // SAFETY: `replace_all` returned a live string owned by `ctx`.
         assert_eq!(unsafe { ctx.str_bytes(result) }, "éZZ".as_bytes());
-        assert_eq!(match_boundary(&mut ctx, regex, 0, false), 3);
-        assert_eq!(match_boundary(&mut ctx, regex, 0, true), 4);
+        assert_eq!(match_boundary(&mut ctx, regex, 0, false, 0), 3);
+        assert_eq!(match_boundary(&mut ctx, regex, 0, true, 0), 4);
     }
 
     #[test]
@@ -780,6 +896,10 @@ mod tests {
             ("", "(?:)"),
             ("/", "\\/"),
             ("\\/", "\\/"),
+            ("[/]", "[/]"),
+            ("a[/]b", "a[/]b"),
+            ("[]/]/", "[]/]\\/"),
+            (r"[\]/]", r"[\]/]"),
             ("\n\r\u{2028}\u{2029}", "\\n\\r\\u2028\\u2029"),
         ] {
             let pattern = string(&mut ctx, pattern_text);

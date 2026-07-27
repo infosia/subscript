@@ -130,6 +130,44 @@ mod tests {
     }
 
     #[test]
+    fn each_regex_literal_site_has_one_module_global_handle() {
+        let module = check_one(
+            "export function main(): void {\n\
+             \x20 const first: RegExp = /x/g;\n\
+             \x20 const second: RegExp = /x/g;\n\
+             \x20 print(`${first.test(\"x\")} ${second.source}`);\n\
+             }\n",
+        )
+        .expect("regex literals check");
+        let regex_globals: Vec<&hir::Global> = module
+            .globals
+            .iter()
+            .filter(|global| global.ty == Type::RegExp)
+            .collect();
+        assert_eq!(regex_globals.len(), 2);
+        for global in regex_globals {
+            assert!(global.name.starts_with("__subscript_regex_literal_"));
+            assert!(matches!(
+                &global.init.kind,
+                hir::ExprKind::Call {
+                    callee: hir::Callee::Regex(hir::RegexFn::New),
+                    ..
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn replace_all_rejects_a_non_global_regex_literal_early() {
+        let diagnostics =
+            check_one("export function main(): void {\n  print(\"aaa\".replaceAll(/a/, \"Z\"));\n}\n")
+                .expect_err("literal without g must be rejected by the checker");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (2, 26));
+        assert!(diagnostics[0].message.contains("requires the `g` flag"));
+    }
+
+    #[test]
     fn bare_number_is_s007_with_position() {
         let err = check_one("const x: number = 1;\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S007);

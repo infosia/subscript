@@ -831,19 +831,31 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             summary: f.api_summary(),
         });
     }
+    for f in RegexFn::ALL.into_iter().filter(|f| {
+        matches!(
+            f,
+            RegexFn::Search | RegexFn::Replace | RegexFn::ReplaceAll | RegexFn::Split
+        )
+    }) {
+        out.push(ApiItem {
+            group: "string",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
     out.push(ApiItem {
         group: "RegExp",
         signature: "/pattern/flags: RegExp".to_string(),
         summary: "Compiles a checker-validated literal through the Context pattern cache.",
     });
-    for f in RegexFn::ALL {
-        let group = match f {
-            RegexFn::New => "RegExp constructor",
-            RegexFn::Search | RegexFn::Replace | RegexFn::ReplaceAll | RegexFn::Split => "string",
-            _ => "RegExp",
-        };
+    for f in RegexFn::ALL.into_iter().filter(|f| {
+        !matches!(
+            f,
+            RegexFn::Search | RegexFn::Replace | RegexFn::ReplaceAll | RegexFn::Split
+        )
+    }) {
         out.push(ApiItem {
-            group,
+            group: "RegExp",
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
         });

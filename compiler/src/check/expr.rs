@@ -37,6 +37,14 @@ fn literalish(e: &ast::Expr) -> bool {
     }
 }
 
+fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
+    match e {
+        ast::Expr::Lit(ast::Lit::Regex(regex)) => Some(regex),
+        ast::Expr::Paren(paren) => regex_literal(&paren.expr),
+        _ => None,
+    }
+}
+
 fn int_range(ty: &Type) -> Option<(i64, i64)> {
     // i64/u64 literals are capped at the f64-exact range; larger
     // spellings are out of the surface syntax (C3).
@@ -204,6 +212,14 @@ impl<'p> Checker<'p> {
             ast::Lit::Regex(regex) => {
                 let pattern = regex.exp.to_string();
                 let flags = regex.flags.to_string();
+                if flags.contains('y') {
+                    self.error(
+                        RuleCode::S014,
+                        "`RegExp.lastIndex` is not in the language: sticky matching requires reading and writing that mutable state (Q31)",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
                 if let Err(error) = crate::regex::validate_literal(&pattern, &flags) {
                     self.error(
                         RuleCode::S100,
@@ -212,22 +228,51 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
+                let key = (pos.file.clone(), pos.line, pos.col);
+                let name = if let Some(name) = self.regex_literals.get(&key) {
+                    name.clone()
+                } else {
+                    let name = loop {
+                        let name = format!(
+                            "__subscript_regex_literal_{}",
+                            self.next_regex_literal_id
+                        );
+                        self.next_regex_literal_id += 1;
+                        if !self.global_sigs.contains_key(&name) {
+                            break name;
+                        }
+                    };
+                    let init = hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Regex(RegexFn::New),
+                            args: vec![
+                                hir::Expr {
+                                    kind: ExprKind::Str(pattern),
+                                    ty: Type::Str,
+                                    pos: pos.clone(),
+                                },
+                                hir::Expr {
+                                    kind: ExprKind::Str(flags),
+                                    ty: Type::Str,
+                                    pos: pos.clone(),
+                                },
+                            ],
+                        },
+                        ty: Type::RegExp,
+                        pos: pos.clone(),
+                    };
+                    self.globals.push(hir::Global {
+                        name: name.clone(),
+                        ty: Type::RegExp,
+                        mutable: false,
+                        init,
+                        pos: pos.clone(),
+                    });
+                    self.regex_literals.insert(key, name.clone());
+                    name
+                };
                 hir::Expr {
-                    kind: ExprKind::Call {
-                        callee: Callee::Regex(RegexFn::New),
-                        args: vec![
-                            hir::Expr {
-                                kind: ExprKind::Str(pattern),
-                                ty: Type::Str,
-                                pos: pos.clone(),
-                            },
-                            hir::Expr {
-                                kind: ExprKind::Str(flags),
-                                ty: Type::Str,
-                                pos: pos.clone(),
-                            },
-                        ],
-                    },
+                    kind: ExprKind::Global(name),
                     ty: Type::RegExp,
                     pos,
                 }
@@ -1948,6 +1993,22 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
+        let literal_without_global = name == "replaceAll"
+            && c.args.first().is_some_and(|arg| {
+                regex_literal(&arg.expr)
+                    .is_some_and(|regex| !regex.flags.as_ref().contains('g'))
+            });
+        if literal_without_global {
+            let diagnostic_pos = c
+                .args
+                .first()
+                .map_or_else(|| pos.clone(), |arg| self.pos(arg.expr.span()));
+            self.error(
+                RuleCode::S100,
+                "`string.replaceAll` with a RegExp literal requires the `g` flag",
+                diagnostic_pos,
+            );
+        }
         let arity = if matches!(name, "replace" | "replaceAll") {
             2
         } else {
@@ -1986,6 +2047,9 @@ impl<'p> Checker<'p> {
         let Some(pattern) = checked.first() else {
             return self.err_expr(pos);
         };
+        if literal_without_global {
+            return self.err_expr(pos);
+        }
 
         if pattern.ty == Type::RegExp {
             let function = match name {

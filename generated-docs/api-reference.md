@@ -158,31 +158,6 @@
 | `charAt(index: i32): string` | Returns the code point starting at a UTF-8 byte index, or an empty string. |
 | `codePointAt(index: i32): i32` | Returns the code point starting at a UTF-8 byte index; out of range traps. |
 | `concat(other: string): string` | Returns a fresh concatenation with exactly one other string. |
-
-### RegExp
-
-| subscript signature | Behavior |
-|---|---|
-| `/pattern/flags: RegExp` | Compiles a checker-validated literal through the Context pattern cache. |
-
-### RegExp constructor
-
-| subscript signature | Behavior |
-|---|---|
-| `new RegExp(pattern: string, flags?: string): RegExp` | Compiles or reuses a Context-cached ECMAScript pattern. |
-
-### RegExp
-
-| subscript signature | Behavior |
-|---|---|
-| `test(subject: string): boolean` | Tests for a budgeted match and records its capture extents. |
-| `source: string` | Returns the constructor pattern text. |
-| `flags: string` | Returns flags in canonical `dgimsuv` order. |
-
-### string
-
-| subscript signature | Behavior |
-|---|---|
 | `string.search(pattern: RegExp): i32` | Returns the first UTF-8 byte offset, or -1. |
 | `string.replace(pattern: RegExp, replacement: string): string` | Replaces the first match with ECMA `$` substitutions. |
 | `string.replaceAll(pattern: RegExp, replacement: string): string` | Replaces every match with ECMA `$` substitutions; the RegExp must be global. |
@@ -192,6 +167,11 @@
 
 | subscript signature | Behavior |
 |---|---|
+| `/pattern/flags: RegExp` | Compiles a checker-validated literal through the Context pattern cache. |
+| `new RegExp(pattern: string, flags?: string): RegExp` | Compiles or reuses a Context-cached ECMAScript pattern. |
+| `test(subject: string): boolean` | Tests for a budgeted match and records its capture extents. |
+| `source: string` | Returns the constructor pattern text. |
+| `flags: string` | Returns flags in canonical `dgimsuv` order. |
 | `matchStart(group: i32): i32` | Returns a recorded capture's start byte offset, or -1. |
 | `matchEnd(group: i32): i32` | Returns a recorded capture's end byte offset, or -1. |
 

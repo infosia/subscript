@@ -1001,6 +1001,9 @@ impl Context {
             if matches!(class_id, CLASS_MAP | CLASS_SET) {
                 self.clear_container_on_delete(payload);
             }
+            if class_id == CLASS_REGEX {
+                self.regex.remove_value(payload);
+            }
             // SAFETY: the live-grid check above proves `block` is still
             // owned. Container clearing only retires its separate child
             // allocations, so the state word and payload free-list link
@@ -1018,6 +1021,9 @@ impl Context {
             let class_id = unsafe { (a.base.add(8) as *const u32).read() };
             if matches!(class_id, CLASS_MAP | CLASS_SET) {
                 self.clear_container_on_delete(payload);
+            }
+            if class_id == CLASS_REGEX {
+                self.regex.remove_value(payload);
             }
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
@@ -1077,6 +1083,9 @@ impl Context {
                     // least HEADER_SIZE bytes; poisoning the state word
                     // makes the emitted use-after-delete checks fire.
                     unsafe { (a.base as *mut u64).write(DEAD_STATE) };
+                    if class_id == CLASS_REGEX {
+                        self.regex.remove_value(payload);
+                    }
                     return;
                 }
             }
@@ -1350,6 +1359,7 @@ impl Context {
             // the large records.
             self.arena_mark(&mut work);
             self.arena_sweep();
+            self.sweep_regex_values();
             return;
         }
 
@@ -1378,6 +1388,23 @@ impl Context {
                 unsafe { (a.base as *mut u64).write(DEAD_STATE) };
             }
             a.marked = false;
+        }
+        self.sweep_regex_values();
+    }
+
+    /// Drops per-handle RegExp state after the ordinary allocation sweep.
+    ///
+    /// Compiled patterns remain in the Context-lifetime cache; only state
+    /// keyed by handles that collection just retired is removed.
+    fn sweep_regex_values(&mut self) {
+        let stale: Vec<usize> = self
+            .regex
+            .value_handles()
+            .into_iter()
+            .filter(|handle| !self.is_live(*handle))
+            .collect();
+        for handle in stale {
+            self.regex.remove_value(handle);
         }
     }
 

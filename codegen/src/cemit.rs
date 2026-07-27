@@ -5594,17 +5594,17 @@ extern void* sub_rt_str_char_at(void* ctx, const void* s, int32_t i, uint32_t po
 extern int32_t sub_rt_str_code_point_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
 extern void* sub_rt_str_method_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
 
-/* Feature-on regular-expression intrinsics (stdlib.md 15, Q31). */
+/* Regular-expression intrinsics (stdlib.md 15, Q31). */
 extern void* sub_rt_regex_new(void* ctx, const void* pattern, const void* flags, uint32_t pos_id);
 extern int32_t sub_rt_regex_test(void* ctx, const void* regex, const void* subject, uint32_t pos_id);
-extern void* sub_rt_regex_source(void* ctx, const void* regex);
-extern void* sub_rt_regex_flags(void* ctx, const void* regex);
+extern void* sub_rt_regex_source(void* ctx, const void* regex, uint32_t pos_id);
+extern void* sub_rt_regex_flags(void* ctx, const void* regex, uint32_t pos_id);
 extern int32_t sub_rt_regex_search(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
 extern void* sub_rt_regex_replace(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
 extern void* sub_rt_regex_replace_all(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
 extern void* sub_rt_regex_split(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
-extern int32_t sub_rt_regex_match_start(void* ctx, const void* regex, int32_t group);
-extern int32_t sub_rt_regex_match_end(void* ctx, const void* regex, int32_t group);
+extern int32_t sub_rt_regex_match_start(void* ctx, const void* regex, int32_t group, uint32_t pos_id);
+extern int32_t sub_rt_regex_match_end(void* ctx, const void* regex, int32_t group, uint32_t pos_id);
 
 /* Array method intrinsics (stdlib.md 9, Q22): one opaque runtime symbol
  * per accepted method, shared with the dev tier. Element values the
@@ -5887,6 +5887,27 @@ mod tests {
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
         assert!(!c.contains("sub_rt_ctx_trap_kind(ctx)"));
+    }
+
+    #[test]
+    fn regex_literals_construct_once_in_the_module_initializer() {
+        let c = emit(
+            "export function main(): void {\n\
+             \x20 for (let i: i32 = 0; i < 3; i += 1) {\n\
+             \x20   const regex: RegExp = /x/g;\n\
+             \x20   print(`${regex.test(\"x\")} ${regex.source}`);\n\
+             \x20 }\n\
+             }\n",
+        );
+        let call = "sub_rt_regex_new(ctx, ";
+        assert_eq!(c.matches(call).count(), 1);
+        let main = c
+            .find("void ss_export_main(Context* ctx) {")
+            .expect("main definition");
+        let init = c.find("void ss_init(Context* ctx) {").expect("init definition");
+        assert!(init < main);
+        assert!(c[init..main].contains(call));
+        assert!(!c[main..].contains(call));
     }
 
     #[test]

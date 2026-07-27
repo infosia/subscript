@@ -92,8 +92,32 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
             (TrapKind::AllocationFailure, 10)
         }
         "t39-regex-budget" => (TrapKind::RegexBudget, 9),
+        "t40-regex-invalid-pattern"
+        | "t41-regex-unsupported-flag"
+        | "t42-regex-duplicate-flag"
+        | "t43-regex-mutually-exclusive-flags"
+        | "t44-regex-replace-all-without-global" => (TrapKind::Regex, 8),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
+}
+
+fn regex_error_message(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "t40-regex-invalid-pattern" => {
+            "invalid regular expression: Unbalanced parenthesis"
+        }
+        "t41-regex-unsupported-flag" => {
+            "unsupported regular-expression flag `q`; supported flags are d, g, i, m, s, u, v"
+        }
+        "t42-regex-duplicate-flag" => "duplicate regular-expression flag `g`",
+        "t43-regex-mutually-exclusive-flags" => {
+            "regular-expression flags `u` and `v` are mutually exclusive"
+        }
+        "t44-regex-replace-all-without-global" => {
+            "string.replaceAll with a RegExp requires the `g` flag"
+        }
+        _ => return None,
+    })
 }
 
 fn allocation_failure_count(id: &str) -> Option<u64> {
@@ -500,12 +524,12 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 39;
+    let expected_count = 44;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
-         coverage + t34 unrepresentable-layout policy, plus t39 with regex), found {}",
+         coverage + t34 unrepresentable-layout policy, plus t39–t44 regex coverage), found {}",
         ids.len()
     );
 
@@ -553,6 +577,15 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                         String::from_utf8_lossy(&report.stdout),
                         String::from_utf8_lossy(&expected)
                     ));
+                }
+                if let Some(message) = regex_error_message(&id) {
+                    if report.message != message {
+                        failures.push(format!(
+                            "{id}: dev-JIT regex message differs\n  expected = {message:?}\n  \
+                             actual   = {:?}",
+                            report.message
+                        ));
+                    }
                 }
                 if matches!(
                     id.as_str(),

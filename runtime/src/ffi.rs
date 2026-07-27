@@ -1661,9 +1661,13 @@ pub unsafe extern "C" fn sub_rt_regex_test(
 ///
 /// Shared contract; `regex` is a live RegExp handle.
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_regex_source(ctx: *mut Context, regex: *const u8) -> *mut u8 {
+pub unsafe extern "C" fn sub_rt_regex_source(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
     // SAFETY: shared contract.
-    crate::regexops::source(unsafe { &mut *ctx }, regex, 0)
+    crate::regexops::source(unsafe { &mut *ctx }, regex, pos_id)
 }
 
 /// Returns canonical `RegExp.flags` without allocating.
@@ -1672,9 +1676,13 @@ pub unsafe extern "C" fn sub_rt_regex_source(ctx: *mut Context, regex: *const u8
 ///
 /// Shared contract; `regex` is a live RegExp handle.
 #[no_mangle]
-pub unsafe extern "C" fn sub_rt_regex_flags(ctx: *mut Context, regex: *const u8) -> *mut u8 {
+pub unsafe extern "C" fn sub_rt_regex_flags(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
     // SAFETY: shared contract.
-    crate::regexops::flags(unsafe { &mut *ctx }, regex, 0)
+    crate::regexops::flags(unsafe { &mut *ctx }, regex, pos_id)
 }
 
 /// `string.search(RegExp)`, returning a UTF-8 byte offset or -1.
@@ -1753,9 +1761,10 @@ pub unsafe extern "C" fn sub_rt_regex_match_start(
     ctx: *mut Context,
     regex: *const u8,
     group: i32,
+    pos_id: u32,
 ) -> i32 {
     // SAFETY: shared contract.
-    crate::regexops::match_boundary(unsafe { &mut *ctx }, regex, group, false)
+    crate::regexops::match_boundary(unsafe { &mut *ctx }, regex, group, false, pos_id)
 }
 
 /// Returns the last match's capture end byte, or -1.
@@ -1768,9 +1777,10 @@ pub unsafe extern "C" fn sub_rt_regex_match_end(
     ctx: *mut Context,
     regex: *const u8,
     group: i32,
+    pos_id: u32,
 ) -> i32 {
     // SAFETY: shared contract.
-    crate::regexops::match_boundary(unsafe { &mut *ctx }, regex, group, true)
+    crate::regexops::match_boundary(unsafe { &mut *ctx }, regex, group, true, pos_id)
 }
 
 // ----- Q14 formatting -----
@@ -3053,9 +3063,8 @@ pub unsafe extern "C" fn sub_rt_ctx_set_now(ctx: *mut Context, ms: i64) {
 
 /// Sets the deterministic Context regex execution budget.
 ///
-/// The setter is present in both feature configurations so the host
-/// Context ABI does not vary; it affects matching only in a `regex`
-/// feature build.
+/// The budget applies to every regular-expression search in this
+/// Context.
 ///
 /// # Safety
 ///

@@ -595,11 +595,11 @@ fn declare_rt<M: Module>(
             let (params, ret): (&[types::Type], types::Type) = match function {
                 R::New => (&[I64, I64, I64, I32], I64),
                 R::Test => (&[I64, I64, I64, I32], I32),
-                R::Source | R::Flags => (&[I64, I64], I64),
+                R::Source | R::Flags => (&[I64, I64, I32], I64),
                 R::Search => (&[I64, I64, I64, I32], I32),
                 R::Replace | R::ReplaceAll => (&[I64, I64, I64, I64, I32], I64),
                 R::Split => (&[I64, I64, I64, I32], I64),
-                R::MatchStart | R::MatchEnd => (&[I64, I64, I32], I32),
+                R::MatchStart | R::MatchEnd => (&[I64, I64, I32, I32], I32),
                 other => return Err(internal(format!("unknown RegexFn {other:?}"))),
             };
             ids.push(mk(function.symbol(), params, Some(ret))?);

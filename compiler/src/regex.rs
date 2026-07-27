@@ -1,4 +1,4 @@
-//! Feature-on regular-expression validation used by the checker.
+//! Regular-expression validation used by the checker.
 
 use regress::Regex;
 

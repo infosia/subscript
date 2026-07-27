@@ -252,6 +252,13 @@ pub(crate) struct Checker<'p> {
     /// Monotonic id for checker-generated storage that stabilizes a
     /// `for…of` subject across the fused loop.
     pub next_for_of_id: usize,
+    /// Checker-generated module globals for regex-literal source sites.
+    ///
+    /// Each initializer compiles and allocates one rooted handle; every
+    /// evaluation of the literal reads that handle.
+    pub regex_literals: HashMap<(String, u32, u32), String>,
+    /// Monotonic suffix for collision-free regex-literal global names.
+    pub next_regex_literal_id: usize,
 }
 
 /// Runs the checker over a parsed program.
@@ -289,6 +296,8 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
         next_for_of_id: 0,
+        regex_literals: HashMap::new(),
+        next_regex_literal_id: 0,
     };
 
     // Pass A: collect top-level names. Mirror (`.d.ts`) declarations land

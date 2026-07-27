@@ -1336,10 +1336,14 @@ impl RegexFn {
             self,
             RegexFn::New
                 | RegexFn::Test
+                | RegexFn::Source
+                | RegexFn::Flags
                 | RegexFn::Search
                 | RegexFn::Replace
                 | RegexFn::ReplaceAll
                 | RegexFn::Split
+                | RegexFn::MatchStart
+                | RegexFn::MatchEnd
         )
     }
 

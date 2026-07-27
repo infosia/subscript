@@ -140,6 +140,13 @@ const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r81-regex-match-all.ts", RuleCode::S014, 8),
     ("r82-regex-last-index.ts", RuleCode::S014, 8),
     ("r83-regex-groups.ts", RuleCode::S014, 7),
+    ("r84-regex-sticky-last-index.ts", RuleCode::S014, 7),
+    ("r85-invalid-regex-literal.ts", RuleCode::S100, 7),
+    (
+        "r86-regex-literal-replace-all-without-global.ts",
+        RuleCode::S100,
+        7,
+    ),
 ];
 
 fn expected_entries() -> Vec<(&'static str, RuleCode, u32)> {
@@ -220,8 +227,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        80,
-        "expected 76 standing reject entries plus the P23 battery"
+        83,
+        "expected 76 standing reject entries plus the seven-entry P23 battery"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -255,6 +262,10 @@ fn omitted_regex_surface_names_each_language_gap() {
         ("r81-regex-match-all.ts", &["Q30", "object"][..]),
         ("r82-regex-last-index.ts", &["mutable", "exec"][..]),
         ("r83-regex-groups.ts", &["dynamic keys"][..]),
+        (
+            "r84-regex-sticky-last-index.ts",
+            &["lastIndex", "mutable"][..],
+        ),
     ] {
         let diagnostic = first_diagnostic(file);
         assert!(

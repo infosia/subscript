@@ -1,0 +1,5 @@
+source [/] a[/]b [/] \/
+flags d g i m s u v
+nonBmpSplit 1:😀 1:😀
+nonBmpDot X X
+literalLoop 3
