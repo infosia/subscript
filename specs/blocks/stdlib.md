@@ -192,8 +192,18 @@ order rule (JS `Map`/`Set` are insertion-ordered — determinism, §0.3,
 requires pinning it), the key-kind whitelist, and the growth/rehash
 policy under the no-implicit-GC memory model.
 
+**`RegExp` — non-goal reversed, as an opt-in build feature (owner
+decision 2026-07-27.)** It was a permanent non-goal; §15 contracts it
+behind a Cargo feature that is **off by default**, so the default
+language is unchanged and a ship binary that does not ask for regex
+pays nothing. The evidence the reversal required is in §15.1: both
+constraints the `js-api-sweep.md` audit recorded as unchecked were
+checked and both resolve in favour of adoption, and the one real cost —
+**+537 KB of linked binary** — is what the feature switch exists to
+make optional.
+
 **Stdlib non-goals** (permanent unless revised with evidence):
-`RegExp`, `Intl`/locale- and Unicode-table-dependent behavior
+`Intl`/locale- and Unicode-table-dependent behavior
 (collation, locale-sensitive case — Q21 covers non-locale case), `Promise` (C8:
 coroutines), `console` (the language has `print`), `Symbol`,
 `Proxy`/`Reflect`, `eval`/`Function`, `BigInt` (`i64`/`u64` exist).
@@ -1219,3 +1229,168 @@ across tiers; rejects at pinned S014 positions; and **no allocation
 attributable to a `for…of`**, verified through
 `sub_rt_ctx_live_allocations` (§18.2d) before and after a loop over a
 populated container.
+
+## 15. P23 — regular expressions, behind an off-by-default feature (Q31)
+
+### 15.1 The evidence the reversal required
+
+`RegExp` was a permanent non-goal. Reversing it needs evidence, as the
+`Map`/`Set` reversal did (§7). Both constraints
+`js-api-sweep.md` recorded as unchecked were checked, and both resolve
+in favour of adoption:
+
+- **Encoding: the problem does not exist.** `regress` matches **UTF-8
+  natively and returns byte offsets** — exactly Q5's index domain, with
+  no conversion layer. The `utf16` feature must stay **off**: it is
+  documented as additive but `#[cfg]`s out the byte-prefix search and
+  the literal optimizer *on the `&str` path too*, measured at **1.4×
+  to 69× slower** on UTF-8 input. Boa enables it because Boa's strings
+  are UTF-16; this language's are not.
+- **Pathological patterns: bounded for free.** `regress` has no budget
+  upstream — `/(a+)+$/` on 26 `a`s takes **2.61 s**, ~1.8× per added
+  character, so a 30-byte string hangs a frame. A ~25-line budget patch
+  measured **no detectable overhead** (ratios 0.92–1.03, inside the
+  noise between two builds of the same crate) and bounds the worst case
+  to **under 1.3 ms at a budget of 1e5**, independent of input length.
+
+Against these, one cost, and it is the reason for the feature switch:
+**+537 KB of linked binary**, roughly doubling the runtime's
+contribution (438 KB → 963 KB). About 343 KB of that is Unicode
+property and case-folding tables, which dead-strip cannot remove
+because `Regex::new` can parse `\p{…}`, and `regress` offers no feature
+to drop them.
+
+### 15.2 The feature is off by default, and the checker knows
+
+`subscript-runtime` and `subscript-compiler` both carry a `regex`
+feature, **off by default**. `codegen` propagates it.
+
+**The checker must know, not just the runtime.** With the feature only
+on the runtime, a program using regex would type-check and then fail to
+**link** — a linker error rather than a diagnostic, against invariant
+6. With the feature off the checker rejects the whole regex surface at
+S014, saying the build does not have it.
+
+So the default language is **unchanged**, and this is an opt-in
+capability rather than a widening of the language. A mobile ship target
+pays the 537 KB only if it asks.
+
+**This is the workspace's first Cargo feature**, and it makes *what the
+language accepts* depend on a build flag — which is new, and touches
+three things that assumed otherwise:
+
+- **The generated API reference** (`compiler.md` §17) has a
+  byte-identical regeneration test. It is generated from the
+  **feature-on** build, and every regex row is marked as requiring the
+  feature. One reference, honestly labelled, rather than two.
+- **The corpus is the executable definition** (CLAUDE.md principle 2).
+  Regex entries live in the corpus but are **skipped when the feature
+  is off**, and the count assertion accounts for them separately.
+- **The standing differential gate** runs **both** configurations —
+  default over the existing corpus, feature-on over the existing corpus
+  plus the regex entries. The incremental cost is the regex entries,
+  not a doubled suite.
+
+### 15.3 Surface — the allocation-free core only
+
+Accepted with the feature on:
+
+- **`new RegExp(pattern: string, flags?: string)`** and the **literal
+  form** `/pat/flags`. The literal costs one match arm — the compiler
+  wraps `swc`, which already resolves the `/` ambiguity — and it lets
+  the pattern be **validated at check time**, which is invariant 6 and
+  also removes the hazard in §15.4 for literals entirely.
+- `re.test(s): boolean`, `re.source: string`, `re.flags: string`
+- `s.search(re): i32` — **byte offset**, −1 on no match
+- `s.replace(re, repl)` / `s.replaceAll(re, repl)` — using **this
+  language's own `$` substitution** (Q27), extended to `$1`–`$99` and
+  `$<name>`. It cannot delegate to `regress::Regex::replace`, which
+  diverges from ECMA in five ways measured against node (`$&`, `` $` ``,
+  `$'` and `$<w>` are literal there; `${w}` and `$0` are not).
+- `s.split(re): string[]` — with capture reinjection, which `regress`
+  does not provide
+- ambient `re.matchStart(g: i32): i32` / `re.matchEnd(g: i32): i32` —
+  capture extents with **no new type and no allocation**, declared in
+  the prelude the way `Map.getOr` and the ES2024 `Set` algebra already
+  are, and verified `tsc`-clean
+
+Every one of these returns a scalar or a string, so **a call allocates
+nothing** once the `RegExp` exists.
+
+**Rejected, and blocked by the language rather than by the engine** —
+the diagnostics must say which:
+
+- `exec` — returns an array-with-extra-fields; there is no such shape
+  and no tuple type (the gap that already excludes `entries()` and
+  `new Map([[k, v]])`)
+- `match` — **fails stock `tsc` under `strict`**: `RegExpMatchArray.index`
+  is `index?: number`, so `const i: i32 = m.index` is `TS2322`.
+  Invariant 5 excludes it, not a design choice.
+- `matchAll` — would need a fusion decision under Q30/§14.3, and each
+  step still yields an object
+- `lastIndex` with `g` — mutable state on a value driving `exec`
+- `m.groups` — an object with dynamic keys
+
+### 15.4 Two hazards, and the rule for each
+
+- **Budget exhaustion traps.** §11.2's test decides it: this is *not*
+  data — a config file's bad number is data, a pattern that blows its
+  budget is the pattern author's error — and there is **no
+  representable sentinel**. `test` returns `boolean`, where `false`
+  collides with a real no-match (Q24's zeroed-`get` objection
+  verbatim); `search` returns `i32`, where `-1` collides with a real
+  no-match (Q20's Invalid-Date objection verbatim). The budget is a
+  **Context field**, host-settable via `sub_rt_ctx_set_regex_budget`,
+  the same shape as `sub_rt_ctx_seed_random` and `sub_rt_ctx_set_now`
+  and therefore part of the deterministic Context state (§0.3).
+- **Pattern nesting aborts the process.** `Regex::new` is
+  recursive-descent with no depth limit: 8000 nested groups is a
+  **stack overflow and an unrecoverable abort**, not a catchable
+  panic. Reachable only from `new RegExp(runtimeString)` — a literal is
+  compiled at check time and is safe by construction. The shim
+  **pre-checks nesting depth before handing the string to `regress`**
+  and traps instead.
+
+### 15.5 Caching the compiled pattern is contract, not optimization
+
+Measured on 1000 short subjects with `^enemy_(\d+)_hp(\d+)$`:
+
+| | per frame | per call |
+|---|---:|---:|
+| compiled once | 374 µs | 374 ns |
+| recompiled per call | 2682 µs | 2682 ns |
+
+Recompiling is **7× worse** and costs 16% of a 16.7 ms frame for a
+thousand matches. A compiled `RegExp` is cached in Context memory and a
+literal is compiled once; this is required, not an optimization to
+consider later.
+
+### 15.6 The budget patch is not upstream
+
+`regress` has no budget, so the ~25-line patch is ours. CLAUDE.md
+forbids a committed reference to any path outside the repository, so it
+is vendored as a **git submodule or a `build.rs`-resolved artifact with
+a documented default**, or upstreamed. **This is the one part of the
+work that is not "call a crate", and it is decided before
+implementation opens, not during.**
+
+### 15.7 Corpus and gate (pre-registered)
+
+Accept (feature-on only): a battery over `test`/`search`/`replace`/
+`replaceAll`/`split`, captures via `matchStart`/`matchEnd`, **a
+non-ASCII subject pinning that offsets are bytes**, empty-match
+iteration, and every ECMA `$` form including `$1`–`$99` and `$<name>`.
+Reject: `exec`, `match`, `matchAll`, `lastIndex`, `groups`, each S014
+naming **the language gap that blocks it**, not the surface form. Also
+reject the whole surface **with the feature off**, at S014 saying the
+build lacks it.
+
+Traps, tuple-identical across tiers, as `cemit` tests: budget
+exhaustion, and a `new RegExp` whose nesting exceeds the pre-check.
+
+Gate: the standing differential gate byte-exact on both tiers **in both
+feature configurations**; `tsc` zero errors with unchanged config in
+both — the `match` rejection is only checkable because `tsc` rejects it
+too; goldens from the dev tier; rejects at pinned S014 positions; and
+**a linked-binary size line**, since +537 KB is what this feature
+charges and it is pre-registered rather than discovered.
