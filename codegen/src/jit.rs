@@ -997,10 +997,10 @@ mod tests {
     }
 
     #[test]
-    fn fused_for_of_over_populated_containers_allocates_nothing() {
+    fn fused_for_of_over_populated_containers_and_bmp_allocates_nothing() {
         let program = sources(
             "const values: i32[] = [1, 2, 3];\n\
-             const text: string = \"Aé🙂\";\n\
+             const text: string = \"Aé漢\";\n\
              const map: Map<i32, i32> = new Map<i32, i32>();\n\
              let sink: i32 = 0;\n\
              export function populate(): void {\n\
@@ -1046,7 +1046,7 @@ mod tests {
         let after = unsafe { ffi::sub_rt_ctx_live_allocations(p) };
         assert_eq!(
             after, before,
-            "array/Map/string for…of introduced a live Context allocation"
+            "array/Map/BMP-string for…of introduced a live Context allocation"
         );
 
         // SAFETY: every generated entry returned and no code pointer

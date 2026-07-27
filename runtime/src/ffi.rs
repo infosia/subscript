@@ -788,8 +788,9 @@ pub unsafe extern "C" fn sub_rt_str_len(ctx: *mut Context, s: *const u8) -> i32 
     unsafe { ctx.str_bytes(s).len() as i32 }
 }
 
-/// Returns the allocation-free one-code-point string beginning at byte
-/// `index` and writes the next byte index to `next`.
+/// Returns the interned one-code-point string beginning at byte `index`
+/// and writes the next byte index to `next`. BMP values are allocation
+/// free; each distinct astral scalar allocates once per Context.
 ///
 /// This is the value-producing half of string `for…of`; index movement
 /// is by UTF-8 scalar width, never by byte-as-character.
@@ -803,7 +804,7 @@ pub unsafe extern "C" fn sub_rt_str_iter_code_point(
     s: *const u8,
     index: i32,
     next: *mut i32,
-    _pos_id: u32,
+    pos_id: u32,
 ) -> *mut u8 {
     if s.is_null() || next.is_null() || index < 0 {
         return std::ptr::null_mut();
@@ -830,7 +831,8 @@ pub unsafe extern "C" fn sub_rt_str_iter_code_point(
     };
     // SAFETY: caller supplies writable output.
     unsafe { next.write(index.saturating_add(consumed as i32)) };
-    Context::inline_code_point(value)
+    // SAFETY: shared contract; the immutable string borrow ended above.
+    unsafe { (&mut *ctx).code_point(value, pos_id) }
 }
 
 /// String concatenation (`+` / template literals).
@@ -4619,6 +4621,165 @@ mod tests {
             let m = sub_rt_ctx_trap_message(ctx, &mut mlen);
             assert!(!m.is_null() && mlen > 0);
             sub_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn string_for_of_code_points_have_the_p24_allocation_bound_on_both_tiers() {
+        unsafe extern "C" fn record_allocation(
+            userdata: *mut std::ffi::c_void,
+            class_id: u32,
+            pos_id: u32,
+            payload_bytes: u64,
+        ) {
+            // SAFETY: each call below supplies a live Vec of this type.
+            unsafe {
+                &mut *userdata.cast::<Vec<(u32, u32, u64)>>()
+            }
+            .push((class_id, pos_id, payload_bytes));
+        }
+
+        unsafe fn snapshot(ctx: *const Context) -> Vec<(u32, u32, u64)> {
+            let mut allocations = Vec::new();
+            // SAFETY: `ctx` is live and the callback userdata points to
+            // `allocations` for the duration of this call.
+            unsafe {
+                sub_rt_ctx_visit_live_allocations(
+                    ctx,
+                    Some(record_allocation),
+                    (&mut allocations as *mut Vec<(u32, u32, u64)>).cast(),
+                );
+            }
+            allocations
+        }
+
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let p: *mut Context = &mut *ctx;
+
+            let bmp_bytes = "é".repeat(1_000).into_bytes();
+            let bmp_source = ctx.alloc_str(&bmp_bytes, 10);
+            // SAFETY: `p` and `bmp_source` are live; `next` is writable.
+            let before_bmp = unsafe { snapshot(p) };
+            let mut index = 0;
+            let mut bmp_handle: *mut u8 = std::ptr::null_mut();
+            for _ in 0..1_000 {
+                let mut next = -1;
+                let handle = unsafe {
+                    sub_rt_str_iter_code_point(p, bmp_source, index, &mut next, 4_200)
+                };
+                assert_eq!(next, index + 2, "{tier}: BMP byte step");
+                if bmp_handle.is_null() {
+                    bmp_handle = handle;
+                } else {
+                    assert_eq!(handle, bmp_handle, "{tier}: stable BMP handle");
+                }
+                index = next;
+            }
+            assert_eq!(index as usize, bmp_bytes.len(), "{tier}");
+            // SAFETY: `bmp_handle` is the returned tagged BMP string.
+            assert_eq!(unsafe { ctx.str_bytes(bmp_handle) }, "é".as_bytes(), "{tier}");
+            assert_eq!(
+                unsafe { snapshot(p) },
+                before_bmp,
+                "{tier}: BMP iteration allocated"
+            );
+
+            let astral_bytes = "😀".repeat(1_000).into_bytes();
+            let astral_source = ctx.alloc_str(&astral_bytes, 11);
+            let before_astral = unsafe { snapshot(p) };
+            let mut index = 0;
+            let mut astral_handle: *mut u8 = std::ptr::null_mut();
+            for _ in 0..1_000 {
+                let mut next = -1;
+                let handle = unsafe {
+                    sub_rt_str_iter_code_point(p, astral_source, index, &mut next, 4_201)
+                };
+                assert_eq!(next, index + 4, "{tier}: astral byte step");
+                if astral_handle.is_null() {
+                    astral_handle = handle;
+                    assert_eq!(
+                        handle as usize & 15,
+                        0,
+                        "{tier}: astral handle must be an ordinary allocation"
+                    );
+                } else {
+                    assert_eq!(handle, astral_handle, "{tier}: astral scalar reinterned");
+                }
+                index = next;
+            }
+            assert_eq!(index as usize, astral_bytes.len(), "{tier}");
+            // SAFETY: `astral_handle` is the live interned string.
+            assert_eq!(unsafe { ctx.str_bytes(astral_handle) }, "😀".as_bytes(), "{tier}");
+            let after_astral = unsafe { snapshot(p) };
+            assert_eq!(
+                after_astral.len(),
+                before_astral.len() + 1,
+                "{tier}: repeated astral scalar must allocate once"
+            );
+            assert_eq!(
+                after_astral
+                    .iter()
+                    .filter(|&&(class_id, pos_id, _)| {
+                        class_id == crate::context::CLASS_STRING && pos_id == 4_201
+                    })
+                    .count(),
+                1,
+                "{tier}: attribution must show one astral allocation"
+            );
+
+            // The ordinary allocated representation must remain
+            // indistinguishable everywhere a string handle flows.
+            let ordinary = ctx.alloc_str("😀".as_bytes(), 13);
+            let suffix = ctx.alloc_str(b"!", 14);
+            // SAFETY: all handles and the Context are live.
+            unsafe {
+                assert_eq!(sub_rt_str_len(p, astral_handle), 4, "{tier}");
+                assert_eq!(sub_rt_str_eq(p, astral_handle, ordinary), 1, "{tier}");
+                let joined = sub_rt_str_concat(p, astral_handle, suffix, 15);
+                assert_eq!(ctx.str_bytes(joined), "😀!".as_bytes(), "{tier}");
+                sub_rt_print(p, astral_handle);
+            }
+            assert_eq!(ctx.stdout_bytes(), "😀\n".as_bytes(), "{tier}");
+
+            // The intern map, not a program root, keeps this ordinary
+            // allocation live across both collection implementations.
+            ctx.collect();
+            assert!(ctx.is_live(astral_handle as usize), "{tier}");
+            assert_eq!(
+                ctx.code_point('😀', 9_999),
+                astral_handle,
+                "{tier}: collect discarded the astral intern entry"
+            );
+
+            let distinct = "😀🦀𐍈".repeat(334);
+            let distinct_source = ctx.alloc_str(distinct.as_bytes(), 12);
+            let before_distinct = unsafe { snapshot(p) };
+            let mut index = 0;
+            for _ in 0..1_002 {
+                let mut next = -1;
+                let handle = unsafe {
+                    sub_rt_str_iter_code_point(p, distinct_source, index, &mut next, 4_202)
+                };
+                assert!(!handle.is_null(), "{tier}");
+                index = next;
+            }
+            assert_eq!(index as usize, distinct.len(), "{tier}");
+            let after_distinct = unsafe { snapshot(p) };
+            // 😀 was already interned; 🦀 and 𐍈 are the two new scalars.
+            assert_eq!(after_distinct.len(), before_distinct.len() + 2, "{tier}");
+            assert_eq!(
+                after_distinct
+                    .iter()
+                    .filter(|&&(class_id, pos_id, _)| {
+                        class_id == crate::context::CLASS_STRING && pos_id == 4_202
+                    })
+                    .count(),
+                2,
+                "{tier}: one allocation per newly distinct scalar"
+            );
         }
     }
 

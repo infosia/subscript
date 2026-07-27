@@ -22,8 +22,8 @@ const REGRESS_MAX: u64 = 515_000;
 
 // Filled from this matched pair. These values diagnose which side moved
 // when the delta leaves its tolerance; they are not exact-size assertions.
-const REFERENCE_BASELINE_BYTES: u64 = 4_832_952;
-const REFERENCE_REGEX_BYTES: u64 = 5_447_992;
+const REFERENCE_BASELINE_BYTES: u64 = 605_992;
+const REFERENCE_REGEX_BYTES: u64 = 1_221_000;
 
 fn main() -> ExitCode {
     if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {

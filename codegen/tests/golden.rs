@@ -85,18 +85,19 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // JSON.stringify (a69), JSON.parse (a70–a72), the P19 review
     // divisor single-evaluation probe (a73), and the P20 compound-array
     // fixes (a74–a76), and P22 for-of/container iteration/array spread
-    // coverage (a77–a81).
+    // coverage (a77–a81), P23 RegExp (a82–a83), and P24 code-point
+    // storage coverage (a84–a87).
     assert_eq!(
         golden_ids.len(),
-        83,
-        "expected exactly the 81 standing committed goldens (a01–a24 run set + a25–a39 interop \
+        87,
+        "expected exactly 87 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
          + a69 P13 JSON.stringify + a70–a72 P13 JSON.parse \
          + a73 P19 divisor single-evaluation + a74–a76 P20 review fixes \
          + a77–a81 P22 for-of/container iteration/array spread), plus the \
-         a82–a83 P23 regex goldens, found {}",
+         a82–a83 P23 regex and a84–a87 P24 code-point goldens, found {}",
         golden_ids.len()
     );
 

@@ -40,8 +40,9 @@
 //! garbage; it never frees a reachable allocation.
 
 use std::alloc::{alloc_zeroed, dealloc, Layout};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
+use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::trap::{TrapKind, TrapRecord};
 
@@ -104,12 +105,13 @@ pub const POS_ID_OFFSET: i32 = -4;
 /// Class id used for string allocations.
 pub const CLASS_STRING: u32 = 0xFFFF_FF01;
 
-// A string produced by `for…of` contains exactly one Unicode scalar.
+// A BMP string produced by `for…of` contains exactly one Unicode scalar.
 // Encode that scalar in an odd handle (Context allocations are
 // 16-byte-aligned) and serve its bytes from immutable process data.
-// This makes the value a normal, storable string handle without a
-// per-visit allocation or an iterator-owned scratch lifetime.
-const CODE_POINT_COUNT: usize = 0x11_0000;
+// Astral scalars use ordinary allocated string handles, interned for the
+// Context's lifetime; keeping the tagged range BMP-only makes the two
+// handle forms disjoint.
+const BMP_CODE_POINT_COUNT: usize = 0x1_0000;
 const INLINE_STRING_TAG: usize = 1;
 
 const fn encode_utf8_word(scalar: u32) -> u32 {
@@ -132,10 +134,10 @@ const fn encode_utf8_word(scalar: u32) -> u32 {
     u32::from_ne_bytes(bytes)
 }
 
-const fn code_point_utf8_table() -> [u32; CODE_POINT_COUNT] {
-    let mut table = [0u32; CODE_POINT_COUNT];
+const fn code_point_utf8_table() -> [u32; BMP_CODE_POINT_COUNT] {
+    let mut table = [0u32; BMP_CODE_POINT_COUNT];
     let mut scalar = 0;
-    while scalar < CODE_POINT_COUNT {
+    while scalar < BMP_CODE_POINT_COUNT {
         table[scalar] = encode_utf8_word(scalar as u32);
         scalar += 1;
     }
@@ -143,7 +145,7 @@ const fn code_point_utf8_table() -> [u32; CODE_POINT_COUNT] {
 }
 
 #[allow(long_running_const_eval)]
-static CODE_POINT_UTF8: [u32; CODE_POINT_COUNT] = code_point_utf8_table();
+static CODE_POINT_UTF8: [u32; BMP_CODE_POINT_COUNT] = code_point_utf8_table();
 
 fn inline_string_scalar(handle: *const u8) -> Option<u32> {
     let raw = handle as usize;
@@ -151,7 +153,7 @@ fn inline_string_scalar(handle: *const u8) -> Option<u32> {
         return None;
     }
     let encoded = raw >> 1;
-    (encoded > 0 && encoded <= CODE_POINT_COUNT).then_some((encoded - 1) as u32)
+    (encoded > 0 && encoded <= BMP_CODE_POINT_COUNT).then_some((encoded - 1) as u32)
 }
 
 fn scalar_utf8_len(scalar: u32) -> usize {
@@ -252,9 +254,39 @@ struct Allocation {
     base: *mut u8,
     layout: Layout,
     payload_size: usize,
-    live: bool,
     marked: bool,
 }
+
+/// Fast deterministic hashing for Context-owned, 16-byte-aligned payload
+/// addresses. Script data cannot choose these keys, so randomized hashing
+/// buys no collision-resistance here.
+#[derive(Default)]
+struct AddressHasher(u64);
+
+impl Hasher for AddressHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        // HashSet<usize> dispatches to `write_usize`; keep a complete
+        // implementation for the Hasher contract and future refactors.
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100_0000_01b3);
+        }
+        self.0 = hash;
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        // Remove the guaranteed alignment zeros, then use the FxHash
+        // multiplier to spread adjacent allocator addresses.
+        self.0 = ((value >> 4) as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+type AddressSet = HashSet<usize, BuildHasherDefault<AddressHasher>>;
 
 /// A registered C-callback binding (P5.2b). The language's function value
 /// is a `(code, env)` pair with the calling convention `(ctx, env,
@@ -309,13 +341,25 @@ pub struct Context {
     fn_table: *const *const u8,
     globals: *mut u8,
     script_depth: u32,
+    // Development-tier live allocations. Collection marks and sweeps only
+    // this map, so its cost is proportional to the live set.
     allocations: HashMap<usize, Allocation>,
+    // Development-tier retained-and-poisoned addresses. Exact membership
+    // preserves double-delete classification without putting dead records
+    // in the map collection sweeps.
+    dead_allocations: AddressSet,
+    // Dense ownership records for retained-dead backing allocations. This
+    // vector is walked only at Context drop, never by collection.
+    retained_allocations: Vec<Allocation>,
     stdout: Vec<u8>,
     trap: Option<TrapRecord>,
     trap_observer: Option<TrapObserver>,
     trap_observer_userdata: *mut c_void,
     trap_observer_active: bool,
     interned: HashMap<(usize, usize), usize>,
+    // One ordinary allocated string per distinct astral scalar observed by
+    // string `for…of`. Values are permanent collection roots.
+    astral_code_points: HashMap<u32, usize>,
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
     callbacks: Vec<Box<CallbackBinding>>,
@@ -393,12 +437,15 @@ impl Context {
             globals: std::ptr::null_mut(),
             script_depth: 0,
             allocations: HashMap::new(),
+            dead_allocations: AddressSet::default(),
+            retained_allocations: Vec::new(),
             stdout: Vec::new(),
             trap: None,
             trap_observer: None,
             trap_observer_userdata: std::ptr::null_mut(),
             trap_observer_active: false,
             interned: HashMap::new(),
+            astral_code_points: HashMap::new(),
             shadow: Vec::new(),
             roots: Vec::new(),
             callbacks: Vec::new(),
@@ -770,7 +817,6 @@ impl Context {
                 base,
                 layout,
                 payload_size: size,
-                live: true,
                 marked: false,
             },
         );
@@ -1037,6 +1083,26 @@ impl Context {
         }
     }
 
+    /// Moves one live development-tier allocation into retained-dead
+    /// storage and poisons its header. The allocation's bytes and complete
+    /// attribution record remain owned until Context drop.
+    fn retire_dev_allocation(&mut self, payload: usize) -> Option<u32> {
+        let allocation = self.allocations.remove(&payload)?;
+        // SAFETY: exact live-map membership proves the complete initialized
+        // header remains owned by this Context.
+        let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        // SAFETY: the retained allocation owns at least HEADER_SIZE bytes;
+        // poisoning preserves the dev-tier stale-handle trap.
+        unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
+        let inserted = self.dead_allocations.insert(payload);
+        debug_assert!(
+            inserted,
+            "live allocation map and retained-dead address set must be disjoint"
+        );
+        self.retained_allocations.push(allocation);
+        Some(class_id)
+    }
+
     /// Frees or marks the allocation at `payload` dead, per tier policy.
     ///
     /// Development tier ([`Context::new`]): the bytes are retained
@@ -1052,57 +1118,40 @@ impl Context {
             self.arena_release(payload);
             return;
         }
-        match self.allocations.get_mut(&payload) {
-            None => {
-                self.trap(
-                    TrapKind::InvalidDelete,
-                    "unsafeDelete of a pointer the Context does not own",
-                    pos_id,
-                );
-                return;
-            }
-            Some(a) if !a.live => {
+        let Some(allocation) = self.allocations.get(&payload) else {
+            if self.dead_allocations.contains(&payload) {
                 self.trap(
                     TrapKind::DoubleDelete,
                     "unsafeDelete of an already-deleted allocation",
                     pos_id,
                 );
-                return;
+            } else {
+                self.trap(
+                    TrapKind::InvalidDelete,
+                    "unsafeDelete of a pointer the Context does not own",
+                    pos_id,
+                );
             }
-            Some(a) => {
-                // SAFETY: exact map membership and `a.live` prove the
-                // allocation owns a readable header.
-                let class_id = unsafe { (a.base.add(8) as *const u32).read() };
-                if matches!(class_id, CLASS_MAP | CLASS_SET) {
-                    // End the allocation-table borrow before clearing:
-                    // backing storage is retired through recursive
-                    // `delete` calls on this Context.
-                } else {
-                    a.live = false;
-                    // SAFETY: `base` is owned by this context and at
-                    // least HEADER_SIZE bytes; poisoning the state word
-                    // makes the emitted use-after-delete checks fire.
-                    unsafe { (a.base as *mut u64).write(DEAD_STATE) };
-                    if class_id == CLASS_REGEX {
-                        self.regex.remove_value(payload);
-                    }
-                    return;
-                }
-            }
+            return;
+        };
+        // SAFETY: exact live-map membership proves the header is readable.
+        let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        if matches!(class_id, CLASS_MAP | CLASS_SET) {
+            // End the allocation-table borrow before clearing: backing
+            // storage is retired through recursive `delete` calls.
+            self.clear_container_on_delete(payload);
         }
-        self.clear_container_on_delete(payload);
-        if let Some(a) = self.allocations.get_mut(&payload) {
-            a.live = false;
-            // SAFETY: `base` is owned by this context and at least
-            // HEADER_SIZE bytes; poisoning the state word makes the
-            // emitted use-after-delete checks fire.
-            unsafe { (a.base as *mut u64).write(DEAD_STATE) };
-        } else {
+        let Some(retired_class_id) = self.retire_dev_allocation(payload) else {
             self.trap(
                 TrapKind::Internal,
-                "Map/Set header disappeared while deleting its storage",
+                "allocation disappeared while deleting it",
                 pos_id,
             );
+            return;
+        };
+        debug_assert_eq!(retired_class_id, class_id);
+        if class_id == CLASS_REGEX {
+            self.regex.remove_value(payload);
         }
     }
 
@@ -1118,7 +1167,7 @@ impl Context {
             }
             return self.large.contains_key(&payload);
         }
-        self.allocations.get(&payload).is_some_and(|a| a.live)
+        self.allocations.contains_key(&payload)
     }
 
     /// Validates a runtime-operation receiver under Q6's tier policy.
@@ -1161,7 +1210,7 @@ impl Context {
             }
             return n;
         }
-        self.allocations.values().filter(|a| a.live).count()
+        self.allocations.len()
     }
 
     /// Payload capacity in live allocations.
@@ -1191,7 +1240,6 @@ impl Context {
         }
         self.allocations
             .values()
-            .filter(|a| a.live)
             .fold(0usize, |sum, a| sum.saturating_add(a.payload_size))
     }
 
@@ -1213,6 +1261,7 @@ impl Context {
         }
         self.allocations
             .values()
+            .chain(self.retained_allocations.iter())
             .fold(0usize, |sum, a| sum.saturating_add(a.layout.size()))
     }
 
@@ -1287,7 +1336,7 @@ impl Context {
             return count;
         }
 
-        for allocation in self.allocations.values().filter(|a| a.live) {
+        for allocation in self.allocations.values() {
             // SAFETY: a live retained allocation owns a fully initialized
             // header for the lifetime of the Context.
             let (class_id, pos_id) = unsafe {
@@ -1352,6 +1401,7 @@ impl Context {
             }
         }
         work.extend(self.interned.values().copied());
+        work.extend(self.astral_code_points.values().copied());
 
         if self.release_on_delete {
             // Ship tier (§8.1b): mark state lives in the block header
@@ -1363,14 +1413,16 @@ impl Context {
             return;
         }
 
+        let mut marked_count = 0usize;
         while let Some(addr) = work.pop() {
             let Some(a) = self.allocations.get_mut(&addr) else {
                 continue;
             };
-            if !a.live || a.marked {
+            if a.marked {
                 continue;
             }
             a.marked = true;
+            marked_count += 1;
             let payload = addr as *const u8;
             let words = a.payload_size / 8;
             for i in 0..words {
@@ -1381,15 +1433,42 @@ impl Context {
             }
         }
 
-        for a in self.allocations.values_mut() {
-            if a.live && !a.marked {
-                a.live = false;
-                // SAFETY: as in `delete`: poison the retained header.
-                unsafe { (a.base as *mut u64).write(DEAD_STATE) };
-            }
-            a.marked = false;
-        }
+        self.sweep_dev_allocations(self.allocations.len() - marked_count);
         self.sweep_regex_values();
+    }
+
+    /// Development-tier sweep: extract unreachable records from the only
+    /// map this phase walks and reset marked survivors in the same pass.
+    ///
+    /// The retained-dead address index and ownership vector are deliberately
+    /// never traversed here.
+    fn sweep_dev_allocations(&mut self, retiring: usize) {
+        // One exact reserve avoids repeated dead-index/vector growth while
+        // the unreachable records are moved out of the swept map.
+        self.dead_allocations.reserve(retiring);
+        self.retained_allocations.reserve(retiring);
+        let dead_allocations = &mut self.dead_allocations;
+        let retained_allocations = &mut self.retained_allocations;
+        // `extract_if` retains the live map's bucket capacity, so the next
+        // allocation burst reuses it instead of repeating peak rehashes.
+        for (addr, allocation) in self.allocations.extract_if(|_, allocation| {
+            if allocation.marked {
+                allocation.marked = false;
+                false
+            } else {
+                true
+            }
+        }) {
+            // SAFETY: this allocation was live at sweep entry and remains
+            // owned; poisoning preserves every stale-handle trap.
+            unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
+            let inserted = dead_allocations.insert(addr);
+            debug_assert!(
+                inserted,
+                "live allocation map and retained-dead address set must be disjoint"
+            );
+            retained_allocations.push(allocation);
+        }
     }
 
     /// Drops per-handle RegExp state after the ordinary allocation sweep.
@@ -1525,31 +1604,55 @@ impl Context {
         p
     }
 
-    /// Returns the allocation-free string handle for one Unicode scalar.
+    /// Returns the allocation-free string handle for one BMP scalar.
     ///
     /// The odd tagged value is never dereferenced directly. Its UTF-8
     /// bytes live in [`CODE_POINT_UTF8`] and therefore remain valid for
     /// every Context and across storage in arrays, maps, and fields.
     #[must_use]
-    pub(crate) fn inline_code_point(value: char) -> *mut u8 {
+    fn inline_bmp_code_point(value: char) -> *mut u8 {
+        debug_assert!((value as u32) < BMP_CODE_POINT_COUNT as u32);
         let encoded = value as usize + 1;
         ((encoded << 1) | INLINE_STRING_TAG) as *mut u8
     }
 
+    /// Returns a stable one-code-point string handle for string `for…of`.
+    ///
+    /// BMP scalars keep the allocation-free tagged form. Each distinct
+    /// astral scalar gets one ordinary allocated string per Context; its
+    /// intern-map entry is a permanent collection root, so the handle stays
+    /// live until the Context is dropped.
+    pub(crate) fn code_point(&mut self, value: char, pos_id: u32) -> *mut u8 {
+        let scalar = value as u32;
+        if scalar < BMP_CODE_POINT_COUNT as u32 {
+            return Self::inline_bmp_code_point(value);
+        }
+        if let Some(&handle) = self.astral_code_points.get(&scalar) {
+            return handle as *mut u8;
+        }
+        let mut storage = [0u8; 4];
+        let bytes = value.encode_utf8(&mut storage).as_bytes();
+        let handle = self.alloc_str(bytes, pos_id);
+        if !handle.is_null() {
+            self.astral_code_points.insert(scalar, handle as usize);
+        }
+        handle
+    }
+
     /// Reads the bytes of a string handle. Allocated strings borrow
-    /// immutable Context storage; inline code-point strings borrow
-    /// immutable process data.
+    /// immutable Context storage (including interned astral code points);
+    /// inline BMP code-point strings borrow immutable process data.
     ///
     /// # Safety
     ///
     /// `handle` must be a live payload produced by
-    /// [`Context::alloc_str`] on this context or a handle produced by
-    /// [`Context::inline_code_point`].
+    /// [`Context::alloc_str`] on this context or a tagged BMP handle
+    /// produced by string `for…of`.
     #[must_use]
     pub unsafe fn str_bytes(&self, handle: *const u8) -> &[u8] {
         if let Some(scalar) = inline_string_scalar(handle) {
             let len = scalar_utf8_len(scalar);
-            // SAFETY: `scalar` is inside the complete static table and
+            // SAFETY: `scalar` is inside the BMP-only static table and
             // each word stores all `len <= 4` UTF-8 bytes contiguously.
             return unsafe {
                 std::slice::from_raw_parts(
@@ -1719,12 +1822,8 @@ impl Context {
                     // `delete`, so array growth does not accumulate.
                     self.arena_release(old);
                 } else {
-                    if let Some(a) = self.allocations.get_mut(&old) {
-                        a.live = false;
-                        // SAFETY: poisons the retained header, as in
-                        // `delete`.
-                        unsafe { (a.base as *mut u64).write(DEAD_STATE) };
-                    }
+                    let retired = self.retire_dev_allocation(old);
+                    debug_assert_eq!(retired, Some(CLASS_ARRAY_DATA));
                 }
             }
             // SAFETY: as above.
@@ -1791,7 +1890,11 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        for a in self.allocations.values() {
+        for a in self
+            .allocations
+            .values()
+            .chain(self.retained_allocations.iter())
+        {
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `Context::alloc` and are freed exactly once, here.
             unsafe { dealloc(a.base, a.layout) };
@@ -1825,6 +1928,7 @@ impl std::fmt::Debug for Context {
         f.debug_struct("Context")
             .field("trap_flag", &self.trap_flag)
             .field("allocations", &self.allocations.len())
+            .field("dead_allocations", &self.dead_allocations.len())
             .field("stdout_len", &self.stdout.len())
             .finish_non_exhaustive()
     }
@@ -1845,7 +1949,7 @@ mod tests {
             if self.release_on_delete {
                 self.live_count()
             } else {
-                self.allocations.len()
+                self.allocations.len() + self.retained_allocations.len()
             }
         }
 
@@ -2159,6 +2263,49 @@ mod tests {
     }
 
     #[test]
+    fn retained_dead_handles_trap_after_700_000_subsequent_allocations() {
+        let mut ctx = Context::new();
+        let oldest = ctx.alloc(8, 1, 1);
+        ctx.delete(oldest as usize, 2);
+        let mut probes = vec![(oldest, 700_000usize)];
+
+        for i in 0..700_000usize {
+            let handle = ctx.alloc(8, 1, 3);
+            ctx.delete(handle as usize, 4);
+            let distance = 699_999 - i;
+            if matches!(distance, 0 | 1 | 1_000) {
+                probes.push((handle, distance));
+            }
+        }
+
+        assert_eq!(ctx.allocations.len(), 0);
+        assert_eq!(ctx.dead_allocations.len(), 700_001);
+        assert_eq!(ctx.retained_allocations.len(), 700_001);
+        for (handle, distance) in probes {
+            // The generated-code path reads this same retained header;
+            // the runtime receiver path additionally proves segregation
+            // still classifies every distance as stale.
+            // SAFETY: dev retain-and-poison owns the header through drop.
+            unsafe {
+                assert_eq!(
+                    (handle.offset(STATE_OFFSET as isize) as *const u64).read(),
+                    DEAD_STATE,
+                    "distance {distance}"
+                );
+            }
+            assert!(
+                !ctx.require_live_handle(handle as usize, 91),
+                "distance {distance}"
+            );
+            let trap = ctx.trap_record().expect("use-after-delete trap");
+            assert_eq!(trap.kind, TrapKind::UseAfterDelete, "distance {distance}");
+            assert_eq!(trap.message, "use of a deleted allocation", "distance {distance}");
+            assert_eq!(trap.pos_id, 91, "distance {distance}");
+            ctx.clear_trap();
+        }
+    }
+
+    #[test]
     fn ordinary_delete_skips_container_path_and_ship_has_one_membership_lookup() {
         use std::sync::atomic::Ordering::SeqCst;
 
@@ -2311,6 +2458,101 @@ mod tests {
         unsafe { slot_ptr.write(0) };
         ctx.collect();
         assert!(!ctx.is_live(kept as usize));
+    }
+
+    #[test]
+    fn collect_moves_unreachable_records_out_of_the_swept_map() {
+        let mut ctx = Context::new();
+        let kept = ctx.alloc(8, 1, 0);
+        let dropped = ctx.alloc(8, 1, 0);
+        let mut root = kept as usize;
+        ctx.root_add(&mut root as *mut usize as usize, 1);
+
+        ctx.collect();
+
+        assert_eq!(ctx.allocations.len(), 1, "only the live set is swept");
+        assert_eq!(ctx.dead_allocations.len(), 1, "dead record is retained");
+        assert!(ctx.allocations.contains_key(&(kept as usize)));
+        assert!(ctx.dead_allocations.contains(&(dropped as usize)));
+        assert!(ctx.is_live(kept as usize));
+        assert!(!ctx.is_live(dropped as usize));
+        // A second collection does not touch or discard the dead record.
+        ctx.collect();
+        assert_eq!(ctx.allocations.len(), 1);
+        assert_eq!(ctx.dead_allocations.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "P24 exit-criterion timing probe; run serialized in release mode"]
+    fn p24_sweep_time_is_independent_of_retained_dead_entries() {
+        use std::hint::black_box;
+        use std::time::{Duration, Instant};
+
+        fn median_sweep(ctx: &mut Context) -> (Duration, f64) {
+            const WARMUP_SAMPLES: usize = 3;
+            const TIMED_SAMPLES: usize = 11;
+            const SWEEPS_PER_SAMPLE: usize = 256;
+
+            let mut samples = Vec::with_capacity(TIMED_SAMPLES);
+            for sample in 0..WARMUP_SAMPLES + TIMED_SAMPLES {
+                let mut total = Duration::ZERO;
+                for _ in 0..SWEEPS_PER_SAMPLE {
+                    for allocation in ctx.allocations.values_mut() {
+                        allocation.marked = true;
+                    }
+                    let start = Instant::now();
+                    ctx.sweep_dev_allocations(0);
+                    total += start.elapsed();
+                    black_box(ctx.allocations.len());
+                }
+                if sample >= WARMUP_SAMPLES {
+                    samples.push(total.as_secs_f64() / SWEEPS_PER_SAMPLE as f64);
+                }
+            }
+            samples.sort_by(f64::total_cmp);
+            let median = samples[samples.len() / 2];
+            let spread = ((samples[samples.len() - 1] - median) / median)
+                .max((median - samples[0]) / median);
+            assert!(
+                spread <= 0.20,
+                "P24 sweep measurement spread {:.1}% exceeds the ±20% publication gate",
+                spread * 100.0
+            );
+            (Duration::from_secs_f64(median), spread)
+        }
+
+        let mut ctx = Context::new();
+        for _ in 0..120_005 {
+            assert!(!ctx.alloc(8, 1, 0).is_null());
+        }
+        let (low, low_spread) = median_sweep(&mut ctx);
+        assert_eq!(ctx.allocation_count(), 120_005);
+
+        for _ in 0..600_000 {
+            let handle = ctx.alloc(8, 1, 0);
+            assert!(!handle.is_null());
+            ctx.delete(handle as usize, 0);
+        }
+        let (high, high_spread) = median_sweep(&mut ctx);
+        assert_eq!(ctx.allocations.len(), 120_005);
+        assert_eq!(ctx.dead_allocations.len(), 600_000);
+        assert_eq!(ctx.retained_allocations.len(), 600_000);
+        assert_eq!(ctx.allocation_count(), 720_005);
+
+        eprintln!(
+            "P24 dev sweep medians: 120,005 total = {:.3} ms (spread ±{:.1}%); \
+             720,005 total = {:.3} ms (spread ±{:.1}%); 120,005 live at both points",
+            low.as_secs_f64() * 1_000.0,
+            low_spread * 100.0,
+            high.as_secs_f64() * 1_000.0,
+            high_spread * 100.0,
+        );
+        // A wide guard catches a cumulative-map walk without turning
+        // ordinary sub-millisecond timing noise into a gate.
+        assert!(
+            high <= low.saturating_mul(3) / 2 + Duration::from_micros(100),
+            "sweep grew with retained-dead entries: {low:?} -> {high:?}"
+        );
     }
 
     #[test]
