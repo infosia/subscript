@@ -17,7 +17,6 @@ pub mod api_reference;
 mod ambient;
 mod check;
 mod parse;
-#[cfg(feature = "regex")]
 mod regex;
 mod trap_sites;
 
@@ -116,7 +115,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "regex")]
     fn invalid_regex_literal_is_a_checker_diagnostic() {
         let diagnostics = check_one("export function main(): void {\n  const regex = /(/;\n}\n")
             .expect_err("invalid literal must be rejected by the checker");
@@ -335,17 +333,12 @@ mod tests {
 
     #[test]
     fn rejected_string_member_is_s014_naming_the_member() {
-        let search_reason = if cfg!(feature = "regex") {
-            "Q31"
-        } else {
-            "`regex` Cargo feature"
-        };
         for (member, call, q_rule) in [
             ("normalize", "s.normalize()", "Q21"),
             ("localeCompare", "s.localeCompare(s)", "Q21"),
             ("toLocaleLowerCase", "s.toLocaleLowerCase()", "Q21"),
             ("matchAll", "s.matchAll(s)", "Q31"),
-            ("search", "s.search(s)", search_reason),
+            ("search", "s.search(s)", "Q31"),
         ] {
             let err = check_one(&format!(
                 "export function main(): void {{\n  const s: string = \"a\";\n  {call};\n}}\n"

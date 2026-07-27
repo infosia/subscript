@@ -1,5 +1,5 @@
 // corpus: reject/r83-regex-groups
-// feature: regex
+// questions: Q31
 // purpose: Rejects RegExpMatchArray.groups because the language has no
 //          object with dynamic string keys.
 // expected-error: S014 naming the dynamic-key object gap

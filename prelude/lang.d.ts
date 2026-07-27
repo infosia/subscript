@@ -66,7 +66,7 @@ declare interface Set<T> {
   isDisjointFrom(other: Set<T>): boolean;
 }
 
-// P23 feature-on augmentation. Stock ES2022 supplies RegExp itself;
+// P23 augmentation. Stock ES2022 supplies RegExp itself;
 // these scalar capture extents are the only added surface.
 declare interface RegExp {
   matchStart(group: i32): i32;

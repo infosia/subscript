@@ -5,7 +5,6 @@
 //! declarations; the checker does not parse it (P1 contract).
 
 use crate::diag::RuleCode;
-#[cfg(feature = "regex")]
 use crate::hir::RegexFn;
 use crate::hir::{AmbientFn, ArrFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
 use crate::types::Type;
@@ -178,7 +177,6 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
     ),
 ];
 
-#[cfg(feature = "regex")]
 const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "string",
@@ -198,35 +196,6 @@ const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
     ),
 ];
 
-#[cfg(not(feature = "regex"))]
-const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
-    rejection(
-        "string",
-        "match",
-        "Q31",
-        None,
-        "This build does not include the `regex` Cargo feature.",
-        Some("r27-string-match.ts"),
-    ),
-    rejection(
-        "string",
-        "matchAll",
-        "Q31",
-        None,
-        "This build does not include the `regex` Cargo feature.",
-        Some("r89-regex-off-match-all.ts"),
-    ),
-    rejection(
-        "string",
-        "search",
-        "Q31",
-        None,
-        "This build does not include the `regex` Cargo feature.",
-        Some("r90-regex-off-search.ts"),
-    ),
-];
-
-#[cfg(feature = "regex")]
 const REGEX_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "RegExp",
@@ -862,27 +831,22 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             summary: f.api_summary(),
         });
     }
-    #[cfg(feature = "regex")]
-    {
+    out.push(ApiItem {
+        group: "RegExp",
+        signature: "/pattern/flags: RegExp".to_string(),
+        summary: "Compiles a checker-validated literal through the Context pattern cache.",
+    });
+    for f in RegexFn::ALL {
+        let group = match f {
+            RegexFn::New => "RegExp constructor",
+            RegexFn::Search | RegexFn::Replace | RegexFn::ReplaceAll | RegexFn::Split => "string",
+            _ => "RegExp",
+        };
         out.push(ApiItem {
-            group: "RegExp [requires feature `regex`]",
-            signature: "/pattern/flags: RegExp".to_string(),
-            summary: "Compiles a checker-validated literal through the Context pattern cache.",
+            group,
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
         });
-        for f in RegexFn::ALL {
-            let group = match f {
-                RegexFn::New => "RegExp constructor [requires feature `regex`]",
-                RegexFn::Search | RegexFn::Replace | RegexFn::ReplaceAll | RegexFn::Split => {
-                    "string [requires feature `regex`]"
-                }
-                _ => "RegExp [requires feature `regex`]",
-            };
-            out.push(ApiItem {
-                group,
-                signature: f.api_signature().to_string(),
-                summary: f.api_summary(),
-            });
-        }
     }
     for (signature, summary) in [
         ("length: i32", "Returns the element count."),
@@ -990,7 +954,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
 /// Every checker-owned named rejection rendered by the generated
 /// reference.
 pub(crate) fn rejected_api() -> Vec<ApiRejection> {
-    let out: Vec<ApiRejection> = [
+    let mut out: Vec<ApiRejection> = [
         STRING_REJECTIONS,
         REGEX_STRING_REJECTIONS,
         ARRAY_REJECTIONS,
@@ -1005,12 +969,7 @@ pub(crate) fn rejected_api() -> Vec<ApiRejection> {
     .flatten()
     .copied()
     .collect();
-    #[cfg(feature = "regex")]
-    let out = {
-        let mut out = out;
-        out.extend(REGEX_REJECTIONS.iter().copied());
-        out
-    };
+    out.extend(REGEX_REJECTIONS.iter().copied());
     out
 }
 
@@ -1367,10 +1326,7 @@ mod tests {
             assert!(has(group, signature), "{group} {signature}");
         }
 
-        #[cfg(feature = "regex")]
         let regex_rows = 1 + RegexFn::ALL.len();
-        #[cfg(not(feature = "regex"))]
-        let regex_rows = 0;
         let expected = AmbientFn::ALL.len()
             + 1
             + 2

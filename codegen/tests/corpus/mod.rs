@@ -75,8 +75,6 @@ fn entry_ids(accept: &Path) -> Vec<String> {
         }
     }
     ids.sort();
-    #[cfg(not(feature = "regex"))]
-    ids.retain(|id| !id.starts_with("a82-regex"));
     ids
 }
 
@@ -89,10 +87,6 @@ pub fn golden_ids(accept: &Path) -> Vec<String> {
     for e in fs::read_dir(accept).expect("read corpus/accept").flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         if let Some(id) = name.strip_suffix(".expected") {
-            #[cfg(not(feature = "regex"))]
-            if id.starts_with("a82-regex") {
-                continue;
-            }
             assert!(
                 entries.contains(&id.to_string()),
                 "{id}: golden has no corpus entry"
@@ -101,8 +95,6 @@ pub fn golden_ids(accept: &Path) -> Vec<String> {
         }
     }
     ids.sort();
-    #[cfg(not(feature = "regex"))]
-    ids.retain(|id| !id.starts_with("a82-regex"));
     ids
 }
 

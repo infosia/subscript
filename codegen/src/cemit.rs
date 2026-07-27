@@ -3361,42 +3361,34 @@ impl<'m> Emitter<'m> {
                 })
             }
             hir::Callee::Regex(function) => {
-                #[cfg(feature = "regex")]
-                {
-                    use subscript_compiler::hir::RegexFn as R;
-                    let expected = match function {
-                        R::New | R::Test | R::Search | R::Split => 2,
-                        R::Source | R::Flags => 1,
-                        R::Replace | R::ReplaceAll => 3,
-                        R::MatchStart | R::MatchEnd => 2,
-                        other => return Err(format!("unknown RegexFn {other:?}")),
-                    };
-                    if args.len() != expected {
-                        return Err(format!(
-                            "{} arity (expected {expected}, got {})",
-                            function.symbol(),
-                            args.len()
-                        ));
-                    }
-                    let argv = self.eval_list(args, out, depth)?;
-                    let call = if function.can_trap() {
-                        let pid = self.pos_id(pos);
-                        format!("{}(ctx, {argv}, {pid}u)", function.symbol())
-                    } else {
-                        format!("{}(ctx, {argv})", function.symbol())
-                    };
-                    let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
-                    Ok(if *function == R::Test {
-                        format!("({result} != 0)")
-                    } else {
-                        result
-                    })
+                use subscript_compiler::hir::RegexFn as R;
+                let expected = match function {
+                    R::New | R::Test | R::Search | R::Split => 2,
+                    R::Source | R::Flags => 1,
+                    R::Replace | R::ReplaceAll => 3,
+                    R::MatchStart | R::MatchEnd => 2,
+                    other => return Err(format!("unknown RegexFn {other:?}")),
+                };
+                if args.len() != expected {
+                    return Err(format!(
+                        "{} arity (expected {expected}, got {})",
+                        function.symbol(),
+                        args.len()
+                    ));
                 }
-                #[cfg(not(feature = "regex"))]
-                {
-                    let _ = (function, args, ret_ty, pos, out, depth, checked);
-                    Err("regex HIR reached C emission without the `regex` feature".to_string())
-                }
+                let argv = self.eval_list(args, out, depth)?;
+                let call = if function.can_trap() {
+                    let pid = self.pos_id(pos);
+                    format!("{}(ctx, {argv}, {pid}u)", function.symbol())
+                } else {
+                    format!("{}(ctx, {argv})", function.symbol())
+                };
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                Ok(if *function == R::Test {
+                    format!("({result} != 0)")
+                } else {
+                    result
+                })
             }
             // An Array method intrinsic (stdlib.md §9) calls its opaque
             // runtime symbol. The receiver is the first HIR argument;

@@ -2110,19 +2110,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
             hir::Callee::Json(f) => self.eval_json(*f, args, pos, checked),
             hir::Callee::Str(f) => self.eval_str(*f, args, pos, checked),
-            hir::Callee::Regex(f) => {
-                #[cfg(feature = "regex")]
-                {
-                    self.eval_regex(*f, args, pos, checked)
-                }
-                #[cfg(not(feature = "regex"))]
-                {
-                    let _ = (f, args, pos, checked);
-                    Err(internal(
-                        "regex HIR reached codegen without the `regex` feature",
-                    ))
-                }
-            }
+            hir::Callee::Regex(f) => self.eval_regex(*f, args, pos, checked),
             hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos, checked),
             hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos, checked),
             hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos, checked),
@@ -3047,7 +3035,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }))
     }
 
-    #[cfg(feature = "regex")]
     fn eval_regex(
         &mut self,
         function: hir::RegexFn,

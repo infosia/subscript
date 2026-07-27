@@ -825,7 +825,7 @@ dependencies = [
 [[package]]
 name = "regress"
 version = "0.11.1"
-source = "git+https://github.com/infosia/regress?branch=subscript-exec-budget#daa6b231039c562aa32f6356263b26e956d8343d"
+source = "git+https://github.com/infosia/regress?branch=subscript-exec-budget#1e1d0a909ddbaacf0e42d79cc567c7cd99712f84"
 dependencies = [
  "memchr",
 ]

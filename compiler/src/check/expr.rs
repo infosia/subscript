@@ -202,48 +202,34 @@ impl<'p> Checker<'p> {
                 pos,
             },
             ast::Lit::Regex(regex) => {
-                #[cfg(not(feature = "regex"))]
-                let _ = regex;
-                #[cfg(feature = "regex")]
-                {
-                    let pattern = regex.exp.to_string();
-                    let flags = regex.flags.to_string();
-                    if let Err(error) = crate::regex::validate_literal(&pattern, &flags) {
-                        self.error(
-                            RuleCode::S100,
-                            format!("invalid regular-expression literal: {error}"),
-                            pos.clone(),
-                        );
-                        return self.err_expr(pos);
-                    }
-                    return hir::Expr {
-                        kind: ExprKind::Call {
-                            callee: Callee::Regex(RegexFn::New),
-                            args: vec![
-                                hir::Expr {
-                                    kind: ExprKind::Str(pattern),
-                                    ty: Type::Str,
-                                    pos: pos.clone(),
-                                },
-                                hir::Expr {
-                                    kind: ExprKind::Str(flags),
-                                    ty: Type::Str,
-                                    pos: pos.clone(),
-                                },
-                            ],
-                        },
-                        ty: Type::RegExp,
-                        pos,
-                    };
-                }
-                #[cfg(not(feature = "regex"))]
-                {
+                let pattern = regex.exp.to_string();
+                let flags = regex.flags.to_string();
+                if let Err(error) = crate::regex::validate_literal(&pattern, &flags) {
                     self.error(
-                        RuleCode::S014,
-                        "regular expressions require a build with the `regex` Cargo feature",
+                        RuleCode::S100,
+                        format!("invalid regular-expression literal: {error}"),
                         pos.clone(),
                     );
-                    self.err_expr(pos)
+                    return self.err_expr(pos);
+                }
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Regex(RegexFn::New),
+                        args: vec![
+                            hir::Expr {
+                                kind: ExprKind::Str(pattern),
+                                ty: Type::Str,
+                                pos: pos.clone(),
+                            },
+                            hir::Expr {
+                                kind: ExprKind::Str(flags),
+                                ty: Type::Str,
+                                pos: pos.clone(),
+                            },
+                        ],
+                    },
+                    ty: Type::RegExp,
+                    pos,
                 }
             }
             other => {
@@ -1864,7 +1850,6 @@ impl<'p> Checker<'p> {
         !shadowed && self.scope_item("RegExp").is_none()
     }
 
-    #[cfg(feature = "regex")]
     fn check_regex_new(&mut self, n: &ast::NewExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         if n.type_args.is_some() {
             self.error(RuleCode::S100, "`RegExp` is not generic", pos.clone());
@@ -1901,7 +1886,6 @@ impl<'p> Checker<'p> {
         }
     }
 
-    #[cfg(feature = "regex")]
     fn check_regex_method(
         &mut self,
         recv: hir::Expr,
@@ -2003,7 +1987,6 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
 
-        #[cfg(feature = "regex")]
         if pattern.ty == Type::RegExp {
             let function = match name {
                 "search" => RegexFn::Search,
@@ -2034,11 +2017,8 @@ impl<'p> Checker<'p> {
 
         if name == "search" {
             if pattern.ty != Type::Error {
-                #[cfg(feature = "regex")]
                 let message =
                     "`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)";
-                #[cfg(not(feature = "regex"))]
-                let message = "`string.search` requires a build with the `regex` Cargo feature";
                 self.error(RuleCode::S014, message, prop_pos);
             }
             return self.err_expr(pos);
@@ -4802,21 +4782,7 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 }
             },
-            Type::RegExp => {
-                #[cfg(feature = "regex")]
-                {
-                    self.check_regex_method(recv, &name, c, fx, pos, prop_pos)
-                }
-                #[cfg(not(feature = "regex"))]
-                {
-                    self.error(
-                        RuleCode::S014,
-                        "regular expressions require a build with the `regex` Cargo feature",
-                        prop_pos,
-                    );
-                    self.err_expr(pos)
-                }
-            }
+            Type::RegExp => self.check_regex_method(recv, &name, c, fx, pos, prop_pos),
             Type::Generator(y) => match name.as_str() {
                 "next" => {
                     let args = self.check_args(&[], &c.args, fx, &pos, "next");
@@ -4974,19 +4940,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if name == "RegExp" && self.regexp_is_ambient(fx) {
-            #[cfg(feature = "regex")]
-            {
-                return self.check_regex_new(n, fx, pos);
-            }
-            #[cfg(not(feature = "regex"))]
-            {
-                self.error(
-                    RuleCode::S014,
-                    "`new RegExp` requires a build with the `regex` Cargo feature",
-                    pos.clone(),
-                );
-                return self.err_expr(pos);
-            }
+            return self.check_regex_new(n, fx, pos);
         }
         // `new Date(ms)` (stdlib.md §3): the ambient constructor applies
         // only when neither a program declaration nor a function-local

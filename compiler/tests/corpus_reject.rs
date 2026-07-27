@@ -135,7 +135,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r79-assign-entries.ts", RuleCode::S014, 9),
 ];
 
-#[cfg(feature = "regex")]
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r80-regex-exec.ts", RuleCode::S014, 8),
     ("r81-regex-match-all.ts", RuleCode::S014, 8),
@@ -143,55 +142,8 @@ const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r83-regex-groups.ts", RuleCode::S014, 7),
 ];
 
-#[cfg(not(feature = "regex"))]
-const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
-    ("r84-regex-off-literal.ts", RuleCode::S014, 7),
-    ("r85-regex-off-new.ts", RuleCode::S014, 7),
-    ("r86-regex-off-test.ts", RuleCode::S014, 7),
-    ("r87-regex-off-source.ts", RuleCode::S014, 7),
-    ("r88-regex-off-flags.ts", RuleCode::S014, 7),
-    ("r89-regex-off-match-all.ts", RuleCode::S014, 7),
-    ("r90-regex-off-search.ts", RuleCode::S014, 7),
-    ("r91-regex-off-replace.ts", RuleCode::S014, 7),
-    ("r92-regex-off-replace-all.ts", RuleCode::S014, 7),
-    ("r93-regex-off-split.ts", RuleCode::S014, 7),
-    ("r94-regex-off-match-start.ts", RuleCode::S014, 7),
-    ("r95-regex-off-match-end.ts", RuleCode::S014, 7),
-];
-
 fn expected_entries() -> Vec<(&'static str, RuleCode, u32)> {
     EXPECTED.iter().chain(REGEX_EXPECTED).copied().collect()
-}
-
-fn inactive_regex_entry(name: &str) -> bool {
-    #[cfg(feature = "regex")]
-    {
-        matches!(
-            name,
-            "r84-regex-off-literal.ts"
-                | "r85-regex-off-new.ts"
-                | "r86-regex-off-test.ts"
-                | "r87-regex-off-source.ts"
-                | "r88-regex-off-flags.ts"
-                | "r89-regex-off-match-all.ts"
-                | "r90-regex-off-search.ts"
-                | "r91-regex-off-replace.ts"
-                | "r92-regex-off-replace-all.ts"
-                | "r93-regex-off-split.ts"
-                | "r94-regex-off-match-start.ts"
-                | "r95-regex-off-match-end.ts"
-        )
-    }
-    #[cfg(not(feature = "regex"))]
-    {
-        matches!(
-            name,
-            "r80-regex-exec.ts"
-                | "r81-regex-match-all.ts"
-                | "r82-regex-last-index.ts"
-                | "r83-regex-groups.ts"
-        )
-    }
 }
 
 #[test]
@@ -268,8 +220,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        if cfg!(feature = "regex") { 80 } else { 88 },
-        "expected 76 standing reject entries plus the configuration-specific P23 battery"
+        80,
+        "expected 76 standing reject entries plus the P23 battery"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -279,7 +231,6 @@ fn reject_table_covers_every_corpus_entry() {
         .filter(|n| n.ends_with(".ts"))
         .collect();
     let active = expected_entries();
-    entries.retain(|name| !inactive_regex_entry(name));
     entries.sort();
     let mut expected: Vec<String> = active.iter().map(|(f, _, _)| f.to_string()).collect();
     expected.sort();
@@ -297,22 +248,6 @@ fn first_diagnostic(file: &str) -> subscript_compiler::Diagnostic {
 }
 
 #[test]
-#[cfg(not(feature = "regex"))]
-fn feature_off_regex_surface_names_the_missing_build_feature() {
-    for file in std::iter::once("r27-string-match.ts")
-        .chain(REGEX_EXPECTED.iter().map(|(file, _, _)| *file))
-    {
-        let diagnostic = first_diagnostic(file);
-        assert!(
-            diagnostic.message.contains("`regex` Cargo feature"),
-            "{file}: feature-off diagnostic does not name the missing build feature: {}",
-            diagnostic.message
-        );
-    }
-}
-
-#[test]
-#[cfg(feature = "regex")]
 fn omitted_regex_surface_names_each_language_gap() {
     for (file, needles) in [
         ("r80-regex-exec.ts", &["array", "tuple"][..]),

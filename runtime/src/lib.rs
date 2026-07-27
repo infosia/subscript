@@ -28,7 +28,6 @@ pub mod host_header;
 pub mod json;
 pub mod math;
 pub mod num;
-#[cfg(feature = "regex")]
 pub(crate) mod regexops;
 pub mod strops;
 pub mod trap;

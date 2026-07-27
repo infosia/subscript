@@ -14,9 +14,4 @@ num-traits = "0.2.19"
 ryu-js = "=1.0.3"
 # Forked for the execution budget the contract requires (stdlib.md §15.4);
 # upstream has none at any version. Pinned by commit in Cargo.lock.
-regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget", optional = true }
-
-[features]
-default = []
-# Off by default so a ship target pays the linked-binary cost only if it asks.
-regex = ["dep:regress"]
+regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget" }

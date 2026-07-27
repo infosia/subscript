@@ -136,9 +136,7 @@ pub(crate) struct RtFns {
     /// signature is `(ctx, recv, params…[, pos_id])` per
     /// [`hir::StrFn::params`] / [`hir::StrFn::takes_pos_id`].
     pub str_ops: [FuncId; hir::StrFn::ALL.len()],
-    /// `sub_rt_regex_*` imports (stdlib.md §15), present only in a
-    /// feature-on code generator.
-    #[cfg(feature = "regex")]
+    /// `sub_rt_regex_*` imports (stdlib.md §15).
     pub regex_ops: [FuncId; hir::RegexFn::ALL.len()],
     /// `sub_rt_arr_*` method imports (stdlib.md §9), indexed by
     /// `hir::ArrFn as usize` (the [`hir::ArrFn::ALL`] order). Each
@@ -590,7 +588,6 @@ fn declare_rt<M: Module>(
     let str_ops: [FuncId; hir::StrFn::ALL.len()] = str_ids
         .try_into()
         .map_err(|_| internal("string import table size"))?;
-    #[cfg(feature = "regex")]
     let regex_ops: [FuncId; hir::RegexFn::ALL.len()] = {
         let mut ids = Vec::with_capacity(hir::RegexFn::ALL.len());
         for function in hir::RegexFn::ALL {
@@ -849,7 +846,6 @@ fn declare_rt<M: Module>(
         date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
         json,
         str_ops,
-        #[cfg(feature = "regex")]
         regex_ops,
         arr_ops,
         fixed_arr_ops,

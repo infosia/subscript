@@ -301,16 +301,7 @@ fn build_runtime_staticlib() -> Result<PathBuf, String> {
     let dir = build_dir().map_err(|e| e.to_string())?;
     let archive = dir.join(runtime_staticlib_name());
     let runtime_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime");
-    let feature_marker = dir.join(".subscript-runtime-staticlib-features");
-    let required_features = if cfg!(feature = "regex") {
-        "regex\n"
-    } else {
-        "default\n"
-    };
-    if staticlib_is_fresh(&archive, &runtime_dir)
-        && std::fs::read_to_string(&feature_marker)
-            .is_ok_and(|features| features == required_features)
-    {
+    if staticlib_is_fresh(&archive, &runtime_dir) {
         return Ok(archive);
     }
     let profile = dir
@@ -325,9 +316,6 @@ fn build_runtime_staticlib() -> Result<PathBuf, String> {
         .arg(runtime_dir.join("Cargo.toml"));
     if profile == "release" {
         cmd.arg("--release");
-    }
-    if cfg!(feature = "regex") {
-        cmd.args(["--features", "regex"]);
     }
     let out = cmd
         .output()
@@ -344,8 +332,6 @@ fn build_runtime_staticlib() -> Result<PathBuf, String> {
             archive.display()
         )));
     }
-    std::fs::write(&feature_marker, required_features)
-        .map_err(|error| internal(format!("write runtime feature marker: {error}")))?;
     Ok(archive)
 }
 

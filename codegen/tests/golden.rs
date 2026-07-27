@@ -88,7 +88,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // coverage (a77–a81).
     assert_eq!(
         golden_ids.len(),
-        if cfg!(feature = "regex") { 82 } else { 81 },
+        82,
         "expected exactly the 81 standing committed goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -96,7 +96,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          + a69 P13 JSON.stringify + a70–a72 P13 JSON.parse \
          + a73 P19 divisor single-evaluation + a74–a76 P20 review fixes \
          + a77–a81 P22 for-of/container iteration/array spread), plus the \
-         feature-on a82 P23 regex golden, found {}",
+         a82 P23 regex golden, found {}",
         golden_ids.len()
     );
 

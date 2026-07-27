@@ -103,12 +103,10 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
         .iter()
         .filter(|name| name.starts_with("a82-regex"))
         .count();
-    assert_eq!(regex_entries, 1, "expected one feature-on regex entry");
-    #[cfg(not(feature = "regex"))]
-    single_files.retain(|name| !name.starts_with("a82-regex"));
+    assert_eq!(regex_entries, 1, "expected one regex entry");
     assert_eq!(
         single_files.len(),
-        if cfg!(feature = "regex") { 81 } else { 80 },
+        81,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -116,7 +114,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          + a69 P13 JSON.stringify + a70–a72 P13 JSON.parse \
          + a73 P19 divisor single-evaluation + a74–a76 P20 review fixes \
          + a77–a81 P22 for-of/container iteration/array spread), plus one \
-         feature-on P23 regex entry \
+         P23 regex entry \
          plus a19-modules"
     );
     for name in &single_files {

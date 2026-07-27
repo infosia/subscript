@@ -1271,10 +1271,7 @@ pub enum StrFn {
 /// Regular-expression intrinsics (stdlib.md §15, Q31).
 ///
 /// Every value crossing this ABI is scalar: Context, string, array, and
-/// RegExp values are handles and capture indices are `i32`. The checker
-/// admits these calls only in a `regex` feature build; keeping the HIR
-/// identities unconditional lets downstream tools inspect serialized or
-/// hand-built HIR without changing the public enum shape by build mode.
+/// RegExp values are handles and capture indices are `i32`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RegexFn {
@@ -1348,7 +1345,6 @@ impl RegexFn {
 
     /// Source-level signature rendered in the generated API reference.
     #[must_use]
-    #[cfg(feature = "regex")]
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
             RegexFn::New => "new RegExp(pattern: string, flags?: string): RegExp",
@@ -1368,7 +1364,6 @@ impl RegexFn {
 
     /// API-reference summary.
     #[must_use]
-    #[cfg(feature = "regex")]
     pub(crate) fn api_summary(self) -> &'static str {
         match self {
             RegexFn::New => "Compiles or reuses a Context-cached ECMAScript pattern.",

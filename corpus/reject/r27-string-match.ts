@@ -1,6 +1,6 @@
 // corpus: reject/r27-string-match
-// purpose: Rejects `match`: feature-off builds lack P23; feature-on
-//          builds cannot represent its strict-TS optional index.
+// purpose: Rejects `match`: strict TS makes its index optional, which
+//          the language cannot represent as its required i32 result.
 // exercises: rejected-string-subset, string-methods
 // questions: Q21
 // expected-error: match requires RegExp; out of subset

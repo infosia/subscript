@@ -1,5 +1,5 @@
 // corpus: accept/a82-regex
-// feature: regex
+// questions: Q31
 // purpose: Pins P23's cached, budgeted RegExp surface, whole-subject context
 //          across repeated matching, UTF-8 byte offsets, capture extents,
 //          capture-reinjecting split, empty-match progress, and every ECMA

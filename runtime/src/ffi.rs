@@ -1628,7 +1628,6 @@ pub unsafe extern "C" fn sub_rt_str_replace_all(
 /// # Safety
 ///
 /// Shared contract; `pattern` and `flags` are live string handles.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_new(
     ctx: *mut Context,
@@ -1645,7 +1644,6 @@ pub unsafe extern "C" fn sub_rt_regex_new(
 /// # Safety
 ///
 /// Shared contract; `regex` and `subject` are live handles.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_test(
     ctx: *mut Context,
@@ -1662,7 +1660,6 @@ pub unsafe extern "C" fn sub_rt_regex_test(
 /// # Safety
 ///
 /// Shared contract; `regex` is a live RegExp handle.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_source(ctx: *mut Context, regex: *const u8) -> *mut u8 {
     // SAFETY: shared contract.
@@ -1674,7 +1671,6 @@ pub unsafe extern "C" fn sub_rt_regex_source(ctx: *mut Context, regex: *const u8
 /// # Safety
 ///
 /// Shared contract; `regex` is a live RegExp handle.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_flags(ctx: *mut Context, regex: *const u8) -> *mut u8 {
     // SAFETY: shared contract.
@@ -1686,7 +1682,6 @@ pub unsafe extern "C" fn sub_rt_regex_flags(ctx: *mut Context, regex: *const u8)
 /// # Safety
 ///
 /// Shared contract; `subject` and `regex` are live handles.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_search(
     ctx: *mut Context,
@@ -1703,7 +1698,6 @@ pub unsafe extern "C" fn sub_rt_regex_search(
 /// # Safety
 ///
 /// Shared contract; every pointer after `ctx` is a live handle.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_replace(
     ctx: *mut Context,
@@ -1721,7 +1715,6 @@ pub unsafe extern "C" fn sub_rt_regex_replace(
 /// # Safety
 ///
 /// Shared contract; every pointer after `ctx` is a live handle.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_replace_all(
     ctx: *mut Context,
@@ -1739,7 +1732,6 @@ pub unsafe extern "C" fn sub_rt_regex_replace_all(
 /// # Safety
 ///
 /// Shared contract; `subject` and `regex` are live handles.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_split(
     ctx: *mut Context,
@@ -1756,7 +1748,6 @@ pub unsafe extern "C" fn sub_rt_regex_split(
 /// # Safety
 ///
 /// Shared contract; `regex` is a live RegExp handle.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_match_start(
     ctx: *mut Context,
@@ -1772,7 +1763,6 @@ pub unsafe extern "C" fn sub_rt_regex_match_start(
 /// # Safety
 ///
 /// Shared contract; `regex` is a live RegExp handle.
-#[cfg(feature = "regex")]
 #[no_mangle]
 pub unsafe extern "C" fn sub_rt_regex_match_end(
     ctx: *mut Context,
@@ -5314,7 +5304,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "regex")]
     fn ffi_regex_budget_setter_updates_context_state() {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;

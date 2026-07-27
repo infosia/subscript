@@ -11,8 +11,4 @@ serde = "=1.0.219"
 swc_common = "=5.0.1"
 swc_ecma_ast = "=5.1.0"
 swc_ecma_parser = "=6.0.2"
-regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget", optional = true }
-
-[features]
-default = []
-regex = ["dep:regress"]
+regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget" }

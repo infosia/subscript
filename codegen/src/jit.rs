@@ -448,35 +448,32 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     for (name, addr) in syms {
         builder.symbol(*name, *addr);
     }
-    #[cfg(feature = "regex")]
-    {
-        let regex_symbols: &[(&str, *const u8)] = &[
-            ("sub_rt_regex_new", ffi::sub_rt_regex_new as *const u8),
-            ("sub_rt_regex_test", ffi::sub_rt_regex_test as *const u8),
-            ("sub_rt_regex_source", ffi::sub_rt_regex_source as *const u8),
-            ("sub_rt_regex_flags", ffi::sub_rt_regex_flags as *const u8),
-            ("sub_rt_regex_search", ffi::sub_rt_regex_search as *const u8),
-            (
-                "sub_rt_regex_replace",
-                ffi::sub_rt_regex_replace as *const u8,
-            ),
-            (
-                "sub_rt_regex_replace_all",
-                ffi::sub_rt_regex_replace_all as *const u8,
-            ),
-            ("sub_rt_regex_split", ffi::sub_rt_regex_split as *const u8),
-            (
-                "sub_rt_regex_match_start",
-                ffi::sub_rt_regex_match_start as *const u8,
-            ),
-            (
-                "sub_rt_regex_match_end",
-                ffi::sub_rt_regex_match_end as *const u8,
-            ),
-        ];
-        for (name, address) in regex_symbols {
-            builder.symbol(*name, *address);
-        }
+    let regex_symbols: &[(&str, *const u8)] = &[
+        ("sub_rt_regex_new", ffi::sub_rt_regex_new as *const u8),
+        ("sub_rt_regex_test", ffi::sub_rt_regex_test as *const u8),
+        ("sub_rt_regex_source", ffi::sub_rt_regex_source as *const u8),
+        ("sub_rt_regex_flags", ffi::sub_rt_regex_flags as *const u8),
+        ("sub_rt_regex_search", ffi::sub_rt_regex_search as *const u8),
+        (
+            "sub_rt_regex_replace",
+            ffi::sub_rt_regex_replace as *const u8,
+        ),
+        (
+            "sub_rt_regex_replace_all",
+            ffi::sub_rt_regex_replace_all as *const u8,
+        ),
+        ("sub_rt_regex_split", ffi::sub_rt_regex_split as *const u8),
+        (
+            "sub_rt_regex_match_start",
+            ffi::sub_rt_regex_match_start as *const u8,
+        ),
+        (
+            "sub_rt_regex_match_end",
+            ffi::sub_rt_regex_match_end as *const u8,
+        ),
+    ];
+    for (name, address) in regex_symbols {
+        builder.symbol(*name, *address);
     }
     register_interop(builder);
 }

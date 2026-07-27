@@ -73,8 +73,7 @@ pub enum Type {
     Date,
     /// A compiled ECMAScript regular expression (stdlib.md §15, Q31).
     ///
-    /// The checker only admits this type when its `regex` Cargo feature
-    /// is enabled. Its runtime representation is a Context-owned handle.
+    /// Its runtime representation is a Context-owned handle.
     RegExp,
     /// Absence of a value (function returns only).
     Void,
