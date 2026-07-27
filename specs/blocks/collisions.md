@@ -707,6 +707,57 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   serializer carry a visited set, and it traps on a revisit where JS
   throws.
 
+- **Q30 (`for…of`, container iteration, array-literal spread)** —
+  accepted per `stdlib.md` §14. Owner decision 2026-07-27, after the
+  `js-api-sweep.md` audit recorded the iterator protocol as wanted at
+  high priority.
+
+  **User-defined iterables are impossible here, and that is forced
+  rather than chosen.** JS binds iteration through `Symbol.iterator`;
+  `Symbol` is a permanent stdlib non-goal. Any substitute spelling — an
+  `iterator()` method, a decorator — leaves the class **not iterable
+  under stock `tsc`**, so `for (const x of mine)` would not type-check
+  and invariant 5 would be broken. `for…of` is therefore over **built-in
+  containers only**: `T[]`, `FixedArray<T, N>`, `Map`, `Set`, `string`,
+  and a `Generator<T>` from a `function*`.
+
+  This is the rare case where the TS-subset invariant *removes* a design
+  question instead of constraining one.
+
+  **`keys()`/`values()`/`entries()` are accepted only as the direct
+  subject of a `for…of`**, where they fuse into the loop. Elsewhere —
+  assigned to a variable, passed, returned — they are S014.
+
+  The reason is the memory model, not taste. C5 makes callbacks
+  non-escaping *by construction*; an iterator held as a value is
+  stateful and outlives the call that made it, which would be the first
+  escaping temporary in the language. Fusing removes the object
+  entirely: **`for…of` lowers to an index loop over the container's
+  storage, allocating nothing**, at the same cost as the `forEach` that
+  Q24 made the traversal. `Generator<T>` remains the one iterator that
+  *is* a value, because C8 already contracted it and it is
+  frame-allocated by the coroutine machinery rather than by iteration.
+
+  Iteration order is **Q24's insertion order** for `Map`/`Set`, which
+  `for…of` inherits rather than re-decides.
+
+  **Spread is accepted in an array literal only** — `[...xs]`,
+  `[0, ...xs, 9]` — where the element count is a runtime value the
+  literal can grow into. **`f(...xs)` is rejected**: it needs variadic
+  parameters, which the language does not have (the same missing
+  prerequisite that keeps `Math.max` at two arguments, Q19).
+
+  **Construction from an iterable stays rejected**, and not for an
+  iterator reason: `new Map([[k, v]])` needs a **tuple type**, and this
+  language has none. That is a type-system gap independent of Q30 and
+  is recorded as such rather than folded in.
+
+  **Mutation during iteration** follows the rule the runtime already
+  applies to `forEach` (`stdlib.md` §10.7): appends after entry do not
+  extend the visit, removals shorten it. `for…of` fuses into the same
+  traversal, so it inherits that rule by construction rather than
+  needing its own.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided
