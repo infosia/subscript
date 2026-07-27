@@ -1246,12 +1246,41 @@ in favour of adoption:
   the literal optimizer *on the `&str` path too*, measured at **1.4×
   to 69× slower** on UTF-8 input. Boa enables it because Boa's strings
   are UTF-16; this language's are not.
-- **Pathological patterns: bounded for free.** `regress` has no budget
-  upstream — `/(a+)+$/` on 26 `a`s takes **2.61 s**, ~1.8× per added
-  character, so a 30-byte string hangs a frame. A ~25-line budget patch
-  measured **no detectable overhead** (ratios 0.92–1.03, inside the
-  noise between two builds of the same crate) and bounds the worst case
-  to **under 1.3 ms at a budget of 1e5**, independent of input length.
+- **Pathological patterns: bounded, at a measured cost.** `regress` has
+  no budget at any version. The blowup is real but needs a **trailing
+  mismatch**: `/(a+)+$/` against `"a".repeat(n)` alone matches
+  immediately, while the same pattern with one non-matching character
+  appended goes **4.0 ms at 17 bytes to 650 ms at 25**.
+
+  *(Corrected 2026-07-27. This section first said the budget cost "no
+  detectable overhead", from the feasibility investigation's 0.92–1.03
+  ratios. Writing the patch and measuring it again did not reproduce
+  that.)* Measured against a control of 0.918–1.069 for two unmodified
+  builds, the patched ratios are:
+
+  | pattern | patched / unpatched |
+  |---|---:|
+  | literal | 1.000 |
+  | backreference | 1.048 |
+  | alternation | 1.046 |
+  | multi-group | 1.108 |
+  | lookahead | 1.142 |
+  | `\d+` | 1.147 |
+  | character class | 1.143 |
+
+  So **11–15% on patterns dominated by long single-character scans**,
+  and free on a literal. The bound holds and no longer grows with input
+  length: exhaustion at a budget of 1e5 costs 357–742 µs across inputs
+  from 25 to 257 bytes, and the `.*.*.*.*b` scan gap that previously
+  scaled with input is now 225/156/105 µs at 16/64/256 KiB.
+
+  **It is not complete wall-clock fuel**: the prefix byte search and a
+  long backreference can still be O(input) inside a single charged
+  instruction. The bound is on backtracking work, not on time.
+
+  The decision is unchanged by the cost — 11–15% against an unbounded
+  hang is not a close call — but the contract should not claim a
+  cheaper number than the one measured.
 
 Against these, one cost, and it is the reason for the feature switch:
 **+537 KB of linked binary**, roughly doubling the runtime's
@@ -1393,8 +1422,34 @@ budget calibration and the 2.61 s blowup figure were taken on 0.10.4
 and must be re-measured on the vendored tree before they are cited as
 evidence for anything.
 
-`regress` has no execution budget at any version, so the ~25-line patch
-is ours.
+`regress` has no execution budget at any version, so the patch is ours.
+
+**A first version was written against 0.10.4 and does not port
+mechanically**: it fails to apply even to 0.10.5, where
+`classicalbacktrack.rs` changed its SCM calls, its non-greedy
+backtracking and its anchor instructions. It is kept as
+`vendor/regress-budget.patch` for its design — the budget state, the
+distinguishable exhaustion error, and the charging of the inner scan
+loops are all reusable — but **the patch that lands is written against
+the vendored tree and measured there.**
+
+The API shape it settled is right and is contract:
+
+```rust
+Regex::find_budgeted(&self, text: &str, budget: u64)
+    -> Result<Option<Match>, BudgetExhausted>
+```
+
+`Ok(Some)` is a match, `Ok(None)` is a completed search with no match,
+`Err` is the trap. §15.4's requirement that exhaustion never look like
+a miss is satisfied by the type, not by a convention.
+
+**Upstreaming as-is is unlikely.** Upstream would want one
+fuel/cancellation API across the iterator, ASCII, UTF-16 and PikeVM
+paths, not a UTF-8 one-shot, and would want a policy for charging the
+prefix search and backreferences. That does not gate P23 (§15.6), but
+it is why the fork is expected to persist rather than being a short
+detour.
 
 **Decided 2026-07-27: a fork, referenced as a git submodule.** CLAUDE.md
 forbids a committed reference to any path outside the repository, and a
