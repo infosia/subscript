@@ -172,6 +172,64 @@ fn assoc_receiver_is_live(ctx: &mut Context, handle: *const u8, pos_id: u32) -> 
     ctx.require_live_handle(handle as usize, pos_id)
 }
 
+/// Begins the fixed-bound insertion-order traversal shared by Map/Set
+/// `forEach`, fused `for…of`, and array-literal spread.
+///
+/// # Safety
+///
+/// `handle` is a live Map or Set payload.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_assoc_iter_begin(
+    ctx: *mut Context,
+    handle: *mut u8,
+    pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract.
+    if !assoc_receiver_is_live(unsafe { &mut *ctx }, handle, pos_id) {
+        return 0;
+    }
+    // SAFETY: receiver was validated above.
+    unsafe { crate::assocops::iteration_begin(handle) as u64 }
+}
+
+/// Copies one still-active ordered key/value during a fused traversal.
+/// `value != 0` selects a Map value; zero selects a Map/Set key.
+///
+/// # Safety
+///
+/// `handle` is the receiver passed to [`sub_rt_assoc_iter_begin`],
+/// `index` is below its returned bound, and `out` is writable for the
+/// selected monomorphized field.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_assoc_iter_copy(
+    ctx: *mut Context,
+    handle: *mut u8,
+    index: u64,
+    value: u32,
+    out: *mut u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    if !assoc_receiver_is_live(unsafe { &mut *ctx }, handle, pos_id) {
+        return 0;
+    }
+    // SAFETY: receiver and output follow the shared traversal ABI.
+    i32::from(unsafe {
+        crate::assocops::iteration_copy(handle, index as usize, value != 0, out)
+    })
+}
+
+/// Ends a traversal begun by [`sub_rt_assoc_iter_begin`].
+///
+/// # Safety
+///
+/// `ctx` is live; `handle` may have been deleted by script.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_assoc_iter_end(ctx: *mut Context, handle: *mut u8) {
+    // SAFETY: forwarded contract.
+    unsafe { crate::assocops::iteration_end(ctx, handle) };
+}
+
 /// Allocates an empty monomorphized `Map<K, V>`.
 ///
 /// `key_size` / `value_size` are the calling tier's concrete storage
@@ -728,6 +786,51 @@ pub unsafe extern "C" fn sub_rt_str_len(ctx: *mut Context, s: *const u8) -> i32 
     let ctx = unsafe { &*ctx };
     // SAFETY: `s` is a live string handle.
     unsafe { ctx.str_bytes(s).len() as i32 }
+}
+
+/// Returns the allocation-free one-code-point string beginning at byte
+/// `index` and writes the next byte index to `next`.
+///
+/// This is the value-producing half of string `for…of`; index movement
+/// is by UTF-8 scalar width, never by byte-as-character.
+///
+/// # Safety
+///
+/// `s` is a live string handle and `next` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_str_iter_code_point(
+    ctx: *mut Context,
+    s: *const u8,
+    index: i32,
+    next: *mut i32,
+    _pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() || next.is_null() || index < 0 {
+        return std::ptr::null_mut();
+    }
+    let at = index as usize;
+    let (value, consumed) = {
+        // SAFETY: shared contract.
+        let bytes = unsafe { (&*ctx).str_bytes(s) };
+        if at >= bytes.len() {
+            // SAFETY: caller supplies writable output.
+            unsafe { next.write(index) };
+            return std::ptr::null_mut();
+        }
+        match std::str::from_utf8(&bytes[at..]) {
+            Ok(text) => {
+                let value = text.chars().next().unwrap_or('\u{fffd}');
+                (value, value.len_utf8())
+            }
+            Err(error) => {
+                let consumed = error.error_len().unwrap_or(1).max(1);
+                ('\u{fffd}', consumed)
+            }
+        }
+    };
+    // SAFETY: caller supplies writable output.
+    unsafe { next.write(index.saturating_add(consumed as i32)) };
+    Context::inline_code_point(value)
 }
 
 /// String concatenation (`+` / template literals).
@@ -2857,6 +2960,156 @@ pub unsafe extern "C" fn sub_rt_array_push(
 ) -> i32 {
     // SAFETY: shared contract.
     unsafe { (*ctx).array_push(a, src, pos_id) }
+}
+
+/// Appends a snapshot of a dynamic array to a fresh array literal.
+///
+/// # Safety
+///
+/// `out` and `source` are live arrays with identical element width.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_array_spread_array(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *mut u8,
+    pos_id: u32,
+) {
+    let runtime = unsafe { &mut *ctx };
+    if !runtime.require_live_handle(out as usize, pos_id)
+        || !runtime.require_live_handle(source as usize, pos_id)
+    {
+        return;
+    }
+    // SAFETY: validated array handles.
+    let count = unsafe { runtime.array_len(source) }.max(0) as usize;
+    // SAFETY: validated source.
+    let width = unsafe { runtime.array_elem_size(source) };
+    for index in 0..count {
+        // SAFETY: snapshot index is in range and no script runs here.
+        let data = unsafe { runtime.array_data(source) };
+        // SAFETY: source storage contains `count` initialized elements.
+        let value = unsafe { data.add(index * width) };
+        // SAFETY: output has the same element width.
+        if unsafe { runtime.array_push(out, value, pos_id) } < 0 {
+            break;
+        }
+    }
+}
+
+/// Appends a fixed-array buffer to a fresh array literal.
+///
+/// # Safety
+///
+/// `data` holds `count` elements of the output array's element width.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_array_spread_fixed(
+    ctx: *mut Context,
+    out: *mut u8,
+    data: *const u8,
+    count: u64,
+    pos_id: u32,
+) {
+    if data.is_null() {
+        return;
+    }
+    let runtime = unsafe { &mut *ctx };
+    if !runtime.require_live_handle(out as usize, pos_id) {
+        return;
+    }
+    // SAFETY: validated output array.
+    let width = unsafe { runtime.array_elem_size(out) };
+    for index in 0..count as usize {
+        // SAFETY: caller-provided fixed buffer contract.
+        let value = unsafe { data.add(index * width) };
+        // SAFETY: value has output width.
+        if unsafe { runtime.array_push(out, value, pos_id) } < 0 {
+            break;
+        }
+    }
+}
+
+/// Appends the insertion-ordered keys of a Map/Set to a fresh array
+/// literal, using the same fixed traversal bound as `forEach`/`for…of`.
+///
+/// # Safety
+///
+/// `out` is a live array and `source` a live Map/Set whose key width
+/// matches the output element width.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_array_spread_assoc(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *mut u8,
+    pos_id: u32,
+) {
+    let runtime = unsafe { &mut *ctx };
+    if !runtime.require_live_handle(out as usize, pos_id)
+        || !assoc_receiver_is_live(runtime, source, pos_id)
+    {
+        return;
+    }
+    // Map/Set keys are limited to at most one machine word.
+    let mut scratch = [0u8; 8];
+    // SAFETY: validated receiver.
+    let bound = unsafe { crate::assocops::iteration_begin(source) };
+    for index in 0..bound {
+        // SAFETY: scratch covers every accepted key width.
+        if unsafe {
+            crate::assocops::iteration_copy(source, index, false, scratch.as_mut_ptr())
+        } && unsafe { runtime.array_push(out, scratch.as_ptr(), pos_id) } < 0
+        {
+            break;
+        }
+    }
+    // SAFETY: matching traversal end.
+    unsafe { crate::assocops::iteration_end(ctx, source) };
+}
+
+/// Appends one string handle per UTF-8 code point to a fresh array
+/// literal.
+///
+/// # Safety
+///
+/// `out` is a live `string[]` and `source` a live string.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_array_spread_string(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *const u8,
+    pos_id: u32,
+) {
+    let runtime = unsafe { &mut *ctx };
+    if !runtime.require_live_handle(out as usize, pos_id)
+        || !runtime.require_live_handle(source as usize, pos_id)
+    {
+        return;
+    }
+    // SAFETY: validated string.
+    let end = unsafe { runtime.str_bytes(source).len() } as i32;
+    let mut index = 0i32;
+    while index < end {
+        let mut next = index;
+        // SAFETY: validated source and writable next index.
+        let value = unsafe {
+            sub_rt_str_iter_code_point(ctx, source, index, &mut next, pos_id)
+        };
+        if value.is_null() || unsafe { (&*ctx).trapped() } {
+            break;
+        }
+        let stored = value;
+        // SAFETY: output element is one string handle.
+        if unsafe {
+            (&mut *ctx).array_push(
+                out,
+                (&raw const stored).cast::<u8>(),
+                pos_id,
+            )
+        } < 0
+        {
+            break;
+        }
+        index = next;
+    }
 }
 
 /// `pop()`: removes the last element into `dst`; traps when empty.

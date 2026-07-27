@@ -156,6 +156,10 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h Type, &'h Pos)>) {
                 }
                 walk_lets(body, out);
             }
+            hir::Stmt::ForOf { ty, body, pos, .. } => {
+                out.push((ty, pos));
+                walk_lets(body, out);
+            }
             hir::Stmt::Switch { cases, .. } => {
                 for case in cases {
                     walk_lets(&case.body, out);
@@ -502,6 +506,11 @@ impl<'a> Validator<'a> {
                     self.validate_closures_expr(arg);
                 }
             }
+            K::ArraySpreadLit(elems) => {
+                for elem in elems {
+                    self.validate_closures_expr(&elem.expr);
+                }
+            }
             K::Field { obj, .. } | K::JsonResultValue(obj) => {
                 self.validate_closures_expr(obj);
             }
@@ -584,6 +593,10 @@ impl<'a> Validator<'a> {
                     }
                     self.validate_closures_stmts(body);
                 }
+                hir::Stmt::ForOf { subject, body, .. } => {
+                    self.validate_closures_expr(subject);
+                    self.validate_closures_stmts(body);
+                }
                 hir::Stmt::Switch { disc, cases, .. } => {
                     self.validate_closures_expr(disc);
                     for case in cases {
@@ -645,6 +658,7 @@ impl<'a> Validator<'a> {
                     | K::Call { .. }
                     | K::New { .. }
                     | K::ArrayLit(_)
+                    | K::ArraySpreadLit(_)
             );
         if result_needs_slot {
             self.add_type_slot(
@@ -730,6 +744,17 @@ impl<'a> Validator<'a> {
                             &elem.pos,
                         );
                     }
+                }
+            }
+            K::ArraySpreadLit(elems) => {
+                for elem in elems {
+                    self.validate_expr_frame(&elem.expr, false, frame);
+                    self.add_frame_slot(
+                        frame,
+                        Layout { size: 8, align: 8 },
+                        "dynamic-array spread scratch storage",
+                        &elem.expr.pos,
+                    );
                 }
             }
             K::Template(parts) => {
@@ -834,6 +859,22 @@ impl<'a> Validator<'a> {
                     if let Some(step) = step {
                         self.validate_expr_frame(step, false, frame);
                     }
+                    self.validate_stmts_frame(body, frame, generator);
+                }
+                hir::Stmt::ForOf {
+                    ty,
+                    subject,
+                    body,
+                    pos,
+                    ..
+                } => {
+                    if !generator
+                        && self.is_aggregate(ty)
+                        && !self.has_managed_interior(ty)
+                    {
+                        self.add_type_slot(frame, ty, "`for…of` binding storage", pos);
+                    }
+                    self.validate_expr_frame(subject, false, frame);
                     self.validate_stmts_frame(body, frame, generator);
                 }
                 hir::Stmt::Switch { disc, cases, .. } => {

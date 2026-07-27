@@ -1261,9 +1261,98 @@ pub(crate) unsafe fn set_is_disjoint_from(
     true
 }
 
+/// Begins the traversal shared by `forEach`, fused `for…of`, and
+/// array-literal spread. The returned insertion-order bound is fixed at
+/// entry: later appends do not extend the visit, while an inactive or
+/// removed slot is skipped when reached.
+///
+/// # Safety
+///
+/// `handle` is a live Map/Set payload.
+pub(crate) unsafe fn iteration_begin(handle: *mut u8) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    // SAFETY: caller contract.
+    let h = unsafe { &mut *handle.cast::<AssocHeader>() };
+    h.iteration_depth = h.iteration_depth.saturating_add(1);
+    h.order_len as usize
+}
+
+/// Returns the active ordered entry at `index`, if it still exists.
+///
+/// # Safety
+///
+/// `handle` is a live Map/Set payload and `index` is below the bound
+/// returned by [`iteration_begin`].
+unsafe fn iteration_entry(
+    handle: *mut u8,
+    index: usize,
+) -> Option<(*const u8, *const u8)> {
+    if handle.is_null() {
+        return None;
+    }
+    // Re-read after every body/callback: it may clear or otherwise
+    // shorten the container.
+    // SAFETY: caller contract.
+    let h = unsafe { &*handle.cast::<AssocHeader>() };
+    if index >= h.order_len as usize || !unsafe { entry_active(h, index) } {
+        return None;
+    }
+    // SAFETY: active ordered slot.
+    Some(unsafe { (entry_key(h, index), entry_value(h, index)) })
+}
+
+/// Copies one still-active ordered key or value into `out`.
+///
+/// Returns false for a removed/shortened slot. `value` selects the Map
+/// value slot; false selects the key slot and is also the Set form.
+///
+/// # Safety
+///
+/// As [`iteration_entry`]; `out` is writable for the selected field
+/// width.
+pub(crate) unsafe fn iteration_copy(
+    handle: *mut u8,
+    index: usize,
+    value: bool,
+    out: *mut u8,
+) -> bool {
+    let Some((key, map_value)) = (unsafe { iteration_entry(handle, index) }) else {
+        return false;
+    };
+    // SAFETY: live header.
+    let h = unsafe { &*handle.cast::<AssocHeader>() };
+    let (src, width) = if value {
+        (map_value, h.value_size as usize)
+    } else {
+        (key, h.key_size as usize)
+    };
+    if out.is_null() || width == 0 {
+        return false;
+    }
+    // SAFETY: selected entry field and caller output cover `width`.
+    unsafe { std::ptr::copy_nonoverlapping(src, out, width) };
+    true
+}
+
+/// Ends one traversal begun by [`iteration_begin`].
+///
+/// # Safety
+///
+/// `ctx` is live. `handle` may have been deleted by the loop body.
+pub(crate) unsafe fn iteration_end(ctx: *mut Context, handle: *mut u8) {
+    if handle.is_null() || !unsafe { (*ctx).is_live(handle as usize) } {
+        return;
+    }
+    // SAFETY: liveness check above.
+    let h = unsafe { &mut *handle.cast::<AssocHeader>() };
+    h.iteration_depth = h.iteration_depth.saturating_sub(1);
+}
+
 /// Iterates a map in insertion order, checking the trap flag after every
-/// callback. Mutation by a callback is observed like JS: removed entries
-/// are skipped and entries appended before completion are visited.
+/// callback. Mutation uses the same fixed-bound traversal as fused
+/// `for…of`: removals shorten the visit and appends do not extend it.
 ///
 /// # Safety
 ///
@@ -1281,50 +1370,22 @@ pub(crate) unsafe fn map_for_each(
     }
     // SAFETY: caller guarantees the generated bridge signature.
     let call: MapBridge = unsafe { std::mem::transmute(bridge) };
-    // SAFETY: the live header is writable for the synchronous iteration.
-    unsafe {
-        let h = &mut *handle.cast::<AssocHeader>();
-        h.iteration_depth = h.iteration_depth.saturating_add(1);
-    }
-    let mut index = 0usize;
-    loop {
-        // Re-read after every callback: it may clear/grow the container.
-        // SAFETY: container handle remains live for the duration of its
-        // synchronous non-escaping callback.
-        let h = unsafe { &*handle.cast::<AssocHeader>() };
-        if index >= h.order_len as usize {
-            break;
-        }
-        // SAFETY: index is inside ordered prefix.
-        if unsafe { entry_active(h, index) } {
-            // SAFETY: active entry pointers remain valid until the
-            // bridge has copied them into the callback ABI; mutation
-            // happens only inside that callback.
-            unsafe {
-                call(
-                    ctx,
-                    code,
-                    env,
-                    entry_value(h, index),
-                    entry_key(h, index),
-                )
-            };
+    // SAFETY: live container.
+    let bound = unsafe { iteration_begin(handle) };
+    for index in 0..bound {
+        // SAFETY: index is below the entry snapshot.
+        if let Some((key, value)) = unsafe { iteration_entry(handle, index) } {
+            // SAFETY: the bridge copies entry bytes before script can
+            // mutate the container.
+            unsafe { call(ctx, code, env, value, key) };
             // SAFETY: live Context.
             if unsafe { (*ctx).trapped() || !(*ctx).is_live(handle as usize) } {
                 break;
             }
         }
-        index += 1;
     }
-    // A callback may delete the receiver. Development storage remains
-    // poisoned and ship storage may be recycled, so touch the depth only
-    // while this exact payload is still live.
-    // SAFETY: live Context and, when true, a live container payload.
-    if unsafe { (*ctx).is_live(handle as usize) } {
-        // SAFETY: liveness check above.
-        let h = unsafe { &mut *handle.cast::<AssocHeader>() };
-        h.iteration_depth = h.iteration_depth.saturating_sub(1);
-    }
+    // SAFETY: matching traversal end; deletion is handled inside.
+    unsafe { iteration_end(ctx, handle) };
 }
 
 /// Iterates a set in insertion order with the same mutation and trap
@@ -1345,35 +1406,21 @@ pub(crate) unsafe fn set_for_each(
     }
     // SAFETY: caller guarantees the generated bridge signature.
     let call: SetBridge = unsafe { std::mem::transmute(bridge) };
-    // SAFETY: the live header is writable for the synchronous iteration.
-    unsafe {
-        let h = &mut *handle.cast::<AssocHeader>();
-        h.iteration_depth = h.iteration_depth.saturating_add(1);
-    }
-    let mut index = 0usize;
-    loop {
-        // SAFETY: live container; re-read after mutation.
-        let h = unsafe { &*handle.cast::<AssocHeader>() };
-        if index >= h.order_len as usize {
-            break;
-        }
-        // SAFETY: index is inside ordered prefix.
-        if unsafe { entry_active(h, index) } {
+    // SAFETY: live container.
+    let bound = unsafe { iteration_begin(handle) };
+    for index in 0..bound {
+        // SAFETY: index below the snapshot.
+        if let Some((key, _)) = unsafe { iteration_entry(handle, index) } {
             // SAFETY: bridge contract.
-            unsafe { call(ctx, code, env, entry_key(h, index)) };
+            unsafe { call(ctx, code, env, key) };
             // SAFETY: live Context.
             if unsafe { (*ctx).trapped() || !(*ctx).is_live(handle as usize) } {
                 break;
             }
         }
-        index += 1;
     }
-    // SAFETY: as in map_for_each.
-    if unsafe { (*ctx).is_live(handle as usize) } {
-        // SAFETY: liveness check above.
-        let h = unsafe { &mut *handle.cast::<AssocHeader>() };
-        h.iteration_depth = h.iteration_depth.saturating_sub(1);
-    }
+    // SAFETY: matching traversal end.
+    unsafe { iteration_end(ctx, handle) };
 }
 
 #[cfg(test)]
@@ -1739,7 +1786,7 @@ mod tests {
     }
 
     #[test]
-    fn compaction_is_suppressed_during_for_each_mutation() {
+    fn compaction_is_suppressed_without_extending_the_for_each_visit() {
         let mut ctx = Context::new();
         let h = new(&mut ctx, 4, 4, KeyKind::Bits, false, 0);
         for key in 1i32..=4 {
@@ -1776,7 +1823,7 @@ mod tests {
                 map_i32_bridge as *const u8,
             );
         }
-        assert_eq!(state.seen, vec![2, 3, 4, 5]);
+        assert_eq!(state.seen, vec![2, 3, 4]);
         // SAFETY: h remains live.
         let header = unsafe { &*h.cast::<AssocHeader>() };
         assert_eq!(header.order_len, 5);

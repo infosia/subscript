@@ -125,6 +125,14 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         11,
     ),
+    ("r72-for-of-user-class.ts", RuleCode::S014, 13),
+    ("r73-for-of-object.ts", RuleCode::S014, 12),
+    ("r74-for-of-number.ts", RuleCode::S014, 9),
+    ("r75-for-of-entries.ts", RuleCode::S014, 9),
+    ("r76-return-keys-view.ts", RuleCode::S014, 8),
+    ("r77-pass-keys-view.ts", RuleCode::S014, 13),
+    ("r78-call-spread-variadic.ts", RuleCode::S014, 13),
+    ("r79-assign-entries.ts", RuleCode::S014, 9),
 ];
 
 #[test]
@@ -201,8 +209,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         EXPECTED.len(),
-        68,
-        "expected the 58 standing reject entries plus ten aggregate/frame-layout entries"
+        76,
+        "expected 76 standing reject entries including the P22 reason-specific battery"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -369,5 +377,47 @@ fn q27_array_callback_container_rejection_names_c5_and_the_reason() {
             message.contains(required),
             "{file}: diagnostic does not name `{required}`: {message}"
         );
+    }
+}
+
+#[test]
+fn q30_rejections_name_the_actual_missing_prerequisite() {
+    let dir = corpus_dir().join("reject");
+    for (file, required) in [
+        (
+            "r72-for-of-user-class.ts",
+            &["invariant 5", "Symbol.iterator", "stock `tsc`"][..],
+        ),
+        (
+            "r43-map-iterable-constructor.ts",
+            &["pair", "no tuple type"][..],
+        ),
+        ("r75-for-of-entries.ts", &["pair", "no tuple type"][..]),
+        ("r79-assign-entries.ts", &["pair", "no tuple type"][..]),
+        (
+            "r42-map-iterator-member.ts",
+            &["direct subject", "stateful iterator", "outlives"][..],
+        ),
+        (
+            "r76-return-keys-view.ts",
+            &["direct subject", "stateful iterator", "outlives"][..],
+        ),
+        (
+            "r77-pass-keys-view.ts",
+            &["direct subject", "stateful iterator", "outlives"][..],
+        ),
+        ("r78-call-spread-variadic.ts", &["variadic parameters"][..]),
+    ] {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("Q30 rejection must fail");
+        let message = &diagnostics[0].message;
+        for needle in required {
+            assert!(
+                message.contains(needle),
+                "{file}: diagnostic does not name {needle:?}: {message}"
+            );
+        }
     }
 }

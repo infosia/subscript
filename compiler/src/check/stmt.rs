@@ -144,6 +144,10 @@ fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
             }
             assigned_roots_stmt(&f.body, out);
         }
+        ast::Stmt::ForOf(f) => {
+            assigned_roots_expr(&f.right, out);
+            assigned_roots_stmt(&f.body, out);
+        }
         ast::Stmt::Switch(sw) => {
             assigned_roots_expr(&sw.discriminant, out);
             for case in &sw.cases {
@@ -361,23 +365,7 @@ impl<'p> Checker<'p> {
                 false
             }
             ast::Stmt::ForOf(for_of) => {
-                let iterable = self.check_expr(&for_of.right, None, fx);
-                let pos = self.pos(for_of.span);
-                if matches!(iterable.ty, Type::Map(..) | Type::Set(_)) {
-                    self.error(
-                        RuleCode::S014,
-                        "`for…of` over Map/Set requires the rejected iterator \
-                         protocol; use `forEach` (Q24)",
-                        pos,
-                    );
-                } else {
-                    self.error(
-                        RuleCode::S100,
-                        "`for…of` requires the iterator protocol, which is outside \
-                         the decided surface",
-                        pos,
-                    );
-                }
+                self.check_for_of(for_of, fx, out);
                 false
             }
             ast::Stmt::Empty(_) => false,
@@ -696,6 +684,358 @@ impl<'p> Checker<'p> {
             body,
             pos,
         });
+    }
+
+    /// Checks and binds P22's closed `for…of` surface. Container views
+    /// are recognized here, before ordinary call checking, because
+    /// `keys()` / `values()` intentionally have no value type outside
+    /// this exact subject position.
+    fn check_for_of(
+        &mut self,
+        f: &ast::ForOfStmt,
+        fx: &mut FnCtx,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        let pos = self.pos(f.span);
+        if f.is_await {
+            self.error(
+                RuleCode::S013,
+                "`for await…of` requires promises and an event loop; the language has neither",
+                pos,
+            );
+            return;
+        }
+
+        let Some((name, mutable, binding_pos, annotation)) =
+            self.for_of_binding(&f.left)
+        else {
+            return;
+        };
+        let (subject, kind, elem_ty, generator) =
+            self.check_for_of_subject(&f.right, fx);
+        if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
+            return;
+        }
+        if let Some(annotation) = annotation {
+            self.require_assignable(
+                &elem_ty,
+                &annotation,
+                binding_pos.clone(),
+                "the `for…of` binding",
+            );
+            self.require_assignable(
+                &annotation,
+                &elem_ty,
+                binding_pos.clone(),
+                "the `for…of` binding",
+            );
+        }
+
+        let mut roots = HashSet::new();
+        assigned_roots_expr(&f.right, &mut roots);
+        assigned_roots_stmt(&f.body, &mut roots);
+        fx.narrowed.retain(|k| !roots.contains(root_of(k)));
+
+        fx.scopes.push(Default::default());
+        fx.declare(
+            &name,
+            Local {
+                ty: elem_ty.clone(),
+                mutable,
+                holds_capturing: false,
+            },
+        );
+        let prefix = format!("{name}.");
+        fx.narrowed
+            .retain(|key| key != &name && !key.starts_with(&prefix));
+        fx.loop_depth += 1;
+        let (body, _) = self.check_branch(&f.body, fx);
+        fx.loop_depth -= 1;
+        fx.scopes.pop();
+
+        let id = self.next_for_of_id;
+        self.next_for_of_id += 1;
+        let subject_name = format!("[[for.of#{id}.subject]]");
+        let subject_ty = subject.ty.clone();
+        let subject_local = hir::Expr {
+            kind: ExprKind::Local(subject_name.clone()),
+            ty: subject_ty.clone(),
+            pos: subject.pos.clone(),
+        };
+        let subject_let = hir::Stmt::Let {
+            name: subject_name.clone(),
+            ty: subject_ty,
+            mutable: false,
+            init: subject,
+            pos: pos.clone(),
+        };
+
+        let loop_stmt = if generator {
+            let step_name = format!("[[for.of#{id}.step]]");
+            let step_ty = Type::IterResult(Box::new(elem_ty.clone()));
+            let next = hir::Expr {
+                kind: ExprKind::Call {
+                    callee: hir::Callee::Method {
+                        recv: Box::new(subject_local),
+                        name: "next".to_string(),
+                    },
+                    args: Vec::new(),
+                },
+                ty: step_ty.clone(),
+                pos: pos.clone(),
+            };
+            let step_local = || hir::Expr {
+                kind: ExprKind::Local(step_name.clone()),
+                ty: step_ty.clone(),
+                pos: pos.clone(),
+            };
+            let mut driven_body = vec![
+                hir::Stmt::Let {
+                    name: step_name.clone(),
+                    ty: step_ty.clone(),
+                    mutable: false,
+                    init: next,
+                    pos: pos.clone(),
+                },
+                hir::Stmt::If {
+                    cond: hir::Expr {
+                        kind: ExprKind::Field {
+                            obj: Box::new(step_local()),
+                            name: "done".to_string(),
+                        },
+                        ty: Type::Bool,
+                        pos: pos.clone(),
+                    },
+                    then: vec![hir::Stmt::Break(pos.clone())],
+                    els: None,
+                    pos: pos.clone(),
+                },
+                hir::Stmt::Let {
+                    name,
+                    ty: elem_ty.clone(),
+                    mutable,
+                    init: hir::Expr {
+                        kind: ExprKind::Field {
+                            obj: Box::new(step_local()),
+                            name: "value".to_string(),
+                        },
+                        ty: elem_ty,
+                        pos: binding_pos,
+                    },
+                    pos: pos.clone(),
+                },
+            ];
+            driven_body.extend(body);
+            hir::Stmt::While {
+                cond: hir::Expr {
+                    kind: ExprKind::Bool(true),
+                    ty: Type::Bool,
+                    pos: pos.clone(),
+                },
+                body: driven_body,
+                pos: pos.clone(),
+            }
+        } else {
+            hir::Stmt::ForOf {
+                name,
+                ty: elem_ty,
+                subject: subject_local,
+                kind: kind.expect("non-generator `for…of` has a fused kind"),
+                body,
+                pos: pos.clone(),
+            }
+        };
+        out.push(hir::Stmt::Block(vec![subject_let, loop_stmt]));
+    }
+
+    /// Resolves the single declaration accepted on the left of
+    /// `for…of`.
+    fn for_of_binding(
+        &mut self,
+        head: &ast::ForHead,
+    ) -> Option<(String, bool, crate::diag::Pos, Option<Type>)> {
+        let ast::ForHead::VarDecl(decl) = head else {
+            self.error(
+                RuleCode::S100,
+                "`for…of` requires a `const` or `let` identifier binding",
+                self.pos(head.span()),
+            );
+            return None;
+        };
+        if decl.kind == ast::VarDeclKind::Var {
+            self.error(
+                RuleCode::S100,
+                "`var` is not in the language; use `let` or `const`",
+                self.pos(decl.span),
+            );
+        }
+        if decl.decls.len() != 1 {
+            self.error(
+                RuleCode::S100,
+                "`for…of` requires exactly one identifier binding",
+                self.pos(decl.span),
+            );
+            return None;
+        }
+        let binding = &decl.decls[0];
+        if binding.init.is_some() {
+            self.error(
+                RuleCode::S100,
+                "`for…of` bindings cannot have an initializer",
+                self.pos(binding.span),
+            );
+        }
+        let ast::Pat::Ident(ident) = &binding.name else {
+            self.error(
+                RuleCode::S100,
+                "destructuring is not in the decided surface",
+                self.pos(binding.name.span()),
+            );
+            return None;
+        };
+        let annotation = ident
+            .type_ann
+            .as_ref()
+            .map(|ann| self.resolve_type(&ann.type_ann));
+        Some((
+            ident.id.sym.to_string(),
+            decl.kind == ast::VarDeclKind::Let,
+            self.pos(ident.id.span),
+            annotation,
+        ))
+    }
+
+    /// Returns the stabilized receiver expression, fused traversal kind,
+    /// bound type, and whether the subject is a C8 generator.
+    fn check_for_of_subject(
+        &mut self,
+        expression: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
+        if let ast::Expr::Call(call) = expression {
+            if let ast::Callee::Expr(callee) = &call.callee {
+                if let ast::Expr::Member(member) = &**callee {
+                    if let ast::MemberProp::Ident(prop) = &member.prop {
+                        let name = prop.sym.as_ref();
+                        if matches!(name, "keys" | "values" | "entries") {
+                            let recv = self.check_expr(&member.obj, None, fx);
+                            let prop_pos = self.pos(prop.span);
+                            if name == "entries" {
+                                self.error(
+                                    RuleCode::S014,
+                                    "`entries()` yields a pair, but the language has no tuple type",
+                                    prop_pos,
+                                );
+                                return (recv, None, Type::Error, false);
+                            }
+                            if !call.args.is_empty() {
+                                self.error(
+                                    RuleCode::S100,
+                                    format!("`{name}()` expects no arguments"),
+                                    self.pos(call.span),
+                                );
+                                return (recv, None, Type::Error, false);
+                            }
+                            let selected = match (&recv.ty, name) {
+                                (Type::Array(_), "keys") => {
+                                    Some((hir::ForOfKind::ArrayKeys, Type::I32))
+                                }
+                                (Type::Array(elem), "values") => Some((
+                                    hir::ForOfKind::ArrayValues,
+                                    (**elem).clone(),
+                                )),
+                                (Type::Map(key, _), "keys") => {
+                                    Some((hir::ForOfKind::MapKeys, (**key).clone()))
+                                }
+                                (Type::Map(_, value), "values") => Some((
+                                    hir::ForOfKind::MapValues,
+                                    (**value).clone(),
+                                )),
+                                (Type::Set(key), "keys" | "values") => Some((
+                                    hir::ForOfKind::SetValues,
+                                    (**key).clone(),
+                                )),
+                                _ => None,
+                            };
+                            if let Some((kind, elem)) = selected {
+                                return (recv, Some(kind), elem, false);
+                            }
+                            let actual = self.type_name(&recv.ty);
+                            self.error(
+                                RuleCode::S014,
+                                format!(
+                                    "`{name}()` is a subject-only fused view on Map, Set, \
+                                     or T[]; receiver is `{actual}`"
+                                ),
+                                prop_pos,
+                            );
+                            return (recv, None, Type::Error, false);
+                        }
+                    }
+                }
+            }
+        }
+
+        let saved_for_of_subject = self.in_for_of_subject;
+        self.in_for_of_subject = true;
+        let subject = self.check_expr(expression, None, fx);
+        self.in_for_of_subject = saved_for_of_subject;
+        let selected = match &subject.ty {
+            Type::Array(elem) => Some((
+                Some(hir::ForOfKind::ArrayValues),
+                (**elem).clone(),
+                false,
+            )),
+            Type::FixedArray(elem, _) => Some((
+                Some(hir::ForOfKind::FixedArrayValues),
+                (**elem).clone(),
+                false,
+            )),
+            Type::Map(key, _) => Some((
+                Some(hir::ForOfKind::MapKeys),
+                (**key).clone(),
+                false,
+            )),
+            Type::Set(key) => Some((
+                Some(hir::ForOfKind::SetValues),
+                (**key).clone(),
+                false,
+            )),
+            Type::Str => Some((
+                Some(hir::ForOfKind::StringCodePoints),
+                Type::Str,
+                false,
+            )),
+            Type::Generator(value) => Some((None, (**value).clone(), true)),
+            Type::Error => return (subject, None, Type::Error, false),
+            _ => None,
+        };
+        if let Some((kind, elem, generator)) = selected {
+            return (subject, kind, elem, generator);
+        }
+        let actual = self.type_name(&subject.ty);
+        if let Type::Class(id) = subject.ty {
+            let class = &self.classes[id.0].name;
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`for…of` cannot make user class `{class}` iterable (invariant 5): \
+                     that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal; \
+                     stock `tsc` rejects this subject too"
+                ),
+                subject.pos.clone(),
+            );
+        } else {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`for…of` accepts only T[], FixedArray<T, N>, Map, Set, string, \
+                     or Generator<T>; got `{actual}`"
+                ),
+                subject.pos.clone(),
+            );
+        }
+        (subject, None, Type::Error, false)
     }
 
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {

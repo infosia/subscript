@@ -926,11 +926,11 @@ fn map_and_set_trapping_foreach_callbacks_report_identically() {
 }
 
 #[test]
-fn map_growth_during_for_each_does_not_compact_under_the_cursor() {
+fn map_growth_during_for_each_preserves_the_fixed_entry_bound() {
     // The deleted first slot makes the ordered vector compactable. The
     // callback's insertion reaches the growth boundary while iteration
-    // is positioned after that slot; moving entries here would skip key
-    // 3. Both tiers must preserve JS/Node's 2,3,4,5 visit sequence.
+    // is positioned after that slot. The shared P22 traversal must keep
+    // the live 2,3,4 suffix without extending the entry snapshot to 5.
     assert_tiers_print(
         "let seen: string = \"\";\n\
          export function main(): void {\n\
@@ -948,12 +948,12 @@ fn map_growth_during_for_each_does_not_compact_under_the_cursor() {
            });\n\
            print(seen);\n\
          }\n",
-        "2:20|3:30|4:40|5:50|\n",
+        "2:20|3:30|4:40|\n",
     );
 }
 
 #[test]
-fn map_mutation_during_for_each_keeps_the_pinned_visit_rules() {
+fn map_mutation_during_for_each_keeps_the_p22_visit_rules() {
     assert_tiers_print(
         "let seen: string = \"\";\n\
          export function main(): void {\n\
@@ -991,7 +991,7 @@ fn map_mutation_during_for_each_keeps_the_pinned_visit_rules() {
            });\n\
            print(seen);\n\
          }\n",
-        "123|13|1|1\n",
+        "12|13|1|1\n",
     );
 }
 

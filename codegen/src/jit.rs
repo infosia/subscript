@@ -164,6 +164,38 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("sub_rt_array_push", ffi::sub_rt_array_push as *const u8),
         ("sub_rt_array_pop", ffi::sub_rt_array_pop as *const u8),
         ("sub_rt_array_ptr", ffi::sub_rt_array_ptr as *const u8),
+        (
+            "sub_rt_assoc_iter_begin",
+            ffi::sub_rt_assoc_iter_begin as *const u8,
+        ),
+        (
+            "sub_rt_assoc_iter_copy",
+            ffi::sub_rt_assoc_iter_copy as *const u8,
+        ),
+        (
+            "sub_rt_assoc_iter_end",
+            ffi::sub_rt_assoc_iter_end as *const u8,
+        ),
+        (
+            "sub_rt_str_iter_code_point",
+            ffi::sub_rt_str_iter_code_point as *const u8,
+        ),
+        (
+            "sub_rt_array_spread_array",
+            ffi::sub_rt_array_spread_array as *const u8,
+        ),
+        (
+            "sub_rt_array_spread_fixed",
+            ffi::sub_rt_array_spread_fixed as *const u8,
+        ),
+        (
+            "sub_rt_array_spread_assoc",
+            ffi::sub_rt_array_spread_assoc as *const u8,
+        ),
+        (
+            "sub_rt_array_spread_string",
+            ffi::sub_rt_array_spread_string as *const u8,
+        ),
         ("sub_rt_str_data", ffi::sub_rt_str_data as *const u8),
         ("sub_rt_array_data", ffi::sub_rt_array_data as *const u8),
         ("sub_rt_cb_bind", ffi::sub_rt_cb_bind as *const u8),
@@ -935,6 +967,64 @@ mod tests {
         // SAFETY: finalized generated code never unwinds across FFI.
         unsafe { entry(ctx) };
         ctx.exit_script();
+    }
+
+    #[test]
+    fn fused_for_of_over_populated_containers_allocates_nothing() {
+        let program = sources(
+            "const values: i32[] = [1, 2, 3];\n\
+             const text: string = \"Aé🙂\";\n\
+             const map: Map<i32, i32> = new Map<i32, i32>();\n\
+             let sink: i32 = 0;\n\
+             export function populate(): void {\n\
+               map.set(4, 40);\n\
+               map.set(5, 50);\n\
+             }\n\
+             export function iterate(): void {\n\
+               for (const value of values) { sink += value; }\n\
+               for (const value of map.values()) { sink += value; }\n\
+               for (const codePoint of text) { sink += codePoint.length; }\n\
+             }\n\
+             export function main(): void {}\n",
+        );
+        let (module, lowered) = compile_jit(&program).expect("compile allocation probe");
+        let init = module.get_finalized_function(lowered.init);
+        let populate = lowered
+            .entries
+            .iter()
+            .find(|entry| entry.name == "populate")
+            .map(|entry| module.get_finalized_function(entry.id))
+            .expect("populate entry");
+        let iterate = lowered
+            .entries
+            .iter()
+            .find(|entry| entry.name == "iterate")
+            .map(|entry| module.get_finalized_function(entry.id))
+            .expect("iterate entry");
+        let mut ctx = Context::new();
+        let p: *const Context = &*ctx;
+        // SAFETY: all three entries are finalized and the module stays
+        // alive through the calls.
+        unsafe {
+            call_entry(init, &mut ctx);
+            call_entry(populate, &mut ctx);
+        }
+        assert!(!ctx.trapped(), "probe setup trapped: {:?}", ctx.trap_record());
+        // SAFETY: shared access after the setup entry returned.
+        let before = unsafe { ffi::sub_rt_ctx_live_allocations(p) };
+        // SAFETY: finalized allocation-probe entry.
+        unsafe { call_entry(iterate, &mut ctx) };
+        assert!(!ctx.trapped(), "fused loop trapped: {:?}", ctx.trap_record());
+        // SAFETY: shared access after the iteration entry returned.
+        let after = unsafe { ffi::sub_rt_ctx_live_allocations(p) };
+        assert_eq!(
+            after, before,
+            "array/Map/string for…of introduced a live Context allocation"
+        );
+
+        // SAFETY: every generated entry returned and no code pointer
+        // survives the test.
+        unsafe { module.free_memory() };
     }
 
     #[test]

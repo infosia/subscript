@@ -106,8 +106,8 @@ impl Checker<'_> {
         if let Some(spread) = call.args[0].spread {
             let spread_pos = self.pos(spread);
             self.error(
-                RuleCode::S100,
-                "spread arguments are not decided",
+                RuleCode::S014,
+                "spread arguments require variadic parameters, which the language does not have",
                 spread_pos.clone(),
             );
             return self.err_expr(spread_pos);
@@ -186,8 +186,8 @@ impl Checker<'_> {
         if let Some(spread) = call.args[0].spread {
             let spread_pos = self.pos(spread);
             self.error(
-                RuleCode::S100,
-                "spread arguments are not decided",
+                RuleCode::S014,
+                "spread arguments require variadic parameters, which the language does not have",
                 spread_pos.clone(),
             );
             return self.err_expr(spread_pos);

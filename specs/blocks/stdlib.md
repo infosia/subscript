@@ -394,8 +394,9 @@ Rejected (S014, Q22/Q27): no-argument `sort`, no-init `reduce`
 has no miss value — `T | null` does not cover scalars; use
 `findIndex`); `at` (same reason); `flat`/`flatMap` (the depth appears
 in the result type, so a runtime depth cannot be typed — undecided
-rather than refused, `js-api-sweep.md`); `entries`/`keys`/`values`
-(the iterator protocol is not in the language); and the **`array`
+rather than refused, `js-api-sweep.md`); `entries` (no tuple type);
+**`keys`/`values` are accepted by Q30 as the direct subject of a
+`for…of` and rejected elsewhere**; and the **`array`
 parameter on callbacks** — `f(v, i)` passes a value and an index, but
 `f(v, i, arr)` hands the callback a reference to the container being
 iterated, which is the defect the P15 review found in aggregate
@@ -520,11 +521,15 @@ Added by Q27 (2026-07-25):
   so §0.3 holds, but it is worth stating because it is not what the
   other three do
 
-Rejected (S014, Q24): the iterator protocol (`keys`/`values`/
-`entries`/`for…of`/spread — `forEach` is the traversal) and
-construction from an iterable (`new Map([[k, v]])`). Both wait on an
-iterator protocol, which the owner has recorded as wanted at high
-priority (`js-api-sweep.md`).
+Revised by Q30 (2026-07-27): **`for…of` over a `Map` or `Set` is
+accepted**, as are `keys()`/`values()` in its direct subject position,
+and all of them **fuse into the traversal `forEach` already uses** —
+same order (§10.3), same mutation rule (§10.7), no iterator object.
+
+Still rejected (S014): `entries()` and construction from an iterable
+(`new Map([[k, v]])`). Both need a **tuple type**, which the language
+does not have; neither is waiting on an iterator protocol, and the
+earlier text saying so was wrong.
 
 ### 10.5 The miss problem — `get` on a scalar value type
 
@@ -573,6 +578,13 @@ behaviour:
 
 - **C5**: `forEach` callbacks are non-escaping, like Q22's, and the
   trap flag is checked after every callback return.
+- **Mutation during traversal — the fixed-bound rule.** A traversal
+  visits the entries present when it started: an entry appended after
+  it began is **not** visited, and a removal shortens it. *(Written out
+  2026-07-27. The rule was implemented and relied on but never stated
+  here, and §14.3 cited this section for it — a citation to text that
+  did not exist. `for…of` fuses into this traversal, so it inherits the
+  rule rather than defining a second one.)*
 - **Invariant 2**: `clear()` and `unsafeDelete` free eagerly;
   `collect()` reclaims an unreachable container **and the keys/values
   it uniquely held** — the container's storage must be scannable by

@@ -296,9 +296,9 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `findLast` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | — |
 | T[] | `flat` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
 | T[] | `flatMap` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
-| T[] | `entries` | S014 | Q22 | — | The language has no iterator protocol. | — |
-| T[] | `keys` | S014 | Q22 | — | The language has no iterator protocol. | — |
-| T[] | `values` | S014 | Q22 | — | The language has no iterator protocol. | — |
+| T[] | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | — |
+| T[] | `keys` | S014 | Q30 | — | `keys()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| T[] | `values` | S014 | Q30 | — | `values()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
 | Date | `getFullYear` | S014 | Q20 | `getUTCFullYear` | Local-time accessors are unavailable. | `r19-date-local-accessor.ts` |
 | Date | `getMonth` | S014 | Q20 | `getUTCMonth` | Local-time accessors are unavailable. | — |
 | Date | `getDate` | S014 | Q20 | `getUTCDate` | Local-time accessors are unavailable. | — |
@@ -318,12 +318,12 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Date | `toUTCString` | S014 | Q20 | `toISOString` | Outside the checker-owned Date formatting subset. | — |
 | Date | `toJSON` | S014 | Q20 | `toISOString` | Outside the checker-owned Date formatting subset. | — |
 | Date | `valueOf` | S014 | Q20 | `getTime` | Implicit Date numeric conversion is unavailable. | — |
-| Map<K, V> | `keys` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
-| Map<K, V> | `values` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
-| Map<K, V> | `entries` | S014 | Q24 | `forEach` | The language has no iterator protocol. | `r42-map-iterator-member.ts` |
-| Set<K> | `keys` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
-| Set<K> | `values` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
-| Set<K> | `entries` | S014 | Q24 | `forEach` | The language has no iterator protocol. | — |
+| Map<K, V> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | `r42-map-iterator-member.ts` |
+| Map<K, V> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| Map<K, V> | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | `r79-assign-entries.ts` |
+| Set<K> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| Set<K> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| Set<K> | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | — |
 | JSON | `stringify(Map<K, V>)` | S014 | Q28 | — | Map is rejected rather than silently serialized as an empty object. | `r56-json-stringify-map.ts` |
 | JSON | `stringify(Set<K>)` | S014 | Q28 | — | Set is rejected rather than silently serialized as an empty object. | `r57-json-stringify-set.ts` |
 | JSON | `stringify(object)` | S014 | Q28 | — | The boundary-opaque object type has no static field shape to serialize. | `r58-json-stringify-object.ts` |
@@ -356,7 +356,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `unshift(value, ...values)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for prepending multiple elements. | `r51-array-unshift-variadic.ts` |
 | FixedArray<T, N> | `non-callback T[] methods` | S014 | Q22/Q27 | — | Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. | — |
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
-| Map / Set | `new Map/Set(iterable)` | S014 | Q24 | `construct empty, then add/set` | The language has no iterator protocol. | `r43-map-iterable-constructor.ts` |
+| Map / Set | `new Map/Set(iterable)` | S014 | Q30 | `construct empty, then add/set` | `new Map([[k, v]])` requires a pair element, but the language has no tuple type. | `r43-map-iterable-constructor.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
 | Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
 

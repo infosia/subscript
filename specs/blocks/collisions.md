@@ -444,8 +444,13 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   hash is the runtime's own, deterministic and **seed-free** — a
   per-Context random seed would make iteration order, the goldens and
   replays non-reproducible. The iterator protocol is not in the
-  language, so `keys`/`values`/`entries`/`for…of`/spread and
-  iterable construction are rejected; `forEach` is the traversal.
+  language. **Revised by Q30 (2026-07-27):** `for…of` over a `Map` or
+  `Set`, and `keys()`/`values()` as its direct subject, are accepted
+  and **fuse into the same traversal `forEach` uses** — so they inherit
+  this section's iteration order and its mutation rule rather than
+  defining their own. `entries()` and construction from an iterable
+  stay rejected, both for the want of a **tuple type**, not for an
+  iterator reason.
   - **Float keys use SameValueZero** (revised 2026-07-25), as JS does
     for `Map`/`Set`: a `NaN` key is retrievable. The earlier rule used
     `===`, under which a `NaN` key could be **inserted and then never
@@ -724,9 +729,14 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   This is the rare case where the TS-subset invariant *removes* a design
   question instead of constraining one.
 
-  **`keys()`/`values()`/`entries()` are accepted only as the direct
-  subject of a `for…of`**, where they fuse into the loop. Elsewhere —
-  assigned to a variable, passed, returned — they are S014.
+  **`keys()`/`values()` are accepted only as the direct subject of a
+  `for…of`**, where they fuse into the loop. Elsewhere — assigned to a
+  variable, passed, returned — they are S014. **`entries()` is rejected
+  everywhere**, `for…of` included. *(Corrected 2026-07-27: this entry
+  first listed `entries()` with the other two, contradicting
+  `stdlib.md` §14.1 in the same commit. `entries()` yields a pair and
+  the language has no tuple type — a type-system gap, not an iterator
+  decision, and the same one that keeps `new Map([[k, v]])` out.)*
 
   The reason is the memory model, not taste. C5 makes callbacks
   non-escaping *by construction*; an iterator held as a value is

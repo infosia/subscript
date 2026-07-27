@@ -103,6 +103,66 @@ pub const POS_ID_OFFSET: i32 = -4;
 
 /// Class id used for string allocations.
 pub const CLASS_STRING: u32 = 0xFFFF_FF01;
+
+// A string produced by `for…of` contains exactly one Unicode scalar.
+// Encode that scalar in an odd handle (Context allocations are
+// 16-byte-aligned) and serve its bytes from immutable process data.
+// This makes the value a normal, storable string handle without a
+// per-visit allocation or an iterator-owned scratch lifetime.
+const CODE_POINT_COUNT: usize = 0x11_0000;
+const INLINE_STRING_TAG: usize = 1;
+
+const fn encode_utf8_word(scalar: u32) -> u32 {
+    let mut bytes = [0u8; 4];
+    if scalar <= 0x7f {
+        bytes[0] = scalar as u8;
+    } else if scalar <= 0x7ff {
+        bytes[0] = 0xc0 | (scalar >> 6) as u8;
+        bytes[1] = 0x80 | (scalar & 0x3f) as u8;
+    } else if scalar <= 0xffff {
+        bytes[0] = 0xe0 | (scalar >> 12) as u8;
+        bytes[1] = 0x80 | ((scalar >> 6) & 0x3f) as u8;
+        bytes[2] = 0x80 | (scalar & 0x3f) as u8;
+    } else {
+        bytes[0] = 0xf0 | (scalar >> 18) as u8;
+        bytes[1] = 0x80 | ((scalar >> 12) & 0x3f) as u8;
+        bytes[2] = 0x80 | ((scalar >> 6) & 0x3f) as u8;
+        bytes[3] = 0x80 | (scalar & 0x3f) as u8;
+    }
+    u32::from_ne_bytes(bytes)
+}
+
+const fn code_point_utf8_table() -> [u32; CODE_POINT_COUNT] {
+    let mut table = [0u32; CODE_POINT_COUNT];
+    let mut scalar = 0;
+    while scalar < CODE_POINT_COUNT {
+        table[scalar] = encode_utf8_word(scalar as u32);
+        scalar += 1;
+    }
+    table
+}
+
+#[allow(long_running_const_eval)]
+static CODE_POINT_UTF8: [u32; CODE_POINT_COUNT] = code_point_utf8_table();
+
+fn inline_string_scalar(handle: *const u8) -> Option<u32> {
+    let raw = handle as usize;
+    if raw & INLINE_STRING_TAG == 0 {
+        return None;
+    }
+    let encoded = raw >> 1;
+    (encoded > 0 && encoded <= CODE_POINT_COUNT).then_some((encoded - 1) as u32)
+}
+
+fn scalar_utf8_len(scalar: u32) -> usize {
+    match scalar {
+        0..=0x7f => 1,
+        0x80..=0x7ff => 2,
+        0x800..=0xffff => 3,
+        _ => 4,
+    }
+}
+
 /// Class id used for dynamic-array headers.
 pub const CLASS_ARRAY: u32 = 0xFFFF_FF02;
 /// Class id used for dynamic-array element storage.
@@ -1412,17 +1472,39 @@ impl Context {
         p
     }
 
-    /// Reads the bytes of a string handle. The borrow is tied to
-    /// `&self`: string storage lives as long as the context and is
-    /// immutable, and `&self` prevents freeing while the slice is
-    /// alive.
+    /// Returns the allocation-free string handle for one Unicode scalar.
+    ///
+    /// The odd tagged value is never dereferenced directly. Its UTF-8
+    /// bytes live in [`CODE_POINT_UTF8`] and therefore remain valid for
+    /// every Context and across storage in arrays, maps, and fields.
+    #[must_use]
+    pub(crate) fn inline_code_point(value: char) -> *mut u8 {
+        let encoded = value as usize + 1;
+        ((encoded << 1) | INLINE_STRING_TAG) as *mut u8
+    }
+
+    /// Reads the bytes of a string handle. Allocated strings borrow
+    /// immutable Context storage; inline code-point strings borrow
+    /// immutable process data.
     ///
     /// # Safety
     ///
-    /// `handle` must be a string payload produced by [`Context::alloc_str`]
-    /// on this context and still owned by it.
+    /// `handle` must be a live payload produced by
+    /// [`Context::alloc_str`] on this context or a handle produced by
+    /// [`Context::inline_code_point`].
     #[must_use]
     pub unsafe fn str_bytes(&self, handle: *const u8) -> &[u8] {
+        if let Some(scalar) = inline_string_scalar(handle) {
+            let len = scalar_utf8_len(scalar);
+            // SAFETY: `scalar` is inside the complete static table and
+            // each word stores all `len <= 4` UTF-8 bytes contiguously.
+            return unsafe {
+                std::slice::from_raw_parts(
+                    CODE_POINT_UTF8.as_ptr().add(scalar as usize).cast::<u8>(),
+                    len,
+                )
+            };
+        }
         // SAFETY: caller guarantees `handle` is a live string payload;
         // its first 8 bytes are the length of the following bytes.
         unsafe {
@@ -1433,16 +1515,15 @@ impl Context {
 
     /// The address of a string handle's UTF-8 bytes (the C `const char*`
     /// half of a `(ptr, len)` string view; the length is
-    /// [`Context::str_bytes`]`.len()`, also `sub_rt_str_len`). Skips the
-    /// 8-byte length prefix of the string payload.
+    /// [`Context::str_bytes`]`.len()`, also `sub_rt_str_len`).
     ///
     /// # Safety
     ///
     /// `handle` must be a live string payload of this context.
     #[must_use]
     pub unsafe fn str_data(&self, handle: *const u8) -> *const u8 {
-        // SAFETY: the bytes follow the 8-byte length prefix.
-        unsafe { handle.add(8) }
+        // SAFETY: forwarded string-handle contract.
+        unsafe { self.str_bytes(handle) }.as_ptr()
     }
 
     /// The address of a dynamic array's element storage (the C `const T*`

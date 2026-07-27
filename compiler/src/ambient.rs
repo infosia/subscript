@@ -236,25 +236,27 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "T[]",
         "entries",
-        "Q22",
+        "Q30",
         None,
-        "The language has no iterator protocol.",
+        "`entries()` yields a pair, but the language has no tuple type.",
         None,
     ),
     rejection(
         "T[]",
         "keys",
-        "Q22",
+        "Q30",
         None,
-        "The language has no iterator protocol.",
+        "`keys()` is accepted only as the direct subject of `for…of`; elsewhere \
+         it would create a stateful iterator value that outlives its call.",
         None,
     ),
     rejection(
         "T[]",
         "values",
-        "Q22",
+        "Q30",
         None,
-        "The language has no iterator protocol.",
+        "`values()` is accepted only as the direct subject of `for…of`; elsewhere \
+         it would create a stateful iterator value that outlives its call.",
         None,
     ),
 ];
@@ -421,26 +423,28 @@ const MAP_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "Map<K, V>",
         "keys",
-        "Q24",
-        Some("forEach"),
-        "The language has no iterator protocol.",
-        None,
+        "Q30",
+        Some("use directly as a for…of subject"),
+        "`keys()` is accepted only as the direct subject of `for…of`; elsewhere it \
+         would create a stateful iterator value that outlives its call.",
+        Some("r42-map-iterator-member.ts"),
     ),
     rejection(
         "Map<K, V>",
         "values",
-        "Q24",
-        Some("forEach"),
-        "The language has no iterator protocol.",
+        "Q30",
+        Some("use directly as a for…of subject"),
+        "`values()` is accepted only as the direct subject of `for…of`; elsewhere it \
+         would create a stateful iterator value that outlives its call.",
         None,
     ),
     rejection(
         "Map<K, V>",
         "entries",
-        "Q24",
-        Some("forEach"),
-        "The language has no iterator protocol.",
-        Some("r42-map-iterator-member.ts"),
+        "Q30",
+        None,
+        "`entries()` yields a pair, but the language has no tuple type.",
+        Some("r79-assign-entries.ts"),
     ),
 ];
 
@@ -448,25 +452,27 @@ const SET_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "Set<K>",
         "keys",
-        "Q24",
-        Some("forEach"),
-        "The language has no iterator protocol.",
+        "Q30",
+        Some("use directly as a for…of subject"),
+        "`keys()` is accepted only as the direct subject of `for…of`; elsewhere it \
+         would create a stateful iterator value that outlives its call.",
         None,
     ),
     rejection(
         "Set<K>",
         "values",
-        "Q24",
-        Some("forEach"),
-        "The language has no iterator protocol.",
+        "Q30",
+        Some("use directly as a for…of subject"),
+        "`values()` is accepted only as the direct subject of `for…of`; elsewhere it \
+         would create a stateful iterator value that outlives its call.",
         None,
     ),
     rejection(
         "Set<K>",
         "entries",
-        "Q24",
-        Some("forEach"),
-        "The language has no iterator protocol.",
+        "Q30",
+        None,
+        "`entries()` yields a pair, but the language has no tuple type.",
         None,
     ),
 ];
@@ -556,7 +562,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
     rejection("FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
     rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
-    rejection("Map / Set", "new Map/Set(iterable)", "Q24", Some("construct empty, then add/set"), "The language has no iterator protocol.", Some("r43-map-iterable-constructor.ts")),
+    rejection("Map / Set", "new Map/Set(iterable)", "Q30", Some("construct empty, then add/set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
     rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
     rejection("Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
 ];

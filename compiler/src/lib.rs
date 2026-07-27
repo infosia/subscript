@@ -416,13 +416,21 @@ mod tests {
 
     #[test]
     fn rejected_array_member_is_s014_naming_the_member() {
-        for (member, call) in [
-            ("sort", "xs.sort()"),
-            ("reduce", "xs.reduce((acc: i32, v: i32): i32 => acc + v)"),
-            ("find", "xs.find((v: i32): boolean => v > 1)"),
-            ("findLast", "xs.findLast((v: i32): boolean => v > 1)"),
-            ("flat", "xs.flat()"),
-            ("keys", "xs.keys()"),
+        for (member, call, q_rule) in [
+            ("sort", "xs.sort()", "Q22"),
+            (
+                "reduce",
+                "xs.reduce((acc: i32, v: i32): i32 => acc + v)",
+                "Q22",
+            ),
+            ("find", "xs.find((v: i32): boolean => v > 1)", "Q22"),
+            (
+                "findLast",
+                "xs.findLast((v: i32): boolean => v > 1)",
+                "Q22",
+            ),
+            ("flat", "xs.flat()", "Q22"),
+            ("keys", "xs.keys()", "Q30"),
         ] {
             let err = check_one(&format!(
                 "export function main(): void {{\n  const xs: i32[] = [1, 2, 3];\n  {call};\n}}\n"
@@ -430,7 +438,11 @@ mod tests {
             .unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{member}");
             assert!(err[0].message.contains(member), "{member}: {}", err[0].message);
-            assert!(err[0].message.contains("Q22"), "{member}: {}", err[0].message);
+            assert!(
+                err[0].message.contains(q_rule),
+                "{member}: {}",
+                err[0].message
+            );
         }
     }
 
@@ -789,16 +801,28 @@ mod tests {
     }
 
     #[test]
-    fn map_set_iterator_surfaces_are_s014_q24() {
-        for body in [
-            "const map: Map<i32, i32> = new Map<i32, i32>();\n  for (const pair of map) {}",
-            "const set: Set<i32> = new Set<i32>();\n  const values: Set<i32>[] = [...set];",
-        ] {
-            let src = format!("export function main(): void {{\n  {body}\n}}\n");
-            let err = check_one(&src).unwrap_err();
-            assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
-            assert!(err[0].message.contains("Q24"), "{body}: {}", err[0].message);
-        }
+    fn q30_accepts_fused_container_iteration_and_array_literal_spread() {
+        check_one(
+            "export function main(): void {\n\
+               const map: Map<i32, i32> = new Map<i32, i32>();\n\
+               const set: Set<i32> = new Set<i32>();\n\
+               for (const key of map) { print(`${key}`); }\n\
+               for (const value of map.values()) { print(`${value}`); }\n\
+               const values: i32[] = [...set];\n\
+               print(`${values.length}`);\n\
+             }\n",
+        )
+        .expect("Q30 container traversal and literal spread");
+
+        let err = check_one(
+            "export function main(): void {\n\
+               const map: Map<i32, i32> = new Map<i32, i32>();\n\
+               const keys = map.keys();\n\
+             }\n",
+        )
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("direct subject"));
     }
 
     #[test]

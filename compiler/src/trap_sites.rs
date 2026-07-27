@@ -203,6 +203,10 @@ impl Analyzer {
                 }
                 self.ranges = saved;
             }
+            hir::Stmt::ForOf { subject, body, .. } => {
+                self.expr(subject);
+                self.scoped_stmts(body);
+            }
             hir::Stmt::Switch { disc, cases, .. } => {
                 self.expr(disc);
                 for case in cases {
@@ -261,6 +265,11 @@ impl Analyzer {
             K::ArrayLit(elems) => {
                 for elem in elems {
                     self.expr(elem);
+                }
+            }
+            K::ArraySpreadLit(elems) => {
+                for elem in elems {
+                    self.expr(&mut elem.expr);
                 }
             }
             K::Template(parts) => {
@@ -435,6 +444,9 @@ fn stmt_assigns_to(stmt: &hir::Stmt, name: &str) -> bool {
                     .is_some_and(|step| expr_assigns_to(step, name))
                 || stmts_assign_to(body, name)
         }
+        hir::Stmt::ForOf { subject, body, .. } => {
+            expr_assigns_to(subject, name) || stmts_assign_to(body, name)
+        }
         hir::Stmt::Switch { disc, cases, .. } => {
             expr_assigns_to(disc, name)
                 || cases.iter().any(|case| {
@@ -477,6 +489,9 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
             expr_assigns_to(obj, name) || expr_assigns_to(index, name)
         }
         K::ArrayLit(elems) => elems.iter().any(|elem| expr_assigns_to(elem, name)),
+        K::ArraySpreadLit(elems) => elems
+            .iter()
+            .any(|elem| expr_assigns_to(&elem.expr, name)),
         K::Template(parts) => parts.iter().any(|part| match part {
             hir::TplPart::Expr(expr) => expr_assigns_to(expr, name),
             hir::TplPart::Text(_) => false,

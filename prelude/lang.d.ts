@@ -34,6 +34,7 @@ declare function CStruct<T extends abstract new (...args: never[]) => object>(
 declare interface FixedArray<T, N extends number> {
   [index: number]: T;
   readonly length: i32;
+  [Symbol.iterator](): IterableIterator<T>;
   forEach(callback: (value: T, index: i32) => void): void;
   map<U>(callback: (value: T, index: i32) => U): U[];
   filter(callback: (value: T, index: i32) => boolean): T[];

@@ -165,6 +165,12 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h str, &'h Type)>) {
                 }
                 walk_lets(body, out);
             }
+            hir::Stmt::ForOf {
+                name, ty, body, ..
+            } => {
+                out.push((name, ty));
+                walk_lets(body, out);
+            }
             hir::Stmt::Switch { cases, .. } => {
                 for c in cases {
                     walk_lets(&c.body, out);
@@ -276,6 +282,8 @@ struct Emitter<'m> {
     /// Break/continue targets of the enclosing loops and switches, as
     /// (break label, optional continue label) pairs.
     loops: Vec<(String, Option<String>)>,
+    /// Map/Set traversals active at the current emission point.
+    assoc_iters: Vec<String>,
 }
 
 impl<'m> Emitter<'m> {
@@ -300,6 +308,7 @@ impl<'m> Emitter<'m> {
             wrappers: HashSet::new(),
             emitted_types: HashSet::new(),
             loops: Vec::new(),
+            assoc_iters: Vec::new(),
         })
     }
 
@@ -847,6 +856,7 @@ impl<'m> Emitter<'m> {
         self.gen_locals.clear();
         self.local_types.clear();
         self.managed_scope.clear();
+        self.assoc_iters.clear();
         self.shadow_cursor = 0;
         self.has_shadow = false;
         self.current_ret = ret;
@@ -915,6 +925,7 @@ impl<'m> Emitter<'m> {
     /// the dev tier's per-frame unwind. The caller checks the Context
     /// trap flag after every fault-capable call and continues unwinding.
     fn emit_trap_return(&mut self, out: &mut String, depth: usize) -> Result<(), String> {
+        self.emit_assoc_iter_ends(out, depth);
         self.emit_shadow_pop(out, depth);
         if self.gen.is_some() {
             let _ = writeln!(out, "{}return 1;", indent(depth));
@@ -1206,6 +1217,7 @@ impl<'m> Emitter<'m> {
             hir::Stmt::For { init, cond, step, body, .. } => {
                 self.emit_for(out, init.as_deref(), cond.as_ref(), step.as_ref(), body, depth)
             }
+            hir::Stmt::ForOf { .. } => self.emit_for_of(out, s, depth),
             hir::Stmt::Switch { disc, cases, .. } => self.emit_switch(out, disc, cases, depth),
             hir::Stmt::Break(_) => {
                 let brk = self.cur_break()?;
@@ -1276,11 +1288,13 @@ impl<'m> Emitter<'m> {
         // Inside a generator resume body, `return` completes the
         // coroutine: terminal state, done = 1 (C8).
         if self.gen.is_some() {
+            self.emit_assoc_iter_ends(out, depth);
             let _ = writeln!(out, "{ind}_f->_state = {GEN_DONE}; return 1;");
             return Ok(());
         }
         match value {
             None => {
+                self.emit_assoc_iter_ends(out, depth);
                 self.emit_shadow_pop(out, depth);
                 let _ = writeln!(out, "{ind}return;");
             }
@@ -1290,11 +1304,19 @@ impl<'m> Emitter<'m> {
                 // return, and the shadow array's memory outlives the pop
                 // (it is unregistered, not freed), so reading it is safe.
                 let text = self.eval(v, out, depth)?;
+                self.emit_assoc_iter_ends(out, depth);
                 self.emit_shadow_pop(out, depth);
                 let _ = writeln!(out, "{ind}return {text};");
             }
         }
         Ok(())
+    }
+
+    fn emit_assoc_iter_ends(&self, out: &mut String, depth: usize) {
+        let ind = indent(depth);
+        for handle in self.assoc_iters.iter().rev() {
+            let _ = writeln!(out, "{ind}sub_rt_assoc_iter_end(ctx, {handle});");
+        }
     }
 
     fn emit_while(&mut self, out: &mut String, cond: &hir::Expr, body: &[hir::Stmt], depth: usize) -> Result<(), String> {
@@ -1350,6 +1372,185 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind1}}}");
         let _ = writeln!(out, "{ind1}{brk}: ;");
         let _ = writeln!(out, "{ind}}}");
+        Ok(())
+    }
+
+    fn emit_for_of_binding(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        ty: &Type,
+        depth: usize,
+    ) -> Result<String, String> {
+        self.local_types.push((name.to_string(), ty.clone()));
+        if self.gen.is_some() {
+            let field = self.gen_next_let_field(name)?;
+            return Ok(format!("_f->{field}"));
+        }
+        let zero = self.zero_value(ty)?;
+        if self.needs_rooting(ty)? {
+            let words = managed_words(&self.layouts, ty)?;
+            let slot = self.shadow_cursor;
+            self.shadow_cursor = checked_shadow_words(self.shadow_cursor, words)?;
+            let access = self.root_slot_store(out, ty, slot, &zero, depth)?;
+            self.managed_scope.push((name.to_string(), access.clone()));
+            return Ok(access);
+        }
+        let cty = self.ctype(ty)?;
+        let cname = sanitize(name);
+        let _ = writeln!(out, "{}{cty} {cname} = {zero};", indent(depth));
+        // Record even an unrooted binding so it masks a same-named
+        // rooted binding from an earlier lexical block.
+        self.managed_scope.push((name.to_string(), cname.clone()));
+        Ok(cname)
+    }
+
+    fn emit_for_of(
+        &mut self,
+        out: &mut String,
+        stmt: &hir::Stmt,
+        depth: usize,
+    ) -> Result<(), String> {
+        use hir::ForOfKind as K;
+        let hir::Stmt::ForOf {
+            name,
+            ty,
+            subject,
+            kind,
+            body,
+            pos,
+        } = stmt
+        else {
+            return Err("non-for-of statement passed to emit_for_of".to_string());
+        };
+        let kind = *kind;
+
+        let ind = indent(depth);
+        let ind1 = indent(depth + 1);
+        let top = self.fresh_label();
+        let cont = self.fresh_label();
+        let brk = self.fresh_label();
+        let subject_value = self.eval(subject, out, depth)?;
+        let subject_ty = self.ctype(&subject.ty)?;
+        let subject_tmp = self.fresh_tmp();
+        let index = self.fresh_tmp();
+        let bound = self.fresh_tmp();
+        let pid = self.pos_id(pos);
+        let managed_base = self.managed_scope.len();
+        let local_types_base = self.local_types.len();
+        let gen_locals_base = self.gen_locals.len();
+
+        let _ = writeln!(out, "{ind}{{");
+        let _ = writeln!(out, "{ind1}{subject_ty} {subject_tmp} = {subject_value};");
+        let binding = self.emit_for_of_binding(out, name, ty, depth + 1)?;
+        let _ = writeln!(out, "{ind1}uint64_t {index} = 0;");
+        match kind {
+            K::ArrayValues | K::ArrayKeys => {
+                let _ = writeln!(
+                    out,
+                    "{ind1}uint64_t {bound} = (uint64_t)sub_rt_array_len(ctx, {subject_tmp});"
+                );
+            }
+            K::FixedArrayValues => {
+                let Type::FixedArray(_, count) = &subject.ty else {
+                    return Err("fixed-array for-of subject type".to_string());
+                };
+                let _ = writeln!(out, "{ind1}uint64_t {bound} = {count}ull;");
+            }
+            K::MapKeys | K::MapValues | K::SetValues => {
+                let _ = writeln!(
+                    out,
+                    "{ind1}uint64_t {bound} = sub_rt_assoc_iter_begin(ctx, {subject_tmp}, {pid}u);"
+                );
+                self.emit_trap_check(out, depth + 1)?;
+                self.assoc_iters.push(subject_tmp.clone());
+            }
+            K::StringCodePoints => {
+                let _ = writeln!(
+                    out,
+                    "{ind1}uint64_t {bound} = (uint64_t)sub_rt_str_len(ctx, {subject_tmp});"
+                );
+            }
+            other => return Err(format!("unknown ForOfKind {other:?}")),
+        }
+        let _ = writeln!(out, "{ind1}{top}: ;");
+        let condition = if matches!(kind, K::ArrayValues | K::ArrayKeys) {
+            format!(
+                "{index} < {bound} && {index} < (uint64_t)sub_rt_array_len(ctx, {subject_tmp})"
+            )
+        } else {
+            format!("{index} < {bound}")
+        };
+        let _ = writeln!(out, "{ind1}if (!({condition})) goto {brk};");
+
+        match kind {
+            K::ArrayKeys => {
+                let _ = writeln!(out, "{ind1}{binding} = (int32_t){index};");
+            }
+            K::ArrayValues => {
+                let ect = self.ctype(ty)?;
+                let _ = writeln!(
+                    out,
+                    "{ind1}{binding} = ((const {ect}*)sub_rt_array_data(ctx, {subject_tmp}))[{index}];"
+                );
+            }
+            K::FixedArrayValues => {
+                let _ = writeln!(
+                    out,
+                    "{ind1}{binding} = ({subject_tmp}).a[{index}];"
+                );
+            }
+            K::MapKeys | K::MapValues | K::SetValues => {
+                let cty = self.ctype(ty)?;
+                let value = self.fresh_tmp();
+                let select = u32::from(kind == K::MapValues);
+                let _ = writeln!(out, "{ind1}{cty} {value};");
+                let _ = writeln!(
+                    out,
+                    "{ind1}if (!sub_rt_assoc_iter_copy(ctx, {subject_tmp}, {index}, \
+                     {select}u, &{value}, {pid}u)) goto {cont};"
+                );
+                self.emit_trap_check(out, depth + 1)?;
+                let _ = writeln!(out, "{ind1}{binding} = {value};");
+            }
+            K::StringCodePoints => {
+                let next = self.fresh_tmp();
+                let value = self.fresh_tmp();
+                let _ = writeln!(out, "{ind1}int32_t {next} = (int32_t){index};");
+                let _ = writeln!(
+                    out,
+                    "{ind1}void* {value} = sub_rt_str_iter_code_point(ctx, {subject_tmp}, \
+                     (int32_t){index}, &{next}, {pid}u);"
+                );
+                self.emit_trap_check(out, depth + 1)?;
+                let _ = writeln!(out, "{ind1}{binding} = {value};");
+                let _ = writeln!(out, "{ind1}{index} = (uint64_t){next};");
+            }
+            other => return Err(format!("unknown ForOfKind {other:?}")),
+        }
+
+        self.loops_push(brk.clone(), cont.clone());
+        self.emit_block(out, body, depth + 1)?;
+        self.loops_pop();
+        if matches!(kind, K::MapKeys | K::MapValues | K::SetValues) {
+            self.assoc_iters.pop();
+        }
+        let _ = writeln!(out, "{ind1}{cont}: ;");
+        if kind != K::StringCodePoints {
+            let _ = writeln!(out, "{ind1}{index}++;");
+        }
+        let _ = writeln!(out, "{ind1}goto {top};");
+        let _ = writeln!(out, "{ind1}{brk}: ;");
+        if matches!(kind, K::MapKeys | K::MapValues | K::SetValues) {
+            let _ = writeln!(
+                out,
+                "{ind1}sub_rt_assoc_iter_end(ctx, {subject_tmp});"
+            );
+        }
+        let _ = writeln!(out, "{ind}}}");
+        self.managed_scope.truncate(managed_base);
+        self.local_types.truncate(local_types_base);
+        self.gen_locals.truncate(gen_locals_base);
         Ok(())
     }
 
@@ -2115,6 +2316,12 @@ impl<'m> Emitter<'m> {
                     self.eval_array_lit(&e.ty, elems, sites, out, depth)
                 })
             }
+            K::ArraySpreadLit(elems) => {
+                let sites = e.trap_sites(self.module);
+                lower_trap_sites(&sites, "array spread literal", |sites| {
+                    self.eval_array_spread_lit(&e.ty, elems, sites, out, depth)
+                })
+            }
             K::Template(parts) => {
                 let sites = e.trap_sites(self.module);
                 lower_trap_sites(&sites, "template", |sites| {
@@ -2758,6 +2965,89 @@ impl<'m> Emitter<'m> {
             }
             other => Err(format!("array literal of {other:?}")),
         }
+    }
+
+    fn eval_array_spread_lit(
+        &mut self,
+        ty: &Type,
+        elems: &[hir::ArrayLitElem],
+        sites: &mut TrapSiteConsumer<'_>,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let Type::Array(elem_ty) = ty else {
+            return Err("spread literal is not a dynamic array".to_string());
+        };
+        let ind = indent(depth);
+        let initial = sites
+            .take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                "array spread literal has no allocation site",
+            )?;
+        let hir::TrapSite::Allocation { pos } = initial else {
+            return Err("array spread literal allocation site kind".to_string());
+        };
+        let ect = self.ctype(elem_ty)?;
+        let pid = self.pos_id(pos);
+        let call = format!("sub_rt_array_new(ctx, sizeof({ect}), {pid}u)");
+        let handle = self.eval_site_checked_call(call, ty, initial, out, depth)?;
+
+        for elem in elems {
+            let site = sites
+                .take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    "array spread element has no allocation site",
+                )?;
+            let hir::TrapSite::Allocation { pos } = site else {
+                return Err("array spread element site kind".to_string());
+            };
+            let pid = self.pos_id(pos);
+            match elem.spread {
+                None => {
+                    let value = self.eval(&elem.expr, out, depth)?;
+                    let _ = writeln!(
+                        out,
+                        "{ind}{{ {ect} _e = {value}; \
+                         sub_rt_array_push(ctx, {handle}, &_e, {pid}u); }}"
+                    );
+                }
+                Some(hir::SpreadKind::Array) => {
+                    let source = self.eval_pinned(&elem.expr, out, depth)?;
+                    let _ = writeln!(
+                        out,
+                        "{ind}sub_rt_array_spread_array(ctx, {handle}, {source}, {pid}u);"
+                    );
+                }
+                Some(hir::SpreadKind::FixedArray) => {
+                    let source = self.eval_pinned(&elem.expr, out, depth)?;
+                    let Type::FixedArray(_, count) = &elem.expr.ty else {
+                        return Err("fixed spread source type".to_string());
+                    };
+                    let _ = writeln!(
+                        out,
+                        "{ind}sub_rt_array_spread_fixed(ctx, {handle}, \
+                         ({source}).a, {count}ull, {pid}u);"
+                    );
+                }
+                Some(hir::SpreadKind::MapKeys | hir::SpreadKind::SetValues) => {
+                    let source = self.eval_pinned(&elem.expr, out, depth)?;
+                    let _ = writeln!(
+                        out,
+                        "{ind}sub_rt_array_spread_assoc(ctx, {handle}, {source}, {pid}u);"
+                    );
+                }
+                Some(hir::SpreadKind::StringCodePoints) => {
+                    let source = self.eval_pinned(&elem.expr, out, depth)?;
+                    let _ = writeln!(
+                        out,
+                        "{ind}sub_rt_array_spread_string(ctx, {handle}, {source}, {pid}u);"
+                    );
+                }
+                Some(other) => return Err(format!("unknown SpreadKind {other:?}")),
+            }
+            self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
+        }
+        Ok(handle)
     }
 
     fn eval_template(
@@ -4650,6 +4940,11 @@ fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
                 collect_aggr_expr(x, set);
             }
         }
+        K::ArraySpreadLit(elems) => {
+            for elem in elems {
+                collect_aggr_expr(&elem.expr, set);
+            }
+        }
         K::Template(parts) => {
             for p in parts {
                 if let hir::TplPart::Expr(x) = p {
@@ -4706,6 +5001,13 @@ fn collect_aggr_stmts(stmts: &[hir::Stmt], set: &mut Vec<Type>) {
                 }
                 collect_aggr_stmts(body, set);
             }
+            hir::Stmt::ForOf {
+                ty, subject, body, ..
+            } => {
+                collect_aggr_ty(ty, set);
+                collect_aggr_expr(subject, set);
+                collect_aggr_stmts(body, set);
+            }
             hir::Stmt::Switch { disc, cases, .. } => {
                 collect_aggr_expr(disc, set);
                 for c in cases {
@@ -4743,6 +5045,9 @@ fn count_yields(stmts: &[hir::Stmt]) -> u32 {
                 n += step.as_ref().map_or(0, count_yields_expr);
                 n += count_yields(body);
             }
+            hir::Stmt::ForOf { subject, body, .. } => {
+                n += count_yields_expr(subject) + count_yields(body);
+            }
             hir::Stmt::Switch { disc, cases, .. } => {
                 n += count_yields_expr(disc);
                 for c in cases {
@@ -4778,6 +5083,9 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
+        K::ArraySpreadLit(elems) => {
+            elems.iter().map(|elem| count_yields_expr(&elem.expr)).sum()
+        }
         K::Template(parts) => parts
             .iter()
             .map(|p| match p {
@@ -5211,6 +5519,14 @@ extern int32_t sub_rt_array_len(void* ctx, const void* a);
 extern int32_t sub_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
 extern void sub_rt_array_pop(void* ctx, void* a, void* dst, uint32_t pos_id);
 extern void* sub_rt_array_ptr(void* ctx, void* a, int32_t idx, uint32_t pos_id);
+extern uint64_t sub_rt_assoc_iter_begin(void* ctx, void* value, uint32_t pos_id);
+extern int32_t sub_rt_assoc_iter_copy(void* ctx, void* value, uint64_t index, uint32_t select_value, void* out, uint32_t pos_id);
+extern void sub_rt_assoc_iter_end(void* ctx, void* value);
+extern void* sub_rt_str_iter_code_point(void* ctx, const void* s, int32_t index, int32_t* next, uint32_t pos_id);
+extern void sub_rt_array_spread_array(void* ctx, void* out, void* source, uint32_t pos_id);
+extern void sub_rt_array_spread_fixed(void* ctx, void* out, const void* data, uint64_t count, uint32_t pos_id);
+extern void sub_rt_array_spread_assoc(void* ctx, void* out, void* source, uint32_t pos_id);
+extern void sub_rt_array_spread_string(void* ctx, void* out, const void* source, uint32_t pos_id);
 /* C-boundary marshaling (P5.2b): string/array data pointers and the
  * callback binding constructor. The generic trampoline itself is declared
  * with the boundary include below, since its type mentions SubStringView. */

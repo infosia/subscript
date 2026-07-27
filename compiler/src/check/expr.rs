@@ -1068,7 +1068,7 @@ impl<'p> Checker<'p> {
             || (matches!(src, Type::Object) && self.is_reference_class(&target))
             || (matches!(&src, Type::Nullable(inner) if **inner == Type::Object)
                 && self.is_reference_class(&target))
-            || (self.in_json_argument
+            || ((self.in_json_argument || self.in_for_of_subject)
                 && target == Type::Object
                 && self.is_reference_class(&src));
         if !ok {
@@ -1099,24 +1099,18 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if a.elems
+            .iter()
+            .flatten()
+            .any(|element| element.spread.is_some())
+        {
+            return self.check_array_spread_lit(a, ctx, fx, pos);
+        }
         let mut elems: Vec<&ast::ExprOrSpread> = Vec::new();
         for e in &a.elems {
             match e {
                 Some(e) if e.spread.is_none() => elems.push(e),
-                Some(e) => {
-                    let p = self.pos(e.spread.unwrap_or(a.span));
-                    let spread = self.check_expr(&e.expr, None, fx);
-                    if matches!(spread.ty, Type::Map(..) | Type::Set(_)) {
-                        self.error(
-                            RuleCode::S014,
-                            "spreading Map/Set requires the rejected iterator \
-                             protocol; use `forEach` (Q24)",
-                            p,
-                        );
-                    } else {
-                        self.error(RuleCode::S100, "spread elements are not decided", p);
-                    }
-                }
+                Some(_) => unreachable!("spread literal dispatched above"),
                 None => {
                     self.error(
                         RuleCode::S100,
@@ -1229,6 +1223,126 @@ impl<'p> Checker<'p> {
                     pos,
                 }
             }
+        }
+    }
+
+    /// Checks an array literal containing spread. P22 keeps this as a
+    /// distinct HIR form so ordinary literals and `FixedArray` in-place
+    /// construction retain their existing lowering unchanged.
+    fn check_array_spread_lit(
+        &mut self,
+        a: &ast::ArrayLit,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        if matches!(ctx, Some(Type::FixedArray(..))) {
+            self.error(
+                RuleCode::S014,
+                "array-literal spread produces a fresh T[]; it cannot construct a FixedArray",
+                pos.clone(),
+            );
+        }
+        let context_elem = match ctx {
+            Some(Type::Array(elem)) => Some((**elem).clone()),
+            _ => None,
+        };
+        let mut checked = Vec::new();
+        let mut inferred: Option<Type> = context_elem.clone();
+        for slot in &a.elems {
+            let Some(slot) = slot else {
+                self.error(
+                    RuleCode::S100,
+                    "array holes are not decided",
+                    pos.clone(),
+                );
+                continue;
+            };
+            let is_spread = slot.spread.is_some();
+            let expr = self.check_expr(
+                &slot.expr,
+                if is_spread { None } else { inferred.as_ref() },
+                fx,
+            );
+            let (spread, element_ty) = if is_spread {
+                let selected = match &expr.ty {
+                    Type::Array(elem) => {
+                        Some((hir::SpreadKind::Array, (**elem).clone()))
+                    }
+                    Type::FixedArray(elem, _) => {
+                        Some((hir::SpreadKind::FixedArray, (**elem).clone()))
+                    }
+                    Type::Map(key, _) => {
+                        Some((hir::SpreadKind::MapKeys, (**key).clone()))
+                    }
+                    Type::Set(key) => {
+                        Some((hir::SpreadKind::SetValues, (**key).clone()))
+                    }
+                    Type::Str => {
+                        Some((hir::SpreadKind::StringCodePoints, Type::Str))
+                    }
+                    Type::Generator(_) => {
+                        self.error(
+                            RuleCode::S014,
+                            "Generator<T> is single-use; array-literal spread would consume \
+                             a value expression",
+                            self.pos(slot.spread.unwrap_or(a.span)),
+                        );
+                        None
+                    }
+                    Type::Error => None,
+                    other => {
+                        let actual = self.type_name(other);
+                        self.error(
+                            RuleCode::S014,
+                            format!(
+                                "array-literal spread accepts T[], FixedArray<T, N>, Map, \
+                                 Set, or string; got `{actual}`"
+                            ),
+                            self.pos(slot.spread.unwrap_or(a.span)),
+                        );
+                        None
+                    }
+                };
+                match selected {
+                    Some((kind, ty)) => (Some(kind), ty),
+                    None => (None, Type::Error),
+                }
+            } else {
+                (None, expr.ty.clone())
+            };
+            if inferred.is_none() && !matches!(element_ty, Type::Error) {
+                inferred = Some(element_ty.clone());
+            }
+            if let Some(expected) = &inferred {
+                self.require_assignable(
+                    &element_ty,
+                    expected,
+                    expr.pos.clone(),
+                    "the array element",
+                );
+            }
+            if !is_spread && self.is_capturing_value(&expr, fx) {
+                self.error(
+                    RuleCode::S009,
+                    "capturing lambdas may not be stored in arrays",
+                    expr.pos.clone(),
+                );
+            }
+            checked.push(hir::ArrayLitElem { expr, spread });
+        }
+        let Some(elem_ty) = inferred else {
+            self.error(
+                RuleCode::S100,
+                "cannot infer the type of an empty array literal without context",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        };
+        hir::Expr {
+            kind: ExprKind::ArraySpreadLit(checked),
+            ty: Type::Array(Box::new(elem_ty)),
+            pos,
         }
     }
 
@@ -2493,7 +2607,12 @@ impl<'p> Checker<'p> {
                 }
                 if let Some(spread) = c.args[1].spread {
                     let p = self.pos(spread);
-                    self.error(RuleCode::S100, "spread arguments are not decided", p.clone());
+                    self.error(
+                        RuleCode::S014,
+                        "spread arguments require variadic parameters, which the language \
+                         does not have",
+                        p.clone(),
+                    );
                     return self.err_expr(p);
                 }
                 // C4: the accumulator type `U` is the callback's when the
@@ -3000,8 +3119,9 @@ impl<'p> Checker<'p> {
                 }
                 if c.args[0].spread.is_some() {
                     self.error(
-                        RuleCode::S100,
-                        "spread arguments are not decided",
+                        RuleCode::S014,
+                        "spread arguments require variadic parameters, which the language \
+                         does not have",
                         self.pos(c.args[0].spread.unwrap_or_default()),
                     );
                     return self.err_expr(pos);
@@ -3105,7 +3225,11 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         if let Some(spread) = arg.spread {
             let p = self.pos(spread);
-            self.error(RuleCode::S100, "spread arguments are not decided", p.clone());
+            self.error(
+                RuleCode::S014,
+                "spread arguments require variadic parameters, which the language does not have",
+                p.clone(),
+            );
             return self.err_expr(p);
         }
         let expr = &*arg.expr;
@@ -4449,7 +4573,8 @@ impl<'p> Checker<'p> {
         what: &str,
     ) -> Vec<hir::Expr> {
         let required = params.iter().filter(|p| !p.has_default).count();
-        if args.len() < required || args.len() > params.len() {
+        let has_spread = args.iter().any(|arg| arg.spread.is_some());
+        if !has_spread && (args.len() < required || args.len() > params.len()) {
             self.error(
                 RuleCode::S100,
                 format!(
@@ -4466,7 +4591,11 @@ impl<'p> Checker<'p> {
         for (i, arg) in args.iter().enumerate() {
             if arg.spread.is_some() {
                 let p = self.pos(arg.spread.unwrap_or_default());
-                self.error(RuleCode::S100, "spread arguments are not decided", p);
+                self.error(
+                    RuleCode::S014,
+                    "spread arguments require variadic parameters, which the language does not have",
+                    p,
+                );
                 continue;
             }
             let param_ty = params.get(i).map(|p| p.ty.clone());

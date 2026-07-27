@@ -238,6 +238,25 @@ pub enum Stmt {
         /// Position of the statement.
         pos: Pos,
     },
+    /// Allocation-free fused `for…of` over one built-in container.
+    ///
+    /// The subject is evaluated once by a checker-generated enclosing
+    /// binding. `kind` fixes both the storage traversal and the value
+    /// bound on each visit; no iterator value exists in HIR.
+    ForOf {
+        /// Loop binding name.
+        name: String,
+        /// Type bound on each visit.
+        ty: Type,
+        /// Checked, already-stabilized container subject.
+        subject: Expr,
+        /// Built-in traversal selected by the checker.
+        kind: ForOfKind,
+        /// Loop body.
+        body: Vec<Stmt>,
+        /// Position of the statement.
+        pos: Pos,
+    },
     /// `switch` over an integer or enum discriminant.
     Switch {
         /// Discriminant expression.
@@ -253,6 +272,26 @@ pub enum Stmt {
     Continue(Pos),
     /// Nested block scope.
     Block(Vec<Stmt>),
+}
+
+/// Closed set of fused built-in `for…of` traversals (stdlib.md §14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ForOfKind {
+    /// Dynamic-array values in index order.
+    ArrayValues,
+    /// Dynamic-array integer indices (`array.keys()`).
+    ArrayKeys,
+    /// Fixed-array values in index order.
+    FixedArrayValues,
+    /// Map keys in insertion order (bare `Map` and `map.keys()`).
+    MapKeys,
+    /// Map values in insertion order (`map.values()`).
+    MapValues,
+    /// Set values in insertion order (`set.keys()` / `set.values()`).
+    SetValues,
+    /// UTF-8 code points, each bound as a one-code-point string.
+    StringCodePoints,
 }
 
 /// One `case` (or `default`) arm of a switch.
@@ -2466,6 +2505,9 @@ pub enum ExprKind {
     /// Array literal; the expression type says whether it constructs a
     /// dynamic array or a `FixedArray` (Q3).
     ArrayLit(Vec<Expr>),
+    /// Dynamic array literal containing at least one spread operand
+    /// (stdlib.md §14.4). The result is always a fresh `T[]`.
+    ArraySpreadLit(Vec<ArrayLitElem>),
     /// Template literal (Q14 formatting at runtime).
     Template(Vec<TplPart>),
     /// Lambda expression. Non-capturing lambdas are free function
@@ -2493,6 +2535,33 @@ pub enum ExprKind {
         /// Value when false.
         els: Box<Expr>,
     },
+}
+
+/// One element of a dynamic array literal containing spread.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct ArrayLitElem {
+    /// Checked value or container operand.
+    pub expr: Expr,
+    /// `None` for an ordinary element; otherwise the fused storage
+    /// traversal used to append this operand.
+    pub spread: Option<SpreadKind>,
+}
+
+/// Closed set of array-literal spread traversals (stdlib.md §14.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SpreadKind {
+    /// Dynamic-array values.
+    Array,
+    /// Fixed-array values.
+    FixedArray,
+    /// Map keys (the language's bare-Map iteration value).
+    MapKeys,
+    /// Set values.
+    SetValues,
+    /// String code points.
+    StringCodePoints,
 }
 
 impl Expr {
@@ -2675,6 +2744,12 @@ impl Expr {
                 let mut sites = Vec::with_capacity(elems.len() + 1);
                 sites.push(allocation(&self.pos));
                 sites.extend(elems.iter().map(|elem| allocation(&elem.pos)));
+                sites
+            }
+            K::ArraySpreadLit(elems) => {
+                let mut sites = Vec::with_capacity(elems.len() + 1);
+                sites.push(allocation(&self.pos));
+                sites.extend(elems.iter().map(|elem| allocation(&elem.expr.pos)));
                 sites
             }
             K::Template(parts) => {

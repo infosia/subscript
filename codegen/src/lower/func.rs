@@ -232,6 +232,10 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<&'h Type>) {
                 }
                 walk_lets(body, out);
             }
+            hir::Stmt::ForOf { ty, body, .. } => {
+                out.push(ty);
+                walk_lets(body, out);
+            }
             hir::Stmt::Switch { cases, .. } => {
                 for c in cases {
                     walk_lets(&c.body, out);
@@ -298,6 +302,9 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
+        K::ArraySpreadLit(elems) => {
+            elems.iter().map(|elem| count_yields_expr(&elem.expr)).sum()
+        }
         K::Template(parts) => parts
             .iter()
             .map(|p| match p {
@@ -343,6 +350,9 @@ fn count_yields(stmts: &[hir::Stmt]) -> usize {
                 n += step.as_ref().map_or(0, count_yields_expr);
                 n += count_yields(body);
             }
+            hir::Stmt::ForOf { subject, body, .. } => {
+                n += count_yields_expr(subject) + count_yields(body);
+            }
             hir::Stmt::Switch { disc, cases, .. } => {
                 n += count_yields_expr(disc);
                 for c in cases {
@@ -370,6 +380,9 @@ struct Body<'f, 'm, 'a, M: Module> {
     is_resume: bool,
     scopes: Vec<Vec<(String, Binding)>>,
     loops: Vec<LoopCtx>,
+    /// Map/Set traversals currently active at this lowering point.
+    /// Explicit returns close them before leaving the function.
+    assoc_iters: Vec<Value>,
     unwind: Option<Block>,
     shadow_base: Option<Value>,
     next_shadow: u32,
@@ -935,6 +948,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(())
     }
 
+    /// Declares storage for a synthesized loop binding. The fused
+    /// lowering writes it once per active visit.
+    fn declare_loop_local(&mut self, name: &str, ty: &Type) -> Result<Binding, String> {
+        let storage = self.alloc_storage(ty)?;
+        let binding = Binding {
+            ty: ty.clone(),
+            storage,
+        };
+        self.bind(name, binding.clone());
+        Ok(binding)
+    }
+
     // ----- expressions -----
 
     fn eval(&mut self, e: &hir::Expr) -> Result<RV, String> {
@@ -1107,6 +1132,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let sites = e.trap_sites(self.ml.hir);
                 lower_trap_sites(&sites, "array literal", |sites| {
                     self.eval_array_lit(&e.ty, elems, sites)
+                })
+            }
+            K::ArraySpreadLit(elems) => {
+                let sites = e.trap_sites(self.ml.hir);
+                lower_trap_sites(&sites, "array spread literal", |sites| {
+                    self.eval_array_spread_lit(&e.ty, elems, sites)
                 })
             }
             K::Template(parts) => {
@@ -3915,6 +3946,106 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
+    fn eval_array_spread_lit(
+        &mut self,
+        ty: &Type,
+        elems: &[hir::ArrayLitElem],
+        sites: &mut TrapSiteConsumer<'_>,
+    ) -> Result<RV, String> {
+        let Type::Array(elem_ty) = ty else {
+            return Err(internal("spread literal is not a dynamic array"));
+        };
+        let initial = sites
+            .take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                internal("array spread literal has no allocation site"),
+            )?;
+        let hir::TrapSite::Allocation { pos } = initial else {
+            return Err(internal("array spread literal allocation site kind"));
+        };
+        let stride = self.ml.layouts.stride(elem_ty)?;
+        let stride_v = self.iconst(types::I64, i64::from(stride));
+        let pos_id = self.pos_id(pos);
+        let pid = self.iconst(types::I32, pos_id);
+        let handle = self
+            .call_rt(
+                self.ml.rt.array_new,
+                &[self.ctx_v, stride_v, pid],
+                false,
+            )?
+            .ok_or_else(|| internal("array spread literal handle"))?;
+        self.emit_trap_site(initial, TrapOperand::Pending)?;
+
+        for elem in elems {
+            let site = sites
+                .take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("array spread element has no allocation site"),
+                )?;
+            let hir::TrapSite::Allocation { pos } = site else {
+                return Err(internal("array spread element site kind"));
+            };
+            let pos_id = self.pos_id(pos);
+            let pid = self.iconst(types::I32, pos_id);
+            match elem.spread {
+                None => {
+                    let value = self.eval(&elem.expr)?;
+                    let src = self.materialize(value, elem_ty)?;
+                    self.call_rt(
+                        self.ml.rt.array_push,
+                        &[self.ctx_v, handle, src, pid],
+                        false,
+                    )?;
+                }
+                Some(hir::SpreadKind::Array) => {
+                    let value = self.eval(&elem.expr)?;
+                    let source = self.expect_s(value)?;
+                    self.call_rt(
+                        self.ml.rt.array_spread_array,
+                        &[self.ctx_v, handle, source, pid],
+                        false,
+                    )?;
+                }
+                Some(hir::SpreadKind::FixedArray) => {
+                    let value = self.eval(&elem.expr)?;
+                    let source = self.expect_a(value)?;
+                    let Type::FixedArray(_, count) = &elem.expr.ty else {
+                        return Err(internal("fixed spread source type"));
+                    };
+                    let count = self.iconst(types::I64, i64::from(*count));
+                    self.call_rt(
+                        self.ml.rt.array_spread_fixed,
+                        &[self.ctx_v, handle, source, count, pid],
+                        false,
+                    )?;
+                }
+                Some(hir::SpreadKind::MapKeys | hir::SpreadKind::SetValues) => {
+                    let value = self.eval(&elem.expr)?;
+                    let source = self.expect_s(value)?;
+                    self.call_rt(
+                        self.ml.rt.array_spread_assoc,
+                        &[self.ctx_v, handle, source, pid],
+                        false,
+                    )?;
+                }
+                Some(hir::SpreadKind::StringCodePoints) => {
+                    let value = self.eval(&elem.expr)?;
+                    let source = self.expect_s(value)?;
+                    self.call_rt(
+                        self.ml.rt.array_spread_string,
+                        &[self.ctx_v, handle, source, pid],
+                        false,
+                    )?;
+                }
+                Some(other) => {
+                    return Err(internal(format!("unknown SpreadKind {other:?}")));
+                }
+            }
+            self.emit_trap_site(site, TrapOperand::Pending)?;
+        }
+        Ok(RV::S(handle))
+    }
+
     /// Stores a `FixedArray` literal's elements straight into `dest`
     /// (§10.2): the destination is a stable in-place address, so the
     /// literal never needs an intermediate the caller would copy from.
@@ -4258,6 +4389,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     {
                         let sret = self.sret_v.ok_or_else(|| internal("missing sret"))?;
                         self.eval_agg_into(v, sret, &ret_ty)?;
+                        self.end_assoc_iters()?;
                         self.emit_shadow_pop()?;
                         self.b.ins().return_(&[]);
                         self.term = true;
@@ -4374,6 +4506,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.scope_pop();
                 Ok(())
             }
+            hir::Stmt::ForOf {
+                name,
+                ty,
+                subject,
+                kind,
+                body,
+                pos,
+            } => self.lower_for_of(name, ty, subject, *kind, body, pos),
             hir::Stmt::Switch { disc, cases, .. } => {
                 let d = self.eval(disc)?;
                 let d = self.expect_s(d)?;
@@ -4449,6 +4589,197 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
+    fn lower_for_of(
+        &mut self,
+        name: &str,
+        ty: &Type,
+        subject: &hir::Expr,
+        kind: hir::ForOfKind,
+        body: &[hir::Stmt],
+        pos: &Pos,
+    ) -> Result<(), String> {
+        use hir::ForOfKind as K;
+
+        self.scope_push();
+        let subject_rv = self.eval(subject)?;
+        let binding = self.declare_loop_local(name, ty)?;
+        let index_var = self.b.declare_var(types::I64);
+        let zero = self.iconst(types::I64, 0);
+        self.b.def_var(index_var, zero);
+
+        let mut assoc_handle = None;
+        let (subject_scalar, subject_addr, bound) = match kind {
+            K::ArrayValues | K::ArrayKeys => {
+                let handle = self.expect_s(subject_rv)?;
+                let n = self
+                    .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("array for-of length"))?;
+                let n = self.b.ins().uextend(types::I64, n);
+                (Some(handle), None, n)
+            }
+            K::FixedArrayValues => {
+                let addr = self.expect_a(subject_rv)?;
+                let Type::FixedArray(_, n) = &subject.ty else {
+                    return Err(internal("fixed-array for-of subject type"));
+                };
+                let n = self.iconst(types::I64, i64::from(*n));
+                (None, Some(addr), n)
+            }
+            K::MapKeys | K::MapValues | K::SetValues => {
+                let handle = self.expect_s(subject_rv)?;
+                let pos_id = self.pos_id(pos);
+                let pid = self.iconst(types::I32, pos_id);
+                let n = self
+                    .call_rt(
+                        self.ml.rt.assoc_iter_begin,
+                        &[self.ctx_v, handle, pid],
+                        true,
+                    )?
+                    .ok_or_else(|| internal("associative for-of bound"))?;
+                assoc_handle = Some(handle);
+                self.assoc_iters.push(handle);
+                (Some(handle), None, n)
+            }
+            K::StringCodePoints => {
+                let handle = self.expect_s(subject_rv)?;
+                let n = self
+                    .call_rt(self.ml.rt.str_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("string for-of byte length"))?;
+                let n = self.b.ins().uextend(types::I64, n);
+                (Some(handle), None, n)
+            }
+            other => return Err(internal(format!("unknown ForOfKind {other:?}"))),
+        };
+
+        let hdr = self.b.create_block();
+        let visit = self.b.create_block();
+        let body_blk = self.b.create_block();
+        let step_blk = self.b.create_block();
+        let exit = self.b.create_block();
+        self.b.ins().jump(hdr, &[]);
+        self.b.switch_to_block(hdr);
+        let index = self.b.use_var(index_var);
+        let below_snapshot = self
+            .b
+            .ins()
+            .icmp(IntCC::UnsignedLessThan, index, bound);
+        let condition = if matches!(kind, K::ArrayValues | K::ArrayKeys) {
+            let handle = subject_scalar.ok_or_else(|| internal("array for-of handle"))?;
+            let current = self
+                .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
+                .ok_or_else(|| internal("array for-of current length"))?;
+            let current = self.b.ins().uextend(types::I64, current);
+            let below_current =
+                self.b
+                    .ins()
+                    .icmp(IntCC::UnsignedLessThan, index, current);
+            self.b.ins().band(below_snapshot, below_current)
+        } else {
+            below_snapshot
+        };
+        self.b.ins().brif(condition, visit, &[], exit, &[]);
+
+        self.b.switch_to_block(visit);
+        let mut next_index = None;
+        let value = match kind {
+            K::ArrayKeys => {
+                let narrowed = self.b.ins().ireduce(types::I32, index);
+                Some(RV::S(narrowed))
+            }
+            K::ArrayValues => {
+                let handle = subject_scalar.ok_or_else(|| internal("array for-of handle"))?;
+                let data = self
+                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("array for-of data"))?;
+                let stride = self.ml.layouts.stride(ty)?;
+                let offset = self.b.ins().imul_imm(index, i64::from(stride));
+                let addr = self.b.ins().iadd(data, offset);
+                Some(self.load_val(ty, addr, 0)?)
+            }
+            K::FixedArrayValues => {
+                let base = subject_addr.ok_or_else(|| internal("fixed-array for-of base"))?;
+                let stride = self.ml.layouts.stride(ty)?;
+                let offset = self.b.ins().imul_imm(index, i64::from(stride));
+                let addr = self.b.ins().iadd(base, offset);
+                Some(self.load_val(ty, addr, 0)?)
+            }
+            K::MapKeys | K::MapValues | K::SetValues => {
+                let handle = subject_scalar.ok_or_else(|| internal("assoc for-of handle"))?;
+                let (size, align) = self.ml.layouts.size_align(ty)?;
+                let slot = self.temp_slot(size.max(1), align.max(1));
+                let select_value = self.iconst(types::I32, i64::from(kind == K::MapValues));
+                let pos_id = self.pos_id(pos);
+                let pid = self.iconst(types::I32, pos_id);
+                let active = self
+                    .call_rt(
+                        self.ml.rt.assoc_iter_copy,
+                        &[self.ctx_v, handle, index, select_value, slot, pid],
+                        true,
+                    )?
+                    .ok_or_else(|| internal("assoc for-of active flag"))?;
+                let loaded = self.load_val(ty, slot, 0)?;
+                let active = self.b.ins().icmp_imm(IntCC::NotEqual, active, 0);
+                self.b.ins().brif(active, body_blk, &[], step_blk, &[]);
+                Some(loaded)
+            }
+            K::StringCodePoints => {
+                let handle = subject_scalar.ok_or_else(|| internal("string for-of handle"))?;
+                let index32 = self.b.ins().ireduce(types::I32, index);
+                let next_slot = self.temp_slot(4, 4);
+                let pos_id = self.pos_id(pos);
+                let pid = self.iconst(types::I32, pos_id);
+                let value = self
+                    .call_rt(
+                        self.ml.rt.str_iter_code_point,
+                        &[self.ctx_v, handle, index32, next_slot, pid],
+                        true,
+                    )?
+                    .ok_or_else(|| internal("string for-of code point"))?;
+                let next32 = self.b.ins().load(types::I32, flags(), next_slot, 0);
+                next_index = Some(self.b.ins().uextend(types::I64, next32));
+                Some(RV::S(value))
+            }
+            other => return Err(internal(format!("unknown ForOfKind {other:?}"))),
+        };
+        if !matches!(kind, K::MapKeys | K::MapValues | K::SetValues) {
+            self.b.ins().jump(body_blk, &[]);
+        }
+
+        self.b.switch_to_block(body_blk);
+        let value = value.ok_or_else(|| internal("for-of visit value"))?;
+        let place = self.place_of_binding(&binding)?;
+        self.write_place(place, ty, value)?;
+        self.loops.push(LoopCtx {
+            brk: exit,
+            cont: Some(step_blk),
+        });
+        self.scope_push();
+        self.lower_stmts(body)?;
+        self.scope_pop();
+        self.loops.pop();
+        if !self.term {
+            self.b.ins().jump(step_blk, &[]);
+        }
+        self.term = false;
+
+        self.b.switch_to_block(step_blk);
+        let next = next_index.unwrap_or_else(|| self.b.ins().iadd_imm(index, 1));
+        self.b.def_var(index_var, next);
+        self.b.ins().jump(hdr, &[]);
+
+        self.b.switch_to_block(exit);
+        if let Some(handle) = assoc_handle {
+            self.call_rt(
+                self.ml.rt.assoc_iter_end,
+                &[self.ctx_v, handle],
+                false,
+            )?;
+            self.assoc_iters.pop();
+        }
+        self.scope_pop();
+        Ok(())
+    }
+
     fn emit_shadow_pop(&mut self) -> Result<(), String> {
         if self.shadow_base.is_some() {
             self.call_rt(self.ml.rt.shadow_pop, &[self.ctx_v], false)?;
@@ -4456,7 +4787,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(())
     }
 
+    fn end_assoc_iters(&mut self) -> Result<(), String> {
+        let handles: Vec<Value> = self.assoc_iters.iter().rev().copied().collect();
+        for handle in handles {
+            self.call_rt(
+                self.ml.rt.assoc_iter_end,
+                &[self.ctx_v, handle],
+                false,
+            )?;
+        }
+        Ok(())
+    }
+
     fn emit_return(&mut self, value: Option<(RV, Type)>) -> Result<(), String> {
+        self.end_assoc_iters()?;
         if self.is_resume {
             // Generator completion: terminal state, done = 1.
             let g = self
@@ -4746,6 +5090,7 @@ pub(crate) fn define_function<M: Module>(
             is_resume: false,
             scopes: vec![Vec::new()],
             loops: Vec::new(),
+            assoc_iters: Vec::new(),
             unwind: None,
             shadow_base: None,
             next_shadow: 0,
@@ -4806,6 +5151,7 @@ fn define_lambda<M: Module>(
             is_resume: false,
             scopes: vec![Vec::new()],
             loops: Vec::new(),
+            assoc_iters: Vec::new(),
             unwind: None,
             shadow_base: None,
             next_shadow: 0,
@@ -5152,6 +5498,7 @@ pub(crate) fn define_generator<M: Module>(
                 is_resume: false,
                 scopes: vec![Vec::new()],
                 loops: Vec::new(),
+                assoc_iters: Vec::new(),
                 unwind: None,
                 shadow_base: None,
                 next_shadow: 0,
@@ -5273,6 +5620,7 @@ pub(crate) fn define_generator<M: Module>(
                 is_resume: true,
                 scopes: vec![Vec::new()],
                 loops: Vec::new(),
+                assoc_iters: Vec::new(),
                 unwind: None,
                 shadow_base: None,
                 next_shadow: 0,
@@ -5335,6 +5683,7 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
             is_resume: false,
             scopes: vec![Vec::new()],
             loops: Vec::new(),
+            assoc_iters: Vec::new(),
             unwind: None,
             shadow_base: None,
             next_shadow: 0,

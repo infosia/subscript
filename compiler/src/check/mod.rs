@@ -236,6 +236,11 @@ pub(crate) struct Checker<'p> {
     /// `object` assertion long enough for the Q28 call to issue its
     /// required S014 instead of an unrelated general-type diagnostic.
     pub in_json_argument: bool,
+    /// True only while checking the expression to the right of
+    /// `for…of`. It preserves a direct `as object` assertion long
+    /// enough for P22's closed-list S014 instead of the general
+    /// boundary-only-type diagnostic.
+    pub in_for_of_subject: bool,
     /// Aggregate type annotations whose byte size depends on a class
     /// layout and must therefore be checked after signature resolution.
     pub pending_layouts: Vec<(Type, Pos, &'static str)>,
@@ -244,6 +249,9 @@ pub(crate) struct Checker<'p> {
     /// both tiers emit an immediate rather than reading a runtime global.
     /// Keyed by name → (value, `u64` flag type).
     pub ambient_int_consts: HashMap<String, (i64, Type)>,
+    /// Monotonic id for checker-generated storage that stabilizes a
+    /// `for…of` subject across the fused loop.
+    pub next_for_of_id: usize,
 }
 
 /// Runs the checker over a parsed program.
@@ -277,8 +285,10 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         in_boundary: false,
         in_assoc_key: false,
         in_json_argument: false,
+        in_for_of_subject: false,
         pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
+        next_for_of_id: 0,
     };
 
     // Pass A: collect top-level names. Mirror (`.d.ts`) declarations land
@@ -1746,6 +1756,9 @@ impl<'p> Checker<'p> {
             hir::ExprKind::ArrayLit(elems) => {
                 elems.iter().any(|e| self.is_capturing_value(e, fx))
             }
+            hir::ExprKind::ArraySpreadLit(elems) => elems
+                .iter()
+                .any(|e| e.spread.is_none() && self.is_capturing_value(&e.expr, fx)),
             _ => false,
         }
     }

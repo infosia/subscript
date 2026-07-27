@@ -102,6 +102,14 @@ pub(crate) struct RtFns {
     pub array_ptr: FuncId,
     pub str_data: FuncId,
     pub array_data: FuncId,
+    pub assoc_iter_begin: FuncId,
+    pub assoc_iter_copy: FuncId,
+    pub assoc_iter_end: FuncId,
+    pub str_iter_code_point: FuncId,
+    pub array_spread_array: FuncId,
+    pub array_spread_fixed: FuncId,
+    pub array_spread_assoc: FuncId,
+    pub array_spread_string: FuncId,
     pub cb_bind: FuncId,
     pub cb_trampoline: FuncId,
     /// `sub_rt_math_*` imports (stdlib.md §1), indexed by
@@ -758,6 +766,42 @@ fn declare_rt<M: Module>(
         array_ptr: mk("sub_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
         str_data: mk("sub_rt_str_data", &[I64, I64], Some(I64))?,
         array_data: mk("sub_rt_array_data", &[I64, I64], Some(I64))?,
+        assoc_iter_begin: mk(
+            "sub_rt_assoc_iter_begin",
+            &[I64, I64, I32],
+            Some(I64),
+        )?,
+        assoc_iter_copy: mk(
+            "sub_rt_assoc_iter_copy",
+            &[I64, I64, I64, I32, I64, I32],
+            Some(I32),
+        )?,
+        assoc_iter_end: mk("sub_rt_assoc_iter_end", &[I64, I64], None)?,
+        str_iter_code_point: mk(
+            "sub_rt_str_iter_code_point",
+            &[I64, I64, I32, I64, I32],
+            Some(I64),
+        )?,
+        array_spread_array: mk(
+            "sub_rt_array_spread_array",
+            &[I64, I64, I64, I32],
+            None,
+        )?,
+        array_spread_fixed: mk(
+            "sub_rt_array_spread_fixed",
+            &[I64, I64, I64, I64, I32],
+            None,
+        )?,
+        array_spread_assoc: mk(
+            "sub_rt_array_spread_assoc",
+            &[I64, I64, I64, I32],
+            None,
+        )?,
+        array_spread_string: mk(
+            "sub_rt_array_spread_string",
+            &[I64, I64, I64, I32],
+            None,
+        )?,
         // (ctx, code, env, userdata1, userdata2) → binding pointer (§14.4:
         // two userdata slots).
         cb_bind: mk("sub_rt_cb_bind", &[I64, I64, I64, I64, I64], Some(I64))?,
