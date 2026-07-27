@@ -1,6 +1,6 @@
 # Cross-language benchmarks — contract
 
-Status: Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
+Status: Rev 4, 2026-07-27 (a fresh process per (workload, subject) becomes normative — `subscript-jit` had been the one in-process subject and its whole column was order-dependent); Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
 subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
@@ -27,7 +27,7 @@ gate); this is a published comparison. Lives in `benchmarks/`.
 |---|---|---|
 | C | hand-written C, `clang -O2 -fwrapv -ffp-contract=off` | self-timed (monotonic clock), prints median |
 | subscript-ship | HIR → C → `clang -std=c11 -O2 -fwrapv -ffp-contract=off` (the ship tier, `compiler.md` §11) | externally timed by the runner (AOT entry loops the exported workload fn) |
-| subscript-jit | HIR → Cranelift JIT (the dev tier) | externally timed by the runner (`jit_bench`) |
+| subscript-jit | HIR → Cranelift JIT (the dev tier) | externally timed, in a **fresh runner re-exec child per workload** (`jit_bench`) |
 | LuaJIT | [luajit.org](https://luajit.org) 2.1 | self-timed (`os.clock`), prints median |
 | JSC | JavaScriptCore, JIT-enabled ([webkit.org](https://webkit.org)) | self-timed (`Date.now`/`performance.now`), prints median |
 | V8 | Node.js ([nodejs.org](https://nodejs.org)) | self-timed, prints median |
@@ -82,6 +82,42 @@ themselves and print `<checksum> <median_seconds>`.
   sink. **This is not a workaround for the optimizer — it is what makes
   the contract's own requirement true**, and the reported warm-up time
   is what proves it stayed true.
+
+- **Every `(workload, subject)` measurement runs in a fresh process.**
+  *(Normative since 2026-07-27.)* Until then `subscript-jit` was the
+  one exception — it ran **in-process** inside the runner, so by
+  workload 10 of 10 it inherited a system heap nine workloads had
+  churned, while every other subject got a cold process.
+
+  It was not a small effect. `collect` measured **463 ms** in the full
+  suite against **226 ms** standalone, the same binary minutes apart,
+  with `subscript-ship` unmoved at 213 against 215. After the fix the
+  two agree to 0.25% (221.5 against 222.1).
+
+  The dev tier is the sensitive one because it makes **one system
+  allocation per object**, so its object layout and locality are
+  inherited from whatever the process did before; `collect`'s mark
+  phase then pointer-chases across ~100 000 of them. The ship tier was
+  immune twice over — a spawned binary, and an arena that places
+  objects itself.
+
+  **Three other cells moved when this was fixed** — `particles` +10.7%,
+  `sort` +7.1%, `callbacks` +5.3% — and the direction is the tell.
+  Running eighth and ninth, they had been *flattered* by a warm
+  process; `collect`, running tenth, had been *penalized* by a
+  fragmented one. Both are now measured cold, like every other subject.
+  The whole `subscript-jit` column had been order-dependent, not just
+  the one cell that made it visible.
+
+  The re-exec child runs exactly one workload and reports its
+  checksum, its measured warm-up and every sample back to the parent.
+  Re-exec start-up, source loading, checking, lowering, JIT
+  compilation, Context construction and protocol I/O are all **outside**
+  the reported duration.
+
+- `--only <id>` must produce the same figure as the full suite for the
+  same cell. That equivalence is the gate on process isolation, and it
+  is what caught this.
 
 - Only the **workload execution** is timed — not process start-up,
   compilation, JIT warm-up, Context creation, or I/O.
