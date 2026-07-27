@@ -3136,8 +3136,16 @@ pub unsafe extern "C" fn sub_rt_array_push(
     src: *const u8,
     pos_id: u32,
 ) -> i32 {
-    // SAFETY: shared contract.
-    unsafe { (*ctx).array_push(a, src, pos_id) }
+    let runtime = unsafe { &mut *ctx };
+    if a.is_null()
+        || src.is_null()
+        || !runtime.require_live_handle(a as usize, pos_id)
+    {
+        return -1;
+    }
+    // SAFETY: receiver liveness was checked above; the shared contract
+    // guarantees `src` is readable for the element size.
+    unsafe { runtime.array_push(a, src, pos_id) }
 }
 
 /// Appends a snapshot of a dynamic array to a fresh array literal.
@@ -4784,6 +4792,42 @@ mod tests {
     }
 
     #[test]
+    fn exported_delete_invalidates_literal_and_astral_string_interns() {
+        static LITERAL: &[u8] = b"interned";
+
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let p: *mut Context = &mut *ctx;
+
+            // SAFETY: the static literal and exclusive Context satisfy the
+            // exported runtime contracts.
+            let literal =
+                unsafe { sub_rt_str_lit(p, LITERAL.as_ptr(), LITERAL.len() as u64, 1) };
+            unsafe { sub_rt_delete(p, literal, 2) };
+            assert!(!ctx.is_live(literal as usize), "{tier}: literal delete");
+            let literal_again =
+                unsafe { sub_rt_str_lit(p, LITERAL.as_ptr(), LITERAL.len() as u64, 3) };
+            assert!(
+                ctx.is_live(literal_again as usize),
+                "{tier}: stale literal intern entry"
+            );
+
+            let astral = ctx.code_point('😀', 4);
+            // SAFETY: `astral` is a live ordinary string allocation.
+            unsafe { sub_rt_delete(p, astral, 5) };
+            assert!(!ctx.is_live(astral as usize), "{tier}: astral delete");
+            let astral_again = ctx.code_point('😀', 6);
+            assert!(
+                ctx.is_live(astral_again as usize),
+                "{tier}: stale astral intern entry"
+            );
+            assert!(!ctx.trapped(), "{tier}");
+        }
+    }
+
+    #[test]
     fn ffi_trap_observer_is_first_wins_and_null_clears_on_both_tier_policies() {
         for (tier, mut ctx) in [
             ("dev", Context::new()),
@@ -5289,6 +5333,25 @@ mod tests {
         assert_eq!(
             ctx.trap_record().map(|r| (r.kind, r.pos_id)),
             Some((TrapKind::IndexOutOfBounds, 9))
+        );
+    }
+
+    #[test]
+    fn ffi_array_push_reports_a_collected_receiver_without_panicking() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid exclusive Context.
+        let array = unsafe { sub_rt_array_new(p, 4, 1) };
+        ctx.collect();
+        let value = 11i32;
+        // SAFETY: this deliberately exercises the dev-tier stale-handle
+        // diagnostic promised by retain-and-poison.
+        let result =
+            unsafe { sub_rt_array_push(p, array, (&value as *const i32).cast(), 77) };
+        assert_eq!(result, -1);
+        assert_eq!(
+            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
+            Some((TrapKind::UseAfterDelete, 77))
         );
     }
 

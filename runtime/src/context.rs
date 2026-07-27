@@ -144,7 +144,6 @@ const fn code_point_utf8_table() -> [u32; BMP_CODE_POINT_COUNT] {
     table
 }
 
-#[allow(long_running_const_eval)]
 static CODE_POINT_UTF8: [u32; BMP_CODE_POINT_COUNT] = code_point_utf8_table();
 
 fn inline_string_scalar(handle: *const u8) -> Option<u32> {
@@ -1027,6 +1026,14 @@ impl Context {
         unsafe { crate::assocops::clear(self, payload as *mut u8) };
     }
 
+    /// Removes Context-lifetime string-intern entries before their ordinary
+    /// allocation is retired through the exported delete path.
+    fn clear_string_interns_on_delete(&mut self, payload: usize) {
+        self.interned.retain(|_, handle| *handle != payload);
+        self.astral_code_points
+            .retain(|_, handle| *handle != payload);
+    }
+
     /// Ship-tier release: a live classed block goes to its class's free
     /// list; a large record is freed and dropped. Map/Set storage is
     /// cleared after the same membership/header read that release already
@@ -1046,6 +1053,9 @@ impl Context {
             };
             if matches!(class_id, CLASS_MAP | CLASS_SET) {
                 self.clear_container_on_delete(payload);
+            }
+            if class_id == CLASS_STRING {
+                self.clear_string_interns_on_delete(payload);
             }
             if class_id == CLASS_REGEX {
                 self.regex.remove_value(payload);
@@ -1067,6 +1077,9 @@ impl Context {
             let class_id = unsafe { (a.base.add(8) as *const u32).read() };
             if matches!(class_id, CLASS_MAP | CLASS_SET) {
                 self.clear_container_on_delete(payload);
+            }
+            if class_id == CLASS_STRING {
+                self.clear_string_interns_on_delete(payload);
             }
             if class_id == CLASS_REGEX {
                 self.regex.remove_value(payload);
@@ -1095,6 +1108,9 @@ impl Context {
         // poisoning preserves the dev-tier stale-handle trap.
         unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
         let inserted = self.dead_allocations.insert(payload);
+        // Dev backing allocations are never freed before Context drop, so
+        // the system allocator cannot return a retained-dead address as a
+        // later live allocation in this Context.
         debug_assert!(
             inserted,
             "live allocation map and retained-dead address set must be disjoint"
@@ -1141,14 +1157,19 @@ impl Context {
             // storage is retired through recursive `delete` calls.
             self.clear_container_on_delete(payload);
         }
+        if class_id == CLASS_STRING {
+            self.clear_string_interns_on_delete(payload);
+        }
         let Some(retired_class_id) = self.retire_dev_allocation(payload) else {
             self.trap(
                 TrapKind::Internal,
-                "allocation disappeared while deleting it",
+                "Map/Set header disappeared while deleting its storage",
                 pos_id,
             );
             return;
         };
+        // `class_id` and `retired_class_id` read the same live header, and
+        // clearing Map/Set child storage does not mutate the header.
         debug_assert_eq!(retired_class_id, class_id);
         if class_id == CLASS_REGEX {
             self.regex.remove_value(payload);
@@ -1449,8 +1470,10 @@ impl Context {
         self.retained_allocations.reserve(retiring);
         let dead_allocations = &mut self.dead_allocations;
         let retained_allocations = &mut self.retained_allocations;
-        // `extract_if` retains the live map's bucket capacity, so the next
-        // allocation burst reuses it instead of repeating peak rehashes.
+        // `extract_if` retains the live map's bucket storage. Later bursts
+        // reuse it; accumulated deletion tombstones can eventually force one
+        // bounded rebuild, but dead-count growth no longer repeats peak
+        // rehashes.
         for (addr, allocation) in self.allocations.extract_if(|_, allocation| {
             if allocation.marked {
                 allocation.marked = false;
@@ -1463,6 +1486,8 @@ impl Context {
             // owned; poisoning preserves every stale-handle trap.
             unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
             let inserted = dead_allocations.insert(addr);
+            // The live map and dead set were disjoint at sweep entry, and
+            // dev backing allocations cannot be reused before Context drop.
             debug_assert!(
                 inserted,
                 "live allocation map and retained-dead address set must be disjoint"
@@ -1611,6 +1636,7 @@ impl Context {
     /// every Context and across storage in arrays, maps, and fields.
     #[must_use]
     fn inline_bmp_code_point(value: char) -> *mut u8 {
+        // The only caller branches on this exact BMP bound before calling.
         debug_assert!((value as u32) < BMP_CODE_POINT_COUNT as u32);
         let encoded = value as usize + 1;
         ((encoded << 1) | INLINE_STRING_TAG) as *mut u8
@@ -1823,7 +1849,25 @@ impl Context {
                     self.arena_release(old);
                 } else {
                     let retired = self.retire_dev_allocation(old);
-                    debug_assert_eq!(retired, Some(CLASS_ARRAY_DATA));
+                    match retired {
+                        Some(CLASS_ARRAY_DATA) => {}
+                        Some(_) => {
+                            self.trap(
+                                TrapKind::Internal,
+                                "array growth found a non-array storage allocation",
+                                pos_id,
+                            );
+                            return -1;
+                        }
+                        None => {
+                            self.trap(
+                                TrapKind::Internal,
+                                "array storage disappeared while growing it",
+                                pos_id,
+                            );
+                            return -1;
+                        }
+                    }
                 }
             }
             // SAFETY: as above.

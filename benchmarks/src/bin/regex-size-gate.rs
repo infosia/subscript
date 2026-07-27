@@ -20,9 +20,13 @@ const DELTA_MAX: u64 = 700_000;
 const REGRESS_MIN: u64 = 490_000;
 const REGRESS_MAX: u64 = 515_000;
 
-// Filled from this matched pair. These values diagnose which side moved
-// when the delta leaves its tolerance; they are not exact-size assertions.
+// The baseline has one MiB of upward tolerance for unrelated code-generation
+// movement. That is wide relative to ordinary drift but cannot hide the
+// 4,194,304-byte astral table returning on both sides of the matched pair.
+const BASELINE_ABSOLUTE_TOLERANCE: u64 = 1_048_576;
 const REFERENCE_BASELINE_BYTES: u64 = 605_992;
+// The regex reference diagnoses a matched-pair delta failure; the baseline
+// reference additionally enforces the absolute-size guard above.
 const REFERENCE_REGEX_BYTES: u64 = 1_221_000;
 
 fn main() -> ExitCode {
@@ -84,8 +88,19 @@ fn run() -> Result<(), String> {
     println!("regex delta:       {} B", delta);
     println!("regress link map:  {} B", regress);
 
+    let baseline_shift = baseline.bytes as i128 - REFERENCE_BASELINE_BYTES as i128;
+    if baseline_shift > BASELINE_ABSOLUTE_TOLERANCE as i128 {
+        return Err(format!(
+            "baseline side moved up by {baseline_shift} B: absolute baseline {} B exceeds \
+             reference {} B + tolerance {} B; regex={} B, delta={} B",
+            baseline.bytes,
+            REFERENCE_BASELINE_BYTES,
+            BASELINE_ABSOLUTE_TOLERANCE,
+            regex.bytes,
+            delta
+        ));
+    }
     if !(DELTA_MIN..=DELTA_MAX).contains(&delta) {
-        let baseline_shift = baseline.bytes as i128 - REFERENCE_BASELINE_BYTES as i128;
         let regex_shift = regex.bytes as i128 - REFERENCE_REGEX_BYTES as i128;
         let side = if baseline_shift.abs() > regex_shift.abs() {
             "baseline side"
