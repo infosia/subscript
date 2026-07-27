@@ -768,6 +768,55 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   traversal, so it inherits that rule by construction rather than
   needing its own.
 
+- **Q31 (regular expressions)** —
+  accepted per `stdlib.md` §15. Owner decision 2026-07-27. `RegExp` had
+  been a **permanent stdlib non-goal**; the reversal follows the shape
+  §7 used for `Map`/`Set` — evidence first.
+
+  *(This entry was referenced throughout §15 from the day the contract
+  was written and **not actually added to this register until
+  2026-07-27**, when the implementer noticed the register ended at Q30.
+  Recorded rather than quietly inserted, because a Q-id cited by a
+  contract and absent from the register is the drift §17 exists to
+  catch, appearing here in prose instead of in a generated table.)*
+
+  **`regress` matches UTF-8 and returns byte offsets**, so the index
+  domain is Q5's with no conversion. Its `utf16` feature must stay off:
+  it is documented as additive but removes the byte-prefix search on
+  the `&str` path, measured 1.4–69× slower.
+
+  **A match position is a byte offset**, agreeing with `indexOf`,
+  `slice` and `charAt` and diverging from JS, which counts UTF-16
+  units. That divergence is Q5's, already recorded — the alternative
+  would have made regex agree with JS and disagree with every other
+  string API in this language.
+
+  **Budget exhaustion traps.** `regress` bounds nothing; a pattern with
+  a trailing mismatch goes 4.0 ms at 17 bytes to 650 ms at 25. The fork
+  adds a budget whose exhaustion is a distinct `Err`, never a miss —
+  `test` returning `false` would be Q24's zeroed-`get` objection and
+  `search` returning `-1` would be Q20's Invalid-Date objection. The
+  budget is a Context field, so it is part of the deterministic state
+  §0.3 governs, like the seeded PRNG and the pinned clock.
+
+  The bound converts a pathological pattern from **exponential to
+  linear**, not to constant: the prefix scan and a long backreference
+  still run inside one charged unit.
+
+  **Unconditional — there is no build switch.** One was contracted and
+  then removed the same day: it was argued from binary size, and the
+  measurement showed the linker already charges that cost per
+  *program*, 80 bytes for one that never calls regex. A switch would
+  have made what the compiler accepts depend on a build flag, which
+  this project has nowhere else, at the price of a second corpus
+  meaning and a doubled gate.
+
+  **`exec`, `match`, `matchAll`, `lastIndex` and `groups` are rejected
+  for language gaps, not engine ones**, and `match` is the sharpest:
+  it **fails stock `tsc` under `strict`**, because
+  `RegExpMatchArray.index` is `index?: number`. Invariant 5 excludes
+  it; no design choice was involved.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided

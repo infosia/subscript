@@ -192,15 +192,14 @@ order rule (JS `Map`/`Set` are insertion-ordered — determinism, §0.3,
 requires pinning it), the key-kind whitelist, and the growth/rehash
 policy under the no-implicit-GC memory model.
 
-**`RegExp` — non-goal reversed, as an opt-in build feature (owner
-decision 2026-07-27.)** It was a permanent non-goal; §15 contracts it
-behind a Cargo feature that is **off by default**, so the default
-language is unchanged and a ship binary that does not ask for regex
-pays nothing. The evidence the reversal required is in §15.1: both
-constraints the `js-api-sweep.md` audit recorded as unchecked were
-checked and both resolve in favour of adoption, and the one real cost —
-**+537 KB of linked binary** — is what the feature switch exists to
-make optional.
+**`RegExp` — non-goal reversed (owner decision 2026-07-27).** It was a
+permanent non-goal; §15 contracts it, **unconditionally**. The evidence
+the reversal required is in §15.1: both constraints the
+`js-api-sweep.md` audit recorded as unchecked were checked and both
+resolve in favour of adoption. The one real cost — **+5.12 MB of
+linked binary** — is charged by the linker to the programs that
+actually call regex, and is 80 bytes for those that do not, which is
+why §15.2 has no build switch.
 
 **Stdlib non-goals** (permanent unless revised with evidence):
 `Intl`/locale- and Unicode-table-dependent behavior
@@ -1230,7 +1229,7 @@ attributable to a `for…of`**, verified through
 `sub_rt_ctx_live_allocations` (§18.2d) before and after a loop over a
 populated container.
 
-## 15. P23 — regular expressions, behind an off-by-default feature (Q31)
+## 15. P23 — regular expressions (Q31)
 
 ### 15.1 The evidence the reversal required
 
@@ -1301,43 +1300,61 @@ in favour of adoption:
   from a 25-byte string is not a close call — but the contract cites
   the tree it will ship, not the tree it first measured.
 
-Against these, one cost, and it is the reason for the feature switch:
-**+537 KB of linked binary**, roughly doubling the runtime's
-contribution (438 KB → 963 KB). About 343 KB of that is Unicode
-property and case-folding tables, which dead-strip cannot remove
-because `Regex::new` can parse `\p{…}`, and `regress` offers no feature
-to drop them.
+The cost is larger than first estimated and is charged differently.
+*(Corrected 2026-07-27; the +537 KB below the line was measured on
+0.10.4 with a trivial call site and is **wrong by an order of
+magnitude** for the vendored 0.11.1+ tree and the real shim.)*
+Measured on the shipping configuration, arm64, `-dead_strip` and
+stripped:
 
-### 15.2 The feature is off by default, and the checker knows
+| build | linked |
+|---|---:|
+| default | 323,416 B |
+| **feature on, regex unused** | **323,496 B** (+80 B) |
+| **feature on, regex called** | **5,447,000 B** (**+5.12 MB**) |
 
-`subscript-runtime` and `subscript-compiler` both carry a `regex`
-feature, **off by default**. `codegen` propagates it.
+Two things follow, and the second was not anticipated:
 
-**The checker must know, not just the runtime.** With the feature only
-on the runtime, a program using regex would type-check and then fail to
-**link** — a linker error rather than a diagnostic, against invariant
-6. With the feature off the checker rejects the whole regex surface at
-S014, saying the build does not have it.
+- **+5.12 MB, not +537 KB.** Mostly Unicode property and case-folding
+  tables, which dead-strip cannot remove once `Regex::new` is reachable
+  because it can parse `\p{…}`, and `regress` offers no feature to drop
+  them.
+- **The cost is charged per program, by the linker.** A build whose
+  program never calls regex pays **80 bytes**. This is why §15.2 has no
+  feature switch: the thing a switch would have made optional is
+  already optional, and paid for only by the programs that use it.
 
-So the default language is **unchanged**, and this is an opt-in
-capability rather than a widening of the language. A mobile ship target
-pays the 537 KB only if it asks.
+### 15.2 Always enabled — the feature switch was removed
 
-**This is the workspace's first Cargo feature**, and it makes *what the
-language accepts* depend on a build flag — which is new, and touches
-three things that assumed otherwise:
+**Owner decision 2026-07-27: regex is unconditional.** There is no
+Cargo feature and no build configuration in which the language differs.
 
-- **The generated API reference** (`compiler.md` §17) has a
-  byte-identical regeneration test. It is generated from the
-  **feature-on** build, and every regex row is marked as requiring the
-  feature. One reference, honestly labelled, rather than two.
-- **The corpus is the executable definition** (CLAUDE.md principle 2).
-  Regex entries live in the corpus but are **skipped when the feature
-  is off**, and the count assertion accounts for them separately.
-- **The standing differential gate** runs **both** configurations —
-  default over the existing corpus, feature-on over the existing corpus
-  plus the regex entries. The incremental cost is the regex entries,
-  not a doubled suite.
+*(This section first contracted an off-by-default `regex` feature,
+argued from binary size. §15.1 measured that argument away: a build
+with the feature **on** whose program never calls regex costs **80
+bytes**, because the linker's dead-strip removes the engine and its
+Unicode tables. The cost is charged per **program**, by the linker,
+and always was — the feature switch was solving a problem that did not
+exist.)*
+
+What removing it costs, stated rather than glossed: **every build now
+fetches the fork**, including builds by people who never write a
+regex. That is a real dependency on a personal fork, and the answer to
+it is §15.6's upstreaming, not a feature flag.
+
+What it buys is that there is **one language**. A feature would have
+made *what the compiler accepts* depend on a build flag, which is not
+a thing this project had anywhere, and which §15.2 had to work around
+in three places:
+
+- the generated API reference (`compiler.md` §17) would have needed
+  per-configuration labelling;
+- corpus entries would have run in only one configuration, weakening
+  "the corpus is the executable definition" (CLAUDE.md principle 2);
+- the differential gate would have run twice.
+
+None of that is needed now. The checker has one answer, the corpus has
+one meaning, and the gate runs once.
 
 ### 15.3 Surface — the allocation-free core only
 
@@ -1362,8 +1379,12 @@ Accepted with the feature on:
   the prelude the way `Map.getOr` and the ES2024 `Set` algebra already
   are, and verified `tsc`-clean
 
-Every one of these returns a scalar or a string, so **a call allocates
-nothing** once the `RegExp` exists.
+`test`, `search` and the capture extents return a scalar, so those
+allocate nothing once the `RegExp` exists. *(Corrected 2026-07-27: this
+section claimed every call was allocation-free, which is wrong —
+`replace`/`replaceAll` allocate the result string and `split` allocates
+the array and each element. They are Context allocations like any other
+string result, not a new category, but the blanket claim was false.)*
 
 **Rejected, and blocked by the language rather than by the engine** —
 the diagnostics must say which:
@@ -1459,14 +1480,12 @@ evidence for anything.
 
 `regress` has no execution budget at any version, so the patch is ours.
 
-**A first version was written against 0.10.4 and does not port
-mechanically**: it fails to apply even to 0.10.5, where
+**A first version was written against 0.10.4 and did not port
+mechanically** — it failed to apply even to 0.10.5, where
 `classicalbacktrack.rs` changed its SCM calls, its non-greedy
-backtracking and its anchor instructions. It is kept as
-`vendor/regress-budget.patch` for its design — the budget state, the
-distinguishable exhaustion error, and the charging of the inner scan
-loops are all reusable — but **the patch that lands is written against
-the vendored tree and measured there.**
+backtracking and its anchor instructions. Its design was reused and the
+file itself is gone; the patch that shipped was written against the
+vendored tree and measured there.
 
 The API shape it settled is right and is contract:
 
@@ -1506,21 +1525,21 @@ budget a trap the contract requires, and a build without it ships the
 
 ### 15.7 Corpus and gate (pre-registered)
 
-Accept (feature-on only): a battery over `test`/`search`/`replace`/
+Accept: a battery over `test`/`search`/`replace`/
 `replaceAll`/`split`, captures via `matchStart`/`matchEnd`, **a
 non-ASCII subject pinning that offsets are bytes**, empty-match
 iteration, and every ECMA `$` form including `$1`–`$99` and `$<name>`.
 Reject: `exec`, `match`, `matchAll`, `lastIndex`, `groups`, each S014
-naming **the language gap that blocks it**, not the surface form. Also
-reject the whole surface **with the feature off**, at S014 saying the
-build lacks it.
+naming **the language gap that blocks it**, not the surface form. 
 
 Traps, tuple-identical across tiers, as `cemit` tests: budget
-exhaustion, and a `new RegExp` whose nesting exceeds the pre-check.
+exhaustion. *(A nesting-depth trap was also listed here; §15.4 records
+that upstream fixed the hazard, so an over-nested pattern is an
+ordinary compile `Err` and needs no separate trap.)*
 
-Gate: the standing differential gate byte-exact on both tiers **in both
-feature configurations**; `tsc` zero errors with unchanged config in
-both — the `match` rejection is only checkable because `tsc` rejects it
-too; goldens from the dev tier; rejects at pinned S014 positions; and
-**a linked-binary size line**, since +537 KB is what this feature
-charges and it is pre-registered rather than discovered.
+Gate: the standing differential gate byte-exact on both tiers; `tsc`
+zero errors with unchanged config — the `match` rejection is only
+checkable because `tsc` rejects it too; goldens from the dev tier; rejects at pinned S014 positions; and
+**a linked-binary size line** for a program that uses regex and one
+that does not, since the charge differs by an order of magnitude
+between them and §15.1's first estimate was wrong by one.
