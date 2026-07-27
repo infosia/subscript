@@ -1,7 +1,15 @@
 # Standard library — contract
 
-Status: Rev 1, 2026-07-25 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list). Evidence lands in
-`specs/tracking/p9-stdlib.md`.
+Status: Rev 12, 2026-07-27 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
+the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
+P23 regex contract and removes the `regex` feature from it; Rev 12,
+2026-07-27, corrects §15.1's binary-size table a second time — the
++5.12 MB attributed to regex was a mismatched pair, the engine is
+632 KB linked, and the 4.25 MiB `CODE_POINT_UTF8` static it displaced
+is this runtime's own — adds §15.6a for `find_from_budgeted`, and
+withdraws §15.7's claim that the `tsc` gate covers reject entries).
+Evidence lands in `specs/tracking/p9-stdlib.md`.
 
 ## 0. Design rules (all stdlib, permanent)
 
@@ -1300,29 +1308,47 @@ in favour of adoption:
   from a 25-byte string is not a close call — but the contract cites
   the tree it will ship, not the tree it first measured.
 
-The cost is larger than first estimated and is charged differently.
-*(Corrected 2026-07-27; the +537 KB below the line was measured on
-0.10.4 with a trivial call site and is **wrong by an order of
-magnitude** for the vendored 0.11.1+ tree and the real shim.)*
-Measured on the shipping configuration, arm64, `-dead_strip` and
-stripped:
+**The cost is charged per program, by the linker — and the size of
+that charge was measured wrong twice.** *(Corrected 2026-07-27, second
+time, after the feature was removed. The figures below replace a table
+that reported **+5.12 MB** for regex and declared the feasibility
+investigation's +537 KB "wrong by an order of magnitude". That verdict
+is withdrawn: +537 KB was approximately right, and the 5.12 MB was an
+artefact of comparing two differently-shaped programs.)*
 
-| build | linked |
-|---|---:|
-| default | 323,416 B |
-| **feature on, regex unused** | **323,496 B** (+80 B) |
-| **feature on, regex called** | **5,447,000 B** (**+5.12 MB**) |
+arm64, ship-C, `-O2`, `-dead_strip`, stripped. Four linked programs,
+each naming exactly which runtime entry points it reaches:
 
-Two things follow, and the second was not anticipated:
+| program | linked | Δ vs. row above |
+|---|---:|---:|
+| `main` returning 0 | 16,824 B | — |
+| + create a Context | 323,536 B | +306,712 B |
+| + print a string | 4,814,904 B | **+4,491,368 B** |
+| + call a regex | 5,447,032 B | **+632,128 B** |
 
-- **+5.12 MB, not +537 KB.** Mostly Unicode property and case-folding
-  tables, which dead-strip cannot remove once `Regex::new` is reachable
-  because it can parse `\p{…}`, and `regress` offers no feature to drop
-  them.
-- **The cost is charged per program, by the linker.** A build whose
-  program never calls regex pays **80 bytes**. This is why §15.2 has no
-  feature switch: the thing a switch would have made optional is
-  already optional, and paid for only by the programs that use it.
+Attributed by link map, the regex-calling program's bytes are
+**`regress` 501,433 B** against **`subscript_runtime` 4,832,058 B**.
+
+- **The regex engine costs ~500 KB of crate, ~632 KB linked** — the
+  Unicode property and case-folding tables are real but are not
+  megabytes. The earlier +5.12 MB compared *Context-only* against
+  *Context + regex*, and regex reaches string construction, so the
+  difference **charged regex for a table the measurement's baseline had
+  simply not reached yet**. Against a baseline that prints — which is
+  every real program — the charge is 632 KB.
+- **A single 4,456,448-byte static in this project's own runtime is the
+  largest thing in a shipped binary**, and it is not regex.
+  `context::CODE_POINT_UTF8` is `[u32; 0x110000]` — every Unicode
+  scalar's UTF-8 bytes — so that `charAt` can return a handle into
+  static memory without allocating. Any program that touches a string
+  pays it. It is **7× the regex engine**, it predates P23, and no size
+  line existed to reveal it until this one was drawn. Recorded here
+  because P23's measurement found it; reducing it is not P23's work
+  (`p23-regex.md`, carried forward).
+- **Both are still charged per program.** A program that never calls
+  regex does not link `regress`; §15.2's argument for removing the
+  feature is unaffected, and strengthened — the switch would have made
+  632 KB optional while 4.25 MB stayed mandatory and unmentioned.
 
 ### 15.2 Always enabled — the feature switch was removed
 
@@ -1330,12 +1356,11 @@ Two things follow, and the second was not anticipated:
 Cargo feature and no build configuration in which the language differs.
 
 *(This section first contracted an off-by-default `regex` feature,
-argued from binary size. §15.1 measured that argument away: a build
-with the feature **on** whose program never calls regex costs **80
-bytes**, because the linker's dead-strip removes the engine and its
-Unicode tables. The cost is charged per **program**, by the linker,
-and always was — the feature switch was solving a problem that did not
-exist.)*
+argued from binary size. §15.1 measured that argument away: the linker
+does not link `regress` into a program that never calls regex, so the
+cost is charged per **program**, by dead-strip, and always was — the
+feature switch was solving a problem that did not exist. It would also
+have been a switch for the **smaller** of the two costs §15.1 found.)*
 
 What removing it costs, stated rather than glossed: **every build now
 fetches the fork**, including builds by people who never write a
@@ -1358,13 +1383,17 @@ one meaning, and the gate runs once.
 
 ### 15.3 Surface — the allocation-free core only
 
-Accepted with the feature on:
+Accepted:
 
 - **`new RegExp(pattern: string, flags?: string)`** and the **literal
   form** `/pat/flags`. The literal costs one match arm — the compiler
   wraps `swc`, which already resolves the `/` ambiguity — and it lets
-  the pattern be **validated at check time**, which is invariant 6 and
-  also removes the hazard in §15.4 for literals entirely.
+  the pattern be **validated at check time**, which is invariant 6. It
+  removes §15.4's *compile* hazard for literals: a malformed or
+  over-nested literal is a checker rejection rather than a runtime
+  `Err`. It does **not** remove the budget hazard — a literal is
+  matched at runtime like any other pattern and exhausts like any
+  other.
 - `re.test(s): boolean`, `re.source: string`, `re.flags: string`
 - `s.search(re): i32` — **byte offset**, −1 on no match
 - `s.replace(re, repl)` / `s.replaceAll(re, repl)` — using **this
@@ -1461,11 +1490,11 @@ exact commit — the same reproducibility as a submodule, without
 to `submodule update`. The workspace already resolves git dependencies
 this way for other crates.)*
 
-The branch base is deliberate — not the tag.
-That is deliberate: the commits between `v0.11.1` and the pinned base
-include **`Harden regress against stack overflow`**, which removes
-§15.4's second hazard outright. Branching from the tag would have
-re-introduced a defect this contract had written a workaround for.
+The branch base is deliberate — not the tag. The commits between
+`v0.11.1` and the pinned base include **`Harden regress against stack
+overflow`**, which removes §15.4's second hazard outright. Branching
+from the tag would have re-introduced a defect this contract had
+written a workaround for.
 
 Upstream publishes tags (`v0.7.0` … `v0.11.1`) but the fork carried
 none; they are fetched from upstream by ref rather than assumed.
@@ -1473,10 +1502,11 @@ none; they are fetched from upstream by ref rather than assumed.
 **The version this contract targets is `0.11.1`+, not the `0.10.4` the
 feasibility investigation measured.** The design it produced ports —
 `MatchAttempter`, `try_at_pos` and the `'nextinsn` loop are all still
-there — but **its measurements do not**: the overhead ratios, the
-budget calibration and the 2.61 s blowup figure were taken on 0.10.4
-and must be re-measured on the vendored tree before they are cited as
-evidence for anything.
+there — but **its measurements did not**: the overhead ratios and the
+blowup figure were taken on 0.10.4. They were re-measured on the
+vendored tree; §15.1 carries the vendored-tree numbers and marks which
+of the three measurement rounds each figure came from. No 0.10.4
+figure is cited as evidence anywhere in this contract.
 
 `regress` has no execution budget at any version, so the patch is ours.
 
@@ -1498,6 +1528,42 @@ Regex::find_budgeted(&self, text: &str, budget: u64)
 `Err` is the trap. §15.4's requirement that exhaustion never look like
 a miss is satisfied by the type, not by a convention.
 
+#### 15.6a Repeated matching — a start offset, never a slice
+
+`replace`, `replaceAll`, `split` and empty-match iteration all search
+again from a position. The fork carries a second entry point for that,
+and it is contract that they use it:
+
+```rust
+Regex::find_from_budgeted(&self, text: &str, start: usize, budget: u64)
+    -> Result<Option<Match>, BudgetExhausted>
+```
+
+- **The engine receives the whole subject.** `start` is where matching
+  begins; `start` and every returned range are **absolute UTF-8 byte
+  offsets** into that subject, the same domain as Q5 and as
+  `search`'s return.
+- **A caller must not emulate this with `&text[start..]`.** Assertions
+  are defined against the whole subject: `\b`, lookbehind, and `^`
+  without `m` all inspect what precedes `start`. Slicing hides it and
+  the engine cannot tell the difference — it reports a match that ECMA
+  says does not exist.
+
+  This is not hypothetical. The shim first sliced, and
+  `"XXX".replaceAll(/(?<=X)X/g, "Z")` produced **`XZX`** where node
+  gives **`XZZ`**: after the first replacement the lookbehind was
+  looking at the start of a slice instead of at the preceding `X`. The
+  entry point exists because of that divergence.
+- **The distinction survives repetition.** `Err(BudgetExhausted)` stays
+  distinct from `Ok(None)` on the *n*-th search, not only the first.
+- **Late exhaustion traps the whole operation.** A `replaceAll` that
+  exhausts on its fourth match returns no string at all — never a
+  partially substituted one. §15.4's rule is about the operation, not
+  about a search.
+- **`split` ignores an empty separator at the terminal position** of a
+  non-empty subject, matching ECMA: `"ab".split(/(?:)/)` is
+  `["a","b"]`, not `["a","b",""]`.
+
 **Upstreaming as-is is unlikely.** Upstream would want one
 fuel/cancellation API across the iterator, ASCII, UTF-16 and PikeVM
 paths, not a UTF-8 one-shot, and would want a policy for charging the
@@ -1505,23 +1571,21 @@ prefix search and backreferences. That does not gate P23 (§15.6), but
 it is why the fork is expected to persist rather than being a short
 detour.
 
-**Decided 2026-07-27: a fork, referenced as a git submodule.** CLAUDE.md
-forbids a committed reference to any path outside the repository, and a
-submodule is the form that rule names. The submodule pins an exact
-commit, so the dependency is as reproducible as the `=1.0.3` pin on
-`ryu-js`.
-
 Upstreaming the budget remains worth doing — it would return the
 dependency to a plain version pin and benefits other users — but
 acceptance and timing are outside this project's control, so it does
 not gate P23.
 
 **Sequencing.** The patch is authored and reviewed here first; the fork
-and its push are the owner's (network operations are, CLAUDE.md). Until
-the submodule exists, P23 may be implemented against the unpatched
-crate from the registry, but it **cannot be COMPLETE**: §15.4 makes the
-budget a trap the contract requires, and a build without it ships the
-2.61-second hang §15.1 measured.
+and its push are the owner's (network operations are, CLAUDE.md). P23
+may be implemented against the unpatched crate while the branch is
+being prepared, but it **cannot be COMPLETE** until `Cargo.lock` pins a
+commit carrying the budget: §15.4 makes exhaustion a trap the contract
+requires, and a build without it ships the 2.61-second hang §15.1
+measured.
+
+**Pinned 2026-07-27 at `1e1d0a90`**, which carries two commits — the
+execution budget, and the start-position entry point §15.6a requires.
 
 ### 15.7 Corpus and gate (pre-registered)
 
@@ -1530,7 +1594,15 @@ Accept: a battery over `test`/`search`/`replace`/
 non-ASCII subject pinning that offsets are bytes**, empty-match
 iteration, and every ECMA `$` form including `$1`–`$99` and `$<name>`.
 Reject: `exec`, `match`, `matchAll`, `lastIndex`, `groups`, each S014
-naming **the language gap that blocks it**, not the surface form. 
+naming **the language gap that blocks it**, not the surface form.
+
+**The `tsc` gate does not cover these, and cannot.** `corpus/reject` is
+excluded from `tsconfig.json` deliberately: a reject entry is usually
+*valid* TypeScript that this language narrows away (invariant 5), so
+`tsc` accepting it is the expected result, not a failure to detect.
+The prelude's omission of `match`/`exec` does mean an editor flags them
+— which is the point of invariant 5 — but that is a property of the
+prelude, checked by the S014 positions above, not by the `tsc` run.
 
 Traps, tuple-identical across tiers, as `cemit` tests: budget
 exhaustion. *(A nesting-depth trap was also listed here; §15.4 records
@@ -1538,8 +1610,14 @@ that upstream fixed the hazard, so an over-nested pattern is an
 ordinary compile `Err` and needs no separate trap.)*
 
 Gate: the standing differential gate byte-exact on both tiers; `tsc`
-zero errors with unchanged config — the `match` rejection is only
-checkable because `tsc` rejects it too; goldens from the dev tier; rejects at pinned S014 positions; and
-**a linked-binary size line** for a program that uses regex and one
-that does not, since the charge differs by an order of magnitude
-between them and §15.1's first estimate was wrong by one.
+zero errors with unchanged config; goldens from the dev tier; rejects
+at pinned S014 positions; and
+**a linked-binary size line**.
+
+The size line is **a matched pair**: two programs differing only in
+whether they call a regex, both reaching everything else the other
+reaches. §15.1 got the number wrong twice, and the second time the
+error was entirely methodological — the two programs compared did not
+otherwise match, so a 4.25 MB table only one of them reached was
+attributed to regex. A size measurement that does not name what both
+sides link is not evidence.
