@@ -1252,35 +1252,54 @@ in favour of adoption:
   immediately, while the same pattern with one non-matching character
   appended goes **4.0 ms at 17 bytes to 650 ms at 25**.
 
-  *(Corrected 2026-07-27. This section first said the budget cost "no
-  detectable overhead", from the feasibility investigation's 0.92–1.03
-  ratios. Writing the patch and measuring it again did not reproduce
-  that.)* Measured against a control of 0.918–1.069 for two unmodified
-  builds, the patched ratios are:
+  *(Measured three times, on three trees, with three different answers
+  — so the number below is the vendored tree's, and the earlier two are
+  kept only to say why they are not cited. The feasibility
+  investigation reported "no detectable overhead" on 0.10.4; a first
+  patch, also on 0.10.4, reported 11–15%; the ported patch on the
+  vendored tree reports the following.)*
 
-  | pattern | patched / unpatched |
-  |---|---:|
-  | literal | 1.000 |
-  | backreference | 1.048 |
-  | alternation | 1.046 |
-  | multi-group | 1.108 |
-  | lookahead | 1.142 |
-  | `\d+` | 1.147 |
-  | character class | 1.143 |
+  **Overhead on the vendored tree: 2–7%, and free on a literal.**
+  Control ratios between two unmodified builds run 0.950–1.009, so
+  anything under about 5% overlaps build noise:
 
-  So **11–15% on patterns dominated by long single-character scans**,
-  and free on a literal. The bound holds and no longer grows with input
-  length: exhaustion at a budget of 1e5 costs 357–742 µs across inputs
-  from 25 to 257 bytes, and the `.*.*.*.*b` scan gap that previously
-  scaled with input is now 225/156/105 µs at 16/64/256 KiB.
+  | pattern | control B/A | patched/A | patched/B |
+  |---|---:|---:|---:|
+  | literal | 1.000 | 0.989 | 0.989 |
+  | backreference | 0.950 | 0.995 | 1.047 |
+  | multi-group | 0.960 | 1.016 | 1.059 |
+  | lookahead | 0.954 | 1.019 | 1.069 |
+  | character class | 0.983 | 1.036 | 1.054 |
+  | alternation | 0.978 | 1.052 | 1.075 |
+  | `\d+` | 1.009 | 1.069 | 1.060 |
 
-  **It is not complete wall-clock fuel**: the prefix byte search and a
-  long backreference can still be O(input) inside a single charged
-  instruction. The bound is on backtracking work, not on time.
+  No pattern class regressed badly; the worst ratio measured is 1.075.
 
-  The decision is unchanged by the cost — 11–15% against an unbounded
-  hang is not a close call — but the contract should not claim a
-  cheaper number than the one measured.
+  **The bound binds, and tracks the budget rather than the input.**
+  `(a+)+$` with a trailing mismatch, every call exhausting — verified
+  independently by the orchestrator at **403–416 µs for budget 1e5
+  across inputs of 25, 257 and 1025 bytes**. The `.*.*.*.*b` scan gap
+  no longer scales either: 184/128/89 µs at 16/64/256 KiB.
+
+  **What the budget does not cover, now quantified.** It bounds
+  *backtracking work*, not wall-clock time, and two paths sit outside
+  it:
+
+  - the **prefix byte search** runs before the first charged dispatch,
+    so `z.*!` over a 256 MiB haystack takes **4.18 ms even at budget
+    1** — linear in input, and unavoidable in the sense that any match
+    must at least look at the input;
+  - a **long backreference** compares inside one charged instruction:
+    at a 64 MiB capture, moving the mismatch to the end adds **49.7 ms
+    within a single unit**.
+
+  So the budget's guarantee is that a pathological pattern becomes
+  **linear rather than exponential**, not that a call fits a frame. A
+  host that feeds megabytes to a regex still needs to think about it.
+
+  The decision is unchanged by any of this — 2–7% against a 650 ms hang
+  from a 25-byte string is not a close call — but the contract cites
+  the tree it will ship, not the tree it first measured.
 
 Against these, one cost, and it is the reason for the feature switch:
 **+537 KB of linked binary**, roughly doubling the runtime's
