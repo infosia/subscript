@@ -11,14 +11,14 @@ Snapshot captured 2026-07-27. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: Apple clang version 21.0.0 (clang-2100.1.1.101)
-- **subscript**: subscript @ 7f84729 (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ 410bbee (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/
 - **JSC**: JavaScriptCore (macOS 26.5.2)
 - **V8 (Node.js)**: Node.js v24.18.0
 
 ## Method
 
-Every subject that runs discards at least 3 warm-up iterations and continues until measured workload execution reaches the 200 ms floor, then performs 11 timed runs and reports the median. `--warmup` is the minimum iteration count; the time floor is always additional. The runner rejects a subject that reports less than the floor or fewer than the requested iterations. Only workload execution is timed. C is the 1.00x reference; every other subject is `ratio (median)`. C, LuaJIT, JSC, and V8 self-time and report every sample; the two subscript tiers are timed by the runner (the language has no clock primitive). Every subject that runs computes the identical integer checksum for a workload — unavailable subjects contribute no checksum, and the runner withholds a workload's timings if any measured checksum differs.
+Every subject that runs discards at least 3 warm-up iterations and continues until measured workload execution reaches the 200 ms floor, then performs 11 timed runs and reports the median. `--warmup` is the minimum iteration count; the time floor is always additional. The runner rejects a subject that reports less than the floor or fewer than the requested iterations. Every workload/subject measurement runs in a fresh process; the runner re-execs itself for each subscript-jit workload. Only workload execution is timed. C is the 1.00x reference; every other subject is `ratio (median)`. C, LuaJIT, JSC, and V8 self-time and report every sample; the two subscript tiers are timed by the runner (the language has no clock primitive). Every subject that runs computes the identical integer checksum for a workload — unavailable subjects contribute no checksum, and the runner withholds a workload's timings if any measured checksum differs.
 
 **Span note.** The C/LuaJIT/JSC/V8 subjects time only the `workload()` call and print the checksum afterward; the two subscript tiers time the whole exported `main()`, which includes formatting and writing the one-line integer checksum to the runtime sink. That is a sub-microsecond step inside subscript's span but outside the others' — a conservative difference that penalizes subscript, retained because the ship-tier AOT timing entry and `jit_bench` are shared with the P4 performance gate and time the exported entry by contract.
 
@@ -26,18 +26,47 @@ Every subject that runs discards at least 3 warm-up iterations and continues unt
 
 | Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|---|
-| collect | 1332546592 | 1.00x (33.931 ms) | 6.28x (213.256 ms) | 6.67x (226.360 ms) | 3.83x (129.993 ms) | 1.00x (33.780 ms) | 2.60x (88.320 ms) |
+| fib-recursive | 1346269 | 1.00x (3.665 ms) | 0.99x (3.643 ms) | 2.21x (8.099 ms) | 1.92x (7.024 ms) | 1.48x (5.440 ms) | 2.65x (9.698 ms) |
+| fib-loop | 973132000 | 1.00x (29.468 ms) | 1.03x (30.352 ms) | 2.01x (59.192 ms) | 1.51x (44.530 ms) | 1.09x (32.240 ms) | 1.59x (46.707 ms) |
+| mandelbrot | 43027996 | 1.00x (124.831 ms) | 1.00x (124.899 ms) | 1.05x (130.729 ms) | 2.82x (351.658 ms) | 1.00x (125.120 ms) | 1.00x (125.412 ms) |
+| primes | 41538 | 1.00x (21.711 ms) | 0.96x (20.925 ms) | 1.46x (31.694 ms) | 2.10x (45.683 ms) | 0.93x (20.120 ms) | 1.71x (37.197 ms) |
+| sort | 3672124540 | 1.00x (15.309 ms) | 1.25x (19.074 ms) | 5.10x (78.012 ms) | 2.28x (34.882 ms) | 1.49x (22.780 ms) | 1.83x (27.989 ms) |
+| tree | 3932130 | 1.00x (65.205 ms) | 1.69x (110.360 ms) | 10.32x (673.057 ms) | 2.17x (141.819 ms) | 0.32x (21.160 ms) | 0.47x (30.630 ms) |
+| queen | 73712 | 1.00x (23.633 ms) | 1.04x (24.639 ms) | 1.49x (35.187 ms) | 1.50x (35.392 ms) | 1.23x (28.980 ms) | 1.76x (41.536 ms) |
+| particles | 1712845248 | 1.00x (38.715 ms) | 1.94x (75.041 ms) | 15.98x (618.649 ms) | 3.83x (148.400 ms) | 1.90x (73.680 ms) | 3.58x (138.514 ms) |
+| callbacks | -662567840 | 1.00x (13.027 ms) | 22.89x (298.235 ms) | 25.78x (335.831 ms) | 9.38x (122.230 ms) | 5.10x (66.400 ms) | 29.66x (386.325 ms) |
+| collect | 1332546592 | 1.00x (32.484 ms) | 6.46x (209.758 ms) | 6.82x (221.703 ms) | 3.71x (120.400 ms) | 1.04x (33.900 ms) | 2.60x (84.549 ms) |
 
 ## Measured warm-up
 
 | Workload | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|
-| collect | 0.228 s (6 iterations) | 0.653 s (3 iterations) | 0.707 s (3 iterations) | 0.397 s (3 iterations) | 0.210 s (6 iterations) | 0.309 s (3 iterations) |
+| fib-recursive | 0.204 s (54 iterations) | 0.203 s (50 iterations) | 0.203 s (25 iterations) | 0.205 s (29 iterations) | 0.203 s (37 iterations) | 0.202 s (21 iterations) |
+| fib-loop | 0.201 s (6 iterations) | 0.209 s (6 iterations) | 0.235 s (4 iterations) | 0.218 s (5 iterations) | 0.225 s (7 iterations) | 0.236 s (5 iterations) |
+| mandelbrot | 0.401 s (3 iterations) | 0.407 s (3 iterations) | 0.393 s (3 iterations) | 1.051 s (3 iterations) | 0.378 s (3 iterations) | 0.379 s (3 iterations) |
+| primes | 0.205 s (8 iterations) | 0.205 s (9 iterations) | 0.222 s (7 iterations) | 0.229 s (5 iterations) | 0.202 s (10 iterations) | 0.224 s (6 iterations) |
+| sort | 0.201 s (12 iterations) | 0.211 s (11 iterations) | 0.234 s (3 iterations) | 0.210 s (6 iterations) | 0.206 s (8 iterations) | 0.205 s (7 iterations) |
+| tree | 0.227 s (3 iterations) | 0.361 s (3 iterations) | 2.057 s (3 iterations) | 0.433 s (3 iterations) | 0.207 s (9 iterations) | 0.231 s (7 iterations) |
+| queen | 0.217 s (8 iterations) | 0.202 s (7 iterations) | 0.210 s (6 iterations) | 0.213 s (6 iterations) | 0.204 s (7 iterations) | 0.208 s (5 iterations) |
+| particles | 0.200 s (5 iterations) | 0.257 s (3 iterations) | 1.858 s (3 iterations) | 0.446 s (3 iterations) | 0.253 s (3 iterations) | 0.418 s (3 iterations) |
+| callbacks | 0.212 s (14 iterations) | 0.936 s (3 iterations) | 1.023 s (3 iterations) | 0.366 s (3 iterations) | 0.233 s (3 iterations) | 1.262 s (3 iterations) |
+| collect | 0.230 s (6 iterations) | 0.645 s (3 iterations) | 0.680 s (3 iterations) | 0.366 s (3 iterations) | 0.204 s (6 iterations) | 0.288 s (3 iterations) |
+
+**callbacks interpretation.** This workload measures what the idiomatic callback spelling costs against a hand-written loop, not a codegen deficit.
 
 **collect interpretation.** This is not a cross-runtime “GC speed” claim; it compares reclaiming the pinned graph in each runtime's own explicit idiom. Ran: C, subscript-ship, subscript-jit, LuaJIT, JSC, V8 (Node.js). Could not run: none. Failed: none.
 
 ## Workload parameters
 
+- **fib-recursive** — naive recursion, fib(31); checksum = fib(31) = 1346269 (i32)
+- **fib-loop** — iterative fib, INNER=32 x OUTER=3000000, masked feedback on the accumulator; checksum = accumulated i32 sum
+- **mandelbrot** — 800x800 grid, escape test x^2+y^2>=4, cap 255, f64; checksum = sum of escape counts (i64)
+- **primes** — count primes up to 500000 by trial division (j*j<=n); checksum = count (i32)
+- **sort** — quicksort 300000 u32 from LCG state=state*1664525+1013904223 (seed 0x12345678); checksum = order-sensitive rolling hash h=h*31+a[i] (u32 wrap)
+- **tree** — 30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + unsafeDelete; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130
+- **queen** — count 13-queens solutions by bitmask backtracking; checksum = 73712 (i32)
+- **particles** — 100000 value-struct particles, 1000 steps (velocity+=acc*dt; position+=velocity*dt, dt=1.0); checksum = i32-wrapping sum of positions cast to i32. Layout: C and subscript use a packed array-of-value-structs (AoS); JS and Lua use parallel Float64Array / tables (SoA). Float64Array is the fair contiguous analog to the packed struct array, not a boxed-object strawman.
+- **callbacks** — i32[1000000] from LCG state=state*1664525+1013904223 (seed 0x12345678), K=20 rounds; map(value,index)=(value+index) i32; filter(value,index)=((value^index)&3)!=0 (removes exactly 250000 elements per round); reduce(acc,value,index)=(acc+value+index) i32 from 0; checksum=checksum+round_result (i32 wrap)
 - **collect** — N=20000 nodes x K=6 rounds from LCG state=state*1664525+1013904223 (seed 0x12345678); each 48-byte node owns unique strings of lengths 9/41/105/233 bytes (subscript requests 17/49/113/241 bytes, one byte past size-class payload capacities 16/48/112/240); keep exactly the nodes with (state&3)!=0 (15000 survivors/round), drop the rest, force collection (C: explicitly free), then traverse the surviving reverse-built chain; checksum per survivor in traversal order is checksum=(checksum*31+state+9+41+105+233) with i32 wrap; final checksum=1332546592
 
 Noise: every recorded sample set is within +/-20% of its median.

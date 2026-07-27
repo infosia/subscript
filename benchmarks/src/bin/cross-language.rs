@@ -10,7 +10,8 @@
 //!   (`subscript_codegen::emit_c`), compiled `clang -std=c11 -O2 -fwrapv
 //!   -ffp-contract=off` and linked with the runtime static library and the AOT
 //!   timing entry, then timed on the exported workload call.
-//! - **subscript-jit** — the dev tier (`subscript_codegen::jit_bench`).
+//! - **subscript-jit** — the dev tier (`subscript_codegen::jit_bench`), run in
+//!   a fresh re-exec child for each workload.
 //! - **LuaJIT**, **JSC**, **V8 (Node.js)** — self-timed scripts, one per
 //!   language dir, located at run time via `$LUAJIT` / `$JSC` / `$NODE` or
 //!   `PATH`. An absent runtime is reported as `-`, never as a failure.
@@ -28,6 +29,7 @@
 //! tools).
 
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Duration;
@@ -161,6 +163,7 @@ struct Args {
     timed: usize,
     only: Option<String>,
     check: bool,
+    jit_child: Option<PathBuf>,
 }
 
 /// Parses the command line.
@@ -170,6 +173,7 @@ fn parse_args() -> Result<Args, Fail> {
         timed: DEFAULT_TIMED,
         only: None,
         check: false,
+        jit_child: None,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -180,7 +184,7 @@ fn parse_args() -> Result<Args, Fail> {
                 a.check = true;
                 i += 1;
             }
-            "--warmup" | "--timed" | "--only" => {
+            "--warmup" | "--timed" | "--only" | "--jit-child" => {
                 let value = argv
                     .get(i + 1)
                     .ok_or_else(|| format!("{flag} needs a value"))?;
@@ -191,7 +195,8 @@ fn parse_args() -> Result<Args, Fail> {
                     "--timed" => {
                         a.timed = value.parse().map_err(|_| format!("--timed: `{value}`"))?
                     }
-                    _ => a.only = Some(value.clone()),
+                    "--only" => a.only = Some(value.clone()),
+                    _ => a.jit_child = Some(PathBuf::from(value)),
                 }
                 i += 2;
             }
@@ -206,6 +211,10 @@ fn parse_args() -> Result<Args, Fail> {
             a.warmup, a.timed
         ));
     }
+    if a.jit_child.is_some() && (a.only.is_some() || a.check) {
+        return Err("the private --jit-child mode cannot be combined with --only or --check"
+            .to_string());
+    }
     Ok(a)
 }
 
@@ -217,6 +226,9 @@ fn run() -> Result<ExitCode, Fail> {
             .to_string());
     }
     let args = parse_args()?;
+    if let Some(source) = &args.jit_child {
+        return run_jit_child(source, args.warmup, args.timed);
+    }
     // `root` holds the generated results.json/README.md; the per-language
     // workload sources live under `root/workloads/{subscript,c,js,lua}/`.
     let root = benchmarks_dir();
@@ -258,7 +270,7 @@ fn run() -> Result<ExitCode, Fail> {
 
         let c = measure_c(&tools, &dir, &work, id, args.warmup, args.timed);
         let ship = measure_ship(&tools, &files, &work, &staticlib, id, args.warmup, args.timed);
-        let jit = measure_jit(&files, args.warmup, args.timed);
+        let jit = measure_jit(&ts_path, args.warmup, args.timed);
         let lua = measure_script(
             &tools.luajit,
             &dir,
@@ -385,6 +397,44 @@ fn run() -> Result<ExitCode, Fail> {
     } else {
         Ok(ExitCode::SUCCESS)
     }
+}
+
+/// Runs exactly one dev-JIT workload inside the private re-exec child and
+/// reports the same warm-up/sample/checksum-stability protocol as the ship
+/// executable. Compilation, Context construction, and process startup remain
+/// outside every duration reported to the parent.
+fn run_jit_child(source: &Path, warmup: usize, timed: usize) -> Result<ExitCode, Fail> {
+    let ts_src = std::fs::read_to_string(source)
+        .map_err(|e| format!("read JIT child source {}: {e}", source.display()))?;
+    let name = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workload.ts")
+        .to_string();
+    let files = vec![SourceFile::new(name, ts_src)];
+    let bench = jit_bench_with_warmup_floor(&files, warmup, timed, WARMUP_FLOOR)
+        .map_err(|e| format!("dev-JIT: {e}"))?;
+
+    {
+        let mut stdout = std::io::stdout().lock();
+        stdout
+            .write_all(&bench.stdout)
+            .map_err(|e| format!("write JIT child checksum: {e}"))?;
+        stdout
+            .flush()
+            .map_err(|e| format!("flush JIT child checksum: {e}"))?;
+    }
+    eprintln!(
+        "warmup {} {}",
+        bench.warmup_iterations,
+        bench.warmup.as_nanos()
+    );
+    for (index, sample) in bench.samples.iter().enumerate() {
+        eprintln!("sample {index} {}", sample.as_nanos());
+    }
+    // `jit_bench_with_warmup_floor` rejects output that changes between calls.
+    eprintln!("checksum-stable 1");
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Runs each subscript workload through the dev JIT once and prints its
@@ -599,18 +649,18 @@ fn measure_ship(
     }
 }
 
-/// Times the dev-tier JIT on the workload.
-fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Outcome {
-    match jit_bench_with_warmup_floor(files, warmup, timed, WARMUP_FLOOR) {
-        Ok(b) => finish(
-            &b.stdout,
-            &b.samples,
-            b.warmup,
-            b.warmup_iterations,
+/// Times the dev-tier JIT in a fresh process for this workload.
+fn measure_jit(source: &Path, warmup: usize, timed: usize) -> Outcome {
+    match run_jit_process(source, warmup, timed) {
+        Ok(run) => finish(
+            &run.stdout,
+            &run.samples,
+            run.warmup,
+            run.warmup_iterations,
             warmup,
             timed,
         ),
-        Err(e) => Outcome::Error(format!("dev-JIT: {e}")),
+        Err(e) => Outcome::Error(format!("dev-JIT child: {e}")),
     }
 }
 
@@ -928,9 +978,39 @@ fn run_looped_binary(
         .arg(warmup_floor.as_nanos().to_string())
         .output()
         .map_err(|e| format!("run {}: {e}", exe.display()))?;
+    parse_looped_output(&exe.display().to_string(), out, timed)
+}
+
+/// Re-execs this runner in its private one-workload JIT mode.
+fn run_jit_process(source: &Path, warmup: usize, timed: usize) -> Result<LoopedRun, Fail> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("locate the cross-language executable: {e}"))?;
+    let out = Command::new(&exe)
+        .arg("--jit-child")
+        .arg(source)
+        .arg("--warmup")
+        .arg(warmup.to_string())
+        .arg("--timed")
+        .arg(timed.to_string())
+        .output()
+        .map_err(|e| format!("run {} --jit-child {}: {e}", exe.display(), source.display()))?;
+    let label = format!("{} --jit-child {}", exe.display(), source.display());
+    parse_looped_output(&label, out, timed)
+}
+
+/// Parses the looped subscript-subject protocol from a completed child.
+fn parse_looped_output(
+    label: &str,
+    out: std::process::Output,
+    timed: usize,
+) -> Result<LoopedRun, Fail> {
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
-        return Err(format!("{} exited with {}: {}", exe.display(), out.status, stderr.trim()));
+        return Err(format!(
+            "{label} exited with {}: {}",
+            out.status,
+            stderr.trim()
+        ));
     }
     let mut samples = Vec::with_capacity(timed);
     let mut stable = None;
@@ -968,16 +1048,16 @@ fn run_looped_binary(
         }
     }
     if stable != Some(true) {
-        return Err(format!("{} produced unstable output across runs", exe.display()));
+        return Err(format!("{label} produced unstable output across runs"));
     }
     if samples.len() != timed {
-        return Err(format!("{} gave {} samples, expected {timed}", exe.display(), samples.len()));
+        return Err(format!(
+            "{label} gave {} samples, expected {timed}",
+            samples.len()
+        ));
     }
     let Some((warmup_iterations, warmup)) = warmup_report else {
-        return Err(format!(
-            "{} did not report its measured warm-up time",
-            exe.display()
-        ));
+        return Err(format!("{label} did not report its measured warm-up time"));
     };
     Ok(LoopedRun {
         stdout: out.stdout,
@@ -1344,8 +1424,10 @@ fn render_readme(
          floor, then performs {timed} timed runs and reports the median. \
          `--warmup` is the minimum iteration count; the time floor is always \
          additional. The runner rejects a subject that reports less than the \
-         floor or fewer than the requested iterations. Only workload execution \
-         is timed. C is the 1.00x reference; every other subject is `ratio \
+         floor or fewer than the requested iterations. Every workload/subject \
+         measurement runs in a fresh process; the runner re-execs itself for \
+         each subscript-jit workload. Only workload execution is timed. C is \
+         the 1.00x reference; every other subject is `ratio \
          (median)`. C, LuaJIT, JSC, and V8 self-time and report every sample; \
          the two subscript tiers are timed by the runner (the language has no \
          clock primitive). Every subject that runs computes the identical \
