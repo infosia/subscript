@@ -1097,3 +1097,113 @@ benchmarks — no ship-row regression.
 about node's behaviour were measured, but the claims about what *this*
 implementation will do are provisional until an implementation
 exercises them. A pre-registration is not evidence.
+
+## 14. P22 — `for…of`, container iteration, array-literal spread (Q30)
+
+### 14.1 What `for…of` accepts
+
+`for (const x of e)` where `e` has one of these types, and **nothing
+else** — §14.2 explains why the list cannot be opened up:
+
+| `e` | binds | order |
+|---|---|---|
+| `T[]` | `T` | index order |
+| `FixedArray<T, N>` | `T` | index order |
+| `Map<K, V>` | `K` (bare `Map` iterates keys, as `keys()` does) | insertion (Q24) |
+| `Set<K>` | `K` | insertion (Q24) |
+| `string` | `string`, one **code point** per step | byte order |
+| `Generator<T>` | `T` | the coroutine's |
+
+`map.keys()`, `map.values()`, `set.values()` and the array `keys()`/
+`values()` are accepted **only as the direct subject of a `for…of`**.
+Anywhere else they are S014.
+
+`entries()` is **rejected everywhere**, including in `for…of`: it
+yields a pair, and the language has no tuple type. This is the same
+gap that keeps `new Map([[k, v]])` out, not an iterator decision.
+
+**`string` iterates code points, not bytes** — the one place the
+language's byte-measure convention (Q5) does not carry over, because
+JS's `for…of` over a string yields code points and a byte-yielding
+version would silently produce different characters rather than
+different indices. `length`, `slice` and `charCodeAt` keep their byte
+meaning.
+
+### 14.2 The list is closed, and invariant 5 closes it
+
+A user class cannot be made iterable. JS binds iteration through
+`Symbol.iterator`; `Symbol` is a permanent stdlib non-goal (§7). Any
+substitute — an `iterator()` method, a decorator, a marker interface —
+leaves the class **not iterable under stock `tsc`**, so
+`for (const x of mine)` fails the `tsc` gate and invariant 5 is broken.
+
+So the closed list is not a v1 scope decision to revisit later. It
+follows from the syntax choice, and reopening it would mean either
+adopting `Symbol` or giving up `tsc` acceptance.
+
+### 14.3 Fusion — the loop allocates nothing
+
+`for…of` **lowers to an index loop over the container's own storage**.
+No iterator object is created, on either tier.
+
+This is why §14.1 restricts `keys()`/`values()` to the `for…of`
+subject position. C5 makes callbacks non-escaping **by construction**;
+an iterator held as a value would be stateful and outlive the call that
+produced it — the first escaping temporary in the language, and a
+memory-model change (invariant 2) rather than a syntax addition. Fusing
+removes the object instead of introducing a rule about it.
+
+Cost is therefore the same as the `forEach` Q24 made the traversal, and
+`a<NN>` pins that the two spellings produce identical output.
+
+`Generator<T>` is the exception and is not new: C8 already contracts it
+as a value with `.next()`, frame-allocated by the coroutine machinery.
+A `for…of` over one drives that existing protocol.
+
+**Mutation during iteration** inherits §10.7's rule by construction,
+since the fused loop *is* the `forEach` traversal: appends after entry
+do not extend the visit, removals shorten it.
+
+### 14.4 Spread
+
+Accepted in an **array literal**: `[...xs]`, `[0, ...xs]`,
+`[...xs, ...ys]`. The result is a fresh `T[]`; element types must
+match the literal's element type as they already must.
+
+**`f(...xs)` is rejected** (S014): it needs variadic parameters, which
+the language does not have — the same missing prerequisite that keeps
+`Math.max` at two arguments (Q19). The diagnostic says so, rather than
+naming spread, because the spread is not the part that is missing.
+
+Spreadable operands are §14.1's list minus `Generator<T>`: a generator
+is single-use and spreading it would consume it, which reads as a value
+expression while being a mutation.
+
+### 14.5 Corpus and gate (pre-registered)
+
+Accept: a `for…of` battery over every §14.1 row, with the loop body
+observing the bound value so the order is pinned, including a `string`
+entry whose text is **not** ASCII so code-point stepping is
+distinguishable from byte stepping; `keys()`/`values()` in subject
+position on `Map`, `Set` and `T[]`; a `Generator<T>` driven by `for…of`
+and, separately, by hand with `.next()`, printing the same sequence; an
+entry showing `for…of` and `forEach` producing byte-identical output on
+the same container; a mutation-during-iteration entry matching §10.7;
+and a spread battery — `[...xs]`, prefix/suffix elements, two spreads,
+spread of a `Map`/`Set`/`string`.
+
+Reject: `for…of` over a user class, over `object`, over a number;
+`entries()` anywhere; `keys()` assigned to a variable, returned, or
+passed as an argument; `f(...xs)`; `new Map([[k, v]])`. Each S014 at a
+pinned position, and the variadic and tuple rejections must **name the
+missing prerequisite** rather than the surface form — §12's rule, for
+the same reason.
+
+Gate: standing differential gate byte-exact on both tiers; `tsc` zero
+errors, unchanged config — **every accept entry must type-check under
+stock `tsc`, which is what makes §14.2's argument checkable rather than
+asserted**; goldens generated from the dev tier; trap tuples identical
+across tiers; rejects at pinned S014 positions; and **no allocation
+attributable to a `for…of`**, verified through
+`sub_rt_ctx_live_allocations` (§18.2d) before and after a loop over a
+populated container.
