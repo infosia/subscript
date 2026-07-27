@@ -1343,13 +1343,21 @@ the diagnostics must say which:
   **Context field**, host-settable via `sub_rt_ctx_set_regex_budget`,
   the same shape as `sub_rt_ctx_seed_random` and `sub_rt_ctx_set_now`
   and therefore part of the deterministic Context state (§0.3).
-- **Pattern nesting aborts the process.** `Regex::new` is
-  recursive-descent with no depth limit: 8000 nested groups is a
-  **stack overflow and an unrecoverable abort**, not a catchable
-  panic. Reachable only from `new RegExp(runtimeString)` — a literal is
-  compiled at check time and is safe by construction. The shim
-  **pre-checks nesting depth before handing the string to `regress`**
-  and traps instead.
+- **Pattern nesting: fixed upstream, no shim work needed.**
+  *(Corrected 2026-07-27.)* This section first required the shim to
+  pre-check nesting depth, because the feasibility investigation —
+  measuring `regress` **0.10.4/0.10.5** — found `Regex::new` to be
+  recursive-descent with no depth limit, where 8000 nested groups was
+  an **unrecoverable process abort**.
+
+  Upstream fixed it on 2026-07-07 (`MAX_NESTING_DEPTH = 256`), after
+  the `v0.11.1` tag and before the commit this project vendors.
+  Verified in the pinned tree: depth 200 is `Ok`, depth 300 and depth
+  8000 both return `Err("Regular expression is too deeply nested")`.
+
+  A clean `Err` is a path the shim must handle anyway — every malformed
+  pattern takes it — so the hazard collapses into the existing
+  compile-failure route with no separate rule.
 
 ### 15.5 Caching the compiled pattern is contract, not optimization
 
@@ -1365,9 +1373,28 @@ thousand matches. A compiled `RegExp` is cached in Context memory and a
 literal is compiled once; this is required, not an optimization to
 consider later.
 
-### 15.6 The budget patch is not upstream
+### 15.6 The vendored fork, and its base
 
-`regress` has no budget, so the ~25-line patch is ours.
+**Vendored at `vendor/regress`, branch `subscript-exec-budget`, based
+on the upstream default branch after `v0.11.1`** — not on the tag.
+That is deliberate: the commits between `v0.11.1` and the pinned base
+include **`Harden regress against stack overflow`**, which removes
+§15.4's second hazard outright. Branching from the tag would have
+re-introduced a defect this contract had written a workaround for.
+
+Upstream publishes tags (`v0.7.0` … `v0.11.1`) but the fork carried
+none; they are fetched from upstream by ref rather than assumed.
+
+**The version this contract targets is `0.11.1`+, not the `0.10.4` the
+feasibility investigation measured.** The design it produced ports —
+`MatchAttempter`, `try_at_pos` and the `'nextinsn` loop are all still
+there — but **its measurements do not**: the overhead ratios, the
+budget calibration and the 2.61 s blowup figure were taken on 0.10.4
+and must be re-measured on the vendored tree before they are cited as
+evidence for anything.
+
+`regress` has no execution budget at any version, so the ~25-line patch
+is ours.
 
 **Decided 2026-07-27: a fork, referenced as a git submodule.** CLAUDE.md
 forbids a committed reference to any path outside the repository, and a
