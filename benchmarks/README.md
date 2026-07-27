@@ -11,7 +11,7 @@ Snapshot captured 2026-07-27. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: Apple clang version 21.0.0 (clang-2100.1.1.101)
-- **subscript**: subscript @ 410bbee (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ dfc4102 (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: LuaJIT 2.1.1784580905 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/
 - **JSC**: JavaScriptCore (macOS 26.5.2)
 - **V8 (Node.js)**: Node.js v24.18.0
@@ -26,31 +26,31 @@ Every subject that runs discards at least 3 warm-up iterations and continues unt
 
 | Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|---|
-| fib-recursive | 1346269 | 1.00x (3.665 ms) | 0.99x (3.643 ms) | 2.21x (8.099 ms) | 1.92x (7.024 ms) | 1.48x (5.440 ms) | 2.65x (9.698 ms) |
-| fib-loop | 973132000 | 1.00x (29.468 ms) | 1.03x (30.352 ms) | 2.01x (59.192 ms) | 1.51x (44.530 ms) | 1.09x (32.240 ms) | 1.59x (46.707 ms) |
-| mandelbrot | 43027996 | 1.00x (124.831 ms) | 1.00x (124.899 ms) | 1.05x (130.729 ms) | 2.82x (351.658 ms) | 1.00x (125.120 ms) | 1.00x (125.412 ms) |
-| primes | 41538 | 1.00x (21.711 ms) | 0.96x (20.925 ms) | 1.46x (31.694 ms) | 2.10x (45.683 ms) | 0.93x (20.120 ms) | 1.71x (37.197 ms) |
-| sort | 3672124540 | 1.00x (15.309 ms) | 1.25x (19.074 ms) | 5.10x (78.012 ms) | 2.28x (34.882 ms) | 1.49x (22.780 ms) | 1.83x (27.989 ms) |
-| tree | 3932130 | 1.00x (65.205 ms) | 1.69x (110.360 ms) | 10.32x (673.057 ms) | 2.17x (141.819 ms) | 0.32x (21.160 ms) | 0.47x (30.630 ms) |
-| queen | 73712 | 1.00x (23.633 ms) | 1.04x (24.639 ms) | 1.49x (35.187 ms) | 1.50x (35.392 ms) | 1.23x (28.980 ms) | 1.76x (41.536 ms) |
-| particles | 1712845248 | 1.00x (38.715 ms) | 1.94x (75.041 ms) | 15.98x (618.649 ms) | 3.83x (148.400 ms) | 1.90x (73.680 ms) | 3.58x (138.514 ms) |
-| callbacks | -662567840 | 1.00x (13.027 ms) | 22.89x (298.235 ms) | 25.78x (335.831 ms) | 9.38x (122.230 ms) | 5.10x (66.400 ms) | 29.66x (386.325 ms) |
-| collect | 1332546592 | 1.00x (32.484 ms) | 6.46x (209.758 ms) | 6.82x (221.703 ms) | 3.71x (120.400 ms) | 1.04x (33.900 ms) | 2.60x (84.549 ms) |
+| fib-recursive | 1346269 | 1.00x (3.656 ms) | 1.02x (3.722 ms) | 2.21x (8.067 ms) | 2.15x (7.860 ms) | 1.49x (5.440 ms) | 2.63x (9.628 ms) |
+| fib-loop | 973132000 | 1.00x (29.421 ms) | 1.03x (30.421 ms) | 2.03x (59.748 ms) | 1.52x (44.679 ms) | 1.10x (32.300 ms) | 1.63x (47.854 ms) |
+| mandelbrot | 43027996 | 1.00x (125.106 ms) | 1.00x (125.396 ms) | 1.05x (131.342 ms) | 2.85x (356.073 ms) | 1.00x (125.400 ms) | 1.01x (126.875 ms) |
+| primes | 41538 | 1.00x (21.969 ms) | 0.96x (21.102 ms) | 1.45x (31.900 ms) | 2.13x (46.840 ms) | 0.94x (20.660 ms) | 1.75x (38.394 ms) |
+| sort | 3672124540 | 1.00x (15.880 ms) | 1.21x (19.185 ms) | 5.02x (79.645 ms) | 2.21x (35.095 ms) | 1.45x (23.020 ms) | 1.77x (28.067 ms) |
+| tree | 3932130 | 1.00x (65.647 ms) | 1.43x (93.759 ms) | 7.81x (512.754 ms) | 2.24x (146.871 ms) | 0.32x (20.880 ms) | 0.47x (31.019 ms) |
+| queen | 73712 | 1.00x (23.721 ms) | 1.04x (24.752 ms) | 1.48x (34.995 ms) | 1.55x (36.739 ms) | 1.23x (29.060 ms) | 1.76x (41.834 ms) |
+| particles | 1712845248 | 1.00x (38.825 ms) | 1.93x (75.093 ms) | 16.07x (623.914 ms) | 3.84x (149.268 ms) | 1.91x (74.040 ms) | 3.58x (139.185 ms) |
+| callbacks | -662567840 | 1.00x (13.064 ms) | 23.05x (301.097 ms) | 25.92x (338.672 ms) | 9.10x (118.879 ms) | 5.24x (68.400 ms) | 29.69x (387.819 ms) |
+| collect | 1332546592 | 1.00x (34.998 ms) | 6.12x (214.083 ms) | 6.19x (216.505 ms) | 3.81x (133.264 ms) | 0.98x (34.420 ms) | 2.50x (87.608 ms) |
 
 ## Measured warm-up
 
 | Workload | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|
-| fib-recursive | 0.204 s (54 iterations) | 0.203 s (50 iterations) | 0.203 s (25 iterations) | 0.205 s (29 iterations) | 0.203 s (37 iterations) | 0.202 s (21 iterations) |
-| fib-loop | 0.201 s (6 iterations) | 0.209 s (6 iterations) | 0.235 s (4 iterations) | 0.218 s (5 iterations) | 0.225 s (7 iterations) | 0.236 s (5 iterations) |
-| mandelbrot | 0.401 s (3 iterations) | 0.407 s (3 iterations) | 0.393 s (3 iterations) | 1.051 s (3 iterations) | 0.378 s (3 iterations) | 0.379 s (3 iterations) |
-| primes | 0.205 s (8 iterations) | 0.205 s (9 iterations) | 0.222 s (7 iterations) | 0.229 s (5 iterations) | 0.202 s (10 iterations) | 0.224 s (6 iterations) |
-| sort | 0.201 s (12 iterations) | 0.211 s (11 iterations) | 0.234 s (3 iterations) | 0.210 s (6 iterations) | 0.206 s (8 iterations) | 0.205 s (7 iterations) |
-| tree | 0.227 s (3 iterations) | 0.361 s (3 iterations) | 2.057 s (3 iterations) | 0.433 s (3 iterations) | 0.207 s (9 iterations) | 0.231 s (7 iterations) |
-| queen | 0.217 s (8 iterations) | 0.202 s (7 iterations) | 0.210 s (6 iterations) | 0.213 s (6 iterations) | 0.204 s (7 iterations) | 0.208 s (5 iterations) |
-| particles | 0.200 s (5 iterations) | 0.257 s (3 iterations) | 1.858 s (3 iterations) | 0.446 s (3 iterations) | 0.253 s (3 iterations) | 0.418 s (3 iterations) |
-| callbacks | 0.212 s (14 iterations) | 0.936 s (3 iterations) | 1.023 s (3 iterations) | 0.366 s (3 iterations) | 0.233 s (3 iterations) | 1.262 s (3 iterations) |
-| collect | 0.230 s (6 iterations) | 0.645 s (3 iterations) | 0.680 s (3 iterations) | 0.366 s (3 iterations) | 0.204 s (6 iterations) | 0.288 s (3 iterations) |
+| fib-recursive | 0.200 s (46 iterations) | 0.203 s (48 iterations) | 0.202 s (25 iterations) | 0.205 s (26 iterations) | 0.203 s (37 iterations) | 0.203 s (21 iterations) |
+| fib-loop | 0.202 s (6 iterations) | 0.206 s (6 iterations) | 0.237 s (4 iterations) | 0.222 s (5 iterations) | 0.230 s (7 iterations) | 0.241 s (5 iterations) |
+| mandelbrot | 0.409 s (3 iterations) | 0.409 s (3 iterations) | 0.395 s (3 iterations) | 1.067 s (3 iterations) | 0.379 s (3 iterations) | 0.383 s (3 iterations) |
+| primes | 0.212 s (8 iterations) | 0.203 s (9 iterations) | 0.225 s (7 iterations) | 0.231 s (5 iterations) | 0.206 s (10 iterations) | 0.228 s (6 iterations) |
+| sort | 0.214 s (12 iterations) | 0.207 s (10 iterations) | 0.239 s (3 iterations) | 0.211 s (6 iterations) | 0.205 s (8 iterations) | 0.207 s (7 iterations) |
+| tree | 0.222 s (3 iterations) | 0.312 s (3 iterations) | 1.552 s (3 iterations) | 0.441 s (3 iterations) | 0.205 s (9 iterations) | 0.229 s (7 iterations) |
+| queen | 0.223 s (9 iterations) | 0.223 s (8 iterations) | 0.211 s (6 iterations) | 0.220 s (6 iterations) | 0.205 s (7 iterations) | 0.211 s (5 iterations) |
+| particles | 0.217 s (5 iterations) | 0.256 s (3 iterations) | 1.871 s (3 iterations) | 0.448 s (3 iterations) | 0.255 s (3 iterations) | 0.422 s (3 iterations) |
+| callbacks | 0.201 s (13 iterations) | 0.932 s (3 iterations) | 1.024 s (3 iterations) | 0.361 s (3 iterations) | 0.233 s (3 iterations) | 1.258 s (3 iterations) |
+| collect | 0.203 s (5 iterations) | 0.673 s (3 iterations) | 0.665 s (3 iterations) | 0.399 s (3 iterations) | 0.208 s (6 iterations) | 0.306 s (3 iterations) |
 
 **callbacks interpretation.** This workload measures what the idiomatic callback spelling costs against a hand-written loop, not a codegen deficit.
 
