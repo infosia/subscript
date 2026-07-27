@@ -1,3 +1,0 @@
-[submodule "vendor/regress"]
-	path = vendor/regress
-	url = https://github.com/infosia/regress

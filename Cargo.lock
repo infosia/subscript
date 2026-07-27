@@ -823,6 +823,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "regress"
+version = "0.11.1"
+source = "git+https://github.com/infosia/regress?branch=subscript-exec-budget#daa6b231039c562aa32f6356263b26e956d8343d"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -985,6 +993,7 @@ version = "0.1.0"
 dependencies = [
  "num-bigint",
  "num-traits",
+ "regress",
  "ryu-js",
 ]
 
