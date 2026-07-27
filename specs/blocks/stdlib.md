@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 12, 2026-07-27 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 13, 2026-07-27 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -8,7 +8,11 @@ P23 regex contract and removes the `regex` feature from it; Rev 12,
 +5.12 MB attributed to regex was a mismatched pair, the engine is
 632 KB linked, and the 4.25 MiB `CODE_POINT_UTF8` static it displaced
 is this runtime's own — adds §15.6a for `find_from_budgeted`, and
-withdraws §15.7's claim that the `tsc` gate covers reject entries).
+withdraws §15.7's claim that the `tsc` gate covers reject entries;
+Rev 13, 2026-07-27, follows P24: that static's astral range is gone
+(`compiler.md` §22.1), so §15.1's table is pre-P24 history and §14.3
+no longer claims the loop allocates nothing — §14.3a states the
+astral bound instead).
 Evidence lands in `specs/tracking/p9-stdlib.md` for §1–§12 and in the
 phase's own tracking file thereafter — §15 in
 `specs/tracking/p23-regex.md`. *(The blanket "evidence lands in
@@ -214,8 +218,10 @@ binary**, of which `regress` is 501 KB — is charged by the linker to
 the programs that actually call regex, which is why §15.2 has no build
 switch. *(This paragraph said +5.12 MB and 80 bytes, from the table
 §15.1 corrected on 2026-07-27: that comparison was an unmatched pair
-and charged regex for a 4.25 MiB static this runtime links for any
-program that touches a string.)*
+and charged regex for a 4.25 MiB static this runtime then linked for
+any program that touches a string. P24 has since removed that static's
+astral range — `compiler.md` §22.1 — so a shipped binary is 4.19 MB
+smaller than any figure in §15.1's table.)*
 
 **Stdlib non-goals** (permanent unless revised with evidence):
 `Intl`/locale- and Unicode-table-dependent behavior
@@ -1178,10 +1184,39 @@ So the closed list is not a v1 scope decision to revisit later. It
 follows from the syntax choice, and reopening it would mean either
 adopting `Symbol` or giving up `tsc` acceptance.
 
-### 14.3 Fusion — the loop allocates nothing
+### 14.3 Fusion — no iterator object, on either tier
 
 `for…of` **lowers to an index loop over the container's own storage**.
 No iterator object is created, on either tier.
+
+*(This section was headed "the loop allocates nothing" and P24 made
+that heading false. The **iterator** costs nothing, which is the claim
+this section is about and which is unchanged. The **element** is a
+separate question with one exception: iterating a string yields one
+string per step, and since `compiler.md` §22.1 an **astral** scalar
+allocates its bytes the first time a Context sees it — bounded by
+distinct astral scalars used, not by iterations. BMP scalars, which is
+all ordinary text, still allocate nothing. See §14.3a.)*
+
+#### 14.3a String iteration and the astral bound
+
+`for…of` over a string yields one string per Unicode scalar.
+
+- **BMP scalars (`< 0x10000`) allocate nothing**, on either tier. They
+  are handed out as tagged handles borrowing from a 262,144-byte static
+  table.
+- **Astral scalars are interned per Context.** The first `😀` a Context
+  sees allocates its bytes; every later `😀` returns the same handle. A
+  loop over a repeated astral scalar allocates **once**.
+- **The intern map is Context-owned and is never swept**, like §15.5a's
+  compiled-pattern cache: no program reference reaches it, so a sweep
+  would free bytes a live handle still points at. It grows with the
+  number of **distinct astral scalars the program ever iterates** — at
+  most 1,048,576 entries, and in any real program a handful.
+
+This replaced a `[u32; 0x110000]` static that gave every scalar a
+static address at a cost of **4.19 MB in every shipped binary**
+(`compiler.md` §22.1).
 
 This is why §14.1 restricts `keys()`/`values()` to the `for…of`
 subject position. C5 makes callbacks non-escaping **by construction**;
@@ -1357,26 +1392,33 @@ Attributed by link map, the regex-calling program's bytes are
   difference **charged regex for a table the measurement's baseline had
   simply not reached yet**. Against a baseline that prints — which is
   every real program — the charge is 632 KB.
-- **A single 4,456,448-byte static in this project's own runtime is the
-  largest thing in a shipped binary**, and it is not regex.
-  `context::CODE_POINT_UTF8` is `[u32; 0x110000]` — every Unicode
-  scalar's UTF-8 bytes at a stable address, so a scalar can be handed
-  out as a tagged handle that `str_bytes` can borrow from without
-  allocating. Any program that touches a string pays it.
+- **A single 4,456,448-byte static in this project's own runtime was
+  the largest thing in a shipped binary**, and it was not regex.
+  `context::CODE_POINT_UTF8` was `[u32; 0x110000]` — every Unicode
+  scalar's UTF-8 bytes at a stable address, so a scalar could be handed
+  out as a tagged handle that `str_bytes` borrows from without
+  allocating. Every program that touched a string paid it.
 
   **Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over
-  a string, and §14.3's guarantee that the loop allocates nothing.
-  *(Corrected 2026-07-27: this said `charAt`, as did the runtime's own
-  doc comment. `charAt` calls `alloc_str` and always has.)* The astral
-  range is the whole cost: scalars below `0x10000` need 262,144 B, and
-  the 1,048,576 scalars above it need the other **4.19 MB**. It is **7× the regex engine**, it predates P23, and no size
-  line existed to reveal it until this one was drawn. Recorded here
-  because P23's measurement found it; reducing it is not P23's work
-  (`p23-regex.md`, carried forward).
+  a string. *(Corrected 2026-07-27: this said `charAt`, as did the
+  runtime's own doc comment. `charAt` calls `alloc_str` and always
+  has.)* The astral range was the whole cost: scalars below `0x10000`
+  need 262,144 B, the 1,048,576 above need the other 4.19 MB.
+
+  **P24 removed the astral range** (`compiler.md` §22.1): the table is
+  BMP-only at **262,144 B**, and astral scalars are interned per
+  Context, bounded by distinct scalars used. Measured on the same
+  matched pair, the print-and-no-regex baseline went **4,832,952 →
+  605,992 B**. The figures in the table above are pre-P24 and are kept
+  as the measurement that found the static; **a shipped binary today is
+  4.19 MB smaller than every row of it.**
 - **Both are still charged per program.** A program that never calls
   regex does not link `regress`; §15.2's argument for removing the
-  feature is unaffected, and strengthened — the switch would have made
-  632 KB optional while 4.25 MB stayed mandatory and unmentioned.
+  feature is unaffected. *(That argument was once put as "the switch
+  would have made 632 KB optional while 4.25 MB stayed mandatory and
+  unmentioned". P24 removed the 4.25 MB, so the contrast is gone; the
+  argument never depended on it — regex dead-strips per program either
+  way.)*
 
 ### 15.2 Always enabled — the feature switch was removed
 

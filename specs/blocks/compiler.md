@@ -1,11 +1,11 @@
 # Compiler and runtime — contract
 
-Status: Rev 24, 2026-07-27 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
+Status: Rev 25, 2026-07-27 (Rev 0: 2026-07-22; Rev 1 moves the mobile link
 spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting; Rev 24, 2026-07-27, adds the §22 P24 contract for two monotonic costs under invariant 2 — the 4.25 MiB code-point table and the dev tier's cumulative-allocation sweep). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting; Rev 24, 2026-07-27, adds the §22 P24 contract for two monotonic costs under invariant 2 — the 4.25 MiB code-point table and the dev tier's cumulative-allocation sweep; Rev 25, 2026-07-27, adds §22.5 What landed, including the measured correction that the ship-tier `tree` movement is `Context`'s 104-byte growth and not this phase). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -2302,3 +2302,52 @@ should do.
    `collect` workload against its recorded figure. A regression is a
    finding, not a cost to absorb.
 7. Standing gate green; `tsc` clean; clippy at its baseline.
+
+### 22.5 What landed
+
+Both parts landed as contracted. Every §22.4 criterion was measured and
+met; `specs/tracking/p24-monotonic-costs.md` carries the numbers.
+
+**The astral range is gone and the guarantee it bought is narrower than
+§14.3 said.** `stdlib.md` §14.3 was headed "the loop allocates nothing"
+and §22.1 quoted it as the property the table existed to serve. The
+**iterator** costs nothing, which is what that section is about and
+which is unchanged; the **element** now allocates once per distinct
+astral scalar. `stdlib.md` §14.3a states the bound and §14.3's heading
+no longer overclaims.
+
+#### The ship-tier `tree` movement was `Context`'s size, not this phase
+
+The `tree` benchmark — 30×131071 alloc/delete pairs — moved on both
+tiers. Only one of the two movements belongs to P24.
+
+**dev-JIT, ~673 → ~500 ms: the phase's own mechanism.** §22.2 moved
+dead entries out of the live map, so every later allocation's hash
+insert works against the live set rather than against every allocation
+ever made. This is the cache-hostile growth §8.1a identified for the
+ship tier and fixed there by releasing; P24 fixes it for the dev tier
+without giving up retain-and-poison. Confirmed by A/B: padding the
+pre-P24 struct does **not** reproduce it.
+
+**ship, ~110 → ~93 ms: layout, and not this phase.** The Phase Review
+established the attribution by measurement, against a first record that
+named the wrong cause:
+
+- Restoring `CODE_POINT_UTF8` to `[u32; 0x110000]` at P24's HEAD leaves
+  ship `tree` unmoved — **92.828 ms** against 92.484 ms. So it is *not*
+  the 4.19 MB of static data.
+- `size_of::<Context>()` went **920 → 1024 B**; the three new fields
+  add exactly 104 B and `Context` is `#[repr(C)]`, so every later field
+  shifts. Inserting **104 bytes of dead padding** into the otherwise
+  untouched pre-P24 struct reproduces the entire ship win — 120.5 →
+  91.8 ms. 64 bytes suffices; 8 bytes does not.
+
+**A win a phase did not cause must not be recorded as one**, and a
+figure this sensitive must not be read as a runtime property: the
+published ship `tree` row moves ±24% on a struct-size change with no
+semantic content. `benchmarks.md` carries that caveat.
+
+*(The first record of this, in the benchmark commit, said "the only
+ship-visible change is 4.19 MB less static data, i.e. binary layout".
+The instinct — refuse the credit — was right; the named cause was
+measurably wrong.)*
