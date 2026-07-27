@@ -557,18 +557,123 @@ No code changed between the 221 ms and 459 ms captures — the warm-up
 fix touched the C harnesses and the runner only, and warm-up iteration
 count for this cell is 3 either way.
 
-**Hypothesis, not yet tested:** collection is **conservative**, so the
-mark phase traces every payload word that looks like a live block
-address. The dev tier makes an individual system allocation per object
-tracked in a map, so its addresses are far more scattered than the ship
-tier's arena — which would make spurious traces both more likely and
-more sensitive to where the heap lands, i.e. to ASLR. That would
-produce exactly this signature: stable within a process, bimodal
-across processes, dev tier only.
+**Both hypotheses this entry first recorded were wrong, and a directed
+investigation disproved them by measurement** (2026-07-27):
 
-The published figure is capture 1's 14.21×. **It is a real measurement
-of one process and not a stable property of the tier**, which is why
-this entry exists.
+- **Conservative false positives: zero.** The mark phase was
+  instrumented; across every process and every `collect`, the counts
+  are *identical* — `marked = 75005`, `traced words = 870005`,
+  `pops = 870018`, `hits = 75010`. The marked set is exactly the graph.
+  Nothing spurious is ever traced, so this hypothesis is not merely
+  unsupported but excluded.
+- **Address scatter / ASLR: no effect.** A standalone probe spans 98 MB
+  of marked addresses; inside the real runner the span is 296–305 MB,
+  **3.1× more scattered** — and the time is 225 ms against 229 ms.
+  Heap bases across 76 processes ranged `0x7a5…` to `0xcbe…` with no
+  correlation.
+
+**And the slow mode does not reproduce.** 76+ separate processes, plus
+799 consecutive samples inside one process: **216.7–239.1 ms, every
+time.** The 459 ms mode appeared zero times. The ship tier is
+single-mode too — 21 processes, 207.2–211.9 ms — so the arena is not
+merely luckier.
+
+Also excluded by direct test: `HashMap` seed (a fresh `Context` per
+run, and the slow capture's 14 runs were all slow across different
+seeds), memory pressure (a 10 GB hog: no effect), heap fragmentation
+(no effect), the nano allocator (not in use here), JIT codegen
+non-determinism (identical layout across 12 processes), and
+efficiency-core placement (a BACKGROUND QoS gives 6.3×, not 2×).
+
+External memory contention **matches the factor but is excluded by its
+side effects**: a 4-thread random-access load takes `collect` 231 → 456
+ms with samples 454–464, closely resembling the published 459–474 —
+but under the same load `tree` goes 670 → 2461 ms. In the slow
+captures, **every other subject in the `collect` row is within 1% of
+the fast captures** (C 32.6, ship 209.4, LuaJIT 120.4, JSC 34.3, V8
+85.3), and those ran in the same ~20-second window immediately before
+and after. A disturbance confined to the JIT subject's ~6.5 seconds,
+twice consecutively, is not credible.
+
+### Mechanism found: `subscript-jit` is the only subject measured in a used process
+
+The investigation's 76 fast processes were **standalone probes**; my
+three slow captures were **full suite runs**. That is the whole
+difference, and it reproduces on demand:
+
+```
+cross-language --only collect     subscript-jit  226.4 ms
+cross-language  (full suite)      subscript-jit  463.0 ms
+```
+
+Same binary, same machine, minutes apart. The ship tier is 213.3 ms
+against 215.2 ms — unmoved.
+
+**Why only this subject.** C, LuaJIT, JSC, V8 and **subscript-ship**
+each run as a **separate process per workload** — the ship tier is a
+linked binary the runner spawns. **`subscript-jit` runs in-process**,
+via `jit_bench_with_warmup_floor` inside the runner
+(`cross-language.rs:604`). By the time `collect` runs — workload 10 of
+10 — the runner's system heap has been churned by nine prior
+workloads.
+
+Each `run_entry` does create a fresh `Context`, so no subscript state
+carries over. What carries over is the **process heap** the dev tier
+allocates from: it makes one system allocation per object, so its
+object layout and locality are inherited from whatever the runner did
+before. The mark phase then pointer-chases across ~100 000 of them.
+The ship tier is immune twice over — fresh process, and an arena that
+places objects itself.
+
+This also explains why the investigation's address-*span* measurement
+found nothing: span is not locality. 296 MB of scattered-but-clustered
+addresses and 296 MB of genuinely fragmented ones look identical by
+that metric.
+
+**Consequence for the published table: the `collect`/subscript-jit
+figure is not comparable to its row.** Every other subject measures a
+cold process; that one measures collect-after-nine-workloads. The
+14.21× is a real number for a condition no other cell shares.
+
+**The fix is to give `subscript-jit` the same process model as every
+other subject** — spawn a fresh process per workload — rather than to
+adjust the number. Until then the cell is order-dependent, and the
+whole `subscript-jit` column is suspect in the same way, not just
+`collect`: any workload sensitive to heap locality inherits whatever
+ran before it.
+
+**Procedure gap this exposes:** the ±20% gate measures spread *within*
+a process and is structurally blind to a mode that is tight inside a
+process and different between them — which is exactly what an
+in-process subject running tenth produces.
 
 This is the `collect` workload doing its job on its first outing: the
 suite had no way to see any of this before P21's review asked for it.
+
+## dev-tier `collect` cost grows with cumulative allocations, not live objects
+
+Found by the same investigation and **independent of the bimodality —
+this one reproduces every time.**
+
+The dev tier never removes map entries on `collect` or `delete`
+(the retain-and-poison contract that makes use-after-delete
+detectable), so **sweep is proportional to every allocation ever made**,
+not to what is live. Measured inside one run as entries grow
+120 005 → 720 005: sweep **0.73 → 3.48 ms, linear**, while mark stays
+14–16 ms because mark *is* proportional to live data.
+
+A host that calls `collect()` per level transition or in a frame budget
+therefore sees its collect cost **rise monotonically for the lifetime
+of the Context**, regardless of how much is live. `a16`, `a51` and
+`a70` allocate too little to show it; a real embedding would not.
+
+This is a language-level property under invariant 2 and Q7, not a
+benchmark artifact. Removing entries would fix it — measured worth
+~17 ms of 229 ms, plus the monotonic growth — but must not break the
+retain-and-poison contract. Recorded; not scheduled.
+
+Two smaller measured findings from the same work: reserving the
+`allocations` map avoids two rehashes, worth ~15 ms of 229 ms; and
+setting **any** explicit QoS class makes `particles` 9.5% faster
+(622 → 563 ms) — the default unspecified scheduling is the slow one,
+which is benchmark hygiene worth knowing.
