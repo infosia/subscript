@@ -1532,6 +1532,10 @@ state is not outside it:
 - **A `RegExp` handle is an ordinary Context allocation.** `collect()`
   reclaims an unreachable one exactly as it reclaims any other object,
   and the handle's match state (`matchStart`/`matchEnd`) dies with it.
+  The `delete` path is required to do the same, though **no script can
+  reach it**: `unsafeDelete(re)` is a type error, so that path exists
+  for the host C ABI and to keep the two reclamation routes from
+  drifting apart.
   A store entry that outlives its handle is a leak, and — because the
   entry keeps answering — also the mechanism by which a stale handle
   can be read after its block is reused.

@@ -1,4 +1,4 @@
-# P23 — regular expressions. IN PROGRESS
+# P23 — regular expressions. COMPLETE 2026-07-27
 
 Contract: `specs/blocks/stdlib.md` §15, `collisions.md` Q31. The phase
 reverses a permanent non-goal, so §15.1 carries the evidence the
@@ -126,11 +126,109 @@ bound past `collect()`; `TrapKind::Regex` shipping with no corpus
 entry, no unit test and no contract line; this file's absence; and
 §15.7's pre-registered binary-size gate never having been built.
 
-**Four of the five are gaps in the gate, not in the behaviour.** The
-code was right and unguarded — which is the same shape P18's review
-found for array callbacks and P21's found for `collect`, and the third
-time this project has shipped correct behaviour with no test that would
-notice it changing.
+**Three of the five are gaps in the gate, not in the behaviour** — the
+untested trap kind, the missing tracking file, and the unbuilt size
+gate. `source` and the store were real defects. *(This line first said
+"four of five", which the re-review corrected: `source` diverged from
+node and the store leaked, and neither is a gate gap.)* The three that
+are gate gaps are the same shape P18's review found for array callbacks
+and P21's found for `collect` — correct behaviour shipped with no test
+that would notice it changing.
+
+## The fixes, and what measuring them showed
+
+### The store — the fix is the whole point of §15.5a
+
+Measured end to end on the ship tier (emitted C, `-O2`, linked against
+the runtime staticlib, peak RSS via `wait4`), not by unit test:
+
+| program | peak RSS |
+|---|---:|
+| 200 000-iteration loop, no regex | 2.34 MB |
+| literal hoisted to a `const`, 200 000 `test` | 3.51 MB |
+| **literal written inside the loop**, 200 000 `test` | **3.49 MB** |
+
+The 181 MB case is gone, and the literal-in-the-loop spelling is now
+**byte-for-byte the hoisted one**. The emitted C shows the mechanism:
+one `static void*` per literal *site*, `sub_rt_regex_new` only inside
+`ss_init`, followed by `sub_rt_root_add`.
+
+§15.5a's predicted residual growth holds and is attributable: ten
+`collect()`ed frames × 2000 **distinct** dynamic patterns → 21.36 MB;
+ten frames re-using the **same** 2000 patterns → 6.72 MB against
+**6.70 MB for one such frame**. Growth is compiled patterns alone
+(~820 B each); per-evaluation handle state is fully reclaimed.
+
+Sweep safety was attacked rather than assumed: a handle reachable only
+from a class field, an array element, a `for…of` binding or an
+arrow-function capture survives `collect()` with its match state
+intact, on both tiers, because `arena_sweep` restores
+`MARK_STATE`→`LIVE_STATE` before the store sweep runs.
+
+### `source` — the fix traded one divergence for a narrower one
+
+The first fix added a `first_in_class` rule so a `]` appearing first in
+a class is literal. **That is Perl's rule; ECMAScript has none** — `[]`
+is an empty class and `[^]` a negated empty class, both closing at that
+`]`.
+
+`[]]` and `[^]]` render identically under both rules, so the cases
+checked at review time could not discriminate. The discriminating cases
+are `[]` and `[^]` with nothing between the brackets, and a committed
+test pinned the wrong value for one of them. **A test written without
+running the oracle defends whatever the code does** — CLAUDE.md's rule
+about running the other system applies to test tables, not only to
+prose.
+
+The rule is now plain: `[` opens, `]` closes, `\` escapes the next
+character inside a class as well, and a `/` is escaped only when no
+class is open. Confirmed by differential fuzz over
+`a / [ ] ^ \ - ( ) d w .`, node-accepted patterns only: **63
+divergences in 9,956** before, **0** after — independently reproduced
+on a second seed at **31 in 5,061** before, **0** after.
+
+The engine was never wrong. `new RegExp("[]a").test("a")` is `false`
+and `new RegExp("[^]").test("a")` is `true` on both tiers, matching
+node exactly. **Only `normalized_source` disagreed with the parser it
+feeds** — which is why no matching test could have caught it, and why
+the rendering needed its own oracle comparison.
+
+### The rest
+
+`TrapKind::Regex` now has five trap entries with cross-tier tuple
+identity, and the checker/trap split is total — every spelling of
+`replaceAll` without `g` reaches one or the other, none reaches
+neither. `can_trap()` gaining four variants moved **no** existing
+golden or trap position: every `.expected` in the fix commit is added,
+none modified.
+
+The size gate reproduces exactly: baseline 4,832,952 B, regex
+5,447,992 B, delta 615,040 B, `regress` 501,433 B — the last figure
+identical across three independent measurements.
+
+**Nothing in `cargo test` links anything**, so the size gate is a
+manually-run bin like `perf-gate`. It satisfies §15.7 as written — the
+number is reproducible from the repository and the gate fails when run
+— but not the stronger reading that CI would notice a drift. Recorded
+rather than glossed.
+
+## Gate
+
+`cargo build --offline --all-targets` zero warnings; `cargo test
+--offline` **599 passed, 0 failed**; **83 goldens and 45 trap entries
+byte-exact across dev-JIT and ship-C-AOT**; `tsc` exit 0; `git diff
+--check` clean; clippy at its 16-warning codegen baseline. No
+pre-existing accept `.expected` moved at any point in the phase. Size
+gate: 4,832,952 / 5,447,992 B, delta 615,040 B, `regress` 501,433 B.
+
+Two review rounds: 0 CRITICAL, 5 MAJOR, 11 MINOR, then 1 further MAJOR
+found inside the first round's own fix. All closed.
+
+**The one MAJOR the fix pass introduced is the phase's last lesson, and
+it is the same one as the size number.** Both times the error was the
+measurement, not the design: an unmatched pair of programs, then a test
+table written without running the oracle. The behaviour was right in
+both cases and the thing checking it was wrong.
 
 ## Carried forward
 
