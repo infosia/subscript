@@ -1347,9 +1347,16 @@ Attributed by link map, the regex-calling program's bytes are
 - **A single 4,456,448-byte static in this project's own runtime is the
   largest thing in a shipped binary**, and it is not regex.
   `context::CODE_POINT_UTF8` is `[u32; 0x110000]` — every Unicode
-  scalar's UTF-8 bytes — so that `charAt` can return a handle into
-  static memory without allocating. Any program that touches a string
-  pays it. It is **7× the regex engine**, it predates P23, and no size
+  scalar's UTF-8 bytes at a stable address, so a scalar can be handed
+  out as a tagged handle that `str_bytes` can borrow from without
+  allocating. Any program that touches a string pays it.
+
+  **Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over
+  a string, and §14.3's guarantee that the loop allocates nothing.
+  *(Corrected 2026-07-27: this said `charAt`, as did the runtime's own
+  doc comment. `charAt` calls `alloc_str` and always has.)* The astral
+  range is the whole cost: scalars below `0x10000` need 262,144 B, and
+  the 1,048,576 scalars above it need the other **4.19 MB**. It is **7× the regex engine**, it predates P23, and no size
   line existed to reveal it until this one was drawn. Recorded here
   because P23's measurement found it; reducing it is not P23's work
   (`p23-regex.md`, carried forward).

@@ -82,16 +82,25 @@ verdict is withdrawn.
 
 **The largest single item in a shipped binary is this project's own
 `context::CODE_POINT_UTF8`** — `[u32; 0x110000]`, 4,456,448 B, every
-Unicode scalar's UTF-8 bytes, so `charAt` can return a handle into
-static memory without allocating. It is **7× the regex engine**, every
-program that touches a string pays it, it predates P23, and no size
-line existed to reveal it until this phase drew one.
+Unicode scalar's UTF-8 bytes at a stable address. It is **7× the regex
+engine**, every program that touches a string pays it, it predates P23,
+and no size line existed to reveal it until this phase drew one.
 
-**Carried forward, not P23's to fix.** The table buys an
-allocation-free `charAt`; the alternatives (table only the BMP at
-256 KB, or ASCII with allocation above it) trade binary size against an
-allocation on a hot path, which is a decision with its own measurement
-and its own phase.
+**Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over a
+string, and §14.3's guarantee that the loop allocates nothing.
+*(Corrected 2026-07-27: first recorded here, and in the runtime's own
+doc comment, as serving `charAt`. `charAt` calls `alloc_str` and always
+has, so the table has exactly one caller.)*
+
+**Carried forward, not P23's to fix**, but the shape of the trade is
+now clear: the **astral range is the entire cost**. Scalars below
+`0x10000` need 262,144 B; the 1,048,576 above it need the other
+4.19 MB. Stable addresses for a million scalars cannot be had for less,
+so any fix allocates for astral scalars — and under invariant 2 a
+per-iteration allocation accumulates until `collect()`, which is the
+same defect §15.5a was written for. Interning astral scalars per
+Context would bound it by *distinct scalars used* rather than by
+iterations, the same bound the compiled-pattern cache has.
 
 ## The divergence that produced §15.6a
 
