@@ -46,6 +46,8 @@ pub fn trap_ids(trap: &Path) -> Vec<String> {
         source_ids, expected_ids,
         "trap corpus .ts and .expected ids must be paired exactly"
     );
+    #[cfg(not(feature = "regex"))]
+    source_ids.retain(|id| id != "t39-regex-budget");
     source_ids
 }
 

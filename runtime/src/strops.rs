@@ -242,15 +242,23 @@ pub fn to_lower(s: &[u8]) -> Vec<u8> {
     }
 }
 
-/// Appends one ECMA string-pattern replacement. With no capture groups,
-/// the recognized substitutions are `$$`, `$&`, ``$` ``, and `$'`;
-/// `$1`–`$9` and every other `$` sequence remain literal.
-fn append_replacement(
+/// Appends one ECMA replacement against a caller-supplied capture set.
+///
+/// The literal-string operations pass zero captures, preserving Q27's
+/// rule that numeric and named substitutions remain literal. P23's
+/// regex operations pass the match's numbered and named ranges, so both
+/// surfaces share the exact parser for `$$`, `$&`, ``$` ``, `$'`,
+/// `$1`–`$99`, and `$<name>`.
+pub(crate) fn append_replacement(
     out: &mut Vec<u8>,
     source: &[u8],
     match_start: usize,
     match_end: usize,
     replacement: &[u8],
+    capture_count: usize,
+    has_named_captures: bool,
+    mut numbered: impl FnMut(usize) -> Option<std::ops::Range<usize>>,
+    mut named: impl FnMut(&str) -> Option<std::ops::Range<usize>>,
 ) {
     let mut at = 0usize;
     while at < replacement.len() {
@@ -259,18 +267,70 @@ fn append_replacement(
             at += 1;
             continue;
         }
-        match replacement[at + 1] {
-            b'$' => out.push(b'$'),
-            b'&' => out.extend_from_slice(&source[match_start..match_end]),
-            b'`' => out.extend_from_slice(&source[..match_start]),
-            b'\'' => out.extend_from_slice(&source[match_end..]),
+        let next = replacement[at + 1];
+        match next {
+            b'$' => {
+                out.push(b'$');
+                at += 2;
+            }
+            b'&' => {
+                out.extend_from_slice(&source[match_start..match_end]);
+                at += 2;
+            }
+            b'`' => {
+                out.extend_from_slice(&source[..match_start]);
+                at += 2;
+            }
+            b'\'' => {
+                out.extend_from_slice(&source[match_end..]);
+                at += 2;
+            }
+            b'0'..=b'9' => {
+                let first = usize::from(next - b'0');
+                let second = replacement
+                    .get(at + 2)
+                    .copied()
+                    .filter(u8::is_ascii_digit)
+                    .map(|digit| usize::from(digit - b'0'));
+                let two_digit = second.map(|digit| first * 10 + digit);
+                let (capture, consumed) =
+                    if two_digit.is_some_and(|index| index > 0 && index <= capture_count) {
+                        (two_digit, 3)
+                    } else if first > 0 && first <= capture_count {
+                        (Some(first), 2)
+                    } else {
+                        (None, 0)
+                    };
+                if let Some(index) = capture {
+                    if let Some(range) = numbered(index) {
+                        out.extend_from_slice(&source[range]);
+                    }
+                    at += consumed;
+                } else {
+                    out.push(b'$');
+                    at += 1;
+                }
+            }
+            b'<' if has_named_captures => {
+                let Some(relative_end) =
+                    replacement[at + 2..].iter().position(|byte| *byte == b'>')
+                else {
+                    out.push(b'$');
+                    at += 1;
+                    continue;
+                };
+                let name_end = at + 2 + relative_end;
+                let name = std::str::from_utf8(&replacement[at + 2..name_end]).unwrap_or_default();
+                if let Some(range) = named(name) {
+                    out.extend_from_slice(&source[range]);
+                }
+                at = name_end + 1;
+            }
             _ => {
                 out.push(b'$');
                 at += 1;
-                continue;
             }
         }
-        at += 2;
     }
 }
 
@@ -283,7 +343,17 @@ pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
         Some(i) => {
             let mut out = Vec::with_capacity(s.len() - pat.len() + repl.len());
             out.extend_from_slice(&s[..i]);
-            append_replacement(&mut out, s, i, i + pat.len(), repl);
+            append_replacement(
+                &mut out,
+                s,
+                i,
+                i + pat.len(),
+                repl,
+                0,
+                false,
+                |_| None,
+                |_| None,
+            );
             out.extend_from_slice(&s[i + pat.len()..]);
             out
         }
@@ -307,7 +377,17 @@ pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     let mut at = 0usize;
     while let Some(i) = find_from(s, pat, at) {
         out.extend_from_slice(&s[at..i]);
-        append_replacement(&mut out, s, i, i + pat.len(), repl);
+        append_replacement(
+            &mut out,
+            s,
+            i,
+            i + pat.len(),
+            repl,
+            0,
+            false,
+            |_| None,
+            |_| None,
+        );
         at = i + pat.len();
     }
     out.extend_from_slice(&s[at..]);

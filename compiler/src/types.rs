@@ -71,6 +71,11 @@ pub enum Type {
     /// codegen, but nominal in the checker — not interchangeable with
     /// `i64` without an explicit `getTime()`.
     Date,
+    /// A compiled ECMAScript regular expression (stdlib.md §15, Q31).
+    ///
+    /// The checker only admits this type when its `regex` Cargo feature
+    /// is enabled. Its runtime representation is a Context-owned handle.
+    RegExp,
     /// Absence of a value (function returns only).
     Void,
     /// The type of the `null` literal.
@@ -129,6 +134,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
         Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
         Type::Str
+        | Type::RegExp
         | Type::Object
         | Type::Array(_)
         | Type::Map(..)
@@ -221,6 +227,7 @@ pub fn display_type(
         Type::Bool => "boolean".to_string(),
         Type::Str => "string".to_string(),
         Type::Date => "Date".to_string(),
+        Type::RegExp => "RegExp".to_string(),
         Type::Void => "void".to_string(),
         Type::Null => "null".to_string(),
         Type::Object => "object".to_string(),

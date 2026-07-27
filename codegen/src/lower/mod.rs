@@ -136,6 +136,10 @@ pub(crate) struct RtFns {
     /// signature is `(ctx, recv, params…[, pos_id])` per
     /// [`hir::StrFn::params`] / [`hir::StrFn::takes_pos_id`].
     pub str_ops: [FuncId; hir::StrFn::ALL.len()],
+    /// `sub_rt_regex_*` imports (stdlib.md §15), present only in a
+    /// feature-on code generator.
+    #[cfg(feature = "regex")]
+    pub regex_ops: [FuncId; hir::RegexFn::ALL.len()],
     /// `sub_rt_arr_*` method imports (stdlib.md §9), indexed by
     /// `hir::ArrFn as usize` (the [`hir::ArrFn::ALL`] order). Each
     /// signature starts `(ctx, recv, …)`; element values travel by
@@ -586,6 +590,26 @@ fn declare_rt<M: Module>(
     let str_ops: [FuncId; hir::StrFn::ALL.len()] = str_ids
         .try_into()
         .map_err(|_| internal("string import table size"))?;
+    #[cfg(feature = "regex")]
+    let regex_ops: [FuncId; hir::RegexFn::ALL.len()] = {
+        let mut ids = Vec::with_capacity(hir::RegexFn::ALL.len());
+        for function in hir::RegexFn::ALL {
+            use hir::RegexFn as R;
+            let (params, ret): (&[types::Type], types::Type) = match function {
+                R::New => (&[I64, I64, I64, I32], I64),
+                R::Test => (&[I64, I64, I64, I32], I32),
+                R::Source | R::Flags => (&[I64, I64], I64),
+                R::Search => (&[I64, I64, I64, I32], I32),
+                R::Replace | R::ReplaceAll => (&[I64, I64, I64, I64, I32], I64),
+                R::Split => (&[I64, I64, I64, I32], I64),
+                R::MatchStart | R::MatchEnd => (&[I64, I64, I32], I32),
+                other => return Err(internal(format!("unknown RegexFn {other:?}"))),
+            };
+            ids.push(mk(function.symbol(), params, Some(ret))?);
+        }
+        ids.try_into()
+            .map_err(|_| internal("regex import table size"))?
+    };
     // Array method imports (stdlib.md §9): one opaque symbol per
     // accepted method, in ArrFn::ALL order so `f as usize` indexes the
     // table. Signatures per the §9 marshaling contract: element values
@@ -825,6 +849,8 @@ fn declare_rt<M: Module>(
         date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
         json,
         str_ops,
+        #[cfg(feature = "regex")]
+        regex_ops,
         arr_ops,
         fixed_arr_ops,
         map_ops,

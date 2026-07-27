@@ -408,6 +408,7 @@ impl<'m> Emitter<'m> {
             Type::Enum(_) => "int32_t".to_string(),
             Type::Void => "void".to_string(),
             Type::Str
+            | Type::RegExp
             | Type::Object
             | Type::Array(_)
             | Type::Map(_, _)
@@ -456,6 +457,7 @@ impl<'m> Emitter<'m> {
             Type::Bool => "bool".to_string(),
             Type::Enum(id) => format!("enum{}", id.0),
             Type::Str
+            | Type::RegExp
             | Type::Object
             | Type::Array(_)
             | Type::Map(_, _)
@@ -1144,6 +1146,7 @@ impl<'m> Emitter<'m> {
                 "0".to_string()
             }
             Type::Str
+            | Type::RegExp
             | Type::Object
             | Type::Array(_)
             | Type::Map(_, _)
@@ -3357,6 +3360,44 @@ impl<'m> Emitter<'m> {
                     _ => result,
                 })
             }
+            hir::Callee::Regex(function) => {
+                #[cfg(feature = "regex")]
+                {
+                    use subscript_compiler::hir::RegexFn as R;
+                    let expected = match function {
+                        R::New | R::Test | R::Search | R::Split => 2,
+                        R::Source | R::Flags => 1,
+                        R::Replace | R::ReplaceAll => 3,
+                        R::MatchStart | R::MatchEnd => 2,
+                        other => return Err(format!("unknown RegexFn {other:?}")),
+                    };
+                    if args.len() != expected {
+                        return Err(format!(
+                            "{} arity (expected {expected}, got {})",
+                            function.symbol(),
+                            args.len()
+                        ));
+                    }
+                    let argv = self.eval_list(args, out, depth)?;
+                    let call = if function.can_trap() {
+                        let pid = self.pos_id(pos);
+                        format!("{}(ctx, {argv}, {pid}u)", function.symbol())
+                    } else {
+                        format!("{}(ctx, {argv})", function.symbol())
+                    };
+                    let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                    Ok(if *function == R::Test {
+                        format!("({result} != 0)")
+                    } else {
+                        result
+                    })
+                }
+                #[cfg(not(feature = "regex"))]
+                {
+                    let _ = (function, args, ret_ty, pos, out, depth, checked);
+                    Err("regex HIR reached C emission without the `regex` feature".to_string())
+                }
+            }
             // An Array method intrinsic (stdlib.md §9) calls its opaque
             // runtime symbol. The receiver is the first HIR argument;
             // element values the runtime receives are materialized into
@@ -5560,6 +5601,18 @@ extern void* sub_rt_str_substr(void* ctx, const void* s, int32_t start, int32_t 
 extern void* sub_rt_str_char_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
 extern int32_t sub_rt_str_code_point_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
 extern void* sub_rt_str_method_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
+
+/* Feature-on regular-expression intrinsics (stdlib.md 15, Q31). */
+extern void* sub_rt_regex_new(void* ctx, const void* pattern, const void* flags, uint32_t pos_id);
+extern int32_t sub_rt_regex_test(void* ctx, const void* regex, const void* subject, uint32_t pos_id);
+extern void* sub_rt_regex_source(void* ctx, const void* regex);
+extern void* sub_rt_regex_flags(void* ctx, const void* regex);
+extern int32_t sub_rt_regex_search(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
+extern void* sub_rt_regex_replace(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
+extern void* sub_rt_regex_replace_all(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
+extern void* sub_rt_regex_split(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
+extern int32_t sub_rt_regex_match_start(void* ctx, const void* regex, int32_t group);
+extern int32_t sub_rt_regex_match_end(void* ctx, const void* regex, int32_t group);
 
 /* Array method intrinsics (stdlib.md 9, Q22): one opaque runtime symbol
  * per accepted method, shared with the dev tier. Element values the

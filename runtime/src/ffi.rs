@@ -1621,6 +1621,168 @@ pub unsafe extern "C" fn sub_rt_str_replace_all(
     ctx.alloc_str(&crate::strops::replace_all(&bytes, &pat, &repl), pos_id)
 }
 
+// ----- RegExp (stdlib.md §15, Q31) -----
+
+/// Compiles or reuses a Context-cached regular expression.
+///
+/// # Safety
+///
+/// Shared contract; `pattern` and `flags` are live string handles.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_new(
+    ctx: *mut Context,
+    pattern: *const u8,
+    flags: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::new(unsafe { &mut *ctx }, pattern, flags, pos_id)
+}
+
+/// `RegExp.test`, with distinguishable budget-exhaustion trapping.
+///
+/// # Safety
+///
+/// Shared contract; `regex` and `subject` are live handles.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_test(
+    ctx: *mut Context,
+    regex: *const u8,
+    subject: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::test(unsafe { &mut *ctx }, regex, subject, pos_id)
+}
+
+/// Returns `RegExp.source` without allocating.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_source(ctx: *mut Context, regex: *const u8) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::source(unsafe { &mut *ctx }, regex, 0)
+}
+
+/// Returns canonical `RegExp.flags` without allocating.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_flags(ctx: *mut Context, regex: *const u8) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::flags(unsafe { &mut *ctx }, regex, 0)
+}
+
+/// `string.search(RegExp)`, returning a UTF-8 byte offset or -1.
+///
+/// # Safety
+///
+/// Shared contract; `subject` and `regex` are live handles.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_search(
+    ctx: *mut Context,
+    subject: *const u8,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::search(unsafe { &mut *ctx }, subject, regex, pos_id)
+}
+
+/// `string.replace(RegExp, replacement)` using the shared substituter.
+///
+/// # Safety
+///
+/// Shared contract; every pointer after `ctx` is a live handle.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_replace(
+    ctx: *mut Context,
+    subject: *const u8,
+    regex: *const u8,
+    replacement: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::replace(unsafe { &mut *ctx }, subject, regex, replacement, pos_id)
+}
+
+/// `string.replaceAll(RegExp, replacement)`, requiring `g`.
+///
+/// # Safety
+///
+/// Shared contract; every pointer after `ctx` is a live handle.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_replace_all(
+    ctx: *mut Context,
+    subject: *const u8,
+    regex: *const u8,
+    replacement: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::replace_all(unsafe { &mut *ctx }, subject, regex, replacement, pos_id)
+}
+
+/// `string.split(RegExp)` with capture reinjection.
+///
+/// # Safety
+///
+/// Shared contract; `subject` and `regex` are live handles.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_split(
+    ctx: *mut Context,
+    subject: *const u8,
+    regex: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::split(unsafe { &mut *ctx }, subject, regex, pos_id)
+}
+
+/// Returns the last match's capture start byte, or -1.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_match_start(
+    ctx: *mut Context,
+    regex: *const u8,
+    group: i32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::match_boundary(unsafe { &mut *ctx }, regex, group, false)
+}
+
+/// Returns the last match's capture end byte, or -1.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[cfg(feature = "regex")]
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_regex_match_end(
+    ctx: *mut Context,
+    regex: *const u8,
+    group: i32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::match_boundary(unsafe { &mut *ctx }, regex, group, true)
+}
+
 // ----- Q14 formatting -----
 
 /// Formats an `i32` (Q14).
@@ -2897,6 +3059,21 @@ pub unsafe extern "C" fn sub_rt_date_to_iso(
 pub unsafe extern "C" fn sub_rt_ctx_set_now(ctx: *mut Context, ms: i64) {
     // SAFETY: shared contract.
     unsafe { &mut *ctx }.set_now(ms);
+}
+
+/// Sets the deterministic Context regex execution budget.
+///
+/// The setter is present in both feature configurations so the host
+/// Context ABI does not vary; it affects matching only in a `regex`
+/// feature build.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_set_regex_budget(ctx: *mut Context, budget: u64) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.set_regex_budget(budget);
 }
 
 /// Refuses the `n`-th subsequent object-level Context allocation.
@@ -5134,6 +5311,18 @@ mod tests {
             sub_rt_ctx_set_now(p, -1);
             assert_eq!(sub_rt_date_now(p), -1);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "regex")]
+    fn ffi_regex_budget_setter_updates_context_state() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: valid context.
+        unsafe {
+            sub_rt_ctx_set_regex_budget(p, 7);
+        }
+        assert_eq!(ctx.regex_budget(), 7);
     }
 
     #[test]

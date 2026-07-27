@@ -370,6 +370,7 @@ impl Layouts {
             Type::F32 => Repr::Scalar(types::F32),
             Type::F64 => Repr::Scalar(types::F64),
             Type::Str
+            | Type::RegExp
             | Type::Object
             | Type::Array(_)
             | Type::Map(..)
@@ -406,6 +407,7 @@ impl Layouts {
 pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
     Ok(match ty {
         Type::Str
+        | Type::RegExp
         | Type::Object
         | Type::Array(_)
         | Type::Map(..)

@@ -67,6 +67,11 @@ pub enum TrapKind {
     /// A program read `JsonResult<T>.value` after parsing or static-type
     /// validation failed and `ok` was false.
     JsonResultValue = 18,
+    /// A malformed pattern/flag set or a regex operation that violates
+    /// its contracted flag requirements.
+    Regex = 19,
+    /// A regex search exhausted the host-configured Context budget.
+    RegexBudget = 20,
 }
 
 impl TrapKind {
@@ -92,6 +97,8 @@ impl TrapKind {
             16 => TrapKind::JsonNumber,
             17 => TrapKind::JsonCycle,
             18 => TrapKind::JsonResultValue,
+            19 => TrapKind::Regex,
+            20 => TrapKind::RegexBudget,
             _ => return None,
         })
     }
@@ -118,6 +125,8 @@ impl TrapKind {
             TrapKind::JsonNumber => "json-non-finite-number",
             TrapKind::JsonCycle => "json-cycle",
             TrapKind::JsonResultValue => "json-result-value",
+            TrapKind::Regex => "regex-error",
+            TrapKind::RegexBudget => "regex-budget-exhausted",
         }
     }
 }
@@ -159,7 +168,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=18u32 {
+        for v in 1..=20u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

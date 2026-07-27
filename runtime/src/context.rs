@@ -177,6 +177,9 @@ pub const CLASS_SET: u32 = 0xFFFF_FF06;
 pub const CLASS_MAP_DATA: u32 = 0xFFFF_FF07;
 /// Class id used for Map/Set open-addressed bucket storage.
 pub const CLASS_MAP_INDEX: u32 = 0xFFFF_FF08;
+/// Class id used for RegExp handles.
+#[cfg(feature = "regex")]
+pub const CLASS_REGEX: u32 = 0xFFFF_FF09;
 
 // ----- ship-tier arena (§8.1b) -----
 
@@ -333,6 +336,12 @@ pub struct Context {
     // The `Date.now` source (stdlib.md §3): `Some` pins the clock
     // (tests, replays); `None` reads the system UTC clock.
     now_override: Option<i64>,
+    // The maximum matching work for one budgeted regex search. Kept
+    // even in feature-off builds so the host Context ABI and setter do
+    // not change by feature configuration.
+    regex_budget: u64,
+    #[cfg(feature = "regex")]
+    regex: crate::regexops::RegexStore,
     // One-shot object-request allocation fault. `Some(n)` refuses the
     // n-th subsequent Context::alloc request; underlying arena chunk
     // allocations are deliberately not counted because their sequence
@@ -402,6 +411,9 @@ impl Context {
             release_on_delete,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             now_override: None,
+            regex_budget: 100_000,
+            #[cfg(feature = "regex")]
+            regex: crate::regexops::RegexStore::default(),
             alloc_fail_countdown: None,
             chunks: Vec::new(),
             chunk_map: Vec::new(),
@@ -529,6 +541,27 @@ impl Context {
     /// returns exactly `ms` until pinned again.
     pub fn set_now(&mut self, ms: i64) {
         self.now_override = Some(ms);
+    }
+
+    /// Sets the maximum work allowed for one regular-expression search.
+    ///
+    /// The value is deterministic Context state. A zero budget is
+    /// permitted and causes any nontrivial match attempt to trap.
+    pub fn set_regex_budget(&mut self, budget: u64) {
+        self.regex_budget = budget;
+    }
+
+    /// Current regular-expression execution budget.
+    #[must_use]
+    #[cfg(feature = "regex")]
+    pub(crate) fn regex_budget(&self) -> u64 {
+        self.regex_budget
+    }
+
+    /// Context-owned regular-expression cache and per-handle state.
+    #[cfg(feature = "regex")]
+    pub(crate) fn regex_store(&mut self) -> &mut crate::regexops::RegexStore {
+        &mut self.regex
     }
 
     // ----- trap state -----

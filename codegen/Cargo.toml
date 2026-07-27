@@ -29,3 +29,7 @@ cc = "1"
 # Object-file inspection for the AOT emission tests, as in the P0.5
 # spike; the same version the spike pins.
 object = { version = "0.36", default-features = false, features = ["read", "std"] }
+
+[features]
+default = []
+regex = ["subscript-compiler/regex", "subscript-runtime/regex"]

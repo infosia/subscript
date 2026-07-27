@@ -91,6 +91,8 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t37-allocation-failure-map-grow" | "t38-allocation-failure-set-grow" => {
             (TrapKind::AllocationFailure, 10)
         }
+        #[cfg(feature = "regex")]
+        "t39-regex-budget" => (TrapKind::RegexBudget, 9),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -499,11 +501,15 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
+    #[cfg(not(feature = "regex"))]
+    let expected_count = 38;
+    #[cfg(feature = "regex")]
+    let expected_count = 39;
     assert_eq!(
         ids.len(),
-        38,
-        "expected exactly 38 trap entries (t01–t33 and t35–t38 runnable coverage + t34 \
-         unrepresentable-layout policy), found {}",
+        expected_count,
+        "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
+         coverage + t34 unrepresentable-layout policy, plus t39 with regex), found {}",
         ids.len()
     );
 

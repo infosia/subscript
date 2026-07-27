@@ -7,8 +7,8 @@ use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
-    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, NumFn, SetFn,
-    StrFn, TplPart, UnOp,
+    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, NumFn,
+    RegexFn, SetFn, StrFn, TplPart, UnOp,
 };
 use crate::types::{FuncType, Type};
 
@@ -201,6 +201,51 @@ impl<'p> Checker<'p> {
                 ty: Type::Null,
                 pos,
             },
+            ast::Lit::Regex(regex) => {
+                #[cfg(not(feature = "regex"))]
+                let _ = regex;
+                #[cfg(feature = "regex")]
+                {
+                    let pattern = regex.exp.to_string();
+                    let flags = regex.flags.to_string();
+                    if let Err(error) = crate::regex::validate_literal(&pattern, &flags) {
+                        self.error(
+                            RuleCode::S100,
+                            format!("invalid regular-expression literal: {error}"),
+                            pos.clone(),
+                        );
+                        return self.err_expr(pos);
+                    }
+                    return hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Regex(RegexFn::New),
+                            args: vec![
+                                hir::Expr {
+                                    kind: ExprKind::Str(pattern),
+                                    ty: Type::Str,
+                                    pos: pos.clone(),
+                                },
+                                hir::Expr {
+                                    kind: ExprKind::Str(flags),
+                                    ty: Type::Str,
+                                    pos: pos.clone(),
+                                },
+                            ],
+                        },
+                        ty: Type::RegExp,
+                        pos,
+                    };
+                }
+                #[cfg(not(feature = "regex"))]
+                {
+                    self.error(
+                        RuleCode::S014,
+                        "regular expressions require a build with the `regex` Cargo feature",
+                        pos.clone(),
+                    );
+                    self.err_expr(pos)
+                }
+            }
             other => {
                 let p = self.pos(other.span());
                 self.error(
@@ -1806,6 +1851,227 @@ impl<'p> Checker<'p> {
             .rev()
             .any(|scope| scope.vars.contains_key(name));
         !shadowed && self.scope_item(name).is_none()
+    }
+
+    /// True when `RegExp` resolves to the ambient constructor rather
+    /// than a local or program declaration.
+    fn regexp_is_ambient(&self, fx: &FnCtx) -> bool {
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.vars.contains_key("RegExp"));
+        !shadowed && self.scope_item("RegExp").is_none()
+    }
+
+    #[cfg(feature = "regex")]
+    fn check_regex_new(&mut self, n: &ast::NewExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+        if n.type_args.is_some() {
+            self.error(RuleCode::S100, "`RegExp` is not generic", pos.clone());
+        }
+        let params = [
+            ParamSig {
+                name: "pattern".to_string(),
+                ty: Type::Str,
+                has_default: false,
+            },
+            ParamSig {
+                name: "flags".to_string(),
+                ty: Type::Str,
+                has_default: true,
+            },
+        ];
+        let empty: Vec<ast::ExprOrSpread> = Vec::new();
+        let args_ast = n.args.as_deref().unwrap_or(&empty);
+        let mut args = self.check_args(&params, args_ast, fx, &pos, "new RegExp");
+        if args.len() == 1 {
+            args.push(hir::Expr {
+                kind: ExprKind::Str(String::new()),
+                ty: Type::Str,
+                pos: pos.clone(),
+            });
+        }
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Regex(RegexFn::New),
+                args,
+            },
+            ty: Type::RegExp,
+            pos,
+        }
+    }
+
+    #[cfg(feature = "regex")]
+    fn check_regex_method(
+        &mut self,
+        recv: hir::Expr,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        let (function, param, result) = match name {
+            "test" => (RegexFn::Test, Type::Str, Type::Bool),
+            "matchStart" => (RegexFn::MatchStart, Type::I32, Type::I32),
+            "matchEnd" => (RegexFn::MatchEnd, Type::I32, Type::I32),
+            "exec" => {
+                self.error(
+                    RuleCode::S014,
+                    "`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)",
+                    prop_pos,
+                );
+                return self.err_expr(pos);
+            }
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    format!("`RegExp` has no accepted method `{name}`"),
+                    prop_pos,
+                );
+                return self.err_expr(pos);
+            }
+        };
+        let params = [ParamSig {
+            name: String::new(),
+            ty: param,
+            has_default: false,
+        }];
+        let checked = self.check_args(&params, &c.args, fx, &pos, name);
+        let mut args = Vec::with_capacity(2);
+        args.push(recv);
+        args.extend(checked);
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Regex(function),
+                args,
+            },
+            ty: result,
+            pos,
+        }
+    }
+
+    /// Checks the String methods whose first argument is overloaded
+    /// between the standing literal-string pattern and P23's RegExp
+    /// handle. The first argument is checked once so a regex literal
+    /// cannot produce duplicate diagnostics.
+    fn check_string_pattern_method(
+        &mut self,
+        recv: hir::Expr,
+        name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        let arity = if matches!(name, "replace" | "replaceAll") {
+            2
+        } else {
+            1
+        };
+        if c.args.len() != arity || c.args.iter().any(|arg| arg.spread.is_some()) {
+            self.error(
+                RuleCode::S100,
+                format!("`{name}` expects {arity} argument(s), got {}", c.args.len()),
+                pos.clone(),
+            );
+        }
+        let mut checked = Vec::with_capacity(c.args.len());
+        for (index, arg) in c.args.iter().enumerate() {
+            if arg.spread.is_some() {
+                let spread_pos = self.pos(arg.spread.unwrap_or_default());
+                self.error(
+                    RuleCode::S014,
+                    "spread arguments require variadic parameters, which the language does not have",
+                    spread_pos,
+                );
+                continue;
+            }
+            let context = (index == 1).then_some(&Type::Str);
+            let value = self.check_expr(&arg.expr, context, fx);
+            if index == 1 {
+                self.require_assignable(
+                    &value.ty.clone(),
+                    &Type::Str,
+                    value.pos.clone(),
+                    "the replacement",
+                );
+            }
+            checked.push(value);
+        }
+        let Some(pattern) = checked.first() else {
+            return self.err_expr(pos);
+        };
+
+        #[cfg(feature = "regex")]
+        if pattern.ty == Type::RegExp {
+            let function = match name {
+                "search" => RegexFn::Search,
+                "replace" => RegexFn::Replace,
+                "replaceAll" => RegexFn::ReplaceAll,
+                "split" => RegexFn::Split,
+                _ => return self.err_expr(pos),
+            };
+            let mut args = Vec::with_capacity(1 + checked.len());
+            args.push(recv);
+            args.extend(checked);
+            let ty = if name == "search" {
+                Type::I32
+            } else if name == "split" {
+                Type::Array(Box::new(Type::Str))
+            } else {
+                Type::Str
+            };
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Regex(function),
+                    args,
+                },
+                ty,
+                pos,
+            };
+        }
+
+        if name == "search" {
+            if pattern.ty != Type::Error {
+                #[cfg(feature = "regex")]
+                let message =
+                    "`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)";
+                #[cfg(not(feature = "regex"))]
+                let message = "`string.search` requires a build with the `regex` Cargo feature";
+                self.error(RuleCode::S014, message, prop_pos);
+            }
+            return self.err_expr(pos);
+        }
+
+        self.require_assignable(
+            &pattern.ty.clone(),
+            &Type::Str,
+            pattern.pos.clone(),
+            "the pattern",
+        );
+        let function = match name {
+            "replace" => StrFn::Replace,
+            "replaceAll" => StrFn::ReplaceAll,
+            "split" => StrFn::Split,
+            _ => return self.err_expr(pos),
+        };
+        let mut args = Vec::with_capacity(1 + checked.len());
+        args.push(recv);
+        args.extend(checked);
+        let ty = if name == "split" {
+            Type::Array(Box::new(Type::Str))
+        } else {
+            Type::Str
+        };
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Str(function),
+                args,
+            },
+            ty,
+            pos,
+        }
     }
 
     /// True when `obj` is the ambient `Date` namespace (stdlib.md §3):
@@ -3717,6 +3983,42 @@ impl<'p> Checker<'p> {
                 }
                 self.err_expr(prop_pos)
             }
+            Type::RegExp => {
+                if !for_write && matches!(name, "source" | "flags") {
+                    let function = if name == "source" {
+                        RegexFn::Source
+                    } else {
+                        RegexFn::Flags
+                    };
+                    return hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Regex(function),
+                            args: vec![obj],
+                        },
+                        ty: Type::Str,
+                        pos: prop_pos,
+                    };
+                }
+                let message = if name == "lastIndex" {
+                    "`RegExp.lastIndex` is rejected: mutable global-match state would drive `exec`, which is not representable (Q31)".to_string()
+                } else if name == "exec" {
+                    "`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)".to_string()
+                } else if matches!(name, "test" | "matchStart" | "matchEnd") {
+                    format!("method `{name}` may only be called, not read as a value")
+                } else {
+                    format!("`RegExp` has no accepted member `{name}`")
+                };
+                self.error(
+                    if matches!(name, "lastIndex" | "exec") {
+                        RuleCode::S014
+                    } else {
+                        RuleCode::S100
+                    },
+                    message,
+                    prop_pos.clone(),
+                );
+                self.err_expr(prop_pos)
+            }
             Type::IterResult(v) => {
                 if for_write {
                     self.error(
@@ -4486,6 +4788,9 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             Type::Str => match name.as_str() {
+                "search" | "replace" | "replaceAll" | "split" => {
+                    self.check_string_pattern_method(recv, &name, c, fx, pos, prop_pos)
+                }
                 other => {
                     // The §8 method intrinsics (stdlib.md §8, Q21).
                     if let Some(f) = crate::ambient::str_method(other) {
@@ -4497,6 +4802,21 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 }
             },
+            Type::RegExp => {
+                #[cfg(feature = "regex")]
+                {
+                    self.check_regex_method(recv, &name, c, fx, pos, prop_pos)
+                }
+                #[cfg(not(feature = "regex"))]
+                {
+                    self.error(
+                        RuleCode::S014,
+                        "regular expressions require a build with the `regex` Cargo feature",
+                        prop_pos,
+                    );
+                    self.err_expr(pos)
+                }
+            }
             Type::Generator(y) => match name.as_str() {
                 "next" => {
                     let args = self.check_args(&[], &c.args, fx, &pos, "next");
@@ -4652,6 +4972,21 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
             return self.err_expr(pos);
+        }
+        if name == "RegExp" && self.regexp_is_ambient(fx) {
+            #[cfg(feature = "regex")]
+            {
+                return self.check_regex_new(n, fx, pos);
+            }
+            #[cfg(not(feature = "regex"))]
+            {
+                self.error(
+                    RuleCode::S014,
+                    "`new RegExp` requires a build with the `regex` Cargo feature",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
         }
         // `new Date(ms)` (stdlib.md §3): the ambient constructor applies
         // only when neither a program declaration nor a function-local

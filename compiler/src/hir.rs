@@ -1268,6 +1268,125 @@ pub enum StrFn {
     Concat,
 }
 
+/// Regular-expression intrinsics (stdlib.md §15, Q31).
+///
+/// Every value crossing this ABI is scalar: Context, string, array, and
+/// RegExp values are handles and capture indices are `i32`. The checker
+/// admits these calls only in a `regex` feature build; keeping the HIR
+/// identities unconditional lets downstream tools inspect serialized or
+/// hand-built HIR without changing the public enum shape by build mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RegexFn {
+    /// `new RegExp(pattern, flags)` and a regex literal.
+    New,
+    /// `re.test(subject)`.
+    Test,
+    /// `re.source`.
+    Source,
+    /// `re.flags`.
+    Flags,
+    /// `subject.search(re)`.
+    Search,
+    /// `subject.replace(re, replacement)`.
+    Replace,
+    /// `subject.replaceAll(re, replacement)`.
+    ReplaceAll,
+    /// `subject.split(re)`.
+    Split,
+    /// `re.matchStart(group)`.
+    MatchStart,
+    /// `re.matchEnd(group)`.
+    MatchEnd,
+}
+
+impl RegexFn {
+    /// Every regex intrinsic in discriminant order.
+    pub const ALL: [RegexFn; 10] = [
+        RegexFn::New,
+        RegexFn::Test,
+        RegexFn::Source,
+        RegexFn::Flags,
+        RegexFn::Search,
+        RegexFn::Replace,
+        RegexFn::ReplaceAll,
+        RegexFn::Split,
+        RegexFn::MatchStart,
+        RegexFn::MatchEnd,
+    ];
+
+    /// Opaque runtime symbol used by both execution tiers.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            RegexFn::New => "sub_rt_regex_new",
+            RegexFn::Test => "sub_rt_regex_test",
+            RegexFn::Source => "sub_rt_regex_source",
+            RegexFn::Flags => "sub_rt_regex_flags",
+            RegexFn::Search => "sub_rt_regex_search",
+            RegexFn::Replace => "sub_rt_regex_replace",
+            RegexFn::ReplaceAll => "sub_rt_regex_replace_all",
+            RegexFn::Split => "sub_rt_regex_split",
+            RegexFn::MatchStart => "sub_rt_regex_match_start",
+            RegexFn::MatchEnd => "sub_rt_regex_match_end",
+        }
+    }
+
+    /// Whether the runtime operation can leave the Context trapped.
+    #[must_use]
+    pub fn can_trap(self) -> bool {
+        matches!(
+            self,
+            RegexFn::New
+                | RegexFn::Test
+                | RegexFn::Search
+                | RegexFn::Replace
+                | RegexFn::ReplaceAll
+                | RegexFn::Split
+        )
+    }
+
+    /// Source-level signature rendered in the generated API reference.
+    #[must_use]
+    #[cfg(feature = "regex")]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            RegexFn::New => "new RegExp(pattern: string, flags?: string): RegExp",
+            RegexFn::Test => "test(subject: string): boolean",
+            RegexFn::Source => "source: string",
+            RegexFn::Flags => "flags: string",
+            RegexFn::Search => "string.search(pattern: RegExp): i32",
+            RegexFn::Replace => "string.replace(pattern: RegExp, replacement: string): string",
+            RegexFn::ReplaceAll => {
+                "string.replaceAll(pattern: RegExp, replacement: string): string"
+            }
+            RegexFn::Split => "string.split(separator: RegExp): string[]",
+            RegexFn::MatchStart => "matchStart(group: i32): i32",
+            RegexFn::MatchEnd => "matchEnd(group: i32): i32",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    #[cfg(feature = "regex")]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            RegexFn::New => "Compiles or reuses a Context-cached ECMAScript pattern.",
+            RegexFn::Test => "Tests for a budgeted match and records its capture extents.",
+            RegexFn::Source => "Returns the constructor pattern text.",
+            RegexFn::Flags => "Returns flags in canonical `dgimsuv` order.",
+            RegexFn::Search => "Returns the first UTF-8 byte offset, or -1.",
+            RegexFn::Replace => "Replaces the first match with ECMA `$` substitutions.",
+            RegexFn::ReplaceAll => {
+                "Replaces every match with ECMA `$` substitutions; the RegExp must be global."
+            }
+            RegexFn::Split => "Splits with capture reinjection.",
+            RegexFn::MatchStart => "Returns a recorded capture's start byte offset, or -1.",
+            RegexFn::MatchEnd => "Returns a recorded capture's end byte offset, or -1.",
+        }
+    }
+}
+
 /// Argument spelling of one [`StrFn`] parameter after the receiver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -2341,6 +2460,8 @@ pub enum Callee {
     /// the first argument; optional arguments were normalized at check
     /// time, so the arity is `1 + f.params().len()` exactly.
     Str(StrFn),
+    /// A regular-expression intrinsic (stdlib.md §15, Q31).
+    Regex(RegexFn),
     /// An `Array` method intrinsic (stdlib.md §9, Q22). The receiver is
     /// the first argument; optional arguments were normalized at check
     /// time (`join` separator, `slice`/`fill` range). For `reduce` the
@@ -2378,6 +2499,7 @@ impl Callee {
             Callee::Date(f) => f.can_trap(),
             Callee::Json(f) => f.can_trap(),
             Callee::Str(f) => f.takes_pos_id(),
+            Callee::Regex(f) => f.can_trap(),
             Callee::Arr(f) => f.can_trap(),
             Callee::Map(f) => f.can_trap(),
             Callee::Set(f) => f.can_trap(),

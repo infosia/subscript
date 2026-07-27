@@ -981,6 +981,7 @@ dependencies = [
 name = "subscript-compiler"
 version = "0.1.0"
 dependencies = [
+ "regress",
  "serde",
  "swc_common",
  "swc_ecma_ast",

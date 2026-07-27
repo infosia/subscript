@@ -17,6 +17,6 @@ ryu-js = "=1.0.3"
 regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget", optional = true }
 
 [features]
-# Off by default: regex costs ~537 KB of linked binary (stdlib.md §15.1),
-# so a ship target pays only if it asks.
+default = []
+# Off by default so a ship target pays the linked-binary cost only if it asks.
 regex = ["dep:regress"]

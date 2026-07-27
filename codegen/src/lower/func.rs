@@ -2110,6 +2110,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
             hir::Callee::Json(f) => self.eval_json(*f, args, pos, checked),
             hir::Callee::Str(f) => self.eval_str(*f, args, pos, checked),
+            hir::Callee::Regex(f) => {
+                #[cfg(feature = "regex")]
+                {
+                    self.eval_regex(*f, args, pos, checked)
+                }
+                #[cfg(not(feature = "regex"))]
+                {
+                    let _ = (f, args, pos, checked);
+                    Err(internal(
+                        "regex HIR reached codegen without the `regex` feature",
+                    ))
+                }
+            }
             hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos, checked),
             hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos, checked),
             hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos, checked),
@@ -3031,6 +3044,48 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(RV::S(match f.ret() {
             hir::StrRet::Bool => self.b.ins().icmp_imm(IntCC::NotEqual, res, 0),
             _ => res,
+        }))
+    }
+
+    #[cfg(feature = "regex")]
+    fn eval_regex(
+        &mut self,
+        function: hir::RegexFn,
+        args: &[hir::Expr],
+        pos: &Pos,
+        checked: bool,
+    ) -> Result<RV, String> {
+        use hir::RegexFn as R;
+        let expected = match function {
+            R::New | R::Test | R::Search | R::Split => 2,
+            R::Source | R::Flags => 1,
+            R::Replace | R::ReplaceAll => 3,
+            R::MatchStart | R::MatchEnd => 2,
+            other => return Err(internal(format!("unknown RegexFn {other:?}"))),
+        };
+        if args.len() != expected {
+            return Err(internal(format!(
+                "{} arity (expected {expected}, got {})",
+                function.symbol(),
+                args.len()
+            )));
+        }
+        let mut argv = vec![self.ctx_v];
+        for arg in args {
+            let value = self.eval(arg)?;
+            argv.push(self.expect_s(value)?);
+        }
+        if function.can_trap() {
+            let pos_id = self.pos_id(pos);
+            argv.push(self.iconst(types::I32, pos_id));
+        }
+        let result = self
+            .call_rt(self.ml.rt.regex_ops[function as usize], &argv, checked)?
+            .ok_or_else(|| internal(format!("{} result", function.symbol())))?;
+        Ok(RV::S(if function == R::Test {
+            self.b.ins().icmp_imm(IntCC::NotEqual, result, 0)
+        } else {
+            result
         }))
     }
 

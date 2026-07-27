@@ -122,6 +122,38 @@ impl<'p> Checker<'p> {
             return alias.clone();
         }
         match name {
+            "RegExp" if self.scope_item(name).is_none() => {
+                if r.type_params.is_some() {
+                    self.error(RuleCode::S100, "`RegExp` is not generic", pos);
+                    return Type::Error;
+                }
+                #[cfg(feature = "regex")]
+                {
+                    return Type::RegExp;
+                }
+                #[cfg(not(feature = "regex"))]
+                {
+                    self.error(
+                        RuleCode::S014,
+                        "`RegExp` requires a build with the `regex` Cargo feature",
+                        pos,
+                    );
+                    return Type::Error;
+                }
+            }
+            "RegExpMatchArray" if self.scope_item(name).is_none() => {
+                #[cfg(not(feature = "regex"))]
+                let message =
+                    "`RegExpMatchArray` requires a build with the `regex` Cargo feature";
+                #[cfg(feature = "regex")]
+                let message = "`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)";
+                self.error(
+                    RuleCode::S014,
+                    message,
+                    pos,
+                );
+                return Type::Error;
+            }
             "Promise" => {
                 self.error(
                     RuleCode::S013,

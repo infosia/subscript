@@ -364,6 +364,7 @@ impl Checker<'_> {
                 | Type::Void
                 | Type::Null
                 | Type::Object
+                | Type::RegExp
                 | Type::Enum(_)
                 | Type::Map(..)
                 | Type::Set(_)

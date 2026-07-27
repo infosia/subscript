@@ -67,6 +67,7 @@ void sub_rt_ctx_release(Context* ctx);
 uint64_t sub_rt_ctx_reserved_bytes(const Context* ctx);
 void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
 void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
+void sub_rt_ctx_set_regex_budget(Context* ctx, uint64_t budget);
 void sub_rt_ctx_set_trap_observer(Context* ctx, sub_rt_trap_observer observer, void* userdata);
 const uint8_t* sub_rt_ctx_stdout(const Context* ctx, uint64_t* len);
 uint32_t sub_rt_ctx_trap_kind(const Context* ctx);

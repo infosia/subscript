@@ -298,6 +298,7 @@ impl<'a> Validator<'a> {
     fn is_managed(&self, ty: &Type) -> bool {
         match ty {
             Type::Str
+            | Type::RegExp
             | Type::Object
             | Type::Array(_)
             | Type::Map(..)

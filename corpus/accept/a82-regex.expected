@@ -1,0 +1,31 @@
+meta (?<word>[a-z]+)-(\d+) gi x im
+source (?:) \/
+capture true 2 7 4 5 5 7
+search 3
+replace x[$][ab][x][z][a][b][a][a0][$99][a][]z
+replaceGlobal a# b#
+all a<1:1:1> b<22:22:22>
+empty -é-x-
+split a|1|b|22|c
+splitEmpty é|x
+lookbehindReplace XZX
+lookbehindAll XZZ
+lookbehindSplit 3 X||
+anchorReplace ZXX
+anchorAll ZXX
+anchorSplit 2 |XX
+anchorMReplace Z~X~X
+anchorMAll Z~Z~Z
+anchorMSplit 4 |~|~|
+spanningReplace Zc
+spanningAll ZZ
+spanningSplit 3 ||
+boundaryReplace Zb cd
+boundaryAll Zb Zd
+boundarySplit 3 ab| |cd
+emptyContextReplace X-X
+emptyContextAll X-X-
+emptyContextSplit 2 X|X
+unicodeAll éZZ
+unicodeOffsets 3 4
+unicodeSplit 3 é||

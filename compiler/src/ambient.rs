@@ -5,6 +5,8 @@
 //! declarations; the checker does not parse it (P1 contract).
 
 use crate::diag::RuleCode;
+#[cfg(feature = "regex")]
+use crate::hir::RegexFn;
 use crate::hir::{AmbientFn, ArrFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
 use crate::types::Type;
 
@@ -174,29 +176,81 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
         "Unicode normalization tables are unavailable.",
         None,
     ),
+];
+
+#[cfg(feature = "regex")]
+const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "string",
         "match",
-        "Q21",
+        "Q31",
         None,
-        "The language has no RegExp engine.",
+        "`RegExpMatchArray.index` is optional under stock `tsc --strict`, so the result cannot satisfy the language's `i32` index contract.",
         Some("r27-string-match.ts"),
     ),
     rejection(
         "string",
         "matchAll",
-        "Q21",
+        "Q31/Q30",
         None,
-        "The language has no RegExp engine or iterator protocol.",
+        "It needs a Q30 fusion decision and each iteration step still yields an object.",
+        Some("r81-regex-match-all.ts"),
+    ),
+];
+
+#[cfg(not(feature = "regex"))]
+const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "string",
+        "match",
+        "Q31",
         None,
+        "This build does not include the `regex` Cargo feature.",
+        Some("r27-string-match.ts"),
+    ),
+    rejection(
+        "string",
+        "matchAll",
+        "Q31",
+        None,
+        "This build does not include the `regex` Cargo feature.",
+        Some("r89-regex-off-match-all.ts"),
     ),
     rejection(
         "string",
         "search",
-        "Q21",
+        "Q31",
         None,
-        "The language has no RegExp engine.",
+        "This build does not include the `regex` Cargo feature.",
+        Some("r90-regex-off-search.ts"),
+    ),
+];
+
+#[cfg(feature = "regex")]
+const REGEX_REJECTIONS: &[ApiRejection] = &[
+    rejection(
+        "RegExp",
+        "exec",
+        "Q31",
         None,
+        "Its result needs an array with extra fields and a tuple type, neither of which the language has.",
+        Some("r80-regex-exec.ts"),
+    ),
+    rejection(
+        "RegExp",
+        "lastIndex",
+        "Q31",
+        None,
+        "Mutable global-match state would drive `exec`, whose result is not representable.",
+        Some("r82-regex-last-index.ts"),
+    ),
+    rejection(
+        "RegExpMatchArray",
+        "groups",
+        "Q31",
+        None,
+        "Named groups require an object with dynamic keys, which the language does not have.",
+        Some("r83-regex-groups.ts"),
     ),
 ];
 
@@ -808,6 +862,28 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             summary: f.api_summary(),
         });
     }
+    #[cfg(feature = "regex")]
+    {
+        out.push(ApiItem {
+            group: "RegExp [requires feature `regex`]",
+            signature: "/pattern/flags: RegExp".to_string(),
+            summary: "Compiles a checker-validated literal through the Context pattern cache.",
+        });
+        for f in RegexFn::ALL {
+            let group = match f {
+                RegexFn::New => "RegExp constructor [requires feature `regex`]",
+                RegexFn::Search | RegexFn::Replace | RegexFn::ReplaceAll | RegexFn::Split => {
+                    "string [requires feature `regex`]"
+                }
+                _ => "RegExp [requires feature `regex`]",
+            };
+            out.push(ApiItem {
+                group,
+                signature: f.api_signature().to_string(),
+                summary: f.api_summary(),
+            });
+        }
+    }
     for (signature, summary) in [
         ("length: i32", "Returns the element count."),
         (
@@ -914,8 +990,9 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
 /// Every checker-owned named rejection rendered by the generated
 /// reference.
 pub(crate) fn rejected_api() -> Vec<ApiRejection> {
-    [
+    let out: Vec<ApiRejection> = [
         STRING_REJECTIONS,
+        REGEX_STRING_REJECTIONS,
         ARRAY_REJECTIONS,
         DATE_LOCAL_REJECTIONS,
         DATE_STRING_REJECTIONS,
@@ -927,7 +1004,14 @@ pub(crate) fn rejected_api() -> Vec<ApiRejection> {
     .into_iter()
     .flatten()
     .copied()
-    .collect()
+    .collect();
+    #[cfg(feature = "regex")]
+    let out = {
+        let mut out = out;
+        out.extend(REGEX_REJECTIONS.iter().copied());
+        out
+    };
+    out
 }
 
 /// Named String rejection, if the checker gives the member an S014
@@ -935,6 +1019,7 @@ pub(crate) fn rejected_api() -> Vec<ApiRejection> {
 pub(crate) fn string_rejection(name: &str) -> Option<ApiRejection> {
     STRING_REJECTIONS
         .iter()
+        .chain(REGEX_STRING_REJECTIONS)
         .copied()
         .find(|r| r.surface == name)
 }
@@ -1282,6 +1367,10 @@ mod tests {
             assert!(has(group, signature), "{group} {signature}");
         }
 
+        #[cfg(feature = "regex")]
+        let regex_rows = 1 + RegexFn::ALL.len();
+        #[cfg(not(feature = "regex"))]
+        let regex_rows = 0;
         let expected = AmbientFn::ALL.len()
             + 1
             + 2
@@ -1303,6 +1392,7 @@ mod tests {
                 .count()
             + MapFn::ALL.len()
             + SetFn::ALL.len()
+            + regex_rows
             + 7;
         assert_eq!(
             rows.len(),

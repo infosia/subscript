@@ -17,6 +17,8 @@ pub mod api_reference;
 mod ambient;
 mod check;
 mod parse;
+#[cfg(feature = "regex")]
+mod regex;
 mod trap_sites;
 
 pub use diag::{Diagnostic, Pos, RuleCode};
@@ -111,6 +113,22 @@ mod tests {
         assert_eq!(module.functions[0].name, "main");
         assert!(module.functions[0].exported);
         assert_eq!(module.functions[0].ret, Type::Void);
+    }
+
+    #[test]
+    #[cfg(feature = "regex")]
+    fn invalid_regex_literal_is_a_checker_diagnostic() {
+        let diagnostics = check_one("export function main(): void {\n  const regex = /(/;\n}\n")
+            .expect_err("invalid literal must be rejected by the checker");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (2, 17));
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("invalid regular-expression literal"),
+            "diagnostic: {}",
+            diagnostics[0].message
+        );
     }
 
     #[test]
@@ -317,12 +335,17 @@ mod tests {
 
     #[test]
     fn rejected_string_member_is_s014_naming_the_member() {
-        for (member, call) in [
-            ("normalize", "s.normalize()"),
-            ("localeCompare", "s.localeCompare(s)"),
-            ("toLocaleLowerCase", "s.toLocaleLowerCase()"),
-            ("matchAll", "s.matchAll(s)"),
-            ("search", "s.search(s)"),
+        let search_reason = if cfg!(feature = "regex") {
+            "Q31"
+        } else {
+            "`regex` Cargo feature"
+        };
+        for (member, call, q_rule) in [
+            ("normalize", "s.normalize()", "Q21"),
+            ("localeCompare", "s.localeCompare(s)", "Q21"),
+            ("toLocaleLowerCase", "s.toLocaleLowerCase()", "Q21"),
+            ("matchAll", "s.matchAll(s)", "Q31"),
+            ("search", "s.search(s)", search_reason),
         ] {
             let err = check_one(&format!(
                 "export function main(): void {{\n  const s: string = \"a\";\n  {call};\n}}\n"
@@ -330,7 +353,11 @@ mod tests {
             .unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{member}");
             assert!(err[0].message.contains(member), "{member}: {}", err[0].message);
-            assert!(err[0].message.contains("Q21"), "{member}: {}", err[0].message);
+            assert!(
+                err[0].message.contains(q_rule),
+                "{member}: {}",
+                err[0].message
+            );
         }
     }
 
