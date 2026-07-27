@@ -96,7 +96,8 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         | "t41-regex-unsupported-flag"
         | "t42-regex-duplicate-flag"
         | "t43-regex-mutually-exclusive-flags"
-        | "t44-regex-replace-all-without-global" => (TrapKind::Regex, 8),
+        | "t44-regex-replace-all-without-global"
+        | "t45-regex-sticky-last-index" => (TrapKind::Regex, 8),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -115,6 +116,9 @@ fn regex_error_message(id: &str) -> Option<&'static str> {
         }
         "t44-regex-replace-all-without-global" => {
             "string.replaceAll with a RegExp requires the `g` flag"
+        }
+        "t45-regex-sticky-last-index" => {
+            "sticky regular-expression flag `y` requires mutable `RegExp.lastIndex`, which is not in the language"
         }
         _ => return None,
     })
@@ -524,12 +528,12 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 44;
+    let expected_count = 45;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
-         coverage + t34 unrepresentable-layout policy, plus t39–t44 regex coverage), found {}",
+         coverage + t34 unrepresentable-layout policy, plus t39–t45 regex coverage), found {}",
         ids.len()
     );
 

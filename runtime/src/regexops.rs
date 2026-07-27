@@ -68,6 +68,12 @@ struct CheckedFlags {
 fn checked_flags(flags: &str) -> Result<CheckedFlags, String> {
     let mut seen = [false; 128];
     for flag in flags.chars() {
+        if flag == 'y' {
+            return Err(
+                "sticky regular-expression flag `y` requires mutable `RegExp.lastIndex`, which is not in the language"
+                    .to_string(),
+            );
+        }
         if !flag.is_ascii() || !matches!(flag, 'd' | 'g' | 'i' | 'm' | 's' | 'u' | 'v') {
             return Err(format!(
                 "unsupported regular-expression flag `{flag}`; supported flags are d, g, i, m, s, u, v"
@@ -104,7 +110,6 @@ fn normalized_source(pattern: &str) -> Vec<u8> {
     let mut source = Vec::with_capacity(pattern.len());
     let mut escaped = false;
     let mut in_class = false;
-    let mut first_in_class = false;
     for ch in pattern.chars() {
         match ch {
             '/' if !escaped && !in_class => source.extend_from_slice(b"\\/"),
@@ -120,9 +125,6 @@ fn normalized_source(pattern: &str) -> Vec<u8> {
 
         if escaped {
             escaped = false;
-            if in_class {
-                first_in_class = false;
-            }
             continue;
         }
         if ch == '\\' {
@@ -131,17 +133,10 @@ fn normalized_source(pattern: &str) -> Vec<u8> {
         }
         if in_class {
             if ch == ']' {
-                if first_in_class {
-                    first_in_class = false;
-                } else {
-                    in_class = false;
-                }
-            } else if !(first_in_class && ch == '^') {
-                first_in_class = false;
+                in_class = false;
             }
         } else if ch == '[' {
             in_class = true;
-            first_in_class = true;
         }
     }
     source
@@ -898,7 +893,9 @@ mod tests {
             ("\\/", "\\/"),
             ("[/]", "[/]"),
             ("a[/]b", "a[/]b"),
-            ("[]/]/", "[]/]\\/"),
+            ("[]/]/", "[]\\/]\\/"),
+            ("[]/", "[]\\/"),
+            ("[^]/", "[^]\\/"),
             (r"[\]/]", r"[\]/]"),
             ("\n\r\u{2028}\u{2029}", "\\n\\r\\u2028\\u2029"),
         ] {
