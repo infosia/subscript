@@ -1404,8 +1404,24 @@ consider later.
 
 ### 15.6 The vendored fork, and its base
 
-**Vendored at `vendor/regress`, branch `subscript-exec-budget`, based
-on the upstream default branch after `v0.11.1`** — not on the tag.
+**A Cargo git dependency on the fork's `subscript-exec-budget` branch**,
+based on the upstream default branch after `v0.11.1` — not on the tag.
+
+```toml
+regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget" }
+```
+
+*(Corrected 2026-07-27. This first specified a **git submodule**, from
+reading CLAUDE.md's "pin external sources as git submodules or fetched
+artifacts" as naming the permitted forms. It does not: the rule forbids
+**filesystem paths** in committed files, and a git URL is not one. A
+Cargo git dependency is a fetched artifact pinned by `Cargo.lock` to an
+exact commit — the same reproducibility as a submodule, without
+`.gitmodules`, without a `vendor/` tree, and without every clone having
+to `submodule update`. The workspace already resolves git dependencies
+this way for other crates.)*
+
+The branch base is deliberate — not the tag.
 That is deliberate: the commits between `v0.11.1` and the pinned base
 include **`Harden regress against stack overflow`**, which removes
 §15.4's second hazard outright. Branching from the tag would have
