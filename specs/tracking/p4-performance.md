@@ -399,7 +399,7 @@ interior, above-watermark, chunk end, cross-class) all rejected;
 retired-block + stale-root + double collect leaves the free list
 duplicate-free. MINOR 1 (commit the benchmark evidence + this entry;
 regenerated README cited the spec commit's hash — re-run at the
-implementation commit, now cites 821170e) resolved with this commit.
+implementation commit, now cites 6eb9734) resolved with this commit.
 MINOR 2 (clippy doc_lazy_continuation in a test doc comment) and
 MINOR 3 (pre-existing P5.2b `vec_box` on `callbacks` — the Box is
 load-bearing: `bind_callback` returns a stable interior pointer; wants
@@ -410,7 +410,7 @@ writes, and full-capacity re-zeroing on reuse — not the map (gone).
 Not scheduled; §8.1b's target is met.
 
 Second-platform confirmation (x86_64 / Windows, clang 22.1.6, 20 logical
-cores, same 20 warm-up / 21 timed schedule, snapshot @3dc3695 in
+cores, same 20 warm-up / 21 timed schedule, snapshot @d69994c in
 `benchmarks/`): ship `tree` 5.33× → **0.81×** C, i.e. below the C
 baseline, reproduced at 0.87× in a second `--only tree` run. The
 baseline there is the MSVC UCRT `malloc`/`free`, which is slower than

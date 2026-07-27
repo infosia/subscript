@@ -52,7 +52,7 @@ Verified: 15 hard cases against node — `ß`→`SS`, `ﬄ`→`FFL`, `ﬁ`→`FI
 final sigma `ΣΣς`→`ΣΣΣ`/`σσς`, `ᾀ`→`ἈΙ`, `µ`→`Μ`, `İ`, `ı`, `ǆ`, `ʼn`
 — **15/15 identical**, special casing included.
 
-**Lifted** (commit `376b5ee`): both tiers now use the Rust std path,
+**Lifted** (commit `d88b2f5`): both tiers now use the Rust std path,
 `trim` uses the explicit ECMA WhiteSpace + LineTerminator predicate
 rather than Rust's `trim` (which removes `U+0085` where ECMA does not,
 and skips `U+FEFF` where ECMA does not), and `a60-string-unicode`

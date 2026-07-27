@@ -11,7 +11,7 @@ Snapshot captured 2026-07-24. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: clang version 22.1.6 (https://github.com/llvm/llvm-project fc4aad7b5db3fff421df9a9637605b9ca5667881)
-- **subscript**: subscript @ 3dc3695 (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ d69994c (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: absent
 - **JSC**: absent
 - **V8 (Node.js)**: Node.js v24.16.0

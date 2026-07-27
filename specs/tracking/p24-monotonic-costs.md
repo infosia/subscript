@@ -132,7 +132,7 @@ matched-pair delta and the `regress` figure — and both sides of the
 pair link the table, so its return cancels. Run against the pre-P24
 tree with all 4,456,448 B present, the gate exited **0**. It now
 asserts the absolute baseline, and that assertion was **watched firing**
-against `11de8ed` (exit 1, "baseline side moved up by 4226960 B")
+against `400ab3b` (exit 1, "baseline side moved up by 4226960 B")
 rather than assumed. A guard nobody has seen fire is the same gap.
 
 **§22.2's `reserve` fold-in was withdrawn on measurement**, not

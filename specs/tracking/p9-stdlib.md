@@ -38,7 +38,7 @@ Corpus: a40 (every §1 function, all constants, the edge battery), a41
 Phase Review (2026-07-24, fresh no-context): 0 CRITICAL, 2 MAJOR,
 2 MINOR.
 
-- MAJOR 1 (fixed, `b248844`): `Math.pow(1, NaN)` returned 1 — ECMA
+- MAJOR 1 (fixed, `f1c70bb`): `Math.pow(1, NaN)` returned 1 — ECMA
   `Number::exponentiate` step 1 returns NaN for a NaN exponent with no
   base-1 exception; IEEE `powf(1, NaN)=1` diverged and the guard only
   covered infinite exponents. Fixed with a NaN-exponent guard;
@@ -49,7 +49,7 @@ Phase Review (2026-07-24, fresh no-context): 0 CRITICAL, 2 MAJOR,
 - MINOR 1 (recorded): `Math.PI(1.0)` is rejected soundly but as S100
   ("f64 is not callable" — the constant folds first), not S014 naming
   the member. Wording only.
-- MINOR 2 (fixed, `b248844`): the emitted-C libm negative assertion
+- MINOR 2 (fixed, `f1c70bb`): the emitted-C libm negative assertion
   was space-prefix substring matching; now token-boundary
   (`has_bare_call`).
 
@@ -57,7 +57,7 @@ Phase Review (2026-07-24, fresh no-context): 0 CRITICAL, 2 MAJOR,
 tiers (incl. cranelift-object cross-check); `tsc` zero errors,
 config unchanged; edge battery + PRNG sequence pinned in committed
 goldens; r15–r18 assert S014 at pinned positions; §5.5 benchmark run
-at `b248844` — ship rows unchanged (tree 1.36×, sort 1.76×,
+at `f1c70bb` — ship rows unchanged (tree 1.36×, sort 1.76×,
 particles 3.06×, compute-bound 0.97–1.00×; run noise only).
 `cargo test --offline` 304/0, zero warnings.
 
@@ -90,7 +90,7 @@ MakeFullYear 0/99/100/-1, TimeClip ±1 ms, i32 extremes) — all matched
 an independent ECMA-262 implementation; the three trap paths fire
 byte-identically on both tiers with identical kind/message/position.
 
-Review: 0 CRITICAL, 3 MAJOR, 2 MINOR. Fixed (`d19e304`):
+Review: 0 CRITICAL, 3 MAJOR, 2 MINOR. Fixed (`0ec3260`):
 
 - MAJOR 1: `new Date` under a *function-local* binding named `Date`
   bypassed the shadow and accepted a program stock `tsc` rejects
@@ -103,7 +103,7 @@ Review: 0 CRITICAL, 3 MAJOR, 2 MINOR. Fixed (`d19e304`):
   `ss_init`; same program/ms/expected bytes as the dev-tier test.
 - MAJOR 3: this entry (with the §5.5 row below).
 - MINOR 1: `r24-date-compare` reject entry added; Q20's rejection
-  list amended (`0ad8e36`) to record the comparison and zero-arg-
+  list amended (`b29b12b`) to record the comparison and zero-arg-
   constructor decisions (corpus-first).
 - MINOR 2: r23 header rationale corrected to nondeterminism (a Date
   value is timezone-less UTC millis).
@@ -112,7 +112,7 @@ Review: 0 CRITICAL, 3 MAJOR, 2 MINOR. Fixed (`d19e304`):
 tiers, goldens byte-unchanged through the fixes; `tsc` zero errors,
 config unchanged; a42 (27 lines) + r19–r24 at pinned S014 positions;
 calendar unit tests incl. the 1600–2400 full-day round-trip sweep;
-§5.5 benchmark at `d19e304` — ship rows unchanged (tree 1.36×,
+§5.5 benchmark at `0ec3260` — ship rows unchanged (tree 1.36×,
 sort 1.81×, particles 3.06×, compute-bound 0.97–1.03×; run noise
 only). `cargo test --offline` 344/0, zero warnings.
 
@@ -160,7 +160,7 @@ guarded (no negative→usize bug); `String` shadowing safe in all
 scope forms (dispatch is on the receiver type — the P9.2 Date-shadow
 class does not recur).
 
-- MAJOR 1 (this entry): §5.5 benchmark at `58c0a1a` — ship rows
+- MAJOR 1 (this entry): §5.5 benchmark at `2a9022b` — ship rows
   unchanged (tree 1.37×, sort 1.77×, particles 3.07×, compute-bound
   0.93–1.05×; run noise only).
 - MINOR 1: this tracking entry.
@@ -260,7 +260,7 @@ Q22-pinned `includes`; all 24 rejected members actually rejected.
 **Gate (§9, all met):** standing gate byte-exact incl. a44/a45 on both
 tiers; `tsc` zero errors unchanged config; sort stability pinned;
 trapping-callback tuple identical across tiers; r29–r32 at pinned S014
-positions; benchmarks re-captured at `568293b` — **ship rows unchanged**
+positions; benchmarks re-captured at `ec53d2e` — **ship rows unchanged**
 (tree 1.37×, sort 1.77×, particles 3.06×, compute-bound 0.96–1.02×),
 and the new short-circuit lowering costs nothing on the `&&`-heavy rows
 (primes 0.96×, queen 1.00×). Orchestrator-verified: 439 tests, 0
@@ -709,7 +709,7 @@ in the plan.
 
 ## P18 Phase Review (2026-07-26) — findings and disposition
 
-Fresh no-context review of `f51d480..c1a2f5a` (P18's five stages plus
+Fresh no-context review of `cdae592..7963c95` (P18's five stages plus
 P16). **CRITICAL: none. MAJOR: 3. MINOR: 4.** The review independently
 regenerated all five goldens `a63`–`a67` on node v24.18.0 (all match),
 regenerated `api-reference.md` (byte-identical), and confirmed the
@@ -724,7 +724,7 @@ aggregates escaping into callbacks, emitted-C UB, or a weakened corpus.
 The stage-2 implementer replaced `sub_rt_str_slice`'s out-of-range
 trap with JS's negative/clamp rules so `a64` could print `substring`
 and `slice` on the same inputs. The trap message
-`"slice(…) out of range for string length …"`, present at `f51d480`,
+`"slice(…) out of range for string length …"`, present at `cdae592`,
 no longer exists anywhere. No test covered that path, so the suite did
 not notice. Worse, this tracking file then described
 `slice(-2, 3)` as empty *as if it had always been* — the value it
@@ -1012,7 +1012,7 @@ rather than omitting the case.
 
 ## P13 Phase Review (2026-07-26) — findings and disposition
 
-Fresh no-context review of `b6ca729..f4899da`. **CRITICAL: none.
+Fresh no-context review of `11ef850..c64a5eb`. **CRITICAL: none.
 MAJOR: 3. MINOR: 5.** The review re-generated all three goldens on
 node v24.18.0 (all matched), ran ~20 probe programs through **both**
 tiers, and confirmed §13.1's no-RTTI premise, §13.2's two serializer

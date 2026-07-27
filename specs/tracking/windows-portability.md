@@ -213,7 +213,7 @@ kept minimal:
 ## Status log
 
 - 2026-07-23: finding recorded; contract §11a written; handoff for site 1
-  (build.rs) emitted, implemented, verified, committed (9a11b94).
+  (build.rs) emitted, implemented, verified, committed (38b7b8c).
 - 2026-07-23: full Windows test run captured; three root causes classified;
   contracts §11b (runtime clang toolchain) and §12.3a (Win64 marshaling)
   written; two-task plan set.
@@ -227,7 +227,7 @@ kept minimal:
   `-Wno-error` flag; hardcoded system-lib list). Win64 ABI, AAPCS64
   non-regression, `_setmode`, clang location, no-panic all verified correct.
   Gate satisfied. Doc-comment MINOR fixed; test-green work committed
-  (1e15563).
+  (05aa5da).
 - 2026-07-23: Follow-up 1 (generator fix) done — `cemit.rs` casts boundary
   struct pointers to the header type; `-Wno-error` flag removed. Verified
   236/0 flag-free, goldens byte-identical.

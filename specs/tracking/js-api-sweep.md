@@ -25,10 +25,10 @@ prerequisite** it cannot cheaply acquire.
 
 | API | contract | status |
 |---|---|---|
-| `Number.prototype.toString(radix)` | Q26, `stdlib.md` §11.5 | `86f925a`, corpus `a62` |
-| `Number.prototype.toExponential` | Q26, §11.5 | `86f925a`, `a62` |
-| `Number.prototype.toPrecision` | Q26, §11.5 | `86f925a`, `a62` |
-| `Math.clz32` | Q26, `stdlib.md` §1 | `86f925a`, `a62` |
+| `Number.prototype.toString(radix)` | Q26, `stdlib.md` §11.5 | `ddd4852`, corpus `a62` |
+| `Number.prototype.toExponential` | Q26, §11.5 | `ddd4852`, `a62` |
+| `Number.prototype.toPrecision` | Q26, §11.5 | `ddd4852`, `a62` |
+| `Math.clz32` | Q26, `stdlib.md` §1 | `ddd4852`, `a62` |
 
 Both normative traps held. Radix 10 **delegates to the existing Q14
 formatter** rather than reimplementing it, so the two agree by
@@ -46,7 +46,7 @@ required-argument S014s.
 
 The sweep of 2026-07-25 found these fail no surviving reason: each
 exists in JS, introduces no defect, and needs no prerequisite the
-project lacks. Contracted as **Q27** (`f51d480`) and **fully implemented
+project lacks. Contracted as **Q27** (`cdae592`) and **fully implemented
 2026-07-26** across six stages (`stdlib.md` §12), corpus `a63`–`a68`.
 The sixth stage — the `every` family on `FixedArray` — was added after
 the P18 Phase Review found that group contracted but never staged.

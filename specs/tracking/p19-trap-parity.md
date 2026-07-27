@@ -59,9 +59,9 @@ ship-only polling cost time for no parity gain.
 
 | tree | out-of-line checks | inline checks | ×C |
 |---|---:|---:|---:|
-| pre-P13 (`4486b8d`) | **0** | 0 | 1.87× |
-| post-P13 (`a7a4ea8`) | 15 | 0 | 3.74× |
-| pre-P19 (`a757939`) | 15 | 0 | 3.65× |
+| pre-P13 (`6b5189d`) | **0** | 0 | 1.87× |
+| post-P13 (`f3e1d5a`) | 15 | 0 | 3.74× |
+| pre-P19 (`2fda4a9`) | 15 | 0 | 3.65× |
 | post-P19 | 1 | 24 | **1.53×** |
 
 Bisected by the orchestrator on one machine, C baselines agreeing to

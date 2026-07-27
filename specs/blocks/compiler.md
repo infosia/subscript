@@ -1698,8 +1698,8 @@ session, `--warmup 12 --timed 15`, both valid under the ±20% rule:
 
 | tree | emitted-C median | C baseline | ×C |
 |---|---:|---:|---:|
-| pre-P19 (`a757939`, git worktree) | 14.75 ms | 4.04 ms | **3.65×** |
-| post-P19 (`08be75d`) | 6.08 ms | 3.97 ms | **1.53×** |
+| pre-P19 (`2fda4a9`, git worktree) | 14.75 ms | 4.04 ms | **3.65×** |
+| post-P19 (`8f8a851`) | 6.08 ms | 3.97 ms | **1.53×** |
 
 The C baselines agree to 1.7%, which is the control that makes the
 comparison mean anything.
@@ -1732,10 +1732,10 @@ machine, with the trap checks emitted into `a22` counted directly:
 
 | tree | out-of-line checks | inline checks | ×C |
 |---|---:|---:|---:|
-| pre-P13 (`4486b8d`) | **0** | 0 | 1.87× |
-| post-P13 (`a7a4ea8`) | 15 | 0 | 3.74× |
-| pre-P19 (`a757939`) | 15 | 0 | 3.65× |
-| post-P19 (`08be75d`) | 1 | 24 | **1.53×** |
+| pre-P13 (`6b5189d`) | **0** | 0 | 1.87× |
+| post-P13 (`f3e1d5a`) | 15 | 0 | 3.74× |
+| pre-P19 (`2fda4a9`) | 15 | 0 | 3.65× |
+| post-P19 (`8f8a851`) | 1 | 24 | **1.53×** |
 
 **The emitted C had no trap check at all before P13.** P13 added the
 checking that C6 requires after a script call and paid for it in the
