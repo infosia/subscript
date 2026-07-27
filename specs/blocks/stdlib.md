@@ -209,10 +209,13 @@ policy under the no-implicit-GC memory model.
 permanent non-goal; §15 contracts it, **unconditionally**. The evidence
 the reversal required is in §15.1: both constraints the
 `js-api-sweep.md` audit recorded as unchecked were checked and both
-resolve in favour of adoption. The one real cost — **+5.12 MB of
-linked binary** — is charged by the linker to the programs that
-actually call regex, and is 80 bytes for those that do not, which is
-why §15.2 has no build switch.
+resolve in favour of adoption. The one real cost — **+632 KB of linked
+binary**, of which `regress` is 501 KB — is charged by the linker to
+the programs that actually call regex, which is why §15.2 has no build
+switch. *(This paragraph said +5.12 MB and 80 bytes, from the table
+§15.1 corrected on 2026-07-27: that comparison was an unmatched pair
+and charged regex for a 4.25 MiB static this runtime links for any
+program that touches a string.)*
 
 **Stdlib non-goals** (permanent unless revised with evidence):
 `Intl`/locale- and Unicode-table-dependent behavior

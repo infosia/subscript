@@ -177,6 +177,24 @@ language stores UTF-8 (Q5), so the index domain has to be settled; and
 both tiers, which a crate satisfies as long as the ship tier links it
 rather than emitting anything.
 
+**Both checked and resolved in favour of adoption; shipped as P23
+(`stdlib.md` §15, Q31, `specs/tracking/p23-regex.md`, 2026-07-27).**
+The index domain needed no conversion — `regress` matches UTF-8
+natively and returns byte offsets, which is Q5's domain, and the
+`utf16` feature stays **off**. A third constraint this section did not
+anticipate turned out to be the real one: `regress` has no execution
+budget at any version, and an unbounded match is a hang the host cannot
+interrupt, so the engine is a fork that adds one.
+
+**Regex is therefore no longer "wanted, unscheduled".** The iterator
+protocol below still is, in part: P22 delivered `for…of` over the
+built-in containers and array-literal spread (Q30, §14), so what
+remains is the *binding* — a spelling for "this type is iterable",
+`keys`/`values`/`entries` returning iterators, and construction from an
+iterable (`new Map([[k, v]])`). The memory-model question this section
+raises — a stateful iterator outliving the call that made it, against
+C5's non-escaping callbacks — is untouched and is still the hard part.
+
 ## Undecided — the two that are not simple
 
 - **`flat`/`flatMap`.** The depth appears in the result type, so
