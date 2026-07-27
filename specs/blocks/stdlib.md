@@ -1367,12 +1367,25 @@ consider later.
 
 ### 15.6 The budget patch is not upstream
 
-`regress` has no budget, so the ~25-line patch is ours. CLAUDE.md
-forbids a committed reference to any path outside the repository, so it
-is vendored as a **git submodule or a `build.rs`-resolved artifact with
-a documented default**, or upstreamed. **This is the one part of the
-work that is not "call a crate", and it is decided before
-implementation opens, not during.**
+`regress` has no budget, so the ~25-line patch is ours.
+
+**Decided 2026-07-27: a fork, referenced as a git submodule.** CLAUDE.md
+forbids a committed reference to any path outside the repository, and a
+submodule is the form that rule names. The submodule pins an exact
+commit, so the dependency is as reproducible as the `=1.0.3` pin on
+`ryu-js`.
+
+Upstreaming the budget remains worth doing — it would return the
+dependency to a plain version pin and benefits other users — but
+acceptance and timing are outside this project's control, so it does
+not gate P23.
+
+**Sequencing.** The patch is authored and reviewed here first; the fork
+and its push are the owner's (network operations are, CLAUDE.md). Until
+the submodule exists, P23 may be implemented against the unpatched
+crate from the registry, but it **cannot be COMPLETE**: §15.4 makes the
+budget a trap the contract requires, and a build without it ships the
+2.61-second hang §15.1 measured.
 
 ### 15.7 Corpus and gate (pre-registered)
 
