@@ -9,7 +9,12 @@ P23 regex contract and removes the `regex` feature from it; Rev 12,
 632 KB linked, and the 4.25 MiB `CODE_POINT_UTF8` static it displaced
 is this runtime's own — adds §15.6a for `find_from_budgeted`, and
 withdraws §15.7's claim that the `tsc` gate covers reject entries).
-Evidence lands in `specs/tracking/p9-stdlib.md`.
+Evidence lands in `specs/tracking/p9-stdlib.md` for §1–§12 and in the
+phase's own tracking file thereafter — §15 in
+`specs/tracking/p23-regex.md`. *(The blanket "evidence lands in
+p9-stdlib.md" was true when this document covered one phase; the P23
+Phase Review found §15 citing a tracking file that did not exist, and
+`p9-stdlib.md` containing no mention of P23, Q31 or regex.)*
 
 ## 0. Design rules (all stdlib, permanent)
 
@@ -1394,7 +1399,11 @@ Accepted:
   `Err`. It does **not** remove the budget hazard — a literal is
   matched at runtime like any other pattern and exhausts like any
   other.
-- `re.test(s): boolean`, `re.source: string`, `re.flags: string`
+- `re.test(s): boolean`, `re.source: string`, `re.flags: string`.
+  `source` follows ECMA's `EscapeRegExpPattern`: it escapes a `/` that
+  is **not inside a character class**, and leaves one that is. `/[/]/`
+  has source `[/]`, not `[\/]` — verified against node. `flags` renders
+  in the canonical order `dgimsuv`.
 - `s.search(re): i32` — **byte offset**, −1 on no match
 - `s.replace(re, repl)` / `s.replaceAll(re, repl)` — using **this
   language's own `$` substitution** (Q27), extended to `$1`–`$99` and
@@ -1428,10 +1437,45 @@ the diagnostics must say which:
   step still yields an object
 - `lastIndex` with `g` — mutable state on a value driving `exec`
 - `m.groups` — an object with dynamic keys
+- **the sticky flag `y`** — it steers matching by reading and writing
+  `lastIndex`, which the line above rejects. The diagnostic names
+  `lastIndex`, not `y`.
 
-### 15.4 Two hazards, and the rule for each
+**One matching divergence from JS, beyond the offset domain.** Q5 puts
+indices in UTF-8 bytes and §15.7 pins that. Separately, **without the
+`u` flag this engine matches Unicode scalars where JS matches UTF-16
+code units**, so `.`, `[^a]` and empty-match advance treat a non-BMP
+character as one unit rather than two: `"😀".split(/(?:)/)` is
+`["😀"]` here and `["\ud83d","\ude00"]` in node. With `u` set the two
+agree. This follows from the string representation — this language's
+strings are UTF-8 (§15.1) — and is not adjustable; recorded because
+§15 previously documented only the offset divergence, and a corpus
+entry with a non-BMP subject now pins it.
 
-- **Budget exhaustion traps.** §11.2's test decides it: this is *not*
+### 15.4 The failure channels
+
+Regex has **two** trap kinds, not one. *(The second was added to the
+register by the P23 Phase Review, which found it shipped with no corpus
+entry, no unit test and no line in this contract — five reachable paths,
+all behaving correctly and identically across tiers, none of them
+gated.)*
+
+- **`regex-error` — the pattern or the call is malformed.** Raised by a
+  `RegExp` **built at runtime** whose pattern does not compile
+  (unbalanced parenthesis, over-nesting per the note below), whose flag
+  string is unsupported, duplicated, or self-contradictory (`u` with
+  `v`), and by `replaceAll` given a `RegExp` without `g`.
+
+  **A literal never reaches it.** `/(/ ` and `/a/q` are rejected at
+  check time (S100), which is invariant 6 — the same failure, moved to
+  the earliest point that can see it. The trap exists for the dynamic
+  constructor, where the pattern is not known until it runs.
+
+  `replaceAll` without `g` is the exception worth naming: a *literal*
+  argument is statically known to fail, so it belongs in the checker
+  too rather than in this trap.
+- **`regex-budget-exhausted` — matching ran too long.** §11.2's test
+  decides it: this is *not*
   data — a config file's bad number is data, a pattern that blows its
   budget is the pattern author's error — and there is **no
   representable sentinel**. `test` returns `boolean`, where `false`
@@ -1469,7 +1513,43 @@ Measured on 1000 short subjects with `^enemy_(\d+)_hp(\d+)$`:
 Recompiling is **7× worse** and costs 16% of a 16.7 ms frame for a
 thousand matches. A compiled `RegExp` is cached in Context memory and a
 literal is compiled once; this is required, not an optimization to
-consider later.
+consider later. *(The recompiling row is a property of a build that
+does not cache. It is not reachable through the shipped API, because
+compilation always goes through the cache — so the row states why the
+cache is contract, not a behaviour a test can observe.)*
+
+#### 15.5a Lifetime — the cache is bounded by patterns, the handle is not exempt from `collect`
+
+*(Added 2026-07-27 by the P23 Phase Review, which measured a Context
+growing **1.8 MB → 40.4 MB** over ten `collect()`ed frames of 2000
+distinct dynamic patterns, and a regex literal evaluated inside a
+200 000-iteration loop retaining **181 MB** that `collect()` could not
+reclaim — against 0 MB for the same literal hoisted to a constant.)*
+
+Invariant 2 makes explicit `collect()` the whole memory model. Regex
+state is not outside it:
+
+- **A `RegExp` handle is an ordinary Context allocation.** `collect()`
+  reclaims an unreachable one exactly as it reclaims any other object,
+  and the handle's match state (`matchStart`/`matchEnd`) dies with it.
+  A store entry that outlives its handle is a leak, and — because the
+  entry keeps answering — also the mechanism by which a stale handle
+  can be read after its block is reused.
+- **The compiled-pattern cache is keyed by `(source, flags)` and is
+  retained for the Context's lifetime.** Its size is bounded by the
+  number of **distinct patterns the program compiles**, not by the
+  number of evaluations. That is the bound §15.5 buys, and it is the
+  right one: a program's literals are a finite set fixed at compile
+  time.
+- **A pattern built at runtime is therefore the one growth path**, and
+  it is the host's to bound — a Context fed unbounded distinct patterns
+  accumulates unbounded compiled patterns, by design, the same way it
+  accumulates any other deliberately retained state. Stated so that a
+  host reading §15.5 does not conclude the cache is self-limiting.
+- **A literal is compiled and allocated once per module**, not once per
+  evaluation. Lowering a literal to a per-evaluation constructor call
+  makes the common spelling — a literal used inside a loop — allocate
+  on every iteration, which is what the measurement above found.
 
 ### 15.6 The vendored fork, and its base
 
@@ -1604,10 +1684,20 @@ The prelude's omission of `match`/`exec` does mean an editor flags them
 — which is the point of invariant 5 — but that is a property of the
 prelude, checked by the S014 positions above, not by the `tsc` run.
 
-Traps, tuple-identical across tiers, as `cemit` tests: budget
-exhaustion. *(A nesting-depth trap was also listed here; §15.4 records
-that upstream fixed the hazard, so an over-nested pattern is an
-ordinary compile `Err` and needs no separate trap.)*
+Traps, tuple-identical across tiers, as `cemit` tests: **both kinds of
+§15.4**. `regex-budget-exhausted` on a first search and on a **later**
+search of a repeated operation, the latter asserting no partial result;
+and `regex-error` on each of its reachable paths — an uncompilable
+dynamic pattern, an unsupported flag, a duplicated flag, `u` with `v`,
+and `replaceAll` without `g`. *(A nesting-depth trap was also listed
+here; §15.4 records that upstream fixed the hazard, so an over-nested
+pattern takes the ordinary compile-failure route.)*
+
+The accepted flag set — `d g i m s u v` — is pinned by corpus entry,
+and **sticky `y` is rejected**, naming `lastIndex` as the language gap
+that blocks it (§15.3): `y` is meaningless without the mutable
+`lastIndex` this contract omits. `d` is accepted and inert until an
+`indices` surface exists.
 
 Gate: the standing differential gate byte-exact on both tiers; `tsc`
 zero errors with unchanged config; goldens from the dev tier; rejects
@@ -1621,3 +1711,14 @@ error was entirely methodological — the two programs compared did not
 otherwise match, so a 4.25 MB table only one of them reached was
 attributed to regex. A size measurement that does not name what both
 sides link is not evidence.
+
+**It must be committed as something that runs.** *(Added by the P23
+Phase Review, which found this the one pre-registered gate item with no
+test, no script and no `benchmarks/` entry — nothing in the repository
+reproduced it and nothing failed if it drifted. It is also the number
+the phase got wrong twice, so it is the last one that should have been
+left unguarded.)* The same applies to §15.1's overhead table and
+§15.5's caching table: a figure this contract cites as evidence is
+either reproducible from the repository or marked as a one-off
+measurement with the date it was taken. Both forms are acceptable; an
+unreproducible figure presented as a standing fact is not.
