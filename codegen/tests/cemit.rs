@@ -770,6 +770,149 @@ fn acyclic_json_serializer_emits_no_tracking_operations() {
     assert!(!c.contains("sub_rt_json_leave(ctx,"), "{c}");
 }
 
+fn provenance_fixture() -> subscript_compiler::hir::Module {
+    use subscript_compiler::check_program;
+
+    const ENGINE_MIRROR: &str = "\
+// @subscript-c-header include=\"engine.h\"
+// @subscript-c-descriptor function=\"engUse\" parameter=\"engRead\" aggregate=\"EngItemView\" element=\"EngItem\" const=true
+// @subscript-c-descriptor function=\"engUse\" parameter=\"engWrite\" aggregate=\"EngItemOut\" element=\"EngItem\" const=false
+// @subscript-c-string-view function=\"engUse\" parameter=\"engLabel\" aggregate=\"EngStringView\"
+// @subscript-c-callback typedef=\"EngCallback\"
+type EngCallback = (engMessage: string, engUserdata1: object | null, engUserdata2: object | null) => void;
+declare class EngItem {
+  engValue: u32;
+  constructor(engValue: u32);
+}
+declare class EngSink {
+  engCallback: EngCallback;
+  engUserdata1: object | null;
+  engUserdata2: object | null;
+  constructor(engCallback: EngCallback, engUserdata1: object | null, engUserdata2: object | null);
+}
+declare function engUse(engRead: EngItem[], engWrite: EngItem[], engLabel: string, engSink: EngSink): void;
+";
+    const AUDIO_MIRROR: &str = "\
+// @subscript-c-header include=\"audio.h\"
+declare function audTick(audFrames: u32): void;
+";
+    const PROGRAM: &str = "\
+export function main(): void {
+  const engRead: EngItem[] = [new EngItem(1)];
+  const engWrite: EngItem[] = [new EngItem(0)];
+  const engSink: EngSink = new EngSink(
+    (engMessage, engUserdata1, engUserdata2) => {},
+    null,
+    null,
+  );
+  engUse(engRead, engWrite, \"label\", engSink);
+  audTick(64);
+}
+";
+    check_program(&[
+        SourceFile::ambient("engine.generated.d.ts", ENGINE_MIRROR),
+        SourceFile::ambient("audio.generated.d.ts", AUDIO_MIRROR),
+        SourceFile::new("test.ts", PROGRAM),
+    ])
+    .expect("provenance fixture checks")
+}
+
+#[test]
+fn foreign_c_names_come_from_typed_mirror_provenance() {
+    use subscript_codegen::emit_c;
+
+    let c = emit_c(&provenance_fixture())
+        .expect("provenance fixture emits")
+        .source;
+    let engine_include = c.find("#include \"engine.h\"").expect("engine include");
+    let audio_include = c.find("#include \"audio.h\"").expect("audio include");
+    assert!(engine_include < audio_include, "mirror ingestion order: {c}");
+    assert_eq!(c.matches("#include \"engine.h\"").count(), 1, "{c}");
+    assert_eq!(c.matches("#include \"audio.h\"").count(), 1, "{c}");
+    assert!(
+        c.contains("typedef struct sub_callback_string_view"),
+        "{c}"
+    );
+    assert!(
+        c.contains(
+            "extern void sub_rt_cb_trampoline(sub_callback_string_view message, void* userdata1, void* userdata2);"
+        ),
+        "{c}"
+    );
+    assert!(c.contains("((EngStringView){"), "{c}");
+    assert!(c.contains("((EngItemView){"), "{c}");
+    assert!(c.contains("((EngItemOut){ (EngItem*)"), "{c}");
+    assert!(
+        c.contains("(EngCallback)&sub_rt_cb_trampoline"),
+        "{c}"
+    );
+}
+
+#[test]
+fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
+    use subscript_codegen::emit_c;
+
+    let mut missing_parameter = provenance_fixture();
+    let parameter = missing_parameter
+        .foreign_fns
+        .iter_mut()
+        .find(|function| function.name == "engUse")
+        .and_then(|function| {
+            function
+                .params
+                .iter_mut()
+                .find(|parameter| parameter.name == "engLabel")
+        })
+        .expect("string parameter");
+    parameter.foreign_provenance = None;
+    let error = emit_c(&missing_parameter).expect_err("missing string provenance must fail");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("engUse"), "{error}");
+    assert!(error.contains("engLabel"), "{error}");
+
+    let mut missing_descriptor = provenance_fixture();
+    let parameter = missing_descriptor
+        .foreign_fns
+        .iter_mut()
+        .find(|function| function.name == "engUse")
+        .and_then(|function| {
+            function
+                .params
+                .iter_mut()
+                .find(|parameter| parameter.name == "engWrite")
+        })
+        .expect("descriptor parameter");
+    parameter.foreign_provenance = None;
+    let error = emit_c(&missing_descriptor).expect_err("missing descriptor provenance must fail");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("engUse"), "{error}");
+    assert!(error.contains("engWrite"), "{error}");
+
+    let mut missing_callback = provenance_fixture();
+    let field = missing_callback
+        .classes
+        .iter_mut()
+        .find(|class| class.name == "EngSink")
+        .and_then(|class| {
+            class
+                .fields
+                .iter_mut()
+                .find(|field| field.name == "engCallback")
+        })
+        .expect("callback field");
+    field.foreign_provenance = None;
+    let error = emit_c(&missing_callback).expect_err("missing callback provenance must fail");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("EngSink"), "{error}");
+    assert!(error.contains("engCallback"), "{error}");
+
+    let mut missing_mirror = provenance_fixture();
+    missing_mirror.foreign_mirrors.clear();
+    let error = emit_c(&missing_mirror).expect_err("missing mirror provenance must fail");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("foreign C preamble"), "{error}");
+}
+
 #[test]
 fn to_string_out_of_range_radix_traps_identically() {
     assert_number_range_trap_identical(

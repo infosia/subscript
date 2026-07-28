@@ -347,46 +347,6 @@ impl<'m> Emitter<'m> {
         Ok(self.class(id)?.is_value)
     }
 
-    /// The C header descriptor struct name for a `(pointer, count)` array
-    /// pair over `elem`, plus the element-pointer cast the compound literal
-    /// needs. Scalar elements use the header's `SubSlice*` / `SubBufferView`
-    /// const descriptors (`const void*` → `const T*` is implicit, no cast).
-    /// A value-class element uses its mutable out-array descriptor
-    /// (§14.3/§14.5): the element pointer is non-const, so the const-
-    /// qualified `sub_rt_array_data` result is cast to the element pointer
-    /// type (using the raw C header struct name, layout-identical to the
-    /// language value class — invariant 1). This path is coupled to the
-    /// synthetic header exactly like the scalar descriptor names.
-    fn interop_array_pair_desc(&self, elem: &Type) -> Result<(String, String), String> {
-        match elem {
-            Type::I8 => Ok(("SubSliceI8".to_string(), String::new())),
-            Type::U8 => Ok(("SubSliceU8".to_string(), String::new())),
-            Type::I16 => Ok(("SubSliceI16".to_string(), String::new())),
-            Type::U16 => Ok(("SubSliceU16".to_string(), String::new())),
-            Type::F16 => Ok(("SubSliceF16".to_string(), String::new())),
-            Type::U32 => Ok(("SubBufferView".to_string(), String::new())),
-            Type::F32 => Ok(("SubSliceF32".to_string(), String::new())),
-            Type::I32 => Ok(("SubSliceI32".to_string(), String::new())),
-            Type::F64 => Ok(("SubSliceF64".to_string(), String::new())),
-            Type::I64 => Ok(("SubSliceI64".to_string(), String::new())),
-            Type::Class(id) if self.is_value_class(*id)? => {
-                let name = self.class(*id)?.name.clone();
-                let desc = match name.as_str() {
-                    "SubWaitEntry" => "SubWaitList",
-                    other => {
-                        return Err(format!(
-                            "no interop array-pair descriptor for value-class element {other}"
-                        ))
-                    }
-                };
-                Ok((desc.to_string(), format!("({name}*)")))
-            }
-            other => Err(format!(
-                "no interop array-pair descriptor for element type {other:?}"
-            )),
-        }
-    }
-
     /// C type for a value of `ty` (as a variable, parameter, field, or
     /// return). Aggregates (value classes, `FixedArray`, `IterResult`,
     /// function values) get their own named struct types.
@@ -554,14 +514,48 @@ impl<'m> Emitter<'m> {
 
         let mut out = String::new();
         out.push_str(PREAMBLE);
-        // Foreign C-header binding (P5.2b): the ship tier includes the real
-        // synthetic header so boundary struct layouts and foreign
-        // prototypes come from one source (compiler.md §12.4; the link
-        // provides `interop.c`). The generic callback trampoline is
-        // declared here because its type mentions `SubStringView`.
-        if !self.module.foreign_fns.is_empty() {
-            out.push_str("#include \"interop.h\"\n");
-            out.push_str("extern void sub_rt_cb_trampoline(SubStringView message, void* userdata1, void* userdata2);\n\n");
+        // Each bound mirror supplies its own C include spelling (§23.4).
+        // The HIR preserves ingestion order; no header is inferred from a
+        // foreign symbol or language type.
+        if !self.module.foreign_fns.is_empty() && self.module.foreign_mirrors.is_empty() {
+            return Err(
+                "internal error at foreign C preamble: foreign functions have no mirror provenance"
+                    .to_string(),
+            );
+        }
+        for foreign in &self.module.foreign_fns {
+            if self
+                .module
+                .foreign_mirrors
+                .get(foreign.mirror.0)
+                .is_none()
+            {
+                return Err(format!(
+                    "internal error at foreign function `{}`: mirror provenance index {} is missing",
+                    foreign.name, foreign.mirror.0
+                ));
+            }
+        }
+        for mirror in &self.module.foreign_mirrors {
+            if mirror.include.contains('"') {
+                return Err(format!(
+                    "internal error at mirror `{}`: header provenance cannot be written as a C include",
+                    mirror.source_name
+                ));
+            }
+            let _ = writeln!(out, "#include \"{}\"", mirror.include);
+        }
+        if !self.module.foreign_mirrors.is_empty() {
+            out.push_str(
+                "/* The runtime callback view and every bound string view have the same\n\
+                 \x20* C ABI layout. That layout identity makes the later function-pointer\n\
+                 \x20* cast to a header callback typedef sound. */\n\
+                 typedef struct sub_callback_string_view {\n\
+                 \x20   const uint8_t* data;\n\
+                 \x20   size_t len;\n\
+                 } sub_callback_string_view;\n\
+                 extern void sub_rt_cb_trampoline(sub_callback_string_view message, void* userdata1, void* userdata2);\n\n",
+            );
         }
         out.push_str(&typedefs);
         out.push('\n');
@@ -4066,7 +4060,7 @@ impl<'m> Emitter<'m> {
 
     /// For a boundary struct-pointer target (`Struct | null`), the foreign
     /// header pointer type an emitted pointer expression is cast to
-    /// (`SubChainHeader*`) — the header struct name, not the language name.
+    /// (`HeaderStruct*`) — the header struct name, not the language name.
     /// `None` when `ty` is not a boundary struct pointer.
     fn boundary_ptr_cast(&self, ty: &Type) -> Result<Option<String>, String> {
         if let Type::Nullable(inner) = ty {
@@ -4094,8 +4088,7 @@ impl<'m> Emitter<'m> {
 
     /// Emits a foreign C-ABI call (`Callee::Foreign`, P5.2b): a direct
     /// call of the header symbol with each argument marshaled per Q13. The
-    /// C compiler resolves the ABI; the symbol resolves from the linked
-    /// `interop.c` (compiler.md §12.4).
+    /// C compiler resolves the ABI; the host supplies the linked symbol.
     fn eval_foreign_call(
         &mut self,
         name: &str,
@@ -4117,7 +4110,8 @@ impl<'m> Emitter<'m> {
         let mut pin_cts: Vec<Option<String>> = Vec::new();
         for (p, a) in ff.params.iter().zip(args) {
             let mut buf = String::new();
-            let (expr, pin_ct) = self.marshal_foreign_c_arg(&p.ty, a, &mut buf, depth)?;
+            let (expr, pin_ct) =
+                self.marshal_foreign_c_arg(&ff.name, p, a, &mut buf, depth)?;
             bufs.push(buf);
             parts.push(expr);
             pin_cts.push(pin_ct);
@@ -4167,10 +4161,34 @@ impl<'m> Emitter<'m> {
     /// can fix its evaluation order. `None` means the expression only
     /// reads temporaries this function already bound (or immutable
     /// state), so where it is evaluated cannot be observed.
-    fn marshal_foreign_c_arg(&mut self, pty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<(String, Option<String>), String> {
+    fn marshal_foreign_c_arg(
+        &mut self,
+        function_name: &str,
+        parameter: &hir::Param,
+        arg: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<(String, Option<String>), String> {
         let ind = indent(depth);
-        match pty {
+        match &parameter.ty {
             Type::Str => {
+                let aggregate = match &parameter.foreign_provenance {
+                    Some(hir::ForeignTypeProvenance::StringView { aggregate }) => {
+                        aggregate.clone()
+                    }
+                    None => {
+                        return Err(format!(
+                            "internal error at foreign function `{function_name}` parameter `{}`: missing string-view provenance",
+                            parameter.name
+                        ));
+                    }
+                    Some(other) => {
+                        return Err(format!(
+                            "internal error at foreign function `{function_name}` parameter `{}`: expected string-view provenance, found {other:?}",
+                            parameter.name
+                        ));
+                    }
+                };
                 // Strings are immutable, so the data/length reads below
                 // are stable wherever they land.
                 let h = self.eval(arg, out, depth)?;
@@ -4178,24 +4196,43 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
                 Ok((
                     format!(
-                        "((SubStringView){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
+                        "(({aggregate}){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
                     ),
                     None,
                 ))
             }
-            Type::Array(elem) => {
+            Type::Array(_) => {
+                let (desc, elem_cast) = match &parameter.foreign_provenance {
+                    Some(hir::ForeignTypeProvenance::Descriptor {
+                        aggregate,
+                        element,
+                        element_const,
+                    }) => {
+                        let elem_cast = if *element_const {
+                            String::new()
+                        } else {
+                            format!("({element}*)")
+                        };
+                        (aggregate.clone(), elem_cast)
+                    }
+                    None => {
+                        return Err(format!(
+                            "internal error at foreign function `{function_name}` parameter `{}`: missing descriptor provenance",
+                            parameter.name
+                        ));
+                    }
+                    Some(other) => {
+                        return Err(format!(
+                            "internal error at foreign function `{function_name}` parameter `{}`: expected descriptor provenance, found {other:?}",
+                            parameter.name
+                        ));
+                    }
+                };
                 // A (pointer, count) array-pair descriptor is passed BY
                 // VALUE, so C requires the compound literal to name the
-                // exact header aggregate type of the parameter. The mirror
-                // absorbs every such descriptor into `T[]` (Q13), discarding
-                // its C name, so the name is reconstructed from the element
-                // type by the synthetic header's convention (this
-                // foreign-call path is the P5 interop-slice marshaler and is
-                // coupled to that header, as the SubStringView / SubLogCallback
-                // spellings elsewhere in this function already are). The JIT
-                // tier needs no name — it passes the two components (data,
-                // count) per the ABI directly.
-                let (desc, elem_cast) = self.interop_array_pair_desc(elem)?;
+                // exact header aggregate type of the parameter. Provenance
+                // supplies that name and whether a mutable element-pointer
+                // cast is required; no language type implies either fact.
                 let h = self.eval(arg, out, depth)?;
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
@@ -4213,7 +4250,7 @@ impl<'m> Emitter<'m> {
                 let expr = self.marshal_boundary_c_struct(*id, arg, out, depth)?;
                 Ok((expr, Some(header)))
             }
-            _ if self.is_boundary_struct_ptr(pty)? => {
+            _ if self.is_boundary_struct_ptr(&parameter.ty)? => {
                 // Struct | null pointer: address of a value struct's
                 // storage (chain-slot address-of), or an existing pointer
                 // (`null`, or a `Struct | null` value). Cast to the foreign
@@ -4221,14 +4258,14 @@ impl<'m> Emitter<'m> {
                 // identical (invariant 1) so the pointer is ABI-safe, but
                 // nominally distinct, and the cast documents that intent
                 // and compiles clean on any clang.
-                let cast = self.boundary_ptr_cast(pty)?
+                let cast = self.boundary_ptr_cast(&parameter.ty)?
                     .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
                 let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
                 Ok((format!("({cast})({expr})"), Some(cast)))
             }
             _ => {
                 let v = self.eval(arg, out, depth)?;
-                let ct = self.ctype(pty)?;
+                let ct = self.ctype(&parameter.ty)?;
                 Ok((v, Some(ct)))
             }
         }
@@ -4253,6 +4290,23 @@ impl<'m> Emitter<'m> {
             let f = &fields[i];
             match &f.ty {
                 Type::Func(_) => {
+                    let callback_typedef = match &f.foreign_provenance {
+                        Some(hir::ForeignTypeProvenance::Callback { typedef_name }) => {
+                            typedef_name.clone()
+                        }
+                        None => {
+                            return Err(format!(
+                                "internal error at boundary struct `{header_name}` field `{}`: missing callback typedef provenance",
+                                f.name
+                            ));
+                        }
+                        Some(other) => {
+                            return Err(format!(
+                                "internal error at boundary struct `{header_name}` field `{}`: expected callback typedef provenance, found {other:?}",
+                                f.name
+                            ));
+                        }
+                    };
                     // The callback field is followed by one or two userdata
                     // slots (§14.4). Both are bound into one binding the
                     // trampoline reads; the C struct's first userdata slot
@@ -4268,7 +4322,9 @@ impl<'m> Emitter<'m> {
                     } else {
                         "NULL".to_string()
                     };
-                    parts.push("(SubLogCallback)&sub_rt_cb_trampoline".to_string());
+                    parts.push(format!(
+                        "({callback_typedef})&sub_rt_cb_trampoline"
+                    ));
                     parts.push(format!(
                         "sub_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{}, {})",
                         sanitize(&f.name), sanitize(&f.name), sanitize(&ud1.name), ud2_expr
@@ -4882,12 +4938,6 @@ fn indent(depth: usize) -> String {
     "    ".repeat(depth)
 }
 
-/// The synthetic interop header's C aggregate name for a `(pointer, count)`
-/// array-pair descriptor of the given element type (P5 interop slice,
-/// `specs/blocks/compiler.md` §12). The header spells the u32 descriptor
-/// `SubBufferView` (historical) and the other primitive descriptors
-/// `SubSlice<T>`. An element type without a header descriptor is a loud
-/// codegen error, never a silent mis-marshal (dev-JIT ≠ ship-C otherwise).
 fn is_aggregate(ty: &Type) -> bool {
     matches!(
         ty,
@@ -5561,8 +5611,8 @@ extern void sub_rt_array_spread_fixed(void* ctx, void* out, const void* data, ui
 extern void sub_rt_array_spread_assoc(void* ctx, void* out, void* source, uint32_t pos_id);
 extern void sub_rt_array_spread_string(void* ctx, void* out, const void* source, uint32_t pos_id);
 /* C-boundary marshaling (P5.2b): string/array data pointers and the
- * callback binding constructor. The generic trampoline itself is declared
- * with the boundary include below, since its type mentions SubStringView. */
+ * callback binding constructor. The generic trampoline declaration and
+ * its local string-view layout follow the bound header includes. */
 extern const void* sub_rt_str_data(void* ctx, const void* s);
 extern const void* sub_rt_array_data(void* ctx, const void* a);
 extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata1, void* userdata2);

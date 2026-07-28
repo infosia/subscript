@@ -437,11 +437,11 @@ fn runtime_system_libs() -> &'static [&'static str] {
     }
 }
 
-/// The committed synthetic-header directory (`corpus/interop`), holding
-/// `interop.h` and its implementation `interop.c` (P5.2b). Both AOT link
-/// paths compile `interop.c` in and add this as an include directory, so
-/// a foreign call resolves to the same implementation the dev-JIT tier
-/// links (compiler.md §12.4). Repo-relative, resolved from the crate.
+/// The committed synthetic-fixture directory (`corpus/interop`). Both AOT
+/// link paths compile its C implementation and add this as an include
+/// directory, so a foreign call resolves to the same implementation the
+/// dev-JIT tier links (compiler.md §12.4). Repo-relative, resolved from the
+/// crate.
 fn interop_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop")
 }
