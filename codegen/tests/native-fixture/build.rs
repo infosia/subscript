@@ -16,6 +16,15 @@ fn main() {
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", header.display());
 
+    // interop.c uses _Float16, which MSVC cl cannot compile; the fixture is
+    // never linked on this target (its dependency edges are gated off
+    // windows-msvc), so skip building it. compiler.md §11c.
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "windows" && target_env == "msvc" {
+        return;
+    }
+
     cc::Build::new()
         .file(&source)
         .include(&directory)
