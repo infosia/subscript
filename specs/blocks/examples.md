@@ -128,11 +128,24 @@ the synthetic interop fixture, and binding it is what `compiler.md` §23
 - **Deterministic and headless.** `engine.c` computes; it does not draw,
   sleep, read a clock, or open anything. The same call sequence produces
   the same bytes on every run and every platform.
-- **It carries one instance of each interop pattern** (plan §4), because
-  the pattern list is what a reader needs to recognize in their own
-  header: struct by value, `(pointer, count)` slice, length-carrying
-  string view, callback with userdata, opaque handle with
-  create/retain/release, and a flag typedef.
+- **It carries one instance of each of the five interop patterns**
+  (plan §4), because that list is what a reader needs to recognize in
+  their own header: an intrusive extension chain, a `(pointer, count)`
+  array pair, a length-carrying string view, a callback with userdata,
+  and an opaque handle with retain/release.
+- **It also carries three shapes the five do not name**, each for its own
+  reason, stated here so no declaration is justified by a list that does
+  not contain it: a **struct passed by value** with non-trivial padding
+  (invariant 1's layout identity is what a reader most needs to see), a
+  **flag typedef** whose `static const` members combine with `|`
+  (`compiler.md` §13.2), and a **descriptor-embedded count-first array**
+  inside a larger struct (§13.2's `<n>Count` / `<n>` recognizer), which is
+  how production headers spell an array field.
+
+  *(Corrected 2026-07-28: this section previously presented struct-by-value
+  and the flag typedef as plan §4 patterns and omitted the intrusive
+  chain, so `engine.h` justified two declarations by citing a list that
+  did not require them.)*
 - **It carries both slice forms** — a `const` borrow the callee reads and
   a mutable out-array the callee writes (§14.3) — over the **same
   element type**. That pair is what makes the facade discriminating for
