@@ -3,12 +3,19 @@ name = "subscript-benchmarks"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "The benchmark and size-gate harnesses. `perf-gate` measures the P4 execution baselines, `cross-language` measures the workload suite, and `regex-size-gate` pins P23's matched linked-binary delta."
+description = "The benchmark and measurement harnesses. `perf-gate` measures the P4 execution baselines, `cross-language` measures the workload suite, `regex-size-gate` pins P23's matched linked-binary delta, and `dev-retention-probe` measures dev-tier retained allocation growth."
+
+[[bin]]
+name = "dev-retention-probe"
+path = "src/bin/dev-retention-probe.rs"
+test = false
+bench = false
 
 # Binaries are auto-discovered from src/bin/ (bin name = file name):
 #   perf-gate      <- src/bin/perf-gate.rs
 #   cross-language <- src/bin/cross-language.rs
 #   regex-size-gate <- src/bin/regex-size-gate.rs
+#   dev-retention-probe <- src/bin/dev-retention-probe.rs
 
 [dependencies]
 subscript-codegen = { path = "../codegen" }

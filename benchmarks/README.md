@@ -70,3 +70,10 @@ Every subject that runs discards at least 3 warm-up iterations and continues unt
 - **collect** — N=20000 nodes x K=6 rounds from LCG state=state*1664525+1013904223 (seed 0x12345678); each 48-byte node owns unique strings of lengths 9/41/105/233 bytes (subscript requests 17/49/113/241 bytes, one byte past size-class payload capacities 16/48/112/240); keep exactly the nodes with (state&3)!=0 (15000 survivors/round), drop the rest, force collection (C: explicitly free), then traverse the surviving reverse-built chain; checksum per survivor in traversal order is checksum=(checksum*31+state+9+41+105+233) with i32 wrap; final checksum=1332546592
 
 Noise: every recorded sample set is within +/-20% of its median.
+
+## Dev-tier retention probe
+
+`dev-retention-probe` measures dev-tier Context reserved-byte growth across
+frame counts and object payload sizes while `Context.free` or per-frame
+`Context.collect()` keeps the live set constant. Run it with
+`cargo run --offline --release -p subscript-benchmarks --bin dev-retention-probe`.
