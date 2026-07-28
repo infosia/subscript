@@ -74,12 +74,11 @@ errors for honest mistakes", and an accidental infinite loop is an honest
 mistake with the worst possible diagnostic: silence. The regex budget is
 precedent that this class gets bounded when it can be bounded cheaply.
 
-Response requires an owner decision; the options differ in cost:
-- accept, and document at Q12 that a non-returning export is
-  unrecoverable by design;
-- a dev-tier-only check (e.g. a host-armed deadline tested at loop
-  back-edges, trap on expiry), ship tier untouched — the §8.1a-1 shape:
-  a diagnostic the dev tier can afford and the ship tier does not pay for.
+**Decided (owner, 2026-07-29): accepted as design.** Q12 now documents
+that a non-returning export is unrecoverable, why that is the cost of
+invariant 6 and of a zero-overhead execution model, and that isolation
+against a hung script is the host's to supply. The dev-tier deadline
+option was not taken and is not carried forward.
 
 ## Verified clean — bounded or already documented
 

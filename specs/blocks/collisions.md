@@ -291,6 +291,17 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   the run set stays headless. Prelude host API for the corpus:
   `print(message: string): void`. (Q16, host-created handles, is deferred
   to P5 — corpus.md §5.)
+
+  **A non-returning export is unrecoverable by design** *(owner,
+  2026-07-29 — `specs/tracking/long-run-audit.md` finding 3)*. Exported
+  calls are synchronous and nothing can interrupt one: no fuel, no
+  watchdog, no cross-thread cancellation. A script that fails to return
+  freezes the host's calling thread until the process ends. This is the
+  cost of invariant 6 (trusted scripts) and of an execution model with no
+  per-iteration overhead; the regex budget stays the one deliberate
+  exception, because pathological regex cost is data-driven rather than a
+  code bug. Hosts that need isolation against a hung script must supply
+  it themselves (a worker thread they can abandon, a process boundary).
 - **Q13 (host C-header mirror)** — deferred to P5 (corpus.md §5). Boundary
   typing rules already decided here and binding on the P5 generator:
   opaque handles are branded empty interfaces (nominal enough that handles
