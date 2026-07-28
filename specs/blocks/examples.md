@@ -102,6 +102,12 @@ the synthetic interop fixture, and binding it is what `compiler.md` §23
   header: struct by value, `(pointer, count)` slice, length-carrying
   string view, callback with userdata, opaque handle with
   create/retain/release, and a flag typedef.
+- **It carries both slice forms** — a `const` borrow the callee reads and
+  a mutable out-array the callee writes (§14.3) — over the **same
+  element type**. That pair is what makes the facade discriminating for
+  `compiler.md` §23.3: provenance recorded per element type rather than
+  per parameter cannot tell the two apart, and this header fails such an
+  implementation instead of letting it pass.
 - **It exposes the host's frame state as C calls.** Exported script
   functions are zero-argument and `void`
   (`runtime/include/subscript_runtime.h`), so the script does not receive
