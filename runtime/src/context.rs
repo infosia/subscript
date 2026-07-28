@@ -289,6 +289,12 @@ impl Hasher for AddressHasher {
 
 type AddressSet = HashSet<usize, BuildHasherDefault<AddressHasher>>;
 
+// Valid boundary callbacks have a null `env`, so §14.4a exposes the
+// `(code, userdata1, userdata2)` identity. Keeping `env` in the internal
+// key prevents invalid non-null environments from aliasing in release
+// builds, where the premise assertion is disabled.
+type CallbackIdentity = (*const u8, *const u8, *mut u8, *mut u8);
+
 /// A registered C-callback binding (P5.2b). The language's function value
 /// is a `(code, env)` pair with the calling convention `(ctx, env,
 /// args...)`; a C callback wants a bare `(fnptr, void* userdata)`. A
@@ -365,6 +371,7 @@ pub struct Context {
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
     callbacks: Vec<Box<CallbackBinding>>,
+    callback_interns: HashMap<CallbackIdentity, *mut CallbackBinding>,
     // Transient P13 JSON output builders. Untracked serializers create
     // no active-reference set; tracked ones do so explicitly.
     json_builders: crate::json::JsonBuilders,
@@ -459,6 +466,7 @@ impl Context {
             shadow: Vec::new(),
             roots: Vec::new(),
             callbacks: Vec::new(),
+            callback_interns: HashMap::new(),
             json_builders: crate::json::JsonBuilders::default(),
             json_parsers: crate::json::JsonParsers::default(),
             ship_arena,
@@ -1799,6 +1807,10 @@ impl Context {
     /// through it. Bindings live for the whole Context (the Q13 lifetime
     /// rule), so the pointer stays valid for every later callback.
     ///
+    /// Rebinding the same `(code, userdata1, userdata2)` identity returns
+    /// the same stable pointer (§14.4a). Boundary callbacks are
+    /// non-capturing, so `env` must be null.
+    ///
     /// Both userdata slots (§14.4) are stored and delivered to the language
     /// callback; a one-slot callback-info passes `userdata2` as null.
     pub fn bind_callback(
@@ -1808,6 +1820,15 @@ impl Context {
         userdata1: *mut u8,
         userdata2: *mut u8,
     ) -> *mut u8 {
+        debug_assert!(
+            env.is_null(),
+            "§14.4a callback interning premise requires a null boundary callback env"
+        );
+        let identity = (code, env, userdata1, userdata2);
+        if let Some(&binding) = self.callback_interns.get(&identity) {
+            return binding.cast();
+        }
+
         let ctx: *mut Context = self;
         let mut rec = Box::new(CallbackBinding {
             ctx,
@@ -1818,6 +1839,7 @@ impl Context {
         });
         let ptr: *mut CallbackBinding = &mut *rec;
         self.callbacks.push(rec);
+        self.callback_interns.insert(identity, ptr);
         ptr as *mut u8
     }
 
@@ -2242,6 +2264,56 @@ mod tests {
         ctx.print_line(b"x");
         assert_eq!(ctx.take_stdout(), b"hello\nx\n");
         assert!(ctx.take_stdout().is_empty());
+    }
+
+    #[test]
+    fn callback_bindings_are_interned_by_identity() {
+        fn first_code() {}
+
+        let mut ctx = Context::new();
+        let code = first_code as *const () as *const u8;
+        let mut userdata1 = 1u8;
+        let mut userdata2 = 2u8;
+        let mut other_userdata2 = 3u8;
+        let userdata1 = std::ptr::from_mut(&mut userdata1);
+        let userdata2 = std::ptr::from_mut(&mut userdata2);
+        let other_userdata2 = std::ptr::from_mut(&mut other_userdata2);
+
+        let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+        let repeated = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+        assert_eq!(first, repeated);
+        assert_eq!(ctx.callbacks.len(), 1);
+
+        let second =
+            ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2);
+        assert_ne!(first, second);
+        assert_eq!(ctx.callbacks.len(), 2);
+    }
+
+    #[test]
+    fn callback_reregistration_has_zero_record_growth_at_frame_scale() {
+        fn callback_code() {}
+
+        let mut ctx = Context::new();
+        let code = callback_code as *const () as *const u8;
+        let mut userdata1 = 1u8;
+        let mut userdata2 = 2u8;
+        let userdata1 = std::ptr::from_mut(&mut userdata1);
+        let userdata2 = std::ptr::from_mut(&mut userdata2);
+        let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+
+        for _ in 1..10_000 {
+            assert_eq!(
+                ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2),
+                first
+            );
+        }
+
+        assert_eq!(
+            ctx.callbacks.len(),
+            1,
+            "10,000 registrations of one identity must retain one record"
+        );
     }
 
     #[test]

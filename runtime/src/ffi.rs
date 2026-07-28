@@ -4257,7 +4257,9 @@ pub unsafe extern "C" fn sub_rt_array_data(ctx: *const Context, a: *const u8) ->
 /// binding bundles the Context, the language function value's
 /// `(code, env)`, and both real userdata slots (§14.4);
 /// [`sub_rt_cb_trampoline`] reads it back. The binding lives for the whole
-/// Context (Q13 lifetime rule).
+/// Context (Q13 lifetime rule). Re-registering the same
+/// `(code, userdata1, userdata2)` identity returns the same stable pointer
+/// and allocates no new binding (§14.4a).
 ///
 /// # Safety
 ///
