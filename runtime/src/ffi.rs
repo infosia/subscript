@@ -94,7 +94,9 @@ pub unsafe extern "C" fn sub_rt_alloc(
     unsafe { &mut *ctx }.alloc(size as usize, class_id, pos_id)
 }
 
-/// `Context.free(value)`: frees immediately; double delete traps (Q6).
+/// `Context.free(value)`: frees immediately by default. With freed-handle
+/// diagnostics enabled, the allocation is retained and a double delete
+/// traps (Q6/§8.1a-1).
 ///
 /// # Safety
 ///
@@ -3077,6 +3079,28 @@ pub unsafe extern "C" fn sub_rt_ctx_set_regex_budget(ctx: *mut Context, budget: 
     unsafe { &mut *ctx }.set_regex_budget(budget);
 }
 
+/// Enables or disables freed-handle diagnostics for this Context.
+///
+/// When enabled, dangling-handle use and double free can be detected, but
+/// freed allocations are retained until Context release, so memory can
+/// grow without bound. The setting is disabled by default.
+///
+/// This must be called before the first allocation. Returns 1 when the
+/// setting was applied, or 0 when allocation had already started and the
+/// setting was left unchanged.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_set_freed_handle_diagnostics(
+    ctx: *mut Context,
+    enabled: u32,
+) -> i32 {
+    // SAFETY: exclusive Context contract.
+    i32::from(unsafe { &mut *ctx }.set_freed_handle_diagnostics(enabled != 0))
+}
+
 /// Refuses the `n`-th subsequent object-level Context allocation.
 ///
 /// The count is independent of the allocator tier: arena chunk
@@ -4334,6 +4358,7 @@ pub unsafe extern "C" fn sub_rt_cb_trampoline(
 /// its `Context.free`/`Context.collect` release storage immediately — arena
 /// blocks to their free lists, large allocations to the system — rather
 /// than retaining and poisoning (built via [`Context::new_releasing`]).
+/// Freed-handle diagnostics are disabled by default.
 #[no_mangle]
 pub extern "C" fn sub_rt_ctx_new() -> *mut Context {
     Box::into_raw(Context::new_releasing())
@@ -4629,6 +4654,47 @@ mod tests {
             let m = sub_rt_ctx_trap_message(ctx, &mut mlen);
             assert!(!m.is_null() && mlen > 0);
             sub_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn ffi_freed_handle_diagnostics_setting_controls_double_free_detection() {
+        let releasing = sub_rt_ctx_new();
+        let diagnosing = sub_rt_ctx_new();
+        assert!(!releasing.is_null() && !diagnosing.is_null());
+        // SAFETY: both pointers are fresh, live Contexts and are released
+        // exactly once below.
+        unsafe {
+            assert_eq!(
+                sub_rt_ctx_set_freed_handle_diagnostics(releasing, 0),
+                1
+            );
+            let released = sub_rt_alloc(releasing, 8, 1, 0);
+            sub_rt_delete(releasing, released, 1);
+            sub_rt_delete(releasing, released, 2);
+            assert_eq!(sub_rt_ctx_trap_kind(releasing), 0);
+            assert_eq!(
+                sub_rt_ctx_set_freed_handle_diagnostics(releasing, 1),
+                0,
+                "the setting must reject a late change"
+            );
+
+            assert_eq!(
+                sub_rt_ctx_set_freed_handle_diagnostics(diagnosing, 1),
+                1
+            );
+            let retained = sub_rt_alloc(diagnosing, 8, 1, 0);
+            sub_rt_delete(diagnosing, retained, 3);
+            assert_eq!(sub_rt_ctx_live_bytes(diagnosing), 0);
+            assert!(sub_rt_ctx_reserved_bytes(diagnosing) > 0);
+            sub_rt_delete(diagnosing, retained, 4);
+            assert_eq!(
+                sub_rt_ctx_trap_kind(diagnosing),
+                TrapKind::DoubleDelete as u32
+            );
+
+            sub_rt_ctx_release(releasing);
+            sub_rt_ctx_release(diagnosing);
         }
     }
 
@@ -5339,13 +5405,14 @@ mod tests {
     #[test]
     fn ffi_array_push_reports_a_collected_receiver_without_panicking() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid exclusive Context.
         let array = unsafe { sub_rt_array_new(p, 4, 1) };
         ctx.collect();
         let value = 11i32;
-        // SAFETY: this deliberately exercises the dev-tier stale-handle
-        // diagnostic promised by retain-and-poison.
+        // SAFETY: this deliberately exercises the mode-enabled stale-handle
+        // diagnostic provided by retain-and-poison.
         let result =
             unsafe { sub_rt_array_push(p, array, (&value as *const i32).cast(), 77) };
         assert_eq!(result, -1);
@@ -5367,8 +5434,9 @@ mod tests {
     }
 
     #[test]
-    fn ffi_map_set_operations_trap_on_deleted_receivers_in_development() {
+    fn ffi_map_set_operations_trap_on_deleted_receivers_with_diagnostics() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid context and monomorphized i32 shapes.
         unsafe {

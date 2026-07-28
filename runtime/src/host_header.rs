@@ -29,6 +29,10 @@ pub fn render() -> Result<String, String> {
     let allocation_visitor = parse_fn_type(CONTEXT_SOURCE, "AllocationVisitor")?;
     let entry_docs = docs_for(CONTEXT_SOURCE, "pub type ScriptMainEntry")?;
     let entry = parse_fn_type(CONTEXT_SOURCE, "ScriptMainEntry")?;
+    let freed_handle_diagnostics_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn sub_rt_ctx_set_freed_handle_diagnostics",
+    )?;
     let mut functions = parse_functions(FFI_SOURCE, "sub_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -70,6 +74,9 @@ pub fn render() -> Result<String, String> {
     out.push_str(";\n\n");
 
     for function in &functions {
+        if function.name == "sub_rt_ctx_set_freed_handle_diagnostics" {
+            push_comment(&mut out, &freed_handle_diagnostics_docs);
+        }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
     }
@@ -89,6 +96,9 @@ fn docs_for(source: &str, declaration: &str) -> Result<Vec<String>, String> {
     let mut docs = Vec::new();
     for line in lines[..index].iter().rev() {
         let trimmed = line.trim_start();
+        if trimmed.starts_with("#[") {
+            continue;
+        }
         let Some(doc) = trimmed.strip_prefix("///") else {
             break;
         };
@@ -298,5 +308,14 @@ mod tests {
         assert!(header.contains("calling any `sub_rt_*` API that takes that Context"));
         assert!(header.contains("pointer smuggled in `userdata`"));
         assert!(header.contains("undefined behaviour"));
+    }
+
+    #[test]
+    fn generated_host_header_documents_freed_handle_diagnostics_cost() {
+        let header = render().expect("render host header");
+        assert!(header.contains("dangling-handle use and double free can be detected"));
+        assert!(header.contains("freed allocations are retained until Context release"));
+        assert!(header.contains("so memory can\n * grow without bound"));
+        assert!(header.contains("setting is disabled by default"));
     }
 }

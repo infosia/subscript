@@ -66,6 +66,22 @@ Context* sub_rt_ctx_new(void);
 void sub_rt_ctx_release(Context* ctx);
 uint64_t sub_rt_ctx_reserved_bytes(const Context* ctx);
 void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
+/**
+ * Enables or disables freed-handle diagnostics for this Context.
+ *
+ * When enabled, dangling-handle use and double free can be detected, but
+ * freed allocations are retained until Context release, so memory can
+ * grow without bound. The setting is disabled by default.
+ *
+ * This must be called before the first allocation. Returns 1 when the
+ * setting was applied, or 0 when allocation had already started and the
+ * setting was left unchanged.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive Context contract.
+ */
+int32_t sub_rt_ctx_set_freed_handle_diagnostics(Context* ctx, uint32_t enabled);
 void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
 void sub_rt_ctx_set_regex_budget(Context* ctx, uint64_t budget);
 void sub_rt_ctx_set_trap_observer(Context* ctx, sub_rt_trap_observer observer, void* userdata);

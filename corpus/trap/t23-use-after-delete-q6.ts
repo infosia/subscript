@@ -2,7 +2,7 @@
 // purpose: Dev-JIT traps when a field is read through a released reference.
 // exercises: Context.free, reference-field-read, use-after-delete, Q6-tier-carve-out
 // questions: Q6
-// tier-policy: dev-JIT traps; ship-C-AOT behavior is deliberately unspecified
+// tier-policy: dev-JIT traps with freed-handle diagnostics enabled; ship-C-AOT behavior is deliberately unspecified
 // expected-trap: use-after-delete at the released reference read
 
 class Box {

@@ -13,6 +13,8 @@
 //!
 //! - [`run_jit`] — dev tier: check, lower, execute the exported
 //!   `main(): void` in process.
+//! - [`run_jit_with_memory_accounting`] — the same dev-tier run with
+//!   post-run Context memory figures for host-side measurement.
 //! - [`run_aot`] — ship tier: check, lower, emit an object, link it
 //!   with the runtime static library and the generated C entry, run
 //!   the binary. [`emit_object`] stops after emission and is what the
@@ -45,7 +47,8 @@ pub use aot::{
 pub use cemit::{emit_c, emit_c_without_main, CProgram};
 pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
-    run_jit_with_native_libraries, BenchSamples, RunError, TrapReport,
+    run_jit_with_memory_accounting, run_jit_with_native_libraries, BenchSamples,
+    JitMemoryAccounting, RunError, TrapReport,
 };
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use native::NativeLibrary;
@@ -73,6 +76,20 @@ mod tests {
             Err(RunError::Trap(t)) => t,
             Ok(out) => panic!("expected a trap, got output {:?}", String::from_utf8_lossy(&out)),
             Err(e) => panic!("expected a trap, got {e}"),
+        }
+    }
+
+    fn run_freed_handle_trap(src: &str) -> TrapReport {
+        match run_jit_with_memory_accounting(
+            &[SourceFile::new("test.ts", src)],
+            true,
+        ) {
+            Err(RunError::Trap(t)) => t,
+            Ok((out, _)) => panic!(
+                "expected a freed-handle trap, got output {:?}",
+                String::from_utf8_lossy(&out)
+            ),
+            Err(e) => panic!("expected a freed-handle trap, got {e}"),
         }
     }
 
@@ -307,20 +324,28 @@ export function main(): void {
 
     #[test]
     fn double_delete_traps() {
-        let t = run_trap(
+        let t = run_freed_handle_trap(
             "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n  Context.free(c);\n}\n",
         );
         assert_eq!(t.rule, TrapKind::DoubleDelete);
-        assert_eq!(t.pos.line, 5);
+        assert_eq!(t.message, "Context.free of an already-deleted allocation");
+        assert_eq!(
+            (t.pos.file.as_str(), t.pos.line, t.pos.col),
+            ("test.ts", 5, 3)
+        );
     }
 
     #[test]
     fn use_after_delete_traps() {
-        let t = run_trap(
+        let t = run_freed_handle_trap(
             "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n  print(`${c.x}`);\n}\n",
         );
         assert_eq!(t.rule, TrapKind::UseAfterDelete);
-        assert_eq!(t.pos.line, 5);
+        assert_eq!(t.message, "use of a deleted allocation");
+        assert_eq!(
+            (t.pos.file.as_str(), t.pos.line, t.pos.col),
+            ("test.ts", 5, 12)
+        );
     }
 
     #[test]
@@ -335,9 +360,14 @@ export function main(): void {
                 "export function main(): void {\n  const value: Set<i32> = new Set<i32>();\n  Context.free(value);\n  print(`${value.size}`);\n}\n",
             ),
         ] {
-            let t = run_trap(src);
+            let t = run_freed_handle_trap(src);
             assert_eq!(t.rule, TrapKind::UseAfterDelete, "{kind}");
-            assert_eq!(t.pos.line, 4, "{kind}");
+            assert_eq!(t.message, "use of a deleted allocation", "{kind}");
+            assert_eq!(
+                (t.pos.file.as_str(), t.pos.line, t.pos.col),
+                ("test.ts", 4, 18),
+                "{kind}"
+            );
         }
     }
 

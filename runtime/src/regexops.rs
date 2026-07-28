@@ -765,20 +765,23 @@ mod tests {
     #[test]
     fn metadata_and_match_boundaries_check_handle_liveness() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         let deleted = regex(&mut ctx, "a", "");
         ctx.delete(deleted as usize, 0);
 
         assert!(source(&mut ctx, deleted, 11).is_null());
         assert_eq!(
-            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
-            Some((TrapKind::UseAfterDelete, 11))
+            ctx.trap_record()
+                .map(|record| (record.kind, record.message.as_str(), record.pos_id)),
+            Some((TrapKind::UseAfterDelete, "use of a deleted allocation", 11))
         );
         ctx.clear_trap();
 
         assert!(flags(&mut ctx, deleted, 12).is_null());
         assert_eq!(
-            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
-            Some((TrapKind::UseAfterDelete, 12))
+            ctx.trap_record()
+                .map(|record| (record.kind, record.message.as_str(), record.pos_id)),
+            Some((TrapKind::UseAfterDelete, "use of a deleted allocation", 12))
         );
         ctx.clear_trap();
 
@@ -788,8 +791,9 @@ mod tests {
         ctx.collect();
         assert_eq!(match_boundary(&mut ctx, collected, 1, false, 13), -1);
         assert_eq!(
-            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
-            Some((TrapKind::UseAfterDelete, 13))
+            ctx.trap_record()
+                .map(|record| (record.kind, record.message.as_str(), record.pos_id)),
+            Some((TrapKind::UseAfterDelete, "use of a deleted allocation", 13))
         );
     }
 

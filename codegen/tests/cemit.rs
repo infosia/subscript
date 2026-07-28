@@ -21,7 +21,8 @@ mod native_fixture;
 
 use subscript_codegen::{
     run_c_aot, run_c_aot_with_alloc_failure, run_c_aot_with_native_libraries, run_jit,
-    run_jit_with_alloc_failure, run_jit_with_native_libraries, RunError, TrapReport,
+    run_jit_with_alloc_failure, run_jit_with_memory_accounting,
+    run_jit_with_native_libraries, RunError, TrapReport,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -592,10 +593,18 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         let expected = trap_corpus::trap_expected(&trap, &id);
         let expected_file = format!("{id}.ts");
         let (expected_kind, expected_line) = trap_expectation(&id);
+        let freed_handle_diagnostic =
+            matches!(id.as_str(), "t22-double-delete-q6" | "t23-use-after-delete-q6");
         let (jit, ship) = if let Some(n) = allocation_failure_count(&id) {
             (
                 run_jit_with_alloc_failure(&files, n),
                 run_c_aot_with_alloc_failure(&files, n),
+            )
+        } else if freed_handle_diagnostic {
+            (
+                run_jit_with_memory_accounting(&files, true)
+                    .map(|(stdout, _)| stdout),
+                run_c_aot(&files),
             )
         } else {
             #[cfg(not(all(windows, target_env = "msvc")))]
@@ -635,6 +644,22 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                         failures.push(format!(
                             "{id}: dev-JIT regex message differs\n  expected = {message:?}\n  \
                              actual   = {:?}",
+                            report.message
+                        ));
+                    }
+                }
+                let freed_handle_message = match id.as_str() {
+                    "t22-double-delete-q6" => {
+                        Some("Context.free of an already-deleted allocation")
+                    }
+                    "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
+                    _ => None,
+                };
+                if let Some(message) = freed_handle_message {
+                    if report.message != message {
+                        failures.push(format!(
+                            "{id}: dev-JIT freed-handle message differs\n  expected = \
+                             {message:?}\n  actual   = {:?}",
                             report.message
                         ));
                     }

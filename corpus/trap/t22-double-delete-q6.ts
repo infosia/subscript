@@ -2,7 +2,7 @@
 // purpose: Dev-JIT traps when Context.free releases an already-released allocation.
 // exercises: Context.free, double-delete, Q6-tier-carve-out
 // questions: Q6
-// tier-policy: dev-JIT traps; ship-C-AOT behavior is deliberately unspecified
+// tier-policy: dev-JIT traps with freed-handle diagnostics enabled; ship-C-AOT behavior is deliberately unspecified
 // expected-trap: double-delete at the second Context.free call
 
 class Box {

@@ -12,10 +12,11 @@
 //! first two directly (use-after-delete checks, checked `as` narrowing),
 //! so their offsets are part of the runtime's ABI contract.
 //!
-//! Development-tier policy: `Context.free` and `Context.collect()` mark an
-//! allocation dead and poison its header but keep the bytes until the
-//! Context is dropped. This is what makes double delete and
-//! use-after-delete *trap* instead of being undefined: a stale handle
+//! Freed-handle diagnostics (§8.1a-1) are disabled by default. When a
+//! host enables them before the first allocation, `Context.free` and
+//! `Context.collect()` mark an allocation dead and poison its header but
+//! keep the bytes until the Context is dropped. This makes double delete
+//! and use-after-delete trap instead of being undefined: a stale handle
 //! still points at owned memory whose header says `DEAD_STATE`.
 //!
 //! Ship-tier policy (§8.1b): no per-allocation map. Blocks up to the
@@ -24,8 +25,9 @@
 //! free list (threaded through the freed payload's first word) and the
 //! next same-class `alloc` pops it, zeroed. Larger allocations are
 //! individual system allocations with their own record. Double delete
-//! and use-after-delete are undefined here (Q6, trusted scripts); the
-//! dev tier is the diagnosing tier.
+//! and use-after-delete are undefined here (Q6, trusted scripts). Enabling
+//! freed-handle diagnostics switches either construction path to the
+//! retain-and-poison allocator for the lifetime of that Context.
 //!
 //! # Collection
 //!
@@ -340,10 +342,11 @@ pub struct Context {
     fn_table: *const *const u8,
     globals: *mut u8,
     script_depth: u32,
-    // Development-tier live allocations. Collection marks and sweeps only
-    // this map, so its cost is proportional to the live set.
+    // Exact-size live allocations. The dev tier uses this path; a ship
+    // Context switches to it when freed-handle diagnostics are enabled.
+    // Collection marks and sweeps only this map.
     allocations: HashMap<usize, Allocation>,
-    // Development-tier retained-and-poisoned addresses. Exact membership
+    // Diagnostic-mode retained-and-poisoned addresses. Exact membership
     // preserves double-delete classification without putting dead records
     // in the map collection sweeps.
     dead_allocations: AddressSet,
@@ -368,11 +371,17 @@ pub struct Context {
     // Transient P13 parsed syntax trees. They contain no language
     // allocations and are removed before JSON.parse returns.
     json_parsers: crate::json::JsonParsers,
-    // Ship-tier policy flag (§8.1a): when true,
-    // `Context.free`/`Context.collect` free and forget immediately; when
-    // false (dev tier), they retain and poison so
-    // use-after-delete/double-delete trap.
-    release_on_delete: bool,
+    // The ship construction path uses the §8.1b arena while freed-handle
+    // diagnostics are off. The dev path keeps exact-size individual
+    // allocations so §18.2d accounting remains exact.
+    ship_arena: bool,
+    // §8.1a-1 diagnostic mode. When true, freed allocations are retained
+    // and poisoned until Context drop so dangling handles and double frees
+    // can be diagnosed. Both construction paths default to false.
+    freed_handle_diagnostics: bool,
+    // The diagnostic setting is immutable after the first object-level
+    // allocation request, including one rejected by fault injection.
+    allocation_started: bool,
     // The `Math.random` PRNG (stdlib.md §2), default-seeded on every
     // construction path so dev and ship draw the same contract stream.
     rng: crate::math::Rng,
@@ -387,7 +396,7 @@ pub struct Context {
     // allocations are deliberately not counted because their sequence
     // is tier-specific.
     alloc_fail_countdown: Option<u64>,
-    // ----- ship-tier arena state (§8.1b); empty on the dev tier -----
+    // ----- ship-tier arena state (§8.1b); unused in diagnostic mode -----
     // Every chunk, in creation order.
     chunks: Vec<Chunk>,
     // (chunk base address, index into `chunks`), sorted by base: the
@@ -408,28 +417,29 @@ pub struct Context {
 impl Context {
     /// Creates an empty context.
     ///
-    /// Development-tier policy: `Context.free`/`Context.collect` retain and poison
-    /// (double delete and use-after-delete trap). The dev-JIT builds its
-    /// Context this way. For the AOT/ship tier use
-    /// [`Context::new_releasing`].
+    /// The dev-JIT builds its Context this way. Individual allocations
+    /// preserve exact requested-byte accounting (§18.2d), while
+    /// `Context.free` and `Context.collect` release them immediately by
+    /// default. Enable freed-handle diagnostics before the first
+    /// allocation to retain and poison them instead.
     #[must_use]
     pub fn new() -> Box<Context> {
-        Self::with_policy(false)
+        Self::with_tier(false)
     }
 
-    /// Creates an empty ship-tier context (§8.1a/§8.1b). Unlike
-    /// [`Context::new`]'s retain-and-poison dev policy, `Context.free` and
-    /// `Context.collect` here **release immediately**: a size-classed block goes
-    /// back to its arena free list and a large allocation is freed
-    /// outright — no per-allocation table is kept. Use-after-delete and
-    /// double delete are undefined (Q6/§8.1b), not trapped. The AOT host
-    /// entry ([`crate::ffi::sub_rt_ctx_new`]) builds its Context this way.
+    /// Creates an empty ship-tier context (§8.1a/§8.1b).
+    ///
+    /// `Context.free` and `Context.collect` release immediately by
+    /// default: a size-classed block goes back to its arena free list and
+    /// a large allocation is freed outright. Use-after-delete and double
+    /// delete are undefined (Q6/§8.1b), not trapped. The AOT host entry
+    /// ([`crate::ffi::sub_rt_ctx_new`]) builds its Context this way.
     #[must_use]
     pub fn new_releasing() -> Box<Context> {
-        Self::with_policy(true)
+        Self::with_tier(true)
     }
 
-    fn with_policy(release_on_delete: bool) -> Box<Context> {
+    fn with_tier(ship_arena: bool) -> Box<Context> {
         Box::new(Context {
             trap_flag: 0,
             reload_epoch: 0,
@@ -451,7 +461,9 @@ impl Context {
             callbacks: Vec::new(),
             json_builders: crate::json::JsonBuilders::default(),
             json_parsers: crate::json::JsonParsers::default(),
-            release_on_delete,
+            ship_arena,
+            freed_handle_diagnostics: false,
+            allocation_started: false,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             now_override: None,
             regex_budget: 100_000,
@@ -465,6 +477,27 @@ impl Context {
             #[cfg(test)]
             stats: Default::default(),
         })
+    }
+
+    /// Enables or disables diagnostics for handles to freed allocations.
+    ///
+    /// When enabled, dangling-handle use and double free can be detected,
+    /// but freed allocations are retained until Context release, so memory
+    /// can grow without bound. The setting is disabled by default.
+    ///
+    /// Returns `false` without changing the setting if an allocation
+    /// request has already started. A host must establish the setting
+    /// before the first allocation.
+    pub fn set_freed_handle_diagnostics(&mut self, enabled: bool) -> bool {
+        if self.allocation_started {
+            return false;
+        }
+        self.freed_handle_diagnostics = enabled;
+        true
+    }
+
+    fn uses_ship_arena(&self) -> bool {
+        self.ship_arena && !self.freed_handle_diagnostics
     }
 
     /// Byte offset of the trap flag inside the context (ABI contract
@@ -768,6 +801,7 @@ impl Context {
     /// allocation tracked in the map. Ship tier: served from the arena
     /// (§8.1b).
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
+        self.allocation_started = true;
         if let Some(remaining) = self.alloc_fail_countdown {
             if remaining == 1 {
                 self.alloc_fail_countdown = None;
@@ -780,7 +814,7 @@ impl Context {
             }
             self.alloc_fail_countdown = Some(remaining - 1);
         }
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             return self.arena_alloc(size, class_id, pos_id);
         }
         let total = HEADER_SIZE.saturating_add(size.max(1));
@@ -1097,16 +1131,16 @@ impl Context {
         }
     }
 
-    /// Moves one live development-tier allocation into retained-dead
-    /// storage and poisons its header. The allocation's bytes and complete
-    /// attribution record remain owned until Context drop.
+    /// Moves one live exact-size allocation into retained-dead storage and
+    /// poisons its header. The allocation's bytes and complete attribution
+    /// record remain owned until Context drop.
     fn retire_dev_allocation(&mut self, payload: usize) -> Option<u32> {
         let allocation = self.allocations.remove(&payload)?;
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
         // SAFETY: the retained allocation owns at least HEADER_SIZE bytes;
-        // poisoning preserves the dev-tier stale-handle trap.
+        // poisoning preserves the diagnostic-mode stale-handle trap.
         unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
         let inserted = self.dead_allocations.insert(payload);
         // Dev backing allocations are never freed before Context drop, so
@@ -1120,34 +1154,47 @@ impl Context {
         Some(class_id)
     }
 
-    /// Frees or marks the allocation at `payload` dead, per tier policy.
+    /// Releases one exact-size allocation and removes its live record.
+    fn release_dev_allocation(&mut self, payload: usize) -> Option<u32> {
+        let allocation = self.allocations.remove(&payload)?;
+        // SAFETY: exact live-map membership proves the complete initialized
+        // header remains owned by this Context.
+        let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        // SAFETY: `base`/`layout` came from `alloc_zeroed` in `alloc`; the
+        // live record was just removed, so this frees it exactly once.
+        unsafe { dealloc(allocation.base, allocation.layout) };
+        Some(class_id)
+    }
+
+    /// Frees or marks the allocation at `payload` dead, per Context policy.
     ///
-    /// Development tier ([`Context::new`]): the bytes are retained
-    /// (poisoned) so stale handles trap; double delete and unknown
-    /// pointers trap (Q6).
+    /// With freed-handle diagnostics enabled, the bytes are retained and
+    /// poisoned so stale handles trap; double delete and unknown pointers
+    /// trap (Q6).
     ///
-    /// Ship tier ([`Context::new_releasing`], §8.1b): a classed block is
-    /// pushed onto its arena free list; a large allocation is freed and
-    /// its record dropped. A double delete or unknown pointer is
-    /// undefined (Q6/§8.1b) and handled as a no-op (no trap).
+    /// With diagnostics disabled, the backing allocation is released.
+    /// A double delete or unknown pointer is undefined (Q6/§8.1b) and
+    /// handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             self.arena_release(payload);
             return;
         }
         let Some(allocation) = self.allocations.get(&payload) else {
-            if self.dead_allocations.contains(&payload) {
-                self.trap(
-                    TrapKind::DoubleDelete,
-                    "Context.free of an already-deleted allocation",
-                    pos_id,
-                );
-            } else {
-                self.trap(
-                    TrapKind::InvalidDelete,
-                    "Context.free of a pointer the Context does not own",
-                    pos_id,
-                );
+            if self.freed_handle_diagnostics {
+                if self.dead_allocations.contains(&payload) {
+                    self.trap(
+                        TrapKind::DoubleDelete,
+                        "Context.free of an already-deleted allocation",
+                        pos_id,
+                    );
+                } else {
+                    self.trap(
+                        TrapKind::InvalidDelete,
+                        "Context.free of a pointer the Context does not own",
+                        pos_id,
+                    );
+                }
             }
             return;
         };
@@ -1161,7 +1208,12 @@ impl Context {
         if class_id == CLASS_STRING {
             self.clear_string_interns_on_delete(payload);
         }
-        let Some(retired_class_id) = self.retire_dev_allocation(payload) else {
+        let released_class_id = if self.freed_handle_diagnostics {
+            self.retire_dev_allocation(payload)
+        } else {
+            self.release_dev_allocation(payload)
+        };
+        let Some(released_class_id) = released_class_id else {
             self.trap(
                 TrapKind::Internal,
                 "Map/Set header disappeared while deleting its storage",
@@ -1169,9 +1221,9 @@ impl Context {
             );
             return;
         };
-        // `class_id` and `retired_class_id` read the same live header, and
+        // Both class IDs read the same live header, and
         // clearing Map/Set child storage does not mutate the header.
-        debug_assert_eq!(retired_class_id, class_id);
+        debug_assert_eq!(released_class_id, class_id);
         if class_id == CLASS_REGEX {
             self.regex.remove_value(payload);
         }
@@ -1182,7 +1234,7 @@ impl Context {
     /// bump watermark, live header — or a large record (§8.1b).
     #[must_use]
     pub fn is_live(&self, payload: usize) -> bool {
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             if let Some((block, _)) = self.arena_lookup_block(payload) {
                 // SAFETY: `block` heads a block inside an owned chunk.
                 return unsafe { (block as *const u64).read() } == LIVE_STATE;
@@ -1192,16 +1244,16 @@ impl Context {
         self.allocations.contains_key(&payload)
     }
 
-    /// Validates a runtime-operation receiver under Q6's tier policy.
+    /// Validates a runtime-operation receiver under Q6's Context policy.
     ///
-    /// Development retains exact allocation membership and traps stale
-    /// handles. Ship-tier use-after-delete is undefined, so the runtime
-    /// preserves its existing unchecked behavior there.
+    /// Freed-handle diagnostics validate exact allocation membership and
+    /// trap stale handles. With diagnostics off, use-after-delete is
+    /// undefined, so the runtime preserves its unchecked behavior.
     pub(crate) fn require_live_handle(&mut self, payload: usize, pos_id: u32) -> bool {
         if self.trapped() {
             return false;
         }
-        if self.release_on_delete || self.is_live(payload) {
+        if !self.freed_handle_diagnostics || self.is_live(payload) {
             return true;
         }
         self.trap(
@@ -1217,7 +1269,7 @@ impl Context {
     /// records.
     #[must_use]
     pub fn live_count(&self) -> usize {
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             let mut n = self.large.len();
             for chunk in &self.chunks {
                 for bi in 0..chunk.bump {
@@ -1242,7 +1294,7 @@ impl Context {
     /// exact payload size for large allocations.
     #[must_use]
     pub fn live_bytes(&self) -> usize {
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             let mut bytes = self
                 .large
                 .values()
@@ -1267,12 +1319,13 @@ impl Context {
 
     /// Bytes currently reserved from the system for Context allocations.
     ///
-    /// Development-tier deleted allocations remain reserved until the
-    /// Context is dropped. Ship-tier chunks remain reserved, while a
-    /// deleted large allocation is returned to the system immediately.
+    /// Exact-size allocations include only live layouts unless freed-handle
+    /// diagnostics retain dead layouts. Ship-tier chunks remain reserved,
+    /// while a deleted large allocation is returned to the system
+    /// immediately.
     #[must_use]
     pub fn reserved_bytes(&self) -> usize {
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             let chunk_bytes = self
                 .chunks
                 .iter()
@@ -1305,7 +1358,7 @@ impl Context {
             return 0;
         };
         let mut count = 0u64;
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             for chunk in &self.chunks {
                 for bi in 0..chunk.bump {
                     // SAFETY: `bi < bump`, so the complete header lies
@@ -1425,7 +1478,7 @@ impl Context {
         work.extend(self.interned.values().copied());
         work.extend(self.astral_code_points.values().copied());
 
-        if self.release_on_delete {
+        if self.uses_ship_arena() {
             // Ship tier (§8.1b): mark state lives in the block header
             // (MARK_STATE), not in a map; sweep walks the chunk grids and
             // the large records.
@@ -1459,12 +1512,29 @@ impl Context {
         self.sweep_regex_values();
     }
 
-    /// Development-tier sweep: extract unreachable records from the only
-    /// map this phase walks and reset marked survivors in the same pass.
+    /// Exact-size allocator sweep: extract unreachable records from the
+    /// only map this phase walks and reset marked survivors in the same
+    /// pass.
     ///
     /// The retained-dead address index and ownership vector are deliberately
     /// never traversed here.
     fn sweep_dev_allocations(&mut self, retiring: usize) {
+        if !self.freed_handle_diagnostics {
+            for (_, allocation) in self.allocations.extract_if(|_, allocation| {
+                if allocation.marked {
+                    allocation.marked = false;
+                    false
+                } else {
+                    true
+                }
+            }) {
+                // SAFETY: this allocation was live at sweep entry; its
+                // record was just removed, so this frees it exactly once.
+                unsafe { dealloc(allocation.base, allocation.layout) };
+            }
+            return;
+        }
+
         // One exact reserve avoids repeated dead-index/vector growth while
         // the unreachable records are moved out of the swept map.
         self.dead_allocations.reserve(retiring);
@@ -1843,14 +1913,35 @@ impl Context {
                 }
                 let old = h.data as usize;
                 // Retire the old storage (internal, so not a trap path).
-                if self.release_on_delete {
+                if self.uses_ship_arena() {
                     // Ship tier (§8.1b): retired data blocks flow through
                     // the same free-list/large-record release path as
                     // `delete`, so array growth does not accumulate.
                     self.arena_release(old);
-                } else {
+                } else if self.freed_handle_diagnostics {
                     let retired = self.retire_dev_allocation(old);
                     match retired {
+                        Some(CLASS_ARRAY_DATA) => {}
+                        Some(_) => {
+                            self.trap(
+                                TrapKind::Internal,
+                                "array growth found a non-array storage allocation",
+                                pos_id,
+                            );
+                            return -1;
+                        }
+                        None => {
+                            self.trap(
+                                TrapKind::Internal,
+                                "array storage disappeared while growing it",
+                                pos_id,
+                            );
+                            return -1;
+                        }
+                    }
+                } else {
+                    let released = self.release_dev_allocation(old);
+                    match released {
                         Some(CLASS_ARRAY_DATA) => {}
                         Some(_) => {
                             self.trap(
@@ -1991,7 +2082,7 @@ mod tests {
         /// blocks plus large records, i.e. `live_count` — a released
         /// block leaves nothing behind.
         fn allocation_count(&self) -> usize {
-            if self.release_on_delete {
+            if self.uses_ship_arena() {
                 self.live_count()
             } else {
                 self.allocations.len() + self.retained_allocations.len()
@@ -2260,11 +2351,18 @@ mod tests {
 
             ctx.delete(deleted as usize, 0);
             assert_eq!(ctx.live_count(), 2, "{tier}: N-M allocations");
-            assert_eq!(
-                ctx.reserved_bytes(),
-                reserved_before,
-                "{tier}: deleting a size-class allocation must retain its storage"
-            );
+            if tier == "dev" {
+                assert!(
+                    ctx.reserved_bytes() < reserved_before,
+                    "dev default must release the exact-size layout"
+                );
+            } else {
+                assert_eq!(
+                    ctx.reserved_bytes(),
+                    reserved_before,
+                    "ship size-class storage stays reserved in its reusable arena"
+                );
+            }
             measured.push((
                 tier,
                 ctx.live_count(),
@@ -2273,7 +2371,7 @@ mod tests {
             ));
         }
 
-        assert_eq!(measured[0], ("dev", 2, 5001, 5066));
+        assert_eq!(measured[0], ("dev", 2, 5001, 5033));
         assert_eq!(measured[1], ("ship", 2, 5016, 136_088));
         assert_eq!(
             measured[0].1, measured[1].1,
@@ -2290,12 +2388,54 @@ mod tests {
     }
 
     #[test]
+    fn freed_handle_diagnostics_setting_controls_release_and_retention() {
+        let mut releasing = Context::new();
+        assert!(releasing.set_freed_handle_diagnostics(false));
+        let released_small = releasing.alloc(8, 1, 0);
+        releasing.delete(released_small as usize, 0);
+        let released_after_small = releasing.reserved_bytes();
+        let released_large = releasing.alloc(8, 1, 0);
+        releasing.delete(released_large as usize, 0);
+        assert_eq!(releasing.live_bytes(), 0);
+        assert_eq!(
+            releasing.reserved_bytes(),
+            released_after_small,
+            "mode off must not retain each freed allocation"
+        );
+        assert!(
+            !releasing.set_freed_handle_diagnostics(true),
+            "the setting is immutable after allocation starts"
+        );
+
+        let mut diagnosing = Context::new();
+        assert!(diagnosing.set_freed_handle_diagnostics(true));
+        let retained_small = diagnosing.alloc(8, 1, 0);
+        diagnosing.delete(retained_small as usize, 0);
+        let retained_after_small = diagnosing.reserved_bytes();
+        let retained_large = diagnosing.alloc(8, 1, 0);
+        diagnosing.delete(retained_large as usize, 0);
+        assert_eq!(diagnosing.live_bytes(), 0);
+        assert!(
+            diagnosing.reserved_bytes() > retained_after_small,
+            "mode on must retain each freed allocation"
+        );
+
+        diagnosing.delete(retained_large as usize, 7);
+        assert_eq!(
+            diagnosing.trap_record().map(|record| record.kind),
+            Some(TrapKind::DoubleDelete),
+            "mode on must preserve the diagnostic path"
+        );
+    }
+
+    #[test]
     fn delete_poisons_and_double_delete_traps() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         let p = ctx.alloc(8, 1, 0);
         ctx.delete(p as usize, 5);
         assert!(!ctx.is_live(p as usize));
-        // SAFETY: bytes are retained after delete (dev-tier policy).
+        // SAFETY: diagnostic mode retains the bytes after delete.
         unsafe {
             assert_eq!((p.offset(STATE_OFFSET as isize) as *const u64).read(), DEAD_STATE);
         }
@@ -2310,6 +2450,7 @@ mod tests {
     #[test]
     fn retained_dead_handles_trap_after_700_000_subsequent_allocations() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         let oldest = ctx.alloc(8, 1, 1);
         ctx.delete(oldest as usize, 2);
         let mut probes = vec![(oldest, 700_000usize)];
@@ -2330,7 +2471,7 @@ mod tests {
             // The generated-code path reads this same retained header;
             // the runtime receiver path additionally proves segregation
             // still classifies every distance as stale.
-            // SAFETY: dev retain-and-poison owns the header through drop.
+            // SAFETY: diagnostic retain-and-poison owns the header through drop.
             unsafe {
                 assert_eq!(
                     (handle.offset(STATE_OFFSET as isize) as *const u64).read(),
@@ -2355,7 +2496,7 @@ mod tests {
         use std::sync::atomic::Ordering::SeqCst;
 
         for mut ctx in [Context::new(), Context::new_releasing()] {
-            let releasing = ctx.release_on_delete;
+            let uses_ship_arena = ctx.uses_ship_arena();
             let ordinary = ctx.alloc(16, 1, 0);
             let stats = ctx.test_stats();
             let lookups_before = stats.membership_lookups.load(SeqCst);
@@ -2370,7 +2511,7 @@ mod tests {
             );
             assert_eq!(
                 stats.membership_lookups.load(SeqCst) - lookups_before,
-                usize::from(releasing),
+                usize::from(uses_ship_arena),
                 "ship delete must combine class resolution with its one release lookup"
             );
 
@@ -2400,7 +2541,7 @@ mod tests {
         assert_eq!(ctx.allocation_count(), 1, "ship mode leaves no entry behind");
 
         // A second delete of the now-released pointer does NOT trap
-        // (undefined-but-safe no-op, §8.1b), unlike the dev-mode
+        // (undefined-but-safe no-op, §8.1b), unlike the diagnostic-mode
         // double-delete trap covered by
         // `delete_poisons_and_double_delete_traps`. (Checked before the
         // next alloc: the arena's LIFO free list would hand `a`'s block
@@ -2413,8 +2554,9 @@ mod tests {
         assert!(!c.is_null());
         assert!(ctx.is_live(c as usize));
 
-        // Contrast: an equivalent dev-mode delete retains the entry.
+        // Contrast: an equivalent diagnostic-mode delete retains the entry.
         let mut dev = Context::new();
+        assert!(dev.set_freed_handle_diagnostics(true));
         let d0 = dev.alloc(8, 1, 0);
         let _d1 = dev.alloc(8, 1, 0);
         assert_eq!(dev.allocation_count(), 2);
@@ -2422,7 +2564,7 @@ mod tests {
         assert_eq!(
             dev.allocation_count(),
             2,
-            "dev mode retains the poisoned entry"
+            "diagnostic mode retains the poisoned entry"
         );
         // `b` and `c` keep the ship context's live set non-trivial.
         assert!(ctx.is_live(b as usize));
@@ -2431,6 +2573,7 @@ mod tests {
     #[test]
     fn delete_of_unowned_pointer_traps() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         ctx.delete(0x1000, 1);
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::InvalidDelete));
     }
@@ -2508,6 +2651,7 @@ mod tests {
     #[test]
     fn collect_moves_unreachable_records_out_of_the_swept_map() {
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         let kept = ctx.alloc(8, 1, 0);
         let dropped = ctx.alloc(8, 1, 0);
         let mut root = kept as usize;
@@ -2567,6 +2711,7 @@ mod tests {
         }
 
         let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true));
         for _ in 0..120_005 {
             assert!(!ctx.alloc(8, 1, 0).is_null());
         }
@@ -2741,9 +2886,10 @@ mod tests {
         assert!(ctx.is_live(inner as usize), "element reached via data pointer");
     }
 
-    // §8.1a: array growth in the ship tier frees each retired data block
-    // instead of retaining it poisoned, so allocation_count does not grow
-    // with the number of capacity doublings. The dev tier retains them.
+    // §8.1a-1: array growth with diagnostics off frees each retired data
+    // block instead of retaining it poisoned, so allocation_count does not
+    // grow with the number of capacity doublings. Diagnostic mode retains
+    // them.
     #[test]
     fn ship_mode_array_growth_frees_retired_blocks() {
         // Push enough u32 elements to force several capacity doublings
@@ -2767,6 +2913,7 @@ mod tests {
         );
 
         let mut dev = Context::new();
+        assert!(dev.set_freed_handle_diagnostics(true));
         let dh = dev.array_new(4, 0);
         for v in 0..pushes {
             // SAFETY: dh is a live u32 array handle; src is a valid u32.
@@ -2778,7 +2925,7 @@ mod tests {
         let dev_count = dev.allocation_count();
         assert!(
             dev_count > ship_count,
-            "dev tier retains retired blocks: dev {dev_count} vs ship {ship_count}"
+            "diagnostic mode retains retired blocks: dev {dev_count} vs ship {ship_count}"
         );
     }
 

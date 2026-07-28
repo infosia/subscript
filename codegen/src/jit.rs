@@ -29,6 +29,24 @@ pub struct TrapReport {
     pub stdout: Vec<u8>,
 }
 
+/// Context memory accounting observed after a successful dev-tier run.
+///
+/// Both figures follow the tier-specific policy in `compiler.md` §18.2d.
+/// The development tier reports exact requested payload bytes as live and
+/// includes retained-and-poisoned allocation layouts in reserved bytes when
+/// freed-handle diagnostics are enabled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct JitMemoryAccounting {
+    /// Requested payload bytes in live Context-owned allocations after the
+    /// run, following §18.2d's exact-requested-bytes development-tier policy.
+    pub live_bytes: u64,
+    /// Bytes still reserved by the Context after the run, including retained
+    /// and poisoned layouts when §8.1a-1's freed-handle diagnostics are
+    /// enabled.
+    pub reserved_bytes: u64,
+}
+
 impl std::fmt::Display for TrapReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: trap [{}]: {}", self.pos, self.rule, self.message)
@@ -542,6 +560,12 @@ unsafe fn call_script_entry(entry: *const u8, ctx: &mut Context) {
     ctx.exit_script();
 }
 
+struct CompletedRun {
+    ctx: Box<Context>,
+    stdout: Vec<u8>,
+    elapsed: Duration,
+}
+
 /// Runs the module initializer and then the exported `main` on a fresh
 /// Context, returning the stdout bytes of the run and how long the
 /// `main` call itself took.
@@ -550,15 +574,17 @@ unsafe fn call_script_entry(entry: *const u8, ctx: &mut Context) {
 /// module's global setup, not the workload (`specs/blocks/compiler.md`
 /// §9). Running it before every call also restores the module globals,
 /// so repeated calls of the same `main` are the same computation.
-fn run_entry(
+fn execute_entry(
     module: &JITModule,
     lowered: &Lowered,
     fail_alloc_after: Option<u64>,
-) -> Result<(Vec<u8>, Duration), RunError> {
+    freed_handle_diagnostics: bool,
+) -> Result<CompletedRun, RunError> {
     let init_ptr = module.get_finalized_function(lowered.init);
     let main_ptr = module.get_finalized_function(lowered.main);
 
     let mut ctx = Context::new();
+    let _ = ctx.set_freed_handle_diagnostics(freed_handle_diagnostics);
     if let Some(n) = fail_alloc_after {
         ctx.fail_alloc_after(n);
     }
@@ -600,7 +626,32 @@ fn run_entry(
             pos,
             stdout,
         })),
-        None => Ok((stdout, elapsed)),
+        None => Ok(CompletedRun {
+            ctx,
+            stdout,
+            elapsed,
+        }),
+    }
+}
+
+fn run_entry(
+    module: &JITModule,
+    lowered: &Lowered,
+    fail_alloc_after: Option<u64>,
+) -> Result<(Vec<u8>, Duration), RunError> {
+    execute_entry(module, lowered, fail_alloc_after, false)
+        .map(|run| (run.stdout, run.elapsed))
+}
+
+fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
+    let p: *const Context = ctx;
+    // SAFETY: shared host accessors over a live Context after every script
+    // entry returned.
+    unsafe {
+        JitMemoryAccounting {
+            live_bytes: ffi::sub_rt_ctx_live_bytes(p),
+            reserved_bytes: ffi::sub_rt_ctx_reserved_bytes(p),
+        }
     }
 }
 
@@ -618,6 +669,30 @@ fn run_entry(
 /// backend failures.
 pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     run_jit_with_native_libraries(files, &[])
+}
+
+/// Runs `files` through the dev JIT and returns its exact stdout bytes
+/// together with Context memory accounting observed after `main` returns.
+///
+/// The accounting is read while the fresh run's Context is still alive and
+/// before its allocations are released. `freed_handle_diagnostics`
+/// establishes §8.1a-1's retain-and-poison mode before `ss_init`; when
+/// false, the dev tier's default immediate-release policy applies.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_jit`].
+pub fn run_jit_with_memory_accounting(
+    files: &[SourceFile],
+    freed_handle_diagnostics: bool,
+) -> Result<(Vec<u8>, JitMemoryAccounting), RunError> {
+    let (module, lowered) = compile_jit(files, &[])?;
+    let outcome = execute_entry(&module, &lowered, None, freed_handle_diagnostics)
+        .map(|run| (run.stdout, memory_accounting(&run.ctx)));
+    // SAFETY: all executions above have returned and no pointer into
+    // the JIT-allocated code/data survives (the Context held none).
+    unsafe { module.free_memory() };
+    outcome
 }
 
 /// Checks, lowers, and runs `files` through the dev JIT with the
@@ -807,35 +882,19 @@ pub(crate) fn memory_accounting_after_run(
     files: &[SourceFile],
 ) -> Result<(u64, u64, u64), RunError> {
     let (module, lowered) = compile_jit(files, &[])?;
-    let init = module.get_finalized_function(lowered.init);
-    let main = module.get_finalized_function(lowered.main);
-    let mut ctx = Context::new();
-    // SAFETY: both pointers are finalized entries and the module remains
-    // live through the calls.
-    unsafe {
-        call_script_entry(init, &mut ctx);
-        if !ctx.trapped() {
-            call_script_entry(main, &mut ctx);
+    let result = execute_entry(&module, &lowered, None, false).map(|run| {
+        let p: *const Context = &*run.ctx;
+        let accounting = memory_accounting(&run.ctx);
+        // SAFETY: shared host accessors over a live Context after every
+        // script entry returned.
+        unsafe {
+            (
+                ffi::sub_rt_ctx_live_allocations(p),
+                accounting.live_bytes,
+                accounting.reserved_bytes,
+            )
         }
-    }
-    let result = match ctx.trap_record() {
-        Some(record) => Err(RunError::Internal(internal(format!(
-            "accounting probe trapped: {}",
-            record.message
-        )))),
-        None => {
-            let p: *const Context = &*ctx;
-            // SAFETY: shared host accessors over a live Context after
-            // every script entry returned.
-            Ok(unsafe {
-                (
-                    ffi::sub_rt_ctx_live_allocations(p),
-                    ffi::sub_rt_ctx_live_bytes(p),
-                    ffi::sub_rt_ctx_reserved_bytes(p),
-                )
-            })
-        }
-    };
+    });
     // SAFETY: all entries returned and no code pointer survives.
     unsafe { module.free_memory() };
     result
@@ -1174,6 +1233,63 @@ mod tests {
         .expect("bench run");
         assert_eq!(b.stdout, b"11\n");
         assert_eq!(b.samples.len(), 4);
+    }
+
+    #[test]
+    fn jit_memory_accounting_distinguishes_retention_from_live_growth() {
+        let measure = |count: i32, free: bool| {
+            let statement = if free {
+                "const value: Cell = new Cell(i, null);\n\
+                 Context.free(value);"
+            } else {
+                "kept = new Cell(i, kept);"
+            };
+            let source = format!(
+                "class Cell {{\n\
+                   value: i32;\n\
+                   next: Cell | null;\n\
+                   constructor(value: i32, next: Cell | null) {{\n\
+                     this.value = value;\n\
+                     this.next = next;\n\
+                   }}\n\
+                 }}\n\
+                 let kept: Cell | null = null;\n\
+                 export function main(): void {{\n\
+                   for (let i: i32 = 0; i < {count}; i += 1) {{\n\
+                     {statement}\n\
+                   }}\n\
+                 }}\n"
+            );
+            let (stdout, accounting) = run_jit_with_memory_accounting(
+                &[SourceFile::new("accounting.ts", source)],
+                true,
+            )
+            .expect("accounted dev-JIT run");
+            assert!(stdout.is_empty());
+            accounting
+        };
+
+        let freed_small = measure(8, true);
+        let freed_large = measure(64, true);
+        assert_eq!(
+            freed_small.live_bytes, freed_large.live_bytes,
+            "freeing every allocation must keep the live payload flat"
+        );
+        assert!(
+            freed_large.reserved_bytes > freed_small.reserved_bytes,
+            "retained layouts must make reserved bytes grow with allocation count"
+        );
+
+        let kept_small = measure(8, false);
+        let kept_large = measure(64, false);
+        assert!(
+            kept_large.live_bytes > kept_small.live_bytes,
+            "keeping allocations must make live payload bytes grow"
+        );
+        assert!(
+            kept_large.reserved_bytes > kept_small.reserved_bytes,
+            "keeping allocations must make reserved bytes grow"
+        );
     }
 
     #[test]
