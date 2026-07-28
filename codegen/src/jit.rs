@@ -584,7 +584,11 @@ fn execute_entry(
     let main_ptr = module.get_finalized_function(lowered.main);
 
     let mut ctx = Context::new();
-    let _ = ctx.set_freed_handle_diagnostics(freed_handle_diagnostics);
+    let diagnostics_set = ctx.set_freed_handle_diagnostics(freed_handle_diagnostics);
+    debug_assert!(
+        diagnostics_set,
+        "dev-JIT freed-handle diagnostics setting was attempted after Context allocation started"
+    );
     if let Some(n) = fail_alloc_after {
         ctx.fail_alloc_after(n);
     }
