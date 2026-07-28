@@ -2491,6 +2491,17 @@ must not be written. A header that needs to deliver more than the view
 and the two userdata slots delivers it through a separate call the script
 makes, not through an extra callback parameter.
 
+**The check is on reachability, not on presence.** It applies to a
+function-pointer typedef that can cross the boundary — used as a mirrored
+struct's field, or as a foreign function's parameter or return. A typedef
+a host declares and the boundary never touches cannot be mis-marshaled,
+and rejecting the header for it would make headers unbindable for a
+reason the language does not have. Such a typedef is simply not mirrored.
+
+Rejecting on presence was the first implementation, and it fails P25's own
+purpose: one unrelated function pointer anywhere in a production header —
+an allocator hook, a debug sink — would refuse the whole header.
+
 Generalizing the trampoline to arbitrary callback signatures is **not in
 P25's scope**. This section makes the existing limit visible and loud; a
 host that needs more is a later phase with its own contract.
@@ -2628,7 +2639,8 @@ facade needs is the spelling the corpus teaches.
 8. **A callback shape the trampoline cannot serve is rejected** (§23.3a),
    naming the typedef and the supported shape, with a test per rejected
    shape — an extra parameter, a missing userdata slot, a non-`void`
-   return.
+   return — and a test that an **unreachable** function-pointer typedef of
+   an unsupported shape does *not* refuse the header.
 9. Standing differential gate green; `tsc` clean; clippy at its baseline.
 
 **Kill criterion.** If a descriptor's C name cannot be recovered for some
