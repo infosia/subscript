@@ -248,18 +248,20 @@ kept minimal:
   a measurement.
 
   Unix: passing, both tiers (`specs/tracking/p25-header-deprivileging.md`
-  §5). Windows: **not run**.
+  §5). Windows: **RUN 2026-07-28 — PASS**.
 
-  What settles it: on the `x86_64-pc-windows-msvc` host, with its Visual
-  Studio and LLVM clang toolchains active, run
+      $ cargo test --offline -p subscript-codegen --test native_library \
+            unregistered_foreign_symbol_is_named_before_platform_lookup
+      test unregistered_foreign_symbol_is_named_before_platform_lookup ... ok
+      test result: ok. 1 passed; 0 failed
 
-      cargo test -p subscript-codegen --test native_library \
-          unregistered_foreign_symbol_is_named_before_platform_lookup
-
-  and record the result here. A second item rides along: the examples gate
-  crate compiles `engine.c`, whose thread-local frame record selects
-  `__declspec(thread)` under MSVC; that path has never been compiled by
-  `cl`. Both are open until run.
+  Measured on `x86_64-pc-windows-msvc` with clang **not** on `PATH` and
+  `$CC` unset — the MSVC-`cl` ship tier this file's work landed, no LLVM
+  present. Both runners name the unresolved symbol before the Windows
+  `GetProcAddress` default lookup can resolve it. The second item settled
+  with it: the examples gate now compiles `engine.c` (with its
+  `__declspec(thread)` frame record) under `cl` and passes, so that path is
+  exercised. P25 criterion 5 is now PASS on both hosts; P25 is COMPLETE.
 
 ## Examples gate + MSVC ship tier (2026-07-28)
 

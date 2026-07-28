@@ -1,9 +1,10 @@
 # P25 header deprivileging — exit evidence
 
-Status: measured 2026-07-28. Contract:
+Status: **COMPLETE**, measured 2026-07-28. Contract:
 `specs/blocks/compiler.md` §23.8. Criteria 1–4 and 6–9 pass on the
-current Unix host. Criterion 5 passes on both tiers on Unix; its Windows
-half was not run and is not recorded as passing.
+current Unix host. Criterion 5 passes on both tiers on **both** hosts —
+its Windows half was measured on `x86_64-pc-windows-msvc` (MSVC-only) once
+the Windows ship tier moved to `cl` (`specs/tracking/windows-portability.md`).
 
 ## 1. A header other than the fixture binds and runs
 
@@ -157,15 +158,26 @@ The test calls both `run_jit` and `run_c_aot` with an empty native-library
 set and asserts the exact symbol name in
 `RunError::UnresolvedForeignSymbol`.
 
-Windows: **not run**. The code was not executed on a Windows host during
-P25, so this record makes no claim about Windows runtime behavior. The
-Windows half is settled by running the same command on the stated
-`x86_64-pc-windows-msvc` development host, with its Visual Studio and
-LLVM clang toolchains active, and observing the same test pass through
-both runners. `specs/tracking/windows-portability.md` owns this class of
-host-portability evidence.
+Windows: **PASS** (measured 2026-07-28, `x86_64-pc-windows-msvc`, MSVC
+only — clang not on `PATH`, `$CC` unset; the ship tier is now `cl`, see
+`specs/tracking/windows-portability.md`):
 
-Result: **PARTIAL — Unix PASS; Windows NOT RUN**.
+```text
+$ cargo test --offline -p subscript-codegen --test native_library unregistered_foreign_symbol_is_named_before_platform_lookup -- --nocapture
+running 1 test
+test unregistered_foreign_symbol_is_named_before_platform_lookup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+```
+
+Both runners name the symbol before any platform lookup on Windows too:
+the demand-side check is host-independent by construction (the sole
+`Linkage::Import` path is verified before finalize/link), and this run is
+the evidence for it, closing the concern that `cranelift-jit`'s Windows
+default lookup (`GetProcAddress` over loaded modules) could resolve by
+accident.
+
+Result: **PASS** (Unix and Windows, both tiers).
 
 ## 6. Unparseable provenance is rejected at ingestion
 
@@ -337,10 +349,10 @@ records. This is 15 additional lines paid by that host mirror.
 ## Carried forward
 
 The engine facade selects `__declspec(thread)` under MSVC and
-`_Thread_local` elsewhere, but P25 did not run the examples gate on a
-Windows host. The portability question remains unmeasured here.
-`specs/tracking/windows-portability.md` owns that class of finding and
-the eventual Windows execution evidence.
+`_Thread_local` elsewhere. That MSVC path was **measured 2026-07-28**: the
+examples gate compiles `engine.c` with `cl` and passes on
+`x86_64-pc-windows-msvc` (`specs/tracking/windows-portability.md`), so the
+`__declspec(thread)` frame record is exercised. No longer unmeasured.
 
 ## Deliberate non-scope
 
@@ -380,7 +392,9 @@ deletion touches test scaffolding in fact rather than by letter.
 Post-review gate: exit 0, 41 targets, 644 tests, the 89-golden differential
 gate green, no golden and no mirror moved, `tsc` clean.
 
-**Criterion 5 remains PARTIAL** and is the one thing standing between this
-phase and COMPLETE; `specs/tracking/windows-portability.md` now carries the
-command that settles it.
+**Criterion 5 is now PASS on both hosts** (2026-07-28): the Windows half
+was run on `x86_64-pc-windows-msvc` after the ship tier moved to `cl`
+(`specs/tracking/windows-portability.md`), and both runners name the
+unresolved symbol. With criterion 5 settled and no open CRITICAL/MAJOR,
+**the phase is COMPLETE**.
 
