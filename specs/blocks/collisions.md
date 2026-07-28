@@ -311,6 +311,13 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   aliases combined with `|` (Q18); callback userdata slots are
   `object | null`, narrowed with `as` (C3), with the lifetime rule that
   userdata must outlive the registration that holds it.
+  **The binding's cost is bounded by distinct identities, not by
+  registrations** *(2026-07-29 — `compiler.md` §14.4a)*: bindings are
+  interned by `(code, userdata1, userdata2)`, so re-registering the same
+  callback with the same userdata allocates nothing, and the honest bound
+  is the astral-intern/pattern-cache one — distinct tuples used.
+
+
 - **Q14 (numeric formatting)** — template-literal interpolation of sized
   numerics is defined by the language runtime, not the host libc:
   integers in decimal; `f32`/`f64` by shortest round-trip (Ryu class

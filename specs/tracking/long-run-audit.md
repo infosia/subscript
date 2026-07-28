@@ -28,11 +28,11 @@ Context's lifetime. The growth rate is exactly the bytes printed plus one
 newline per call; no measurement is needed because the mechanism stores
 the quantity itself.
 
-Response requires an owner decision (a C API addition):
-- a draining accessor (`take`-shaped: returns and clears), or
-- a clear call beside the existing read, so the read stays `const`.
-Either is additive; the gate reads the sink once at end, so no golden
-moves. Until then the only mitigation is the context-per-scene pattern.
+**Decided (owner, 2026-07-29): a print observer, contracted at
+`compiler.md` §18.2f.** Streaming rather than draining: when a host sets
+the observer, each line is delivered and nothing is retained; unset — the
+default — keeps today's cumulative sink, so the gate and every golden
+stand. The trap observer (§18.2) is the deliberate precedent.
 
 ### 2. Callback bindings accumulate per registration and are never swept
 
@@ -50,13 +50,14 @@ takes a fresh callback-info per call, and nothing stops a game from
 re-registering its sink every frame — grows one boxed record per registration,
 without bound. Register-once hosts are unaffected.
 
-Response options, none adopted here:
-- document the cost at Q13 and in the generated header, with the guidance
-  (register once; per-frame re-registration leaks by design), or
-- an in-place rebind for the per-frame pattern (updates an existing
-  binding's code/userdata rather than allocating a new one).
-Reachability-based collection is not an option: the C side holds the raw
-pointer, which is the very fact Q13 encodes.
+**Decided (owner, 2026-07-29): bindings are interned by identity,
+contracted at `compiler.md` §14.4a.** A boundary callback is
+non-capturing (C5), so the binding's identity is (code, userdata1,
+userdata2); re-registration returns the existing record. The growth class
+converts to bounded-by-distinct — the astral-intern/pattern-cache bound
+this project already accepts twice. Reachability-based collection stays
+impossible for the reason above, and no cap was added: a cap would narrow
+Q13's lifetime rule, and interning removes the need.
 
 ### 3. A runaway script freezes the host with no recovery path
 

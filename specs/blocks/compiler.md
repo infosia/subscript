@@ -1047,6 +1047,51 @@ to the language callback (each `object | null`, narrowed with `as`). P5.2b
 carried one; P7.2 extends it. The Context-held-binding lifetime rule
 (§13.3) is unchanged.
 
+### 14.4a Callback bindings are interned by identity — Rev 2026-07-29
+
+`bind_callback` allocated a fresh Context-held record on **every**
+marshaled callback-info crossing and nothing ever swept it — not
+`Context.free`, not `Context.collect`, only Context drop. The long-run
+audit (`specs/tracking/long-run-audit.md`, finding 2) names the
+consequence: a host that registers per frame grows one boxed record per
+registration, without bound. The lifetime rule itself (§13.3: the binding
+lives for the whole Context, because the C side holds the raw pointer and
+the runtime cannot know when the host is done with it) is correct and
+unchanged; the defect is that each registration paid for a new record.
+
+**The fix is interning.** A boundary callback is non-escaping (C5), so
+its function value is a non-capturing wrapper and `env` is always null —
+`sub_rt_cb_bind`'s own contract says so. A binding's identity is therefore
+the tuple **(code, userdata1, userdata2)**. `bind_callback` returns the
+existing record for a tuple it has seen, and allocates only for a new
+one.
+
+This converts the growth class rather than capping it: bindings become
+**bounded by distinct (code, userdata) tuples used**, the same
+bounded-by-distinct shape this project already accepts for the astral
+code-point interns (§22.1) and the compiled-pattern cache
+(`stdlib.md` §15.5a). The honest bound is stated the same way those two
+state it: a program that registers a million distinct userdata objects
+allocates a million bindings, and that is not a shape a real host loop
+has.
+
+Observable consequences, pre-registered:
+
+1. Re-registering the same callback with the same userdata returns the
+   **same binding pointer**; a C host may rely on pointer equality across
+   re-registrations within one Context.
+2. Deferred fires through a re-registered binding behave exactly as
+   before — the record the C side stored at first registration *is* the
+   record the pump reads.
+3. No golden moves: no corpus entry or example observes binding identity
+   or count today.
+
+Exit criteria: (1) a runtime unit test registers one tuple twice and
+asserts one record and pointer equality, and registers a second tuple and
+asserts a second record; (2) a probe-style measurement (the
+`dev-retention-probe` pattern) shows per-frame re-registration at zero
+growth per frame; (3) standing gate green, no golden moved.
+
 ### 14.5 Composed Future-shape async (capstone)
 
 A neutral fixture reproduces the whole model: an async op returns a
@@ -1620,6 +1665,53 @@ Two things to settle then, both of which the sketch does not answer:
   emitted C is close to hand-written C. One `u32` store per allocation
   is expected to be negligible, but it is to be **measured**, not
   asserted.
+
+### 18.2f The print observer — streaming output without retention
+
+**The stdout sink is cumulative and a C host cannot drain it.** `print`
+appends to the Context sink; `sub_rt_ctx_stdout` is a `const` read
+returning a pointer into it; the draining accessor exists only on the
+Rust surface, where the in-repo runners call it once at run end. That is
+correct for the gate — the golden comparison wants the whole run's bytes —
+and unacceptable for a long-running host, which retains every byte its
+script ever printed (`specs/tracking/long-run-audit.md`, finding 1).
+
+**The fix is the trap observer's shape applied to print** (§18.2 is the
+precedent, deliberately):
+
+    typedef void (*sub_rt_print_observer)(void* userdata,
+                                          const uint8_t* line,
+                                          uint64_t line_len);
+    void sub_rt_ctx_set_print_observer(Context* ctx,
+                                       sub_rt_print_observer observer,
+                                       void* userdata);
+
+- **When set, each `print` delivers the line to the observer and retains
+  nothing.** The sink does not grow. The bytes passed are exactly the
+  bytes the sink would have stored, minus nothing — determinism is a
+  property of the bytes, not of where they land.
+- **When unset — the default — behaviour is exactly today's**: the sink
+  accumulates and `sub_rt_ctx_stdout` reads it. The gate never sets an
+  observer, so every golden stands.
+- The observer is called during `print`, inside script execution, under
+  the same constraint as the trap observer: it must not call back into
+  any `sub_rt_*` API taking this Context (§18.2's aliasing rule, stated
+  once there and referenced here).
+- `line`/`line_len` are the line **without** the trailing newline the
+  sink stores; the observer decides its own framing. Valid only for the
+  duration of the call, like the trap observer's message.
+- Switching the observer mid-run is allowed (unlike the freed-handle
+  diagnostics setting there is no allocation-order invariant); bytes
+  printed while unset stay in the sink, bytes printed while set are not
+  added to it. A host that mixes the modes owns the seam.
+
+Exit criteria: (1) a runtime unit test proves set-mode delivers each line
+and leaves the sink empty, unset-mode accumulates, and a set→unset switch
+leaves earlier lines observed and later lines sunk; (2) an FFI test
+exercises the C surface both ways; (3) the capstone or a host example
+gains the observer so the pattern is taught, with its golden unchanged in
+meaning; (4) standing gate green, no golden moved; (5) the generated host
+header documents the aliasing constraint and the no-retention property.
 
 ### 18.3 Why there is no in-language observer
 
