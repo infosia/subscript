@@ -236,19 +236,31 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   `stdlib.md` §8 with the reason and the cost. Permitted surface: `length`, `slice`,
   `+`/template-literal concatenation, `===`/`!==` (by content).
 - **Q6 (`Context.free`)** — `Context.free(value: object): void` frees a
-  reference-class instance immediately. Double free and use-after-free
-  trap in the development tier and are undefined in AOT (trusted scripts,
-  invariant 6).
+  reference-class instance immediately. Double free and use-after-free are
+  **undefined in both tiers by default** (trusted scripts, invariant 6).
+  The development tier can be made to **trap** on them by a host-set,
+  per-Context setting that is off by default (`compiler.md` §8.1a-1);
+  freeing a pointer the Context never owned is gated by the same setting.
 
-  *(Renamed from `unsafeDelete` 2026-07-28, owner decision. The old name
-  said `unsafe` where the property is tier-dependent — this clause itself
-  records that the dev tier **traps**, so the adjective described the ship
-  tier only. `free` names the C memory model the language advertises, and
-  a reader who writes C ABI hosts already pairs it with use-after-free, so
-  the warning survives the adjective's removal. `delete` was considered
-  and rejected: JavaScript's `delete` is a property-removal operator, and
-  a language whose premise is TypeScript syntax over C semantics should
-  not add an avoidable entry to this table.)*
+  *(Amended 2026-07-29. This clause said the dev tier traps, full stop.
+  That became false when retention moved off the default path, and this
+  table is the subset's definition — CLAUDE.md — so it cannot lag the
+  contract.)*
+
+  *(Renamed from `unsafeDelete` 2026-07-28, owner decision. `free` names
+  the C memory model the language advertises, and a reader who writes C
+  ABI hosts already pairs it with use-after-free, so the warning survives
+  the adjective's removal. `delete` was considered and rejected:
+  JavaScript's `delete` is a property-removal operator, and a language
+  whose premise is TypeScript syntax over C semantics should not add an
+  avoidable entry to this table.*
+
+  *A second argument was given at the time and is **withdrawn**: that
+  `unsafe` described the ship tier only, because the dev tier trapped.
+  Under the default that premise no longer holds, and the old name would
+  now be the more literal one. The rename stands on the C-vocabulary
+  argument alone, which never depended on the trap — every C `free` has
+  exactly these semantics and none is called `unsafeFree`.)*
 - **Q7 (`Context.collect`)** — `Context.collect(): void` — explicitly
   invoked collection of unreachable Context allocations. Also invocable
   host-side. Never runs unbidden (invariant 2).

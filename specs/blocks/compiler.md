@@ -185,9 +185,10 @@ Observable obligations only; internal design is the implementer's.
 - **Runtime semantics** (the run set exercises all of these):
   - Context memory: reference classes, arrays, strings, coroutine
     frames are Context allocations. `Context.free` frees immediately;
-    double delete / use-after-delete trap in the dev tier (the dev tier
-    retains the freed bytes poisoned so the trap can fire — the ship tier
-    releases instead, §8.1a). `Context.collect()` frees unreachable allocations
+    double delete / use-after-delete trap in the dev tier when
+    freed-handle diagnostics are on, and are undefined otherwise
+    (**superseded by §8.1a-1**; §8.1a made the retention unconditional,
+    and it is now a setting that is off by default). `Context.collect()` frees unreachable allocations
     and never runs unbidden.
   - Strings: immutable UTF-8 `(ptr, len)`; `length` = byte length
     (`i32`); `slice(start, end)` byte offsets, traps off a UTF-8
@@ -302,7 +303,11 @@ A mode is either complete or off, and says which.
 
 **The guarantee is now conditional, and that is a real loss.** With the
 mode off, double free and use-after-free in the dev tier are undefined,
-as they already are in AOT (Q6; invariant 6). The dev tier no longer
+as they already are in AOT (Q6; invariant 6). **A third diagnostic is
+gated with them:** freeing a pointer the Context never owned traps as an
+invalid free with the mode on and is a silent no-op with it off, matching
+the ship tier. Naming only the first two would understate what the
+default gives up. The dev tier no longer
 diagnoses them by default. This is stated here rather than footnoted
 because §8.1a called the trap a dev-tier guarantee and it is one no
 longer.
@@ -353,8 +358,9 @@ shape itself is ~+17% over the C baseline's bare `malloc`/`free`). The
 ship tier therefore drops the per-allocation map from the hot path.
 
 **Scope: ship tier only** (`Context::new_releasing`). The dev tier keeps
-the map and retain-and-poison unchanged — the map is what funds its
-trap-on-stale-handle diagnostics (§8.1a). One runtime, two allocation
+the map, and retain-and-poison when freed-handle diagnostics are on — the
+map is what funds its trap-on-stale-handle diagnostics (§8.1a, **narrowed
+by §8.1a-1**: this paragraph described the retention as unconditional). One runtime, two allocation
 policies, selected at Context construction as today; no generated-code,
 lowering, or `sub_rt_*` ABI change.
 
@@ -1535,14 +1541,17 @@ Measured on one program (3 allocations, 1 delete), reported as
 `(live_allocations, live_bytes, reserved_bytes)`:
 
 ```
-dev  = (2, 8, 60)
+dev  = (2, 8, 60)   # measured before §8.1a-1; with freed-handle
+                    # diagnostics off, the deleted allocation's layout is
+                    # no longer reserved
 ship = (2, 32, 65536)
 ```
 
 The count agrees; neither byte figure does.
 
 **Cost.** `reserved_bytes` is O(chunks + live large allocations) on the
-ship tier and walks the retained allocation records on the dev tier —
+ship tier and walks the retained allocation records on the dev tier when
+freed-handle diagnostics are on (§8.1a-1) —
 cheap, but not O(1). `live_allocations` and `live_bytes` walk live
 blocks on the ship tier and are **O(live blocks)** — they are diagnostics, not per-frame counters. The contract
 deliberately does **not** add running counters maintained in
