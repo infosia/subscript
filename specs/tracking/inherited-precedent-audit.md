@@ -87,3 +87,43 @@ reports nothing found is evidence only if it says so explicitly.
 
 Findings land in this file with the trail, as the instance above is
 recorded.
+
+## Run 1 — 2026-07-28, at P25's Phase Review
+
+Run as pre-registered, by the same fresh-context reviewer that performed
+the Phase Review. **Hits: 3.** Two scope items produced none, and that is
+recorded here because a sweep reporting nothing is evidence only if it
+says so.
+
+**Hit 1 — the pre-named suspect, settled as removed.** The string-view
+record for a *callback's* parameter is not emitted: `bindgen` emits
+parameter records only for a `Decl::Func`, and a callback carries only
+`@subscript-c-callback typedef=…`. Its justification is recorded at a
+site, as the outcome requires — `bindgen/src/lib.rs`: the trampoline uses
+its own layout-identical view struct, so no C emission site consumes that
+name. The *function*-parameter string-view record is required; its
+consumer is `cemit.rs`'s `marshal_foreign_c_arg`, `Type::Str` arm.
+
+**Hit 2 — provenance attached where nothing can consume it.**
+`hir::ForeignFn::ret_provenance`, and the `Type::Func` routing that
+attaches callback provenance to a bare callback parameter, exist because
+*field* provenance was needed; the requirement was carried to the
+parameter and return positions by analogy. No consumer exists and none
+can: no lowering supports a bare callback parameter or return. Disposition
+per this file's method — removed, not annotated.
+
+**Hit 3 — a declaration justified by a list that did not contain it.**
+`engine.h`'s option chain and embedded count-first array cited
+`examples.md` §4, whose pattern enumeration had drifted from plan §4's
+five. The declarations are kept — each teaches something the corpus
+covers — but the justification was the rule's existence rather than what
+the rule says, which is this file's defect class exactly. §4 is corrected
+and each shape now carries its own reason.
+
+**Zero hits:** the examples gate crate — every test traces to
+`examples.md` §7 or `compiler.md` §23.7, and the fresh-thread JIT
+execution is derived from `engine.c`'s thread-local frame record rather
+than copied from the corpus gate. The two previously recorded instances
+are confirmed fixed: no checksum survives in the facade, and handle
+checking no longer reads storage to decide whether a handle is valid.
+
