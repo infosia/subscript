@@ -1,0 +1,15 @@
+host:init index=1
+script:init step=0.25
+host:state entities=1 flags=3 layer=1
+host:frame=0 index=2
+script:update x=0.25,step=0.25
+host:state entities=1 flags=3 layer=2
+host:frame=1 index=3
+script:update x=0.5,step=0.25
+host:state entities=1 flags=3 layer=3
+host:frame=2 index=4
+script:update x=0.75,step=0.25
+host:state entities=1 flags=3 layer=4
+host:shutdown allocations-before=30 bytes-before=1664
+script:shutdown
+host:shutdown allocations-after=5 bytes-after=176

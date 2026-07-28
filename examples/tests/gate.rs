@@ -10,6 +10,7 @@ extern crate subscript_interop_fixture;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 
 use subscript_bindgen::generate_for_header;
@@ -366,6 +367,32 @@ fn every_phase_gate_program_matches_dev_jit_ship_c_aot_and_golden() {
     let programs =
         discover_gate_programs().unwrap_or_else(|error| panic!("discover gate programs: {error}"));
     assert_programs_match(&programs, "phase gate");
+}
+
+#[test]
+fn capstone_host_builds_runs_and_matches_golden() {
+    let host = examples_root().join("host");
+    let script = host.join("build.sh");
+    let expected_path = host.join("expected.txt");
+    let expected = fs::read(&expected_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", expected_path.display()));
+    let output = Command::new("sh")
+        .arg(&script)
+        .output()
+        .unwrap_or_else(|error| panic!("run {}: {error}", script.display()));
+    assert!(
+        output.status.success(),
+        "capstone build/run failed with {}:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        output.stdout,
+        expected,
+        "capstone stdout differs from {}:\nactual:\n{}",
+        expected_path.display(),
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 #[test]
