@@ -28,6 +28,18 @@ fixed there.
 runs headless, with no GPU, no window, and no external device (CLAUDE.md
 core principle 4), and produces deterministic bytes.
 
+**An example's observable is the value itself, never a hash of it.** A
+corpus entry may fold state into a checksum — `a23-game-loop` does — and
+the interop fixture must, because a callback's `message.length` is its
+only channel. Neither reason transfers: an example prints positions,
+counts and flags, which a reader can check by eye and which a golden
+discriminates more strongly than a hash. A convention that is right in
+`corpus/` is not right here by inheritance; it earns its place against
+this section or it does not appear.
+
+*(Written 2026-07-28 after the first draft of the host facade grew an
+`engWorldChecksum` for no reason but that the corpus has checksums.)*
+
 ## 2. Layout and file conventions
 
 ```
@@ -139,6 +151,13 @@ the C ABI.
 5. the memory accounting the host actually gets — `live_bytes` /
    `live_allocations` around an explicit `collect()` (§18.2d), which is
    how "no implicit GC" becomes visible to a host rather than a claim.
+
+**The host prints integers; the script prints floats.** The capstone's
+golden must not depend on a libc's float formatting, and it does not have
+to: the script's `print` goes through the runtime's own deterministic
+number formatting (Q14), which is a property the examples should show
+rather than hide. So `main.c` reports counts, flags and frame indices,
+and any fractional value is printed from the script side.
 
 `build.sh` builds it on the development desktop with the platform C
 compiler: emit the ship-tier C for `game.ts` against the mirror
