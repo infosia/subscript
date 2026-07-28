@@ -344,12 +344,26 @@ requirement).
 
 ### Result (2026-07-28)
 
-Landed in six commits on `spec/windows-msvc-ship-tier`. Final verification
-on `x86_64-pc-windows-msvc` with **clang not on `PATH` and `$CC` unset**
-(i.e. MSVC only, no LLVM): `cargo test -p subscript-codegen` **211 passed,
-0 failed**; `cargo test -p subscript-examples` **5 passed, 0 failed**
-(capstone included). The byte-exact differential (dev-JIT ≡ ship-C-AOT ≡
-golden) holds under `cl`; no golden byte changed.
+Landed in eight commits on `spec/windows-msvc-ship-tier`. Final
+verification on `x86_64-pc-windows-msvc` with **clang not on `PATH` and
+`$CC` unset** (i.e. MSVC only, no LLVM): a bare `cargo build` reaches
+`Finished`; `cargo test -p subscript-codegen` **211 passed, 0 failed**;
+`cargo test -p subscript-examples` **5 passed, 0 failed** (capstone
+included). The byte-exact differential (dev-JIT ≡ ship-C-AOT ≡ golden)
+holds under `cl`; no golden byte changed.
+
+Phase review (fresh independent reviewer, cumulative diff): all focus
+areas clean — the float↔narrow-int equivalence re-derived by hand, no
+golden changed, `/fp:strict` correct, exclusions Unix-safe, no panics, no
+hardcoded paths. One MAJOR: the fixture crate is a workspace member whose
+build script compiled `_Float16` unconditionally, so a bare (unscoped)
+`cargo build` failed on the MSVC-only host though the dependency edges were
+gated. Fixed by gating the fixture `build.rs` on the windows-msvc target
+(`CARGO_CFG_TARGET_OS`/`_ENV`). Three MINORs left as accepted: the msvc
+phase gate compares zero programs (its sole program is interop-gated; the
+example set still exercises both tiers); `$CC` on windows-msvc is assumed
+MSVC-style (`clang-cl` works, GNU `clang` would not); the shim collapses
+exit codes >255 (`cl` never uses them). No open CRITICAL/MAJOR.
 
 What each piece required, beyond the plan:
 
