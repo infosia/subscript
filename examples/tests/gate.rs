@@ -5,7 +5,10 @@
 // registered with the development tier.
 extern crate subscript_examples;
 // Naming the dev-dependency propagates its test-only interop archive into
-// this integration-test link.
+// this integration-test link. The fixture compiles `corpus/interop/interop.c`
+// (which uses `_Float16`), unbuildable by MSVC `cl`, so it is excluded on
+// windows-msvc — as is every code path that references its symbols.
+#[cfg(not(all(windows, target_env = "msvc")))]
 extern crate subscript_interop_fixture;
 
 use std::fs;
@@ -15,9 +18,15 @@ use std::thread;
 
 use subscript_bindgen::generate_for_header;
 use subscript_codegen::{
-    emit_c, run_c_aot_with_native_libraries, run_jit_with_native_libraries, NativeLibrary,
+    run_c_aot_with_native_libraries, run_jit_with_native_libraries, NativeLibrary,
 };
-use subscript_compiler::{check_program, SourceFile};
+// Used only by the interop-only two-header emission test, which is excluded
+// on windows-msvc; split out so the import is not unused there.
+#[cfg(not(all(windows, target_env = "msvc")))]
+use subscript_codegen::emit_c;
+use subscript_compiler::SourceFile;
+#[cfg(not(all(windows, target_env = "msvc")))]
+use subscript_compiler::check_program;
 
 const ENGINE_MIRROR_NAME: &str = "engine.generated.d.ts";
 const INTEROP_MIRROR_NAME: &str = "interop.generated.d.ts";
@@ -39,7 +48,10 @@ extern "C" {
     fn engFrameWorld();
     fn engFrameFixedStep();
     fn engFrameIndex();
+}
 
+#[cfg(not(all(windows, target_env = "msvc")))]
+extern "C" {
     fn subDeviceCreate();
     fn subDeviceRelease();
     fn subDeviceSubmit();
@@ -135,9 +147,17 @@ fn discover_gate_programs() -> Result<Vec<Program>, String> {
         programs.push(load_program(&path, format!("gate/{stem}"))?);
     }
     programs.sort_by(|left, right| left.id.cmp(&right.id));
+    // The empty guard runs before the windows-msvc filter so a legitimately
+    // empty directory is still caught, while the filter merely narrows a
+    // non-empty set.
     if programs.is_empty() {
         return Err("no phase-proof programs found under examples/gate".to_string());
     }
+    // On windows-msvc the interop fixture is excluded, so no gate program that
+    // binds interop.h may run. two-header-binding.ts is the only such program;
+    // filtering it leaves the gate set empty on that host, which is expected.
+    #[cfg(all(windows, target_env = "msvc"))]
+    programs.retain(|program| !program.uses_interop);
     Ok(programs)
 }
 
@@ -227,6 +247,7 @@ fn engine_library() -> NativeLibrary {
     }
 }
 
+#[cfg(not(all(windows, target_env = "msvc")))]
 fn interop_library() -> Result<NativeLibrary, String> {
     let directory = repository_root()?.join("corpus").join("interop");
     let symbols = vec![
@@ -260,6 +281,10 @@ fn native_libraries(uses_engine: bool, uses_interop: bool) -> Result<Vec<NativeL
         libraries.push(engine_library());
     }
     if uses_interop {
+        // On windows-msvc no discovered program has `uses_interop` (the sole
+        // such gate program is filtered out), so this branch is never taken;
+        // the push is excluded there because `interop_library` does not exist.
+        #[cfg(not(all(windows, target_env = "msvc")))]
         libraries.push(interop_library()?);
     }
     Ok(libraries)
@@ -437,6 +462,9 @@ fn engine_mirror_regenerates_byte_identically() {
     );
 }
 
+// The only gate program binding both headers uses interop.h, whose fixture is
+// excluded on windows-msvc; this emission test is therefore excluded there.
+#[cfg(not(all(windows, target_env = "msvc")))]
 #[test]
 fn two_header_gate_emits_both_provenance_vocabularies() {
     let programs =

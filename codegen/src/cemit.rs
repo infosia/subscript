@@ -704,7 +704,11 @@ impl<'m> Emitter<'m> {
             }
             Type::Class(id) => {
                 let _ = writeln!(out, "typedef struct {name} {{");
-                for field in &self.class(*id)?.fields {
+                let class = self.class(*id)?;
+                if class.fields.is_empty() {
+                    let _ = writeln!(out, "    char sub_opaque;");
+                }
+                for field in &class.fields {
                     let _ = writeln!(out, "    {};", self.field_decl(&field.name, &field.ty)?);
                 }
                 let _ = writeln!(out, "}} {name};");
@@ -6033,6 +6037,38 @@ mod tests {
         assert!(c.contains("sub_rt_delete"));
         assert!(c.contains("ss_ctor0(ctx,"));
         assert!(!c.contains("ss_new0(void* ctx"));
+    }
+
+    #[test]
+    fn zero_field_opaque_handle_emits_a_valid_c_struct() {
+        // A branded ambient interface is an opaque handle with no fields.
+        // An empty C struct is rejected by MSVC C mode (C2016), so the
+        // typedef must carry a placeholder member and stay a valid C11
+        // struct. The member is never read or instantiated by value.
+        let files = [
+            SourceFile::ambient(
+                "widget.generated.d.ts",
+                "// @subscript-c-header include=\"widget.h\"\n\
+                 interface Widget {\n\
+                 \x20 readonly __sub_handle_Widget: never;\n\
+                 }\n\
+                 declare function widgetCreate(): Widget;\n\
+                 declare function widgetDestroy(w: Widget): void;\n",
+            ),
+            SourceFile::new(
+                "prog.ts",
+                "export function main(): void {\n\
+                 \x20 const w: Widget = widgetCreate();\n\
+                 \x20 widgetDestroy(w);\n\
+                 }\n",
+            ),
+        ];
+        let module = check_program(&files).expect("clean check");
+        let c = emit_c(&module).expect("emit").source;
+        assert!(
+            c.contains("char sub_opaque;"),
+            "zero-field opaque handle must emit a non-empty C11 struct:\n{c}"
+        );
     }
 
     #[test]

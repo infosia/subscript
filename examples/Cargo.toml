@@ -9,6 +9,11 @@ description = "Executable gates for the subscript teaching examples."
 subscript-bindgen = { path = "../bindgen" }
 subscript-codegen = { path = "../codegen" }
 subscript-compiler = { path = "../compiler" }
+
+# The interop fixture's build script compiles `corpus/interop/interop.c`,
+# which uses `_Float16` — a type MSVC `cl` cannot compile. Gate it off
+# windows-msvc, mirroring `codegen/Cargo.toml`.
+[target.'cfg(not(all(windows, target_env = "msvc")))'.dev-dependencies]
 subscript-interop-fixture = { path = "../codegen/tests/native-fixture" }
 
 [build-dependencies]
