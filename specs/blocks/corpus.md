@@ -107,8 +107,8 @@ the table stands as the corpus spelling reference.
 | Fixed-size array field | `FixedArray<f32, 16>` ambient generic | Q3 |
 | Slice / `(ptr,len)` | `T[]` parameters lower to `(ptr, len)`; no separate slice type in the surface syntax | Q4 |
 | String at boundary | `string` lowers to a length-carrying view (pointer + byte length); no NUL assumption | Q5 |
-| Manual delete | prelude function `unsafeDelete(x)` — TS strict mode forbids `delete x` on non-properties, so a delete statement has no TS spelling | Q6 |
-| Explicit collection | prelude function `collect()` (host-invoked op exposed to script for the corpus) | Q7 |
+| Manual delete | prelude function `Context.free(x)` — TS strict mode forbids `delete x` on non-properties, so a delete statement has no TS spelling | Q6 |
+| Explicit collection | prelude function `Context.collect()` (host-invoked op exposed to script for the corpus) | Q7 |
 | Null story | `T \| null` only; `undefined` never appears in the corpus | Q8 |
 | Error handling | return values / result objects; no `throw` in accept corpus | Q9 |
 | Closure capture | non-capturing function values freely; capturing lambda appears only in `a14` as the policy probe | Q10 |
@@ -136,8 +136,8 @@ the table stands as the corpus spelling reference.
 | a12-generics-mono | One generic function + one generic value struct, two instantiations each |
 | a13-closures-noncapture | Function values passed and called, zero capture |
 | a14-closures-capture | Single minimal capturing lambda (the Q10 policy probe) |
-| a15-manual-lifetime | Reference class: `new`, use, `unsafeDelete` |
-| a16-explicit-collect | Allocation, drop of last reference, explicit `collect()` call |
+| a15-manual-lifetime | Reference class: `new`, use, `Context.free` |
+| a16-explicit-collect | Allocation, drop of last reference, explicit `Context.collect()` call |
 | a17-null-story | `T \| null` parameter and field, narrowing before use |
 | a18-error-handling | Fallible operation returning a result value, checked by caller |
 | a19-modules | Two-file program: `math.ts` exports, `main.ts` imports |

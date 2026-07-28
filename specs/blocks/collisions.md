@@ -235,13 +235,43 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   trap** (JS's negative/clamp rules) — changed by P18, recorded in
   `stdlib.md` §8 with the reason and the cost. Permitted surface: `length`, `slice`,
   `+`/template-literal concatenation, `===`/`!==` (by content).
-- **Q6 (`unsafeDelete`)** — `declare function unsafeDelete(value: object):
-  void;` frees a reference-class instance immediately. Double delete and
-  use-after-delete trap in the development tier and are undefined in AOT
-  (trusted scripts, invariant 6).
-- **Q7 (`collect`)** — `declare function collect(): void;` — explicitly
+- **Q6 (`Context.free`)** — `Context.free(value: object): void` frees a
+  reference-class instance immediately. Double free and use-after-free
+  trap in the development tier and are undefined in AOT (trusted scripts,
+  invariant 6).
+
+  *(Renamed from `unsafeDelete` 2026-07-28, owner decision. The old name
+  said `unsafe` where the property is tier-dependent — this clause itself
+  records that the dev tier **traps**, so the adjective described the ship
+  tier only. `free` names the C memory model the language advertises, and
+  a reader who writes C ABI hosts already pairs it with use-after-free, so
+  the warning survives the adjective's removal. `delete` was considered
+  and rejected: JavaScript's `delete` is a property-removal operator, and
+  a language whose premise is TypeScript syntax over C semantics should
+  not add an avoidable entry to this table.)*
+- **Q7 (`Context.collect`)** — `Context.collect(): void` — explicitly
   invoked collection of unreachable Context allocations. Also invocable
   host-side. Never runs unbidden (invariant 2).
+
+  *(Renamed from the bare global `collect` 2026-07-28, owner decision. A
+  top-level `collect()` names no owner and reads as a library helper;
+  qualifying it names the object that owns the memory. `Context` is
+  already the host's word for it — `Context*` and `sub_rt_ctx_*` in
+  `runtime/include/subscript_runtime.h` — so script and host now say the
+  same word for the same object.)*
+
+  **Spelling.** `Context` is an ambient namespace, never a class: a script
+  cannot construct or hold one. `declare namespace Context { function
+  collect(): void; function free(value: object): void; }` is `tsc`-clean.
+  Should a future member need a reserved word, the namespace form fails —
+  measured 2026-07-28, `declare namespace C { function delete(): void }`
+  is TS1359 — and the fallback is the object form, `declare const Context:
+  { … }`, which accepts reserved-word members and was verified to accept a
+  `delete` member and its call site.
+
+  `print` stays a bare global. It writes to the same Context sink, but it
+  is not a memory operation and it is the most-called name in every corpus
+  entry and example; the change would cost more than it names.
 - **Q12 (entry and host API)** — every `export function` is a
   host-callable entry point. The corpus runner calls `main(): void`;
   `a23` exports a lifecycle trio (`init`/`update`/`shutdown`) for
@@ -664,7 +694,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   **`parse` reports failure as data, not as a trap.** `JsonResult<T>`
   is an ambient generic reference class — the machinery Q24 built for
   `Map`/`Set` — carrying `ok` and `value`; the caller releases it with
-  `unsafeDelete` (Q6). Trapping was rejected because it contradicts the
+  `Context.free` (Q6). Trapping was rejected because it contradicts the
   reasoning Q25 committed to: a parse failure is **data**, which is why
   `parseInt` may return `NaN` where Q20 and Q24 could not have a
   sentinel. JSON reaching a script has usually crossed the host
@@ -829,7 +859,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 ## 4. Prelude and gate
 
 - `prelude/lang.d.ts` — ambient declarations for §1/§2: sized-numeric
-  aliases, `print`, `collect`, `unsafeDelete`, `CStruct` decorator
+  aliases, `print`, `Context.collect`, `Context.free`, `CStruct` decorator
   (typed against TS 5 standard `ClassDecoratorContext`), `FixedArray`.
 - `tsconfig.json` (repo root) — `strict`, `noEmit`, ES2022 target/lib,
   `types: []`; includes `prelude/**/*.d.ts` and `corpus/accept/**/*.ts`

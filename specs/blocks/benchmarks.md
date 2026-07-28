@@ -146,7 +146,7 @@ machine), and each produces an exact
 | mandelbrot | escape-iteration count over an N×N grid, escape test `x²+y² ≥ 4` (no `sqrt`), cap 255 | sum of escape counts |
 | primes | count primes up to N by trial division | the count |
 | sort | quicksort (or heapsort) an `i32[]` of N elements seeded by a fixed LCG | sum of the sorted array (or a sampled set of indices) |
-| tree | build and traverse balanced binary trees (allocate/free) to a fixed depth; subscript uses reference classes with explicit `unsafeDelete` | node-visit count / checksum |
+| tree | build and traverse balanced binary trees (allocate/free) to a fixed depth; subscript uses reference classes with explicit `Context.free` | node-visit count / checksum |
 
 **`tree`'s ship-tier figure is layout-sensitive and is not a runtime property on its own.** Measured 2026-07-27 (`compiler.md` §22.5): inserting 104 bytes of dead padding into `Context` — no semantic change at all — moves ship `tree` from 120.5 ms to 91.8 ms, a **24%** swing, while every other workload holds. A movement in this row is evidence of *something*, but attributing it to a change requires an A/B against that change, not the row alone.
 | queen | count solutions to the N-queens problem | the solution count |
@@ -168,8 +168,8 @@ every payload word onto a work list and looks each one up**, so the
 extra words become extra work-list traffic and extra conservative
 lookups, not just extra loads.
 
-**Nothing measures it.** No workload calls `collect()`; `tree`
-allocates and frees 131 071 nodes with `unsafeDelete`, exercising the
+**Nothing measures it.** No workload calls `Context.collect()`; `tree`
+allocates and frees 131 071 nodes with `Context.free`, exercising the
 **allocator, not the collector**; `perf-gate`'s `a22` has no heap graph
 at all. Correctness is well covered — three corpus entries call
 `collect`, and P21's review ran a 200 000-operation randomized stress —

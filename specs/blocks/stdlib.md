@@ -463,7 +463,7 @@ for the accepted subset, `tsc` sees the ES2022 lib).
 `Map<K, V>` and `Set<K>` are **reference classes** (heap, Context
 memory, manual lifetime — C2's plain-`class` side), monomorphized on
 first use exactly as `a12`'s generic value class is. `new Map<K, V>()`
-allocates; `unsafeDelete` frees; `collect()` reclaims an unreachable
+allocates; `Context.free` frees; `Context.collect()` reclaims an unreachable
 one. The `K`/`V` monomorphization means there is no boxing and no
 type erasure: a `Map<i32, Vec3>` stores `i32` keys and `Vec3` values
 inline.
@@ -616,8 +616,8 @@ behaviour:
   here, and §14.3 cited this section for it — a citation to text that
   did not exist. `for…of` fuses into this traversal, so it inherits the
   rule rather than defining a second one.)*
-- **Invariant 2**: `clear()` and `unsafeDelete` free eagerly;
-  `collect()` reclaims an unreachable container **and the keys/values
+- **Invariant 2**: `clear()` and `Context.free` free eagerly;
+  `Context.collect()` reclaims an unreachable container **and the keys/values
   it uniquely held** — the container's storage must be scannable by
   the collector (the P2/P4.3 root-range machinery), on both tiers.
 - **Hot reload** (compiler block §8.2): `Map`/`Set` are declarations
@@ -640,7 +640,7 @@ member, and `new Map([[k, v]])` — each S014 at a pinned position.
 Gate: standing gate byte-exact on both tiers including the new
 entries; `tsc` zero errors, unchanged config; iteration order pinned
 by golden; the collector reclaims a dropped container (observable via
-a `collect()` entry that then still prints correctly); a trapping
+a `Context.collect()` entry that then still prints correctly); a trapping
 `forEach` callback reports an identical tuple across tiers; rejects at
 pinned S014 positions; benchmarks — no ship-row regression.
 
@@ -1006,7 +1006,7 @@ ECMA-defined answer, exactly as Q25 argued for `toFixed`.
 
 `JsonResult<T>` is an ambient **generic reference class**, the same
 machinery `Map`/`Set` use (Q24), with `ok: boolean` and `value: T`.
-The caller owns it and releases it with `unsafeDelete` (Q6).
+The caller owns it and releases it with `Context.free` (Q6).
 
 The alternative — trapping — was rejected because it contradicts the
 reasoning Q25 already committed to: **a parse failure is *data*, not a
@@ -1588,22 +1588,22 @@ observe. The row states why the cache is contract; it is not a
 measurement anything can drift away from. Measured 2026-07-27 on the
 vendored tree.
 
-#### 15.5a Lifetime — the cache is bounded by patterns, the handle is not exempt from `collect`
+#### 15.5a Lifetime — the cache is bounded by patterns, the handle is not exempt from `Context.collect`
 
 *(Added 2026-07-27 by the P23 Phase Review, which measured a Context
-growing **1.8 MB → 40.4 MB** over ten `collect()`ed frames of 2000
+growing **1.8 MB → 40.4 MB** over ten frames that each called `Context.collect()`, of 2000
 distinct dynamic patterns, and a regex literal evaluated inside a
-200 000-iteration loop retaining **181 MB** that `collect()` could not
+200 000-iteration loop retaining **181 MB** that `Context.collect()` could not
 reclaim — against 0 MB for the same literal hoisted to a constant.)*
 
-Invariant 2 makes explicit `collect()` the whole memory model. Regex
+Invariant 2 makes explicit `Context.collect()` the whole memory model. Regex
 state is not outside it:
 
-- **A `RegExp` handle is an ordinary Context allocation.** `collect()`
+- **A `RegExp` handle is an ordinary Context allocation.** `Context.collect()`
   reclaims an unreachable one exactly as it reclaims any other object,
   and the handle's match state (`matchStart`/`matchEnd`) dies with it.
   The `delete` path is required to do the same, though **no script can
-  reach it**: `unsafeDelete(re)` is a type error, so that path exists
+  reach it**: `Context.free(re)` is a type error, so that path exists
   for the host C ABI and to keep the two reclamation routes from
   drifting apart.
   A store entry that outlives its handle is a leak, and — because the

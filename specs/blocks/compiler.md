@@ -184,10 +184,10 @@ Observable obligations only; internal design is the implementer's.
   never aborts the host process and no signal/SEH handling is used.
 - **Runtime semantics** (the run set exercises all of these):
   - Context memory: reference classes, arrays, strings, coroutine
-    frames are Context allocations. `unsafeDelete` frees immediately;
+    frames are Context allocations. `Context.free` frees immediately;
     double delete / use-after-delete trap in the dev tier (the dev tier
     retains the freed bytes poisoned so the trap can fire — the ship tier
-    releases instead, §8.1a). `collect()` frees unreachable allocations
+    releases instead, §8.1a). `Context.collect()` frees unreachable allocations
     and never runs unbidden.
   - Strings: immutable UTF-8 `(ptr, len)`; `length` = byte length
     (`i32`); `slice(start, end)` byte offsets, traps off a UTF-8
@@ -238,7 +238,7 @@ Observable obligations only; internal design is the implementer's.
 
 ### 8.1a Ship-tier manual memory is released, not retained
 
-The dev tier realizes `unsafeDelete`/`collect` (Q6/Q7) by
+The dev tier realizes `Context.free`/`Context.collect` (Q6/Q7) by
 **retain-and-poison**: the freed allocation's bytes stay owned by the
 Context and its header is stamped dead, so a stale handle *traps* instead
 of reading reused memory (§7). That retention is the price of the dev
@@ -247,12 +247,12 @@ tier's trap-on-use-after-delete guarantee.
 The **ship tier does not owe that guarantee** — in AOT, double delete and
 use-after-delete are undefined (Q6; invariant 6, trusted scripts). So the
 ship tier **returns the allocation to the system allocator immediately**:
-`unsafeDelete` (and a `collect` sweep) free the backing storage and drop
+`Context.free` (and a `Context.collect` sweep) free the backing storage and drop
 the Context's bookkeeping entry for it, rather than retaining a poisoned
 corpse.
 
 - **Soundness / gate-safety.** For a *correct* program — one that never
-  reads a handle after its `unsafeDelete`, and never deletes twice — the
+  reads a handle after its `Context.free`, and never deletes twice — the
   released and retained policies are observationally identical: the only
   difference is the state of memory the program has promised not to touch.
   Every `corpus/accept` entry is such a program by construction, so
@@ -295,7 +295,7 @@ lowering, or `sub_rt_*` ABI change.
 
 - **Mechanism.** The ship Context owns memory in chunks. Small
   allocations (header + payload up to a largest size class) are carved
-  from **per-size-class chunks** by bump pointer; `unsafeDelete` pushes
+  from **per-size-class chunks** by bump pointer; `Context.free` pushes
   the block onto that class's LIFO free list; the next same-class `alloc`
   pops it. Allocations above the largest class are carried as individual
   system allocations with their own Context record (they remain
@@ -307,14 +307,14 @@ lowering, or `sub_rt_*` ABI change.
 - **Zeroing.** `alloc` returns a zeroed payload in every case, including
   free-list reuse — conservative tracing and language zero-init rely on
   it.
-- **Membership is exact.** The conservative scan and `collect()` need
+- **Membership is exact.** The conservative scan and `Context.collect()` need
   "is this word a managed payload address?". The test must never
   identify an address as a managed block unless it is one: chunk-range
   lookup, block-grid alignment within the per-class chunk, bump-watermark
   bound, and a live header state — all four. A false positive that lets
   the sweeper treat arbitrary memory as a block is memory corruption, not
   conservatism.
-- **`collect()`** (Q7, explicitly invoked only) still works on the ship
+- **`Context.collect()`** (Q7, explicitly invoked only) still works on the ship
   tier: mark from roots/shadow/interned as today; sweep by walking each
   chunk's blocks linearly (bump watermark bounds the walk) plus the large
   records; unreached live blocks go to their free list (or are freed, for
@@ -339,7 +339,7 @@ lowering, or `sub_rt_*` ABI change.
 3. Runtime unit tests, same commit: (a) ship alloc→delete→alloc reuses
    free-listed storage without chunk growth over N cycles; (b) Context
    drop frees every chunk and large record (no leak, asserted by a
-   counting hook or chunk count); (c) ship `collect()` frees unreachable
+   counting hook or chunk count); (c) ship `Context.collect()` frees unreachable
    blocks and keeps rooted ones (arena edition of the existing tests);
    (d) the dev-tier trap tests (double delete, stale handle) pass
    unchanged.
@@ -1439,7 +1439,7 @@ uint64_t sub_rt_ctx_reserved_bytes(const Context*);
 Owner decision 2026-07-26, and this closes a larger gap than §18.2's.
 **Invariant 2 — no implicit GC — makes explicit lifetime management
 the memory model's centre, and the host had no way to measure whether
-it was working.** A script that forgets `unsafeDelete` and leaks a
+it was working.** A script that forgets `Context.free` and leaks a
 little every frame is invisible from outside: `Context::live_count`
 and `is_live` existed but were Rust-side only. The P15 review found a
 container retaining 8.4 MB after churn; a benchmark caught it, and a
@@ -1483,7 +1483,7 @@ blocks on the ship tier and are **O(live blocks)** — they are diagnostics, not
 deliberately does **not** add running counters maintained in
 `alloc`/`delete`: that would make the figures O(1) at the price of an
 invariant that must stay correct across delete, chunk reuse and
-`collect()`, and a memory statistic that can itself drift is worse
+`Context.collect()`, and a memory statistic that can itself drift is worse
 than one that is slow.
 
 Read-only: none of the three can change script-visible output, so
@@ -1903,7 +1903,7 @@ A boolean cannot express these; each was found in the P19 work.
 
 The non-call sites P19 left in two places: integer div/rem, index read,
 index write, `JsonResult.value`, narrowing `as` (null and class
-mismatch), the `unsafeDelete` lifetime checks, stale-coroutine,
+mismatch), the `Context.free` lifetime checks, stale-coroutine,
 allocation failure, and the allocation-bearing literals — string
 literal, `str_concat`, `fmt_*`, array literal.
 
@@ -2122,7 +2122,7 @@ new value has to be threaded anywhere.
 **The header's fourth word was not free, and this section said it
 was.** *(Corrected 2026-07-26 during implementation.)* On the ship tier
 that word held each classed block's **exact requested payload size**,
-and `collect`'s mark phase read it to know how far to trace. Storing
+and `Context.collect`'s mark phase read it to know how far to trace. Storing
 `pos_id` takes it, so the mark phase now traces **the whole size-class
 payload capacity** instead.
 
@@ -2133,13 +2133,13 @@ block reused from a free list is re-zeroed across its **full capacity**
 is re-armed. The padding a conservative trace now reads is therefore
 always zero.
 
-The cost is real and bounded: `collect` scans up to the size-class
+The cost is real and bounded: `Context.collect` scans up to the size-class
 rounding of each block rather than its exact request — at most a factor
 of two, on an operation that never runs unbidden (invariant 2). The
 alternative, widening the header to 24 bytes, costs every allocation 8
 bytes to save an explicitly-invoked operation some scanning, which is
 the worse trade. **Recorded rather than left silent, because a future
-reader finding `collect` tracing padding should find the reason here.**
+reader finding `Context.collect` tracing padding should find the reason here.**
 
 Only the dev tier and the ship tier's large-allocation path add a
 genuinely new store; for classed blocks the store replaces one that was
@@ -2215,7 +2215,7 @@ carried forward, and scheduled together on 2026-07-27 (owner) because
 they are the same defect wearing different clothes: **something inside
 the Context grows without bound in a way the program cannot control,
 and no gate can see it.** One is binary size charged to every shipped
-program; the other is `collect()` time charged to every long-running
+program; the other is `Context.collect()` time charged to every long-running
 host.
 
 Neither is a bug in what the code computes. Both are bugs in what it
@@ -2261,7 +2261,7 @@ the runtime's doc comment said `charAt`; corrected 2026-07-27.)*
    This is the bound `stdlib.md` §15.5a already gives the
    compiled-pattern cache, and it is chosen for the same reason: a
    per-iteration allocation under invariant 2 accumulates until
-   `collect()`, which is the defect §15.5a was written for.
+   `Context.collect()`, which is the defect §15.5a was written for.
 3. **The intern map is Context-owned and is not swept.** No program
    reference reaches it, so a sweep would free bytes a live handle
    still points at. It lives and dies with the Context, like the
@@ -2276,7 +2276,7 @@ price of not carrying 4 MB in every binary.
 
 ### 22.2 The dev-tier allocation map (`p4-performance.md`, P21 carried forward)
 
-The dev tier realizes `unsafeDelete`/`collect` by **retain-and-poison**
+The dev tier realizes `Context.free`/`Context.collect` by **retain-and-poison**
 (§8.1a): freed bytes stay owned by the Context with a dead header, so a
 stale handle traps instead of reading reused memory. §8.1a accepted the
 *memory* cost of that retention as the price of the guarantee.
@@ -2288,7 +2288,7 @@ Measured inside one run as entries grow 120,005 → 720,005: sweep
 **0.73 → 3.48 ms, linear**, while mark stays 14–16 ms because mark *is*
 proportional to live data.
 
-A host calling `collect()` per level transition or inside a frame
+A host calling `Context.collect()` per level transition or inside a frame
 budget therefore sees its collect cost **rise monotonically for the
 lifetime of the Context, regardless of how much is live.** `a16`, `a51`
 and `a70` allocate too little to show it; a real embedding would not.

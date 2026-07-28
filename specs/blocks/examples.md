@@ -181,7 +181,7 @@ the C ABI.
    (§18.1b) — the example takes one and says why;
 4. draining the script's stdout sink with `sub_rt_ctx_stdout`;
 5. the memory accounting the host actually gets — `live_bytes` /
-   `live_allocations` around an explicit `collect()` (§18.2d), which is
+   `live_allocations` around an explicit `Context.collect()` (§18.2d), which is
    how "no implicit GC" becomes visible to a host rather than a claim.
 
 **The host prints integers; the script prints floats.** The capstone's
@@ -207,7 +207,7 @@ implementer's choice; the committed `.expected` freezes it.
 |---|---|---|
 | `e01-sized-integers` | `i32`/`u32`/`i64`/`f32`/`f64`, explicit `as` conversions, wrapping | C3 bare `number` rejected; C4 literals are contextually typed |
 | `e02-value-and-reference` | `@CStruct class` beside a plain `class`; copy on assign and on pass | C2 value types; C1 nominal identity — structurally identical is not interchangeable |
-| `e03-memory` | Context allocation, `unsafeDelete`, explicit `collect()` | invariant 2 — nothing collects unbidden; a program that never collects is correct, merely larger |
+| `e03-memory` | Context allocation, `Context.free`, explicit `Context.collect()` | invariant 2 — nothing collects unbidden; a program that never collects is correct, merely larger |
 | `e04-null` | `T \| null`, narrowing by `!== null` | C7 — no `undefined`, no general unions |
 | `e05-no-exceptions` | result-shaped returns; `JsonResult` for parsing; what a trap is | C6 — no `throw`, no `try` |
 | `e06-arrays-and-closures` | fixed vs growable arrays, bounds checks, `map`/`filter`/`reduce` | C5 — non-escaping capture only |
