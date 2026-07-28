@@ -212,6 +212,10 @@ table with absolute times, methodology, and machine/runtime versions is in
 | sort | 1.00× | 1.77× | 3.70× | 2.28× | 1.45× | 1.83× |
 | particles | 1.00× | 3.07× | 10.35× | 3.84× | 1.90× | 3.58× |
 
+For what the language looks like at these speeds — ten commented programs,
+a C host facade, and a C host that owns the loop — see
+[`examples/`](examples/README.md).
+
 What the numbers show:
 
 - **On compute-bound work the shipping tier reaches hand-written C** —
