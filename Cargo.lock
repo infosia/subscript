@@ -964,7 +964,6 @@ dependencies = [
 name = "subscript-codegen"
 version = "0.1.0"
 dependencies = [
- "cc",
  "cranelift-codegen",
  "cranelift-frontend",
  "cranelift-jit",
@@ -973,6 +972,7 @@ dependencies = [
  "cranelift-object",
  "object 0.36.7",
  "subscript-compiler",
+ "subscript-interop-fixture",
  "subscript-runtime",
  "target-lexicon",
 ]
@@ -996,6 +996,14 @@ dependencies = [
  "subscript-bindgen",
  "subscript-codegen",
  "subscript-compiler",
+ "subscript-interop-fixture",
+]
+
+[[package]]
+name = "subscript-interop-fixture"
+version = "0.0.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

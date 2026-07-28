@@ -26,6 +26,12 @@
 //!   `(string view, void*, void*) -> void` → a `type` alias; a reachable
 //!   callback of every other shape is rejected, while an unreferenced
 //!   host-only typedef is omitted (§23.3a);
+//! - absorbed string views and descriptors are parameter-only: returning
+//!   either aggregate by value is rejected because return provenance has
+//!   no mirror vocabulary;
+//! - callbacks cross only as mirrored struct fields; direct callback
+//!   parameters/returns, callback descriptor elements, and callback fields
+//!   in function-free headers are rejected;
 //! - every other struct → a boundary `declare class` (C-layout value
 //!   struct whose fields may carry the boundary types above);
 //! - each C function → an ambient `declare function` with the mapped
@@ -85,8 +91,10 @@ pub use cparse::{CField, Decl, ParseError};
 ///
 /// Returns a [`ParseError`] when libclang cannot be loaded, when the
 /// header fails to parse, when it uses a construct the frontend does not
-/// model, or when a callback typedef reachable from the boundary differs
-/// from the supported `(string view, void*, void*) -> void` shape.
+/// model, when an absorbed descriptor/string-view appears in return
+/// position, when a callback appears in an unsupported boundary position,
+/// or when a callback typedef reachable from the boundary differs from the
+/// supported `(string view, void*, void*) -> void` shape.
 pub fn generate(header: &str) -> Result<String, ParseError> {
     generate_for_header(header, "header.h")
 }

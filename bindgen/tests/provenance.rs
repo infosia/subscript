@@ -164,7 +164,12 @@ fn callback_with_an_extra_parameter_is_rejected() {
             void *engUserdata1,
             void *engUserdata2,
             uint32_t engKind);
-        void engInstall(EngExtra engCallback);
+        typedef struct EngSink {
+            EngExtra engCallback;
+            void *engUserdata1;
+            void *engUserdata2;
+        } EngSink;
+        void engInstall(EngSink engSink);
     ";
     let error =
         generate_for_header(header, "extra.h").expect_err("extra callback parameter must fail");
@@ -191,7 +196,12 @@ fn callback_with_one_userdata_slot_is_rejected() {
         typedef void (*EngShort)(
             EngText engMessage,
             void *engUserdata1);
-        void engInstall(EngShort engCallback);
+        typedef struct EngSink {
+            EngShort engCallback;
+            void *engUserdata1;
+            void *engUserdata2;
+        } EngSink;
+        void engInstall(EngSink engSink);
     ";
     let error =
         generate_for_header(header, "short.h").expect_err("missing userdata slot must fail");
@@ -220,7 +230,12 @@ fn callback_with_non_void_return_is_rejected() {
             EngText engMessage,
             void *engUserdata1,
             void *engUserdata2);
-        void engInstall(EngReturning engCallback);
+        typedef struct EngSink {
+            EngReturning engCallback;
+            void *engUserdata1;
+            void *engUserdata2;
+        } EngSink;
+        void engInstall(EngSink engSink);
     ";
     let error =
         generate_for_header(header, "return.h").expect_err("non-void callback return must fail");
@@ -234,6 +249,182 @@ fn callback_with_non_void_return_is_rejected() {
         error.to_string().contains(
             "supported shape is `void Callback(StringView message, void *userdata1, void *userdata2)`"
         ),
+        "{error}"
+    );
+}
+
+#[test]
+fn by_value_string_view_return_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        typedef struct EngText {
+            const char *engData;
+            size_t engLen;
+        } EngText;
+        EngText engWorldName(void);
+    ";
+    let error =
+        generate_for_header(header, "return.h").expect_err("string-view return must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("foreign function `engWorldName` returns string-view aggregate `EngText`"),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("boundary provenance vocabulary cannot express string-view returns"),
+        "{error}"
+    );
+}
+
+#[test]
+fn by_value_descriptor_return_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct EngIds {
+            const uint32_t *engItems;
+            size_t engCount;
+        } EngIds;
+        EngIds engWorldIds(void);
+    ";
+    let error =
+        generate_for_header(header, "return.h").expect_err("descriptor return must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("foreign function `engWorldIds` returns descriptor aggregate `EngIds`"),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("boundary provenance vocabulary cannot express descriptor returns"),
+        "{error}"
+    );
+}
+
+#[test]
+fn direct_callback_parameter_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        typedef struct EngText {
+            const char *engData;
+            size_t engLen;
+        } EngText;
+        typedef void (*EngDone)(
+            EngText engMessage,
+            void *engUserdata1,
+            void *engUserdata2);
+        void engInstall(EngDone engCallback);
+    ";
+    let error =
+        generate_for_header(header, "direct.h").expect_err("direct callback parameter must fail");
+    assert!(
+        error.to_string().contains(
+            "foreign function `engInstall` parameter `engCallback` uses callback typedef \
+             `EngDone` directly"
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("callbacks are bindable only as mirrored struct fields"),
+        "{error}"
+    );
+}
+
+#[test]
+fn direct_callback_return_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        typedef struct EngText {
+            const char *engData;
+            size_t engLen;
+        } EngText;
+        typedef void (*EngDone)(
+            EngText engMessage,
+            void *engUserdata1,
+            void *engUserdata2);
+        EngDone engCallback(void);
+    ";
+    let error =
+        generate_for_header(header, "direct.h").expect_err("direct callback return must fail");
+    assert!(
+        error.to_string().contains(
+            "foreign function `engCallback` returns callback typedef `EngDone` directly"
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn callback_field_without_a_foreign_function_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        typedef struct EngText {
+            const char *engData;
+            size_t engLen;
+        } EngText;
+        typedef void (*EngDone)(
+            EngText engMessage,
+            void *engUserdata1,
+            void *engUserdata2);
+        typedef struct EngSink {
+            EngDone engCallback;
+            void *engUserdata1;
+            void *engUserdata2;
+        } EngSink;
+    ";
+    let error = generate_for_header(header, "types.h")
+        .expect_err("a callback field without foreign provenance must fail");
+    assert!(
+        error.to_string().contains(
+            "struct `EngSink` field `engCallback` uses callback typedef `EngDone`"
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("header declares no foreign function"),
+        "{error}"
+    );
+}
+
+#[test]
+fn callback_typedef_descriptor_element_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        typedef struct EngText {
+            const char *engData;
+            size_t engLen;
+        } EngText;
+        typedef void (*EngDone)(
+            EngText engMessage,
+            void *engUserdata1,
+            void *engUserdata2);
+        typedef struct EngCallbacks {
+            EngDone *engItems;
+            size_t engCount;
+        } EngCallbacks;
+        void engInstall(EngCallbacks engCallbacks);
+    ";
+    let error = generate_for_header(header, "callbacks.h")
+        .expect_err("a callback descriptor element must fail");
+    assert!(
+        error.to_string().contains(
+            "descriptor struct `EngCallbacks` has callback-typedef element `EngDone`"
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("callback typedefs cannot be descriptor elements"),
         "{error}"
     );
 }

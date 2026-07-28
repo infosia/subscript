@@ -1,0 +1,12 @@
+[package]
+name = "subscript-interop-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Test-only native implementation of the synthetic interop fixture."
+
+[lib]
+path = "lib.rs"
+
+[build-dependencies]
+cc = "1"

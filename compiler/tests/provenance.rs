@@ -159,3 +159,122 @@ fn foreign_free_ambient_source_needs_no_provenance() {
     assert!(module.foreign_fns.is_empty());
     assert!(module.foreign_mirrors.is_empty());
 }
+
+#[test]
+fn absorbed_parameters_without_records_are_rejected() {
+    let diagnostics = reject(
+        "missing-parameter-records.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         declare function engUse(engItems: u32[], engText: string): void;\n",
+    );
+    assert_named(
+        &diagnostics,
+        "missing-parameter-records.d.ts",
+        "engUse.engItems",
+    );
+    assert_named(
+        &diagnostics,
+        "missing-parameter-records.d.ts",
+        "@subscript-c-descriptor",
+    );
+    assert_named(
+        &diagnostics,
+        "missing-parameter-records.d.ts",
+        "engUse.engText",
+    );
+    assert_named(
+        &diagnostics,
+        "missing-parameter-records.d.ts",
+        "@subscript-c-string-view",
+    );
+}
+
+#[test]
+fn kind_incompatible_parameter_record_is_rejected() {
+    let diagnostics = reject(
+        "wrong-record-kind.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         // @subscript-c-string-view function=\"engUse\" parameter=\"engItems\" aggregate=\"EngText\"\n\
+         declare function engUse(engItems: u32[]): void;\n",
+    );
+    assert_named(
+        &diagnostics,
+        "wrong-record-kind.d.ts",
+        "incompatible with parameter `engUse.engItems`",
+    );
+    assert_named(
+        &diagnostics,
+        "wrong-record-kind.d.ts",
+        "aggregate=\"EngText\"",
+    );
+}
+
+#[test]
+fn foreign_string_view_return_is_rejected() {
+    let diagnostics = reject(
+        "string-return.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         declare function engWorldName(): string;\n",
+    );
+    assert_named(
+        &diagnostics,
+        "string-return.d.ts",
+        "foreign function `engWorldName` returns a string view",
+    );
+    assert_named(
+        &diagnostics,
+        "string-return.d.ts",
+        "return provenance cannot be represented",
+    );
+}
+
+#[test]
+fn foreign_array_descriptor_return_is_rejected() {
+    let diagnostics = reject(
+        "array-return.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         declare function engWorldEntities(): u32[];\n",
+    );
+    assert_named(
+        &diagnostics,
+        "array-return.d.ts",
+        "foreign function `engWorldEntities` returns an array descriptor",
+    );
+    assert_named(
+        &diagnostics,
+        "array-return.d.ts",
+        "return provenance cannot be represented",
+    );
+}
+
+#[test]
+fn foreign_direct_callback_parameter_is_rejected() {
+    let diagnostics = reject(
+        "callback-parameter.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         // @subscript-c-callback typedef=\"EngDone\"\n\
+         type EngDone = (message: string, userdata1: object | null, userdata2: object | null) => void;\n\
+         declare function engInstall(callback: EngDone): void;\n",
+    );
+    assert_named(
+        &diagnostics,
+        "callback-parameter.d.ts",
+        "parameter `callback` is a direct callback",
+    );
+}
+
+#[test]
+fn foreign_direct_callback_return_is_rejected() {
+    let diagnostics = reject(
+        "callback-return.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         // @subscript-c-callback typedef=\"EngDone\"\n\
+         type EngDone = (message: string, userdata1: object | null, userdata2: object | null) => void;\n\
+         declare function engCallback(): EngDone;\n",
+    );
+    assert_named(
+        &diagnostics,
+        "callback-return.d.ts",
+        "foreign function `engCallback` returns a direct callback",
+    );
+}

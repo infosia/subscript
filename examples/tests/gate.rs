@@ -4,6 +4,9 @@
 // engine archive into this integration-test link, where its addresses are
 // registered with the development tier.
 extern crate subscript_examples;
+// Naming the dev-dependency propagates its test-only interop archive into
+// this integration-test link.
+extern crate subscript_interop_fixture;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -238,9 +241,9 @@ fn interop_library() -> Result<NativeLibrary, String> {
         ),
         ("subDevicePump".to_string(), subDevicePump as *const u8),
     ];
-    // SAFETY: codegen/build.rs links these static-lifetime fixture functions
-    // into the test process, and every address has the signature declared by
-    // interop.h and its committed mirror.
+    // SAFETY: the test-only fixture crate links these static-lifetime
+    // functions into the test process, and every address has the signature
+    // declared by interop.h and its committed mirror.
     Ok(unsafe {
         NativeLibrary::new(
             vec![directory.clone()],

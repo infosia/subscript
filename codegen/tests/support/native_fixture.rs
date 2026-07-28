@@ -1,12 +1,16 @@
 //! Native-library description for the synthetic interop test fixture.
 
+// Naming the dev-dependency propagates its test-only native archive into
+// this integration-test link.
+extern crate subscript_interop_fixture;
+
 use std::path::PathBuf;
 
 use subscript_codegen::NativeLibrary;
 
-// The fixture implementation is compiled into the test process by
-// `codegen/build.rs`. Only addresses are taken here; generated code calls
-// them through the C signatures declared by the committed mirror.
+// The fixture crate compiles the implementation into this test process.
+// Only addresses are taken here; generated code calls them through the C
+// signatures declared by the committed mirror.
 extern "C" {
     fn subChainPayloadValue();
     fn subDeviceCreate();
@@ -73,9 +77,9 @@ pub fn library() -> NativeLibrary {
         ("subDeviceKickAsync".to_string(), subDeviceKickAsync as *const u8),
         ("subDeviceWait".to_string(), subDeviceWait as *const u8),
     ];
-    // SAFETY: build.rs links these static-lifetime functions into the test
-    // process, and every address corresponds to the same-name signature in
-    // the committed mirror and header.
+    // SAFETY: the test-only fixture crate links these static-lifetime
+    // functions into the test process, and every address corresponds to the
+    // same-name signature in the committed mirror and header.
     unsafe {
         NativeLibrary::new(
             vec![directory.clone()],

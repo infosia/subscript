@@ -4,8 +4,9 @@
 // see: corpus/accept/a25-a33, corpus/accept/a89, compiler.md §23.7, examples.md §4
 
 // C3: these counters have fixed-width i32 fields even though tsc sees
-// number. Rejected alternative: a number field is S007, "no default
-// numeric type; use a sized type"; corpus/reject/r08-bare-number.ts pins it.
+// number. Rejected alternative: a number field is S007; diagnostic excerpt:
+// "bare `number` is rejected; there is no default numeric type — use a sized type";
+// corpus/reject/r08-bare-number.ts pins it.
 class EventLog {
   hits: i32;
   bytes: i32;

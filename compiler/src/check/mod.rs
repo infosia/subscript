@@ -42,17 +42,6 @@ fn parameter_name_from_pat(pat: &ast::Pat) -> Option<&str> {
     }
 }
 
-fn parameter_type_ann(pat: &ast::Pat) -> Option<&ast::TsType> {
-    match pat {
-        ast::Pat::Ident(binding) => binding
-            .type_ann
-            .as_deref()
-            .map(|annotation| annotation.type_ann.as_ref()),
-        ast::Pat::Assign(assign) => parameter_type_ann(&assign.left),
-        _ => None,
-    }
-}
-
 fn type_reference_name(ty: Option<&ast::TsType>) -> Option<&str> {
     let ast::TsType::TsTypeRef(reference) = ty? else {
         return None;
@@ -504,13 +493,8 @@ impl<'p> Checker<'p> {
         function_name: &str,
         parameter_name: &str,
         ty: &Type,
-        type_ann: Option<&ast::TsType>,
         pos: Pos,
     ) -> Option<hir::ForeignTypeProvenance> {
-        if matches!(ty, Type::Func(_)) {
-            return self.callback_provenance(file, type_ann, pos);
-        }
-
         let parsed = &self.prog.files[file];
         let key = (function_name.to_string(), parameter_name.to_string());
         let record = parsed.provenance.parameters.get(&key);
@@ -1102,9 +1086,20 @@ impl<'p> Checker<'p> {
                             &name,
                             &parameter.name,
                             &parameter.ty,
-                            ast_parameter.and_then(|p| parameter_type_ann(&p.pat)),
                             parameter_pos.clone(),
                         );
+                        if matches!(parameter.ty, Type::Func(_)) {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "mirror `{}` foreign function `{}` parameter `{}` is a \
+                                     direct callback; callbacks are supported only as fields \
+                                     of mirrored boundary structs",
+                                    self.prog.files[file].name, name, parameter.name
+                                ),
+                                parameter_pos.clone(),
+                            );
+                        }
                         params.push(hir::Param {
                             name: parameter.name.clone(),
                             ty: parameter.ty.clone(),
@@ -1113,16 +1108,25 @@ impl<'p> Checker<'p> {
                             pos: parameter_pos,
                         });
                     }
-                    let ret_provenance = if matches!(sig.ret, Type::Func(_)) {
-                        let type_ann = f
-                            .function
-                            .return_type
-                            .as_deref()
-                            .map(|annotation| annotation.type_ann.as_ref());
-                        self.callback_provenance(file, type_ann, pos.clone())
-                    } else {
-                        None
+                    let unsupported_return = match &sig.ret {
+                        Type::Str => Some("a string view"),
+                        Type::Array(_) => Some("an array descriptor"),
+                        Type::Func(_) => Some("a direct callback"),
+                        _ => None,
                     };
+                    if let Some(kind) = unsupported_return {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "mirror `{}` foreign function `{}` returns {kind}; foreign \
+                                 string-view, descriptor, and callback returns are unsupported \
+                                 because return provenance cannot be represented by the boundary \
+                                 vocabulary",
+                                self.prog.files[file].name, name
+                            ),
+                            pos.clone(),
+                        );
+                    }
                     let Some(mirror) = self.foreign_mirror_ids.get(&file).copied() else {
                         self.error(
                             RuleCode::S100,
@@ -1138,7 +1142,6 @@ impl<'p> Checker<'p> {
                         name: name.clone(),
                         params,
                         ret: sig.ret.clone(),
-                        ret_provenance,
                         mirror,
                         pos,
                     });

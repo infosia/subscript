@@ -66,7 +66,7 @@ pub enum ForeignTypeProvenance {
         /// C string-view struct name used by a compound literal.
         aggregate: String,
     },
-    /// A C function-pointer typedef mapped to a language function type.
+    /// A C function-pointer typedef attached to a mirrored struct field.
     Callback {
         /// C typedef name used to cast the runtime callback trampoline.
         typedef_name: String,
@@ -86,8 +86,6 @@ pub struct ForeignFn {
     pub params: Vec<Param>,
     /// Return type (a mapped boundary type or `void`).
     pub ret: Type,
-    /// C spelling attached to a callback return type, when present.
-    pub ret_provenance: Option<ForeignTypeProvenance>,
     /// Mirror whose header declares this C symbol.
     pub mirror: ForeignMirrorId,
     /// Position of the `declare function` in the mirror.

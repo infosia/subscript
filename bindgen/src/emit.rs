@@ -64,6 +64,7 @@ fn emit(parsed: &Parsed) -> Result<String, ParseError> {
 /// Returns [`ParseError`] under the same conditions as [`emit`].
 pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String, ParseError> {
     let registry = classify(parsed);
+    validate_boundary_positions(parsed, &registry)?;
     let reachable_callbacks = reachable_callbacks(parsed, &registry);
     validate_callback_shapes(parsed, &registry, &reachable_callbacks)?;
     let mut blocks: Vec<String> = Vec::new();
@@ -158,6 +159,108 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
         out.push('\n');
     }
     Ok(out)
+}
+
+/// Rejects C positions that the mirror vocabulary or either lowering
+/// cannot represent without losing ABI information.
+fn validate_boundary_positions(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+) -> Result<(), ParseError> {
+    let callback_names: HashSet<&str> = parsed
+        .decls
+        .iter()
+        .filter_map(|decl| match decl {
+            Decl::FnPtr { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let has_foreign_function = parsed
+        .decls
+        .iter()
+        .any(|decl| matches!(decl, Decl::Func { .. }));
+
+    for decl in &parsed.decls {
+        match decl {
+            Decl::Struct { name, fields } => {
+                if let Some(Kind::ArrayPair(element)) = registry.get(name) {
+                    if callback_names.contains(element.as_str()) {
+                        return Err(ParseError(format!(
+                            "descriptor struct `{name}` has callback-typedef element \
+                             `{element}`; callback typedefs cannot be descriptor elements"
+                        )));
+                    }
+                }
+                if !has_foreign_function
+                    && !matches!(
+                        registry.get(name),
+                        Some(Kind::ArrayPair(_) | Kind::StringView)
+                    )
+                {
+                    if let Some(field) = fields
+                        .iter()
+                        .find(|field| callback_names.contains(field.base.as_str()))
+                    {
+                        return Err(ParseError(format!(
+                            "struct `{name}` field `{}` uses callback typedef `{}`, but \
+                             the header declares no foreign function from which callback \
+                             provenance can be emitted",
+                            field.name, field.base
+                        )));
+                    }
+                }
+            }
+            Decl::Func { name, ret, params } => {
+                if !ret.pointer && ret.array_len.is_none() {
+                    match registry.get(&ret.base) {
+                        Some(Kind::StringView) => {
+                            return Err(ParseError(format!(
+                                "foreign function `{name}` returns string-view aggregate \
+                                 `{}` by value; the boundary provenance vocabulary cannot \
+                                 express string-view returns",
+                                ret.base
+                            )));
+                        }
+                        Some(Kind::ArrayPair(_)) => {
+                            return Err(ParseError(format!(
+                                "foreign function `{name}` returns descriptor aggregate \
+                                 `{}` by value; the boundary provenance vocabulary cannot \
+                                 express descriptor returns",
+                                ret.base
+                            )));
+                        }
+                        Some(Kind::FnPtr) => {
+                            return Err(ParseError(format!(
+                                "foreign function `{name}` returns callback typedef `{}` \
+                                 directly; callbacks are bindable only as mirrored struct \
+                                 fields",
+                                ret.base
+                            )));
+                        }
+                        Some(
+                            Kind::Enum
+                            | Kind::Handle
+                            | Kind::Boundary
+                            | Kind::Alias,
+                        )
+                        | None => {}
+                    }
+                }
+                for param in params {
+                    if matches!(registry.get(&param.base), Some(Kind::FnPtr)) {
+                        return Err(ParseError(format!(
+                            "foreign function `{name}` parameter `{}` uses callback typedef \
+                             `{}` directly; callbacks are bindable only as mirrored struct \
+                             fields",
+                            param.name, param.base
+                        )));
+                    }
+                }
+            }
+            Decl::Enum { .. } | Decl::FnPtr { .. } | Decl::Handle { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 /// Emits fixed-shape, tsc-clean provenance comments when the header has a
@@ -277,8 +380,9 @@ fn validate_callback_shapes(
 }
 
 /// Returns the function-pointer typedefs that can cross the mirrored
-/// boundary: a field of an emitted struct, or a foreign function parameter
-/// or return. Unreferenced host-only hooks are not part of the mirror.
+/// boundary through a field of an emitted struct. Direct foreign-function
+/// parameters and returns were rejected before this walk. Unreferenced
+/// host-only hooks are not part of the mirror.
 fn reachable_callbacks(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
@@ -306,16 +410,7 @@ fn reachable_callbacks(
                     }
                 }
             }
-            Decl::Func { ret, params, .. } => {
-                if callback_names.contains(ret.base.as_str()) {
-                    reachable.insert(ret.base.clone());
-                }
-                for param in params {
-                    if callback_names.contains(param.base.as_str()) {
-                        reachable.insert(param.base.clone());
-                    }
-                }
-            }
+            Decl::Func { .. } => {}
             Decl::Enum { .. }
             | Decl::FnPtr { .. }
             | Decl::Handle { .. }

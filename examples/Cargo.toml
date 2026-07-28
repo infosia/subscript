@@ -9,6 +9,7 @@ description = "Executable gates for the subscript teaching examples."
 subscript-bindgen = { path = "../bindgen" }
 subscript-codegen = { path = "../codegen" }
 subscript-compiler = { path = "../compiler" }
+subscript-interop-fixture = { path = "../codegen/tests/native-fixture" }
 
 [build-dependencies]
 cc = "1"
