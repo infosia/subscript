@@ -58,6 +58,8 @@ examples/
     main.c                         the host program: owns the loop
     expected.txt                   the capstone's committed output
     build.sh                       desktop build, documented in README.md
+  context-per-scene/               a second host program (§5a): one Context per scene
+    scene.ts  main.c  expected.txt  build.sh
   Cargo.toml  build.rs  tests/     the gate (§6)
 ```
 
@@ -198,6 +200,44 @@ runtime static library, run it. No NDK and no Xcode device SDK; the
 device path already has `codegen/device-link.sh` and is not duplicated
 here.
 
+## 5a. Context lifetime — `examples/context-per-scene/`
+
+A second host program, contracted separately because it teaches a
+different thing from §5: **the Context is a unit the host creates and
+destroys**, not a fixture that lives for the process.
+
+The question it answers is one a game host actually asks — a scene ends,
+and everything the scene allocated should go away. `Context.collect()`
+(Q7) can do it, but only for allocations the script has made unreachable,
+and in the development tier the freed bytes stay owned by the Context
+(§8.1a, retain-and-poison), so a session cycling scenes grows
+monotonically. Releasing the Context and building the next one from
+`ss_init` reclaims everything, in both tiers, without the script dropping
+a single reference.
+
+`main.c` must run **at least two scenes in one process**, each with its
+own `sub_rt_ctx_new` … `sub_rt_ctx_release`, and show:
+
+1. **Script globals reset.** A module-level variable the first scene
+   mutates starts the second scene at its initializer value. This is the
+   observable that proves the Context is new rather than cleared.
+2. **State that outlives a scene lives host-side.** The engine facade's
+   frame record is thread-local and belongs to the host, not to the
+   Context, so `engFrameIndex()` keeps counting across the boundary while
+   the script's own counter restarts. One example, two lifetimes, and no
+   new C API to demonstrate it.
+3. **The memory accounting at the boundary** — `live_bytes` at the end of
+   each scene, before release, so a reader sees the second scene starting
+   from the floor rather than from the first scene's peak.
+
+**What it must not do:** claim that releasing is better than collecting.
+They answer different questions — `Context.collect()` reclaims within a
+living Context, release ends one — and the example states the trade it
+makes, including that a fresh Context re-runs `ss_init`, so anything the
+next scene needs must have been kept by the host.
+
+Gate, build script, and the integer/float split follow §5 exactly.
+
 ## 6. The example set
 
 Each entry names what it must demonstrate. Output shape is the
@@ -233,8 +273,9 @@ rots silently teaches a language that no longer exists.
 2. **The set is derived, never enumerated.** The gate reads
    `examples/` and picks up a new example with no edit to test code, as
    `codegen/tests/corpus/mod.rs` does for the corpus.
-3. **The capstone is compiled and run**, and its stdout compared with
-   `host/expected.txt`. It needs only the platform C compiler, which the
+3. **Each host program is compiled and run**, and its stdout compared
+   with its own committed `expected.txt` — the §5 capstone and the §5a
+   Context-lifetime program alike. It needs only the platform C compiler, which the
    ship tier already requires, so it is not gated behind a device
    toolchain.
 4. **`tsc` clean.** `examples/**/*.ts` and `examples/**/*.d.ts` join
