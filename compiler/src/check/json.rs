@@ -30,12 +30,14 @@ impl Checker<'_> {
                 name: "ok".to_string(),
                 ty: Type::Bool,
                 init: None,
+                foreign_provenance: None,
                 pos: pos.clone(),
             },
             hir::Field {
                 name: "value".to_string(),
                 ty: value.clone(),
                 init: None,
+                foreign_provenance: None,
                 pos,
             },
         ];
@@ -1332,6 +1334,7 @@ fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {
         name: name.to_string(),
         ty,
         default: None,
+        foreign_provenance: None,
         pos: pos.clone(),
     }
 }

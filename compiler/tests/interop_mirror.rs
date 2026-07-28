@@ -176,7 +176,8 @@ fn nullable_handle_used_without_narrowing_is_rejected() {
 #[test]
 fn cross_assigning_two_handle_types_is_rejected() {
     // Two distinct opaque handles are nominal and non-interchangeable.
-    let extra = "interface HandleA { readonly __sub_handle_HandleA: never; }\n\
+    let extra = "// @subscript-c-header include=\"handles.h\"\n\
+                 interface HandleA { readonly __sub_handle_HandleA: never; }\n\
                  interface HandleB { readonly __sub_handle_HandleB: never; }\n\
                  declare function getA(): HandleA;\n\
                  declare function takeB(b: HandleB): void;\n";

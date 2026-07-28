@@ -5262,6 +5262,7 @@ impl<'p> Checker<'p> {
                 name: p.name.clone(),
                 ty: p.ty.clone(),
                 default: None,
+                foreign_provenance: None,
                 pos: pos.clone(),
             });
         }

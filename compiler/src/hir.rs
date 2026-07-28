@@ -25,9 +25,52 @@ pub struct Module {
     /// (`declare function` in a `.d.ts`, P5.2). They carry a signature
     /// but no body; lowering a call to one is P5.2b, not P5.2a.
     pub foreign_fns: Vec<ForeignFn>,
+    /// Ambient mirrors that contribute foreign functions, with the exact
+    /// C header include spelling recovered from generated provenance.
+    pub foreign_mirrors: Vec<ForeignMirror>,
     /// Checked top-level non-declaration statements, in source order
     /// (the accept corpus has none; kept for completeness).
     pub top_level: Vec<Stmt>,
+}
+
+/// Stable index into [`Module::foreign_mirrors`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ForeignMirrorId(pub usize);
+
+/// One ingested C-header mirror that contributes foreign functions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ForeignMirror {
+    /// Ambient source name used in diagnostics.
+    pub source_name: String,
+    /// Basename written by the host in a C `#include`.
+    pub include: String,
+}
+
+/// Typed C spelling attached directly to the boundary type occurrence that
+/// absorbed it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ForeignTypeProvenance {
+    /// A by-value C `(pointer, count)` descriptor mapped to a language array.
+    Descriptor {
+        /// C descriptor struct name used by a compound literal.
+        aggregate: String,
+        /// C element type name used by a mutable element-pointer cast.
+        element: String,
+        /// True when the descriptor's element pointer is const.
+        element_const: bool,
+    },
+    /// A by-value length-carrying C string view mapped to `string`.
+    StringView {
+        /// C string-view struct name used by a compound literal.
+        aggregate: String,
+    },
+    /// A C function-pointer typedef mapped to a language function type.
+    Callback {
+        /// C typedef name used to cast the runtime callback trampoline.
+        typedef_name: String,
+    },
 }
 
 /// A foreign function declared by an ambient C-header mirror
@@ -43,6 +86,10 @@ pub struct ForeignFn {
     pub params: Vec<Param>,
     /// Return type (a mapped boundary type or `void`).
     pub ret: Type,
+    /// C spelling attached to a callback return type, when present.
+    pub ret_provenance: Option<ForeignTypeProvenance>,
+    /// Mirror whose header declares this C symbol.
+    pub mirror: ForeignMirrorId,
     /// Position of the `declare function` in the mirror.
     pub pos: Pos,
 }
@@ -83,6 +130,8 @@ pub struct Field {
     pub ty: Type,
     /// Field initializer, when present.
     pub init: Option<Expr>,
+    /// C typedef attached to a mirrored callback field, when present.
+    pub foreign_provenance: Option<ForeignTypeProvenance>,
     /// Position of the field declaration.
     pub pos: Pos,
 }
@@ -165,6 +214,8 @@ pub struct Param {
     pub ty: Type,
     /// Checked default value, when declared (`a11`).
     pub default: Option<Expr>,
+    /// C spelling absorbed at this foreign boundary parameter.
+    pub foreign_provenance: Option<ForeignTypeProvenance>,
     /// Position of the parameter.
     pub pos: Pos,
 }
@@ -3279,6 +3330,7 @@ mod tests {
             globals: Vec::new(),
             functions: Vec::new(),
             foreign_fns: Vec::new(),
+            foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
         };
         assert!(m.functions.is_empty());

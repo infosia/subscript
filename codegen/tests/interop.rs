@@ -299,6 +299,7 @@ fn boundary_struct_field_initializers_run_left_to_right() {
 #[test]
 fn hfa_float_struct_return_fails_loud() {
     const HFA_MIRROR: &str = "\
+// @subscript-c-header include=\"hfa.h\"
 declare class SubVec2f {
   x: f32;
   y: f32;

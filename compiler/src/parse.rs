@@ -6,6 +6,7 @@ use swc_ecma_ast as ast;
 use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
+use crate::provenance;
 use crate::SourceFile;
 
 /// One parsed source file.
@@ -20,6 +21,8 @@ pub(crate) struct ParsedFile {
     /// declarations are ingested into the global ambient surface (the
     /// P5.2 mirror), not checked as a program module.
     pub dts: bool,
+    /// Fixed-shape C provenance parsed from a generated ambient mirror.
+    pub provenance: provenance::Mirror,
 }
 
 /// A parsed program: all files plus the shared source map.
@@ -69,6 +72,17 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
     let mut diags = Vec::new();
 
     for source in sources {
+        let provenance = if source.dts {
+            match provenance::parse(&source.name, &source.source) {
+                Ok(provenance) => provenance,
+                Err(diag) => {
+                    diags.push(diag);
+                    continue;
+                }
+            }
+        } else {
+            provenance::Mirror::default()
+        };
         let fm = source_map.new_source_file(
             FileName::Custom(source.name.clone()).into(),
             source.source.clone(),
@@ -104,6 +118,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
                         stem: stem_of(&source.name),
                         module,
                         dts: source.dts,
+                        provenance,
                     });
                 }
             }

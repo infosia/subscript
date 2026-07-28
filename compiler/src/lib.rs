@@ -17,6 +17,7 @@ pub mod api_reference;
 mod ambient;
 mod check;
 mod parse;
+mod provenance;
 mod regex;
 mod trap_sites;
 

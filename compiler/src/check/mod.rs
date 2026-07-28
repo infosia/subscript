@@ -21,7 +21,47 @@ use swc_ecma_ast as ast;
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::hir;
 use crate::parse::ParsedProgram;
+use crate::provenance;
 use crate::types::{ClassId, EnumId, Type};
+
+fn module_decl(item: &ast::ModuleItem) -> Option<&ast::Decl> {
+    match item {
+        ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => Some(decl),
+        ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => {
+            Some(&export.decl)
+        }
+        _ => None,
+    }
+}
+
+fn parameter_name_from_pat(pat: &ast::Pat) -> Option<&str> {
+    match pat {
+        ast::Pat::Ident(binding) => Some(binding.id.sym.as_ref()),
+        ast::Pat::Assign(assign) => parameter_name_from_pat(&assign.left),
+        _ => None,
+    }
+}
+
+fn parameter_type_ann(pat: &ast::Pat) -> Option<&ast::TsType> {
+    match pat {
+        ast::Pat::Ident(binding) => binding
+            .type_ann
+            .as_deref()
+            .map(|annotation| annotation.type_ann.as_ref()),
+        ast::Pat::Assign(assign) => parameter_type_ann(&assign.left),
+        _ => None,
+    }
+}
+
+fn type_reference_name(ty: Option<&ast::TsType>) -> Option<&str> {
+    let ast::TsType::TsTypeRef(reference) = ty? else {
+        return None;
+    };
+    let ast::TsEntityName::Ident(ident) = &reference.type_name else {
+        return None;
+    };
+    Some(ident.sym.as_ref())
+}
 
 /// The integer value of a non-negative numeric-literal expression (a flag
 /// member initializer, §13.2), or `None` for any other expression.
@@ -213,6 +253,10 @@ pub(crate) struct Checker<'p> {
     pub foreign_sigs: HashMap<String, FnSig>,
     /// Foreign function definitions, in mirror declaration order.
     pub foreign_defs: Vec<hir::ForeignFn>,
+    /// Mirrors that contribute foreign functions, in source order.
+    pub foreign_mirrors: Vec<hir::ForeignMirror>,
+    /// Mirror id assigned to each ambient file that contributes functions.
+    pub foreign_mirror_ids: HashMap<usize, hir::ForeignMirrorId>,
     /// Class ids that are opaque handles (empty branded nominal types).
     pub handle_classes: HashSet<ClassId>,
     /// Class ids that are boundary structs: value-layout structs whose
@@ -286,6 +330,8 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         ambient_scope: HashMap::new(),
         foreign_sigs: HashMap::new(),
         foreign_defs: Vec::new(),
+        foreign_mirrors: Vec::new(),
+        foreign_mirror_ids: HashMap::new(),
         handle_classes: HashSet::new(),
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
@@ -299,6 +345,15 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
     };
+
+    // Parse-time provenance has a fixed shape; this pass binds each record
+    // to declarations in its own mirror before type resolution discards
+    // the source spelling.
+    for i in 0..prog.files.len() {
+        if prog.files[i].dts {
+            ck.collect_mirror_provenance(i);
+        }
+    }
 
     // Pass A: collect top-level names. Mirror (`.d.ts`) declarations land
     // in the global ambient scope; program declarations in per-file scopes.
@@ -342,6 +397,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
             globals: ck.globals,
             functions: ck.functions,
             foreign_fns: ck.foreign_defs,
+            foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
         };
         crate::trap_sites::decide_index_checks(&mut module);
@@ -358,6 +414,202 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn pos(&self, span: swc_common::Span) -> Pos {
         self.prog.pos(span)
+    }
+
+    /// Validates record targets in one ambient mirror and assigns its HIR
+    /// header identity when it contributes foreign functions.
+    fn collect_mirror_provenance(&mut self, file: usize) {
+        let parsed = &self.prog.files[file];
+        let mut functions = HashMap::new();
+        let mut aliases = HashSet::new();
+        for item in &parsed.module.body {
+            let Some(decl) = module_decl(item) else {
+                continue;
+            };
+            match decl {
+                ast::Decl::Fn(function) => {
+                    functions.insert(function.ident.sym.to_string(), &function.function);
+                }
+                ast::Decl::TsTypeAlias(alias) => {
+                    aliases.insert(alias.id.sym.to_string());
+                }
+                _ => {}
+            }
+        }
+
+        if !functions.is_empty() {
+            let include = match &parsed.provenance.header {
+                Some(record) => record.value.clone(),
+                None => {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "mirror `{}` declares foreign functions but has no \
+                             `@subscript-c-header` provenance record",
+                            parsed.name
+                        ),
+                        Pos::new(parsed.name.clone(), 1, 1),
+                    );
+                    String::new()
+                }
+            };
+            let id = hir::ForeignMirrorId(self.foreign_mirrors.len());
+            self.foreign_mirrors.push(hir::ForeignMirror {
+                source_name: parsed.name.clone(),
+                include,
+            });
+            self.foreign_mirror_ids.insert(file, id);
+        }
+
+        for ((function_name, parameter_name), record) in &parsed.provenance.parameters {
+            let exists = functions.get(function_name).is_some_and(|function| {
+                function.params.iter().any(|parameter| {
+                    parameter_name_from_pat(&parameter.pat)
+                        .is_some_and(|name| name == parameter_name)
+                })
+            });
+            if !exists {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror `{}` has provenance record naming nonexistent \
+                         parameter `{}.{}`: `{}`",
+                        parsed.name, function_name, parameter_name, record.raw
+                    ),
+                    Pos::new(parsed.name.clone(), record.line, 1),
+                );
+            }
+        }
+
+        for (typedef_name, record) in &parsed.provenance.callbacks {
+            if !aliases.contains(typedef_name) {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror `{}` has provenance record naming nonexistent \
+                         callback typedef `{}`: `{}`",
+                        parsed.name, typedef_name, record.raw
+                    ),
+                    Pos::new(parsed.name.clone(), record.line, 1),
+                );
+            }
+        }
+    }
+
+    /// Converts parameter provenance into the consumer-ready HIR shape and
+    /// rejects missing or type-incompatible records.
+    fn foreign_parameter_provenance(
+        &mut self,
+        file: usize,
+        function_name: &str,
+        parameter_name: &str,
+        ty: &Type,
+        type_ann: Option<&ast::TsType>,
+        pos: Pos,
+    ) -> Option<hir::ForeignTypeProvenance> {
+        if matches!(ty, Type::Func(_)) {
+            return self.callback_provenance(file, type_ann, pos);
+        }
+
+        let parsed = &self.prog.files[file];
+        let key = (function_name.to_string(), parameter_name.to_string());
+        let record = parsed.provenance.parameters.get(&key);
+        match (ty, record.map(|record| &record.value)) {
+            (
+                Type::Array(_),
+                Some(provenance::Parameter::Descriptor {
+                    aggregate,
+                    element,
+                    element_const,
+                }),
+            ) => Some(hir::ForeignTypeProvenance::Descriptor {
+                aggregate: aggregate.clone(),
+                element: element.clone(),
+                element_const: *element_const,
+            }),
+            (Type::Str, Some(provenance::Parameter::StringView { aggregate })) => {
+                Some(hir::ForeignTypeProvenance::StringView {
+                    aggregate: aggregate.clone(),
+                })
+            }
+            (Type::Array(_), None) => {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror `{}` parameter `{}.{}` absorbs an array descriptor \
+                         but has no `@subscript-c-descriptor` provenance record",
+                        parsed.name, function_name, parameter_name
+                    ),
+                    pos,
+                );
+                None
+            }
+            (Type::Str, None) => {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror `{}` parameter `{}.{}` absorbs a string view but \
+                         has no `@subscript-c-string-view` provenance record",
+                        parsed.name, function_name, parameter_name
+                    ),
+                    pos,
+                );
+                None
+            }
+            (Type::Array(_), Some(_)) | (Type::Str, Some(_)) | (_, Some(_)) => {
+                let raw = record.map(|record| record.raw.as_str()).unwrap_or_default();
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror `{}` has provenance record incompatible with \
+                         parameter `{}.{}`: `{}`",
+                        parsed.name, function_name, parameter_name, raw
+                    ),
+                    pos,
+                );
+                None
+            }
+            (_, None) => None,
+        }
+    }
+
+    /// Resolves one mirrored function type directly to its C typedef.
+    fn callback_provenance(
+        &mut self,
+        file: usize,
+        type_ann: Option<&ast::TsType>,
+        pos: Pos,
+    ) -> Option<hir::ForeignTypeProvenance> {
+        let parsed = &self.prog.files[file];
+        let Some(typedef_name) = type_reference_name(type_ann) else {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "mirror `{}` has an anonymous callback type without \
+                     `@subscript-c-callback` provenance",
+                    parsed.name
+                ),
+                pos,
+            );
+            return None;
+        };
+        match parsed.provenance.callbacks.get(typedef_name) {
+            Some(record) => Some(hir::ForeignTypeProvenance::Callback {
+                typedef_name: record.value.clone(),
+            }),
+            None => {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror `{}` callback type `{}` has no \
+                         `@subscript-c-callback` provenance record",
+                        parsed.name, typedef_name
+                    ),
+                    pos,
+                );
+                None
+            }
+        }
     }
 
     /// Renders a type with real class/enum names, for messages.
@@ -840,20 +1092,54 @@ impl<'p> Checker<'p> {
                     let name = f.ident.sym.to_string();
                     let pos = self.pos(f.ident.span);
                     let sig = self.resolve_fn_sig(&f.function, pos.clone());
-                    let params: Vec<hir::Param> = sig
-                        .params
-                        .iter()
-                        .map(|p| hir::Param {
-                            name: p.name.clone(),
-                            ty: p.ty.clone(),
+                    let mut params = Vec::with_capacity(sig.params.len());
+                    for (index, parameter) in sig.params.iter().enumerate() {
+                        let ast_parameter = f.function.params.get(index);
+                        let parameter_pos = ast_parameter
+                            .map_or_else(|| pos.clone(), |p| self.pos(p.span));
+                        let foreign_provenance = self.foreign_parameter_provenance(
+                            file,
+                            &name,
+                            &parameter.name,
+                            &parameter.ty,
+                            ast_parameter.and_then(|p| parameter_type_ann(&p.pat)),
+                            parameter_pos.clone(),
+                        );
+                        params.push(hir::Param {
+                            name: parameter.name.clone(),
+                            ty: parameter.ty.clone(),
                             default: None,
-                            pos: pos.clone(),
-                        })
-                        .collect();
+                            foreign_provenance,
+                            pos: parameter_pos,
+                        });
+                    }
+                    let ret_provenance = if matches!(sig.ret, Type::Func(_)) {
+                        let type_ann = f
+                            .function
+                            .return_type
+                            .as_deref()
+                            .map(|annotation| annotation.type_ann.as_ref());
+                        self.callback_provenance(file, type_ann, pos.clone())
+                    } else {
+                        None
+                    };
+                    let Some(mirror) = self.foreign_mirror_ids.get(&file).copied() else {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "mirror `{}` has no header identity for foreign function `{}`",
+                                self.prog.files[file].name, name
+                            ),
+                            pos,
+                        );
+                        continue;
+                    };
                     self.foreign_defs.push(hir::ForeignFn {
                         name: name.clone(),
                         params,
                         ret: sig.ret.clone(),
+                        ret_provenance,
+                        mirror,
                         pos,
                     });
                     self.foreign_sigs.insert(name, sig);
@@ -1190,6 +1476,18 @@ impl<'p> Checker<'p> {
                             Type::Error
                         }
                     };
+                    let foreign_provenance =
+                        if self.in_boundary && matches!(ty, Type::Func(_)) {
+                            self.callback_provenance(
+                                self.cur_file,
+                                prop.type_ann
+                                    .as_deref()
+                                    .map(|annotation| annotation.type_ann.as_ref()),
+                                pos.clone(),
+                            )
+                        } else {
+                            None
+                        };
                     // Boundary structs (mirror-ingested) relax the C2
                     // value-field whitelist: they may carry `X | null`,
                     // `object | null`, and function-pointer fields.
@@ -1211,6 +1509,7 @@ impl<'p> Checker<'p> {
                         name: key.sym.to_string(),
                         ty,
                         init: None,
+                        foreign_provenance,
                         pos,
                     });
                 }
@@ -1470,6 +1769,7 @@ impl<'p> Checker<'p> {
                 name: ps.name.clone(),
                 ty: ps.ty.clone(),
                 default,
+                foreign_provenance: None,
                 pos,
             });
         }
@@ -1539,6 +1839,7 @@ impl<'p> Checker<'p> {
                             name: ps.name.clone(),
                             ty: ps.ty.clone(),
                             default,
+                            foreign_provenance: None,
                             pos: self.pos(param.span),
                         });
                     }
