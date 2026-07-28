@@ -349,3 +349,38 @@ emitted C still assumes exactly
 `void Callback(StringView, void *, void *)`; bindgen rejects every
 reachable callback typedef outside that shape. Supporting arbitrary
 callback signatures requires a later contract and lowering.
+
+## Phase Review — 2026-07-28
+
+A fresh-context reviewer read the cumulative diff against the contract and
+ran the pre-registered inherited-precedent audit in the same pass.
+Findings: **1 MAJOR, 6 MINOR, 0 CRITICAL.** All closed; the audit's three
+hits are recorded in `specs/tracking/inherited-precedent-audit.md`.
+
+**The MAJOR is the one worth keeping.** A foreign function returning a
+string view or a `(pointer, count)` descriptor **by value** passed bindgen,
+passed the checker, and reached the dev tier as a single `I64` return
+against a callee returning a 16-byte aggregate in two registers — while the
+ship tier failed with a C type error. A silent dev-tier mis-marshal plus a
+loud ship-tier failure is a **tier divergence**, which is what the standing
+gate exists to prevent, and no test could see it because neither the
+fixture nor the facade declares such a function.
+
+The cause is stated plainly so the next contract does not repeat it: §23.3
+specifies provenance **per parameter**, and the record vocabulary
+(`function=… parameter=…`) has no way to name a return. That was not a
+considered exclusion. It was written while thinking about arguments.
+
+The remaining MINORs were unconsumed provenance surface, three more header
+shapes bindgen wrote and the toolchain then refused, two untested rejection
+paths, a misquoted diagnostic in two examples, and the fixture still being a
+crate-build input — now its own dev-dependency-only crate, so §23.8.4's
+deletion touches test scaffolding in fact rather than by letter.
+
+Post-review gate: exit 0, 41 targets, 644 tests, the 89-golden differential
+gate green, no golden and no mirror moved, `tsc` clean.
+
+**Criterion 5 remains PARTIAL** and is the one thing standing between this
+phase and COMPLETE; `specs/tracking/windows-portability.md` now carries the
+command that settles it.
+
