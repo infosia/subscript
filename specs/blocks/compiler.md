@@ -2456,6 +2456,45 @@ than per element type is required: one header may declare both a const
 borrow and a mutable out-array of the same element type, and the
 element type alone does not distinguish them.
 
+### 23.3a One callback shape is bindable, and a mirror must refuse the rest
+
+The runtime has **exactly one** C-ABI callback trampoline, and its
+signature is fixed:
+
+- `runtime/src/ffi.rs` — `sub_rt_cb_trampoline(message: SubStrView,
+  userdata1: *mut u8, userdata2: *mut u8)`, three C parameters;
+- `codegen/src/lower/mod.rs` declares it to the dev tier as
+  `[I64, I64, I64, I64]` — the view flattened to two registers plus the
+  two userdata;
+- `codegen/src/cemit.rs` stores it into a header's callback field through
+  a cast to that field's declared typedef.
+
+So the **only** bindable callback is `(string view, userdata, userdata)
+→ void`, and the language function value behind it receives
+`(message, userdata1, userdata2)`.
+
+**Nothing in the toolchain checks this.** A mirror may declare a callback
+of any shape, the checker accepts a matching lambda, and the lowering
+installs the three-parameter trampoline behind it. The C API then calls
+it with its own signature: an extra leading parameter lands where the
+view's data pointer is read, and the view's length lands where the
+binding pointer is read and dereferenced.
+
+*(Found 2026-07-28. The examples facade's first draft declared
+`(EngEventKind, EngStringView, void*, void*)`; `bindgen` emitted the
+mirror, and no stage of either tier objected.)*
+
+**`bindgen` must reject a callback typedef whose signature the trampoline
+cannot serve**, naming the typedef and the supported shape — the §23.8
+kill criterion applied to callbacks: a mirror the tiers would mis-marshal
+must not be written. A header that needs to deliver more than the view
+and the two userdata slots delivers it through a separate call the script
+makes, not through an extra callback parameter.
+
+Generalizing the trampoline to arbitrary callback signatures is **not in
+P25's scope**. This section makes the existing limit visible and loud; a
+host that needs more is a later phase with its own contract.
+
 ### 23.4 Ship tier
 
 The emitted C includes **each ingested mirror's header**, in ingestion
@@ -2540,7 +2579,11 @@ moves is a finding.
    with the offending mirror named.
 7. **`bindgen` regeneration stays byte-identical** (§12.2) with the
    provenance records present, and the mirror stays `tsc`-clean.
-8. Standing differential gate green; `tsc` clean; clippy at its baseline.
+8. **A callback shape the trampoline cannot serve is rejected** (§23.3a),
+   naming the typedef and the supported shape, with a test per rejected
+   shape — an extra parameter, a missing userdata slot, a non-`void`
+   return.
+9. Standing differential gate green; `tsc` clean; clippy at its baseline.
 
 **Kill criterion.** If a descriptor's C name cannot be recovered for some
 header shape the generator otherwise accepts, `bindgen` **fails on that
