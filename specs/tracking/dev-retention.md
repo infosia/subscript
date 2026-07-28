@@ -40,9 +40,37 @@ both are legitimate spellings a host would write:
 - **B** — references dropped, `Context.collect()` once per frame.
 
 Run under the dev tier at several frame counts (at least 100 / 1 000 /
-10 000). Retention is `sub_rt_ctx_reserved_bytes − sub_rt_ctx_live_bytes`,
-which in the dev tier is exactly the retained-dead set
-(`Context::reserved_bytes` sums live plus `retained_allocations`).
+10 000).
+
+**Corrected 2026-07-29, before any measurement.** This section first said
+retention is `reserved_bytes − live_bytes`, "which in the dev tier is
+exactly the retained-dead set". That is wrong, and the code says so:
+`live_bytes` sums each live allocation's **requested payload**, while
+`reserved_bytes` sums each allocation's **layout**, header included
+(`runtime/src/context.rs`). So
+
+```
+reserved − live = (header and padding on the live set) + (retained layout)
+```
+
+— the difference **overstates** retention by the live set's per-allocation
+overhead. Measured on the existing accounting test, a dev run reports
+`live = 8, reserved = 60` for a handful of 4-byte payloads: the two are
+not equal even with nothing retained.
+
+**The criteria below are unaffected**, because they were always derived
+from *growth per frame*, and a constant live set contributes a constant
+offset that the slope removes. What changes is what may be claimed: the
+probe reports the **slope** — retained bytes per frame — as the measured
+quantity, and reports the raw `live_bytes` and `reserved_bytes` at each
+frame count beside it so the offset is visible rather than folded away.
+An absolute "retained right now" figure is not claimed, because no
+accessor yields one.
+
+*(Found by the implementer, refusing to write a unit test whose stated
+assertion — allocate-only means `reserved == live` — the accounting
+contradicts. The author of this file had read that code an hour earlier
+and wrote the wrong sentence anyway.)*
 
 Reported per variant: frames, live bytes, reserved bytes, retained bytes,
 **retained per frame**, and **retained per allocation**. Live bytes must
