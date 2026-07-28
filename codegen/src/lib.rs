@@ -42,7 +42,7 @@ pub use aot::{
     run_c_aot_with_alloc_failure, run_c_aot_with_native_libraries, runtime_staticlib_path,
     AotObject, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
 };
-pub use cemit::{emit_c, CProgram};
+pub use cemit::{emit_c, emit_c_without_main, CProgram};
 pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
     run_jit_with_native_libraries, BenchSamples, RunError, TrapReport,

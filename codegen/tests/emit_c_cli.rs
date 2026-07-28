@@ -23,7 +23,7 @@ fn explicit_sources_and_mirrors_can_suppress_the_generated_entry() {
     let mirror = root.join("host.generated.d.ts");
     std::fs::write(
         &source,
-        "export function main(): void {\n  print(`explicit`);\n}\n",
+        "export function init(): void {\n  print(`explicit`);\n}\n",
     )
     .expect("write source");
     std::fs::write(
@@ -52,4 +52,9 @@ fn explicit_sources_and_mirrors_can_suppress_the_generated_entry() {
     assert!(!output.join("entry.c").exists());
     let emitted = std::fs::read_to_string(output.join("program.c")).expect("read emitted C");
     assert!(emitted.contains("#include \"host.h\""), "{emitted}");
+    assert!(emitted.contains("void ss_export_init(Context* ctx)"), "{emitted}");
+    assert!(
+        !emitted.contains("void ss_export_main(Context* ctx) {"),
+        "{emitted}"
+    );
 }

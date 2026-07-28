@@ -16,7 +16,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use subscript_codegen::{emit_c, AOT_ENTRY_C};
+use subscript_codegen::{emit_c, emit_c_without_main, AOT_ENTRY_C};
 use subscript_compiler::{check_program, SourceFile};
 
 fn main() -> ExitCode {
@@ -110,7 +110,11 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let program = match emit_c(&hir) {
+    let program = match if write_entry {
+        emit_c(&hir)
+    } else {
+        emit_c_without_main(&hir)
+    } {
         Ok(p) => p,
         Err(e) => {
             eprintln!("emit-c: {label}: {e}");

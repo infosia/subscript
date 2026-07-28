@@ -78,15 +78,15 @@ pub type AllocationVisitor = unsafe extern "C" fn(
     payload_bytes: u64,
 );
 
-/// C calling convention shared by the module initializer (`ss_init`)
-/// and the required exported `main(): void` (`ss_export_main`).
+/// C calling convention shared by the module initializer (`ss_init`) and every
+/// supported host export.
 ///
 /// A host that may clear traps brackets each call with
 /// `sub_rt_ctx_enter_script` and `sub_rt_ctx_exit_script`.
 ///
-/// Every other currently supported host export is a zero-argument
-/// `void` script function using the symbol `ss_export_<name>` and this
-/// same C signature.
+/// An ordinary run entry uses `ss_export_main`; a host-owned entry may instead
+/// drive other zero-argument `void` exports using the symbol
+/// `ss_export_<name>` and this same C signature.
 pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Bytes between an allocation's base and its payload.

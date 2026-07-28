@@ -61,8 +61,8 @@ pub fn render() -> Result<String, String> {
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("sub_script_main_entry", &entry)?);
     out.push_str(";\n\n");
-    out.push_str("/* Every linked program defines these two entry symbols. Every other\n");
-    out.push_str(" * currently supported host export is a zero-argument void function\n");
+    out.push_str("/* Every linked program defines ss_init. A program with an exported main\n");
+    out.push_str(" * defines ss_export_main; every other currently supported host export is\n");
     out.push_str(" * named `ss_export_<name>` with the same signature. */\n");
     out.push_str(&c_function("ss_init", &entry)?);
     out.push_str(";\n");

@@ -38,20 +38,20 @@ typedef void (*sub_rt_trap_observer)(void* userdata, uint32_t kind, uint32_t pos
 typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id, uint32_t pos_id, uint64_t payload_bytes);
 
 /**
- * C calling convention shared by the module initializer (`ss_init`)
- * and the required exported `main(): void` (`ss_export_main`).
+ * C calling convention shared by the module initializer (`ss_init`) and every
+ * supported host export.
  *
  * A host that may clear traps brackets each call with
  * `sub_rt_ctx_enter_script` and `sub_rt_ctx_exit_script`.
  *
- * Every other currently supported host export is a zero-argument
- * `void` script function using the symbol `ss_export_<name>` and this
- * same C signature.
+ * An ordinary run entry uses `ss_export_main`; a host-owned entry may instead
+ * drive other zero-argument `void` exports using the symbol
+ * `ss_export_<name>` and this same C signature.
  */
 typedef void (*sub_script_main_entry)(Context* ctx);
 
-/* Every linked program defines these two entry symbols. Every other
- * currently supported host export is a zero-argument void function
+/* Every linked program defines ss_init. A program with an exported main
+ * defines ss_export_main; every other currently supported host export is
  * named `ss_export_<name>` with the same signature. */
 void ss_init(Context* ctx);
 void ss_export_main(Context* ctx);

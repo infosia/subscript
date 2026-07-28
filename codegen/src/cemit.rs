@@ -141,7 +141,22 @@ pub struct CProgram {
 /// Returns an error string when the module uses an HIR construct outside
 /// the run set's scope, or has no exported `main(): void`.
 pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
-    Emitter::new(module)?.emit()
+    Emitter::new(module)?.emit(true)
+}
+
+/// Emits a C translation unit for a host-owned entry program.
+///
+/// This has the same output as [`emit_c`], but permits a module with no
+/// exported `main(): void`. The translation unit still defines `ss_init`
+/// and every zero-argument `void` export as `ss_export_<name>`; the caller
+/// supplies `main` and chooses which exports to drive.
+///
+/// # Errors
+///
+/// Returns an error string when the module uses an HIR construct outside
+/// the run set's scope.
+pub fn emit_c_without_main(module: &hir::Module) -> Result<CProgram, String> {
+    Emitter::new(module)?.emit(false)
 }
 
 // ----- generator frame planning -----
@@ -446,7 +461,7 @@ impl<'m> Emitter<'m> {
 
     // ----- top-level -----
 
-    fn emit(&mut self) -> Result<CProgram, String> {
+    fn emit(&mut self, require_main: bool) -> Result<CProgram, String> {
         // Validate the entry point exists (mirrors lower_module_with).
         let has_main = self.module.functions.iter().any(|f| {
             f.name == "main"
@@ -455,7 +470,7 @@ impl<'m> Emitter<'m> {
                 && f.params.is_empty()
                 && f.ret == Type::Void
         });
-        if !has_main {
+        if require_main && !has_main {
             return Err("no exported `main(): void` entry point".to_string());
         }
 
@@ -5947,6 +5962,24 @@ mod tests {
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
         assert!(!c.contains("sub_rt_ctx_trap_kind(ctx)"));
+    }
+
+    #[test]
+    fn emits_host_owned_exports_without_a_script_main() {
+        let module = module_of(
+            "export function init(): void {}\n\
+             export function update(): void {}\n\
+             export function shutdown(): void {}\n",
+        );
+        let c = emit_c_without_main(&module)
+            .expect("host-owned exports emit")
+            .source;
+        assert!(c.contains("void ss_init(Context* ctx)"));
+        assert!(c.contains("void ss_export_init(Context* ctx)"));
+        assert!(c.contains("void ss_export_update(Context* ctx)"));
+        assert!(c.contains("void ss_export_shutdown(Context* ctx)"));
+        assert!(!c.contains("void ss_export_main(Context* ctx) {"));
+        assert!(emit_c(&module).is_err());
     }
 
     #[test]
