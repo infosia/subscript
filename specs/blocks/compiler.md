@@ -2620,11 +2620,22 @@ facade needs is the spelling the corpus teaches.
    both tiers, against a committed golden (§23.7 program 1).
 2. **Two headers bind in one program** (§23.7 program 2), byte-identical
    on both tiers.
-3. **No fixture identifier survives in the binding path.** A search for
-   `interop.h`, `SubSlice`, `SubBufferView`, `SubStringView` and the
-   `sub…` foreign symbol names over `compiler/src` and `codegen/src`
-   returns nothing. Matches under `corpus/`, `examples/`, `tests/` and
-   `build.rs` are expected and are not violations.
+3. **No fixture identifier or path survives in the binding path.** A
+   search over `compiler/src` and `codegen/src` returns nothing for the
+   fixture's type and symbol names (`SubSlice`, `SubBufferView`,
+   `SubStringView`, `SubLogCallback`, `SubWaitList`, the `sub…` foreign
+   symbols) **and** for the fixture itself — `interop.h`, `interop.c`,
+   the `corpus/interop` path, and any identifier naming it such as
+   `interop_dir` or `register_interop`. Matches under `corpus/`,
+   `examples/`, `tests/` and `build.rs` are expected and are not
+   violations.
+
+   *(The name list was type names only until 2026-07-28. Stage 3 satisfied
+   it by rewriting a doc comment while `aot.rs` still resolved
+   `corpus/interop` and compiled `interop.c` into every link — Stage 4's
+   scope, so not a violation there, but a criterion satisfiable by
+   renaming is not a criterion. Criterion 4 is what actually establishes
+   the property; this one is its cheap precheck and must not be weaker.)*
 4. **Deleting the fixture touches test scaffolding only** — demonstrated,
    not asserted: the deletion compiles with no edit under
    `compiler/src` or `codegen/src`. The deletion is not committed.
