@@ -72,10 +72,12 @@ assertion — allocate-only means `reserved == live` — the accounting
 contradicts. The author of this file had read that code an hour earlier
 and wrote the wrong sentence anyway.)*
 
-Reported per variant: frames, live bytes, reserved bytes, retained bytes,
-**retained per frame**, and **retained per allocation**. Live bytes must
-stay flat across frame counts; if it does not, the probe is measuring the
-wrong thing and the run is void.
+Reported per variant: frames, live bytes, reserved bytes, and the derived
+**growth per frame** and **growth per allocation** — derived from the
+change in `reserved_bytes` between frame counts, which is the slope the
+correction above leaves valid. Live bytes must stay flat across frame
+counts; if it does not, the probe is measuring the wrong thing and the run
+is void.
 
 The extrapolation to a session is computed from the measured
 retained-per-frame, not from an assumed object size.
