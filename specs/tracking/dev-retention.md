@@ -1,7 +1,8 @@
 # Dev-tier retention — pre-registered measurement
 
-Status: **pre-registered 2026-07-29, not yet run.** Criteria below are
-fixed before the numbers exist.
+Status: **CLOSED 2026-07-29.** Measured, decided, and the response
+landed. Criteria below were fixed before the numbers existed; the
+superseding decision and the outcome are at the end.
 
 ## The question
 
@@ -178,3 +179,34 @@ response trades away. It must be stated in those terms rather than as a
 memory setting.
 
 Mechanism is not yet chosen; that is the next decision.
+
+## Response — landed 2026-07-29
+
+`compiler.md` §8.1a-1 contracts it and the change is in: the dev tier
+releases by default, and retention becomes
+`sub_rt_ctx_set_freed_handle_diagnostics(ctx, enabled)` — per Context,
+host-set, default off, refused after the first allocation.
+
+The same probe that produced the problem measures the fix, both settings
+side by side:
+
+| shape | payload | off, bytes/alloc | on, bytes/alloc |
+|---|---:|---:|---:|
+| `i32` ×1 | 4 | **0.000** | 20.000 |
+| `f32` ×3 | 12 | **0.000** | 28.000 |
+| `f32` ×8 | 32 | **0.000** | 48.000 |
+| `f32` ×32 | 128 | **0.000** | 144.000 |
+
+All five §8.1a-1 exit criteria met and verified independently of the
+implementer's report: zero growth with the mode off; `payload + 16`
+reproduced with it on, so the diagnostic was moved off the default path
+rather than deleted; `t22` and `t23` trapping with unchanged kind, message
+and position; no golden moved; and unit tests asserting both directions.
+Gate at 42 targets, 654 tests, `tsc` clean.
+
+**What the project gave up, recorded plainly.** With the mode off — the
+default — double free and use-after-free in the dev tier are undefined, as
+they already were in AOT. A developer hunting one turns the mode on and
+accepts the unbounded growth for that session. §8.1a called the trap a
+dev-tier guarantee; it is now a mode, and §8.1a-1 says so where §8.1a
+said the opposite.
