@@ -10,6 +10,8 @@
 //! the body-only replacement that makes the saved coroutine stale.
 
 mod corpus;
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
@@ -407,7 +409,12 @@ fn reload_mode_reproduces_every_committed_golden() {
     for id in &ids {
         let golden = corpus::golden_bytes(&accept, id);
         let sources = corpus::entry_sources(&accept, id);
-        let mut session = match ReloadSession::new(&sources) {
+        let uses_fixture = sources
+            .iter()
+            .any(|source| corpus::references_interop(&source.source));
+        let libraries = uses_fixture.then(native_fixture::library).into_iter().collect::<Vec<_>>();
+        let mut session =
+            match ReloadSession::new_with_native_libraries(&sources, &libraries) {
             Ok(s) => s,
             Err(e) => {
                 failures.push(format!("{id}: session failed: {e}"));

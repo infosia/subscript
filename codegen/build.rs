@@ -1,11 +1,10 @@
 //! Compiles the committed synthetic-header implementation
 //! (`corpus/interop/interop.c`) into a static library named `interop` and
-//! links it into every binary that links this crate. That is what makes
-//! the foreign symbols (`subDevice*`) resolvable *by address* inside the
-//! dev-JIT test process: `jit.rs` takes their addresses and registers them
-//! with the JIT. The ship-C tier links the same source separately
-//! (`run_c_aot`), so one C implementation serves both tiers
-//! (compiler.md §12.4).
+//! links it into every binary that links this crate. The corpus gate's
+//! native-library test support takes those addresses and supplies them to
+//! the dev JIT; the same native-library value supplies this source to the
+//! ship-C compiler, so one implementation serves both tiers
+//! (compiler.md §23.5–§23.6).
 //!
 //! The platform C toolchain is selected by Rust target triple through the
 //! `cc` crate (already resolved in `Cargo.lock` and present in the local

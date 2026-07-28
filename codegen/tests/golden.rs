@@ -18,16 +18,35 @@
 //! test: the gate machine is the development machine (§8.3).
 
 mod corpus;
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 
-use subscript_codegen::{run_aot, run_c_aot, run_jit};
+use subscript_codegen::{
+    run_aot_with_native_libraries, run_c_aot_with_native_libraries,
+    run_jit_with_native_libraries, NativeLibrary,
+};
+
+fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Vec<NativeLibrary> {
+    if sources
+        .iter()
+        .any(|source| corpus::references_interop(&source.source))
+    {
+        vec![native_fixture::library()]
+    } else {
+        Vec::new()
+    }
+}
 
 #[test]
 fn unicode_string_entry_matches_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     let id = "a60-string-unicode";
     let sources = corpus::entry_sources(&accept, id);
-    let jit = run_jit(&sources).unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
-    let ship = run_c_aot(&sources).unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
+    let libraries = native_libraries(&sources);
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
     assert_eq!(
         jit,
         ship,
@@ -49,9 +68,11 @@ fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
         "a50-narrow-callbacks-shifts",
     ] {
         let sources = corpus::entry_sources(&accept, id);
-        let jit = run_jit(&sources).unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
-        let ship =
-            run_c_aot(&sources).unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
+        let libraries = native_libraries(&sources);
+        let jit = run_jit_with_native_libraries(&sources, &libraries)
+            .unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
+        let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+            .unwrap_or_else(|e| panic!("{id}: ship-C-AOT run failed: {e}"));
         assert_eq!(
             jit,
             ship,
@@ -110,7 +131,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     for id in &golden_ids {
         let golden = corpus::golden_bytes(&accept, id);
         let sources = corpus::entry_sources(&accept, id);
-        let jit = match run_jit(&sources) {
+        let libraries = native_libraries(&sources);
+        let jit = match run_jit_with_native_libraries(&sources, &libraries) {
             Ok(bytes) => bytes,
             Err(e) => {
                 failures.push(format!("{id}: dev-JIT run failed: {e}"));
@@ -119,7 +141,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
         };
         // The ship tier: emit C, compile at -O2 -ffp-contract=off, link
         // with the runtime, run, capture stdout.
-        let ship = match run_c_aot(&sources) {
+        let ship = match run_c_aot_with_native_libraries(&sources, &libraries) {
             Ok(bytes) => bytes,
             Err(e) => {
                 failures.push(format!("{id}: ship-C-AOT run failed: {e}"));
@@ -173,7 +195,8 @@ fn cranelift_object_aot_still_matches_the_goldens_cross_check() {
     for id in corpus::golden_ids(&accept) {
         let golden = corpus::golden_bytes(&accept, &id);
         let sources = corpus::entry_sources(&accept, &id);
-        match run_aot(&sources) {
+        let libraries = native_libraries(&sources);
+        match run_aot_with_native_libraries(&sources, &libraries) {
             Ok(bytes) if bytes == golden => {}
             Ok(bytes) => failures.push(format!(
                 "{id}: cranelift-AOT output {:?} != golden {:?}",

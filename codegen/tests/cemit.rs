@@ -12,10 +12,12 @@
 
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 
 use subscript_codegen::{
-    run_c_aot, run_c_aot_with_alloc_failure, run_jit,
-    run_jit_with_alloc_failure, RunError, TrapReport,
+    run_c_aot, run_c_aot_with_alloc_failure, run_c_aot_with_native_libraries, run_jit,
+    run_jit_with_alloc_failure, run_jit_with_native_libraries, RunError, TrapReport,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -559,7 +561,11 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                 run_c_aot_with_alloc_failure(&files, n),
             )
         } else {
-            (run_jit(&files), run_c_aot(&files))
+            let libraries = [native_fixture::library()];
+            (
+                run_jit_with_native_libraries(&files, &libraries),
+                run_c_aot_with_native_libraries(&files, &libraries),
+            )
         };
 
         match &jit {
@@ -1507,8 +1513,8 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     std::fs::write(&entry_path, entry.as_bytes()).expect("write entry.c");
 
     // Same compile line as `run_c_aot` (§11): clang, -std=c11 -O2
-    // -fwrapv -ffp-contract=off, interop header/impl, runtime staticlib.
-    let interop = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
+    // -fwrapv -ffp-contract=off and the runtime staticlib. This program
+    // has no foreign calls, so it supplies no native library.
     let cc = std::env::var_os("CC").unwrap_or_else(|| "clang".into());
     #[cfg(all(windows, target_env = "msvc"))]
     let system_libs: &[&str] = &["-lkernel32", "-lntdll", "-luserenv", "-lws2_32", "-ldbghelp"];
@@ -1519,11 +1525,8 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
         .arg("-O2")
         .arg("-fwrapv")
         .arg("-ffp-contract=off")
-        .arg("-I")
-        .arg(&interop)
         .arg(&src_path)
         .arg(&entry_path)
-        .arg(interop.join("interop.c"))
         .arg(&staticlib)
         .args(system_libs)
         .arg("-o")

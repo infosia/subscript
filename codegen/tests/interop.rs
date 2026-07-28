@@ -15,7 +15,12 @@
 //! accumulates `message.length` into a userdata sink, so a program
 //! surfaces every effect by printing the sink's count.
 
-use subscript_codegen::{run_c_aot, run_jit};
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
+
+use subscript_codegen::{
+    run_c_aot_with_native_libraries, run_jit, run_jit_with_native_libraries,
+};
 use subscript_compiler::SourceFile;
 
 /// The committed ambient mirror, ingested as a global `.d.ts` surface.
@@ -31,8 +36,11 @@ fn both_tiers(program: &str) -> Vec<u8> {
             SourceFile::new("prog.ts", program),
         ]
     };
-    let jit = run_jit(&files()).unwrap_or_else(|e| panic!("dev-JIT run failed: {e}"));
-    let ship = run_c_aot(&files()).unwrap_or_else(|e| panic!("ship-C-AOT run failed: {e}"));
+    let libraries = [native_fixture::library()];
+    let jit = run_jit_with_native_libraries(&files(), &libraries)
+        .unwrap_or_else(|e| panic!("dev-JIT run failed: {e}"));
+    let ship = run_c_aot_with_native_libraries(&files(), &libraries)
+        .unwrap_or_else(|e| panic!("ship-C-AOT run failed: {e}"));
     assert_eq!(
         jit,
         ship,

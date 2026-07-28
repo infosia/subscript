@@ -209,6 +209,11 @@ pub(crate) struct Lowered {
     /// Alignment of the module-global block
     /// ([`LowerOptions::reload`] only; 1 otherwise).
     pub globals_align: u32,
+    /// Foreign C symbols imported by lowered call sites, in first-use
+    /// order. This is the complete set because the sole
+    /// `Linkage::Import` path for `Callee::Foreign` records here when it
+    /// declares the import.
+    pub foreign_symbols: Vec<String>,
 }
 
 /// Where a module-level variable's storage lives.
@@ -236,6 +241,8 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub globals: HashMap<String, (GlobalSlot, Type)>,
     /// Imported foreign C symbols, declared on first use (P5.2b).
     pub foreign_ids: HashMap<String, FuncId>,
+    /// Foreign imports in deterministic first-use order.
+    pub foreign_symbols: Vec<String>,
     pub positions: Vec<Pos>,
     pub lambda_count: u32,
     pub str_count: u32,
@@ -930,6 +937,7 @@ pub(crate) fn lower_module_with<M: Module>(
         str_data: HashMap::new(),
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
+        foreign_symbols: Vec::new(),
         positions: Vec::new(),
         lambda_count: 0,
         str_count: 0,
@@ -1083,6 +1091,7 @@ pub(crate) fn lower_module_with<M: Module>(
     }
     let positions = std::mem::take(&mut ml.positions);
     let slots = std::mem::take(&mut ml.slots);
+    let foreign_symbols = std::mem::take(&mut ml.foreign_symbols);
     Ok(Lowered {
         main,
         init,
@@ -1091,6 +1100,7 @@ pub(crate) fn lower_module_with<M: Module>(
         slots,
         globals_size,
         globals_align,
+        foreign_symbols,
     })
 }
 

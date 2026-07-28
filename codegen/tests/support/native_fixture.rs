@@ -1,0 +1,86 @@
+//! Native-library description for the synthetic interop test fixture.
+
+use std::path::PathBuf;
+
+use subscript_codegen::NativeLibrary;
+
+// The fixture implementation is compiled into the test process by
+// `codegen/build.rs`. Only addresses are taken here; generated code calls
+// them through the C signatures declared by the committed mirror.
+extern "C" {
+    fn subChainPayloadValue();
+    fn subDeviceCreate();
+    fn subDeviceRetain();
+    fn subDeviceRelease();
+    fn subDeviceSubmit();
+    fn subDeviceSetLogger();
+    fn subDeviceSetLabel();
+    fn subSliceChecksumF32();
+    fn subSliceChecksumI32();
+    fn subSliceChecksumF64();
+    fn subSliceChecksumI64();
+    fn subSliceChecksumU8();
+    fn subSliceChecksumI8();
+    fn subSliceChecksumU16();
+    fn subSliceChecksumI16();
+    fn subSliceChecksumF16();
+    fn subDrawListTotal();
+    fn subAccessMatches();
+    fn subBulkConsume();
+    fn subBulkConsumeF32();
+    fn subDeviceOnComplete();
+    fn subDevicePump();
+    fn subCommandBufferTotal();
+    fn subStageMatches();
+    fn subFutureMake();
+    fn subStatsMake();
+    fn subDeviceQuery();
+    fn subDeviceKickAsync();
+    fn subDeviceWait();
+}
+
+/// Returns the native-library inputs for the committed interop fixture.
+pub fn library() -> NativeLibrary {
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
+    let symbols = vec![
+        ("subChainPayloadValue".to_string(), subChainPayloadValue as *const u8),
+        ("subDeviceCreate".to_string(), subDeviceCreate as *const u8),
+        ("subDeviceRetain".to_string(), subDeviceRetain as *const u8),
+        ("subDeviceRelease".to_string(), subDeviceRelease as *const u8),
+        ("subDeviceSubmit".to_string(), subDeviceSubmit as *const u8),
+        ("subDeviceSetLogger".to_string(), subDeviceSetLogger as *const u8),
+        ("subDeviceSetLabel".to_string(), subDeviceSetLabel as *const u8),
+        ("subSliceChecksumF32".to_string(), subSliceChecksumF32 as *const u8),
+        ("subSliceChecksumI32".to_string(), subSliceChecksumI32 as *const u8),
+        ("subSliceChecksumF64".to_string(), subSliceChecksumF64 as *const u8),
+        ("subSliceChecksumI64".to_string(), subSliceChecksumI64 as *const u8),
+        ("subSliceChecksumU8".to_string(), subSliceChecksumU8 as *const u8),
+        ("subSliceChecksumI8".to_string(), subSliceChecksumI8 as *const u8),
+        ("subSliceChecksumU16".to_string(), subSliceChecksumU16 as *const u8),
+        ("subSliceChecksumI16".to_string(), subSliceChecksumI16 as *const u8),
+        ("subSliceChecksumF16".to_string(), subSliceChecksumF16 as *const u8),
+        ("subDrawListTotal".to_string(), subDrawListTotal as *const u8),
+        ("subAccessMatches".to_string(), subAccessMatches as *const u8),
+        ("subBulkConsume".to_string(), subBulkConsume as *const u8),
+        ("subBulkConsumeF32".to_string(), subBulkConsumeF32 as *const u8),
+        ("subDeviceOnComplete".to_string(), subDeviceOnComplete as *const u8),
+        ("subDevicePump".to_string(), subDevicePump as *const u8),
+        ("subCommandBufferTotal".to_string(), subCommandBufferTotal as *const u8),
+        ("subStageMatches".to_string(), subStageMatches as *const u8),
+        ("subFutureMake".to_string(), subFutureMake as *const u8),
+        ("subStatsMake".to_string(), subStatsMake as *const u8),
+        ("subDeviceQuery".to_string(), subDeviceQuery as *const u8),
+        ("subDeviceKickAsync".to_string(), subDeviceKickAsync as *const u8),
+        ("subDeviceWait".to_string(), subDeviceWait as *const u8),
+    ];
+    // SAFETY: build.rs links these static-lifetime functions into the test
+    // process, and every address corresponds to the same-name signature in
+    // the committed mirror and header.
+    unsafe {
+        NativeLibrary::new(
+            vec![directory.clone()],
+            vec![directory.join("interop.c")],
+            symbols,
+        )
+    }
+}

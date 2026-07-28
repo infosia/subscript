@@ -67,6 +67,8 @@ use subscript_runtime::Context;
 
 use crate::jit::{register_runtime, RunError, TrapReport};
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
+use crate::native::{missing_symbol, register_symbols};
+use crate::NativeLibrary;
 
 // ----- declaration hash -----
 
@@ -246,6 +248,9 @@ pub enum ReloadError {
     /// Script code was on the stack (a swap may only happen between
     /// host calls into script).
     ScriptOnStack,
+    /// A called foreign C symbol was absent from every native library
+    /// supplied when the session was created.
+    UnresolvedForeignSymbol(String),
     /// An internal lowering/backend failure (a bug, not a user error).
     Internal(String),
 }
@@ -269,6 +274,10 @@ impl std::fmt::Display for ReloadError {
                 f,
                 "reload refused: script code is on the stack; swaps happen \
                  only between host calls into script"
+            ),
+            ReloadError::UnresolvedForeignSymbol(name) => write!(
+                f,
+                "unresolved foreign symbol `{name}`: no supplied native library registers it"
             ),
             ReloadError::Internal(m) => write!(f, "{m}"),
         }
@@ -339,6 +348,7 @@ pub struct ReloadSession {
     entries: HashMap<String, usize>,
     positions: Vec<Pos>,
     decls: DeclarationHash,
+    native_libraries: Vec<NativeLibrary>,
 }
 
 /// One compiled generation: the module plus what the driver needs from
@@ -369,37 +379,45 @@ impl Generation {
 
 /// Compiles `hir` in reload mode into a fresh JIT module and resolves
 /// every slot to a finalized code address.
-fn compile(hirm: &hir::Module) -> Result<Generation, String> {
-    let flags = dev_flags()?;
+fn compile(
+    hirm: &hir::Module,
+    libraries: &[NativeLibrary],
+) -> Result<Generation, RunError> {
+    let flags = dev_flags().map_err(RunError::Internal)?;
     let isa = cranelift_native::builder()
-        .map_err(|e| internal(format!("host ISA: {e}")))
+        .map_err(|e| RunError::Internal(internal(format!("host ISA: {e}"))))
         .and_then(|b| {
             b.finish(flags)
-                .map_err(|e| internal(format!("ISA flags: {e}")))
+                .map_err(|e| RunError::Internal(internal(format!("ISA flags: {e}"))))
         })?;
     let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
     register_runtime(&mut builder);
+    register_symbols(&mut builder, libraries);
     let mut module = JITModule::new(builder);
 
     // A failure past this point must release the module's code pages:
     // a dropped `JITModule` frees nothing by itself.
-    let built = lower_module_with(&mut module, hirm, LowerOptions { reload: true }).and_then(
-        |lowered| {
-            module
-                .finalize_definitions()
-                .map_err(|e| internal(format!("finalize: {e}")))?;
-            Ok(lowered)
-        },
-    );
-    let lowered = match built {
+    let lowered = match lower_module_with(&mut module, hirm, LowerOptions { reload: true }) {
         Ok(l) => l,
         Err(e) => {
             // SAFETY: nothing ran and no pointer into this module
             // escaped; the partially built module is unreachable.
             unsafe { module.free_memory() };
-            return Err(e);
+            return Err(RunError::Internal(e));
         }
     };
+    if let Some(name) = missing_symbol(&lowered.foreign_symbols, libraries) {
+        // SAFETY: lowering has not finalized or executed the module and no
+        // code or data pointer escaped.
+        unsafe { module.free_memory() };
+        return Err(RunError::UnresolvedForeignSymbol(name.to_string()));
+    }
+    if let Err(e) = module.finalize_definitions() {
+        // SAFETY: finalization failed before any generated entry was
+        // exposed or executed.
+        unsafe { module.free_memory() };
+        return Err(RunError::Internal(internal(format!("finalize: {e}"))));
+    }
 
     let slot_index = |id: FuncId, slots: &[Option<FuncId>]| {
         slots.iter().position(|s| *s == Some(id))
@@ -469,11 +487,30 @@ impl ReloadSession {
     ///
     /// [`RunError::Rejected`] when the checker rejects the program,
     /// [`RunError::Trap`] when the initializer trapped,
+    /// [`RunError::UnresolvedForeignSymbol`] when the program calls a
+    /// symbol but no native library was supplied,
     /// [`RunError::Internal`] on backend failures.
     pub fn new(files: &[SourceFile]) -> Result<ReloadSession, RunError> {
+        Self::new_with_native_libraries(files, &[])
+    }
+
+    /// Compiles `files` in reload mode with caller-supplied native
+    /// libraries, runs the module-global initializer, and returns the live
+    /// session. The same libraries remain available to every accepted
+    /// reload.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same [`RunError`] variants as [`ReloadSession::new`],
+    /// including [`RunError::UnresolvedForeignSymbol`] when a called
+    /// foreign symbol is absent from `libraries`.
+    pub fn new_with_native_libraries(
+        files: &[SourceFile],
+        libraries: &[NativeLibrary],
+    ) -> Result<ReloadSession, RunError> {
         let hirm = check_program(files).map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
-        let gen = compile(&hirm).map_err(RunError::Internal)?;
+        let gen = compile(&hirm, libraries)?;
         let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
             Ok(g) => g,
             Err(e) => {
@@ -490,6 +527,7 @@ impl ReloadSession {
             entries: gen.entries,
             positions: gen.positions,
             decls,
+            native_libraries: libraries.to_vec(),
         };
         session.ctx.set_fn_table(session.table.as_ptr());
         session.ctx.set_globals(session.globals.ptr);
@@ -570,8 +608,10 @@ impl ReloadSession {
     /// [`ReloadError::Rejected`] when the new sources do not check,
     /// [`ReloadError::DeclarationChanged`] naming the first differing
     /// declaration, [`ReloadError::ScriptOnStack`] when script code is
-    /// running, [`ReloadError::Internal`] on backend failures. In
-    /// every failure case the running program is untouched.
+    /// running, [`ReloadError::UnresolvedForeignSymbol`] when an edited
+    /// body first calls an unsupplied symbol, and [`ReloadError::Internal`]
+    /// on backend failures. In every failure case the running program is
+    /// untouched.
     pub fn reload(&mut self, files: &[SourceFile]) -> Result<(), ReloadError> {
         if self.ctx.script_depth() != 0 {
             return Err(ReloadError::ScriptOnStack);
@@ -586,7 +626,12 @@ impl ReloadSession {
                     .unwrap_or_else(|| "<unknown>".to_string()),
             });
         }
-        let gen = compile(&hirm).map_err(ReloadError::Internal)?;
+        let gen = compile(&hirm, &self.native_libraries).map_err(|error| match error {
+            RunError::UnresolvedForeignSymbol(name) => {
+                ReloadError::UnresolvedForeignSymbol(name)
+            }
+            other => ReloadError::Internal(other.to_string()),
+        })?;
         // Both follow from the unchanged declaration hash; checked
         // rather than assumed, because getting either wrong would
         // corrupt a live Context instead of failing loudly.

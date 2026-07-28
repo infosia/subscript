@@ -10,6 +10,8 @@ use subscript_compiler::{check_program, Diagnostic, Pos, SourceFile};
 use subscript_runtime::{ffi, Context, TrapKind};
 
 use crate::lower::{dev_flags, internal, lower_module_with, Lowered, LowerOptions};
+use crate::native::{missing_symbol, register_symbols};
+use crate::NativeLibrary;
 
 /// A runtime fault that stopped the script (collisions.md C6). The
 /// host process survives; this is the report the Context recorded.
@@ -41,6 +43,9 @@ pub enum RunError {
     Rejected(Vec<Diagnostic>),
     /// The program ran and trapped.
     Trap(TrapReport),
+    /// A called foreign C symbol was absent from every caller-supplied
+    /// native library.
+    UnresolvedForeignSymbol(String),
     /// An internal lowering/backend failure (a bug, not a user error).
     Internal(String),
 }
@@ -56,6 +61,10 @@ impl std::fmt::Display for RunError {
                 Ok(())
             }
             RunError::Trap(t) => write!(f, "{t}"),
+            RunError::UnresolvedForeignSymbol(name) => write!(
+                f,
+                "unresolved foreign symbol `{name}`: no supplied native library registers it"
+            ),
             RunError::Internal(m) => write!(f, "{m}"),
         }
     }
@@ -475,91 +484,14 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     for (name, address) in regex_symbols {
         builder.symbol(*name, *address);
     }
-    register_interop(builder);
-}
-
-// The synthetic-header implementation, linked into this process by
-// `build.rs` (from `corpus/interop/interop.c`). Only the addresses are
-// taken — generated JIT code calls these under the C-ABI signatures the
-// foreign-call lowering builds — so the declared Rust signatures are
-// deliberately argument-less; a mismatch is irrelevant to address-taking
-// and these are never called from Rust.
-extern "C" {
-    fn subChainPayloadValue();
-    fn subDeviceCreate();
-    fn subDeviceRetain();
-    fn subDeviceRelease();
-    fn subDeviceSubmit();
-    fn subDeviceSetLogger();
-    fn subDeviceSetLabel();
-    fn subSliceChecksumF32();
-    fn subSliceChecksumI32();
-    fn subSliceChecksumF64();
-    fn subSliceChecksumI64();
-    fn subSliceChecksumU8();
-    fn subSliceChecksumI8();
-    fn subSliceChecksumU16();
-    fn subSliceChecksumI16();
-    fn subSliceChecksumF16();
-    fn subDrawListTotal();
-    fn subAccessMatches();
-    fn subBulkConsume();
-    fn subBulkConsumeF32();
-    fn subDeviceOnComplete();
-    fn subDevicePump();
-    fn subCommandBufferTotal();
-    fn subStageMatches();
-    fn subFutureMake();
-    fn subStatsMake();
-    fn subDeviceQuery();
-    fn subDeviceKickAsync();
-    fn subDeviceWait();
-}
-
-/// Registers the foreign C-header symbols (`corpus/interop/interop.c`,
-/// linked by `build.rs`) so a `Callee::Foreign` call resolves at JIT
-/// time, the same way the ship-C tier resolves them from the linked
-/// object (compiler.md §12.4).
-pub(crate) fn register_interop(builder: &mut JITBuilder) {
-    let syms: &[(&str, *const u8)] = &[
-        ("subChainPayloadValue", subChainPayloadValue as *const u8),
-        ("subDeviceCreate", subDeviceCreate as *const u8),
-        ("subDeviceRetain", subDeviceRetain as *const u8),
-        ("subDeviceRelease", subDeviceRelease as *const u8),
-        ("subDeviceSubmit", subDeviceSubmit as *const u8),
-        ("subDeviceSetLogger", subDeviceSetLogger as *const u8),
-        ("subDeviceSetLabel", subDeviceSetLabel as *const u8),
-        ("subSliceChecksumF32", subSliceChecksumF32 as *const u8),
-        ("subSliceChecksumI32", subSliceChecksumI32 as *const u8),
-        ("subSliceChecksumF64", subSliceChecksumF64 as *const u8),
-        ("subSliceChecksumI64", subSliceChecksumI64 as *const u8),
-        ("subSliceChecksumU8", subSliceChecksumU8 as *const u8),
-        ("subSliceChecksumI8", subSliceChecksumI8 as *const u8),
-        ("subSliceChecksumU16", subSliceChecksumU16 as *const u8),
-        ("subSliceChecksumI16", subSliceChecksumI16 as *const u8),
-        ("subSliceChecksumF16", subSliceChecksumF16 as *const u8),
-        ("subDrawListTotal", subDrawListTotal as *const u8),
-        ("subAccessMatches", subAccessMatches as *const u8),
-        ("subBulkConsume", subBulkConsume as *const u8),
-        ("subBulkConsumeF32", subBulkConsumeF32 as *const u8),
-        ("subDeviceOnComplete", subDeviceOnComplete as *const u8),
-        ("subDevicePump", subDevicePump as *const u8),
-        ("subCommandBufferTotal", subCommandBufferTotal as *const u8),
-        ("subStageMatches", subStageMatches as *const u8),
-        ("subFutureMake", subFutureMake as *const u8),
-        ("subStatsMake", subStatsMake as *const u8),
-        ("subDeviceQuery", subDeviceQuery as *const u8),
-        ("subDeviceKickAsync", subDeviceKickAsync as *const u8),
-        ("subDeviceWait", subDeviceWait as *const u8),
-    ];
-    for (name, addr) in syms {
-        builder.symbol(*name, *addr);
-    }
 }
 
 /// Checks `files`, lowers the typed HIR through the shared CLIF
 /// lowering, and finalizes the code in a live JIT module.
-fn compile_jit(files: &[SourceFile]) -> Result<(JITModule, Lowered), RunError> {
+fn compile_jit(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<(JITModule, Lowered), RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
 
     let flags = dev_flags().map_err(RunError::Internal)?;
@@ -571,10 +503,22 @@ fn compile_jit(files: &[SourceFile]) -> Result<(JITModule, Lowered), RunError> {
         })?;
     let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
     register_runtime(&mut builder);
+    register_symbols(&mut builder, libraries);
     let mut module = JITModule::new(builder);
 
     let lowered = lower_module_with(&mut module, &hir, LowerOptions::default())
         .map_err(RunError::Internal)?;
+    if let Some(name) = missing_symbol(&lowered.foreign_symbols, libraries) {
+        // Cranelift-JIT retains a platform symbol-lookup fallback and
+        // exposes only an API for appending more lookup functions. The
+        // lowering's list is total: its sole `Callee::Foreign` import path
+        // records every imported name. Refuse finalization here so the
+        // fallback is never consulted for an unregistered foreign symbol.
+        // SAFETY: no definition was finalized or executed and no pointer
+        // into this module escaped.
+        unsafe { module.free_memory() };
+        return Err(RunError::UnresolvedForeignSymbol(name.to_string()));
+    }
     module
         .finalize_definitions()
         .map_err(|e| RunError::Internal(internal(format!("finalize: {e}"))))?;
@@ -668,10 +612,27 @@ fn run_entry(
 ///
 /// [`RunError::Rejected`] when the checker rejects the program,
 /// [`RunError::Trap`] when the run trapped (rule + message + TS
-/// position + pre-trap stdout), [`RunError::Internal`] on backend
-/// failures.
+/// position + pre-trap stdout),
+/// [`RunError::UnresolvedForeignSymbol`] when the program calls a symbol
+/// but no native library was supplied, and [`RunError::Internal`] on
+/// backend failures.
 pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    let (module, lowered) = compile_jit(files)?;
+    run_jit_with_native_libraries(files, &[])
+}
+
+/// Checks, lowers, and runs `files` through the dev JIT with the
+/// caller-supplied native libraries available for foreign calls.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_jit`], including
+/// [`RunError::UnresolvedForeignSymbol`] when a called foreign symbol is
+/// absent from `libraries`.
+pub fn run_jit_with_native_libraries(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    let (module, lowered) = compile_jit(files, libraries)?;
     let outcome = run_entry(&module, &lowered, None).map(|(out, _)| out);
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
@@ -692,7 +653,7 @@ pub fn run_jit_with_alloc_failure(
     files: &[SourceFile],
     n: u64,
 ) -> Result<Vec<u8>, RunError> {
-    let (module, lowered) = compile_jit(files)?;
+    let (module, lowered) = compile_jit(files, &[])?;
     let outcome = run_entry(&module, &lowered, Some(n)).map(|(out, _)| out);
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
@@ -768,7 +729,7 @@ pub fn jit_bench_with_warmup_floor(
         )));
     }
     let started = Instant::now();
-    let (module, lowered) = compile_jit(files)?;
+    let (module, lowered) = compile_jit(files, &[])?;
     let compile = started.elapsed();
 
     let mut samples = Vec::with_capacity(timed);
@@ -845,7 +806,7 @@ pub fn jit_bench_with_warmup_floor(
 pub(crate) fn memory_accounting_after_run(
     files: &[SourceFile],
 ) -> Result<(u64, u64, u64), RunError> {
-    let (module, lowered) = compile_jit(files)?;
+    let (module, lowered) = compile_jit(files, &[])?;
     let init = module.get_finalized_function(lowered.init);
     let main = module.get_finalized_function(lowered.main);
     let mut ctx = Context::new();
@@ -900,7 +861,7 @@ pub(crate) fn allocation_attribution_after_run(
         triples.push((class_id, pos_id, payload_bytes));
     }
 
-    let (module, lowered) = compile_jit(files)?;
+    let (module, lowered) = compile_jit(files, &[])?;
     let init = module.get_finalized_function(lowered.init);
     let main = module.get_finalized_function(lowered.main);
     let mut ctx = Context::new();
@@ -1016,7 +977,8 @@ mod tests {
              }\n\
              export function main(): void {}\n",
         );
-        let (module, lowered) = compile_jit(&program).expect("compile allocation probe");
+        let (module, lowered) =
+            compile_jit(&program, &[]).expect("compile allocation probe");
         let init = module.get_finalized_function(lowered.init);
         let populate = lowered
             .entries
@@ -1070,7 +1032,8 @@ mod tests {
                print(\"done\");\n\
              }\n",
         );
-        let (module, lowered) = compile_jit(&program).expect("compile observer program");
+        let (module, lowered) =
+            compile_jit(&program, &[]).expect("compile observer program");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main);
         let mut ctx = Context::new();
@@ -1146,7 +1109,7 @@ mod tests {
     fn jit_corpus_output_is_byte_identical_with_an_observer_registered() {
         let source = include_str!("../../corpus/accept/a01-hello.ts");
         let program = [SourceFile::new("a01-hello.ts", source)];
-        let (module, lowered) = compile_jit(&program).expect("compile a01");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile a01");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main);
 
@@ -1231,7 +1194,7 @@ mod tests {
         // — the same program, pinned ms, and expected bytes.
         let (module, lowered) = compile_jit(&sources(
             "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n",
-        ))
+        ), &[])
         .expect("compile");
         let init_ptr = module.get_finalized_function(lowered.init);
         let main_ptr = module.get_finalized_function(lowered.main);

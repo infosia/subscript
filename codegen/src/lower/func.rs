@@ -2208,6 +2208,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .declare_function(name, Linkage::Import, &sig)
                 .map_err(|e| internal(format!("declare foreign {name}: {e}")))?;
             self.ml.foreign_ids.insert(name.to_string(), id);
+            self.ml.foreign_symbols.push(name.to_string());
             id
         };
         let fref = self.ml.module.declare_func_in_func(id, self.b.func);

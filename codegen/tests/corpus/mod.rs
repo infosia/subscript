@@ -21,8 +21,8 @@ pub fn corpus_accept() -> PathBuf {
 /// written against these global ambient declarations exactly as the
 /// language prelude, so the gate ingests it as an ambient source for any
 /// entry that uses it (`specs/blocks/compiler.md` §12.4). Linking of
-/// `interop.c` is unconditional in both tiers (`run_jit`/`run_c_aot`), so
-/// the only per-entry step is supplying the mirror surface.
+/// The corpus gate supplies the fixture's [`subscript_codegen::NativeLibrary`]
+/// beside this mirror for entries that use it.
 fn interop_mirror() -> SourceFile {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../corpus/interop/interop.generated.d.ts");

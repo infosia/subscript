@@ -42,6 +42,8 @@ use target_lexicon::Triple;
 
 use crate::jit::{RunError, TrapReport};
 use crate::lower::{aot_flags, internal, lower_module_with, LowerOptions};
+use crate::native::missing_symbol;
+use crate::NativeLibrary;
 
 /// Mach-O build version `10.0.0`, nibble-packed as `xxxx.yy.zz`. Apple's
 /// linker rejects an iOS object with no `LC_BUILD_VERSION`, and
@@ -72,6 +74,7 @@ pub struct AotObject {
     pub bytes: Vec<u8>,
     /// Trap position table: `pos_id` -> TS position.
     pub positions: Vec<Pos>,
+    foreign_symbols: Vec<String>,
 }
 
 /// Checks `files` and emits a relocatable object for `triple`.
@@ -134,6 +137,7 @@ pub fn emit_object(files: &[SourceFile], triple: Option<&str>) -> Result<AotObje
         triple: triple_name,
         bytes,
         positions: lowered.positions,
+        foreign_symbols: lowered.foreign_symbols,
     })
 }
 
@@ -437,13 +441,27 @@ fn runtime_system_libs() -> &'static [&'static str] {
     }
 }
 
-/// The committed synthetic-fixture directory (`corpus/interop`). Both AOT
-/// link paths compile its C implementation and add this as an include
-/// directory, so a foreign call resolves to the same implementation the
-/// dev-JIT tier links (compiler.md §12.4). Repo-relative, resolved from the
-/// crate.
-fn interop_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop")
+fn require_native_symbols(
+    required: &[String],
+    libraries: &[NativeLibrary],
+) -> Result<(), RunError> {
+    match missing_symbol(required, libraries) {
+        Some(name) => Err(RunError::UnresolvedForeignSymbol(name.to_string())),
+        None => Ok(()),
+    }
+}
+
+fn add_native_compile_inputs(command: &mut Command, libraries: &[NativeLibrary]) {
+    for library in libraries {
+        for directory in library.include_directories() {
+            command.arg("-I").arg(directory);
+        }
+    }
+    for library in libraries {
+        for source in library.c_sources() {
+            command.arg(source);
+        }
+    }
 }
 
 /// Writes `bytes` to `path`.
@@ -468,10 +486,27 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
 /// [`RunError::Rejected`] when the checker rejects the program,
 /// [`RunError::Trap`] when the linked program trapped (the trap is
 /// reported by the entry program and mapped back through the position
-/// table), [`RunError::Internal`] on emission, toolchain, link, or
-/// execution failures.
+/// table), [`RunError::UnresolvedForeignSymbol`] when the program calls a
+/// symbol but no native library was supplied, and [`RunError::Internal`]
+/// on emission, toolchain, link, or execution failures.
 pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
+    run_aot_with_native_libraries(files, &[])
+}
+
+/// Compiles, links, and runs `files` through the retained Cranelift-object
+/// AOT cross-check with caller-supplied native libraries.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_aot`], including
+/// [`RunError::UnresolvedForeignSymbol`] when a called foreign symbol is
+/// absent from `libraries`.
+pub fn run_aot_with_native_libraries(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
     let object = emit_object(files, None)?;
+    require_native_symbols(&object.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
     let dir = TempDir::new("run")?;
 
@@ -483,14 +518,12 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     write_file(&obj_path, &object.bytes)?;
     write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
 
-    let interop = interop_dir();
     let cc = host_c_compiler();
-    let link = Command::new(&cc)
-        .arg("-I")
-        .arg(&interop)
+    let mut command = Command::new(&cc);
+    add_native_compile_inputs(&mut command, libraries);
+    let link = command
         .arg(&entry_path)
         .arg(&obj_path)
-        .arg(interop.join("interop.c"))
         .arg(&staticlib)
         .args(runtime_system_libs())
         .arg("-o")
@@ -545,10 +578,26 @@ pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 /// [`RunError::Rejected`] when the checker rejects the program,
 /// [`RunError::Trap`] when the linked program trapped (mapped back
 /// through the emitted position table, with pre-trap stdout),
-/// [`RunError::Internal`] on emission, toolchain, compile, link, or
-/// execution failures.
+/// [`RunError::UnresolvedForeignSymbol`] when the program calls a symbol
+/// but no native library was supplied, and [`RunError::Internal`] on
+/// emission, toolchain, compile, link, or execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None)
+    run_c_aot_configured(files, None, &[])
+}
+
+/// Compiles, links, and runs `files` through the emitted-C ship tier with
+/// caller-supplied native libraries.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_c_aot`], including
+/// [`RunError::UnresolvedForeignSymbol`] when a called foreign symbol is
+/// absent from `libraries`.
+pub fn run_c_aot_with_native_libraries(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    run_c_aot_configured(files, None, libraries)
 }
 
 /// Runs the emitted-C ship tier while refusing the `n`-th object-level
@@ -566,15 +615,17 @@ pub fn run_c_aot_with_alloc_failure(
     files: &[SourceFile],
     n: u64,
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, Some(n))
+    run_c_aot_configured(files, Some(n), &[])
 }
 
 fn run_c_aot_configured(
     files: &[SourceFile],
     fail_alloc_after: Option<u64>,
+    libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
     let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
+    require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
     let dir = TempDir::new("crun")?;
 
@@ -603,7 +654,6 @@ fn run_c_aot_configured(
     };
     write_file(&entry_path, entry.as_bytes())?;
 
-    let interop = interop_dir();
     let cc = host_c_compiler();
     let address_sanitizer = std::env::var_os("SUBSCRIPT_C_AOT_ASAN").is_some();
     let mut command = Command::new(&cc);
@@ -625,12 +675,11 @@ fn run_c_aot_configured(
                 .then_some(["-fsanitize=address", "-fno-omit-frame-pointer"])
                 .into_iter()
                 .flatten(),
-        )
-        .arg("-I")
-        .arg(&interop)
+        );
+    add_native_compile_inputs(&mut command, libraries);
+    command
         .arg(&src_path)
         .arg(&entry_path)
-        .arg(interop.join("interop.c"))
         .arg(&staticlib)
         .args(runtime_system_libs())
         .arg("-o")
@@ -700,8 +749,8 @@ mod tests {
     }
 
     /// Drives the emitted-C ship tier with a test-specific C host entry.
-    /// The compile/link flags and runtime/interop inputs are exactly the
-    /// ones used by `run_c_aot`; only the host driver source differs.
+    /// The compile/link flags and runtime inputs are exactly the ones used
+    /// by `run_c_aot`; only the host driver source differs.
     fn run_c_aot_with_entry(files: &[SourceFile], entry: &str) -> std::process::Output {
         let hir = check_program(files).expect("test program checks");
         let program = crate::emit_c(&hir).expect("emit ship C");
@@ -721,7 +770,6 @@ mod tests {
         )
         .expect("write allocation-metadata.h");
 
-        let interop = interop_dir();
         let cc = host_c_compiler();
         let compile = Command::new(&cc)
             .arg("-std=c11")
@@ -730,11 +778,8 @@ mod tests {
             .arg("-ffp-contract=off")
             .arg("-I")
             .arg(&dir.path)
-            .arg("-I")
-            .arg(&interop)
             .arg(&src_path)
             .arg(&entry_path)
-            .arg(interop.join("interop.c"))
             .arg(&staticlib)
             .args(runtime_system_libs())
             .arg("-o")

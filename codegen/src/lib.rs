@@ -33,19 +33,22 @@ mod cemit;
 mod jit;
 mod layout;
 mod lower;
+mod native;
 mod reload;
 mod trap_sites;
 
 pub use aot::{
-    emit_object, run_aot, run_c_aot, run_c_aot_with_alloc_failure, runtime_staticlib_path,
+    emit_object, run_aot, run_aot_with_native_libraries, run_c_aot,
+    run_c_aot_with_alloc_failure, run_c_aot_with_native_libraries, runtime_staticlib_path,
     AotObject, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
 };
 pub use cemit::{emit_c, CProgram};
 pub use jit::{
-    jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure, BenchSamples,
-    RunError, TrapReport,
+    jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
+    run_jit_with_native_libraries, BenchSamples, RunError, TrapReport,
 };
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
+pub use native::NativeLibrary;
 pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
 
 #[cfg(test)]

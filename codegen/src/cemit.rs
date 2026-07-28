@@ -125,6 +125,7 @@ pub struct CProgram {
     /// The generated table-definition section embedded byte-for-byte in
     /// [`CProgram::source`].
     pub allocation_metadata_source: String,
+    pub(crate) foreign_symbols: Vec<String>,
 }
 
 /// Emits a C translation unit for a checked HIR module (§11).
@@ -284,6 +285,9 @@ struct Emitter<'m> {
     loops: Vec<(String, Option<String>)>,
     /// Map/Set traversals active at the current emission point.
     assoc_iters: Vec<String>,
+    /// Foreign C symbols called by the emitted program, in first-use
+    /// order.
+    foreign_symbols: Vec<String>,
 }
 
 impl<'m> Emitter<'m> {
@@ -309,6 +313,7 @@ impl<'m> Emitter<'m> {
             emitted_types: HashSet::new(),
             loops: Vec::new(),
             assoc_iters: Vec::new(),
+            foreign_symbols: Vec::new(),
         })
     }
 
@@ -571,12 +576,14 @@ impl<'m> Emitter<'m> {
             render_allocation_metadata_definitions(self.module, &positions);
         out.push_str(&allocation_metadata_source);
         let allocation_metadata_header = render_allocation_metadata_header();
+        let foreign_symbols = std::mem::take(&mut self.foreign_symbols);
 
         Ok(CProgram {
             source: out,
             positions,
             allocation_metadata_header,
             allocation_metadata_source,
+            foreign_symbols,
         })
     }
 
@@ -4098,6 +4105,9 @@ impl<'m> Emitter<'m> {
         depth: usize,
         checked: bool,
     ) -> Result<String, String> {
+        if !self.foreign_symbols.iter().any(|symbol| symbol == name) {
+            self.foreign_symbols.push(name.to_string());
+        }
         let ff = self.module.foreign_fns.iter().find(|f| f.name == name)
             .ok_or_else(|| format!("unknown foreign function `{name}`"))?
             .clone();
