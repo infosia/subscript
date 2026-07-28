@@ -1554,27 +1554,65 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     std::fs::write(&src_path, program.source.as_bytes()).expect("write program.c");
     std::fs::write(&entry_path, entry.as_bytes()).expect("write entry.c");
 
-    // Same compile line as `run_c_aot` (§11): clang, -std=c11 -O2
-    // -fwrapv -ffp-contract=off and the runtime staticlib. This program
-    // has no foreign calls, so it supplies no native library.
-    let cc = std::env::var_os("CC").unwrap_or_else(|| "clang".into());
+    // Same compile line as `run_c_aot` (§11/§11c): the platform C
+    // compiler at C11 -O2, and the runtime staticlib. This program has
+    // no foreign calls, so it supplies no native library. On windows-msvc
+    // the compiler is MSVC `cl`, resolved with its toolchain environment
+    // from the registry (§11c); on every other host it is clang.
     #[cfg(all(windows, target_env = "msvc"))]
-    let system_libs: &[&str] = &["-lkernel32", "-lntdll", "-luserenv", "-lws2_32", "-ldbghelp"];
+    let compile = {
+        use std::ffi::OsString;
+        let system_libs: &[&str] = &[
+            "kernel32.lib",
+            "ntdll.lib",
+            "userenv.lib",
+            "ws2_32.lib",
+            "dbghelp.lib",
+        ];
+        let mut command = if let Some(cc) = std::env::var_os("CC") {
+            Command::new(cc)
+        } else {
+            let target = target_lexicon::HOST.to_string();
+            let tool = cc::windows_registry::find_tool(&target, "cl.exe").expect(
+                "MSVC cl.exe (install the Visual C++ build tools or set $CC; compiler.md §11c)",
+            );
+            let mut command = Command::new(tool.path());
+            command.envs(tool.env().iter().cloned());
+            command
+        };
+        let mut object_dir_arg = OsString::from("/Fo:");
+        object_dir_arg.push(dir.as_os_str());
+        object_dir_arg.push(std::path::MAIN_SEPARATOR.to_string());
+        let mut exe_arg = OsString::from("/Fe:");
+        exe_arg.push(exe_path.as_os_str());
+        command
+            .args(["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"])
+            .arg(object_dir_arg)
+            .arg(&src_path)
+            .arg(&entry_path)
+            .arg(&staticlib)
+            .args(system_libs)
+            .arg(exe_arg)
+            .arg("-link")
+            .output()
+            .expect("run the C compiler (cl; set $CC)")
+    };
     #[cfg(not(all(windows, target_env = "msvc")))]
-    let system_libs: &[&str] = &[];
-    let compile = Command::new(&cc)
-        .arg("-std=c11")
-        .arg("-O2")
-        .arg("-fwrapv")
-        .arg("-ffp-contract=off")
-        .arg(&src_path)
-        .arg(&entry_path)
-        .arg(&staticlib)
-        .args(system_libs)
-        .arg("-o")
-        .arg(&exe_path)
-        .output()
-        .expect("run the C compiler (clang; set $CC)");
+    let compile = {
+        let cc = std::env::var_os("CC").unwrap_or_else(|| "clang".into());
+        Command::new(&cc)
+            .arg("-std=c11")
+            .arg("-O2")
+            .arg("-fwrapv")
+            .arg("-ffp-contract=off")
+            .arg(&src_path)
+            .arg(&entry_path)
+            .arg(&staticlib)
+            .arg("-o")
+            .arg(&exe_path)
+            .output()
+            .expect("run the C compiler (clang; set $CC)")
+    };
     assert!(
         compile.status.success(),
         "compiling/linking the emitted C failed:\n{}",

@@ -28,6 +28,7 @@
 //! `print` still never writes to the process stdout itself: the bytes
 //! compared by the differential gate are the sink's.
 
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -385,6 +386,7 @@ pub fn runtime_staticlib_path() -> Result<PathBuf, RunError> {
 
 /// Finds `name` on `PATH`, returning its full path when an executable
 /// file exists. On Windows the `.exe` extension is tried as well.
+#[cfg(not(all(windows, target_env = "msvc")))]
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
@@ -399,42 +401,162 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Resolves the C compiler used for linking. The compiler is clang
-/// (compiler.md §11): `$CC` verbatim when set, else `clang` on `PATH`,
-/// else — on Windows only — the standard LLVM install
-/// (`%ProgramFiles%\LLVM\bin\clang.exe`). Falls back to the bare name
-/// `clang`, so a missing toolchain surfaces as a clear run error.
-fn host_c_compiler() -> std::ffi::OsString {
+/// The resolved host C compiler for a ship-tier compile/link: the
+/// program to run, the environment it needs, and whether it is the MSVC
+/// `cl` driver — which takes a different flag, output, and library
+/// syntax than a GNU-style driver.
+struct HostCCompiler {
+    program: OsString,
+    env: Vec<(OsString, OsString)>,
+    msvc: bool,
+}
+
+impl HostCCompiler {
+    /// A [`Command`] for the resolved compiler with its toolchain
+    /// environment applied. MSVC `cl` cannot find its own headers and
+    /// import libraries without the `INCLUDE`/`LIB`/`PATH` the registry
+    /// lookup supplies, so that environment travels with the program.
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.program);
+        command.envs(self.env.iter().cloned());
+        command
+    }
+}
+
+/// Resolves the platform C compiler used for ship-tier compilation and
+/// linking. `$CC` is honored verbatim on every target. The default is
+/// MSVC `cl` with its discovered toolchain environment on windows-msvc
+/// (compiler.md §11c), and clang on every other host (§11/§11b).
+///
+/// # Errors
+///
+/// [`RunError::Internal`] on windows-msvc when neither `$CC` is set nor
+/// the MSVC toolchain can be located; a missing toolchain is a failure,
+/// never a skip — the gate machine is the development machine (§8.3).
+fn host_c_compiler() -> Result<HostCCompiler, RunError> {
     if let Some(cc) = std::env::var_os("CC") {
-        return cc;
+        return Ok(HostCCompiler {
+            program: cc,
+            env: Vec::new(),
+            msvc: cfg!(all(windows, target_env = "msvc")),
+        });
     }
-    if let Some(p) = find_on_path("clang") {
-        return p.into_os_string();
+
+    #[cfg(all(windows, target_env = "msvc"))]
+    {
+        let target = target_lexicon::HOST.to_string();
+        let tool = cc::windows_registry::find_tool(&target, "cl.exe").ok_or_else(|| {
+            RunError::Internal(internal(format!(
+                "MSVC `cl.exe` was not found for target {target}; \
+                 install the Visual C++ build tools or set $CC \
+                 (compiler.md §11c)"
+            )))
+        })?;
+        Ok(HostCCompiler {
+            program: tool.path().as_os_str().to_owned(),
+            env: tool.env().to_vec(),
+            msvc: true,
+        })
     }
-    #[cfg(windows)]
-    if let Some(pf) = std::env::var_os("ProgramFiles") {
-        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
-        if llvm.is_file() {
-            return llvm.into_os_string();
-        }
+
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    {
+        Ok(HostCCompiler {
+            program: find_on_path("clang")
+                .map(PathBuf::into_os_string)
+                .unwrap_or_else(|| "clang".into()),
+            env: Vec::new(),
+            msvc: false,
+        })
     }
-    "clang".into()
+}
+
+/// Concatenates a flag `prefix` with a path, as MSVC's `/Fo:` / `/Fe:`
+/// output flags require (no separating space between flag and value).
+fn prefixed_path_arg(prefix: &str, path: &Path) -> OsString {
+    let mut arg = OsString::from(prefix);
+    arg.push(path.as_os_str());
+    arg
+}
+
+/// The MSVC `/Fo:` object-output flag pointing at a directory: a
+/// trailing path separator tells `cl` to place each object there under
+/// the source basename, which is required when more than one source is
+/// compiled in a single invocation.
+fn msvc_object_directory_arg(directory: &Path) -> OsString {
+    let mut arg = prefixed_path_arg("/Fo:", directory);
+    arg.push(std::path::MAIN_SEPARATOR.to_string());
+    arg
+}
+
+/// Adds the pinned C11 optimization flags for the resolved driver. The
+/// emitted ship C targets C11 (compiler.md §11); pinning the dialect
+/// keeps the ship tier independent of the platform compiler's default
+/// `-std`. On MSVC (§11c) `-fwrapv` is dropped — `cl` wraps signed
+/// overflow two's-complement — and `/utf-8` reads the UTF-8 sources
+/// without warning C4819. `/fp:strict` replaces `-ffp-contract=off`: it
+/// forbids contraction and reassociation as `-ffp-contract=off` does, and
+/// additionally stops `cl` from constant-folding an emitted IEEE
+/// `1.0 / 0.0` (infinity) at compile time — which `/fp:precise` rejects
+/// with error C2124 — deferring it to a runtime infinity instead. It is
+/// at least as conservative as `/fp:precise`, so the byte-exact
+/// differential is preserved.
+fn add_c11_optimized_flags(command: &mut Command, msvc: bool) {
+    if msvc {
+        command.args(["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]);
+    } else {
+        command.args(["-std=c11", "-O2", "-fwrapv", "-ffp-contract=off"]);
+    }
+}
+
+/// Adds the AddressSanitizer flags for the resolved driver.
+fn add_address_sanitizer_flags(command: &mut Command, msvc: bool) {
+    if msvc {
+        command.args(["/fsanitize=address", "/Oy-"]);
+    } else {
+        command.args(["-fsanitize=address", "-fno-omit-frame-pointer"]);
+    }
+}
+
+/// Adds the executable-output arguments for the resolved driver: MSVC's
+/// `/Fe:` naming plus the `-link` linker-arguments marker, or the
+/// GNU-style `-o` form.
+fn add_executable_output(command: &mut Command, executable: &Path, msvc: bool) {
+    if msvc {
+        command
+            .arg(prefixed_path_arg("/Fe:", executable))
+            .arg("-link");
+    } else {
+        command.arg("-o").arg(executable);
+    }
+}
+
+/// The object-file path for `stem` in `directory`, with the platform's
+/// object extension (`.obj` on windows-msvc, `.o` elsewhere).
+fn object_path(directory: &Path, stem: &str) -> PathBuf {
+    let extension = if cfg!(all(windows, target_env = "msvc")) {
+        "obj"
+    } else {
+        "o"
+    };
+    directory.join(format!("{stem}.{extension}"))
 }
 
 /// System import libraries the linked program needs on windows-msvc that
-/// clang's own defaults do not supply. The runtime static library embeds
-/// Rust `std`, which references these; `rustc` passes them automatically
-/// when it links, so a manual clang link of the staticlib must add them
-/// (`rustc --print native-static-libs` for this host: kernel32, ntdll,
-/// userenv, ws2_32, dbghelp). Empty on every other target.
+/// the driver's own defaults do not supply. The runtime static library
+/// embeds Rust `std`, which references these; `rustc` passes them
+/// automatically when it links, so a manual platform-C link of the
+/// staticlib must name them (`rustc --print native-static-libs` for this
+/// host: kernel32, ntdll, userenv, ws2_32, dbghelp). Empty on every
+/// other target.
 fn runtime_system_libs() -> &'static [&'static str] {
     if cfg!(all(windows, target_env = "msvc")) {
         &[
-            "-lkernel32",
-            "-lntdll",
-            "-luserenv",
-            "-lws2_32",
-            "-ldbghelp",
+            "kernel32.lib",
+            "ntdll.lib",
+            "userenv.lib",
+            "ws2_32.lib",
+            "dbghelp.lib",
         ]
     } else {
         &[]
@@ -451,10 +573,14 @@ fn require_native_symbols(
     }
 }
 
-fn add_native_compile_inputs(command: &mut Command, libraries: &[NativeLibrary]) {
+fn add_native_compile_inputs(command: &mut Command, libraries: &[NativeLibrary], msvc: bool) {
     for library in libraries {
         for directory in library.include_directories() {
-            command.arg("-I").arg(directory);
+            if msvc {
+                command.arg("/I").arg(directory);
+            } else {
+                command.arg("-I").arg(directory);
+            }
         }
     }
     for library in libraries {
@@ -510,7 +636,7 @@ pub fn run_aot_with_native_libraries(
     let staticlib = runtime_staticlib()?;
     let dir = TempDir::new("run")?;
 
-    let obj_path = dir.path.join("program.o");
+    let obj_path = object_path(&dir.path, "program");
     let entry_path = dir.path.join("entry.c");
     let exe_path = dir
         .path
@@ -518,23 +644,28 @@ pub fn run_aot_with_native_libraries(
     write_file(&obj_path, &object.bytes)?;
     write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
 
-    let cc = host_c_compiler();
-    let mut command = Command::new(&cc);
-    add_native_compile_inputs(&mut command, libraries);
-    let link = command
+    let cc = host_c_compiler()?;
+    let mut command = cc.command();
+    if cc.msvc {
+        // The C entry is the only source compiled here; direct its
+        // object into the temp dir so `cl` does not litter the cwd.
+        add_c11_optimized_flags(&mut command, true);
+        command.arg(msvc_object_directory_arg(&dir.path));
+    }
+    add_native_compile_inputs(&mut command, libraries, cc.msvc);
+    command
         .arg(&entry_path)
         .arg(&obj_path)
         .arg(&staticlib)
-        .args(runtime_system_libs())
-        .arg("-o")
-        .arg(&exe_path)
+        .args(runtime_system_libs());
+    add_executable_output(&mut command, &exe_path, cc.msvc);
+    let link = command
         .output()
         .map_err(|e| {
             RunError::Internal(internal(format!(
-                "the C compiler `{}` (clang) could not be run: {e}. \
-                 The ship-C AOT path requires clang (§11); \
-                 install LLVM or set $CC.",
-                cc.to_string_lossy()
+                "the platform C compiler `{}` could not be run: {e}; \
+                 install the host C toolchain or set $CC (compiler.md §11c)",
+                cc.program.to_string_lossy()
             )))
         })?;
     if !link.status.success() {
@@ -654,44 +785,40 @@ fn run_c_aot_configured(
     };
     write_file(&entry_path, entry.as_bytes())?;
 
-    let cc = host_c_compiler();
+    let cc = host_c_compiler()?;
     let address_sanitizer = std::env::var_os("SUBSCRIPT_C_AOT_ASAN").is_some();
-    let mut command = Command::new(&cc);
-    command
-        // The emitted ship C targets C11 (compiler block §11); the
-        // language's C-ABI layout, compound literals, `_Alignof`, and
-        // `<stdbool.h>`/`<stdint.h>` types are all C11. Pinning the
-        // dialect keeps the ship tier independent of the platform
-        // compiler's default `-std`.
-        .arg("-std=c11")
-        .arg("-O2")
-        // Signed integer arithmetic in the emitted C must wrap
-        // two's-complement (the language's semantics); `-fwrapv` makes
-        // signed overflow defined rather than C undefined behaviour.
-        .arg("-fwrapv")
-        .arg("-ffp-contract=off")
-        .args(
-            address_sanitizer
-                .then_some(["-fsanitize=address", "-fno-omit-frame-pointer"])
-                .into_iter()
-                .flatten(),
-        );
-    add_native_compile_inputs(&mut command, libraries);
+    let mut command = cc.command();
+    // The emitted ship C targets C11 (compiler block §11); the language's
+    // C-ABI layout, compound literals, `_Alignof`, and
+    // `<stdbool.h>`/`<stdint.h>` types are all C11. Pinning the dialect
+    // keeps the ship tier independent of the platform compiler's default
+    // `-std`. Signed overflow must wrap two's-complement (the language's
+    // semantics); `-fwrapv` establishes that off MSVC, `cl` wraps by
+    // default (§11c).
+    add_c11_optimized_flags(&mut command, cc.msvc);
+    if address_sanitizer {
+        add_address_sanitizer_flags(&mut command, cc.msvc);
+    }
+    if cc.msvc {
+        // Two sources (the program and the entry) plus any native
+        // sources are compiled in one invocation; direct their objects
+        // into the temp dir under their basenames.
+        command.arg(msvc_object_directory_arg(&dir.path));
+    }
+    add_native_compile_inputs(&mut command, libraries, cc.msvc);
     command
         .arg(&src_path)
         .arg(&entry_path)
         .arg(&staticlib)
-        .args(runtime_system_libs())
-        .arg("-o")
-        .arg(&exe_path);
+        .args(runtime_system_libs());
+    add_executable_output(&mut command, &exe_path, cc.msvc);
     let compile = command
         .output()
         .map_err(|e| {
             RunError::Internal(internal(format!(
-                "the C compiler `{}` (clang) could not be run: {e}. \
-                 The ship-C AOT path requires clang (§11); \
-                 install LLVM or set $CC.",
-                cc.to_string_lossy()
+                "the platform C compiler `{}` could not be run: {e}; \
+                 install the host C toolchain or set $CC (compiler.md §11c)",
+                cc.program.to_string_lossy()
             )))
         })?;
     if !compile.status.success() {
@@ -770,22 +897,24 @@ mod tests {
         )
         .expect("write allocation-metadata.h");
 
-        let cc = host_c_compiler();
-        let compile = Command::new(&cc)
-            .arg("-std=c11")
-            .arg("-O2")
-            .arg("-fwrapv")
-            .arg("-ffp-contract=off")
-            .arg("-I")
-            .arg(&dir.path)
+        let cc = host_c_compiler().expect("resolve C compiler");
+        let mut command = cc.command();
+        add_c11_optimized_flags(&mut command, cc.msvc);
+        if cc.msvc {
+            command
+                .arg(msvc_object_directory_arg(&dir.path))
+                .arg("/I")
+                .arg(&dir.path);
+        } else {
+            command.arg("-I").arg(&dir.path);
+        }
+        command
             .arg(&src_path)
             .arg(&entry_path)
             .arg(&staticlib)
-            .args(runtime_system_libs())
-            .arg("-o")
-            .arg(&exe_path)
-            .output()
-            .expect("run C compiler");
+            .args(runtime_system_libs());
+        add_executable_output(&mut command, &exe_path, cc.msvc);
+        let compile = command.output().expect("run C compiler");
         assert!(
             compile.status.success(),
             "compiling/linking test host failed:\n{}",
@@ -796,8 +925,35 @@ mod tests {
 
     /// Prefixes a test host body with the generated runtime header, so
     /// host tests exercise the committed ABI artifact.
+    ///
+    /// A test host defines its own `int main(void)`; on Windows the
+    /// MSVCRT opens stdout in text mode, which would translate the sink's
+    /// `\n` to `\r\n` and break the byte-exact compare. This injects the
+    /// same `_setmode(_fileno(stdout), _O_BINARY)` (and its `<io.h>` /
+    /// `<fcntl.h>` includes) that the production `AOT_ENTRY_C` uses, at
+    /// the top of `main`, `_WIN32`-guarded so it is a no-op elsewhere.
     fn host_entry(body: &str) -> String {
-        format!("{HOST_HEADER_C}\n{body}")
+        const MAIN: &str = "int main(void) {";
+        assert!(
+            body.contains(MAIN),
+            "test host body must define `int main(void)`"
+        );
+        let body = body.replacen(
+            MAIN,
+            "int main(void) {\n\
+             #ifdef _WIN32\n\
+             \x20   (void)_setmode(_fileno(stdout), _O_BINARY);\n\
+             #endif",
+            1,
+        );
+        format!(
+            "{HOST_HEADER_C}\n\
+             #ifdef _WIN32\n\
+             #include <fcntl.h>\n\
+             #include <io.h>\n\
+             #endif\n\
+             {body}"
+        )
     }
 
     /// Asserts the shape every emitted object must have: the right

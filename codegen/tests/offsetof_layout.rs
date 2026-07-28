@@ -1,3 +1,9 @@
+// The synthetic header this proof compiles (`corpus/interop/interop.h`)
+// spells `_Float16`, which MSVC `cl` cannot compile in any language mode
+// (compiler.md §11c constraint 2). The whole proof is therefore excluded
+// on windows-msvc — it fails loud there, never silently substitutes — and
+// the clang build on Unix continues to discharge the C-ABI-identity claim.
+#![cfg(not(all(windows, target_env = "msvc")))]
 //! The `offsetof` layout proof (`specs/blocks/compiler.md` §12.3, scaled to
 //! production complexity at §13.4): design invariant 1 (C-ABI-identical
 //! struct layout) is machine-verified here, not asserted.

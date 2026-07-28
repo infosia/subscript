@@ -17,6 +17,11 @@ cranelift-jit = "=0.125.4"
 cranelift-native = "=0.125.4"
 cranelift-object = "=0.125.4"
 target-lexicon = "=0.13.5"
+# Used only on windows-msvc, to locate the MSVC `cl` toolchain and its
+# INCLUDE/LIB/PATH environment via the registry (compiler.md §11c). Unused
+# on every other host; a regular dependency because `src/aot.rs` (library
+# code) calls `cc::windows_registry`.
+cc = "1"
 
 [dev-dependencies]
 # Object-file inspection for the AOT emission tests, as in the P0.5
