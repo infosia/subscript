@@ -278,6 +278,71 @@ corpse.
   in C and superlinear under retention, is the informal corroboration, not
   a gate.
 
+### 8.1a-1 Retention is a mode, not the dev tier's policy — Rev 2026-07-29
+
+**What changed.** §8.1a above made retain-and-poison the dev tier's
+standing policy. It is now **off by default**; the dev tier releases like
+the ship tier, and retention becomes a mode a host switches on when it is
+hunting a dangling handle.
+
+**Evidence.** `specs/tracking/dev-retention.md` measured what the policy
+costs: retained bytes per allocation are exactly **payload + 16**, across
+four object shapes and both `Context.free` and `Context.collect`, growing
+strictly linearly in cumulative allocations with the live set held at
+zero. A particle-shaped object at 1 000 allocations per frame and 60 fps
+exhausts 8 GB in **0.77 hours**.
+
+**Decision (owner, 2026-07-29).** Memory that grows linearly and without
+bound is not acceptable regardless of duration. Bounding the retention was
+considered and rejected in favour of removing it from the default path
+entirely: a bound narrows *how far back* a use-after-free is detected
+while still costing memory, and it leaves a stale read landing on a
+recycled address — undetected and silently wrong — rather than absent.
+A mode is either complete or off, and says which.
+
+**The guarantee is now conditional, and that is a real loss.** With the
+mode off, double free and use-after-free in the dev tier are undefined,
+as they already are in AOT (Q6; invariant 6). The dev tier no longer
+diagnoses them by default. This is stated here rather than footnoted
+because §8.1a called the trap a dev-tier guarantee and it is one no
+longer.
+
+**The mode is per Context and host-set, not compile-time.** A build flag
+would force two builds of the workspace to run one `cargo test`: the trap
+corpus needs the mode on in the same run where the accept corpus, the
+benchmarks and the examples need it off. So it is a Context-level setting
+established before the first allocation, exposed on the host C API beside
+the other `sub_rt_ctx_*` settings, defaulting to off. When on, behaviour
+is exactly today's retain-and-poison, unbounded — a diagnostic session
+accepts that cost deliberately.
+
+**Consequences.**
+
+- **No golden moves.** §8.1a's own soundness argument applies unchanged:
+  a correct program cannot observe released-versus-retained, so
+  dev-JIT ≡ ship-C-AOT ≡ golden is unaffected.
+- **`corpus/trap/t22` and `t23`** carry `tier-policy: dev-JIT traps;
+  ship-C-AOT behavior is deliberately unspecified`. They now additionally
+  require the mode, and the gate enables it for them. Their trap tuples
+  and `.expected` bytes must not move.
+- **Dev-tier accounting** loses its retained term: `reserved_bytes`
+  becomes live plus per-allocation overhead, with the mode off.
+- §8.1a's "Mechanism" paragraph — the tier picks the policy at Context
+  construction — is superseded: the policy is now a setting, and the tier
+  only chooses its default.
+
+**Exit criteria (pre-registered).**
+
+1. `benchmarks/src/bin/dev-retention-probe` reports **no growth per
+   allocation** with the mode off, on every shape it already sweeps.
+2. The same probe with the mode **on** reproduces `payload + 16`, so the
+   diagnostic path is intact rather than removed.
+3. `t22` and `t23` trap with the same kind, message and position.
+4. No accept or trap golden moves; the standing differential gate green;
+   `tsc` clean.
+5. A runtime unit test asserts both directions of the setting, as §8.1a's
+   criterion (2) does for the tier.
+
 ### 8.1b P8 — ship-tier allocator: Context-owned arena, size-class free lists
 
 §8.1a removed retention; the remaining ship-tier allocation cost is the
