@@ -223,6 +223,32 @@ fn narrow_integer_operations_wrap_at_the_declared_width_on_both_tiers() {
     );
 }
 
+#[test]
+fn float_to_narrow_int_casts_saturate_to_the_narrow_range_on_both_tiers() {
+    // The corpus only casts in-range floats to narrow ints, so overflow
+    // saturation could regress silently. A float that overflows a narrow
+    // integer must saturate to that width's own range (not wrap, and not
+    // to the 32-bit range), and NaN must map to 0 — identically on the
+    // dev-JIT and ship-C-AOT tiers, for signed and unsigned targets from
+    // both f32 and f64 sources.
+    assert_tiers_print(
+        "export function main(): void {\n\
+           const sHi: i8 = (300.0 as f32) as i8;\n\
+           const sLo: i8 = (-200.0 as f32) as i8;\n\
+           const uHi: u8 = (300.0 as f64) as u8;\n\
+           const uLo: u8 = (-200.0 as f64) as u8;\n\
+           const shHi: i16 = (70000.0 as f32) as i16;\n\
+           const shLo: i16 = (-70000.0 as f64) as i16;\n\
+           const uwHi: u16 = (70000.0 as f32) as u16;\n\
+           const uwLo: u16 = (-5.0 as f64) as u16;\n\
+           const nanS: i16 = (Math.sqrt(-1) as f32) as i16;\n\
+           const nanU: u8 = (Math.sqrt(-1) as f64) as u8;\n\
+           print(`${sHi},${sLo},${uHi},${uLo},${shHi},${shLo},${uwHi},${uwLo},${nanS},${nanU}`);\n\
+         }\n",
+        "127,-128,255,0,32767,-32768,65535,0,0,0\n",
+    );
+}
+
 // ----- P4.3 phase-review regressions (dev-JIT ≡ ship-C-AOT) -----
 
 #[test]

@@ -1553,6 +1553,24 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
         if from.is_integer() && matches!(to, Type::F32 | Type::F64) {
             let target = if to == Type::F32 { types::F32 } else { types::F64 };
+            // The x64 backend only converts from 32/64-bit integers; a
+            // narrow source (I8/I16) is `unreachable!` there. Widen it to
+            // I32 first, matching its signedness, before the float convert.
+            // This is a no-op on every result: the extended value is the
+            // same number, so goldens stay byte-exact on all architectures.
+            let src_ty = match self.ml.layouts.repr(&from)? {
+                Repr::Scalar(t) => t,
+                other => return Err(internal(format!("integer source repr {other:?}"))),
+            };
+            let v = if src_ty.bits() < 32 {
+                if is_unsigned(&from) {
+                    self.b.ins().uextend(types::I32, v)
+                } else {
+                    self.b.ins().sextend(types::I32, v)
+                }
+            } else {
+                v
+            };
             let out = if is_unsigned(&from) {
                 self.b.ins().fcvt_from_uint(target, v)
             } else {
@@ -1565,10 +1583,32 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Repr::Scalar(t) => t,
                 other => return Err(internal(format!("integer target repr {other:?}"))),
             };
-            let out = if is_unsigned(&to) {
-                self.b.ins().fcvt_to_uint_sat(target, v)
+            // The x64 backend only produces 32/64-bit integer results from
+            // the saturating float->int conversions; a narrow target
+            // (I8/I16) is `unreachable!` there. For a narrow target,
+            // saturate into I32, clamp to the narrow width's range, then
+            // reduce. The clamp reproduces the narrow saturation of
+            // `fcvt_to_{s,u}int_sat(<narrow>)` bit-for-bit for every input
+            // (in-range, overflow both ways, NaN->0), so the CLIF stays
+            // arch-independent and the tiers and goldens keep agreeing.
+            let out = if target.bits() >= 32 {
+                if is_unsigned(&to) {
+                    self.b.ins().fcvt_to_uint_sat(target, v)
+                } else {
+                    self.b.ins().fcvt_to_sint_sat(target, v)
+                }
+            } else if is_unsigned(&to) {
+                let wide = self.b.ins().fcvt_to_uint_sat(types::I32, v);
+                let hi = self.iconst(types::I32, (1i64 << target.bits()) - 1);
+                let clamped = self.b.ins().umin(wide, hi);
+                self.b.ins().ireduce(target, clamped)
             } else {
-                self.b.ins().fcvt_to_sint_sat(target, v)
+                let wide = self.b.ins().fcvt_to_sint_sat(types::I32, v);
+                let lo = self.iconst(types::I32, -(1i64 << (target.bits() - 1)));
+                let hi = self.iconst(types::I32, (1i64 << (target.bits() - 1)) - 1);
+                let low_clamped = self.b.ins().smax(wide, lo);
+                let clamped = self.b.ins().smin(low_clamped, hi);
+                self.b.ins().ireduce(target, clamped)
             };
             return Ok(RV::S(out));
         }
