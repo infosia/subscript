@@ -16,6 +16,8 @@ Read the numbered examples in order:
    [`engine/`](engine/) C facade.
 4. [`host/`](host/) is the capstone: a C `main` owns the loop and calls the
    script's `init`, `update`, and `shutdown` exports.
+5. [`context-per-scene/`](context-per-scene/) runs two scenes with fresh
+   Contexts, showing script state reset while host frame state continues.
 
 [`gate/two-header-binding.ts`](gate/two-header-binding.ts) is a compiler
 phase-proof program, not a teaching example. It binds the `Eng…` facade and
@@ -52,9 +54,9 @@ cargo test --offline -p subscript-examples
 This derives the numbered set from the directory, runs every example and the
 phase-proof program under both dev-JIT and ship-C-AOT, compares both outputs
 byte-for-byte with their committed goldens, regenerates the engine mirror,
-and builds and runs the capstone. It needs the repository's Rust dependencies
-available offline and the platform C compiler already required by the ship
-tier.
+and builds and runs both host programs. It needs the repository's Rust
+dependencies available offline and the platform C compiler already required
+by the ship tier.
 
 To type-check the TypeScript surface with the repository's installed
 dependencies:
@@ -63,15 +65,17 @@ dependencies:
 npx tsc -p tsconfig.json
 ```
 
-To build and run only the capstone:
+To build and run either host program directly:
 
 ```sh
 sh examples/host/build.sh
+sh examples/context-per-scene/build.sh
 ```
 
-The capstone needs a POSIX shell, the same Rust toolchain and cached
-dependencies, and the same platform C compiler; it requires no additional
-SDK.
+The host programs need a POSIX shell, the same Rust toolchain and cached
+dependencies, and the same platform C compiler; they require no additional
+SDK. Releasing a scene Context re-runs `ss_init` for the next one, so any
+state that must span scenes stays host-side.
 
 ## How the C binding fits
 
@@ -82,7 +86,8 @@ implementation. `subscript-bindgen` generates
 that mirror, while both execution tiers call the declared C functions
 directly. The complete host path is
 [`host/game.ts`](host/game.ts), [`host/main.c`](host/main.c), and
-[`host/build.sh`](host/build.sh).
+[`host/build.sh`](host/build.sh); the Context-lifetime counterpart is
+[`context-per-scene/`](context-per-scene/).
 
 These examples deliberately contain no device build, benchmark, or trapping
 program. Device linkage and performance measurement have their own tooling;

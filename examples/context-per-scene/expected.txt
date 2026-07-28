@@ -1,0 +1,12 @@
+host:scene=1 scene-frame=1 engine-index=1
+script:scene-frame=1,step=0.25
+host:scene=1 scene-frame=2 engine-index=2
+script:scene-frame=2,step=0.25
+script:scene-end frame=2
+host:scene=1 end live-bytes=320
+host:scene=2 scene-frame=1 engine-index=3
+script:scene-frame=1,step=0.25
+host:scene=2 scene-frame=2 engine-index=4
+script:scene-frame=2,step=0.25
+script:scene-end frame=2
+host:scene=2 end live-bytes=320
