@@ -1,17 +1,16 @@
 //! Ship-tier C emitter for the device-triple link
 //! (`specs/blocks/compiler.md` §11).
 //!
-//! Emits the C translation unit for one accept-corpus entry — the ship
-//! tier's HIR→C lowering — plus the host entry program, into a
-//! directory. `device-link.sh` cross-compiles the pair with `clang` for
-//! each device triple and links them with the runtime static library
-//! cross-built for that triple; nothing here executes a produced binary
-//! (compile+link is the whole criterion, §3).
+//! Emits a ship-tier C translation unit and, unless suppressed, the host
+//! entry program into a directory. Input is either one accept-corpus entry
+//! or explicit script and ambient-mirror paths. `device-link.sh` uses the
+//! corpus form and cross-compiles the pair for each device triple.
 //!
 //! Usage:
-//! `cargo run --offline -p subscript-codegen --bin emit-c -- <out-dir> [entry-id]`
-//! The entry id defaults to `a01-hello`. Exit status: 0 on success,
-//! 1 on a check/emit failure, 2 on usage or I/O errors.
+//! `emit-c <out-dir> [entry-id] [--no-entry]`
+//! `emit-c <out-dir> --source <path>... [--mirror <path>...] [--no-entry]`
+//! The corpus entry id defaults to `a01-hello`. Exit status: 0 on
+//! success, 1 on a check/emit failure, 2 on usage or I/O errors.
 
 use std::fs;
 use std::path::PathBuf;
@@ -23,30 +22,89 @@ use subscript_compiler::{check_program, SourceFile};
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(out_dir) = args.next() else {
-        eprintln!("usage: emit-c <out-dir> [entry-id]");
+        usage();
         return ExitCode::from(2);
     };
-    let id = args.next().unwrap_or_else(|| "a01-hello".to_string());
+    let mut entry_id = None;
+    let mut source_paths = Vec::new();
+    let mut mirror_paths = Vec::new();
+    let mut write_entry = true;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--source" => {
+                let Some(path) = args.next() else {
+                    eprintln!("emit-c: --source requires a path");
+                    usage();
+                    return ExitCode::from(2);
+                };
+                source_paths.push(PathBuf::from(path));
+            }
+            "--mirror" => {
+                let Some(path) = args.next() else {
+                    eprintln!("emit-c: --mirror requires a path");
+                    usage();
+                    return ExitCode::from(2);
+                };
+                mirror_paths.push(PathBuf::from(path));
+            }
+            "--no-entry" => write_entry = false,
+            flag if flag.starts_with('-') => {
+                eprintln!("emit-c: unknown option `{flag}`");
+                usage();
+                return ExitCode::from(2);
+            }
+            id if entry_id.is_none() => entry_id = Some(id.to_string()),
+            other => {
+                eprintln!("emit-c: unexpected argument `{other}`");
+                usage();
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if !source_paths.is_empty() && entry_id.is_some() {
+        eprintln!("emit-c: an entry id cannot be combined with --source");
+        usage();
+        return ExitCode::from(2);
+    }
+    if source_paths.is_empty() && !mirror_paths.is_empty() {
+        eprintln!("emit-c: --mirror requires at least one --source");
+        usage();
+        return ExitCode::from(2);
+    }
+
     let out_dir = PathBuf::from(out_dir);
     if let Err(e) = fs::create_dir_all(&out_dir) {
         eprintln!("emit-c: create {}: {e}", out_dir.display());
         return ExitCode::from(2);
     }
 
-    let accept = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
-    let sources = match load_entry(&accept, &id) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("emit-c: {e}");
-            return ExitCode::from(2);
-        }
+    let (label, sources) = if source_paths.is_empty() {
+        let id = entry_id.unwrap_or_else(|| "a01-hello".to_string());
+        let accept = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
+        let sources = match load_entry(&accept, &id) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("emit-c: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        (id, sources)
+    } else {
+        let sources = match load_explicit(&mirror_paths, &source_paths) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("emit-c: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        ("program".to_string(), sources)
     };
 
     let hir = match check_program(&sources) {
         Ok(m) => m,
         Err(diags) => {
             eprintln!(
-                "emit-c: {id} did not check: {}",
+                "emit-c: {label} did not check: {}",
                 diags.first().map(|d| d.message.as_str()).unwrap_or("no diagnostic")
             );
             return ExitCode::FAILURE;
@@ -55,32 +113,59 @@ fn main() -> ExitCode {
     let program = match emit_c(&hir) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("emit-c: {id}: {e}");
+            eprintln!("emit-c: {label}: {e}");
             return ExitCode::FAILURE;
         }
     };
 
-    let entry_c = out_dir.join("entry.c");
-    if let Err(e) = fs::write(&entry_c, AOT_ENTRY_C) {
-        eprintln!("emit-c: write {}: {e}", entry_c.display());
-        return ExitCode::from(2);
+    if write_entry {
+        let entry_c = out_dir.join("entry.c");
+        if let Err(e) = fs::write(&entry_c, AOT_ENTRY_C) {
+            eprintln!("emit-c: write {}: {e}", entry_c.display());
+            return ExitCode::from(2);
+        }
+        println!("wrote {}", entry_c.display());
     }
-    println!("wrote {}", entry_c.display());
 
-    let src = out_dir.join(format!("{id}.c"));
+    let src = out_dir.join(format!("{label}.c"));
     if let Err(e) = fs::write(&src, program.source.as_bytes()) {
         eprintln!("emit-c: write {}: {e}", src.display());
         return ExitCode::from(2);
     }
     println!("wrote {} ({} bytes)", src.display(), program.source.len());
 
-    let metadata = out_dir.join(format!("{id}.alloc.h"));
+    let metadata = out_dir.join(format!("{label}.alloc.h"));
     if let Err(e) = fs::write(&metadata, program.allocation_metadata_header.as_bytes()) {
         eprintln!("emit-c: write {}: {e}", metadata.display());
         return ExitCode::from(2);
     }
     println!("wrote {}", metadata.display());
     ExitCode::SUCCESS
+}
+
+fn usage() {
+    eprintln!(
+        "usage: emit-c <out-dir> [entry-id] [--no-entry]\n\
+         \x20      emit-c <out-dir> --source <path>... [--mirror <path>...] [--no-entry]"
+    );
+}
+
+fn load_explicit(
+    mirrors: &[PathBuf],
+    sources: &[PathBuf],
+) -> Result<Vec<SourceFile>, String> {
+    let mut out = Vec::with_capacity(mirrors.len() + sources.len());
+    for path in mirrors {
+        let text = fs::read_to_string(path)
+            .map_err(|e| format!("read mirror {}: {e}", path.display()))?;
+        out.push(SourceFile::ambient(path.to_string_lossy(), text));
+    }
+    for path in sources {
+        let text = fs::read_to_string(path)
+            .map_err(|e| format!("read source {}: {e}", path.display()))?;
+        out.push(SourceFile::new(path.to_string_lossy(), text));
+    }
+    Ok(out)
 }
 
 /// Loads one accept-corpus entry (a multi-file entry is a directory).
