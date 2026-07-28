@@ -2566,6 +2566,43 @@ dependency on `examples/`.
 emission writes down, not what any program computes. An `.expected` that
 moves is a finding.
 
+#### 23.7a Corpus first — an extension payload read back through the chain
+
+The intrusive extension chain is one of the five §4 patterns, and the
+project exercises only half of it: `subDeviceCreate` **counts** nodes
+(`interop.c`), no accept entry mentions `SubChainExtA`–`SubChainExtD`
+(`grep ChainExt corpus/accept/` is empty), and no fixture function reads
+an extension's payload. Reading the payload is the point of the pattern —
+it is why a chain node carries a tag — and nothing pins it.
+
+*(Found 2026-07-28 by the fresh-context review of the examples facade,
+whose option walker reads payloads. Recorded here rather than in the
+examples work: a semantic no corpus entry covers is a corpus gap, and
+`examples.md` §1 forbids an example from being the first place it appears.)*
+
+Two consequences, both before the facade's walker is accepted:
+
+1. **The fixture grows one payload-reading walk** — a function that walks
+   a chain, switches on `sType`, and folds each extension's payload
+   scalars into an observable. Structs only, as §12.1 requires; the
+   `offsetof` suite already mirrors `SubChainExtA`/`SubChainExtB`.
+2. **An accept entry pins it**: a program that builds an extension in
+   script, passes that extension's **embedded header field** into the
+   `Struct | null` chain slot, and observes the payload the callee read
+   back. This is the semantic the facade depends on — that the address
+   crossing the boundary is the live struct's own storage, not a copy of
+   the header field — and it is the one a node count cannot discriminate,
+   because a copy of a header has the same `next` and yields the same
+   depth.
+
+**The precondition the pattern carries is documented, not engineered
+away.** A callee that switches on a tag and casts to the matching
+extension assumes the node is that extension's embedded header; a
+production chain API assumes exactly this. A facade may therefore keep
+payload-bearing options, provided the header states the precondition at
+the declaration — and provided the entry above exists, so the spelling the
+facade needs is the spelling the corpus teaches.
+
 ### 23.8 Exit criteria (kill or pass, pre-registered)
 
 1. **A header other than the fixture binds and runs**, byte-identical on

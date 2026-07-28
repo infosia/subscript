@@ -31,6 +31,20 @@ inside the requirement* — scaling before truncation — rather than
 questioning the requirement. The owner caught it, by asking what the
 checksum was for.
 
+## A second instance, from the same handoff
+
+The Stage 0 handoff also required "invalid or NULL handle -> no-op". The
+NULL half is deliverable; the *invalid* half is not — detecting a released
+handle means reading its storage, which is the undefined behaviour it
+claims to guard against. The requirement was written by analogy with
+defensive C, not derived from what C can promise, and the facade
+implemented it faithfully across eleven declarations.
+
+Same shape as the checksum: a requirement whose source is a convention
+rather than a derivation, implemented correctly, and invisible to a review
+that checks compliance. Found 2026-07-28 by the fresh-context review, not
+by the author of the requirement.
+
 ## Scope of the sweep
 
 Artifacts authored in the same session as that instance, and every rule in
