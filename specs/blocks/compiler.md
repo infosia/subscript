@@ -2495,6 +2495,15 @@ Generalizing the trampoline to arbitrary callback signatures is **not in
 P25's scope**. This section makes the existing limit visible and loud; a
 host that needs more is a later phase with its own contract.
 
+### 23.3b Carried forward — the inherited-precedent audit
+
+`specs/tracking/inherited-precedent-audit.md` pre-registers a sweep for
+one defect class this phase produced: a requirement carried from an older
+artifact by analogy, without re-deriving whether the destination needs it.
+One §23.3 provenance record is already named there as suspect. The sweep
+runs at or after this phase's Phase Review; its scope and pre-registered
+outcome are in that file, not restated here.
+
 ### 23.4 Ship tier
 
 The emitted C includes **each ingested mirror's header**, in ingestion
