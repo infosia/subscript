@@ -2509,7 +2509,10 @@ header. Two new gate programs:
    table is global.
 
 Both run under dev-JIT and ship-C-AOT and are compared byte-exact, as
-every corpus entry is.
+every corpus entry is. They live in the examples gate crate
+(`examples.md` §7.6) with committed goldens, not in `corpus/accept/`:
+that crate is what links `engine.c`, and the corpus stays free of a
+dependency on `examples/`.
 
 **No existing golden moves.** This phase changes which C names the
 emission writes down, not what any program computes. An `.expected` that
