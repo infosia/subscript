@@ -235,3 +235,29 @@ kept minimal:
   binary-mode stdout, and a `QueryPerformanceCounter` timing shim in both
   committed C entries. Benchmark runs on Windows; all four subjects match
   the golden. §11b extended.
+- 2026-07-28: **P25 owes this file one unrun measurement.**
+  `compiler.md` §23.8 criterion 5 is pre-registered kill-or-pass on both a
+  Unix and a Windows host: a program calling a foreign function whose
+  symbol no supplied native library registers must fail naming the symbol,
+  rather than resolving by accident. It matters here specifically because
+  `cranelift-jit` 0.125.4 cannot disable its default lookup — `dlsym`
+  on Unix, `GetProcAddress` over loaded modules on Windows — so the two
+  hosts can differ. The check runs on the demand side (every symbol the
+  sole `Linkage::Import` path declares, verified before finalize/link),
+  which is host-independent by construction, but that is an argument, not
+  a measurement.
+
+  Unix: passing, both tiers (`specs/tracking/p25-header-deprivileging.md`
+  §5). Windows: **not run**.
+
+  What settles it: on the `x86_64-pc-windows-msvc` host, with its Visual
+  Studio and LLVM clang toolchains active, run
+
+      cargo test -p subscript-codegen --test native_library \
+          unregistered_foreign_symbol_is_named_before_platform_lookup
+
+  and record the result here. A second item rides along: the examples gate
+  crate compiles `engine.c`, whose thread-local frame record selects
+  `__declspec(thread)` under MSVC; that path has never been compiled by
+  `cl`. Both are open until run.
+
