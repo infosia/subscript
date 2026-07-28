@@ -28,6 +28,20 @@ typedef struct Context Context;
 typedef void (*sub_rt_trap_observer)(void* userdata, uint32_t kind, uint32_t pos_id, const uint8_t* message, uint64_t message_len);
 
 /**
+ * Host callback invoked for each line printed while it is installed.
+ *
+ * The callback receives no [`Context`] handle. It runs inside
+ * [`Context::print_line`] while that method holds exclusive access to the
+ * Context, so calling any `sub_rt_*` API that takes that Context
+ * (including through a pointer smuggled in `userdata`) would violate
+ * Rust's aliasing rules and is undefined behaviour.
+ *
+ * `line` excludes the trailing newline and is valid only for the duration
+ * of the callback.
+ */
+typedef void (*sub_rt_print_observer)(void* userdata, const uint8_t* line, uint64_t line_len);
+
+/**
  * Host callback invoked once for each live Context allocation.
  *
  * `payload_bytes` follows the same tier policy as
@@ -83,6 +97,26 @@ void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
  */
 int32_t sub_rt_ctx_set_freed_handle_diagnostics(Context* ctx, uint32_t enabled);
 void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
+/**
+ * Installs the callback invoked for each line printed by `ctx`. Passing a
+ * null `observer` clears it.
+ *
+ * While set, the callback receives each line without its trailing newline
+ * and the Context stdout sink retains none of that line's bytes. The line
+ * is valid only for the duration of the callback.
+ *
+ * The callback receives no Context handle. It runs from inside
+ * [`Context::print_line`] while the Context is exclusively borrowed, so it
+ * must not call any `sub_rt_*` function taking that Context (including by
+ * recovering the pointer from `userdata`); doing so is an aliasing
+ * violation and undefined behaviour.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive Context contract. `observer`, when present,
+ * must be callable with `userdata` and obey the no-re-entry rule above.
+ */
+void sub_rt_ctx_set_print_observer(Context* ctx, sub_rt_print_observer observer, void* userdata);
 void sub_rt_ctx_set_regex_budget(Context* ctx, uint64_t budget);
 void sub_rt_ctx_set_trap_observer(Context* ctx, sub_rt_trap_observer observer, void* userdata);
 const uint8_t* sub_rt_ctx_stdout(const Context* ctx, uint64_t* len);

@@ -17,7 +17,9 @@
 //! the script ran under the emitted trap-check discipline, so a null
 //! result from a trapping function is never fed into another call.
 
-use crate::context::{AllocationVisitor, CallbackBinding, Context, TrapObserver};
+use crate::context::{
+    AllocationVisitor, CallbackBinding, Context, PrintObserver, TrapObserver,
+};
 use crate::trap::TrapKind;
 
 /// Narrows an `f64` to raw IEEE 754 binary16 storage bits using
@@ -47,8 +49,9 @@ pub struct SubStrView {
     pub len: usize,
 }
 
-/// `print(message)`: appends the string's bytes and a newline to the
-/// Context stdout sink.
+/// `print(message)`: delivers the string's bytes to the installed print
+/// observer, or appends them and a newline to the Context stdout sink when
+/// no observer is installed.
 ///
 /// # Safety
 ///
@@ -4474,6 +4477,33 @@ pub unsafe extern "C" fn sub_rt_ctx_set_trap_observer(
     unsafe { &mut *ctx }.set_trap_observer(observer, userdata);
 }
 
+/// Installs the callback invoked for each line printed by `ctx`. Passing a
+/// null `observer` clears it.
+///
+/// While set, the callback receives each line without its trailing newline
+/// and the Context stdout sink retains none of that line's bytes. The line
+/// is valid only for the duration of the callback.
+///
+/// The callback receives no Context handle. It runs from inside
+/// [`Context::print_line`] while the Context is exclusively borrowed, so it
+/// must not call any `sub_rt_*` function taking that Context (including by
+/// recovering the pointer from `userdata`); doing so is an aliasing
+/// violation and undefined behaviour.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. `observer`, when present,
+/// must be callable with `userdata` and obey the no-re-entry rule above.
+#[no_mangle]
+pub unsafe extern "C" fn sub_rt_ctx_set_print_observer(
+    ctx: *mut Context,
+    observer: Option<PrintObserver>,
+    userdata: *mut std::ffi::c_void,
+) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.set_print_observer(observer, userdata);
+}
+
 /// Marks entry into an exported script function.
 ///
 /// A host that uses [`sub_rt_ctx_clear_trap`] must call this immediately
@@ -4624,6 +4654,25 @@ mod tests {
             unsafe { std::slice::from_raw_parts(message, message_len as usize) }.to_vec();
     }
 
+    #[derive(Default)]
+    struct ObservedPrint {
+        lines: Vec<Vec<u8>>,
+    }
+
+    unsafe extern "C" fn observe_print(
+        userdata: *mut std::ffi::c_void,
+        line: *const u8,
+        line_len: u64,
+    ) {
+        // SAFETY: the test passes a live `ObservedPrint` and the line is
+        // readable for the duration of this callback.
+        let observed = unsafe { &mut *userdata.cast::<ObservedPrint>() };
+        // SAFETY: the print-observer contract supplies `line_len` readable
+        // bytes for this callback.
+        let line = unsafe { std::slice::from_raw_parts(line, line_len as usize) };
+        observed.lines.push(line.to_vec());
+    }
+
     #[test]
     fn ffi_f16_conversion_round_trips_raw_binary16_storage() {
         let bits = sub_rt_f16_from_f64(1.0006);
@@ -4655,6 +4704,42 @@ mod tests {
             assert_eq!(sub_rt_ctx_trap_pos_id(ctx), 4);
             let m = sub_rt_ctx_trap_message(ctx, &mut mlen);
             assert!(!m.is_null() && mlen > 0);
+            sub_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn ffi_print_observer_delivers_without_retention_and_null_restores_sink() {
+        let ctx = sub_rt_ctx_new();
+        assert!(!ctx.is_null());
+        let mut observed = ObservedPrint::default();
+
+        // SAFETY: `ctx`, callback userdata, and string handles remain live
+        // through each call and the Context is released exactly once.
+        unsafe {
+            sub_rt_ctx_set_print_observer(
+                ctx,
+                Some(observe_print),
+                std::ptr::from_mut(&mut observed).cast(),
+            );
+            let delivered = sub_rt_str_lit(ctx, b"delivered".as_ptr(), 9, 0);
+            sub_rt_print(ctx, delivered);
+
+            let mut len = 1u64;
+            let _ = sub_rt_ctx_stdout(ctx, &mut len);
+            assert_eq!(len, 0);
+            assert_eq!(observed.lines, [b"delivered".to_vec()]);
+
+            sub_rt_ctx_set_print_observer(ctx, None, std::ptr::null_mut());
+            let retained = sub_rt_str_lit(ctx, b"retained".as_ptr(), 8, 0);
+            sub_rt_print(ctx, retained);
+            let bytes = sub_rt_ctx_stdout(ctx, &mut len);
+            assert_eq!(
+                std::slice::from_raw_parts(bytes, len as usize),
+                b"retained\n"
+            );
+            assert_eq!(observed.lines, [b"delivered".to_vec()]);
+
             sub_rt_ctx_release(ctx);
         }
     }

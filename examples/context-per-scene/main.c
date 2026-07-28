@@ -33,18 +33,17 @@ static bool hostCallScript(
     return sub_rt_ctx_trap_kind(ctx) == 0u;
 }
 
-/* The sink is cumulative within one Context. Each scene starts its own
- * drained offset because each scene starts a fresh sink. */
-static void hostDrainScriptOutput(
-    const Context *ctx,
-    uint64_t *drained) {
-    uint64_t length = 0u;
-    const uint8_t *bytes = sub_rt_ctx_stdout(ctx, &length);
-    if (length > *drained) {
-        size_t available = (size_t)(length - *drained);
-        fwrite(bytes + *drained, 1u, available, stdout);
-        *drained = length;
+/* The observer receives one script line without its trailing newline.
+ * Using the same buffered stdout stream as host printf preserves ordering. */
+static void hostObserveScriptPrint(
+    void *userdata,
+    const uint8_t *line,
+    uint64_t lineLength) {
+    FILE *stream = (FILE *)userdata;
+    if (lineLength != 0u) {
+        fwrite(line, 1u, (size_t)lineLength, stream);
     }
+    fputc('\n', stream);
 }
 
 /* A trap detaches script from the current scene. The host reports it through
@@ -74,7 +73,7 @@ static bool hostRunScene(uint32_t sceneNumber) {
         return false;
     }
 
-    uint64_t drained = 0u;
+    sub_rt_ctx_set_print_observer(ctx, hostObserveScriptPrint, stdout);
     bool scriptAttached = hostCallScript(ctx, ss_init);
     if (!scriptAttached) {
         hostReportTrap(ctx);
@@ -94,7 +93,6 @@ static bool hostRunScene(uint32_t sceneNumber) {
             sceneFrame,
             engFrameIndex());
         scriptAttached = hostCallScript(ctx, ss_export_update);
-        hostDrainScriptOutput(ctx, &drained);
         if (!scriptAttached) {
             hostReportTrap(ctx);
         }
@@ -102,7 +100,6 @@ static bool hostRunScene(uint32_t sceneNumber) {
 
     if (scriptAttached) {
         scriptAttached = hostCallScript(ctx, ss_export_finish);
-        hostDrainScriptOutput(ctx, &drained);
         if (!scriptAttached) {
             hostReportTrap(ctx);
         }

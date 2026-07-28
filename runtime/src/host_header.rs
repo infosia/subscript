@@ -24,6 +24,8 @@ struct Function {
 pub fn render() -> Result<String, String> {
     let observer_docs = docs_for(CONTEXT_SOURCE, "pub type TrapObserver")?;
     let observer = parse_fn_type(CONTEXT_SOURCE, "TrapObserver")?;
+    let print_observer_docs = docs_for(CONTEXT_SOURCE, "pub type PrintObserver")?;
+    let print_observer = parse_fn_type(CONTEXT_SOURCE, "PrintObserver")?;
     let allocation_visitor_docs =
         docs_for(CONTEXT_SOURCE, "pub type AllocationVisitor")?;
     let allocation_visitor = parse_fn_type(CONTEXT_SOURCE, "AllocationVisitor")?;
@@ -32,6 +34,10 @@ pub fn render() -> Result<String, String> {
     let freed_handle_diagnostics_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn sub_rt_ctx_set_freed_handle_diagnostics",
+    )?;
+    let print_observer_setter_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn sub_rt_ctx_set_print_observer",
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "sub_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
@@ -53,6 +59,13 @@ pub fn render() -> Result<String, String> {
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("sub_rt_trap_observer", &observer)?);
+    out.push_str(";\n\n");
+    push_comment(&mut out, &print_observer_docs);
+    out.push_str("typedef ");
+    out.push_str(&c_fn_pointer(
+        "sub_rt_print_observer",
+        &print_observer,
+    )?);
     out.push_str(";\n\n");
     push_comment(&mut out, &allocation_visitor_docs);
     out.push_str("typedef ");
@@ -76,6 +89,9 @@ pub fn render() -> Result<String, String> {
     for function in &functions {
         if function.name == "sub_rt_ctx_set_freed_handle_diagnostics" {
             push_comment(&mut out, &freed_handle_diagnostics_docs);
+        }
+        if function.name == "sub_rt_ctx_set_print_observer" {
+            push_comment(&mut out, &print_observer_setter_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
@@ -252,6 +268,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "*const u8" => Ok("const uint8_t*"),
         "*mut c_void" | "*mut std::ffi::c_void" => Ok("void*"),
         "Option<TrapObserver>" => Ok("sub_rt_trap_observer"),
+        "Option<PrintObserver>" => Ok("sub_rt_print_observer"),
         "Option<AllocationVisitor>" => Ok("sub_rt_alloc_visitor"),
         other => Err(format!(
             "host header: Rust type `{other}` has no explicit C spelling"
@@ -308,6 +325,15 @@ mod tests {
         assert!(header.contains("calling any `sub_rt_*` API that takes that Context"));
         assert!(header.contains("pointer smuggled in `userdata`"));
         assert!(header.contains("undefined behaviour"));
+    }
+
+    #[test]
+    fn generated_host_header_documents_the_print_observer_contract() {
+        let header = render().expect("render host header");
+        assert!(header.contains("sink retains none of that line's bytes"));
+        assert!(header.contains("valid only for the duration of the callback"));
+        assert!(header.contains("must not call any `sub_rt_*` function taking that Context"));
+        assert!(header.contains("aliasing\n * violation and undefined behaviour"));
     }
 
     #[test]

@@ -67,6 +67,19 @@ pub type TrapObserver = unsafe extern "C" fn(
     message_len: u64,
 );
 
+/// Host callback invoked for each line printed while it is installed.
+///
+/// The callback receives no [`Context`] handle. It runs inside
+/// [`Context::print_line`] while that method holds exclusive access to the
+/// Context, so calling any `sub_rt_*` API that takes that Context
+/// (including through a pointer smuggled in `userdata`) would violate
+/// Rust's aliasing rules and is undefined behaviour.
+///
+/// `line` excludes the trailing newline and is valid only for the duration
+/// of the callback.
+pub type PrintObserver =
+    unsafe extern "C" fn(userdata: *mut c_void, line: *const u8, line_len: u64);
+
 /// Host callback invoked once for each live Context allocation.
 ///
 /// `payload_bytes` follows the same tier policy as
@@ -360,6 +373,8 @@ pub struct Context {
     // vector is walked only at Context drop, never by collection.
     retained_allocations: Vec<Allocation>,
     stdout: Vec<u8>,
+    print_observer: Option<PrintObserver>,
+    print_observer_userdata: *mut c_void,
     trap: Option<TrapRecord>,
     trap_observer: Option<TrapObserver>,
     trap_observer_userdata: *mut c_void,
@@ -457,6 +472,8 @@ impl Context {
             dead_allocations: AddressSet::default(),
             retained_allocations: Vec::new(),
             stdout: Vec::new(),
+            print_observer: None,
+            print_observer_userdata: std::ptr::null_mut(),
             trap: None,
             trap_observer: None,
             trap_observer_userdata: std::ptr::null_mut(),
@@ -775,11 +792,35 @@ impl Context {
 
     // ----- stdout sink -----
 
-    /// Appends `bytes` and a trailing newline to the stdout sink
-    /// (print never writes to the process stdout).
+    /// Delivers `bytes` to the installed print observer without retaining
+    /// them. With no observer, appends `bytes` and a trailing newline to
+    /// the stdout sink.
     pub fn print_line(&mut self, bytes: &[u8]) {
+        if let Some(observer) = self.print_observer {
+            let userdata = self.print_observer_userdata;
+            // SAFETY: the host supplied the callback and userdata. The
+            // callback contract forbids obtaining and using this Context
+            // while the exclusive borrow is live.
+            unsafe { observer(userdata, bytes.as_ptr(), bytes.len() as u64) };
+            return;
+        }
         self.stdout.extend_from_slice(bytes);
         self.stdout.push(b'\n');
+    }
+
+    /// Installs a host observer for printed lines. Passing `None` clears
+    /// the observer and its userdata.
+    pub fn set_print_observer(
+        &mut self,
+        observer: Option<PrintObserver>,
+        userdata: *mut c_void,
+    ) {
+        self.print_observer = observer;
+        self.print_observer_userdata = if observer.is_some() {
+            userdata
+        } else {
+            std::ptr::null_mut()
+        };
     }
 
     /// Takes the captured stdout bytes.
@@ -2258,12 +2299,41 @@ mod tests {
     }
 
     #[test]
-    fn print_appends_bytes_and_newline_to_the_sink() {
+    fn print_observer_controls_delivery_and_sink_retention() {
+        unsafe extern "C" fn observe(
+            userdata: *mut c_void,
+            line: *const u8,
+            line_len: u64,
+        ) {
+            // SAFETY: the test passes a live Vec with this exact type and
+            // the observer contract keeps the line readable for this call.
+            let lines = unsafe { &mut *userdata.cast::<Vec<Vec<u8>>>() };
+            // SAFETY: `line` addresses `line_len` readable bytes for this
+            // callback.
+            let line = unsafe { std::slice::from_raw_parts(line, line_len as usize) };
+            lines.push(line.to_vec());
+        }
+
+        let mut unset = Context::new();
+        unset.print_line(b"default");
+        assert_eq!(unset.take_stdout(), b"default\n");
+
         let mut ctx = Context::new();
-        ctx.print_line(b"hello");
-        ctx.print_line(b"x");
-        assert_eq!(ctx.take_stdout(), b"hello\nx\n");
-        assert!(ctx.take_stdout().is_empty());
+        let mut observed = Vec::<Vec<u8>>::new();
+        ctx.set_print_observer(
+            Some(observe),
+            std::ptr::from_mut(&mut observed).cast(),
+        );
+        ctx.print_line(b"first");
+        ctx.print_line(b"second");
+        assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
+        assert!(ctx.stdout_bytes().is_empty());
+
+        ctx.set_print_observer(None, std::ptr::from_mut(&mut observed).cast());
+        ctx.print_line(b"after-unset");
+        assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
+        assert_eq!(ctx.stdout_bytes(), b"after-unset\n");
+        assert!(ctx.print_observer_userdata.is_null());
     }
 
     #[test]
