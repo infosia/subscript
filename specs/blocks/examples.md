@@ -48,6 +48,7 @@ examples/
   e01-<slug>.ts  e01-<slug>.expected
   …
   e10-<slug>.ts  e10-<slug>.expected
+  gate/                            phase-proof programs, not teaching material (§2a)
   engine/
     engine.h                       the host's C facade (§4)
     engine.c                       its deterministic implementation
@@ -73,6 +74,24 @@ examples/
 ```
 
 - All identifiers, comments and prose are English (CLAUDE.md, Language).
+
+### 2a. `gate/` is not part of the example set
+
+A phase sometimes needs a program that proves a property rather than
+teaching one. `compiler.md` §23.7's two-header binding proof is the first:
+it must bind the synthetic fixture *and* the facade in one program, and a
+reader meeting `SubDevice` beside `EngWorld` learns nothing about their own
+header from it.
+
+Such programs live in `examples/gate/`, carry a golden, and run under the
+same both-tier comparison as everything else. They are **excluded from the
+derived example set**, from `README.md`'s table, and from the `e<nn>`
+numbering. A program in `gate/` states in its header comment which
+contract clause it proves.
+
+*(Added 2026-07-28: the §23.7 proof was first written as `e10`, which
+gave a teaching example a `teaches:` line naming a phase requirement and
+put four fixture identifiers in front of a reader.)*
 - No path outside the repository appears anywhere, including in
   `build.sh` and `README.md`.
 
