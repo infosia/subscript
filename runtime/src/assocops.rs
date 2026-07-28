@@ -934,7 +934,7 @@ pub(crate) unsafe fn group_by(
         return out;
     }
     // Runtime-owned results are not yet visible in a generated local.
-    // Root both the input and output across callback-triggered collect().
+    // Root both the input and output across callback-triggered Context.collect().
     let mut roots = [items as usize, out as usize];
     unsafe { (*ctx).shadow_push(roots.as_mut_ptr() as usize, roots.len()) };
 

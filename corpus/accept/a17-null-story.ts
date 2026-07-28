@@ -27,6 +27,6 @@ export function main(): void {
   const tail: ListNode = new ListNode(9, null);
   const head: ListNode = new ListNode(4, tail);
   print(`${nextValue(head)},${nextValue(null)}`);
-  unsafeDelete(head);
-  unsafeDelete(tail);
+  Context.free(head);
+  Context.free(tail);
 }

@@ -27,11 +27,11 @@ pub enum TrapKind {
     NullNarrowing = 4,
     /// Checked `as` narrowing to a class the instance does not have.
     ClassMismatch = 5,
-    /// `unsafeDelete` of an allocation that was already deleted (Q6).
+    /// `Context.free` of an allocation that was already deleted (Q6).
     DoubleDelete = 6,
     /// Access through a reference whose allocation was deleted (Q6).
     UseAfterDelete = 7,
-    /// `unsafeDelete` of a pointer the Context does not own.
+    /// `Context.free` of a pointer the Context does not own.
     InvalidDelete = 8,
     /// Context allocation failure.
     AllocationFailure = 9,

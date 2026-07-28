@@ -62,10 +62,11 @@ control step in an embedded system — who want:
   the language's structs *are* the C structs (layout is machine-verified
   against the platform C compiler), so no data is converted or copied at
   the boundary.
-- **Deterministic memory** — Context-scoped allocation, manual `delete`,
-  and collection only when you ask for it. No collector runs unbidden, so
-  there is no pause the host did not ask for — the property a frame loop,
-  an audio callback, or a control step all need.
+- **Deterministic memory** — Context-scoped allocation, explicit
+  `Context.free(value)`, and `Context.collect()` only when you ask for it.
+  No collector runs unbidden, so there is no pause the host did not ask
+  for — the property a frame loop, an audio callback, or a control step
+  all need.
 
 ### Who it's *not* for
 
@@ -152,11 +153,11 @@ the host grows a C facade.
 
 ### No implicit GC
 
-Memory is Context-scoped. You allocate, you `delete` when done, and you
-call `collect()` explicitly when you want unreachable allocations
-reclaimed. Nothing collects unbidden — a program that never collects is
-correct, merely larger — so there are no collector pauses in the frame
-loop.
+Memory is Context-scoped. Allocate objects normally, release finished
+objects with `Context.free(value)`, and call `Context.collect()` when you
+want unreachable allocations reclaimed. Nothing collects unbidden — a
+program that never collects is correct, merely larger — so there are no
+collector pauses in the frame loop.
 
 ### A deterministic standard library
 

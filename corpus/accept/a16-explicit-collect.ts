@@ -17,6 +17,6 @@ export function main(): void {
     print(`${token.id}`);
   }
   token = null;
-  collect();
+  Context.collect();
   print("collected");
 }

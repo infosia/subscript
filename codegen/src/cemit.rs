@@ -38,7 +38,7 @@
 //! - **Reference classes** are Context allocations (`sub_rt_alloc`);
 //!   their handle is the payload pointer, and fields are read/written
 //!   through a `struct` view of the payload (the same C-ABI layout the
-//!   runtime allocates). `unsafeDelete` is `sub_rt_delete`, `collect()`
+//!   runtime allocates). `Context.free` is `sub_rt_delete`, `Context.collect()`
 //!   is `sub_rt_collect`.
 //! - **Checked growable `T[]`** is the runtime's array: `sub_rt_array_*`
 //!   for `new`/`push`/`pop`/`length`/indexing, so bounds checks, push
@@ -73,9 +73,9 @@
 //! # A note on the GC root discipline
 //!
 //! The CLIF path registers module-global roots and per-call shadow
-//! frames so `collect()` can see live handles. The emitted C does not
+//! frames so `Context.collect()` can see live handles. The emitted C does not
 //! replicate that discipline: no run-set entry observably depends on it
-//! (the only `collect()` in the corpus, a16, collects an allocation that
+//! (the only `Context.collect()` in the corpus, a16, collects an allocation that
 //! is already dead, and interned string literals are rooted by the
 //! runtime itself), and the standing gate — byte-identity across all 24
 //! entries on both tiers — is the oracle. Should a future entry make
@@ -270,7 +270,7 @@ struct Emitter<'m> {
     /// Shadow-frame access expression of each rooted (managed, or
     /// managed-interior aggregate) local or parameter of the current
     /// function, innermost last (M1: the collector scans the frame, so a
-    /// live handle held in one survives `collect()`).
+    /// live handle held in one survives `Context.collect()`).
     managed_scope: Vec<(String, String)>,
     /// Next managed-`let` shadow slot to assign in emission order.
     shadow_cursor: u32,
@@ -889,7 +889,7 @@ impl<'m> Emitter<'m> {
     /// aggregate whose interior holds Context handles (a `FixedArray` of
     /// references/strings, an `IterResult` of a managed type), lives in a
     /// per-call shadow frame the collector conservatively word-scans, so
-    /// a live handle held in one survives `collect()`; the frame is
+    /// a live handle held in one survives `Context.collect()`; the frame is
     /// pushed here and popped at every exit, exactly as the CLIF path's
     /// `shadow_push`/`shadow_pop` do (the P2 M1 fix, on the CLIF side).
     fn emit_prologue(&mut self, out: &mut String, params: &[hir::Param], body: &[hir::Stmt], depth: usize) -> Result<(), String> {
@@ -1272,7 +1272,7 @@ impl<'m> Emitter<'m> {
             return Ok(());
         }
         // A managed local — or an aggregate whose interior holds managed
-        // handles — lives in the shadow frame so `collect()` sees its
+        // handles — lives in the shadow frame so `Context.collect()` sees its
         // handle(s) (M1); its storage is shadow slot(s), not a C var.
         if self.needs_rooting(ty)? {
             let w = managed_words(&self.layouts, ty)?;
@@ -1723,7 +1723,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}sub_rt_collect(ctx);");
             }
             hir::AmbientFn::UnsafeDelete => {
-                let arg = args.first().ok_or("unsafeDelete arity")?;
+                let arg = args.first().ok_or("Context.free arity")?;
                 let p = self.eval_pinned(arg, out, depth)?;
                 while let Some(site) =
                     sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
@@ -6032,7 +6032,7 @@ mod tests {
 
     #[test]
     fn reference_class_uses_the_runtime_allocator() {
-        let c = emit("class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  print(`${c.x}`);\n  unsafeDelete(c);\n}\n");
+        let c = emit("class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  print(`${c.x}`);\n  Context.free(c);\n}\n");
         assert!(c.contains("sub_rt_alloc"));
         assert!(c.contains("sub_rt_delete"));
         assert!(c.contains("ss_ctor0(ctx,"));

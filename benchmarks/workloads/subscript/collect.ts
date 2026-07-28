@@ -6,7 +6,7 @@
 // size-class payload capacities.
 //
 // Nodes with (state&3)!=0 survive (exactly 15000 per round); the rest and the
-// preceding survivor graph are dropped before collect(). Checksum per node in
+// preceding survivor graph are dropped before Context.collect(). Checksum per node in
 // each reverse-built survivor chain:
 //   checksum = checksum*31 + state + 9 + 41 + 105 + 233 (i32 wrap).
 
@@ -77,7 +77,7 @@ export function main(): void {
     s41 = "";
     s105 = "";
     s233 = "";
-    collect();
+    Context.collect();
 
     cursor = keep;
     while (cursor !== null) {
@@ -91,6 +91,6 @@ export function main(): void {
   }
 
   keep = null;
-  collect();
+  Context.collect();
   print(`${checksum}`);
 }

@@ -516,16 +516,17 @@ pub enum BinOp {
     UShr,
 }
 
-/// Ambient prelude functions (Q6, Q7, Q12); their signatures are
-/// hardcoded in the checker, not parsed from `.d.ts`.
+/// Ambient prelude functions and namespace members (Q6, Q7, Q12);
+/// their signatures are hardcoded in the checker, not parsed from
+/// `.d.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AmbientFn {
     /// `print(message: string): void`.
     Print,
-    /// `collect(): void`.
+    /// `Context.collect(): void`.
     Collect,
-    /// `unsafeDelete(value: object): void`.
+    /// `Context.free(value: object): void`.
     UnsafeDelete,
 }
 
@@ -543,23 +544,13 @@ impl AmbientFn {
         self == AmbientFn::UnsafeDelete
     }
 
-    /// Surface spelling.
-    #[must_use]
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            AmbientFn::Print => "print",
-            AmbientFn::Collect => "collect",
-            AmbientFn::UnsafeDelete => "unsafeDelete",
-        }
-    }
-
     /// Source-level subscript signature.
     #[must_use]
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
             AmbientFn::Print => "print(message: string): void",
             AmbientFn::Collect => "collect(): void",
-            AmbientFn::UnsafeDelete => "unsafeDelete(value: object): void",
+            AmbientFn::UnsafeDelete => "free(value: object): void",
         }
     }
 

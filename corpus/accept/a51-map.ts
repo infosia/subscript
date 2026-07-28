@@ -41,15 +41,15 @@ export function main(): void {
 
   const vectors: Map<string, Vec2> = new Map<string, Vec2>();
   vectors.set("p", new Vec2(3, 4));
-  collect();
+  Context.collect();
   const vector: Vec2 = vectors.getOr("p", new Vec2(0, 0));
   print(`vector ${vector.x},${vector.y} ${vectors.has("p")}`);
 
   numbers.clear();
   print(`clear ${numbers.size} ${numbers.has(1)}`);
-  unsafeDelete(numbers);
+  Context.free(numbers);
 
   leaveDroppedMap();
-  collect();
+  Context.collect();
   print("collected");
 }

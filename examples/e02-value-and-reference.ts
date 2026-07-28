@@ -49,6 +49,6 @@ export function main(): void {
   const reference: ReferenceSwitch = new ReferenceSwitch(true);
   reference.enabled = false;
   print(`reference=${reference.enabled}`);
-  // Q6: reference-class lifetime ends explicitly at unsafeDelete.
-  unsafeDelete(reference);
+  // Q6: reference-class lifetime ends explicitly at Context.free.
+  Context.free(reference);
 }

@@ -1,6 +1,6 @@
 // corpus: accept/a15-manual-lifetime
-// purpose: Allocates, uses, and manually deletes a reference-class instance.
-// exercises: reference-class, allocation, manual-delete
+// purpose: Allocates, uses, and manually frees a reference-class instance.
+// exercises: reference-class, allocation, manual-free
 // questions: Q1, Q2, Q6, Q12
 
 class Counter {
@@ -19,5 +19,5 @@ export function main(): void {
   const counter: Counter = new Counter(10);
   counter.increment();
   print(`${counter.value}`);
-  unsafeDelete(counter);
+  Context.free(counter);
 }

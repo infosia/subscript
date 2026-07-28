@@ -7,15 +7,15 @@ export function main(): void {
   const loneSurrogate: JsonResult<string> =
     JSON.parse<string>('"\\ud800"');
   print(`lone-surrogate-ok=${loneSurrogate.ok}`);
-  unsafeDelete(loneSurrogate);
+  Context.free(loneSurrogate);
 
   const f32Overflow: JsonResult<f32> = JSON.parse<f32>("1e39");
   print(`f32-overflow-ok=${f32Overflow.ok}`);
-  unsafeDelete(f32Overflow);
+  Context.free(f32Overflow);
 
   const tooDeepText: string =
     "[".repeat(129) + "0" + "]".repeat(129);
   const tooDeep: JsonResult<i32> = JSON.parse<i32>(tooDeepText);
   print(`depth-limit-ok=${tooDeep.ok}`);
-  unsafeDelete(tooDeep);
+  Context.free(tooDeep);
 }

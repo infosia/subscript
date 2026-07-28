@@ -11,11 +11,16 @@
 | subscript signature | Behavior |
 |---|---|
 | `print(message: string): void` | Writes one line to the Context output sink. |
-| `collect(): void` | Explicitly collects unreachable Context allocations. |
-| `unsafeDelete(value: object): void` | Immediately releases a reference-class allocation. |
 | `NaN: f64` | Ambient NaN literal used by floating-point APIs. |
 | `parseInt(value: string, radix: i32): f64` | Parses the longest integer prefix; the radix is required. |
 | `parseFloat(value: string): f64` | Parses the longest decimal floating-point prefix. |
+
+### Context
+
+| subscript signature | Behavior |
+|---|---|
+| `collect(): void` | Explicitly collects unreachable Context allocations. |
+| `free(value: object): void` | Immediately releases a reference-class allocation. |
 
 ### Math
 
@@ -272,7 +277,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `stringify<T>(value: T): string` | Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle. |
-| `parse<T>(text: string): JsonResult<T>` | Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with unsafeDelete. |
+| `parse<T>(text: string): JsonResult<T>` | Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with Context.free. |
 
 ### JsonResult<T>
 
@@ -457,7 +462,7 @@ subscript:
 export function main(): void {
   const result: JsonResult<string> = JSON.parse<string>('"\\ud800"');
   print(`${result.ok}`);
-  unsafeDelete(result);
+  Context.free(result);
 }
 ```
 
@@ -480,7 +485,7 @@ subscript:
 export function main(): void {
   const result: JsonResult<f32> = JSON.parse<f32>("1e39");
   print(`${result.ok}`);
-  unsafeDelete(result);
+  Context.free(result);
 }
 ```
 

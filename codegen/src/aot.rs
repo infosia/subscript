@@ -1222,7 +1222,7 @@ int main(void) {
                const first: Cell = new Cell(1);\n\
                const deleted: Cell = new Cell(2);\n\
                const last: Cell = new Cell(first.value + 2);\n\
-               unsafeDelete(deleted);\n\
+               Context.free(deleted);\n\
                if (last.value === 0) { print(\"unreachable\"); }\n\
              }\n",
         );

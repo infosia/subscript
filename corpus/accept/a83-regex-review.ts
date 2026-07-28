@@ -19,7 +19,7 @@ export function main(): void {
     if (/a/.test("a")) {
       matches += 1;
     }
-    collect();
+    Context.collect();
   }
   print(`literalLoop ${matches}`);
 }

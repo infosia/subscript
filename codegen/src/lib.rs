@@ -308,7 +308,7 @@ export function main(): void {
     #[test]
     fn double_delete_traps() {
         let t = run_trap(
-            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  unsafeDelete(c);\n  unsafeDelete(c);\n}\n",
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n  Context.free(c);\n}\n",
         );
         assert_eq!(t.rule, TrapKind::DoubleDelete);
         assert_eq!(t.pos.line, 5);
@@ -317,7 +317,7 @@ export function main(): void {
     #[test]
     fn use_after_delete_traps() {
         let t = run_trap(
-            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  unsafeDelete(c);\n  print(`${c.x}`);\n}\n",
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n  print(`${c.x}`);\n}\n",
         );
         assert_eq!(t.rule, TrapKind::UseAfterDelete);
         assert_eq!(t.pos.line, 5);
@@ -328,11 +328,11 @@ export function main(): void {
         for (kind, src) in [
             (
                 "Map",
-                "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  unsafeDelete(value);\n  print(`${value.size}`);\n}\n",
+                "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  Context.free(value);\n  print(`${value.size}`);\n}\n",
             ),
             (
                 "Set",
-                "export function main(): void {\n  const value: Set<i32> = new Set<i32>();\n  unsafeDelete(value);\n  print(`${value.size}`);\n}\n",
+                "export function main(): void {\n  const value: Set<i32> = new Set<i32>();\n  Context.free(value);\n  print(`${value.size}`);\n}\n",
             ),
         ] {
             let t = run_trap(src);
@@ -388,7 +388,7 @@ export function main(): void {
     #[test]
     fn collect_after_dropping_the_last_reference_is_safe() {
         let out = run_ok(
-            "class T { id: i32; constructor(id: i32) { this.id = id; } }\nexport function main(): void {\n  let t: T | null = new T(17);\n  if (t !== null) {\n    print(`${t.id}`);\n  }\n  t = null;\n  collect();\n  print(\"ok\");\n}\n",
+            "class T { id: i32; constructor(id: i32) { this.id = id; } }\nexport function main(): void {\n  let t: T | null = new T(17);\n  if (t !== null) {\n    print(`${t.id}`);\n  }\n  t = null;\n  Context.collect();\n  print(\"ok\");\n}\n",
         );
         assert_eq!(out, "17\nok\n");
     }
@@ -396,7 +396,7 @@ export function main(): void {
     #[test]
     fn collect_keeps_rooted_locals_alive() {
         let out = run_ok(
-            "class T { id: i32; constructor(id: i32) { this.id = id; } }\nexport function main(): void {\n  const t: T = new T(5);\n  collect();\n  print(`${t.id}`);\n}\n",
+            "class T { id: i32; constructor(id: i32) { this.id = id; } }\nexport function main(): void {\n  const t: T = new T(5);\n  Context.collect();\n  print(`${t.id}`);\n}\n",
         );
         assert_eq!(out, "5\n");
     }
@@ -438,9 +438,9 @@ export function main(): void {
     #[test]
     fn m1_reference_held_only_in_a_fixed_array_survives_collect() {
         // GC root coverage: the only handle to the C instance lives
-        // inside a FixedArray local; collect() must not free it.
+        // inside a FixedArray local; Context.collect() must not free it.
         let out = run_ok(
-            "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: FixedArray<C, 1> = [new C(7)];\n  collect();\n  print(`${xs[0].x}`);\n}\n",
+            "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: FixedArray<C, 1> = [new C(7)];\n  Context.collect();\n  print(`${xs[0].x}`);\n}\n",
         );
         assert_eq!(out, "7\n");
     }
@@ -450,7 +450,7 @@ export function main(): void {
         // The concatenation result is not interned; the FixedArray
         // interior is its only reference.
         let out = run_ok(
-            "export function main(): void {\n  const parts: FixedArray<string, 2> = [\"al\" + \"pha\", \"beta\"];\n  collect();\n  print(parts[0] + parts[1]);\n}\n",
+            "export function main(): void {\n  const parts: FixedArray<string, 2> = [\"al\" + \"pha\", \"beta\"];\n  Context.collect();\n  print(parts[0] + parts[1]);\n}\n",
         );
         assert_eq!(out, "alphabeta\n");
     }
@@ -458,7 +458,7 @@ export function main(): void {
     #[test]
     fn m1_iter_result_string_survives_collect() {
         let out = run_ok(
-            "function* words() {\n  yield \"al\" + \"pha\";\n}\nexport function main(): void {\n  const g = words();\n  const s = g.next();\n  collect();\n  print(s.value);\n}\n",
+            "function* words() {\n  yield \"al\" + \"pha\";\n}\nexport function main(): void {\n  const g = words();\n  const s = g.next();\n  Context.collect();\n  print(s.value);\n}\n",
         );
         assert_eq!(out, "alpha\n");
     }
@@ -466,9 +466,9 @@ export function main(): void {
     #[test]
     fn m1_aggregate_params_are_rooted_in_the_callee() {
         // The caller's argument temp is not a root; the callee must
-        // root its own copy before running collect().
+        // root its own copy before running Context.collect().
         let out = run_ok(
-            "class C { x: i32; constructor(x: i32) { this.x = x; } }\nfunction probe(xs: FixedArray<C, 1>): i32 {\n  collect();\n  return xs[0].x;\n}\nexport function main(): void {\n  print(`${probe([new C(9)])}`);\n}\n",
+            "class C { x: i32; constructor(x: i32) { this.x = x; } }\nfunction probe(xs: FixedArray<C, 1>): i32 {\n  Context.collect();\n  return xs[0].x;\n}\nexport function main(): void {\n  print(`${probe([new C(9)])}`);\n}\n",
         );
         assert_eq!(out, "9\n");
     }

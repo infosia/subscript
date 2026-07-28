@@ -289,7 +289,7 @@
     },
     {
       "id": "tree",
-      "params": "30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + unsafeDelete; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130",
+      "params": "30 full binary trees of depth 16 built/traversed/freed (subscript: reference class + Context.free; C: malloc/free; JS/Lua: GC); checksum = node-visit count (i64) = 3932130",
       "checksum": 3932130,
       "checksum_match": true,
       "medians_s": {

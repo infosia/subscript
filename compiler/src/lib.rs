@@ -280,6 +280,10 @@ mod tests {
         let err =
             check_one("export function main(): void {\n  throw \"x\";\n}\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S010);
+        assert_eq!(
+            err[0].message,
+            "exceptions are not in the language; return a result value"
+        );
         assert_eq!(err[0].pos.line, 2);
     }
 
@@ -1100,17 +1104,37 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_delete_takes_reference_instances_only() {
+    fn context_free_takes_reference_instances_only() {
         check_one(
-            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  unsafeDelete(c);\n}\n",
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n}\n",
         )
         .expect("reference instances cross into `object`");
 
         let err = check_one(
-            "@CStruct\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  unsafeDelete(v);\n}\n",
+            "@CStruct\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  Context.free(v);\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
+    }
+
+    #[test]
+    fn context_namespace_is_neither_a_value_nor_a_class() {
+        let value_err = check_one(
+            "export function main(): void {\n  const value = Context;\n}\n",
+        )
+        .unwrap_err();
+        assert_eq!(value_err[0].code, RuleCode::S014);
+        assert_eq!(
+            value_err[0].message,
+            "`Context` is an ambient namespace, not a value; use \
+             `Context.collect()` or `Context.free(value)` (Q6/Q7)"
+        );
+
+        let construct_err =
+            check_one("export function main(): void {\n  const value = new Context();\n}\n")
+                .unwrap_err();
+        assert_eq!(construct_err[0].code, RuleCode::S100);
+        assert_eq!(construct_err[0].message, "unknown class `Context`");
     }
 
     // ----- P1 phase-review regression tests -----
@@ -1239,9 +1263,9 @@ mod tests {
             .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S011);
 
-        // The ambient `unsafeDelete(value: object)` stays callable.
+        // The ambient `Context.free(value: object)` stays callable.
         check_one(
-            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  unsafeDelete(c);\n}\n",
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n}\n",
         )
         .expect("ambient object parameter unaffected");
     }

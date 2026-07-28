@@ -12,7 +12,7 @@
 //! first two directly (use-after-delete checks, checked `as` narrowing),
 //! so their offsets are part of the runtime's ABI contract.
 //!
-//! Development-tier policy: `unsafeDelete` and `collect()` mark an
+//! Development-tier policy: `Context.free` and `Context.collect()` mark an
 //! allocation dead and poison its header but keep the bytes until the
 //! Context is dropped. This is what makes double delete and
 //! use-after-delete *trap* instead of being undefined: a stale handle
@@ -20,7 +20,7 @@
 //!
 //! Ship-tier policy (§8.1b): no per-allocation map. Blocks up to the
 //! largest size class are carved from Context-owned per-class chunks by
-//! bump pointer; `unsafeDelete` pushes a block onto its class's LIFO
+//! bump pointer; `Context.free` pushes a block onto its class's LIFO
 //! free list (threaded through the freed payload's first word) and the
 //! next same-class `alloc` pops it, zeroed. Larger allocations are
 //! individual system allocations with their own record. Double delete
@@ -29,7 +29,7 @@
 //!
 //! # Collection
 //!
-//! `collect()` never runs unbidden (design invariant 2). Roots are the
+//! `Context.collect()` never runs unbidden (design invariant 2). Roots are the
 //! addresses generated code registers: module-global slots
 //! (`root_add`) and per-call shadow frames of managed locals
 //! (`shadow_push`/`shadow_pop`). Marking is conservative: the payload
@@ -183,9 +183,9 @@ pub const CLASS_REGEX: u32 = 0xFFFF_FF09;
 
 // ----- ship-tier arena (§8.1b) -----
 
-// Header state word for a block reached by the current `collect()` mark
+// Header state word for a block reached by the current `Context.collect()` mark
 // phase (ship tier only). Lives only between mark and sweep — no script
-// code runs during `collect`, and sweep restores survivors to
+// code runs during `Context.collect`, and sweep restores survivors to
 // `LIVE_STATE` — so generated code never observes it.
 const MARK_STATE: u64 = 0x5355_4253_4D41_524B; // "SUBSMARK"
 
@@ -368,9 +368,10 @@ pub struct Context {
     // Transient P13 parsed syntax trees. They contain no language
     // allocations and are removed before JSON.parse returns.
     json_parsers: crate::json::JsonParsers,
-    // Ship-tier policy flag (§8.1a): when true, `delete`/`collect` free
-    // and forget immediately; when false (dev tier), they retain and
-    // poison so use-after-delete/double-delete trap.
+    // Ship-tier policy flag (§8.1a): when true,
+    // `Context.free`/`Context.collect` free and forget immediately; when
+    // false (dev tier), they retain and poison so
+    // use-after-delete/double-delete trap.
     release_on_delete: bool,
     // The `Math.random` PRNG (stdlib.md §2), default-seeded on every
     // construction path so dev and ship draw the same contract stream.
@@ -407,7 +408,7 @@ pub struct Context {
 impl Context {
     /// Creates an empty context.
     ///
-    /// Development-tier policy: `unsafeDelete`/`collect` retain and poison
+    /// Development-tier policy: `Context.free`/`Context.collect` retain and poison
     /// (double delete and use-after-delete trap). The dev-JIT builds its
     /// Context this way. For the AOT/ship tier use
     /// [`Context::new_releasing`].
@@ -417,8 +418,8 @@ impl Context {
     }
 
     /// Creates an empty ship-tier context (§8.1a/§8.1b). Unlike
-    /// [`Context::new`]'s retain-and-poison dev policy, `unsafeDelete` and
-    /// `collect` here **release immediately**: a size-classed block goes
+    /// [`Context::new`]'s retain-and-poison dev policy, `Context.free` and
+    /// `Context.collect` here **release immediately**: a size-classed block goes
     /// back to its arena free list and a large allocation is freed
     /// outright — no per-allocation table is kept. Use-after-delete and
     /// double delete are undefined (Q6/§8.1b), not trapped. The AOT host
@@ -1138,13 +1139,13 @@ impl Context {
             if self.dead_allocations.contains(&payload) {
                 self.trap(
                     TrapKind::DoubleDelete,
-                    "unsafeDelete of an already-deleted allocation",
+                    "Context.free of an already-deleted allocation",
                     pos_id,
                 );
             } else {
                 self.trap(
                     TrapKind::InvalidDelete,
-                    "unsafeDelete of a pointer the Context does not own",
+                    "Context.free of a pointer the Context does not own",
                     pos_id,
                 );
             }

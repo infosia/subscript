@@ -3,7 +3,7 @@
 //
 // The value-bearing lines are measured from JSON.parse below. The `ok`
 // lines are contract-derived: JavaScript throws on malformed input and
-// has no JsonResult<T>, static T validation, or unsafeDelete analogue.
+// has no JsonResult<T>, static T validation, or Context.free analogue.
 
 const success = JSON.parse('{"name":"demo","count":3}');
 const duplicate = JSON.parse(

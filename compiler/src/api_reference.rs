@@ -113,7 +113,7 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
         subscript: r#"export function main(): void {
   const result: JsonResult<string> = JSON.parse<string>('"\\ud800"');
   print(`${result.ok}`);
-  unsafeDelete(result);
+  Context.free(result);
 }
 "#,
         javascript: r#"console.log(JSON.parse('"\\ud800"'));
@@ -129,7 +129,7 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
         subscript: r#"export function main(): void {
   const result: JsonResult<f32> = JSON.parse<f32>("1e39");
   print(`${result.ok}`);
-  unsafeDelete(result);
+  Context.free(result);
 }
 "#,
         javascript: r#"console.log(JSON.parse("1e39"));

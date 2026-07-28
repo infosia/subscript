@@ -80,6 +80,6 @@ export function shutdown(): void {
   // C7 and invariant 2: removing the last root does not collect by itself;
   // this explicit call is the event the host measures around.
   session = null;
-  collect();
+  Context.collect();
   print("script:shutdown");
 }

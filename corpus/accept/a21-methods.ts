@@ -35,5 +35,5 @@ export function main(): void {
   const accumulator: Accumulator = new Accumulator();
   accumulator.add(point.sum());
   print(`${accumulator.total}`);
-  unsafeDelete(accumulator);
+  Context.free(accumulator);
 }

@@ -3700,7 +3700,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             hir::AmbientFn::UnsafeDelete => {
-                let arg = args.first().ok_or_else(|| internal("unsafeDelete arity"))?;
+                let arg = args.first().ok_or_else(|| internal("Context.free arity"))?;
                 let rv = self.eval(arg)?;
                 let ptr = self.expect_s(rv)?;
                 let pid = self.pos_id(pos);
@@ -3713,7 +3713,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let site = sites
                     .take_required(
                         |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
-                        internal("unsafeDelete has no HIR lifetime site"),
+                        internal("Context.free has no HIR lifetime site"),
                     )?;
                 self.emit_trap_site(site, TrapOperand::Pending)?;
                 Ok(RV::None)

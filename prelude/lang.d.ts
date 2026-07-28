@@ -13,8 +13,11 @@ declare type u16 = number;
 declare type f16 = number;
 
 declare function print(message: string): void;
-declare function collect(): void;
-declare function unsafeDelete(value: object): void;
+
+declare namespace Context {
+  function collect(): void;
+  function free(value: object): void;
+}
 
 declare class JsonResult<T> {
   private constructor();

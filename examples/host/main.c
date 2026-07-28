@@ -151,7 +151,7 @@ int main(void) {
             state.engTransform.engLayer);
     }
 
-    /* shutdown drops the last script root and calls collect() explicitly.
+    /* shutdown drops the last script root and calls Context.collect() explicitly.
      * The before/after host figures make invariant 2 externally observable;
      * counts are portable, while byte totals describe this ship allocator. */
     printf(

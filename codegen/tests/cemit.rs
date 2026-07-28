@@ -6,7 +6,7 @@
 //! path, reachable traps reported with kind and position (the trap
 //! model), and — the P4.3 phase-review regressions — cross-tier
 //! byte-equality (dev-JIT ≡ ship-C-AOT) for a mutating value method
-//! (C1), non-i32 lambda captures (C2), and `collect()` interacting with
+//! (C1), non-i32 lambda captures (C2), and `Context.collect()` interacting with
 //! live handles (M1). Cross-tier byte-equality is the real invariant, so
 //! these need no committed golden.
 
@@ -283,28 +283,28 @@ fn c2_capturing_lambda_over_i32_matches_the_jit() {
 
 #[test]
 fn m1_collect_then_delete_live_handle_matches_the_jit() {
-    // The handle is live across collect(), so a single unsafeDelete must
+    // The handle is live across Context.collect(), so a single Context.free must
     // succeed on both tiers (no spurious double-delete trap).
     assert_tiers_agree(
-        "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const a: C = new C(1);\n  collect();\n  unsafeDelete(a);\n  print(\"ok\");\n}\n",
+        "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const a: C = new C(1);\n  Context.collect();\n  Context.free(a);\n  print(\"ok\");\n}\n",
     );
 }
 
 #[test]
 fn m1_collect_then_use_live_handle_matches_the_jit() {
     assert_tiers_agree(
-        "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const a: C = new C(7);\n  collect();\n  print(`${a.x}`);\n  unsafeDelete(a);\n}\n",
+        "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const a: C = new C(7);\n  Context.collect();\n  print(`${a.x}`);\n  Context.free(a);\n}\n",
     );
 }
 
 #[test]
 fn m1_collect_keeps_references_inside_a_fixed_array_local_alive() {
     // The Box references live only inside a `FixedArray` local; the
-    // shadow frame must root the aggregate's interior so collect() does
+    // shadow frame must root the aggregate's interior so Context.collect() does
     // not mark them dead (which would synthesize a double-delete trap on
-    // the following single unsafeDelete of a live handle).
+    // the following single Context.free of a live handle).
     assert_tiers_agree(
-        "class Box { value: i32; constructor(v: i32) { this.value = v; } }\nexport function main(): void {\n  const arr: FixedArray<Box, 2> = [new Box(10), new Box(20)];\n  collect();\n  print(`${arr[0].value},${arr[1].value}`);\n  unsafeDelete(arr[0]);\n  print(`ok`);\n}\n",
+        "class Box { value: i32; constructor(v: i32) { this.value = v; } }\nexport function main(): void {\n  const arr: FixedArray<Box, 2> = [new Box(10), new Box(20)];\n  Context.collect();\n  print(`${arr[0].value},${arr[1].value}`);\n  Context.free(arr[0]);\n  print(`ok`);\n}\n",
     );
 }
 
@@ -312,9 +312,9 @@ fn m1_collect_keeps_references_inside_a_fixed_array_local_alive() {
 fn m1_collect_keeps_references_inside_a_fixed_array_param_alive() {
     // The CLIF path roots a managed-interior aggregate *parameter* by
     // copying it into the callee's shadow frame; the C tier must too, so
-    // collect() inside the callee does not free the references.
+    // Context.collect() inside the callee does not free the references.
     assert_tiers_agree(
-        "class Box { value: i32; constructor(v: i32) { this.value = v; } }\nfunction probe(boxes: FixedArray<Box, 2>): i32 {\n  collect();\n  return boxes[0].value + boxes[1].value;\n}\nexport function main(): void {\n  const arr: FixedArray<Box, 2> = [new Box(3), new Box(4)];\n  print(`${probe(arr)}`);\n  unsafeDelete(arr[0]);\n  unsafeDelete(arr[1]);\n}\n",
+        "class Box { value: i32; constructor(v: i32) { this.value = v; } }\nfunction probe(boxes: FixedArray<Box, 2>): i32 {\n  Context.collect();\n  return boxes[0].value + boxes[1].value;\n}\nexport function main(): void {\n  const arr: FixedArray<Box, 2> = [new Box(3), new Box(4)];\n  print(`${probe(arr)}`);\n  Context.free(arr[0]);\n  Context.free(arr[1]);\n}\n",
     );
 }
 
@@ -1217,7 +1217,7 @@ fn map_mutation_during_for_each_keeps_the_p22_visit_rules() {
            removed.set(2, 20);\n\
            removed.forEach((value: i32, key: i32): void => {\n\
              seen += `${key}`;\n\
-             unsafeDelete(removed);\n\
+             Context.free(removed);\n\
            });\n\
            print(seen);\n\
          }\n",

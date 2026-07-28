@@ -518,6 +518,14 @@ impl<'p> Checker<'p> {
                         pos.clone(),
                     );
                     self.err_expr(pos)
+                } else if name == "Context" {
+                    self.error(
+                        RuleCode::S014,
+                        "`Context` is an ambient namespace, not a value; use \
+                         `Context.collect()` or `Context.free(value)` (Q6/Q7)",
+                        pos.clone(),
+                    );
+                    self.err_expr(pos)
                 } else if name == "Math" {
                     // The ambient namespace is not a value (Q19): it
                     // cannot be assigned, passed, or stored.
@@ -700,7 +708,7 @@ impl<'p> Checker<'p> {
             ast::UnaryOp::Delete => {
                 self.error(
                     RuleCode::S100,
-                    "the `delete` operator is not in the language; use `unsafeDelete`",
+                    "the `delete` operator is not in the language; use `Context.free`",
                     pos.clone(),
                 );
                 self.err_expr(pos)
@@ -1464,6 +1472,17 @@ impl<'p> Checker<'p> {
         if is_local {
             return None;
         }
+        // `Context.<member>` (Q6/Q7): function members are intercepted
+        // in call position; the namespace and its members are not values.
+        if name == "Context" && self.scope_item(&name).is_none() {
+            let detail = if crate::ambient::context_fn(prop).is_some() {
+                format!("`Context.{prop}` may only be called, not read as a value (Q6/Q7)")
+            } else {
+                format!("`Context.{prop}` is outside the accepted Context subset (Q6/Q7)")
+            };
+            self.error(RuleCode::S014, detail, prop_pos.clone());
+            return Some(self.err_expr(prop_pos));
+        }
         // `Math.<member>` (stdlib.md §1): the ambient namespace applies
         // only when no program declaration shadows the name. Function
         // members are intercepted by `check_method_call` before this
@@ -1588,6 +1607,24 @@ impl<'p> Checker<'p> {
             .rev()
             .any(|s| s.vars.contains_key("Math"));
         !shadowed && self.scope_item("Math").is_none()
+    }
+
+    /// True when `obj` is the ambient `Context` namespace (Q6/Q7):
+    /// the identifier `Context` with no local binding and no program
+    /// declaration shadowing it.
+    fn is_context_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+        let ast::Expr::Ident(id) = obj else {
+            return false;
+        };
+        if id.sym.as_ref() != "Context" {
+            return false;
+        }
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|s| s.vars.contains_key("Context"));
+        !shadowed && self.scope_item("Context").is_none()
     }
 
     /// A `Math` member outside a call position (stdlib.md §1): a
@@ -4622,8 +4659,8 @@ impl<'p> Checker<'p> {
             .collect();
         let name = match ambient {
             AmbientFn::Print => "print",
-            AmbientFn::Collect => "collect",
-            AmbientFn::UnsafeDelete => "unsafeDelete",
+            AmbientFn::Collect => "Context.collect",
+            AmbientFn::UnsafeDelete => "Context.free",
         };
         let args = self.check_args(&params, &c.args, fx, &pos, name);
         hir::Expr {
@@ -4691,6 +4728,13 @@ impl<'p> Checker<'p> {
         };
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
+        // `Context.collect()` / `Context.free(value)` (Q6/Q7): ambient
+        // namespace calls lower through the existing ambient-call path.
+        if self.is_context_namespace(&m.obj, fx) {
+            if let Some(f) = crate::ambient::context_fn(&name) {
+                return self.check_ambient_call(f, c, fx, pos);
+            }
+        }
         // `Math.<fn>(…)` (stdlib.md §1): an ambient-namespace intrinsic
         // call, resolved before the generic namespace-member path (which
         // treats a function member read as an error). Constants and

@@ -1,7 +1,7 @@
 /* benchmark: tree (C baseline)
  * Build, traverse, and free 30 full binary trees of depth 16 (131071 nodes
  * each) with malloc/free — the manual-lifetime counterpart of subscript's
- * reference class + unsafeDelete. Checksum: total node-visit count (int64) =
+ * reference class + Context.free. Checksum: total node-visit count (int64) =
  * 30 * (2^17 - 1) = 3932130.
  */
 #include <stdio.h>

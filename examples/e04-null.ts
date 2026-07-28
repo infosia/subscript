@@ -41,6 +41,6 @@ export function main(): void {
     `values=${activeOrFalse(head)},${activeOrFalse(null)},${nextActiveOrFalse(head)},${nextActiveOrFalse(tail)}`,
   );
   // Q6: these reference-class lifetimes end explicitly.
-  unsafeDelete(head);
-  unsafeDelete(tail);
+  Context.free(head);
+  Context.free(tail);
 }

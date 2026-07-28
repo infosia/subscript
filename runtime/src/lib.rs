@@ -2,7 +2,7 @@
 //! subscript runtime (plan phase P2, `specs/blocks/compiler.md` §7).
 //!
 //! The single runtime crate shared by both execution tiers: Context
-//! memory (manual delete, explicit collect), strings, arrays, traps,
+//! memory (`Context.free`, explicit `Context.collect`), strings, arrays, traps,
 //! coroutine frame storage, and Q14 numeric formatting. Everything
 //! callable from generated code lives in [`ffi`] as `extern "C"`
 //! functions with stable signatures.

@@ -1,5 +1,5 @@
-//! Hardcoded ambient prelude surface (Q12): sized-numeric aliases and
-//! the host functions `print`, `collect`, `unsafeDelete`.
+//! Hardcoded ambient prelude surface (Q12): sized-numeric aliases, the
+//! host function `print`, and `Context.collect`/`Context.free`.
 //!
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
@@ -629,7 +629,16 @@ pub(crate) fn sized_alias(name: &str) -> Option<Type> {
 
 /// Maps an ambient function name to its identity.
 pub(crate) fn ambient_fn(name: &str) -> Option<AmbientFn> {
-    AmbientFn::ALL.iter().copied().find(|f| f.name() == name)
+    (name == "print").then_some(AmbientFn::Print)
+}
+
+/// Maps a `Context` namespace member name to its identity.
+pub(crate) fn context_fn(name: &str) -> Option<AmbientFn> {
+    Some(match name {
+        "collect" => AmbientFn::Collect,
+        "free" => AmbientFn::UnsafeDelete,
+        _ => return None,
+    })
 }
 
 /// Parameter types of an ambient function (all return `void`).
@@ -732,13 +741,11 @@ pub(crate) fn set_method(name: &str) -> Option<SetFn> {
 /// generator.
 pub(crate) fn accepted_api() -> Vec<ApiItem> {
     let mut out = Vec::new();
-    for f in AmbientFn::ALL {
-        out.push(ApiItem {
-            group: "Global",
-            signature: f.api_signature().to_string(),
-            summary: f.api_summary(),
-        });
-    }
+    out.push(ApiItem {
+        group: "Global",
+        signature: AmbientFn::Print.api_signature().to_string(),
+        summary: AmbientFn::Print.api_summary(),
+    });
     out.push(ApiItem {
         group: "Global",
         signature: "NaN: f64".to_string(),
@@ -747,6 +754,13 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
     for f in [NumFn::ParseInt, NumFn::ParseFloat] {
         out.push(ApiItem {
             group: "Global",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    for f in [AmbientFn::Collect, AmbientFn::UnsafeDelete] {
+        out.push(ApiItem {
+            group: "Context",
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
         });
@@ -929,7 +943,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
     out.push(ApiItem {
         group: "JSON",
         signature: "parse<T>(text: string): JsonResult<T>".to_string(),
-        summary: "Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with unsafeDelete.",
+        summary: "Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with Context.free.",
     });
     out.extend([
         ApiItem {
@@ -1230,6 +1244,11 @@ mod tests {
         assert_eq!(ambient_params(AmbientFn::Print), &[Type::Str]);
         assert!(ambient_params(AmbientFn::Collect).is_empty());
         assert_eq!(ambient_params(AmbientFn::UnsafeDelete), &[Type::Object]);
+        assert_eq!(context_fn("collect"), Some(AmbientFn::Collect));
+        assert_eq!(context_fn("free"), Some(AmbientFn::UnsafeDelete));
+        assert_eq!(context_fn("delete"), None);
+        assert_eq!(ambient_fn("collect"), None);
+        assert_eq!(ambient_fn("free"), None);
         assert_eq!(ambient_fn("eval"), None);
     }
 
@@ -1242,7 +1261,16 @@ mod tests {
         };
 
         for f in AmbientFn::ALL {
-            assert!(has("Global", f.api_signature()), "ambient {}", f.name());
+            let group = if f == AmbientFn::Print {
+                "Global"
+            } else {
+                "Context"
+            };
+            assert!(
+                has(group, f.api_signature()),
+                "ambient {}",
+                f.api_signature()
+            );
         }
         for c in MATH_CONSTS {
             assert!(has("Math", &format!("{}: f64", c.name)), "Math.{}", c.name);

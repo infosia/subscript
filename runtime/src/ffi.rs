@@ -66,7 +66,7 @@ pub unsafe extern "C" fn sub_rt_print(ctx: *mut Context, s: *const u8) {
     ctx.print_line(&owned);
 }
 
-/// `collect()`: explicitly invoked collection (Q7).
+/// `Context.collect()`: explicitly invoked collection (Q7).
 ///
 /// # Safety
 ///
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn sub_rt_alloc(
     unsafe { &mut *ctx }.alloc(size as usize, class_id, pos_id)
 }
 
-/// `unsafeDelete(value)`: frees immediately; double delete traps (Q6).
+/// `Context.free(value)`: frees immediately; double delete traps (Q6).
 ///
 /// # Safety
 ///
@@ -4331,7 +4331,7 @@ pub unsafe extern "C" fn sub_rt_cb_trampoline(
 /// return it with [`sub_rt_ctx_release`]. Never null.
 ///
 /// The returned Context is a ship-tier (releasing) Context (§8.1a/§8.1b):
-/// its `unsafeDelete`/`collect` release storage immediately — arena
+/// its `Context.free`/`Context.collect` release storage immediately — arena
 /// blocks to their free lists, large allocations to the system — rather
 /// than retaining and poisoning (built via [`Context::new_releasing`]).
 #[no_mangle]

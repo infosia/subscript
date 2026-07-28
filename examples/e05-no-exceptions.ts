@@ -43,8 +43,8 @@ export function main(): void {
   print(`json-error=${malformed.ok}`);
 
   // Q6/Q28: each JsonResult is a Context allocation released by its caller.
-  unsafeDelete(parsed);
-  unsafeDelete(malformed);
+  Context.free(parsed);
+  Context.free(malformed);
 
   // C6 and compiler.md §19.3: a trap is not a result value; it stops the
   // Context at the fault. compiler.md §18.2c makes the trap record

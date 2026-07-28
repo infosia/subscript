@@ -1,6 +1,6 @@
 // benchmark: tree
 // Build, traverse, and explicitly free 30 full binary trees of depth 16
-// (131071 nodes each) using reference classes and unsafeDelete — the
+// (131071 nodes each) using reference classes and Context.free — the
 // language's manual-lifetime path (no implicit GC, design invariant 2).
 // Checksum: total node-visit count, i64 = 30 * (2^17 - 1) = 3932130.
 
@@ -45,7 +45,7 @@ function free(node: Node): void {
   if (right !== null) {
     free(right);
   }
-  unsafeDelete(node);
+  Context.free(node);
 }
 
 export function main(): void {

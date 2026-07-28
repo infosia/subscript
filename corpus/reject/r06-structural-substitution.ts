@@ -19,5 +19,5 @@ function read(value: A): i32 {
 export function main(): void {
   const value: B = new B();
   print(`${read(value)}`);
-  unsafeDelete(value);
+  Context.free(value);
 }

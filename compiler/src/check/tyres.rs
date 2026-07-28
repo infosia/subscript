@@ -72,7 +72,7 @@ impl<'p> Checker<'p> {
                 // exists only at the C boundary. It is legal while
                 // resolving a mirror declaration (`in_boundary`); general
                 // declarations may not spell it. The ambient
-                // `unsafeDelete(value: object)` signature is hardcoded and
+                // `Context.free(value: object)` signature is hardcoded and
                 // unaffected.
                 if self.in_boundary
                     || self.in_assoc_key
