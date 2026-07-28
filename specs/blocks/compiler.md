@@ -593,6 +593,11 @@ verified by running it, not by the suite.
 
 ## 11b. C toolchain at runtime is clang, located portably
 
+**Windows note (2026-07-28):** §11c supersedes this section's Windows
+toolchain choice — the default Windows ship-C compiler is MSVC `cl`, not
+clang. The rest of §11b (system import libraries, binary-mode stdout,
+staticlib name, `.exe` suffix) still applies to the `cl` path.
+
 Three paths invoke a C toolchain while the standing gate runs — the two
 ship-C AOT runners (`codegen/src/aot.rs` `run_aot`/`run_c_aot`) and the
 `offsetof` layout probe (`codegen/tests/offsetof_layout.rs`). They compile
@@ -640,6 +645,55 @@ independent. It is not gate-driven, so it is verified by running the
 benchmark, not by `cargo test`; the §3 performance thresholds it reports are
 machine- and toolchain-dependent (the recorded ship-tier figures are the
 reference setup's, §11).
+
+## 11c. C toolchain on Windows is MSVC `cl` (supersedes §11b's Windows clang)
+
+Owner decision 2026-07-28: on `*-pc-windows-msvc` the ship-C toolchain is
+the native MSVC compiler `cl`, not clang. subscript must build on Windows
+with the platform toolchain alone — no LLVM install as a prerequisite.
+This supersedes §11b's choice of clang on Windows; §11b still governs the
+Unix host, and clang/clang-cl remains an optional cross-check. Every
+other Windows detail §11b lists — the system import libraries, binary-mode
+stdout, the `subscript_runtime.lib` staticlib name, the `.exe` suffix — is
+unchanged and applies to the `cl` path.
+
+Flags: `/std:c11 /O2 /utf-8`. `-ffp-contract=off` needs no flag — MSVC's
+default (`/fp:precise`) does not contract. `/utf-8` makes `cl` read the
+UTF-8 sources without the CP932/ACP-dependent C4819 warning.
+
+**Signed-overflow soundness.** §11b pinned clang because `-fwrapv` makes
+signed overflow defined two's-complement wrap, the language's semantics;
+`cl` has no `-fwrapv` equivalent. MSVC does not optimize on the
+signed-overflow-is-UB assumption and wraps two's-complement *(docs)*. The
+guarantee is re-established the project's standing way — by verification,
+not by a compile flag: the Windows standing gate runs `cl` and stays
+byte-exact (dev-JIT ≡ ship-C-AOT ≡ golden, §11), so any `cl` divergence on
+overflow breaks the gate. Evidence (measured 2026-07-28, MSVC 19.44):
+emitted ship C for the language examples e01–e08 compiles under `cl` and
+is byte-identical to the goldens, the wrapping and `as`-conversion cases
+(e01) included; `engine.c` compiles under `cl` (C4819 only, silenced by
+`/utf-8`).
+
+Two constraints the `cl` path adds, both measured:
+
+1. **The emitter must not output an empty struct.** MSVC C mode rejects a
+   zero-member struct (`error C2016`); clang accepts it. The opaque-handle
+   pointee is emitted today as `struct Sub_N_<Handle> {}`. It must carry
+   at least one member (a single `char`), or be an incomplete type used
+   only behind a pointer — the pointee is never instantiated by value in
+   emitted C, so either is ABI-safe. Measured: adding a `char` member
+   keeps e09/e10 byte-identical across both tiers under `cl`.
+
+2. **A host header that spells a boundary type `_Float16`/`__fp16` fails
+   loud on the `cl` path.** Emitted C never spells `_Float16` (`f16` is
+   `uint16_t` storage, §16.2), so `f16` *programs* build under `cl`. But a
+   bound host facade whose C source spells the type directly — the
+   `corpus/interop` fixture does — cannot be compiled by `cl`: MSVC 19.44
+   has no half-width float in any `/std` or language mode (measured). This
+   is the §16.2 fail-loud stance, never an integer substitution. On the
+   MSVC-Windows configuration the interop fixture and the two-header gate
+   that binds it are therefore excluded from the gate; the clang build
+   still covers them.
 
 ## 12. P5 C-header binding vertical slice
 

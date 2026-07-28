@@ -261,3 +261,84 @@ kept minimal:
   `__declspec(thread)` under MSVC; that path has never been compiled by
   `cl`. Both are open until run.
 
+## Examples gate + MSVC ship tier (2026-07-28)
+
+Contract: `compiler.md` §11c (new). Owner decision 2026-07-28: on
+`*-pc-windows-msvc` the ship-C toolchain is MSVC `cl`, not clang — no LLVM
+install as a prerequisite. Supersedes §11b's Windows clang choice on the
+evidence below.
+
+### Trigger
+
+The `examples/` gate crate (added after the 2026-07-23 port) fails to
+build on `x86_64-pc-windows-msvc`. Its dev-dependency
+`subscript-interop-fixture` compiles `corpus/interop/interop.c` via the
+`cc` crate, which selects MSVC `cl`; `interop.h:39` `typedef _Float16
+SubFloat16` does not compile under `cl` (`error C2061`/`C2059` cascade,
+cc-rs exit 2). The fixture is also a dependency of `subscript-codegen`, so
+`cargo test -p subscript-codegen` hits the same wall.
+
+### Feasibility spike (measured, MSVC 19.44, this host)
+
+The `emit-c` binary emitted each example's ship C; each was compiled with
+`cl -nologo -std:c11 -O2 -utf-8`, linked against `subscript_runtime.lib`
+plus the §11b system libs, run, and byte-compared to the committed golden.
+
+| subject | result |
+|---|---|
+| e01–e08 (language only) | compile under `cl`, **8/8 byte-identical** to goldens (integer wrapping, `as` conversions, f32, deterministic formatting included) |
+| e09/e10 (opaque-handle C bind) | `error C2016` — emitter outputs `typedef struct Sub_N_EngWorld {}`; MSVC C mode rejects empty structs. After a one-`char` member is added, both **byte-identical** across dev-JIT ≡ ship-C-AOT ≡ golden |
+| `engine.c` under `cl` | compiles; `__declspec(thread)` path exercised; only C4819 (silenced by `/utf-8`) — closes the 2026-07-28 open item above |
+| `_Float16`/`__fp16`/`std::float16_t`/`<stdfloat>` under `cl` | none compile in any `/std` or language mode — MSVC has no half-width float |
+| emitted ship C | never spells `_Float16` (`f16` = `uint16_t` storage, §16.2), so `f16` programs are `cl`-clean |
+
+Conclusion: the MSVC ship tier is feasible. The two blockers are the empty
+struct (fixable in the emitter) and the host-header `_Float16` spelling
+(fail-loud on Windows, accepted by the owner).
+
+### Task plan (handoff — coding agent)
+
+Sequential; each task's gate is a clean `cargo test -p subscript-examples`
+(and `-p subscript-codegen`) on `x86_64-pc-windows-msvc`, plus arm64/Unix
+non-regression.
+
+1. **Emitter: no empty structs** (`codegen/src/cemit.rs`). Give an
+   otherwise-zero-member emitted struct a single `char` member, or emit it
+   as an incomplete type used only behind a pointer (opaque-handle
+   pointee; never instantiated by value). Add an accept-corpus entry that
+   binds an opaque handle so the standing gate covers it. Gate: standing
+   gate byte-exact both tiers; goldens unchanged (the member is never
+   read). §11c constraint 1.
+
+2. **Ship-C toolchain on Windows = `cl`** (`codegen/src/aot.rs`;
+   `codegen/tests/offsetof_layout.rs`; `benchmarks/src/bin/perf-gate.rs`
+   follow the same locator). `host_c_compiler()` selects `cl` on
+   `*-pc-windows-msvc`; translate the GNU flags to MSVC (`/std:c11 /O2
+   /utf-8`; drop `-fwrapv`/`-ffp-contract=off` — MSVC wraps and does not
+   contract by default); compile+link through `cl`. Keep the §11b system
+   libs, binary-mode stdout, staticlib name, `.exe` suffix. Gate: standing
+   gate byte-exact under `cl`; the signed-overflow guarantee is the gate
+   itself (§11c). `$CC` override still honored.
+
+3. **`cc`-crate build scripts stay `cl`; f16 fixture excluded on Windows**
+   (`codegen/tests/native-fixture/build.rs`, `examples/build.rs`, and the
+   `subscript-interop-fixture` dependency in `codegen`/`examples`). Add
+   `/utf-8` to the `cc` build (silences C4819). Gate the interop fixture
+   compile and the `gate/two-header-binding.ts` example out of the
+   `*-pc-windows-msvc` configuration (fail-loud on `_Float16`, never
+   substituted; §11c constraint 2 / §16.2). `engine.c` stays `cl`-built.
+   The examples gate's example discovery must skip the two-header gate on
+   Windows without weakening it elsewhere.
+
+4. **`examples/host/build.sh`**: the Windows branch links with `cl`
+   (translated flags, `/utf-8`), not bare `clang`. It currently assumes
+   `clang` on `PATH`; on an MSVC-only host that fails.
+
+5. **Spec**: §11c landed (this change). Confirm §16.3 / examples.md need no
+   further edit once the two-header gate is Windows-excluded.
+
+Kept out of scope until the owner asks: making `cl` compile the `_Float16`
+fixture (impossible without an integer substitution §16.2 forbids), and a
+clang-cl configuration (still needs LLVM, which this decision removes as a
+requirement).
+
