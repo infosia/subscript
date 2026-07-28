@@ -120,6 +120,61 @@ its pressure:
 
 Nothing here is adopted in advance.
 
-## Result
+## Result — measured 2026-07-29
 
-Not yet run.
+Both variants, dev tier, one `i32` field per allocation:
+
+| frames | live_bytes | reserved_bytes | growth/allocation |
+|---:|---:|---:|---:|
+| 0 | 0 | 0 | — |
+| 100 | 0 | 2 000 | 20.000 |
+| 1 000 | 0 | 20 000 | 20.000 |
+| 10 000 | 0 | 200 000 | 20.000 |
+
+Three findings, each measured rather than argued:
+
+1. **Growth is exactly linear in cumulative allocations.** The slope does
+   not move across two orders of magnitude.
+2. **`Context.free` and `Context.collect` retain identically** — 20 bytes
+   per allocation either way. In the dev tier the spelling of release
+   changes nothing about retention. §8.1a says so; this is the first time
+   it was measured.
+3. **The live set held at 0 across every frame count**, so the measurement
+   is of retention and not of ordinary growth. The validity condition the
+   pre-registration set is met.
+
+At this allocation shape — 4 bytes of payload, the smallest the language
+can make — the reference budget lasts **1.85 hours**.
+
+## Decision — owner, 2026-07-29
+
+**The pre-registered criteria are superseded.** They asked how long the
+budget lasts; the owner rejects the **shape** rather than the magnitude:
+
+> Memory that grows linearly and without bound is not acceptable
+> regardless of duration.
+
+That is a stronger rule than any of the three thresholds, and it settles
+the case without the object-size sweep the duration question would have
+needed: at every object size the growth is unbounded and linear, so no
+size makes it acceptable. Option 1 of the three listed below — accept and
+document — is ruled out.
+
+**What this reopens.** P24 §22.2 declined to bound the poison window,
+preferring "a smaller, correct win … to a larger one that quietly narrows
+a guarantee", and said reopening needs a measurement to justify the
+narrower guarantee. The measurement above is that justification, and the
+decision above is the owner's.
+
+**What the retention actually buys, stated precisely, because the fix
+depends on it.** Retaining the bytes is not about the payload — it is
+about keeping the *address* out of circulation. A stale handle traps
+because its address is still recognized as a dead allocation; if the
+storage were released, the system allocator could hand that address to a
+later allocation and the stale read would find a live object instead of a
+trap. So any bound on retention is a bound on **how far back a
+use-after-free is still detected**, and that is the quantity a design
+response trades away. It must be stated in those terms rather than as a
+memory setting.
+
+Mechanism is not yet chosen; that is the next decision.
