@@ -1,10 +1,9 @@
 // GENERATED FILE — DO NOT EDIT.
 //
-// Ambient boundary mirror produced by this project's `bindgen` from the
-// pinned synthetic interop header (corpus/interop/interop.h). Hand edits
-// are overwritten; the byte-identical regeneration test
-// (specs/blocks/compiler.md §12.2) fails on drift. Fix the generator,
-// never this file (CLAUDE.md core principle 6).
+// Ambient boundary mirror produced by this project's `bindgen` from
+// `interop.h`. Hand edits are overwritten; the byte-identical
+// regeneration test (specs/blocks/compiler.md §12.2) fails on drift. Fix
+// the generator, never this file (CLAUDE.md core principle 6).
 //
 // Boundary typing follows the Q13 rules (specs/blocks/collisions.md §2):
 // opaque handles are branded interfaces; struct pointers and
@@ -12,6 +11,22 @@
 // `T[]`; length-carrying string views are `string`; callback userdata
 // slots are `object | null`. These declarations are global ambient (no
 // import/export), like the language prelude.
+
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-descriptor function="subDeviceSubmit" parameter="commands" aggregate="SubBufferView" element="uint32_t" const=true
+// @subscript-c-string-view function="subDeviceSetLabel" parameter="label" aggregate="SubStringView"
+// @subscript-c-descriptor function="subSliceChecksumF32" parameter="data" aggregate="SubSliceF32" element="float" const=true
+// @subscript-c-descriptor function="subSliceChecksumI32" parameter="data" aggregate="SubSliceI32" element="int32_t" const=true
+// @subscript-c-descriptor function="subSliceChecksumF64" parameter="data" aggregate="SubSliceF64" element="double" const=true
+// @subscript-c-descriptor function="subSliceChecksumI64" parameter="data" aggregate="SubSliceI64" element="int64_t" const=true
+// @subscript-c-descriptor function="subSliceChecksumU8" parameter="data" aggregate="SubSliceU8" element="uint8_t" const=true
+// @subscript-c-descriptor function="subSliceChecksumI8" parameter="data" aggregate="SubSliceI8" element="int8_t" const=true
+// @subscript-c-descriptor function="subSliceChecksumU16" parameter="data" aggregate="SubSliceU16" element="uint16_t" const=true
+// @subscript-c-descriptor function="subSliceChecksumI16" parameter="data" aggregate="SubSliceI16" element="int16_t" const=true
+// @subscript-c-descriptor function="subSliceChecksumF16" parameter="data" aggregate="SubSliceF16" element="SubFloat16" const=true
+// @subscript-c-descriptor function="subBulkConsumeF32" parameter="data" aggregate="SubSliceF32" element="float" const=true
+// @subscript-c-descriptor function="subDeviceWait" parameter="waits" aggregate="SubWaitList" element="SubWaitEntry" const=false
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -38,6 +53,8 @@ declare class SubChainExtB {
   level: i32;
   constructor(header: SubChainHeader, scale: f64, level: i32);
 }
+
+declare function subChainPayloadValue(chain: SubChainHeader | null): i32;
 
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 

@@ -70,6 +70,13 @@ typedef struct SubChainExtB {
     int32_t level;
 } SubChainExtB;
 
+/* Walks a chain and folds the payload scalars of tagged ExtA and ExtB
+ * nodes in field order. A tagged node must address the matching
+ * extension's embedded header; unsigned accumulation defines wrapping,
+ * and casting each float to int32_t before folding makes the payload
+ * read-back an exact observable. */
+int32_t subChainPayloadValue(SubChainHeader *chain);
+
 /* ---- Pattern 2: (pointer, count) array-pair descriptor ------------- */
 
 /* Borrowed view over a contiguous run of elements; the callee reads

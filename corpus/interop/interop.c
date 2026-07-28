@@ -13,6 +13,9 @@
  *   - subDeviceCreate walks the chain and records its depth (number of
  *     nodes reachable through `next`); this exercises the `Struct | null`
  *     pointer marshaling.
+ *   - subChainPayloadValue switches on each chain tag and folds the
+ *     matching extension payload, making embedded-header address
+ *     marshaling observable.
  *   - subDeviceSetLabel stores the label bytes (a (ptr,len) string view).
  *   - subDeviceSetLogger stores the callback + userdata and immediately
  *     invokes the callback once with the stored label as the message, so
@@ -60,6 +63,29 @@ struct SubDevice_T {
 /* Deterministic scratch used to synthesize a callback message of a given
  * length. Single-threaded; refilled on each use. */
 static char sub_msgbuf[256];
+
+int32_t subChainPayloadValue(SubChainHeader *chain) {
+    uint32_t h = 0u;
+    for (SubChainHeader *n = chain; n != NULL; n = n->next) {
+        switch (n->sType) {
+            case SUB_CHAIN_KIND_EXT_A: {
+                const SubChainExtA *ext = (const SubChainExtA *)(const void *)n;
+                h = h * 31u + (uint32_t)(int32_t)ext->intensity;
+                h = h * 31u + ext->flags;
+                break;
+            }
+            case SUB_CHAIN_KIND_EXT_B: {
+                const SubChainExtB *ext = (const SubChainExtB *)(const void *)n;
+                h = h * 31u + (uint32_t)(int32_t)ext->scale;
+                h = h * 31u + (uint32_t)ext->level;
+                break;
+            }
+            case SUB_CHAIN_KIND_BASE:
+                break;
+        }
+    }
+    return (int32_t)h;
+}
 
 SubDevice subDeviceCreate(SubChainHeader *chain) {
     struct SubDevice_T *d = (struct SubDevice_T *)calloc(1, sizeof(*d));

@@ -39,6 +39,7 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     // unresolved identifier.
     const INTEROP_TOKENS: &[&str] = &[
         "subDevice",
+        "subChainPayloadValue",
         "subSlice",
         "SubDrawList",
         "subDrawListTotal",
@@ -106,7 +107,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        87,
+        88,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -115,7 +116,9 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          + a73 P19 divisor single-evaluation + a74–a76 P20 review fixes \
          + a77–a81 P22 for-of/container iteration/array spread), plus two \
          P23 regex entries, four a84–a87 P24 code-point entries, and the \
-         a88 P24 astral-intern collection entry"
+         a88 P24 astral-intern collection entry, and the a89 P25 chain \
+         payload read-back through an embedded header entry \
+         (compiler.md §23.7a)"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

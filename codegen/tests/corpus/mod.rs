@@ -45,6 +45,7 @@ fn uses_interop_mirror(sources: &[SourceFile]) -> bool {
 pub(crate) fn references_interop(src: &str) -> bool {
     const TOKENS: &[&str] = &[
         "subDevice",
+        "subChainPayloadValue",
         "subSlice",
         "SubDrawList",
         "subDrawListTotal",

@@ -87,11 +87,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // fixes (a74–a76), and P22 for-of/container iteration/array spread
     // coverage (a77–a81), P23 RegExp (a82–a83), and P24 code-point
     // storage coverage (a84–a87), plus the P24 astral-intern collection
-    // coverage (a88).
+    // coverage (a88), and the P25 embedded chain-payload read-back
+    // coverage (a89).
     assert_eq!(
         golden_ids.len(),
-        88,
-        "expected exactly 88 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        89,
+        "expected exactly 89 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -99,7 +100,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          + a73 P19 divisor single-evaluation + a74–a76 P20 review fixes \
          + a77–a81 P22 for-of/container iteration/array spread), plus the \
          a82–a83 P23 regex, a84–a87 P24 code-point, and a88 P24 \
-         astral-intern collection goldens, found {}",
+         astral-intern collection, and a89 P25 embedded chain-payload \
+         read-back goldens, found {}",
         golden_ids.len()
     );
 

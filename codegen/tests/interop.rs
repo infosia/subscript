@@ -34,9 +34,11 @@ fn both_tiers(program: &str) -> Vec<u8> {
     let jit = run_jit(&files()).unwrap_or_else(|e| panic!("dev-JIT run failed: {e}"));
     let ship = run_c_aot(&files()).unwrap_or_else(|e| panic!("ship-C-AOT run failed: {e}"));
     assert_eq!(
+        jit,
+        ship,
+        "dev-JIT output {:?} != ship-C-AOT output {:?}",
         String::from_utf8_lossy(&jit),
-        String::from_utf8_lossy(&ship),
-        "dev-JIT and ship-C-AOT diverged"
+        String::from_utf8_lossy(&ship)
     );
     jit
 }
@@ -184,6 +186,18 @@ fn chain_slot_address_of_via_assignment() {
 "
     );
     assert_eq!(both_tiers(&prog), b"7\n");
+}
+
+/// An extension's embedded header crosses the chain slot by address, so
+/// the callee can recover and fold the payload fields that follow it.
+#[test]
+fn chain_extension_payload_is_read_through_its_embedded_header() {
+    let prog = include_str!("../../corpus/accept/a89-interop-chain-payload.ts");
+    let golden = include_bytes!("../../corpus/accept/a89-interop-chain-payload.expected");
+    let output = both_tiers(prog);
+    assert_eq!(golden, b"222\n");
+    assert_eq!(output, golden);
+    println!("a89-interop-chain-payload: {:?}", String::from_utf8_lossy(&output));
 }
 
 /// P6.3 async model: a completion callback is REGISTERED (subDeviceOnComplete)

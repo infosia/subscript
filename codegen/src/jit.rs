@@ -485,6 +485,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
 // deliberately argument-less; a mismatch is irrelevant to address-taking
 // and these are never called from Rust.
 extern "C" {
+    fn subChainPayloadValue();
     fn subDeviceCreate();
     fn subDeviceRetain();
     fn subDeviceRelease();
@@ -521,6 +522,7 @@ extern "C" {
 /// object (compiler.md §12.4).
 pub(crate) fn register_interop(builder: &mut JITBuilder) {
     let syms: &[(&str, *const u8)] = &[
+        ("subChainPayloadValue", subChainPayloadValue as *const u8),
         ("subDeviceCreate", subDeviceCreate as *const u8),
         ("subDeviceRetain", subDeviceRetain as *const u8),
         ("subDeviceRelease", subDeviceRelease as *const u8),

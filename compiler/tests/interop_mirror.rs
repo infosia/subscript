@@ -41,13 +41,15 @@ fn using_program_type_checks_against_the_generated_mirror() {
         });
 
     // Every C function in the header became a foreign symbol with a mapped
-    // signature, in declaration order: the six device entries, then the
-    // nine typed-slice facades (their `SubSlice*` descriptors absorbed into
-    // `T[]`, so each takes a primitive array and returns i32).
+    // signature, in declaration order: the chain-payload reader, the six
+    // device entries, then the nine typed-slice facades (their `SubSlice*`
+    // descriptors absorbed into `T[]`, so each takes a primitive array and
+    // returns i32).
     let names: Vec<&str> = module.foreign_fns.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names,
         vec![
+            "subChainPayloadValue",
             "subDeviceCreate",
             "subDeviceRetain",
             "subDeviceRelease",
@@ -121,7 +123,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
 
     // subDeviceCreate returns the branded handle (a nominal class type),
     // and its chain parameter is the `Struct | null` boundary form.
-    let create = &module.foreign_fns[0];
+    let create = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subDeviceCreate")
+        .expect("subDeviceCreate foreign declaration");
     assert!(matches!(create.ret, Type::Class(_)), "handle return type");
     assert!(
         matches!(create.params[0].ty, Type::Nullable(_)),
