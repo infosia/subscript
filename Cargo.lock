@@ -989,6 +989,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "subscript-examples"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "subscript-bindgen",
+ "subscript-codegen",
+ "subscript-compiler",
+]
+
+[[package]]
 name = "subscript-runtime"
 version = "0.1.0"
 dependencies = [

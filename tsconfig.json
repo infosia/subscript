@@ -14,6 +14,8 @@
     "corpus/accept/**/*.ts",
     "corpus/trap/**/*.ts",
     "corpus/interop/**/*.d.ts",
-    "corpus/interop/**/*.ts"
+    "corpus/interop/**/*.ts",
+    "examples/**/*.ts",
+    "examples/**/*.d.ts"
   ]
 }

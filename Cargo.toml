@@ -6,6 +6,7 @@ members = [
     "compiler",
     "runtime",
     "codegen",
+    "examples",
     "spike/mobile-link",
     "spike/mobile-link/runtime-stub",
 ]

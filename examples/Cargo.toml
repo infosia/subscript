@@ -1,0 +1,14 @@
+[package]
+name = "subscript-examples"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Executable gates for the subscript teaching examples."
+
+[dev-dependencies]
+subscript-bindgen = { path = "../bindgen" }
+subscript-codegen = { path = "../codegen" }
+subscript-compiler = { path = "../compiler" }
+
+[build-dependencies]
+cc = "1"
