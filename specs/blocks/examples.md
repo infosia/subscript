@@ -74,6 +74,8 @@ examples/
 ```
 
 - All identifiers, comments and prose are English (CLAUDE.md, Language).
+- No path outside the repository appears anywhere, including in
+  `build.sh` and `README.md`.
 
 ### 2a. `gate/` is not part of the example set
 
@@ -92,8 +94,6 @@ contract clause it proves.
 *(Added 2026-07-28: the §23.7 proof was first written as `e10`, which
 gave a teaching example a `teaches:` line naming a phase requirement and
 put four fixture identifiers in front of a reader.)*
-- No path outside the repository appears anywhere, including in
-  `build.sh` and `README.md`.
 
 ## 3. The comment contract
 
