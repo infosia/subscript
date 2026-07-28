@@ -1,0 +1,4 @@
+arrays=4,6,5,5
+mapped=3,6,9,12,15
+filtered=9,12,15
+reduced=36
