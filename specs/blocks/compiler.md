@@ -2378,3 +2378,168 @@ semantic content. `benchmarks.md` carries that caveat.
 ship-visible change is 4.19 MB less static data, i.e. binary layout".
 The instinct — refuse the credit — was right; the named cause was
 measurably wrong.)*
+
+## 23. P25 — no header is privileged
+
+Design invariant 4 says the host presents C headers and the language
+binds those, and that **no specific host header is privileged by the
+language**. The binding path does not implement that today: it binds
+exactly one header, `corpus/interop/interop.h`, and a second header
+cannot reach either tier.
+
+Found 2026-07-28 while contracting `examples.md`, whose C-integration
+examples bind a host facade of their own. The corpus never noticed
+because the corpus has only ever had one header to bind.
+
+### 23.1 What is wrong, with evidence
+
+1. **The ship tier includes the fixture by name.** `codegen/src/cemit.rs`
+   emits `#include "interop.h"` whenever the module has any foreign
+   function, and declares the callback trampoline with that header's
+   `SubStringView`.
+2. **The ship tier names the fixture's descriptor structs.**
+   `interop_array_pair_desc` maps an element type to a fixed C aggregate
+   name — `SubBufferView` for `u32`, `SubSlice<T>` otherwise. Those
+   names belong to the fixture, not to the language.
+3. **The mirror throws away the name the emission needs.** `bindgen`
+   absorbs a `(pointer, count)` descriptor into `T[]` at use sites and
+   emits no record of the C struct it came from, so the emission has
+   nothing to recover and a table in the compiler is the only thing
+   left.
+4. **The dev tier resolves foreign symbols from a fixed list.**
+   `codegen/src/jit.rs` holds an `extern "C"` block naming the fixture's
+   28 symbols and registers them by address. `cranelift-jit` 0.125.4
+   falls back to `dlsym(RTLD_DEFAULT)` on Unix and to `GetProcAddress`
+   over loaded modules on Windows, so an unregistered symbol resolves by
+   accident on Unix and is not guaranteed to resolve on Windows —
+   a portability trap, not a substitute for registration.
+5. **The link line is the fixture's.** `codegen/src/aot.rs` passes
+   `-I corpus/interop` and `corpus/interop/interop.c` unconditionally,
+   and `codegen/build.rs` compiles that file into the crate.
+
+The consequence is one sentence: **a host cannot bind its own header.**
+That is the project's headline interop claim, and it is currently true
+only of the fixture.
+
+### 23.2 The rule
+
+> Every C name the emitted code needs is **recovered from the bound
+> mirror**. The compiler, the two tiers, and the runtime contain no
+> identifier from any particular header.
+
+The fixture keeps working by becoming **an argument** — one native
+library among any number the caller supplies — rather than a case in the
+binding path. The test of the rule is deletion: removing the fixture
+must require touching test scaffolding only, never `compiler/src` or
+`codegen/src`.
+
+### 23.3 Mirror provenance
+
+`bindgen` records in the mirror what the ship tier's C emission needs and
+cannot otherwise know:
+
+- the **include spelling** for the header the mirror was generated from,
+  as the host would write it (`engine.h`), never a filesystem path;
+- for every absorbed `(pointer, count)` descriptor, the **C aggregate
+  name**, its element C type, its mutability (the const borrow and the
+  out/mutable array are different types — §14.3), and the parameter it
+  belongs to;
+- the **C typedef name** of every callback type, so the trampoline can be
+  cast to the type the header declares at the point of use.
+
+Constraints on the spelling, not the spelling itself: it must keep the
+mirror `tsc`-clean (invariant 5), it must be generated and covered by the
+byte-identical regeneration test (§12.2), and a mirror the compiler
+cannot parse provenance from is a **loud error at ingestion**, never a
+silent fallback to a built-in table. Recording it per parameter rather
+than per element type is required: one header may declare both a const
+borrow and a mutable out-array of the same element type, and the
+element type alone does not distinguish them.
+
+### 23.4 Ship tier
+
+The emitted C includes **each ingested mirror's header**, in ingestion
+order, and no other. Descriptor struct names and callback typedef names
+come from provenance.
+
+The generic callback trampoline is declared with a **locally emitted,
+layout-identical view struct** under a reserved `sub_` name rather than
+with a header's type; the runtime already defines that layout as
+`SubStrView` in `runtime/src/ffi.rs`. At the point where the trampoline
+is stored into a header's callback field it is cast to that field's
+declared C typedef, recovered per §23.3. Layout identity (invariant 1)
+is what makes the cast sound; it is not a convenience.
+
+### 23.5 Dev tier
+
+Foreign symbol resolution becomes explicit and caller-supplied. No
+`extern "C"` block naming a particular header's symbols remains in
+`codegen/src`. Registration is by address, as today; the fixture's table
+moves to the corpus gate's own support code.
+
+**The dlsym fallback is not relied on.** A foreign symbol a caller did
+not register is a run error naming the symbol, not a lookup that happens
+to succeed on one platform. This is the Windows half of the portability
+record (`specs/tracking/windows-portability.md`).
+
+### 23.6 The surface a caller uses
+
+One value type describes a native library the caller links: its include
+directories, its C sources for the ship tier's compile, and its symbol
+table for the dev tier's JIT. Both runners take a set of them. Taking
+function addresses across a language boundary is `unsafe`; the
+constructor carries the SAFETY contract (the addresses outlive every run
+and match the C signatures the mirror declares).
+
+`emit-c` (`codegen/src/bin/emit-c.rs`) additionally accepts explicit
+source and mirror paths instead of only a corpus entry id, and a flag to
+suppress the generated `entry.c` — a host that owns `main` supplies its
+own. The corpus-entry form stays, because `device-link.sh` uses it.
+
+### 23.7 Corpus and gate (pre-registered)
+
+**A second fixture, and the two bound together.** The examples' host
+facade (`examples/engine/engine.h`, `examples.md` §4) is the second
+header. Two new gate programs:
+
+1. one binding **only** the engine facade — the first time any header
+   other than the fixture is bound on either tier;
+2. one binding **both** headers in a single program — the proof that
+   binding is per-mirror and that no include, descriptor name, or symbol
+   table is global.
+
+Both run under dev-JIT and ship-C-AOT and are compared byte-exact, as
+every corpus entry is.
+
+**No existing golden moves.** This phase changes which C names the
+emission writes down, not what any program computes. An `.expected` that
+moves is a finding.
+
+### 23.8 Exit criteria (kill or pass, pre-registered)
+
+1. **A header other than the fixture binds and runs**, byte-identical on
+   both tiers, against a committed golden (§23.7 program 1).
+2. **Two headers bind in one program** (§23.7 program 2), byte-identical
+   on both tiers.
+3. **No fixture identifier survives in the binding path.** A search for
+   `interop.h`, `SubSlice`, `SubBufferView`, `SubStringView` and the
+   `sub…` foreign symbol names over `compiler/src` and `codegen/src`
+   returns nothing. Matches under `corpus/`, `examples/`, `tests/` and
+   `build.rs` are expected and are not violations.
+4. **Deleting the fixture touches test scaffolding only** — demonstrated,
+   not asserted: the deletion compiles with no edit under
+   `compiler/src` or `codegen/src`. The deletion is not committed.
+5. **A missing registration fails loudly.** A program calling a foreign
+   function whose symbol was not supplied reports an error naming the
+   symbol, on both tiers and on both a Unix and a Windows host — not a
+   dlsym hit.
+6. **A mirror without parseable provenance is rejected at ingestion**,
+   with the offending mirror named.
+7. **`bindgen` regeneration stays byte-identical** (§12.2) with the
+   provenance records present, and the mirror stays `tsc`-clean.
+8. Standing differential gate green; `tsc` clean; clippy at its baseline.
+
+**Kill criterion.** If a descriptor's C name cannot be recovered for some
+header shape the generator otherwise accepts, `bindgen` **fails on that
+header** naming the construct, as it already does for an unmapped type
+(§13.1). A mirror the ship tier would mis-marshal must not be written.
