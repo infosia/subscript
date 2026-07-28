@@ -23,8 +23,9 @@
 //!   with the count elided (§13.2);
 //! - callback userdata slot (`void*`) → `object | null`;
 //! - the supported function-pointer typedef
-//!   `(string view, void*, void*) -> void` → a `type` alias; every other
-//!   callback shape is rejected before a mirror is emitted (§23.3a);
+//!   `(string view, void*, void*) -> void` → a `type` alias; a reachable
+//!   callback of every other shape is rejected, while an unreferenced
+//!   host-only typedef is omitted (§23.3a);
 //! - every other struct → a boundary `declare class` (C-layout value
 //!   struct whose fields may carry the boundary types above);
 //! - each C function → an ambient `declare function` with the mapped
@@ -56,9 +57,10 @@
 //! characters. Descriptor `const` is `true` when the descriptor's element
 //! pointer is const and `false` for a mutable out-array. A consumer may
 //! assume one header record, exactly one record per absorbed standalone
-//! function parameter, and one callback record per C function-pointer
-//! typedef. Descriptor-embedded count/pointer fields have no provenance
-//! record because C emission fills their enclosing aggregate positionally.
+//! function parameter, and one callback record per reachable C
+//! function-pointer typedef. Descriptor-embedded count/pointer fields have
+//! no provenance record because C emission fills their enclosing aggregate
+//! positionally.
 //! Malformed, duplicate, or missing directives are ingestion errors; a
 //! consumer must not reconstruct a C name from a language type.
 //!
@@ -83,8 +85,8 @@ pub use cparse::{CField, Decl, ParseError};
 ///
 /// Returns a [`ParseError`] when libclang cannot be loaded, when the
 /// header fails to parse, when it uses a construct the frontend does not
-/// model, or when a callback typedef differs from the supported
-/// `(string view, void*, void*) -> void` shape.
+/// model, or when a callback typedef reachable from the boundary differs
+/// from the supported `(string view, void*, void*) -> void` shape.
 pub fn generate(header: &str) -> Result<String, ParseError> {
     generate_for_header(header, "header.h")
 }

@@ -64,7 +64,8 @@ fn emit(parsed: &Parsed) -> Result<String, ParseError> {
 /// Returns [`ParseError`] under the same conditions as [`emit`].
 pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String, ParseError> {
     let registry = classify(parsed);
-    validate_callback_shapes(parsed, &registry)?;
+    let reachable_callbacks = reachable_callbacks(parsed, &registry);
+    validate_callback_shapes(parsed, &registry, &reachable_callbacks)?;
     let mut blocks: Vec<String> = Vec::new();
     let mut pending_fns: Vec<String> = Vec::new();
 
@@ -82,6 +83,9 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
                 blocks.push(emit_enum(name, members));
             }
             Decl::FnPtr { name, ret, params } => {
+                if !reachable_callbacks.contains(name) {
+                    continue;
+                }
                 flush(&mut pending_fns, &mut blocks);
                 blocks.push(emit_fn_ptr(name, ret, params, &registry)?);
             }
@@ -141,7 +145,9 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
     }
 
     let mut out = header(include_spelling);
-    if let Some(provenance) = emit_provenance(parsed, &registry, include_spelling)? {
+    if let Some(provenance) =
+        emit_provenance(parsed, &registry, &reachable_callbacks, include_spelling)?
+    {
         out.push('\n');
         out.push_str(&provenance);
         out.push('\n');
@@ -160,6 +166,7 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
 fn emit_provenance(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
+    reachable_callbacks: &HashSet<String>,
     include_spelling: &str,
 ) -> Result<Option<String>, ParseError> {
     if !parsed
@@ -176,13 +183,16 @@ fn emit_provenance(
     )];
     for decl in &parsed.decls {
         match decl {
-            Decl::FnPtr { name, .. } => {
+            Decl::FnPtr { name, .. } if reachable_callbacks.contains(name) => {
                 records.push(format!("// @subscript-c-callback typedef={}", quoted(name)));
             }
             Decl::Func { name, params, .. } => {
                 emit_parameter_provenance(name, params, parsed, registry, &mut records)?;
             }
-            Decl::Enum { .. } | Decl::Struct { .. } | Decl::Handle { .. } => {}
+            Decl::Enum { .. }
+            | Decl::FnPtr { .. }
+            | Decl::Struct { .. }
+            | Decl::Handle { .. } => {}
         }
     }
     Ok(Some(records.join("\n")))
@@ -236,11 +246,15 @@ fn emit_parameter_provenance(
 fn validate_callback_shapes(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
+    reachable_callbacks: &HashSet<String>,
 ) -> Result<(), ParseError> {
     for decl in &parsed.decls {
         let Decl::FnPtr { name, ret, params } = decl else {
             continue;
         };
+        if !reachable_callbacks.contains(name) {
+            continue;
+        }
         let returns_void = ret.base == "void" && !ret.pointer && ret.array_len.is_none();
         let has_string_view = params.first().is_some_and(|param| {
             !param.pointer
@@ -260,6 +274,55 @@ fn validate_callback_shapes(
         }
     }
     Ok(())
+}
+
+/// Returns the function-pointer typedefs that can cross the mirrored
+/// boundary: a field of an emitted struct, or a foreign function parameter
+/// or return. Unreferenced host-only hooks are not part of the mirror.
+fn reachable_callbacks(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+) -> HashSet<String> {
+    let callback_names: HashSet<&str> = parsed
+        .decls
+        .iter()
+        .filter_map(|decl| match decl {
+            Decl::FnPtr { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let mut reachable = HashSet::new();
+    for decl in &parsed.decls {
+        match decl {
+            Decl::Struct { name, fields }
+                if !matches!(
+                    registry.get(name),
+                    Some(Kind::ArrayPair(_) | Kind::StringView)
+                ) =>
+            {
+                for field in fields {
+                    if callback_names.contains(field.base.as_str()) {
+                        reachable.insert(field.base.clone());
+                    }
+                }
+            }
+            Decl::Func { ret, params, .. } => {
+                if callback_names.contains(ret.base.as_str()) {
+                    reachable.insert(ret.base.clone());
+                }
+                for param in params {
+                    if callback_names.contains(param.base.as_str()) {
+                        reachable.insert(param.base.clone());
+                    }
+                }
+            }
+            Decl::Enum { .. }
+            | Decl::FnPtr { .. }
+            | Decl::Handle { .. }
+            | Decl::Struct { .. } => {}
+        }
+    }
+    reachable
 }
 
 /// Returns the pointer field of a classified two-field descriptor struct.

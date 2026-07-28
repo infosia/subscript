@@ -130,6 +130,24 @@ fn header_without_foreign_functions_emits_no_provenance_records() {
     ";
     let mirror = generate_for_header(header, "types.h").expect("type-only header maps");
     assert!(!mirror.contains("@subscript-c-"), "{mirror}");
+    assert!(!mirror.contains("type EngDone"), "{mirror}");
+}
+
+#[test]
+fn unreachable_unsupported_callback_is_omitted_without_rejecting_header() {
+    let header = "
+        #include <stddef.h>
+        typedef void (*EngAllocator)(size_t engSize, void *engUserdata);
+        void engRun(void);
+    ";
+    let mirror = generate_for_header(header, "host.h")
+        .expect("an unreachable host-only callback does not cross the boundary");
+    assert!(mirror.contains("declare function engRun(): void;"), "{mirror}");
+    assert!(!mirror.contains("type EngAllocator"), "{mirror}");
+    assert!(
+        !mirror.contains("@subscript-c-callback typedef=\"EngAllocator\""),
+        "{mirror}"
+    );
 }
 
 #[test]
@@ -146,6 +164,7 @@ fn callback_with_an_extra_parameter_is_rejected() {
             void *engUserdata1,
             void *engUserdata2,
             uint32_t engKind);
+        void engInstall(EngExtra engCallback);
     ";
     let error =
         generate_for_header(header, "extra.h").expect_err("extra callback parameter must fail");
@@ -172,6 +191,7 @@ fn callback_with_one_userdata_slot_is_rejected() {
         typedef void (*EngShort)(
             EngText engMessage,
             void *engUserdata1);
+        void engInstall(EngShort engCallback);
     ";
     let error =
         generate_for_header(header, "short.h").expect_err("missing userdata slot must fail");
@@ -200,6 +220,7 @@ fn callback_with_non_void_return_is_rejected() {
             EngText engMessage,
             void *engUserdata1,
             void *engUserdata2);
+        void engInstall(EngReturning engCallback);
     ";
     let error =
         generate_for_header(header, "return.h").expect_err("non-void callback return must fail");
