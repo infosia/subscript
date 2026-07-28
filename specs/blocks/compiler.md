@@ -657,9 +657,20 @@ other Windows detail §11b lists — the system import libraries, binary-mode
 stdout, the `subscript_runtime.lib` staticlib name, the `.exe` suffix — is
 unchanged and applies to the `cl` path.
 
-Flags: `/std:c11 /O2 /utf-8`. `-ffp-contract=off` needs no flag — MSVC's
-default (`/fp:precise`) does not contract. `/utf-8` makes `cl` read the
-UTF-8 sources without the CP932/ACP-dependent C4819 warning.
+Flags: `/nologo /std:c11 /O2 /utf-8 /fp:strict`. `/utf-8` makes `cl` read
+the UTF-8 sources without the CP932/ACP-dependent C4819 warning. `/fp:strict`
+is the `-ffp-contract=off` equivalent — it forbids contraction and
+reassociation — but the stricter mode is *required*, not merely chosen: the
+emitter writes `double inf = 1.0 / 0.0;` for `Infinity`, which `cl`
+constant-folds and rejects (`C2124`) under the default `/fp:precise`;
+`/fp:strict` defers it to a runtime infinity (clang only warns). Output and
+link syntax is MSVC's: `/Fo:<dir>\` for objects, `/Fe:<exe> -link` for the
+executable, `.obj` object files, and the §11b system import libraries as
+bare `.lib` names (not `-l`). The compiler and its `INCLUDE`/`LIB`/`PATH`
+environment are discovered with `cc::windows_registry::find_tool`, so no
+prior `vcvars` shell is needed — `codegen/src/bin/msvc-cl` is a thin shim
+that applies that lookup for the `sh`-driven capstone build, which cannot
+run `vcvars` itself.
 
 **Signed-overflow soundness.** §11b pinned clang because `-fwrapv` makes
 signed overflow defined two's-complement wrap, the language's semantics;

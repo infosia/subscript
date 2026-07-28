@@ -342,3 +342,63 @@ fixture (impossible without an integer substitution §16.2 forbids), and a
 clang-cl configuration (still needs LLVM, which this decision removes as a
 requirement).
 
+### Result (2026-07-28)
+
+Landed in six commits on `spec/windows-msvc-ship-tier`. Final verification
+on `x86_64-pc-windows-msvc` with **clang not on `PATH` and `$CC` unset**
+(i.e. MSVC only, no LLVM): `cargo test -p subscript-codegen` **211 passed,
+0 failed**; `cargo test -p subscript-examples` **5 passed, 0 failed**
+(capstone included). The byte-exact differential (dev-JIT ≡ ship-C-AOT ≡
+golden) holds under `cl`; no golden byte changed.
+
+What each piece required, beyond the plan:
+
+1. **Emitter — no empty struct** (`cemit.rs`): a zero-field opaque handle
+   now carries `char sub_opaque;`. Byte-exact (member unread).
+2. **Fixture exclusion** was needed in **both** `examples/` and `codegen/`
+   (the plan's premise that codegen was already gated was read off a
+   contaminated tree — it was not). In codegen the fixture is used by four
+   integration targets via `tests/support/native_fixture.rs`; each, plus
+   every `corpus::references_interop` entry, is gated off windows-msvc.
+3. **Ship-C toolchain = `cl`** (`aot.rs`): resolved with
+   `cc::windows_registry::find_tool` (path + `INCLUDE`/`LIB`/`PATH` env);
+   `$CC` honored; missing toolchain is a fail-loud `RunError`. Flags
+   `/nologo /std:c11 /O2 /utf-8 /fp:strict`. **`/fp:strict` is required,
+   not chosen**: the emitted `double inf = 1.0 / 0.0;` is constant-folded
+   and rejected (`C2124`) by `cl` under the default `/fp:precise`;
+   `/fp:strict` defers it to a runtime infinity and still forbids
+   contraction/reassociation, so the differential stays byte-exact
+   (§11c). The two CRLF host-observer tests were fixed by injecting a
+   `_WIN32`-guarded `_setmode(_O_BINARY)` into the test `host_entry`.
+   `offsetof_layout` is gated off windows-msvc (its probe includes
+   `interop.h`'s `_Float16`; clang covers it on Unix).
+4. **Capstone `build.sh`** uses `cl` through `codegen/src/bin/msvc-cl`, a
+   shim that applies the same registry lookup so the `sh`-driven build
+   needs no `vcvars`; objects are directed to `target/examples-host` so
+   `cl` leaves nothing in the repo root.
+
+**Separate pre-existing bug found and fixed — dev-JIT float↔narrow-int on
+x86-64** (`lower/func.rs`). Not a ship-tier or `cl` issue: cranelift's x64
+backend cannot emit a float↔integer conversion with a sub-32-bit (i8/i16)
+operand or result — it hits `unreachable!()` (`isa/x64/inst/emit.rs:1054`)
+— while its arm64 backend can, so the arm64 reference machine that
+generated the goldens never exposed it; it had been latent on every x64
+host since P14 added narrow numerics. Fix (in-tree, no cranelift fork):
+widen a narrow int to i32 before `fcvt_from_*`; for float→narrow-int,
+`fcvt_to_*_sat` into i32 then clamp to the narrow range (smax/smin signed,
+umin unsigned) then `ireduce` — numerically identical to
+`fcvt_to_*_sat(<narrow>)` for every input (in-range, both overflow
+directions, NaN→0), so the CLIF stays arch-independent and the arm64
+goldens keep agreeing. Regression test added for the saturating
+overflow/NaN cases on both tiers.
+
+**Process note.** The first coding-agent run (a Codex MCP session) was
+told to do all four tasks at once with full autonomy; it rewrote 63 files
+across unrelated subsystems, went silent, and — after its harness abort —
+its server process kept running and rewrote the tree several times after
+it was cleaned. Recovery required killing the OS processes. The work was
+redone as single-task, file-scoped subagent handoffs, each independently
+re-verified against the gate before commit. Lesson (one line): scope a
+coding agent to one task and an explicit file set, and confirm the agent
+process is dead before trusting a clean tree.
+
