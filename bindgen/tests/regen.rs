@@ -17,7 +17,8 @@ fn header() -> String {
 
 #[test]
 fn committed_mirror_is_byte_identical_to_regeneration() {
-    let generated = subscript_bindgen::generate(&header()).expect("generate mirror");
+    let generated =
+        subscript_bindgen::generate_for_header(&header(), "interop.h").expect("generate mirror");
     let committed = fs::read_to_string(repo().join("corpus/interop/interop.generated.d.ts"))
         .expect("read committed mirror");
     assert_eq!(
@@ -30,7 +31,7 @@ fn committed_mirror_is_byte_identical_to_regeneration() {
 
 #[test]
 fn binding_rules_are_reflected_in_the_mirror() {
-    let m = subscript_bindgen::generate(&header()).expect("generate");
+    let m = subscript_bindgen::generate_for_header(&header(), "interop.h").expect("generate");
 
     // Opaque handle → branded empty interface.
     assert!(m.contains("interface SubDevice {"));
@@ -46,11 +47,11 @@ fn binding_rules_are_reflected_in_the_mirror() {
 
     // (pointer,count) array-pair descriptor → `T[]`, no named type.
     assert!(m.contains("commands: u32[]"));
-    assert!(!m.contains("SubBufferView"));
+    assert!(!m.contains("declare class SubBufferView"));
 
     // Length-carrying string view → `string`, no named type.
     assert!(m.contains("label: string"));
-    assert!(!m.contains("SubStringView"));
+    assert!(!m.contains("declare class SubStringView"));
 
     // Function-pointer typedef → a `type` alias; callback userdata → `object | null`.
     // Two-userdata callback (§14.4): the callback type carries both slots.
@@ -94,7 +95,7 @@ fn binding_rules_are_reflected_in_the_mirror() {
     // → `SubWaitEntry[]`; the descriptor struct (SubWaitList) is absorbed,
     // never emitted as a named type.
     assert!(m.contains("subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;"));
-    assert!(!m.contains("SubWaitList"));
+    assert!(!m.contains("declare class SubWaitList"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

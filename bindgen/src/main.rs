@@ -15,6 +15,7 @@
 //!   subscript-bindgen --header corpus/interop/interop.h \
 //!     -o corpus/interop/interop.generated.d.ts
 
+use std::path::Path;
 use std::process::ExitCode;
 
 const USAGE: &str = "\
@@ -79,7 +80,12 @@ fn run(args: &[String]) -> Result<(), String> {
     }
     let header = header.ok_or_else(|| format!("no header path given\n\n{USAGE}"))?;
     let src = std::fs::read_to_string(header).map_err(|e| format!("read {header}: {e}"))?;
-    let mirror = subscript_bindgen::generate(&src).map_err(|e| e.to_string())?;
+    let include_spelling = Path::new(header)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("header path `{header}` has no UTF-8 basename"))?;
+    let mirror = subscript_bindgen::generate_for_header(&src, include_spelling)
+        .map_err(|e| e.to_string())?;
     match out {
         Some(path) => std::fs::write(path, mirror).map_err(|e| format!("write {path}: {e}"))?,
         None => print!("{mirror}"),

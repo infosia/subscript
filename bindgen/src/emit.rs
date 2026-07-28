@@ -23,14 +23,15 @@ enum Kind {
     Alias,
 }
 
-const HEADER: &str = "\
+fn header(include_spelling: &str) -> String {
+    format!(
+        "\
 // GENERATED FILE — DO NOT EDIT.
 //
-// Ambient boundary mirror produced by this project's `bindgen` from the
-// pinned synthetic interop header (corpus/interop/interop.h). Hand edits
-// are overwritten; the byte-identical regeneration test
-// (specs/blocks/compiler.md §12.2) fails on drift. Fix the generator,
-// never this file (CLAUDE.md core principle 6).
+// Ambient boundary mirror produced by this project's `bindgen` from
+// `{include_spelling}`. Hand edits are overwritten; the byte-identical
+// regeneration test (specs/blocks/compiler.md §12.2) fails on drift. Fix
+// the generator, never this file (CLAUDE.md core principle 6).
 //
 // Boundary typing follows the Q13 rules (specs/blocks/collisions.md §2):
 // opaque handles are branded interfaces; struct pointers and
@@ -38,7 +39,9 @@ const HEADER: &str = "\
 // `T[]`; length-carrying string views are `string`; callback userdata
 // slots are `object | null`. These declarations are global ambient (no
 // import/export), like the language prelude.
-";
+"
+    )
+}
 
 /// Emits the mirror text for the parsed header.
 ///
@@ -49,8 +52,19 @@ const HEADER: &str = "\
 /// (struct/enum/handle/alias/array-pair/string-view): the emitter fails
 /// loud rather than write an invalid mirror (`specs/blocks/compiler.md`
 /// §13.2).
-pub fn emit(parsed: &Parsed) -> Result<String, ParseError> {
+#[cfg(test)]
+fn emit(parsed: &Parsed) -> Result<String, ParseError> {
+    emit_for_header(parsed, "header.h")
+}
+
+/// Emits a mirror with provenance naming `include_spelling`.
+///
+/// # Errors
+///
+/// Returns [`ParseError`] under the same conditions as [`emit`].
+pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String, ParseError> {
     let registry = classify(parsed);
+    validate_callback_shapes(parsed, &registry)?;
     let mut blocks: Vec<String> = Vec::new();
     let mut pending_fns: Vec<String> = Vec::new();
 
@@ -126,13 +140,159 @@ pub fn emit(parsed: &Parsed) -> Result<String, ParseError> {
         blocks.push(block);
     }
 
-    let mut out = String::from(HEADER);
+    let mut out = header(include_spelling);
+    if let Some(provenance) = emit_provenance(parsed, &registry, include_spelling)? {
+        out.push('\n');
+        out.push_str(&provenance);
+        out.push('\n');
+    }
     for block in &blocks {
         out.push('\n');
         out.push_str(block);
         out.push('\n');
     }
     Ok(out)
+}
+
+/// Emits fixed-shape, tsc-clean provenance comments when the header has a
+/// foreign function. A declaration-only header has no C names for either
+/// execution tier to recover, so it emits no provenance directives.
+fn emit_provenance(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+    include_spelling: &str,
+) -> Result<Option<String>, ParseError> {
+    if !parsed
+        .decls
+        .iter()
+        .any(|decl| matches!(decl, Decl::Func { .. }))
+    {
+        return Ok(None);
+    }
+
+    let mut records = vec![format!(
+        "// @subscript-c-header include={}",
+        quoted(include_spelling)
+    )];
+    for decl in &parsed.decls {
+        match decl {
+            Decl::FnPtr { name, .. } => {
+                records.push(format!("// @subscript-c-callback typedef={}", quoted(name)));
+            }
+            Decl::Func { name, params, .. } => {
+                emit_parameter_provenance(name, params, parsed, registry, &mut records)?;
+            }
+            Decl::Enum { .. } | Decl::Struct { .. } | Decl::Handle { .. } => {}
+        }
+    }
+    Ok(Some(records.join("\n")))
+}
+
+/// Adds provenance for each standalone descriptor or string view absorbed
+/// from one foreign-function parameter list.
+fn emit_parameter_provenance(
+    owner_name: &str,
+    params: &[CField],
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+    records: &mut Vec<String>,
+) -> Result<(), ParseError> {
+    for param in params {
+        match registry.get(&param.base) {
+            Some(Kind::ArrayPair(_)) => {
+                let element = first_struct_field(parsed, &param.base).ok_or_else(|| {
+                    ParseError(format!(
+                        "descriptor provenance for `{}.{}` lost C struct `{}`",
+                        owner_name, param.name, param.base
+                    ))
+                })?;
+                records.push(format!(
+                    "// @subscript-c-descriptor function={} parameter={} aggregate={} element={} const={}",
+                    quoted(owner_name),
+                    quoted(&param.name),
+                    quoted(&param.base),
+                    quoted(&element.base),
+                    element.is_const,
+                ));
+            }
+            Some(Kind::StringView) => {
+                records.push(format!(
+                    "// @subscript-c-string-view function={} parameter={} aggregate={}",
+                    quoted(owner_name),
+                    quoted(&param.name),
+                    quoted(&param.base),
+                ));
+            }
+            Some(Kind::Enum | Kind::Handle | Kind::FnPtr | Kind::Boundary | Kind::Alias) | None => {
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Rejects callback typedefs the runtime's sole C-ABI trampoline cannot
+/// serve. The first parameter must be a by-value classified string view,
+/// followed by exactly two `void*` userdata slots, and the return is void.
+fn validate_callback_shapes(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+) -> Result<(), ParseError> {
+    for decl in &parsed.decls {
+        let Decl::FnPtr { name, ret, params } = decl else {
+            continue;
+        };
+        let returns_void = ret.base == "void" && !ret.pointer && ret.array_len.is_none();
+        let has_string_view = params.first().is_some_and(|param| {
+            !param.pointer
+                && param.array_len.is_none()
+                && matches!(registry.get(&param.base), Some(Kind::StringView))
+        });
+        let has_two_userdata = params.len() == 3
+            && params[1..]
+                .iter()
+                .all(|param| param.base == "void" && param.pointer && param.array_len.is_none());
+        if !(returns_void && has_string_view && has_two_userdata) {
+            return Err(ParseError(format!(
+                "callback typedef `{name}` has an unsupported signature; \
+                 the supported shape is `void Callback(StringView message, \
+                 void *userdata1, void *userdata2)`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Returns the pointer field of a classified two-field descriptor struct.
+fn first_struct_field<'a>(parsed: &'a Parsed, name: &str) -> Option<&'a CField> {
+    parsed.decls.iter().find_map(|decl| match decl {
+        Decl::Struct {
+            name: struct_name,
+            fields,
+        } if struct_name == name => fields.first(),
+        _ => None,
+    })
+}
+
+/// Quotes one directive value with JSON-compatible escaping.
+fn quoted(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch < '\u{20}' => {
+                use std::fmt::Write as _;
+                let _ = write!(out, "\\u{:04x}", ch as u32);
+            }
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Builds the name→role registry from the declarations and scalar aliases.
