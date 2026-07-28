@@ -1,6 +1,9 @@
 # Long-running-host audit — unbounded growth and freezes
 
-Status: swept 2026-07-29 (owner request, after the dev-retention finding).
+Status: swept 2026-07-29 (owner request, after the dev-retention finding);
+**all three findings decided and closed 2026-07-29** — the print observer
+(§18.2f) and binding interning (§14.4a) landed with their exit criteria
+met, and finding 3 is accepted as design at Q12.
 Scope: every quantity in the runtime that grows with **calls made** rather
 than with **data live**, in either tier, plus every way a host frame can
 fail to return. The dev-retention defect is the template: a cost that is
