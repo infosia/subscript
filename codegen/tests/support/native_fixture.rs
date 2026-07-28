@@ -1,5 +1,12 @@
 //! Native-library description for the synthetic interop test fixture.
 
+// The fixture compiles `corpus/interop/interop.c` (which uses `_Float16`),
+// unbuildable by MSVC `cl`, so the fixture crate is excluded on windows-msvc
+// (compiler.md §11c). This module is included via `#[path]` into four test
+// targets; gating its whole body makes it expose nothing and reference no
+// fixture symbol there. Every call site is excluded under the same predicate.
+#![cfg(not(all(windows, target_env = "msvc")))]
+
 // Naming the dev-dependency propagates its test-only native archive into
 // this integration-test link.
 extern crate subscript_interop_fixture;

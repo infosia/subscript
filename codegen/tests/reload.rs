@@ -10,6 +10,10 @@
 //! the body-only replacement that makes the saved coroutine stale.
 
 mod corpus;
+// The fixture is excluded on windows-msvc (compiler.md §11c), and no interop
+// corpus entry is run there, so this module and its symbols are gated out
+// under the same predicate.
+#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[allow(dead_code)]
@@ -412,7 +416,16 @@ fn reload_mode_reproduces_every_committed_golden() {
         let uses_fixture = sources
             .iter()
             .any(|source| corpus::references_interop(&source.source));
+        // On windows-msvc the interop fixture is excluded, so interop entries
+        // are not run there; every other golden still is.
+        #[cfg(all(windows, target_env = "msvc"))]
+        if uses_fixture {
+            continue;
+        }
+        #[cfg(not(all(windows, target_env = "msvc")))]
         let libraries = uses_fixture.then(native_fixture::library).into_iter().collect::<Vec<_>>();
+        #[cfg(all(windows, target_env = "msvc"))]
+        let libraries: Vec<subscript_codegen::NativeLibrary> = Vec::new();
         let mut session =
             match ReloadSession::new_with_native_libraries(&sources, &libraries) {
             Ok(s) => s,

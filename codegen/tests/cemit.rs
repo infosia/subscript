@@ -12,6 +12,10 @@
 
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
+// The fixture is excluded on windows-msvc (compiler.md §11c), and the two
+// interop trap probes are not run there, so this module and its symbols are
+// gated out under the same predicate.
+#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
@@ -552,6 +556,13 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             continue;
         }
         let files = trap_corpus::trap_sources(&trap, &id);
+        // On windows-msvc the interop fixture is excluded, so the two
+        // narrowing probes (t20/t21) that make real foreign calls cannot run
+        // there (compiler.md §11c). Every non-interop trap still runs.
+        #[cfg(all(windows, target_env = "msvc"))]
+        if files.iter().any(|source| source.source.contains("subDevice")) {
+            continue;
+        }
         let expected = trap_corpus::trap_expected(&trap, &id);
         let expected_file = format!("{id}.ts");
         let (expected_kind, expected_line) = trap_expectation(&id);
@@ -561,7 +572,12 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                 run_c_aot_with_alloc_failure(&files, n),
             )
         } else {
+            #[cfg(not(all(windows, target_env = "msvc")))]
             let libraries = [native_fixture::library()];
+            // No interop trap runs on windows-msvc, so the remaining entries
+            // need no native library.
+            #[cfg(all(windows, target_env = "msvc"))]
+            let libraries: [subscript_codegen::NativeLibrary; 0] = [];
             (
                 run_jit_with_native_libraries(&files, &libraries),
                 run_c_aot_with_native_libraries(&files, &libraries),

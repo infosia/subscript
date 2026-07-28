@@ -15,6 +15,11 @@
 //! accumulates `message.length` into a userdata sink, so a program
 //! surfaces every effect by printing the sink's count.
 
+// Every test here binds the synthetic interop header, whose fixture compiles
+// `corpus/interop/interop.c` (`_Float16`), unbuildable by MSVC `cl`. The whole
+// target is excluded on windows-msvc (compiler.md §11c).
+#![cfg(not(all(windows, target_env = "msvc")))]
+
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 

@@ -18,6 +18,10 @@
 //! test: the gate machine is the development machine (§8.3).
 
 mod corpus;
+// The fixture is excluded on windows-msvc (compiler.md §11c), and no interop
+// corpus entry is compiled or run there, so this module and its symbols are
+// gated out under the same predicate.
+#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
@@ -26,6 +30,7 @@ use subscript_codegen::{
     run_jit_with_native_libraries, NativeLibrary,
 };
 
+#[cfg(not(all(windows, target_env = "msvc")))]
 fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Vec<NativeLibrary> {
     if sources
         .iter()
@@ -35,6 +40,14 @@ fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Vec<NativeLib
     } else {
         Vec::new()
     }
+}
+
+// On windows-msvc the interop fixture is excluded and every interop corpus
+// entry is filtered out before it is run, so no entry ever needs a native
+// library.
+#[cfg(all(windows, target_env = "msvc"))]
+fn native_libraries(_sources: &[subscript_compiler::SourceFile]) -> Vec<NativeLibrary> {
+    Vec::new()
 }
 
 #[test]
@@ -68,6 +81,15 @@ fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
         "a50-narrow-callbacks-shifts",
     ] {
         let sources = corpus::entry_sources(&accept, id);
+        // On windows-msvc the interop fixture is excluded, so the interop
+        // narrow entry (a48) is not compiled or run there.
+        #[cfg(all(windows, target_env = "msvc"))]
+        if sources
+            .iter()
+            .any(|source| corpus::references_interop(&source.source))
+        {
+            continue;
+        }
         let libraries = native_libraries(&sources);
         let jit = run_jit_with_native_libraries(&sources, &libraries)
             .unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
@@ -125,6 +147,21 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          read-back goldens, found {}",
         golden_ids.len()
     );
+
+    // The count guard above checks the full committed set on every host
+    // (goldens are never deleted). On windows-msvc the interop fixture is
+    // excluded, so interop entries are filtered out of the run set here — no
+    // interop program is compiled or run there — while every other golden is
+    // still compared on both tiers.
+    #[cfg(all(windows, target_env = "msvc"))]
+    let golden_ids: Vec<String> = golden_ids
+        .into_iter()
+        .filter(|id| {
+            !corpus::entry_sources(&accept, id)
+                .iter()
+                .any(|source| corpus::references_interop(&source.source))
+        })
+        .collect();
 
     let mut failures = Vec::new();
     let mut compared = 0usize;
@@ -195,6 +232,15 @@ fn cranelift_object_aot_still_matches_the_goldens_cross_check() {
     for id in corpus::golden_ids(&accept) {
         let golden = corpus::golden_bytes(&accept, &id);
         let sources = corpus::entry_sources(&accept, &id);
+        // On windows-msvc the interop fixture is excluded, so interop entries
+        // are not compiled or run in this cross-check either.
+        #[cfg(all(windows, target_env = "msvc"))]
+        if sources
+            .iter()
+            .any(|source| corpus::references_interop(&source.source))
+        {
+            continue;
+        }
         let libraries = native_libraries(&sources);
         match run_aot_with_native_libraries(&sources, &libraries) {
             Ok(bytes) if bytes == golden => {}
