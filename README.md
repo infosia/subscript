@@ -90,6 +90,18 @@ gaps to be closed later:
   spends its effort on early, precise diagnostics for honest mistakes, not
   on containing hostile ones.
 
+## Tutorials
+
+- [subscript for C and C++ developers](docs/tutorial-c-cpp.md) — the
+  language from the host's side, ending in a step-by-step embedding
+  walkthrough (a complete host is 29 lines of C).
+- [subscript for TypeScript developers](docs/tutorial-typescript.md) —
+  what changes coming from TypeScript: sized integers, explicit memory,
+  value classes, traps, coroutines, and the rejection table.
+
+Every command and output in both was run against the repository as
+committed.
+
 ## What you get
 
 ### Sound TypeScript-subset syntax
