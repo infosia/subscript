@@ -277,6 +277,14 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   `runtime/include/subscript_runtime.h` — so script and host now say the
   same word for the same object.)*
 
+  *(`Context.gc` was considered and rejected 2026-07-29, owner decision.
+  `gc` names a subsystem this language does not have (invariant 2) and
+  imports the wrong intuition — `System.gc()`-style calls are advisory
+  hints, while `Context.collect()` is deterministic and synchronous.
+  `collect` is also the established verb for the explicit act even where
+  a GC exists: `GC.Collect()` in C#, `collectgarbage("collect")` in Lua
+  (docs).)*
+
   **Spelling.** `Context` is an ambient namespace, never a class: a script
   cannot construct or hold one. `declare namespace Context { function
   collect(): void; function free(value: object): void; }` is `tsc`-clean.
