@@ -74,7 +74,7 @@ shim on Windows), with the §11c flag set (`/fp:strict`, joined-path
 Runs the program under the dev JIT and prints its output. v1 scope:
 programs without host C bindings (the class the JIT gate already runs
 standalone). A program needing host symbols is a clear error, not a
-crash. `--watch` (hot reload, §8.2) is a named follow-up, **not**
+crash. `--watch` (hot reload, compiler.md §8.2) is a named follow-up, **not**
 dropped: it is the dev tier's reason to exist and gets its own
 contract revision when taken.
 
@@ -134,3 +134,71 @@ way to run them.
 cross-compilation targets beyond the host platform; generating host
 build-system files; any change to `emit-c`, `emit-object`, `capture`,
 or `msvc-cl` beyond factoring shared library entries.
+
+## 8. Diagnostic rendering — Rev 2026-07-30
+
+Owner decision. §2.1's original behaviour — silence on a clean check,
+one line per rejection — under-serves both directions: success gives
+no confirmation that anything ran, and an error names its position
+without showing it. Diagnostics get a rich rendering; the data model
+does not change.
+
+### 8.1 The renderer
+
+One public renderer in the compiler crate, colocated with `diag.rs`,
+taking the program's `SourceFile`s and the diagnostics and returning
+the rendered text. Every CLI path that prints a rejected program —
+`check`, `emit`, `build`, and `run` — uses it, and prints
+byte-identical text for the same rejected program. `emit-c` and the
+corpus harnesses are untouched, as are `Diagnostic`'s fields and its
+`Display` (the reject corpus asserts fields, never rendered text).
+
+### 8.2 The shape, pinned
+
+Per diagnostic (the rustc shape, single-caret because `Pos` is a
+point, not a span):
+
+```text
+error[S007]: <message>
+ --> <file>:<line>:<col>
+  |
+3 | const value: number = 1;
+  |              ^
+  = rule: <the code's one-line rule text>
+```
+
+- The gutter width follows the widest line number rendered.
+- The `= rule:` line carries `RuleCode::explanation()` — a new
+  method whose strings restate each code's contracted meaning
+  (compiler.md §6); every code has one, and a test iterates the full
+  enum.
+- After all diagnostics, one summary line: `error: N error(s)`.
+- **Degradation, never a panic:** a position whose file is not among
+  the supplied sources or whose line is out of range renders the
+  header and `-->` lines only, no snippet.
+- Caret placement counts characters; earlier multi-byte or tab
+  content may shift visual alignment in v1 — accepted, recorded
+  here, not silently.
+- No ANSI color in v1: output is byte-stable for tests. Color on a
+  tty is a named follow-up, as is machine-readable `--json`.
+
+### 8.3 Success is confirmed
+
+A clean `check` prints exactly one line to stderr —
+`check: <source as given>: no errors` — and nothing to stdout,
+preserving §3 (stdout stays reserved for requested answers, keeping
+`--json` open). Exit codes are unchanged (0 / 1 / 2).
+
+### 8.4 Exit criteria (pre-registered)
+
+1. Clean `check`: exactly the contracted stderr line, empty stdout,
+   exit 0 — tested.
+2. Exact-output tests pin: one diagnostic with snippet and caret; a
+   multi-diagnostic program with its summary count; the degraded
+   no-snippet path.
+3. `check`, `emit`, `build`, `run` emit byte-identical rejection text
+   for the same program — tested.
+4. `RuleCode::explanation()` is non-empty for every code — tested
+   over the full enum.
+5. Full gate green; corpus accept/reject harnesses and
+   `Diagnostic::Display` byte-untouched.
