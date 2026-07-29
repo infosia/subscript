@@ -14,7 +14,7 @@ use subscript_codegen::{
     host_c_compiler, include_directory_arg, run_jit, runtime_system_libraries, CCompilerStyle,
     EmitCFilesError, RunError,
 };
-use subscript_compiler::{check_program, Diagnostic, SourceFile};
+use subscript_compiler::{check_program, render_diagnostics, Diagnostic, SourceFile};
 
 const SUCCESS: u8 = 0;
 const PROGRAM_ERROR: u8 = 1;
@@ -24,6 +24,7 @@ const USAGE_ERROR: u8 = 2;
 struct Failure {
     code: u8,
     message: String,
+    verbatim: bool,
 }
 
 impl Failure {
@@ -31,6 +32,7 @@ impl Failure {
         Self {
             code: PROGRAM_ERROR,
             message: message.into(),
+            verbatim: false,
         }
     }
 
@@ -38,6 +40,15 @@ impl Failure {
         Self {
             code: USAGE_ERROR,
             message: message.into(),
+            verbatim: false,
+        }
+    }
+
+    fn rejection(message: impl Into<String>) -> Self {
+        Self {
+            code: PROGRAM_ERROR,
+            message: message.into(),
+            verbatim: true,
         }
     }
 }
@@ -58,7 +69,11 @@ where
     match result {
         Ok(code) => code,
         Err(failure) => {
-            let _ = writeln!(stderr, "subscript: {}", failure.message);
+            if failure.verbatim {
+                let _ = writeln!(stderr, "{}", failure.message);
+            } else {
+                let _ = writeln!(stderr, "subscript: {}", failure.message);
+            }
             failure.code
         }
     }
@@ -73,7 +88,7 @@ fn dispatch<O: Write, E: Write>(
         return Err(Failure::usage(usage()));
     };
     match command {
-        "check" => check_command(&args[1..]),
+        "check" => check_command(&args[1..], stderr),
         "emit" => emit_command(&args[1..]),
         "link-flags" => link_flags_command(&args[1..], stdout),
         "build" => build_command(&args[1..], stdout, stderr),
@@ -95,18 +110,20 @@ struct SourceArguments {
     mirrors: Vec<PathBuf>,
 }
 
-fn check_command(args: &[OsString]) -> Result<u8, Failure> {
+fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failure> {
     let parsed = parse_source_arguments(args)?;
-    let files = load_program(
-        parsed
-            .source
-            .as_ref()
-            .ok_or_else(|| Failure::usage("check requires <file.ts>"))?,
-        &parsed.mirrors,
-    )?;
+    let source = parsed
+        .source
+        .as_ref()
+        .ok_or_else(|| Failure::usage("check requires <file.ts>"))?;
+    let files = load_program(source, &parsed.mirrors)?;
     match check_program(&files) {
-        Ok(_) => Ok(SUCCESS),
-        Err(diagnostics) => Err(rejection(diagnostics)),
+        Ok(_) => {
+            writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
+                .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
+            Ok(SUCCESS)
+        }
+        Err(diagnostics) => Err(rejection(&files, diagnostics)),
     }
 }
 
@@ -167,7 +184,7 @@ fn emit_command(args: &[OsString]) -> Result<u8, Failure> {
     let files = load_program(&source, &mirrors)?;
     emit_c_files(&files, &output, "program", write_entry)
         .map(|_| SUCCESS)
-        .map_err(map_emit_error)
+        .map_err(|error| map_emit_error(error, &files))
 }
 
 #[derive(Debug)]
@@ -260,13 +277,11 @@ fn build_command<O: Write, E: Write>(
     let parsed = parse_build_arguments(args)?;
     let current = std::env::current_dir()
         .map_err(|error| Failure::usage(format!("read current directory: {error}")))?;
-    let source = absolute(
-        parsed
-            .source
-            .as_ref()
-            .ok_or_else(|| Failure::usage("build requires --source <file.ts>"))?,
-        &current,
-    );
+    let source_given = parsed
+        .source
+        .clone()
+        .ok_or_else(|| Failure::usage("build requires --source <file.ts>"))?;
+    let source = absolute(&source_given, &current);
     let mirrors = parsed
         .mirrors
         .iter()
@@ -283,9 +298,9 @@ fn build_command<O: Write, E: Write>(
     );
     let runtime = resolve_runtime_paths(parsed.runtime, RuntimeEnvironment::current(), &current)
         .map_err(Failure::usage)?;
-    let files = load_program(&source, &mirrors)?;
-    let emitted =
-        emit_c_files(&files, &output, "program", hosts.is_empty()).map_err(map_emit_error)?;
+    let files = load_program(&source_given, &parsed.mirrors)?;
+    let emitted = emit_c_files(&files, &output, "program", hosts.is_empty())
+        .map_err(|error| map_emit_error(error, &files))?;
     let executable = executable_path(&output, &source)?;
     compile_build(
         &emitted.source,
@@ -448,7 +463,7 @@ fn run_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failur
                 .map_err(|error| Failure::usage(format!("write program stdout: {error}")))?;
             Ok(SUCCESS)
         }
-        Err(RunError::Rejected(diagnostics)) => Err(rejection(diagnostics)),
+        Err(RunError::Rejected(diagnostics)) => Err(rejection(&files, diagnostics)),
         Err(RunError::Trap(report)) => Err(Failure::program(report.to_string())),
         Err(RunError::UnresolvedForeignSymbol(symbol)) => Err(Failure::usage(format!(
             "run supports only programs without host C bindings; unresolved symbol `{symbol}`"
@@ -474,18 +489,13 @@ fn read_text(path: &Path, kind: &str) -> Result<String, Failure> {
         .map_err(|error| Failure::usage(format!("read {kind} {}: {error}", path.display())))
 }
 
-fn rejection(diagnostics: Vec<Diagnostic>) -> Failure {
-    let message = diagnostics
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-    Failure::program(message)
+fn rejection(files: &[SourceFile], diagnostics: Vec<Diagnostic>) -> Failure {
+    Failure::rejection(render_diagnostics(files, &diagnostics))
 }
 
-fn map_emit_error(error: EmitCFilesError) -> Failure {
+fn map_emit_error(error: EmitCFilesError, files: &[SourceFile]) -> Failure {
     match error {
-        EmitCFilesError::Diagnostics(diagnostics) => rejection(diagnostics),
+        EmitCFilesError::Diagnostics(diagnostics) => rejection(files, diagnostics),
         EmitCFilesError::Emission(message) => Failure::program(message),
         other => Failure::usage(other.to_string()),
     }
@@ -585,7 +595,11 @@ mod tests {
             SUCCESS
         );
         assert!(stdout.is_empty());
-        assert!(stderr.is_empty());
+        assert_eq!(
+            stderr,
+            format!("check: {}: no errors\n", clean.0.to_string_lossy()).as_bytes()
+        );
+        stderr.clear();
 
         assert_eq!(
             execute(

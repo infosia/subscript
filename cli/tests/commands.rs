@@ -64,6 +64,23 @@ fn assert_code(result: &Output, code: i32) {
     );
 }
 
+fn s007_output(path: &Path) -> Vec<u8> {
+    format!(
+        concat!(
+            "error[S007]: bare `number` is rejected; there is no default numeric type — ",
+            "use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64)\n",
+            " --> {}:1:14\n",
+            "  |\n",
+            "1 | const value: number = 1;\n",
+            "  |              ^\n",
+            "  = rule: Bare `number` is rejected; sized numeric types are mandatory.\n",
+            "error: 1 error(s)\n",
+        ),
+        path.display()
+    )
+    .into_bytes()
+}
+
 #[test]
 fn check_and_emit_cover_clean_diagnostic_and_io_paths() -> Result<(), String> {
     let directory = TestDir::new()?;
@@ -73,14 +90,20 @@ fn check_and_emit_cover_clean_diagnostic_and_io_paths() -> Result<(), String> {
     )?;
     let rejected = directory.write("rejected.ts", b"const value: number = 1;\n")?;
 
-    let checked = output(subscript().arg("check").arg(&clean))?;
+    let checked = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("check")
+            .arg("clean.ts"),
+    )?;
     assert_code(&checked, 0);
     assert!(checked.stdout.is_empty());
-    assert!(checked.stderr.is_empty());
+    assert_eq!(checked.stderr, b"check: clean.ts: no errors\n");
 
     let diagnostic = output(subscript().arg("check").arg(&rejected))?;
     assert_code(&diagnostic, 1);
-    assert!(String::from_utf8_lossy(&diagnostic.stderr).contains("S007"));
+    assert!(diagnostic.stdout.is_empty());
+    assert_eq!(diagnostic.stderr, s007_output(&rejected));
 
     let emitted_dir = directory.0.join("emitted");
     let emitted = output(
@@ -106,6 +129,8 @@ fn check_and_emit_cover_clean_diagnostic_and_io_paths() -> Result<(), String> {
             .arg(directory.0.join("rejected-output")),
     )?;
     assert_code(&emit_diagnostic, 1);
+    assert!(emit_diagnostic.stdout.is_empty());
+    assert_eq!(emit_diagnostic.stderr, diagnostic.stderr);
 
     let missing = output(subscript().arg("emit").arg(&clean))?;
     assert_code(&missing, 2);
@@ -200,6 +225,57 @@ fn build_and_run_cover_clean_and_environment_error_paths() -> Result<(), String>
     let rejected = directory.write("bad.ts", b"const value: number = 1;\n")?;
     let run_rejected = output(subscript().arg("run").arg(&rejected))?;
     assert_code(&run_rejected, 1);
+    Ok(())
+}
+
+#[test]
+fn rejection_text_is_byte_identical_for_all_four_program_commands() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    directory.write("same.ts", b"const value: number = 1;\n")?;
+    let runtime = subscript_codegen::runtime_staticlib_path().map_err(|error| error.to_string())?;
+    let include = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("runtime")
+        .join("include");
+
+    let source = Path::new("same.ts");
+    let checked = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("check")
+            .arg(source),
+    )?;
+    let emitted = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("emit")
+            .arg(source)
+            .arg("-o")
+            .arg("emit-rejected"),
+    )?;
+    let built = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("build")
+            .arg("--source")
+            .arg(source)
+            .arg("-o")
+            .arg("build-rejected")
+            .arg("--runtime-lib")
+            .arg(&runtime)
+            .arg("--runtime-include")
+            .arg(&include),
+    )?;
+    let run = output(subscript().current_dir(&directory.0).arg("run").arg(source))?;
+
+    for result in [&checked, &emitted, &built, &run] {
+        assert_code(result, 1);
+        assert!(result.stdout.is_empty());
+    }
+    assert_eq!(checked.stderr, s007_output(source));
+    assert_eq!(emitted.stderr, checked.stderr);
+    assert_eq!(built.stderr, checked.stderr);
+    assert_eq!(run.stderr, checked.stderr);
     Ok(())
 }
 

@@ -10,6 +10,7 @@
 //! rule codes (S001–S013, S100) and TS positions.
 
 pub mod diag;
+mod diag_render;
 pub mod hir;
 pub mod types;
 pub mod api_reference;
@@ -22,6 +23,7 @@ mod regex;
 mod trap_sites;
 
 pub use diag::{Diagnostic, Pos, RuleCode};
+pub use diag_render::render_diagnostics;
 pub use types::{ClassId, EnumId, FuncType, Type};
 
 /// One source file of a program.

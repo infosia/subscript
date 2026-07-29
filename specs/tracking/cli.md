@@ -49,6 +49,26 @@ subcommands over a list of five; `build`'s `<name>` was undefined
 (now: source stem + platform suffix); §4 did not say which
 subcommands accept the runtime flags (now: `link-flags` and `build`).
 
+## §8 diagnostic rendering — landed and verified 2026-07-30
+
+`render_diagnostics` (`compiler/src/diag_render.rs`) plus
+`RuleCode::explanation()` (all 15 codes, mirroring the §6 doc
+comments); `check`/`emit`/`build`/`run` rejection paths all print it.
+Reviewer-run §8.4 evidence:
+
+1. Clean `check`: exactly `check: <path>: no errors` on stderr, empty
+   stdout, exit 0 (run on `examples/e01`).
+2. S007 program rendered with header, `-->`, snippet, caret at the
+   column, `= rule:` line, and `error: 1 error(s)` — reproduced
+   locally, matching the pinned exact-output unit tests (single,
+   multi-diagnostic with 2-wide gutter, degraded no-snippet).
+3. `check` / `run` / `emit` rejection stderr `cmp`-identical for the
+   same program (reviewer); the four-command identity test also
+   covers `build`.
+4. Explanation-per-code test iterates the full enum.
+5. Gate: 46 harnesses, 686 passed, 0 failed, exit 0, read directly;
+   `corpus_accept`/`corpus_reject` harness files untouched.
+
 ## Named follow-ups (not dropped)
 
 - `run --watch` hot reload — §2.5's own future contract revision.

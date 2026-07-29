@@ -68,6 +68,36 @@ impl RuleCode {
             RuleCode::S100 => "S100",
         }
     }
+
+    /// A one-line explanation of the rule enforced by this code.
+    #[must_use]
+    pub fn explanation(self) -> &'static str {
+        match self {
+            RuleCode::S001 => "`any` is not part of the language.",
+            RuleCode::S002 => "No dynamic code evaluation (`eval`, `new Function`).",
+            RuleCode::S003 => "No prototype mutation.",
+            RuleCode::S004 => "Nominal types are closed (no undeclared properties).",
+            RuleCode::S005 => "No structural substitution between nominal types.",
+            RuleCode::S006 => "Value classes do not inherit.",
+            RuleCode::S007 => "Bare `number` is rejected; sized numeric types are mandatory.",
+            RuleCode::S008 => {
+                "Numeric literals must fit their context and be integral in an integer context."
+            }
+            RuleCode::S009 => "A capturing lambda may not escape its defining function.",
+            RuleCode::S010 => "Exceptions are not in the language.",
+            RuleCode::S011 => {
+                "Unions are limited to `Ref | null`; nullable values must be narrowed before member access."
+            }
+            RuleCode::S012 => "`undefined` is banned; the single null story is `null`.",
+            RuleCode::S013 => {
+                "No `async`, `await`, or `Promise`; coroutines are the only suspension mechanism."
+            }
+            RuleCode::S014 => {
+                "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected."
+            }
+            RuleCode::S100 => "Constructs outside the decided language surface are rejected.",
+        }
+    }
 }
 
 impl fmt::Display for RuleCode {
@@ -143,6 +173,32 @@ mod tests {
     fn rule_code_display_matches_as_str() {
         assert_eq!(RuleCode::S001.as_str(), "S001");
         assert_eq!(RuleCode::S100.to_string(), "S100");
+    }
+
+    #[test]
+    fn every_rule_code_has_an_explanation() {
+        let codes = [
+            RuleCode::S001,
+            RuleCode::S002,
+            RuleCode::S003,
+            RuleCode::S004,
+            RuleCode::S005,
+            RuleCode::S006,
+            RuleCode::S007,
+            RuleCode::S008,
+            RuleCode::S009,
+            RuleCode::S010,
+            RuleCode::S011,
+            RuleCode::S012,
+            RuleCode::S013,
+            RuleCode::S014,
+            RuleCode::S100,
+        ];
+        assert_eq!(codes.len(), 15);
+        for code in codes {
+            assert!(!code.explanation().is_empty(), "{code}");
+            assert!(!code.explanation().contains('\n'), "{code}");
+        }
     }
 
     #[test]
