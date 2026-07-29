@@ -301,13 +301,56 @@ Device-triple compile+link check (needs Xcode and/or the Android NDK):
 sh codegen/device-link.sh
 ```
 
+## Using the `subscript` CLI
+
+The developer command ([`specs/blocks/cli.md`](specs/blocks/cli.md))
+owns the emit → compile → link pipeline the examples use. Build it once:
+
+```sh
+cargo build --release -p subscript-cli
+alias subscript=target/release/subscript   # or put it on PATH
+```
+
+Run a program under the development tier (JIT), or type-check it and
+produce nothing:
+
+```sh
+subscript run examples/e01-sized-integers.ts
+subscript check game.ts --mirror engine.generated.d.ts
+```
+
+For a host with its own build system, emit the C translation unit and
+ask what the link line must add:
+
+```sh
+subscript emit game.ts --mirror engine.generated.d.ts --no-entry -o out/
+subscript link-flags    # runtime include dir, static archive, system libs
+```
+
+Or build and run a complete host in one step — this is all
+`examples/host/build.sh` does:
+
+```sh
+subscript build \
+    --source examples/host/game.ts \
+    --mirror examples/engine/engine.generated.d.ts \
+    --host examples/engine/engine.c \
+    --host examples/host/main.c \
+    -o target/examples-host --run
+```
+
+Inside this repository the CLI builds and finds the runtime archive
+itself. Outside it, point the CLI at an installed runtime with
+`--runtime-lib` / `--runtime-include` or the `SUBSCRIPT_RUNTIME_LIB` /
+`SUBSCRIPT_RUNTIME_INCLUDE` environment variables.
+
 ## Status
 
 The core language is implemented: the semantic checker and typed HIR, the
 runtime, both execution tiers, the standing dev≡ship differential gate
-over the corpus, a performance gate, and the C-header binding slice
+over the corpus, a performance gate, the C-header binding slice
 (mirror generator, layout proof, and the five interop patterns as corpus
-entries). It is a young language under active development; the surface
+entries), and the `subscript` developer CLI. It is a young language under active development; the surface
 grows as the corpus grows.
 
 Design and phase records live in [`specs/`](specs/): `specs/blocks/` holds
