@@ -26,6 +26,17 @@ reaching the root for a sibling directory, which is the repo-relative form
 the rule requires. `examples/host/build.sh`, added in this sweep's session,
 resolves every path from `dirname $0` and embeds none.
 
+## Sweep 2026-07-29 — clean (incremental)
+
+Run over the 36 commits since the 2026-07-28 sweep (boundary `54a0f84`,
+via `git log -p` so content added and later removed is still seen), plus
+the full current tree and all commit messages. Same pattern set as
+2026-07-28 — absolute/local paths, machine and user names, predecessor
+and sibling project names, credentials, email addresses in content —
+plus a tracked-filename check (`.env`, key material, credential files).
+Everything returned zero; the only matches were this file's own pattern
+table. The two rulings below were reported as accepted, not raised.
+
 ## Rulings — not violations
 
 Both were raised in the sweep and settled by the owner on 2026-07-28.
