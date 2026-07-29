@@ -6,6 +6,10 @@
 
 #include <stdint.h>
 
+/* Recommended freed-handle diagnostics retention budget. The runtime does
+ * not treat this value specially. */
+#define SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES UINT64_C(1073741824)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -83,9 +87,20 @@ void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
 /**
  * Enables or disables freed-handle diagnostics for this Context.
  *
- * When enabled, dangling-handle use and double free can be detected, but
- * freed allocations are retained until Context release, so memory can
- * grow without bound. The setting is disabled by default.
+ * When enabled, freed allocations whose requested payload is at least
+ * `min_payload_bytes` are retained within `max_retained_bytes` of layout
+ * storage. When a new retained allocation would exceed that budget, the
+ * oldest retained allocations are evicted and released first. Memory held
+ * by the mode is bounded by `max_retained_bytes`.
+ *
+ * Dangling-handle and double-free diagnostics are guaranteed for the most
+ * recently retained frees whose layouts fit the budget, within the class
+ * covered by the threshold, and best-effort otherwise. Freeing a pointer
+ * the Context never owned still traps regardless of the threshold or
+ * budget. A zero threshold covers every payload; a zero budget retains
+ * nothing. `UINT64_MAX` is effectively unbounded. `min_payload_bytes` and
+ * `max_retained_bytes` are ignored when `enabled` is 0.
+ * The setting is disabled by default.
  *
  * This must be called before the first allocation. Returns 1 when the
  * setting was applied, or 0 when allocation had already started and the
@@ -95,7 +110,7 @@ void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
  *
  * `ctx` follows the exclusive Context contract.
  */
-int32_t sub_rt_ctx_set_freed_handle_diagnostics(Context* ctx, uint32_t enabled);
+int32_t sub_rt_ctx_set_freed_handle_diagnostics(Context* ctx, uint32_t enabled, uint64_t min_payload_bytes, uint64_t max_retained_bytes);
 void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
 /**
  * Installs the callback invoked for each line printed by `ctx`. Passing a

@@ -2,7 +2,9 @@
 
 Status: **CLOSED 2026-07-29.** Measured, decided, and the response
 landed. Criteria below were fixed before the numbers existed; the
-superseding decision and the outcome are at the end.
+superseding decision and the outcome are at the end, followed by two
+same-day owner refinements to the diagnostics mode (threshold and
+budget).
 
 ## The question
 
@@ -210,3 +212,51 @@ they already were in AOT. A developer hunting one turns the mode on and
 accepts the unbounded growth for that session. §8.1a called the trap a
 dev-tier guarantee; it is now a mode, and §8.1a-1 says so where §8.1a
 said the opposite.
+
+## Refinements — owner, 2026-07-29
+
+Two same-day decisions bounded the mode itself, contracted at §8.1a-2
+and §8.1a-3 and landed together:
+
+1. **Size threshold (§8.1a-2).** With the mode on, only allocations
+   whose requested payload meets a host-set minimum are retained;
+   smaller ones release as with the mode off. Rationale: retention cost
+   is `payload + 16` per free, so growth is driven by allocation count,
+   and small short-lived objects are the high-count class; the handles a
+   session hunts are typically to larger objects. Below the threshold
+   the diagnostics are best-effort — a stale handle traps while its
+   address remains unallocated (the live-map check stays), undefined
+   once reused.
+2. **Retention byte budget (§8.1a-3), default 1 GiB.** Retained layout
+   bytes never exceed a host-set ceiling; the oldest retained records
+   are evicted (released and forgotten, joining the best-effort class)
+   to make room. Rationale: a diagnostic session that exhausts the
+   machine diagnoses nothing. The default is the generated header's
+   `SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES`
+   (1 073 741 824), also used by the dev JIT's boolean mode parameter.
+
+The guarantee after both: diagnostics are complete for the most recently
+retained frees that fit the budget, within the size class the threshold
+covers; best-effort everywhere else; invalid free (a pointer the Context
+never owned) traps regardless of both.
+
+**Verified 2026-07-29** (all exit criteria of both sections, gate 667
+tests green, no golden moved, `t22`/`t23` tuples unchanged):
+
+- Threshold 32, mode on: payloads 4 and 12 retain **0.000**
+  bytes/allocation; payloads 32 and 128 retain exactly `payload + 16`
+  (48.000, 144.000). Threshold 0 reproduces the original table
+  (20/28/48/144); mode off stays 0.000 throughout.
+- Budget 1 440 bytes, threshold 0: reserved bytes plateau at 1 440
+  (payloads 4/32/128) and 1 428 (payload 12 — the largest multiple of
+  its 28-byte record that fits), identical at 100 and 10 000 frames, so
+  growth per allocation after the plateau is 0 for every shape and both
+  variants.
+
+**Probe methodology note.** The probe now drives the runtime Context
+directly instead of compiling a script per point: the JIT runner's
+public parameter stays a boolean (threshold 0, default budget), so
+varying threshold and budget requires the runtime API. Equivalence with
+the original JIT-driven measurement is established by reproduction — the
+threshold-0 column re-derives the original 20/28/48/144 table
+byte-exactly under both `Context.free` and `Context.collect` variants.

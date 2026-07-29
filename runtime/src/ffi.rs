@@ -98,8 +98,9 @@ pub unsafe extern "C" fn sub_rt_alloc(
 }
 
 /// `Context.free(value)`: frees immediately by default. With freed-handle
-/// diagnostics enabled, the allocation is retained and a double delete
-/// traps (Q6/§8.1a-1).
+/// diagnostics enabled, a threshold-eligible allocation may be retained
+/// within the byte budget; double-delete diagnostics then follow §8.1a-3's
+/// guaranteed-versus-best-effort coverage.
 ///
 /// # Safety
 ///
@@ -3084,9 +3085,20 @@ pub unsafe extern "C" fn sub_rt_ctx_set_regex_budget(ctx: *mut Context, budget: 
 
 /// Enables or disables freed-handle diagnostics for this Context.
 ///
-/// When enabled, dangling-handle use and double free can be detected, but
-/// freed allocations are retained until Context release, so memory can
-/// grow without bound. The setting is disabled by default.
+/// When enabled, freed allocations whose requested payload is at least
+/// `min_payload_bytes` are retained within `max_retained_bytes` of layout
+/// storage. When a new retained allocation would exceed that budget, the
+/// oldest retained allocations are evicted and released first. Memory held
+/// by the mode is bounded by `max_retained_bytes`.
+///
+/// Dangling-handle and double-free diagnostics are guaranteed for the most
+/// recently retained frees whose layouts fit the budget, within the class
+/// covered by the threshold, and best-effort otherwise. Freeing a pointer
+/// the Context never owned still traps regardless of the threshold or
+/// budget. A zero threshold covers every payload; a zero budget retains
+/// nothing. `UINT64_MAX` is effectively unbounded. `min_payload_bytes` and
+/// `max_retained_bytes` are ignored when `enabled` is 0.
+/// The setting is disabled by default.
 ///
 /// This must be called before the first allocation. Returns 1 when the
 /// setting was applied, or 0 when allocation had already started and the
@@ -3099,9 +3111,20 @@ pub unsafe extern "C" fn sub_rt_ctx_set_regex_budget(ctx: *mut Context, budget: 
 pub unsafe extern "C" fn sub_rt_ctx_set_freed_handle_diagnostics(
     ctx: *mut Context,
     enabled: u32,
+    min_payload_bytes: u64,
+    max_retained_bytes: u64,
 ) -> i32 {
+    let min_payload_bytes = usize::try_from(min_payload_bytes).unwrap_or(usize::MAX);
+    let max_retained_bytes = usize::try_from(max_retained_bytes).unwrap_or(usize::MAX);
     // SAFETY: exclusive Context contract.
-    i32::from(unsafe { &mut *ctx }.set_freed_handle_diagnostics(enabled != 0))
+    i32::from(
+        unsafe { &mut *ctx }
+            .set_freed_handle_diagnostics(
+                enabled != 0,
+                min_payload_bytes,
+                max_retained_bytes,
+            ),
+    )
 }
 
 /// Refuses the `n`-th subsequent object-level Context allocation.
@@ -4753,7 +4776,7 @@ mod tests {
         // exactly once below.
         unsafe {
             assert_eq!(
-                sub_rt_ctx_set_freed_handle_diagnostics(releasing, 0),
+                sub_rt_ctx_set_freed_handle_diagnostics(releasing, 0, u64::MAX, 0),
                 1
             );
             let released = sub_rt_alloc(releasing, 8, 1, 0);
@@ -4761,13 +4784,13 @@ mod tests {
             sub_rt_delete(releasing, released, 2);
             assert_eq!(sub_rt_ctx_trap_kind(releasing), 0);
             assert_eq!(
-                sub_rt_ctx_set_freed_handle_diagnostics(releasing, 1),
+                sub_rt_ctx_set_freed_handle_diagnostics(releasing, 1, 0, u64::MAX),
                 0,
                 "the setting must reject a late change"
             );
 
             assert_eq!(
-                sub_rt_ctx_set_freed_handle_diagnostics(diagnosing, 1),
+                sub_rt_ctx_set_freed_handle_diagnostics(diagnosing, 1, 0, u64::MAX),
                 1
             );
             let retained = sub_rt_alloc(diagnosing, 8, 1, 0);
@@ -5492,7 +5515,7 @@ mod tests {
     #[test]
     fn ffi_array_push_reports_a_collected_receiver_without_panicking() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid exclusive Context.
         let array = unsafe { sub_rt_array_new(p, 4, 1) };
@@ -5523,7 +5546,7 @@ mod tests {
     #[test]
     fn ffi_map_set_operations_trap_on_deleted_receivers_with_diagnostics() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid context and monomorphized i32 shapes.
         unsafe {

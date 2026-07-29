@@ -20,3 +20,4 @@ bench = false
 [dependencies]
 subscript-codegen = { path = "../codegen" }
 subscript-compiler = { path = "../compiler" }
+subscript-runtime = { path = "../runtime" }

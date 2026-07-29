@@ -241,6 +241,11 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   The development tier can be made to **trap** on them by a host-set,
   per-Context setting that is off by default (`compiler.md` §8.1a-1);
   freeing a pointer the Context never owned is gated by the same setting.
+  The setting carries a size threshold (§8.1a-2) and a retention byte
+  budget (§8.1a-3, default 1 GiB): the trap is guaranteed only for
+  allocations whose
+  payload meets the host-set minimum and whose retained records still fit
+  the budget — oldest evicted first — and is best-effort otherwise.
 
   *(Amended 2026-07-29. This clause said the dev tier traps, full stop.
   That became false when retention moved off the default path, and this

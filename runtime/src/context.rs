@@ -12,12 +12,11 @@
 //! first two directly (use-after-delete checks, checked `as` narrowing),
 //! so their offsets are part of the runtime's ABI contract.
 //!
-//! Freed-handle diagnostics (§8.1a-1) are disabled by default. When a
-//! host enables them before the first allocation, `Context.free` and
-//! `Context.collect()` mark an allocation dead and poison its header but
-//! keep the bytes until the Context is dropped. This makes double delete
-//! and use-after-delete trap instead of being undefined: a stale handle
-//! still points at owned memory whose header says `DEAD_STATE`.
+//! Freed-handle diagnostics (§8.1a-3) are disabled by default. When a host
+//! enables them before the first allocation, `Context.free` and
+//! `Context.collect()` can mark an allocation dead and poison its header.
+//! Retention is limited by a requested-payload threshold and a layout-byte
+//! budget; oldest records are evicted first when the budget fills.
 //!
 //! Ship-tier policy (§8.1b): no per-allocation map. Blocks up to the
 //! largest size class are carved from Context-owned per-class chunks by
@@ -26,8 +25,9 @@
 //! next same-class `alloc` pops it, zeroed. Larger allocations are
 //! individual system allocations with their own record. Double delete
 //! and use-after-delete are undefined here (Q6, trusted scripts). Enabling
-//! freed-handle diagnostics switches either construction path to the
-//! retain-and-poison allocator for the lifetime of that Context.
+//! freed-handle diagnostics switches either construction path to exact-size
+//! allocation and budgeted retain-and-poison at or above the configured
+//! payload threshold.
 //!
 //! # Collection
 //!
@@ -42,7 +42,7 @@
 //! garbage; it never frees a reachable allocation.
 
 use std::alloc::{alloc_zeroed, dealloc, Layout};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -106,6 +106,11 @@ pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Bytes between an allocation's base and its payload.
 pub const HEADER_SIZE: usize = 16;
+/// Recommended byte ceiling for freed-handle diagnostic retention.
+///
+/// The runtime treats this as an ordinary literal budget; hosts may pass any
+/// other value accepted by [`Context::set_freed_handle_diagnostics`].
+pub const FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES: usize = 1_073_741_824;
 /// Header state word for a live allocation (offset -16 from payload).
 pub const LIVE_STATE: u64 = 0x5355_4253_4C49_5645; // "SUBSLIVE"
 /// Header state word for a deleted/collected allocation.
@@ -271,6 +276,13 @@ struct Allocation {
     marked: bool,
 }
 
+/// One retained-and-poisoned exact-size allocation, in retirement order.
+struct RetainedAllocation {
+    payload: usize,
+    base: *mut u8,
+    layout: Layout,
+}
+
 /// Fast deterministic hashing for Context-owned, 16-byte-aligned payload
 /// addresses. Script data cannot choose these keys, so randomized hashing
 /// buys no collision-resistance here.
@@ -369,9 +381,11 @@ pub struct Context {
     // preserves double-delete classification without putting dead records
     // in the map collection sweeps.
     dead_allocations: AddressSet,
-    // Dense ownership records for retained-dead backing allocations. This
-    // vector is walked only at Context drop, never by collection.
-    retained_allocations: Vec<Allocation>,
+    // FIFO ownership records for retained-dead backing allocations. The
+    // collector never walks this queue; budget eviction pops from its front.
+    retained_allocations: VecDeque<RetainedAllocation>,
+    // Exact sum of `retained_allocations` layout bytes.
+    retained_bytes: usize,
     stdout: Vec<u8>,
     print_observer: Option<PrintObserver>,
     print_observer_userdata: *mut c_void,
@@ -397,10 +411,17 @@ pub struct Context {
     // diagnostics are off. The dev path keeps exact-size individual
     // allocations so §18.2d accounting remains exact.
     ship_arena: bool,
-    // §8.1a-1 diagnostic mode. When true, freed allocations are retained
-    // and poisoned until Context drop so dangling handles and double frees
-    // can be diagnosed. Both construction paths default to false.
+    // §8.1a-3 diagnostic mode. When true, freed allocations at or above
+    // `freed_handle_diagnostics_min_payload_bytes` are retained and poisoned
+    // within `freed_handle_diagnostics_max_retained_bytes`. Both construction
+    // paths default to false.
     freed_handle_diagnostics: bool,
+    // Requested-payload boundary for diagnostic retention. This is the same
+    // quantity exact-size `live_bytes` sums, not the allocation layout size.
+    freed_handle_diagnostics_min_payload_bytes: usize,
+    // Hard ceiling on retained layout bytes. Oldest records are evicted to
+    // make room for a newly retired allocation.
+    freed_handle_diagnostics_max_retained_bytes: usize,
     // The diagnostic setting is immutable after the first object-level
     // allocation request, including one rejected by fault injection.
     allocation_started: bool,
@@ -442,8 +463,9 @@ impl Context {
     /// The dev-JIT builds its Context this way. Individual allocations
     /// preserve exact requested-byte accounting (§18.2d), while
     /// `Context.free` and `Context.collect` release them immediately by
-    /// default. Enable freed-handle diagnostics before the first
-    /// allocation to retain and poison them instead.
+    /// default. Enable freed-handle diagnostics before the first allocation
+    /// to retain and poison freed allocations at or above its configured
+    /// payload threshold within its retention budget instead.
     #[must_use]
     pub fn new() -> Box<Context> {
         Self::with_tier(false)
@@ -470,7 +492,8 @@ impl Context {
             script_depth: 0,
             allocations: HashMap::new(),
             dead_allocations: AddressSet::default(),
-            retained_allocations: Vec::new(),
+            retained_allocations: VecDeque::new(),
+            retained_bytes: 0,
             stdout: Vec::new(),
             print_observer: None,
             print_observer_userdata: std::ptr::null_mut(),
@@ -488,6 +511,8 @@ impl Context {
             json_parsers: crate::json::JsonParsers::default(),
             ship_arena,
             freed_handle_diagnostics: false,
+            freed_handle_diagnostics_min_payload_bytes: 0,
+            freed_handle_diagnostics_max_retained_bytes: 0,
             allocation_started: false,
             rng: crate::math::Rng::new(crate::math::DEFAULT_RANDOM_SEED),
             now_override: None,
@@ -506,23 +531,40 @@ impl Context {
 
     /// Enables or disables diagnostics for handles to freed allocations.
     ///
-    /// When enabled, dangling-handle use and double free can be detected,
-    /// but freed allocations are retained until Context release, so memory
-    /// can grow without bound. The setting is disabled by default.
+    /// When enabled, freed allocations whose requested payload is at least
+    /// `min_payload_bytes` are retained within `max_retained_bytes`. Oldest
+    /// retained allocations are evicted to make room. Diagnostics are
+    /// guaranteed for the most recent covered frees that fit the budget and
+    /// best-effort otherwise. Invalid frees remain diagnosed regardless of
+    /// the threshold and budget. The setting is disabled by default.
     ///
     /// Returns `false` without changing the setting if an allocation
     /// request has already started. A host must establish the setting
     /// before the first allocation.
-    pub fn set_freed_handle_diagnostics(&mut self, enabled: bool) -> bool {
+    pub fn set_freed_handle_diagnostics(
+        &mut self,
+        enabled: bool,
+        min_payload_bytes: usize,
+        max_retained_bytes: usize,
+    ) -> bool {
         if self.allocation_started {
             return false;
         }
         self.freed_handle_diagnostics = enabled;
+        if enabled {
+            self.freed_handle_diagnostics_min_payload_bytes = min_payload_bytes;
+            self.freed_handle_diagnostics_max_retained_bytes = max_retained_bytes;
+        }
         true
     }
 
     fn uses_ship_arena(&self) -> bool {
         self.ship_arena && !self.freed_handle_diagnostics
+    }
+
+    fn retains_freed_payload(&self, payload_size: usize) -> bool {
+        self.freed_handle_diagnostics
+            && payload_size >= self.freed_handle_diagnostics_min_payload_bytes
     }
 
     /// Byte offset of the trap flag inside the context (ABI contract
@@ -1180,27 +1222,78 @@ impl Context {
         }
     }
 
-    /// Moves one live exact-size allocation into retained-dead storage and
-    /// poisons its header. The allocation's bytes and complete attribution
-    /// record remain owned until Context drop.
+    /// Moves one live exact-size allocation into retained-dead storage when
+    /// its layout fits the retention budget. Oldest records are evicted until
+    /// the new record fits; an individually over-budget layout is released.
     fn retire_dev_allocation(&mut self, payload: usize) -> Option<u32> {
         let allocation = self.allocations.remove(&payload)?;
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        Self::retain_or_release_removed_allocation(
+            &mut self.dead_allocations,
+            &mut self.retained_allocations,
+            &mut self.retained_bytes,
+            self.freed_handle_diagnostics_max_retained_bytes,
+            payload,
+            allocation,
+        );
+        Some(class_id)
+    }
+
+    /// Retains one removed exact-size allocation within the byte budget, or
+    /// releases it when its layout alone exceeds the budget.
+    fn retain_or_release_removed_allocation(
+        dead_allocations: &mut AddressSet,
+        retained_allocations: &mut VecDeque<RetainedAllocation>,
+        retained_bytes: &mut usize,
+        max_retained_bytes: usize,
+        payload: usize,
+        allocation: Allocation,
+    ) {
+        let layout_bytes = allocation.layout.size();
+        if layout_bytes > max_retained_bytes {
+            // SAFETY: the live record was removed by the caller, so this
+            // allocation is released exactly once.
+            unsafe { dealloc(allocation.base, allocation.layout) };
+            return;
+        }
+
+        while *retained_bytes > max_retained_bytes - layout_bytes {
+            let oldest = retained_allocations
+                .pop_front()
+                .expect("retained byte accounting requires an oldest allocation");
+            let removed = dead_allocations.remove(&oldest.payload);
+            debug_assert!(
+                removed,
+                "retained ownership queue and dead address set must agree"
+            );
+            *retained_bytes = retained_bytes
+                .checked_sub(oldest.layout.size())
+                .expect("retained byte accounting cannot underflow");
+            // SAFETY: popping the ownership record makes this the allocation's
+            // unique release. Its address was removed from the dead set first.
+            unsafe { dealloc(oldest.base, oldest.layout) };
+        }
+
         // SAFETY: the retained allocation owns at least HEADER_SIZE bytes;
         // poisoning preserves the diagnostic-mode stale-handle trap.
         unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
-        let inserted = self.dead_allocations.insert(payload);
-        // Dev backing allocations are never freed before Context drop, so
-        // the system allocator cannot return a retained-dead address as a
-        // later live allocation in this Context.
+        let inserted = dead_allocations.insert(payload);
+        // Until budget eviction, this owned backing allocation is unavailable
+        // for allocator reuse and remains disjoint from the live map.
         debug_assert!(
             inserted,
             "live allocation map and retained-dead address set must be disjoint"
         );
-        self.retained_allocations.push(allocation);
-        Some(class_id)
+        *retained_bytes += layout_bytes;
+        retained_allocations.push_back(RetainedAllocation {
+            payload,
+            base: allocation.base,
+            layout: allocation.layout,
+        });
+        debug_assert!(*retained_bytes <= max_retained_bytes);
+        debug_assert_eq!(dead_allocations.len(), retained_allocations.len());
     }
 
     /// Releases one exact-size allocation and removes its live record.
@@ -1215,11 +1308,27 @@ impl Context {
         Some(class_id)
     }
 
+    /// Retains or releases one exact-size allocation according to the
+    /// diagnostics mode's requested-payload threshold.
+    fn dispose_dev_allocation(&mut self, payload: usize) -> Option<u32> {
+        let retain = self
+            .allocations
+            .get(&payload)
+            .is_some_and(|allocation| self.retains_freed_payload(allocation.payload_size));
+        if retain {
+            self.retire_dev_allocation(payload)
+        } else {
+            self.release_dev_allocation(payload)
+        }
+    }
+
     /// Frees or marks the allocation at `payload` dead, per Context policy.
     ///
-    /// With freed-handle diagnostics enabled, the bytes are retained and
-    /// poisoned so stale handles trap; double delete and unknown pointers
-    /// trap (Q6).
+    /// With freed-handle diagnostics enabled, allocations at or above the
+    /// configured payload threshold are retained and poisoned within the
+    /// byte budget, evicting oldest records first. Stale-handle,
+    /// double-delete, and unknown-pointer checks remain enabled for every
+    /// payload size (Q6/§8.1a-3).
     ///
     /// With diagnostics disabled, the backing allocation is released.
     /// A double delete or unknown pointer is undefined (Q6/§8.1b) and
@@ -1257,11 +1366,7 @@ impl Context {
         if class_id == CLASS_STRING {
             self.clear_string_interns_on_delete(payload);
         }
-        let released_class_id = if self.freed_handle_diagnostics {
-            self.retire_dev_allocation(payload)
-        } else {
-            self.release_dev_allocation(payload)
-        };
+        let released_class_id = self.dispose_dev_allocation(payload);
         let Some(released_class_id) = released_class_id else {
             self.trap(
                 TrapKind::Internal,
@@ -1383,10 +1488,11 @@ impl Context {
                 sum.saturating_add(a.layout.size())
             });
         }
-        self.allocations
+        let live_layout_bytes = self
+            .allocations
             .values()
-            .chain(self.retained_allocations.iter())
-            .fold(0usize, |sum, a| sum.saturating_add(a.layout.size()))
+            .fold(0usize, |sum, a| sum.saturating_add(a.layout.size()));
+        live_layout_bytes.saturating_add(self.retained_bytes)
     }
 
     /// Visits every live allocation and returns the number visited.
@@ -1565,7 +1671,7 @@ impl Context {
     /// only map this phase walks and reset marked survivors in the same
     /// pass.
     ///
-    /// The retained-dead address index and ownership vector are deliberately
+    /// The retained-dead address index and ownership queue are deliberately
     /// never traversed here.
     fn sweep_dev_allocations(&mut self, retiring: usize) {
         if !self.freed_handle_diagnostics {
@@ -1584,12 +1690,29 @@ impl Context {
             return;
         }
 
-        // One exact reserve avoids repeated dead-index/vector growth while
-        // the unreachable records are moved out of the swept map.
-        self.dead_allocations.reserve(retiring);
-        self.retained_allocations.reserve(retiring);
+        let min_payload_bytes = self.freed_handle_diagnostics_min_payload_bytes;
+        let max_retained_bytes = self.freed_handle_diagnostics_max_retained_bytes;
+        // Preserve the one-shot reserve for the effectively unbounded mode.
+        // A finite budget instead lets both structures grow only to the
+        // bounded retained set, rather than reserving for an arbitrarily
+        // large unreachable burst that will mostly be evicted.
+        if max_retained_bytes == usize::MAX {
+            let retaining = if min_payload_bytes == 0 {
+                retiring
+            } else {
+                self.allocations
+                    .values()
+                    .filter(|allocation| {
+                        !allocation.marked && allocation.payload_size >= min_payload_bytes
+                    })
+                    .count()
+            };
+            self.dead_allocations.reserve(retaining);
+            self.retained_allocations.reserve(retaining);
+        }
         let dead_allocations = &mut self.dead_allocations;
         let retained_allocations = &mut self.retained_allocations;
+        let retained_bytes = &mut self.retained_bytes;
         // `extract_if` retains the live map's bucket storage. Later bursts
         // reuse it; accumulated deletion tombstones can eventually force one
         // bounded rebuild, but dead-count growth no longer repeats peak
@@ -1602,17 +1725,20 @@ impl Context {
                 true
             }
         }) {
-            // SAFETY: this allocation was live at sweep entry and remains
-            // owned; poisoning preserves every stale-handle trap.
-            unsafe { (allocation.base as *mut u64).write(DEAD_STATE) };
-            let inserted = dead_allocations.insert(addr);
-            // The live map and dead set were disjoint at sweep entry, and
-            // dev backing allocations cannot be reused before Context drop.
-            debug_assert!(
-                inserted,
-                "live allocation map and retained-dead address set must be disjoint"
+            if allocation.payload_size < min_payload_bytes {
+                // SAFETY: this allocation was live at sweep entry; its
+                // record was just removed, so this frees it exactly once.
+                unsafe { dealloc(allocation.base, allocation.layout) };
+                continue;
+            }
+            Self::retain_or_release_removed_allocation(
+                dead_allocations,
+                retained_allocations,
+                retained_bytes,
+                max_retained_bytes,
+                addr,
+                allocation,
             );
-            retained_allocations.push(allocation);
         }
     }
 
@@ -1981,30 +2107,9 @@ impl Context {
                     // the same free-list/large-record release path as
                     // `delete`, so array growth does not accumulate.
                     self.arena_release(old);
-                } else if self.freed_handle_diagnostics {
-                    let retired = self.retire_dev_allocation(old);
-                    match retired {
-                        Some(CLASS_ARRAY_DATA) => {}
-                        Some(_) => {
-                            self.trap(
-                                TrapKind::Internal,
-                                "array growth found a non-array storage allocation",
-                                pos_id,
-                            );
-                            return -1;
-                        }
-                        None => {
-                            self.trap(
-                                TrapKind::Internal,
-                                "array storage disappeared while growing it",
-                                pos_id,
-                            );
-                            return -1;
-                        }
-                    }
                 } else {
-                    let released = self.release_dev_allocation(old);
-                    match released {
+                    let disposed = self.dispose_dev_allocation(old);
+                    match disposed {
                         Some(CLASS_ARRAY_DATA) => {}
                         Some(_) => {
                             self.trap(
@@ -2089,13 +2194,14 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        for a in self
-            .allocations
-            .values()
-            .chain(self.retained_allocations.iter())
-        {
+        for a in self.allocations.values() {
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `Context::alloc` and are freed exactly once, here.
+            unsafe { dealloc(a.base, a.layout) };
+        }
+        for a in &self.retained_allocations {
+            // SAFETY: retained records own allocations not present in the
+            // live map; any evicted records were already popped and freed.
             unsafe { dealloc(a.base, a.layout) };
         }
         // Ship-tier arena (§8.1b): chunks and large records are freed
@@ -2532,7 +2638,7 @@ mod tests {
     #[test]
     fn freed_handle_diagnostics_setting_controls_release_and_retention() {
         let mut releasing = Context::new();
-        assert!(releasing.set_freed_handle_diagnostics(false));
+        assert!(releasing.set_freed_handle_diagnostics(false, usize::MAX, 0));
         let released_small = releasing.alloc(8, 1, 0);
         releasing.delete(released_small as usize, 0);
         let released_after_small = releasing.reserved_bytes();
@@ -2545,12 +2651,12 @@ mod tests {
             "mode off must not retain each freed allocation"
         );
         assert!(
-            !releasing.set_freed_handle_diagnostics(true),
+            !releasing.set_freed_handle_diagnostics(true, 0, usize::MAX),
             "the setting is immutable after allocation starts"
         );
 
         let mut diagnosing = Context::new();
-        assert!(diagnosing.set_freed_handle_diagnostics(true));
+        assert!(diagnosing.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let retained_small = diagnosing.alloc(8, 1, 0);
         diagnosing.delete(retained_small as usize, 0);
         let retained_after_small = diagnosing.reserved_bytes();
@@ -2571,9 +2677,237 @@ mod tests {
     }
 
     #[test]
+    fn freed_handle_diagnostics_threshold_controls_delete_and_collect_accounting() {
+        for collect in [false, true] {
+            let mut ctx = Context::new();
+            assert!(ctx.set_freed_handle_diagnostics(true, 32, usize::MAX));
+
+            let below = ctx.alloc(12, 1, 0);
+            assert_eq!(ctx.live_bytes(), 12);
+            assert_eq!(ctx.reserved_bytes(), 12 + HEADER_SIZE);
+            if collect {
+                ctx.collect();
+            } else {
+                ctx.delete(below as usize, 0);
+            }
+            assert_eq!(ctx.live_bytes(), 0);
+            assert_eq!(
+                ctx.reserved_bytes(),
+                0,
+                "payload below the threshold must be released"
+            );
+
+            let at = ctx.alloc(32, 1, 0);
+            if collect {
+                ctx.collect();
+            } else {
+                ctx.delete(at as usize, 0);
+            }
+            assert_eq!(ctx.live_bytes(), 0);
+            assert_eq!(
+                ctx.reserved_bytes(),
+                32 + HEADER_SIZE,
+                "payload at the threshold must be retained"
+            );
+
+            let above = ctx.alloc(128, 1, 0);
+            if collect {
+                ctx.collect();
+            } else {
+                ctx.delete(above as usize, 0);
+            }
+            assert_eq!(ctx.live_bytes(), 0);
+            assert_eq!(
+                ctx.reserved_bytes(),
+                32 + HEADER_SIZE + 128 + HEADER_SIZE,
+                "payload above the threshold must be retained"
+            );
+            assert_eq!(ctx.dead_allocations.len(), 2);
+            assert_eq!(ctx.retained_allocations.len(), 2);
+        }
+    }
+
+    #[test]
+    fn retention_budget_never_exceeds_and_evicts_oldest_first() {
+        const BUDGET: usize = 72;
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, BUDGET));
+
+        let oldest = ctx.alloc(32, 1, 0);
+        ctx.delete(oldest as usize, 0);
+        assert_eq!(ctx.retained_bytes, 48);
+        assert_eq!(ctx.reserved_bytes(), 48);
+
+        let middle = ctx.alloc(8, 1, 0);
+        ctx.delete(middle as usize, 0);
+        assert_eq!(ctx.retained_bytes, BUDGET);
+        assert_eq!(ctx.reserved_bytes(), BUDGET);
+
+        let newest = ctx.alloc(8, 1, 0);
+        ctx.delete(newest as usize, 0);
+        assert!(ctx.retained_bytes <= BUDGET);
+        assert_eq!(ctx.retained_bytes, 48);
+        assert_eq!(
+            ctx.reserved_bytes(),
+            48,
+            "evicting the older larger layout must lower reserved accounting"
+        );
+        assert!(!ctx.dead_allocations.contains(&(oldest as usize)));
+        assert!(ctx.dead_allocations.contains(&(middle as usize)));
+        assert!(ctx.dead_allocations.contains(&(newest as usize)));
+        // SAFETY: newest remains retained and owned by the Context.
+        unsafe {
+            assert_eq!(
+                (newest.offset(STATE_OFFSET as isize) as *const u64).read(),
+                DEAD_STATE
+            );
+        }
+        assert_eq!(
+            ctx.retained_allocations
+                .iter()
+                .map(|allocation| allocation.payload)
+                .collect::<Vec<_>>(),
+            [middle as usize, newest as usize],
+            "the oldest retirement must be evicted first"
+        );
+
+        // No allocation has occurred since `oldest` was evicted, so its
+        // released address is still in the deterministic best-effort window.
+        assert!(!ctx.require_live_handle(oldest as usize, 31));
+        assert_eq!(
+            ctx.trap_record().map(|record| record.kind),
+            Some(TrapKind::UseAfterDelete)
+        );
+        ctx.clear_trap();
+
+        // The newest free remains retained and therefore has the guaranteed
+        // diagnostic coverage funded by the budget.
+        assert!(!ctx.require_live_handle(newest as usize, 32));
+        assert_eq!(
+            ctx.trap_record().map(|record| record.kind),
+            Some(TrapKind::UseAfterDelete)
+        );
+    }
+
+    #[test]
+    fn retention_budget_applies_to_collect_sweeps() {
+        const BUDGET: usize = 48;
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, BUDGET));
+
+        for _ in 0..3 {
+            assert!(!ctx.alloc(8, 1, 0).is_null());
+            ctx.collect();
+            assert!(ctx.retained_bytes <= BUDGET);
+            assert!(ctx.reserved_bytes() <= BUDGET);
+        }
+        assert_eq!(ctx.retained_bytes, BUDGET);
+        assert_eq!(ctx.retained_allocations.len(), 2);
+        assert_eq!(ctx.dead_allocations.len(), 2);
+    }
+
+    #[test]
+    fn allocation_larger_than_retention_budget_is_released_immediately() {
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, 47));
+        let allocation = ctx.alloc(32, 1, 0);
+        ctx.delete(allocation as usize, 0);
+
+        assert_eq!(ctx.retained_bytes, 0);
+        assert_eq!(ctx.reserved_bytes(), 0);
+        assert!(ctx.retained_allocations.is_empty());
+        assert!(!ctx.dead_allocations.contains(&(allocation as usize)));
+        assert!(!ctx.require_live_handle(allocation as usize, 41));
+        assert_eq!(
+            ctx.trap_record().map(|record| record.kind),
+            Some(TrapKind::UseAfterDelete)
+        );
+    }
+
+    #[test]
+    fn zero_retention_budget_retains_nothing() {
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, 0));
+        let allocation = ctx.alloc(8, 1, 0);
+        ctx.delete(allocation as usize, 0);
+
+        assert_eq!(ctx.retained_bytes, 0);
+        assert_eq!(ctx.reserved_bytes(), 0);
+        assert!(ctx.retained_allocations.is_empty());
+        assert!(ctx.dead_allocations.is_empty());
+    }
+
+    #[test]
+    fn array_growth_applies_diagnostics_threshold_to_retired_backing_payloads() {
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 32, usize::MAX));
+        let array = ctx.array_new(4, 0);
+        for value in 0..9i32 {
+            // SAFETY: `array` is a live i32 array and `value` supplies one
+            // initialized element for the duration of the call.
+            assert!(unsafe {
+                ctx.array_push(array, (&value as *const i32).cast(), 0)
+            } > 0);
+        }
+
+        assert_eq!(ctx.dead_allocations.len(), 1);
+        assert_eq!(ctx.retained_allocations.len(), 1);
+        assert_eq!(
+            ctx.retained_allocations[0].layout.size() - HEADER_SIZE,
+            32,
+            "the retired 16-byte backing store is released and the 32-byte store is retained"
+        );
+    }
+
+    #[test]
+    fn freed_handle_diagnostics_setting_refuses_changes_after_allocation_starts() {
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 32, usize::MAX));
+        let below = ctx.alloc(12, 1, 0);
+        assert!(
+            !ctx.set_freed_handle_diagnostics(true, 0, usize::MAX),
+            "mode and threshold must be immutable after allocation starts"
+        );
+        ctx.delete(below as usize, 0);
+        assert_eq!(
+            ctx.reserved_bytes(),
+            0,
+            "a refused change must leave the original threshold in force"
+        );
+    }
+
+    #[test]
+    fn freed_handle_diagnostics_threshold_and_budget_are_ignored_when_disabled() {
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(false, usize::MAX, 0));
+        let allocation = ctx.alloc(128, 1, 0);
+        ctx.delete(allocation as usize, 0);
+        assert_eq!(ctx.live_bytes(), 0);
+        assert_eq!(ctx.reserved_bytes(), 0);
+        assert!(ctx.dead_allocations.is_empty());
+        assert!(ctx.retained_allocations.is_empty());
+    }
+
+    #[test]
+    fn below_threshold_stale_handle_traps_before_address_reuse() {
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 32, usize::MAX));
+        let below = ctx.alloc(12, 1, 0);
+        ctx.delete(below as usize, 0);
+        assert_eq!(ctx.reserved_bytes(), 0);
+
+        assert!(!ctx.require_live_handle(below as usize, 19));
+        assert_eq!(
+            ctx.trap_record()
+                .map(|record| (record.kind, record.pos_id)),
+            Some((TrapKind::UseAfterDelete, 19))
+        );
+    }
+
+    #[test]
     fn delete_poisons_and_double_delete_traps() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let p = ctx.alloc(8, 1, 0);
         ctx.delete(p as usize, 5);
         assert!(!ctx.is_live(p as usize));
@@ -2592,7 +2926,7 @@ mod tests {
     #[test]
     fn retained_dead_handles_trap_after_700_000_subsequent_allocations() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let oldest = ctx.alloc(8, 1, 1);
         ctx.delete(oldest as usize, 2);
         let mut probes = vec![(oldest, 700_000usize)];
@@ -2698,7 +3032,7 @@ mod tests {
 
         // Contrast: an equivalent diagnostic-mode delete retains the entry.
         let mut dev = Context::new();
-        assert!(dev.set_freed_handle_diagnostics(true));
+        assert!(dev.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let d0 = dev.alloc(8, 1, 0);
         let _d1 = dev.alloc(8, 1, 0);
         assert_eq!(dev.allocation_count(), 2);
@@ -2713,9 +3047,9 @@ mod tests {
     }
 
     #[test]
-    fn delete_of_unowned_pointer_traps() {
+    fn delete_of_unowned_pointer_traps_with_nonzero_diagnostics_threshold() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 32, usize::MAX));
         ctx.delete(0x1000, 1);
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::InvalidDelete));
     }
@@ -2793,7 +3127,7 @@ mod tests {
     #[test]
     fn collect_moves_unreachable_records_out_of_the_swept_map() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let kept = ctx.alloc(8, 1, 0);
         let dropped = ctx.alloc(8, 1, 0);
         let mut root = kept as usize;
@@ -2853,7 +3187,7 @@ mod tests {
         }
 
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         for _ in 0..120_005 {
             assert!(!ctx.alloc(8, 1, 0).is_null());
         }
@@ -3055,7 +3389,7 @@ mod tests {
         );
 
         let mut dev = Context::new();
-        assert!(dev.set_freed_handle_diagnostics(true));
+        assert!(dev.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let dh = dev.array_new(4, 0);
         for v in 0..pushes {
             // SAFETY: dh is a live u32 array handle; src is a valid u32.

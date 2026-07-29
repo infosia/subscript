@@ -299,7 +299,9 @@ considered and rejected in favour of removing it from the default path
 entirely: a bound narrows *how far back* a use-after-free is detected
 while still costing memory, and it leaves a stale read landing on a
 recycled address — undetected and silently wrong — rather than absent.
-A mode is either complete or off, and says which.
+A mode is either complete or off, and says which. (**Narrowed by
+§8.1a-2**: the mode now carries a size threshold and states its coverage
+by class.)
 
 **The guarantee is now conditional, and that is a real loss.** With the
 mode off, double free and use-after-free in the dev tier are undefined,
@@ -347,6 +349,146 @@ accepts that cost deliberately.
    `tsc` clean.
 5. A runtime unit test asserts both directions of the setting, as §8.1a's
    criterion (2) does for the tier.
+
+### 8.1a-2 The mode takes a size threshold — Rev 2026-07-29
+
+**What changed.** §8.1a-1's mode retained every freed allocation. The
+setting now carries a minimum payload size: with diagnostics on, a freed
+allocation is retained and poisoned only when its requested payload is at
+least the threshold; a smaller allocation is released exactly as with the
+mode off. Threshold 0 reproduces §8.1a-1's behaviour unchanged.
+
+**Decision (owner, 2026-07-29).** Retention costs `payload + 16` per
+freed allocation, so the mode's growth is driven by allocation count, and
+small short-lived objects are the high-count class in the loops this
+language targets. Recording them exhausts a diagnostic session's memory
+before the session finds its fault, while the handles a session hunts are
+typically to larger, longer-lived objects. The mode therefore records
+larger objects only, with the boundary host-chosen.
+
+**C API.** The setting and its threshold are established together:
+
+```c
+int32_t sub_rt_ctx_set_freed_handle_diagnostics(
+    Context *ctx, uint32_t enabled, uint64_t min_payload_bytes);
+```
+
+Per Context, host-set, refused (returns 0) after the first allocation, as
+before. `min_payload_bytes` is ignored when `enabled` is 0. The threshold
+compares the **requested payload** — the same quantity the dev
+accounting's `live_bytes` sums — not the layout.
+
+**What §8.1a-1 argued and this narrows.** §8.1a-1 rejected bounding
+retention by *age* with "a mode is either complete or off, and says
+which". A size threshold is a bound by *class*, and the mode now says
+which classes it covers: **complete at and above the threshold,
+best-effort below it.** Below the threshold, with the mode on:
+
+- A stale handle **traps while its address remains unallocated** — the
+  live-map membership check that funds the trap is already paid for and
+  stays — and is undefined once a later allocation reuses the address,
+  exactly as with the mode off.
+- A double free likewise traps while the address is unallocated, reported
+  as an **invalid free** — without a retained record the runtime cannot
+  distinguish the two — and is undefined once the address is reused.
+- Freeing a pointer the Context never owned traps regardless of the
+  threshold: no size exists for a pointer that was never owned, and the
+  bookkeeping map detects it whole.
+
+A session that saw no trap has shown absence of stale-handle faults only
+at and above its threshold. The generated host header states this beside
+the setting.
+
+**Exit criteria (pre-registered).**
+
+1. `benchmarks/src/bin/dev-retention-probe` gains a threshold column:
+   with the mode on and a threshold strictly between two swept shapes'
+   payloads, shapes below it report **0.000** bytes per allocation and
+   shapes at or above it report `payload + 16`; the off and threshold-0
+   columns reproduce §8.1a-1's table.
+2. `t22` and `t23` trap with the same kind, message and position; the
+   gate enables the mode for them with threshold 0.
+3. Runtime unit tests assert: release below the threshold and retention
+   at and above it, visible in the accounting; the pre-first-allocation
+   refusal with the new signature; a below-threshold stale handle traps
+   when its address has not been reused; invalid free traps under a
+   nonzero threshold.
+4. No accept or trap golden moves; the standing differential gate green;
+   `tsc` clean.
+5. The generated host header documents the threshold and its coverage
+   statement — generator-driven, never hand-edited.
+
+### 8.1a-3 The mode takes a retention budget — Rev 2026-07-29
+
+**What changed.** §8.1a-2 bounded retention by class; the mode now also
+bounds it in total. The setting carries a byte budget: the layouts of
+retained-and-poisoned allocations never sum above it. When retiring one
+more allocation would exceed the budget, the oldest retained allocations
+are evicted — released and forgotten — until the new one fits; an
+allocation whose own layout exceeds the whole budget is released
+immediately. The budget bounds diagnostic retention only; live
+allocations are the program's and are never evicted.
+
+**Decision (owner, 2026-07-29).** Above the threshold, retention is still
+unbounded (§8.1a-2's header states so), and a diagnostic session that
+exhausts the machine diagnoses nothing. The owner requires a hard ceiling
+on the memory the mode may hold.
+
+**What eviction means.** An evicted allocation joins the best-effort
+class §8.1a-2 defines for below-threshold frees: its stale handles trap
+while the address remains unallocated and are undefined once a later
+allocation reuses it. Eviction introduces no new semantic class. The
+guarantee becomes: **diagnostics are guaranteed for the most recently
+retained frees whose layouts fit the budget, within the size class the
+threshold covers; best-effort everywhere else.** Eviction is
+oldest-first because a hunted stale handle is typically to a recently
+freed allocation; evicting newest-first would spend the budget on the
+frees least likely to matter.
+
+**C API.** The setting, threshold and budget are established together:
+
+```c
+int32_t sub_rt_ctx_set_freed_handle_diagnostics(
+    Context *ctx, uint32_t enabled, uint64_t min_payload_bytes,
+    uint64_t max_retained_bytes);
+```
+
+`max_retained_bytes` is literal, as the regex budget is: 0 retains
+nothing (the mode becomes wholly best-effort), and a host that wants no
+practical ceiling passes `UINT64_MAX`. The budget counts the retained
+allocations' **layouts** — the `payload + 16` the probe reports — because
+that is the memory actually held. Both parameters are ignored when
+`enabled` is 0; same pre-first-allocation refusal.
+
+**Default budget (owner, 2026-07-29): 1 GiB** (`1_073_741_824` bytes).
+The parameter has no optional form in C, so the default lives in two
+places: the generated header exposes it as
+`SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES` for hosts
+to pass, and the dev tier's own mode-enabling path (the JIT runner's
+boolean parameter) uses it rather than `UINT64_MAX`. A host that wants a
+different ceiling passes its own number; nothing in the runtime treats
+the constant specially.
+
+**Exit criteria (pre-registered).**
+
+1. Runtime unit tests drive frees past the budget and assert: retained
+   layout bytes never exceed the budget at any point; eviction is
+   oldest-first; an evicted handle still traps while its address is
+   unallocated; the newest retained handle traps as guaranteed; an
+   allocation whose layout alone exceeds the budget is released
+   immediately; a zero budget retains nothing.
+2. The probe gains a budget setting: with the mode on, threshold 0 and a
+   budget smaller than a run's cumulative frees, reserved bytes plateau
+   at or below the budget while frees continue — growth per allocation
+   reaches 0 after the plateau.
+3. `t22` and `t23` trap with the same kind, message and position; the
+   gate enables the mode for them with threshold 0 and the default
+   budget — their retention is orders of magnitude below it. No accept
+   or trap golden moves; the standing differential gate green; `tsc`
+   clean.
+4. The generated host header documents the budget, the eviction order,
+   the resulting guarantee, and the default constant — generator-driven,
+   never hand-edited.
 
 ### 8.1b P8 — ship-tier allocator: Context-owned arena, size-class free lists
 

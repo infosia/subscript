@@ -951,6 +951,7 @@ version = "0.1.0"
 dependencies = [
  "subscript-codegen",
  "subscript-compiler",
+ "subscript-runtime",
 ]
 
 [[package]]

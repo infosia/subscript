@@ -765,7 +765,7 @@ mod tests {
     #[test]
     fn metadata_and_match_boundaries_check_handle_liveness() {
         let mut ctx = Context::new();
-        assert!(ctx.set_freed_handle_diagnostics(true));
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
         let deleted = regex(&mut ctx, "a", "");
         ctx.delete(deleted as usize, 0);
 

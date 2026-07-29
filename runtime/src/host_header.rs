@@ -52,6 +52,13 @@ pub fn render() -> Result<String, String> {
     out.push_str("#ifndef SUBSCRIPT_RUNTIME_H\n");
     out.push_str("#define SUBSCRIPT_RUNTIME_H\n\n");
     out.push_str("#include <stdint.h>\n\n");
+    out.push_str("/* Recommended freed-handle diagnostics retention budget. The runtime does\n");
+    out.push_str(" * not treat this value specially. */\n");
+    out.push_str(&format!(
+        "#define SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES \
+         UINT64_C({})\n\n",
+        crate::FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES
+    ));
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
     out.push_str("#endif\n\n");
@@ -337,11 +344,24 @@ mod tests {
     }
 
     #[test]
-    fn generated_host_header_documents_freed_handle_diagnostics_cost() {
+    fn generated_host_header_documents_freed_handle_diagnostics_threshold() {
         let header = render().expect("render host header");
-        assert!(header.contains("dangling-handle use and double free can be detected"));
-        assert!(header.contains("freed allocations are retained until Context release"));
-        assert!(header.contains("so memory can\n * grow without bound"));
+        assert!(header.contains("Recommended freed-handle diagnostics retention budget"));
+        assert!(header.contains("runtime does\n * not treat this value specially"));
+        assert!(header.contains(
+            "#define SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES \
+             UINT64_C(1073741824)"
+        ));
+        assert!(header.contains("requested payload is at least"));
+        assert!(header.contains("oldest retained allocations are evicted"));
+        assert!(header.contains("bounded by `max_retained_bytes`"));
+        assert!(header.contains("guaranteed for the most\n * recently retained frees"));
+        assert!(header.contains("within the class\n * covered by the threshold"));
+        assert!(header.contains("and best-effort otherwise"));
+        assert!(header.contains("zero budget retains\n * nothing"));
+        assert!(header.contains("`UINT64_MAX` is effectively unbounded"));
+        assert!(header.contains("`max_retained_bytes` are ignored when `enabled` is 0"));
+        assert!(!header.contains("grow without bound"));
         assert!(header.contains("setting is disabled by default"));
     }
 }

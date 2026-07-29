@@ -99,8 +99,11 @@ option was not taken and is not carried forward.
   not current live (§8.1b). Bounded, and the standard arena trade.
 - **`Context.collect` pause** — proportional to live data, host-invoked
   only; the cumulative-sweep defect was P24's and is fixed.
-- **Freed-handle diagnostics ON** — unbounded by design, documented as
-  the mode's stated cost (§8.1a-1).
+- **Freed-handle diagnostics ON** — was unbounded by design with the
+  cost documented (§8.1a-1); since 2026-07-29 bounded by a host-set
+  retention budget with oldest-first eviction, default 1 GiB
+  (§8.1a-3), with a payload-size threshold selecting what is retained
+  at all (§8.1a-2).
 - **Hot-reload epochs** — per-edit cost, dev-only, bounded by the number
   of edits in a session.
 

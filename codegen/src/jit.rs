@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use cranelift_jit::{JITBuilder, JITModule};
 use subscript_compiler::{check_program, Diagnostic, Pos, SourceFile};
-use subscript_runtime::{ffi, Context, TrapKind};
+use subscript_runtime::{
+    ffi, Context, TrapKind, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
+};
 
 use crate::lower::{dev_flags, internal, lower_module_with, Lowered, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
@@ -42,8 +44,8 @@ pub struct JitMemoryAccounting {
     /// run, following §18.2d's exact-requested-bytes development-tier policy.
     pub live_bytes: u64,
     /// Bytes still reserved by the Context after the run, including retained
-    /// and poisoned layouts when §8.1a-1's freed-handle diagnostics are
-    /// enabled.
+    /// and poisoned layouts when §8.1a-3's freed-handle diagnostics are
+    /// enabled with threshold 0 and the recommended default budget.
     pub reserved_bytes: u64,
 }
 
@@ -584,7 +586,11 @@ fn execute_entry(
     let main_ptr = module.get_finalized_function(lowered.main);
 
     let mut ctx = Context::new();
-    let diagnostics_set = ctx.set_freed_handle_diagnostics(freed_handle_diagnostics);
+    let diagnostics_set = ctx.set_freed_handle_diagnostics(
+        freed_handle_diagnostics,
+        0,
+        FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
+    );
     debug_assert!(
         diagnostics_set,
         "dev-JIT freed-handle diagnostics setting was attempted after Context allocation started"
@@ -680,8 +686,9 @@ pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 ///
 /// The accounting is read while the fresh run's Context is still alive and
 /// before its allocations are released. `freed_handle_diagnostics`
-/// establishes §8.1a-1's retain-and-poison mode before `ss_init`; when
-/// false, the dev tier's default immediate-release policy applies.
+/// establishes §8.1a-3's retain-and-poison mode with threshold 0 and an
+/// 1 GiB recommended default budget before `ss_init`; when false, the dev
+/// tier's default immediate-release policy applies.
 ///
 /// # Errors
 ///
