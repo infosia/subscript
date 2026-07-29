@@ -14,7 +14,10 @@ use subscript_codegen::{
     host_c_compiler, include_directory_arg, run_jit, runtime_system_libraries, CCompilerStyle,
     EmitCFilesError, RunError,
 };
-use subscript_compiler::{check_program, render_diagnostics, Diagnostic, SourceFile};
+use subscript_compiler::{
+    check_program, check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile,
+    Warning,
+};
 
 const SUCCESS: u8 = 0;
 const PROGRAM_ERROR: u8 = 1;
@@ -89,10 +92,10 @@ fn dispatch<O: Write, E: Write>(
     };
     match command {
         "check" => check_command(&args[1..], stderr),
-        "emit" => emit_command(&args[1..]),
+        "emit" => emit_command(&args[1..], stderr),
         "link-flags" => link_flags_command(&args[1..], stdout),
         "build" => build_command(&args[1..], stdout, stderr),
-        "run" => run_command(&args[1..], stdout),
+        "run" => run_command(&args[1..], stdout, stderr),
         _ => Err(Failure::usage(format!(
             "unknown subcommand `{command}`; {}",
             usage()
@@ -108,6 +111,7 @@ fn usage() -> &'static str {
 struct SourceArguments {
     source: Option<PathBuf>,
     mirrors: Vec<PathBuf>,
+    deny_warnings: bool,
 }
 
 fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failure> {
@@ -117,14 +121,18 @@ fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Fail
         .as_ref()
         .ok_or_else(|| Failure::usage("check requires <file.ts>"))?;
     let files = load_program(source, &parsed.mirrors)?;
-    match check_program(&files) {
-        Ok(_) => {
-            writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
-                .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
-            Ok(SUCCESS)
-        }
-        Err(diagnostics) => Err(rejection(&files, diagnostics)),
+    let warnings = accepted_warnings(&files)?;
+    if warnings.is_empty() {
+        writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
+            .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
+        return Ok(SUCCESS);
     }
+    write_warnings(&files, &warnings, stderr)?;
+    Ok(if parsed.deny_warnings {
+        PROGRAM_ERROR
+    } else {
+        SUCCESS
+    })
 }
 
 fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure> {
@@ -132,6 +140,12 @@ fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure>
     let mut index = 0;
     while index < args.len() {
         match args[index].to_str() {
+            Some("--deny-warnings") if !parsed.deny_warnings => {
+                parsed.deny_warnings = true;
+            }
+            Some("--deny-warnings") => {
+                return Err(Failure::usage("--deny-warnings may be supplied only once"));
+            }
             Some("--mirror") => {
                 parsed
                     .mirrors
@@ -155,14 +169,19 @@ fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure>
     Ok(parsed)
 }
 
-fn emit_command(args: &[OsString]) -> Result<u8, Failure> {
+fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failure> {
     let mut source = None;
     let mut mirrors = Vec::new();
     let mut output = None;
     let mut write_entry = true;
+    let mut deny_warnings = false;
     let mut index = 0;
     while index < args.len() {
         match args[index].to_str() {
+            Some("--deny-warnings") if !deny_warnings => deny_warnings = true,
+            Some("--deny-warnings") => {
+                return Err(Failure::usage("--deny-warnings may be supplied only once"));
+            }
             Some("--mirror") => mirrors.push(path_value(args, &mut index, "--mirror")?),
             Some("-o") => set_once(&mut output, path_value(args, &mut index, "-o")?, "-o")?,
             Some("--no-entry") => write_entry = false,
@@ -182,6 +201,13 @@ fn emit_command(args: &[OsString]) -> Result<u8, Failure> {
     let source = source.ok_or_else(|| Failure::usage("emit requires <file.ts>"))?;
     let output = output.ok_or_else(|| Failure::usage("emit requires -o <dir>"))?;
     let files = load_program(&source, &mirrors)?;
+    let warnings = accepted_warnings(&files)?;
+    if !warnings.is_empty() {
+        write_warnings(&files, &warnings, stderr)?;
+        if deny_warnings {
+            return Ok(PROGRAM_ERROR);
+        }
+    }
     emit_c_files(&files, &output, "program", write_entry)
         .map(|_| SUCCESS)
         .map_err(|error| map_emit_error(error, &files))
@@ -266,6 +292,7 @@ struct BuildArguments {
     hosts: Vec<PathBuf>,
     output: Option<PathBuf>,
     run: bool,
+    deny_warnings: bool,
     runtime: RuntimeOverrides,
 }
 
@@ -296,9 +323,16 @@ fn build_command<O: Write, E: Write>(
         || source.parent().unwrap_or(&current).join("subscript-build"),
         |path| absolute(&path, &current),
     );
+    let files = load_program(&source_given, &parsed.mirrors)?;
+    let warnings = accepted_warnings(&files)?;
+    if !warnings.is_empty() {
+        write_warnings(&files, &warnings, stderr)?;
+        if parsed.deny_warnings {
+            return Ok(PROGRAM_ERROR);
+        }
+    }
     let runtime = resolve_runtime_paths(parsed.runtime, RuntimeEnvironment::current(), &current)
         .map_err(Failure::usage)?;
-    let files = load_program(&source_given, &parsed.mirrors)?;
     let emitted = emit_c_files(&files, &output, "program", hosts.is_empty())
         .map_err(|error| map_emit_error(error, &files))?;
     let executable = executable_path(&output, &source)?;
@@ -337,6 +371,12 @@ fn parse_build_arguments(args: &[OsString]) -> Result<BuildArguments, Failure> {
             }
             Some("--run") if !parsed.run => parsed.run = true,
             Some("--run") => return Err(Failure::usage("--run may be supplied only once")),
+            Some("--deny-warnings") if !parsed.deny_warnings => {
+                parsed.deny_warnings = true;
+            }
+            Some("--deny-warnings") => {
+                return Err(Failure::usage("--deny-warnings may be supplied only once"));
+            }
             Some("--runtime-lib") => {
                 let value = path_value(args, &mut index, "--runtime-lib")?;
                 set_once(&mut parsed.runtime.library, value, "--runtime-lib")?;
@@ -450,12 +490,35 @@ fn executable_path(output: &Path, source: &Path) -> Result<PathBuf, Failure> {
     Ok(output.join(name))
 }
 
-fn run_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failure> {
-    if args.len() != 1 {
-        return Err(Failure::usage("run requires exactly one <file.ts>"));
+fn run_command<O: Write, E: Write>(
+    args: &[OsString],
+    stdout: &mut O,
+    stderr: &mut E,
+) -> Result<u8, Failure> {
+    let mut source = None;
+    let mut deny_warnings = false;
+    for arg in args {
+        match arg.to_str() {
+            Some("--deny-warnings") if !deny_warnings => deny_warnings = true,
+            Some("--deny-warnings") => {
+                return Err(Failure::usage("--deny-warnings may be supplied only once"));
+            }
+            Some(flag) if flag.starts_with('-') => {
+                return Err(Failure::usage(format!("unknown option `{flag}`")));
+            }
+            _ if source.is_none() => source = Some(PathBuf::from(arg)),
+            _ => return Err(Failure::usage("run requires exactly one <file.ts>")),
+        }
     }
-    let source = PathBuf::from(&args[0]);
+    let source = source.ok_or_else(|| Failure::usage("run requires exactly one <file.ts>"))?;
     let files = load_program(&source, &[])?;
+    let warnings = accepted_warnings(&files)?;
+    if !warnings.is_empty() {
+        write_warnings(&files, &warnings, stderr)?;
+        if deny_warnings {
+            return Ok(PROGRAM_ERROR);
+        }
+    }
     match run_jit(&files) {
         Ok(output) => {
             stdout
@@ -491,6 +554,22 @@ fn read_text(path: &Path, kind: &str) -> Result<String, Failure> {
 
 fn rejection(files: &[SourceFile], diagnostics: Vec<Diagnostic>) -> Failure {
     Failure::rejection(render_diagnostics(files, &diagnostics))
+}
+
+fn accepted_warnings(files: &[SourceFile]) -> Result<Vec<Warning>, Failure> {
+    match check_program(files) {
+        Ok(module) => Ok(check_warnings(&module)),
+        Err(diagnostics) => Err(rejection(files, diagnostics)),
+    }
+}
+
+fn write_warnings<E: Write>(
+    files: &[SourceFile],
+    warnings: &[Warning],
+    stderr: &mut E,
+) -> Result<(), Failure> {
+    writeln!(stderr, "{}", render_warnings(files, warnings))
+        .map_err(|error| Failure::usage(format!("write warnings: {error}")))
 }
 
 fn map_emit_error(error: EmitCFilesError, files: &[SourceFile]) -> Failure {

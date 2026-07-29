@@ -81,6 +81,40 @@ fn s007_output(path: &Path) -> Vec<u8> {
     .into_bytes()
 }
 
+fn w001_source() -> &'static [u8] {
+    concat!(
+        "class Token {\n",
+        "  value: i32;\n",
+        "  constructor(value: i32) {\n",
+        "    this.value = value;\n",
+        "  }\n",
+        "}\n",
+        "export function main(): void {\n",
+        "  for (let i: i32 = 0; i < 2; i += 1) {\n",
+        "    const token: Token = new Token(i);\n",
+        "    print(`${token.value}`);\n",
+        "  }\n",
+        "}\n",
+    )
+    .as_bytes()
+}
+
+fn w001_output(path: &Path) -> Vec<u8> {
+    format!(
+        concat!(
+            "warning[W001]: `token` is allocated in each loop iteration but neither escapes the iteration nor is released\n",
+            " --> {}:9:26\n",
+            "  |\n",
+            "9 |     const token: Token = new Token(i);\n",
+            "  |                          ^\n",
+            "  = rule: A reference-class allocation repeated by a loop should escape the iteration or be released.\n",
+            "warning: 1 warning(s)\n",
+        ),
+        path.display()
+    )
+    .into_bytes()
+}
+
 #[test]
 fn check_and_emit_cover_clean_diagnostic_and_io_paths() -> Result<(), String> {
     let directory = TestDir::new()?;
@@ -276,6 +310,119 @@ fn rejection_text_is_byte_identical_for_all_four_program_commands() -> Result<()
     assert_eq!(emitted.stderr, checked.stderr);
     assert_eq!(built.stderr, checked.stderr);
     assert_eq!(run.stderr, checked.stderr);
+    Ok(())
+}
+
+#[test]
+fn warning_text_is_exact_and_byte_identical_with_artifacts_for_all_commands() -> Result<(), String>
+{
+    let directory = TestDir::new()?;
+    directory.write("warning.ts", w001_source())?;
+    let runtime = subscript_codegen::runtime_staticlib_path().map_err(|error| error.to_string())?;
+    let include = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("runtime")
+        .join("include");
+    let source = Path::new("warning.ts");
+
+    let checked = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("check")
+            .arg(source),
+    )?;
+    let emitted = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("emit")
+            .arg(source)
+            .arg("-o")
+            .arg("warn-emitted"),
+    )?;
+    let built = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("build")
+            .arg("--source")
+            .arg(source)
+            .arg("-o")
+            .arg("warn-built")
+            .arg("--runtime-lib")
+            .arg(&runtime)
+            .arg("--runtime-include")
+            .arg(&include),
+    )?;
+    let run = output(subscript().current_dir(&directory.0).arg("run").arg(source))?;
+
+    for result in [&checked, &emitted, &built, &run] {
+        assert_code(result, 0);
+    }
+    assert!(checked.stdout.is_empty());
+    assert!(emitted.stdout.is_empty());
+    assert!(built.stdout.is_empty());
+    assert_eq!(run.stdout, b"0\n1\n");
+    assert_eq!(checked.stderr, w001_output(source));
+    assert_eq!(emitted.stderr, checked.stderr);
+    assert_eq!(built.stderr, checked.stderr);
+    assert_eq!(run.stderr, checked.stderr);
+    assert!(directory.0.join("warn-emitted/program.c").is_file());
+    assert!(directory
+        .0
+        .join(format!(
+            "warn-built/warning{}",
+            std::env::consts::EXE_SUFFIX
+        ))
+        .is_file());
+    Ok(())
+}
+
+#[test]
+fn deny_warnings_exits_one_and_prevents_emit_and_build_artifacts() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    directory.write("warning.ts", w001_source())?;
+    let source = Path::new("warning.ts");
+
+    let checked = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("check")
+            .arg(source)
+            .arg("--deny-warnings"),
+    )?;
+    let emitted = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("emit")
+            .arg(source)
+            .arg("-o")
+            .arg("denied-emit")
+            .arg("--deny-warnings"),
+    )?;
+    let built = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("build")
+            .arg("--source")
+            .arg(source)
+            .arg("-o")
+            .arg("denied-build")
+            .arg("--deny-warnings"),
+    )?;
+    let run = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("run")
+            .arg(source)
+            .arg("--deny-warnings"),
+    )?;
+
+    for result in [&checked, &emitted, &built, &run] {
+        assert_code(result, 1);
+        assert!(result.stdout.is_empty());
+        assert_eq!(result.stderr, w001_output(source));
+    }
+    assert!(!directory.0.join("denied-emit").exists());
+    assert!(!directory.0.join("denied-build").exists());
     Ok(())
 }
 

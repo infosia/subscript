@@ -21,10 +21,12 @@ mod parse;
 mod provenance;
 mod regex;
 mod trap_sites;
+mod warn;
 
 pub use diag::{Diagnostic, Pos, RuleCode};
-pub use diag_render::render_diagnostics;
+pub use diag_render::{render_diagnostics, render_warnings};
 pub use types::{ClassId, EnumId, FuncType, Type};
+pub use warn::{check_warnings, WarnCode, Warning};
 
 /// One source file of a program.
 #[derive(Debug, Clone, PartialEq, Eq)]

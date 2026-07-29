@@ -69,6 +69,31 @@ Reviewer-run §8.4 evidence:
 5. Gate: 46 harnesses, 686 passed, 0 failed, exit 0, read directly;
    `corpus_accept`/`corpus_reject` harness files untouched.
 
+## warnings (specs/blocks/warnings.md) — landed and verified 2026-07-30
+
+`WarnCode`/`Warning`/`check_warnings` (`compiler/src/warn.rs`, HIR
+analysis, panic-free outside tests), `render_warnings` sharing the §8
+shape with `render_diagnostics` byte-unchanged, new corpus arm
+`corpus/warn/` (w01, w02) wired into the `tsc` gate, surfacing plus
+`--deny-warnings` in all four subcommands. Reviewer-run §6 evidence:
+
+1. w01 fires W001 at 15:26 and w02 fires W002 at 16:12, rendered as
+   contracted, exit 0; `--deny-warnings` exits 1; `emit
+   --deny-warnings` leaves no output directory.
+2. Zero-warning net: corpus/accept (90 files) and examples (10)
+   sweep clean in the harness; `e03-memory.ts` reproduced silent
+   locally with the `no errors` line.
+3. `check_program` signature and reject harness (12 tests,
+   83 entries) unchanged and green.
+4. Gate: 697 passed, 0 failed, exit 0, read directly; `tsc` gate
+   exit 0 with `corpus/warn/**` included.
+
+Implementer's recorded conservatisms: Map/Set count as reference
+classes for W001; uncertain alias/reassignment identity does not
+fire; the collect mute does not cross lambda/function boundaries;
+W002 discards tracking at control-flow joins. All precision-first,
+consistent with §2.
+
 ## Named follow-ups (not dropped)
 
 - `run --watch` hot reload — §2.5's own future contract revision.

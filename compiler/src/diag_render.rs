@@ -2,7 +2,14 @@
 
 use std::fmt::Write as _;
 
-use crate::{Diagnostic, SourceFile};
+use crate::{Diagnostic, Pos, SourceFile, Warning};
+
+struct RenderItem<'a> {
+    code: &'static str,
+    message: &'a str,
+    pos: &'a Pos,
+    explanation: &'static str,
+}
 
 /// Renders diagnostics against their source files without ANSI color.
 ///
@@ -13,56 +20,80 @@ use crate::{Diagnostic, SourceFile};
 /// characters can therefore shift visual alignment.
 #[must_use]
 pub fn render_diagnostics(files: &[SourceFile], diagnostics: &[Diagnostic]) -> String {
-    let gutter_width = diagnostics
+    let items = diagnostics
         .iter()
-        .filter(|diagnostic| source_line(files, diagnostic).is_some())
-        .map(|diagnostic| diagnostic.pos.line.to_string().len())
+        .map(|diagnostic| RenderItem {
+            code: diagnostic.code.as_str(),
+            message: &diagnostic.message,
+            pos: &diagnostic.pos,
+            explanation: diagnostic.code.explanation(),
+        })
+        .collect::<Vec<_>>();
+    render_items(files, &items, "error")
+}
+
+/// Renders warnings against their source files without ANSI color.
+///
+/// The returned string has no trailing newline and uses the same source
+/// snippet, caret, degradation, and summary shape as
+/// [`render_diagnostics`].
+#[must_use]
+pub fn render_warnings(files: &[SourceFile], warnings: &[Warning]) -> String {
+    let items = warnings
+        .iter()
+        .map(|warning| RenderItem {
+            code: warning.code.as_str(),
+            message: &warning.message,
+            pos: &warning.pos,
+            explanation: warning.code.explanation(),
+        })
+        .collect::<Vec<_>>();
+    render_items(files, &items, "warning")
+}
+
+fn render_items(files: &[SourceFile], items: &[RenderItem<'_>], severity: &str) -> String {
+    let gutter_width = items
+        .iter()
+        .filter(|item| source_line(files, item.pos).is_some())
+        .map(|item| item.pos.line.to_string().len())
         .max()
         .unwrap_or(1);
     let mut rendered = String::new();
 
-    for diagnostic in diagnostics {
-        let _ = writeln!(
-            rendered,
-            "error[{}]: {}",
-            diagnostic.code, diagnostic.message
-        );
+    for item in items {
+        let _ = writeln!(rendered, "{severity}[{}]: {}", item.code, item.message);
         let _ = writeln!(
             rendered,
             " --> {}:{}:{}",
-            diagnostic.pos.file, diagnostic.pos.line, diagnostic.pos.col
+            item.pos.file, item.pos.line, item.pos.col
         );
 
-        let Some(line) = source_line(files, diagnostic) else {
+        let Some(line) = source_line(files, item.pos) else {
             continue;
         };
         let gutter_padding = " ".repeat(gutter_width + 1);
-        let caret_padding = " ".repeat(diagnostic.pos.col.saturating_sub(1) as usize);
+        let caret_padding = " ".repeat(item.pos.col.saturating_sub(1) as usize);
         let _ = writeln!(rendered, "{gutter_padding}|");
         let _ = writeln!(
             rendered,
             "{:>width$} | {line}",
-            diagnostic.pos.line,
+            item.pos.line,
             width = gutter_width
         );
         let _ = writeln!(rendered, "{gutter_padding}| {caret_padding}^");
-        let _ = writeln!(
-            rendered,
-            "{gutter_padding}= rule: {}",
-            diagnostic.code.explanation()
-        );
+        let _ = writeln!(rendered, "{gutter_padding}= rule: {}", item.explanation);
     }
 
-    let _ = write!(rendered, "error: {} error(s)", diagnostics.len());
+    let _ = write!(rendered, "{severity}: {} {severity}(s)", items.len());
     rendered
 }
 
-fn source_line<'a>(files: &'a [SourceFile], diagnostic: &Diagnostic) -> Option<&'a str> {
-    let index = diagnostic.pos.line.checked_sub(1)?;
+fn source_line<'a>(files: &'a [SourceFile], pos: &Pos) -> Option<&'a str> {
+    let index = pos.line.checked_sub(1)?;
     let index = usize::try_from(index).ok()?;
     files
         .iter()
-        .find(|file| file.name == diagnostic.pos.file)?
+        .find(|file| file.name == pos.file)?
         .source
         .lines()
         .nth(index)
@@ -71,7 +102,7 @@ fn source_line<'a>(files: &'a [SourceFile], diagnostic: &Diagnostic) -> Option<&
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Pos, RuleCode};
+    use crate::{Pos, RuleCode, WarnCode, Warning};
 
     #[test]
     fn renders_one_diagnostic_with_snippet_and_caret_exactly() {
@@ -146,6 +177,29 @@ mod tests {
                 "error[S100]: missing line\n",
                 " --> main.ts:2:1\n",
                 "error: 2 error(s)",
+            )
+        );
+    }
+
+    #[test]
+    fn warning_rendering_reuses_the_diagnostic_shape() {
+        let files = [SourceFile::new("main.ts", "const token = allocate();\n")];
+        let warnings = [Warning::new(
+            WarnCode::W001,
+            "allocation repeats",
+            Pos::new("main.ts", 1, 15),
+        )];
+
+        assert_eq!(
+            render_warnings(&files, &warnings),
+            concat!(
+                "warning[W001]: allocation repeats\n",
+                " --> main.ts:1:15\n",
+                "  |\n",
+                "1 | const token = allocate();\n",
+                "  |               ^\n",
+                "  = rule: A reference-class allocation repeated by a loop should escape the iteration or be released.\n",
+                "warning: 1 warning(s)",
             )
         );
     }
