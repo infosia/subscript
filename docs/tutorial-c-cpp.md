@@ -141,10 +141,16 @@ sum=3
 
 ### 5. Coroutines instead of async
 
-There is no `async`, no promises, no event loop — the host owns the
-loop. A `function*` coroutine suspends at `yield`; each `next()` call
-advances exactly one step, which matches driving script logic once per
-frame:
+There is no `async`, no promises, no event loop — and that is a
+consequence of the embedding model, not a gap: `await`'s semantics
+require an event loop that decides when continuations resume, and
+your application owns the loop; promise chains also keep captured
+environments alive until a collector frees them, and there is no
+collector. The suspension mechanism itself stays: a `function*`
+coroutine suspends at `yield`, and each `next()` call advances exactly
+one step, which matches driving script logic once per frame (the
+fuller reasoning is in the
+[TypeScript tutorial](tutorial-typescript.md#why-promises-are-absent)):
 
 ```ts
 function* updates(): Generator<i32> {

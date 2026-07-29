@@ -189,11 +189,10 @@ subscript: oob.ts:4:12: trap [index-out-of-bounds]: index 5 out of bounds for ar
 Recoverable conditions are values in the type system (`T | null`),
 not exceptions.
 
-## No `async`; coroutines
+## No `async`, no `Promise`; coroutines
 
-There is no event loop to schedule promises on — the host application
-owns the loop. Suspension is a `function*` coroutine, advanced
-explicitly; the host (or your own code) calls `next()` once per step:
+Suspension is a `function*` coroutine, advanced explicitly; the host
+(or your own code) calls `next()` once per step:
 
 ```ts
 function* updates(): Generator<i32> {
@@ -223,6 +222,43 @@ frame=1 value=6
 frame=2 value=12
 frame=3 done
 ```
+
+### Why promises are absent
+
+Three reasons, each following from a decision documented elsewhere in
+this repository — not from implementation effort.
+
+1. **`await` needs an event loop to give it meaning.** In JavaScript,
+   `await` suspends, returns control to the event loop, and resumes
+   when the microtask queue schedules the continuation — the promise's
+   semantics include the loop's scheduling rules. subscript is
+   embedded and the host application owns the loop, so the language
+   has no place of its own to define *when* a continuation runs. Once
+   the host drives resumption, what remains of `await` is exactly a
+   coroutine advanced by `next()` — so that is the mechanism the
+   language keeps.
+2. **Promise lifetimes assume a garbage collector.** A pending promise
+   keeps its continuation alive: a closure capturing its environment,
+   chained through each `.then`. In JavaScript that chain is collected
+   when unreachable; subscript has no collector and memory is
+   explicit, so "who frees an abandoned chain and its captured
+   environments" has no answer. The same constraint appears in the
+   rejection table as S009 — a capturing lambda may not escape its
+   defining function — and an `await` continuation is precisely an
+   escaping capturing closure.
+3. **Both tiers must run byte-identically.** A microtask queue is
+   scheduler state that the JIT and the emitted C would each have to
+   reproduce exactly. A coroutine has no scheduler state: the
+   resumption order is written in your control flow.
+
+What replaces the pattern: asynchronous host work (I/O, threads)
+reaches scripts as C callbacks, delivered on the calling thread when
+the host pumps — never spontaneously from another thread — and the
+script-side "waiting" logic is a coroutine. Composed, those two give
+Future-shaped async without a `Promise` object; see
+[`e10-c-callbacks-and-handles.ts`](../examples/e10-c-callbacks-and-handles.ts)
+and the callback model in
+[`specs/blocks/compiler.md`](../specs/blocks/compiler.md) §13.3, §14.5.
 
 ## The standard library is a deliberate subset
 
