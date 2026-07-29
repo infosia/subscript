@@ -20,7 +20,7 @@ class SceneState {
   }
 }
 
-// ss_init evaluates this initializer for every fresh Context. The host does
+// subscript_init evaluates this initializer for every fresh Context. The host does
 // not clear or replace this global between calls: rebuilding the Context is
 // what makes the second scene start from zero.
 let scene: SceneState = new SceneState();

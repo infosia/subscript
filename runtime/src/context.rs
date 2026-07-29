@@ -52,7 +52,7 @@ use crate::trap::{TrapKind, TrapRecord};
 ///
 /// The callback deliberately receives no [`Context`] handle. It runs
 /// inside [`Context::trap`] while that method holds exclusive access to
-/// the Context, so calling any `sub_rt_*` API that takes that Context
+/// the Context, so calling any `subscript_rt_*` API that takes that Context
 /// (including through a pointer smuggled in `userdata`) would violate
 /// Rust's aliasing rules and is undefined behaviour.
 ///
@@ -71,7 +71,7 @@ pub type TrapObserver = unsafe extern "C" fn(
 ///
 /// The callback receives no [`Context`] handle. It runs inside
 /// [`Context::print_line`] while that method holds exclusive access to the
-/// Context, so calling any `sub_rt_*` API that takes that Context
+/// Context, so calling any `subscript_rt_*` API that takes that Context
 /// (including through a pointer smuggled in `userdata`) would violate
 /// Rust's aliasing rules and is undefined behaviour.
 ///
@@ -93,15 +93,15 @@ pub type AllocationVisitor = unsafe extern "C" fn(
     payload_bytes: u64,
 );
 
-/// C calling convention shared by the module initializer (`ss_init`) and every
+/// C calling convention shared by the module initializer (`subscript_init`) and every
 /// supported host export.
 ///
 /// A host that may clear traps brackets each call with
-/// `sub_rt_ctx_enter_script` and `sub_rt_ctx_exit_script`.
+/// `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
 ///
-/// An ordinary run entry uses `ss_export_main`; a host-owned entry may instead
+/// An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
 /// drive other zero-argument `void` exports using the symbol
-/// `ss_export_<name>` and this same C signature.
+/// `subscript_export_<name>` and this same C signature.
 pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Bytes between an allocation's base and its payload.
@@ -323,7 +323,7 @@ type CallbackIdentity = (*const u8, *const u8, *mut u8, *mut u8);
 /// A registered C-callback binding (P5.2b). The language's function value
 /// is a `(code, env)` pair with the calling convention `(ctx, env,
 /// args...)`; a C callback wants a bare `(fnptr, void* userdata)`. A
-/// generic C-ABI trampoline ([`crate::ffi::sub_rt_cb_trampoline`]) bridges
+/// generic C-ABI trampoline ([`crate::ffi::subscript_rt_cb_trampoline`]) bridges
 /// the two: the record is what the trampoline receives through the C
 /// `userdata` slot, so it carries everything the language convention needs
 /// — the Context, the language `code`/`env`, and the *real* userdata the
@@ -477,7 +477,7 @@ impl Context {
     /// default: a size-classed block goes back to its arena free list and
     /// a large allocation is freed outright. Use-after-delete and double
     /// delete are undefined (Q6/§8.1b), not trapped. The AOT host entry
-    /// ([`crate::ffi::sub_rt_ctx_new`]) builds its Context this way.
+    /// ([`crate::ffi::subscript_rt_ctx_new`]) builds its Context this way.
     #[must_use]
     pub fn new_releasing() -> Box<Context> {
         Self::with_tier(true)
@@ -654,7 +654,7 @@ impl Context {
     }
 
     /// Reseeds the `Math.random` stream by re-expanding `seed` (host
-    /// replay control; [`crate::ffi::sub_rt_ctx_seed_random`]).
+    /// replay control; [`crate::ffi::subscript_rt_ctx_seed_random`]).
     pub fn seed_random(&mut self, seed: u64) {
         self.rng.reseed(seed);
     }
@@ -679,7 +679,7 @@ impl Context {
     }
 
     /// Pins the `Date.now` clock to `ms` (tests, replays;
-    /// [`crate::ffi::sub_rt_ctx_set_now`]). Every later `Date.now()`
+    /// [`crate::ffi::subscript_rt_ctx_set_now`]). Every later `Date.now()`
     /// returns exactly `ms` until pinned again.
     pub fn set_now(&mut self, ms: i64) {
         self.now_override = Some(ms);
@@ -1943,7 +1943,7 @@ impl Context {
 
     /// The address of a string handle's UTF-8 bytes (the C `const char*`
     /// half of a `(ptr, len)` string view; the length is
-    /// [`Context::str_bytes`]`.len()`, also `sub_rt_str_len`).
+    /// [`Context::str_bytes`]`.len()`, also `subscript_rt_str_len`).
     ///
     /// # Safety
     ///
@@ -1970,7 +1970,7 @@ impl Context {
     /// Registers a C-callback binding and returns a stable pointer to it
     /// (P5.2b). The pointer is what a boundary marshaler stores in a C
     /// `void* userdata` slot; the generic trampoline
-    /// ([`crate::ffi::sub_rt_cb_trampoline`]) reads the binding back
+    /// ([`crate::ffi::subscript_rt_cb_trampoline`]) reads the binding back
     /// through it. Bindings live for the whole Context (the Q13 lifetime
     /// rule), so the pointer stays valid for every later callback.
     ///
@@ -2377,7 +2377,7 @@ mod tests {
         // SAFETY: this is a host-boundary probe over a live Context. The
         // test raises only the guard bit, without entering a callback and
         // therefore without creating an aliasing violation.
-        assert_eq!(unsafe { crate::ffi::sub_rt_ctx_clear_trap(p) }, 0);
+        assert_eq!(unsafe { crate::ffi::subscript_rt_ctx_clear_trap(p) }, 0);
         assert!(ctx.trapped(), "the refused clear changed trap state");
         ctx.trap_observer_active = false;
         assert!(ctx.can_clear_trap());

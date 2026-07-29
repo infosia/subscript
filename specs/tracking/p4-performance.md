@@ -33,7 +33,7 @@ contracts multiply-add; the contracting build is ~1.8× *slower* here,
 so this flag gives the stronger, not the weaker, baseline).
 
 Timed spans (§9): C — the workload call (array construction, 100
-propagation iterations, checksum); ship-AOT — the `ss_export_main` call
+propagation iterations, checksum); ship-AOT — the `subscript_export_main` call
 in the linked binary; dev-JIT — the `main` call in-process. Compilation,
 linking, JIT warm-up, Context setup and I/O are outside all three.
 
@@ -114,7 +114,7 @@ from the same typed HIR the CLIF path consumes, carrying the language's
 semantics: `Matrix4` value params **by value** (C2 copy-on-pass, which
 the hand baseline elides with `const*`); the `FixedArray` inner matmul
 **unchecked** via the same P4.1 interval proof; dynamic arrays as
-`(data,len,cap)` with a **bounds check per access** (`sub_arr_at`) and
+`(data,len,cap)` with a **bounds check per access** (`subscript_arr_at`) and
 realloc-on-push; f32 kept in `float`; Q14 print replicated. Verified by
 inspecting the emitted C (inner loop unchecked, value params by value,
 dynamic access checked, element store resolved after the RHS) and by
@@ -189,7 +189,7 @@ the optimization is correctness-preserving.
   branch-free and the disassembly confirms single-lane `fmul`/`fadd`.
 - ~10%: residual 64-byte value-struct copy traffic (part ABI/lowering,
   part C2-fundamental).
-- ~6%: out-of-line dynamic-array indexing (`sub_rt_array_ptr`,
+- ~6%: out-of-line dynamic-array indexing (`subscript_rt_array_ptr`,
   deliberately still checked; addressable in a later phase).
 
 Of the original ~35× gap, this project's own code generation
@@ -225,7 +225,7 @@ Contract: `specs/blocks/compiler.md` §11; plan §8 Rev 2. The a22-only
 P4.2 emitter (`codegen/src/cemit.rs`) is extended to the full run set
 and made the ship tier, replacing `cranelift-object`. It links the
 runtime staticlib (identical arrays/strings/coroutines/Q14/traps) and
-exports the same `ss_init` / `ss_export_<name>` surface, so it is a
+exports the same `subscript_init` / `subscript_export_<name>` surface, so it is a
 drop-in for the AOT entry.
 
 ### Standing gate rewired
@@ -361,7 +361,7 @@ the 32-byte-zeroed-with-header allocation shape itself was ~+17% over
 bare `malloc`/`free`.
 
 Mechanism (runtime/src/context.rs, ship Context only; dev tier's map +
-retain-and-poison + traps unchanged; no `sub_rt_*` ABI change): 8
+retain-and-poison + traps unchanged; no `subscript_rt_*` ABI change): 8
 power-of-two size classes (32..4096 B total block) carved from 64 KiB
 per-class chunks by bump pointer; `delete` pushes the block onto its
 class's LIFO free list (link threaded through the freed payload's first
@@ -405,7 +405,7 @@ MINOR 3 (pre-existing P5.2b `vec_box` on `callbacks` — the Box is
 load-bearing: `bind_callback` returns a stable interior pointer; wants
 a justifying `#[allow]` comment) recorded as cosmetic follow-ups.
 
-Residual ship `tree` gap (1.37×): the `sub_rt` call boundary, header
+Residual ship `tree` gap (1.37×): the `subscript_rt` call boundary, header
 writes, and full-capacity re-zeroing on reuse — not the map (gone).
 Not scheduled; §8.1b's target is met.
 
@@ -441,7 +441,7 @@ runs showed.
 | `callbacks` | 20.84× | 22.86× |
 
 `particles` and `sort` both have array indexing in their inner loop,
-which is what P19 changed: `ss_arr_at` was an inlined helper whose
+which is what P19 changed: `subscript_arr_at` was an inlined helper whose
 fallback pointer cost a null test, a `csel`, a live global address and
 a reachable cold call, and removing it took the loop body from 82
 instructions to 39 (`p19-trap-parity.md`). `tree` is `unsafeDelete`

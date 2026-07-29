@@ -15,7 +15,7 @@ User declarations named `Math` shadow the namespace in every form
 (class, const, parameter — probe-verified).
 
 Runtime: `runtime/src/math.rs`, one implementation; both tiers call
-opaque `sub_rt_math_*` (the ship C emitter never emits a bare libm
+opaque `subscript_rt_math_*` (the ship C emitter never emits a bare libm
 call — clang's libm constant folding is the pre-registered §0.2
 hazard; a constant-argument fold probe is byte-identical across
 tiers). ECMA edges implemented and probe-verified beyond the pinned
@@ -29,7 +29,7 @@ corpus: `round` half-toward-+∞ incl. `round(0.49999999999999994)=+0`
 the contract seed `0x5355_4253_5245_4144`; draw maps the top 53 bits
 to [0,1). An independent reimplementation from the published algorithm
 matched 64 draws bit-exactly; the unit-test pin, the a41 golden, and
-that reimplementation agree. `sub_rt_ctx_seed_random` reseeds; dev and
+that reimplementation agree. `subscript_rt_ctx_seed_random` reseeds; dev and
 ship Context constructions share the stream.
 
 Corpus: a40 (every §1 function, all constants, the edge battery), a41
@@ -70,12 +70,12 @@ type (`Type::Date`) erasing to i64 UTC epoch milliseconds; `new
 Date(ms)` (TimeClip trap — no Invalid-Date value), `Date.UTC` (ECMA
 MakeDay/MakeTime carry incl. negative months/days, MakeFullYear
 0–99→1900+, i128 intermediates — extreme i32 args trap, never wrap),
-`Date.now()` (Context clock; `sub_rt_ctx_set_now` pins it; default
+`Date.now()` (Context clock; `subscript_rt_ctx_set_now` pins it; default
 system UTC, pre-epoch-safe), field-coded `getUTC*` accessors,
 `toISOString` (years 0000–9999 else trap; euclidean decomposition —
 `-1 ms` is `1969-12-31T23:59:59.999Z`). `getTime` folds at check time
 to the i64 receiver (trap order preserved — probe-verified). Both
-tiers call identical opaque `sub_rt_date_*` symbols; extern widths
+tiers call identical opaque `subscript_rt_date_*` symbols; extern widths
 verified against the runtime signatures. Rejections (S014, Q20):
 local-time accessors, setters, `parse`, `toString` family, multi- and
 zero-argument constructors, `Date` in templates, direct `Date`
@@ -99,8 +99,8 @@ Review: 0 CRITICAL, 3 MAJOR, 2 MINOR. Fixed (`0ec3260`):
   shadowed `new Date(...)` is S100. Three scope-form unit tests.
 - MAJOR 2: the §3-promised ship-tier pinned-clock `Date.now` test was
   missing (dev-tier only). Added in `cemit.rs`: entry derived from
-  `AOT_ENTRY_C` pins the clock via `sub_rt_ctx_set_now` before
-  `ss_init`; same program/ms/expected bytes as the dev-tier test.
+  `AOT_ENTRY_C` pins the clock via `subscript_rt_ctx_set_now` before
+  `subscript_init`; same program/ms/expected bytes as the dev-tier test.
 - MAJOR 3: this entry (with the §5.5 row below).
 - MINOR 1: `r24-date-compare` reject entry added; Q20's rejection
   list amended (`b29b12b`) to record the comparison and zero-arg-
@@ -122,7 +122,7 @@ Both stages complete; the pattern for further stdlib areas is now
 standing: the `tsc` side stays lib ES2022, the checker admits a
 deterministic sized-typed subset (out-of-subset members S014 with a
 Q-register citation), one runtime implementation serves both tiers
-through opaque `sub_rt_*` symbols, semantics are pinned by corpus
+through opaque `subscript_rt_*` symbols, semantics are pinned by corpus
 goldens under the standing differential gate, and nondeterministic
 inputs (clock, entropy) are Context-owned and host-settable.
 
@@ -139,7 +139,7 @@ indexOf/lastIndexOf/includes/startsWith/endsWith/charCodeAt/split/
 trim×3/repeat/padStart/padEnd/toUpperCase/toLowerCase/replace/
 replaceAll. `StrFn` intrinsics; check-time optional-arg normalization
 (from→0, pad→" "); one runtime implementation (`strops.rs`) behind
-opaque `sub_rt_str_*` on both tiers; every string result is a fresh
+opaque `subscript_rt_str_*` on both tiers; every string result is a fresh
 Context allocation (no interior pointers into the receiver); split
 builds `string[]` through the array machinery, element-identical to
 literal arrays on both tiers (FFI + cross-tier tests). Four Q21 trap
@@ -182,7 +182,7 @@ class does not recur).
 
 16 methods on `T[]` (stdlib.md §9, Q22) — the project's first
 **runtime→script closure invocation**. `ArrFn` intrinsics; one runtime
-implementation (`arrops.rs`) behind opaque `sub_rt_arr_*` on both
+implementation (`arrops.rs`) behind opaque `subscript_rt_arr_*` on both
 tiers; type-tag marshaling with per-tier width dispatch (boolean 1 B
 JIT / 4 B ship-C, each derived from that tier's own element width, so
 correct by construction rather than by coincidence); callback ABI
@@ -277,7 +277,7 @@ failures, zero warnings, goldens untouched.
 container**. Monomorphized on first use like `a12`'s generic value
 class, so keys and values are stored unboxed. One runtime
 implementation (`runtime/src/assocops.rs`) behind opaque
-`sub_rt_map_*`/`sub_rt_set_*` on both tiers. Corpus `a51`–`a56`,
+`subscript_rt_map_*`/`subscript_rt_set_*` on both tiers. Corpus `a51`–`a56`,
 rejects `r38`–`r45`.
 
 Contract points worth restating because they were decided here, not
@@ -382,7 +382,7 @@ pre-existing golden modified.
 **required radix**, `parseFloat`, and `toFixed` — per `stdlib.md` §11 /
 Q25. No new machinery: these extend the ambient-namespace and member
 surfaces P9/P10 built. One runtime implementation (`runtime/src/num.rs`)
-behind opaque `sub_rt_num_*` on both tiers; the host libc's
+behind opaque `subscript_rt_num_*` on both tiers; the host libc's
 `snprintf("%.*f")` is deliberately unused (§0.2 — its rounding is
 platform-dependent), verified by the review to be absent from the
 runtime, the emitter and the emitted C.
@@ -721,7 +721,7 @@ aggregates escaping into callbacks, emitted-C UB, or a weakened corpus.
 
 ### MAJOR 1 — `String.slice` changed from trapping to JS clamping, unrecorded
 
-The stage-2 implementer replaced `sub_rt_str_slice`'s out-of-range
+The stage-2 implementer replaced `subscript_rt_str_slice`'s out-of-range
 trap with JS's negative/clamp rules so `a64` could print `substring`
 and `slice` on the same inputs. The trap message
 `"slice(…) out of range for string length …"`, present at `cdae592`,
@@ -923,7 +923,7 @@ Implemented. `JSON.parse` is stage 2 and untouched.
 Call-site monomorphized serializers, **no RTTI and no layout
 descriptors** — §13.1's premise held under implementation, which was
 the thing most worth checking, since the roadmap had named RTTI as
-this phase's new machinery. One shared `sub_rt_json_*` runtime serves
+this phase's new machinery. One shared `subscript_rt_json_*` runtime serves
 both tiers.
 
 Static cycle analysis emits two shapes as §13.2 requires: **no

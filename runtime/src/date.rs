@@ -1,6 +1,6 @@
 //! `Date` runtime (stdlib.md §3): proleptic-Gregorian calendar
 //! arithmetic over `i64` epoch milliseconds (UTC), implemented once and
-//! called by both tiers through the opaque `sub_rt_date_*` boundary in
+//! called by both tiers through the opaque `subscript_rt_date_*` boundary in
 //! [`crate::ffi`].
 //!
 //! The civil↔day conversions are the well-known public-domain
@@ -25,21 +25,21 @@ pub const MS_PER_DAY: i64 = 86_400_000;
 /// The ECMA TimeClip bound: valid times satisfy `|ms| <= MAX_DATE_MS`.
 pub const MAX_DATE_MS: i64 = 8_640_000_000_000_000;
 
-/// `sub_rt_date_get` field code: `getUTCFullYear`.
+/// `subscript_rt_date_get` field code: `getUTCFullYear`.
 pub const FIELD_FULL_YEAR: u32 = 0;
-/// `sub_rt_date_get` field code: `getUTCMonth` (0-based).
+/// `subscript_rt_date_get` field code: `getUTCMonth` (0-based).
 pub const FIELD_MONTH: u32 = 1;
-/// `sub_rt_date_get` field code: `getUTCDate`.
+/// `subscript_rt_date_get` field code: `getUTCDate`.
 pub const FIELD_DATE: u32 = 2;
-/// `sub_rt_date_get` field code: `getUTCDay` (0 = Sunday).
+/// `subscript_rt_date_get` field code: `getUTCDay` (0 = Sunday).
 pub const FIELD_DAY: u32 = 3;
-/// `sub_rt_date_get` field code: `getUTCHours`.
+/// `subscript_rt_date_get` field code: `getUTCHours`.
 pub const FIELD_HOURS: u32 = 4;
-/// `sub_rt_date_get` field code: `getUTCMinutes`.
+/// `subscript_rt_date_get` field code: `getUTCMinutes`.
 pub const FIELD_MINUTES: u32 = 5;
-/// `sub_rt_date_get` field code: `getUTCSeconds`.
+/// `subscript_rt_date_get` field code: `getUTCSeconds`.
 pub const FIELD_SECONDS: u32 = 6;
-/// `sub_rt_date_get` field code: `getUTCMilliseconds`.
+/// `subscript_rt_date_get` field code: `getUTCMilliseconds`.
 pub const FIELD_MILLISECONDS: u32 = 7;
 
 /// True when `ms` is a valid time value (ECMA TimeClip range).
@@ -166,7 +166,7 @@ pub fn decompose(ms: i64) -> DateFields {
     }
 }
 
-/// One UTC accessor by its `FIELD_*` code (the `sub_rt_date_get`
+/// One UTC accessor by its `FIELD_*` code (the `subscript_rt_date_get`
 /// contract). `None` for an unknown code — the FFI boundary reports it
 /// as an internal trap, never a panic.
 #[must_use]

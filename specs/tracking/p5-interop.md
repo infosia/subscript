@@ -9,7 +9,7 @@ Solid foundations: C-ABI layout engine (`codegen/src/layout.rs`,
 per-field offsets, C-correct, unit-tested); value-class-as-C-struct in
 both tiers; `object` / `object | null` type with `as` narrowing (C7
 boundary form, enforced boundary-only); 64-bit bitwise (Q18); the
-`Linkage::Import` mechanism (how `sub_rt_*` are declared).
+`Linkage::Import` mechanism (how `subscript_rt_*` are declared).
 
 Greenfield (nothing exists): `corpus/interop/*.h`; a bindgen/mirror
 generator; `.d.ts` ingestion (parser is `dts:false`; ambient surface
@@ -137,7 +137,7 @@ behaviour, no soundness impact. **P5.2a COMPLETE.**
 the header symbol is `Linkage::Import`, and `codegen/build.rs` compiles
 `corpus/interop/interop.c` → `libinterop.a` whose addresses `jit.rs`
 registers with the JITModule (alongside new runtime symbols
-`sub_rt_str_data`/`array_data`/`cb_bind`/`cb_trampoline`). Ship C:
+`subscript_rt_str_data`/`array_data`/`cb_bind`/`cb_trampoline`). Ship C:
 `#include "interop.h"` + direct calls; `run_c_aot`/`run_aot` add
 `-I corpus/interop` and compile `interop.c` into the link. One C
 implementation serves both tiers.
@@ -148,7 +148,7 @@ Marshaling (Q13): `string` ↔ `(const char*, size_t)`; `T[]` ↔
 address-of: a guarded `store_val` arm writes the struct's storage
 address into a `Nullable(value class)` slot — reachable only through a
 C7 boundary-only type, never from ordinary code. Callback trampoline:
-`sub_rt_cb_trampoline` bridges the language `SubFn{code,env}` /
+`subscript_rt_cb_trampoline` bridges the language `SubFn{code,env}` /
 `(ctx,env,args)` convention to the C `(fnptr, void* userdata)`
 convention via a per-callback `CallbackBinding{ctx,code,env,userdata}`
 held in the Context; it delivers the script's real userdata and the
@@ -543,7 +543,7 @@ main-thread-driven Future usage end to end (dev-JIT ≡ ship-C-AOT ≡
 golden):
 
 - **Two userdata slots** (§14.4): `CallbackBinding` carries userdata1 +
-  userdata2 (`object|null` each); `sub_rt_cb_bind`/`sub_rt_cb_trampoline`
+  userdata2 (`object|null` each); `subscript_rt_cb_bind`/`subscript_rt_cb_trampoline`
   deliver both to the language callback as its two trailing args. ABI
   matches C `SubLogCallback(SubStringView, void*, void*)` on both tiers
   (JIT sig `[I64×4]`; cemit extern updated). The binding is

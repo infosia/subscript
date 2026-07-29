@@ -22,7 +22,7 @@ Status: COMPLETE, 2026-07-22. Contract: `specs/blocks/compiler.md` §7.
 
 - `runtime/` (`subscript-runtime`, no deps): Context (allocations,
   stdout sink, roots, collect), strings, arrays, Q14 formatting, trap
-  records; 25 `extern "C"` `sub_rt_*` entry points.
+  records; 25 `extern "C"` `subscript_rt_*` entry points.
 - `codegen/` (`subscript-codegen`): the lowering lives here, generic
   over `cranelift_module::Module` — string literals and globals are
   module data, runtime reached only through imported symbols, so P3

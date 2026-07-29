@@ -174,14 +174,14 @@ the C ABI.
 
 `main.c` must show, with comments, all of:
 
-1. `sub_rt_ctx_new`, `ss_init`, and release at the end;
+1. `subscript_rt_ctx_new`, `subscript_init`, and release at the end;
 2. the frame loop: the host advances its own state, then calls
-   `ss_export_update`, bracketed by `sub_rt_ctx_enter_script` /
-   `sub_rt_ctx_exit_script` (§18.1a);
-3. **trap detection by `sub_rt_ctx_trap_kind`, not by a return value**
+   `subscript_export_update`, bracketed by `subscript_rt_ctx_enter_script` /
+   `subscript_rt_ctx_exit_script` (§18.1a);
+3. **trap detection by `subscript_rt_ctx_trap_kind`, not by a return value**
    (§18.2c), and the host's choice among the three coherent responses
    (§18.1b) — the example takes one and says why;
-4. draining the script's stdout sink with `sub_rt_ctx_stdout`;
+4. draining the script's stdout sink with `subscript_rt_ctx_stdout`;
 5. the memory accounting the host actually gets — `live_bytes` /
    `live_allocations` around an explicit `Context.collect()` (§18.2d), which is
    how "no implicit GC" becomes visible to a host rather than a claim.
@@ -212,11 +212,11 @@ and everything the scene allocated should go away. `Context.collect()`
 and in the development tier the freed bytes stay owned by the Context
 (§8.1a, retain-and-poison), so a session cycling scenes grows
 monotonically. Releasing the Context and building the next one from
-`ss_init` reclaims everything, in both tiers, without the script dropping
+`subscript_init` reclaims everything, in both tiers, without the script dropping
 a single reference.
 
 `main.c` must run **at least two scenes in one process**, each with its
-own `sub_rt_ctx_new` … `sub_rt_ctx_release`, and show:
+own `subscript_rt_ctx_new` … `subscript_rt_ctx_release`, and show:
 
 1. **Script globals reset.** A module-level variable the first scene
    mutates starts the second scene at its initializer value. This is the
@@ -233,7 +233,7 @@ own `sub_rt_ctx_new` … `sub_rt_ctx_release`, and show:
 **What it must not do:** claim that releasing is better than collecting.
 They answer different questions — `Context.collect()` reclaims within a
 living Context, release ends one — and the example states the trade it
-makes, including that a fresh Context re-runs `ss_init`, so anything the
+makes, including that a fresh Context re-runs `subscript_init`, so anything the
 next scene needs must have been kept by the host.
 
 Gate, build script, and the integer/float split follow §5 exactly.

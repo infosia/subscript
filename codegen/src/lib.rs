@@ -125,7 +125,7 @@ export function main(): void {
 
     #[test]
     fn date_field_codes_agree_between_compiler_and_runtime() {
-        // The sub_rt_date_get contract: the checker/codegen field codes
+        // The subscript_rt_date_get contract: the checker/codegen field codes
         // (hir::DateFn::field_code) and the runtime's FIELD_* constants
         // are one table. This crate sees both crates, so it holds the
         // cross-check.
@@ -148,7 +148,7 @@ export function main(): void {
 
     #[test]
     fn arr_kind_codes_agree_between_compiler_and_runtime() {
-        // The sub_rt_arr_* tag contract (stdlib.md §9): the compiler's
+        // The subscript_rt_arr_* tag contract (stdlib.md §9): the compiler's
         // ArrElemKind/ArrFmtKind codes and the runtime arrops decoders
         // are one table. This crate sees both crates, so it holds the
         // cross-check.

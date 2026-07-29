@@ -33,7 +33,7 @@ prerequisite** it cannot cheaply acquire.
 Both normative traps held. Radix 10 **delegates to the existing Q14
 formatter** rather than reimplementing it, so the two agree by
 construction and `a62` prints them side by side. `clz32` goes through
-`sub_rt_math_clz32` over `u32::leading_zeros`, and a `cemit` test
+`subscript_rt_math_clz32` over `u32::leading_zeros`, and a `cemit` test
 asserts the emitted C does **not** contain `__builtin_clz`, which is
 undefined at zero where ECMA defines `clz32(0)` as `32`. Exponents are
 unpadded (`(0).toExponential(2)` is `0.00e+0`, not C's `0.00e+00`).
@@ -173,7 +173,7 @@ one".
 Two constraints to check before adopting it, neither yet checked:
 `regress`'s `utf16` feature is aimed at JS's UTF-16 strings while this
 language stores UTF-8 (Q5), so the index domain has to be settled; and
-§0.2 requires one implementation behind an opaque `sub_rt_*` symbol on
+§0.2 requires one implementation behind an opaque `subscript_rt_*` symbol on
 both tiers, which a crate satisfies as long as the ship tier links it
 rather than emitting anything.
 

@@ -2197,7 +2197,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// Lowers a foreign C-ABI call (`Callee::Foreign`, P5.2b) to a direct
     /// call of the header symbol. The signature is built from the mirror's
     /// boundary types by marshaling each argument per Q13; the symbol is
-    /// imported (`Linkage::Import`) exactly as the `sub_rt_*` runtime is,
+    /// imported (`Linkage::Import`) exactly as the `subscript_rt_*` runtime is,
     /// and resolved by the JIT's symbol registration / the ship-C link.
     fn eval_foreign_call(
         &mut self,
@@ -2825,7 +2825,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Lowers a `Math.<fn>` intrinsic (stdlib.md §1) to its opaque
-    /// `sub_rt_math_*` runtime call. `clz32` is `(ctx, u32) -> i32`;
+    /// `subscript_rt_math_*` runtime call. `clz32` is `(ctx, u32) -> i32`;
     /// all others use `f64`. No trap check follows: the runtime entries
     /// never trap (pure, or a PRNG state advance). Constants never reach
     /// here — they folded to literals at check time.
@@ -2955,7 +2955,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 RV::S(result.ok_or_else(|| internal(format!("{} result", f.symbol())))?)
             }
             J::Visit | J::ParseIsKind | J::ParseNumberFits | J::ParseBool => {
-                let value = result.ok_or_else(|| internal("sub_rt_json_visit result"))?;
+                let value = result.ok_or_else(|| internal("subscript_rt_json_visit result"))?;
                 RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, value, 0))
             }
             _ => RV::None,
@@ -2963,7 +2963,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Lowers a `Date` intrinsic (stdlib.md §3) to its opaque
-    /// `sub_rt_date_*` runtime call. A Date value is its `i64`
+    /// `subscript_rt_date_*` runtime call. A Date value is its `i64`
     /// millisecond representation (`Type::Date` reprs as I64); the
     /// range-checked operations (`new`, `UTC`, `toISOString`) are
     /// fault-capable and followed by a trap check, the accessors and
@@ -3042,7 +3042,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Lowers a `String` method intrinsic (stdlib.md §8) to its opaque
-    /// `sub_rt_str_*` runtime call. The receiver is the first HIR
+    /// `subscript_rt_str_*` runtime call. The receiver is the first HIR
     /// argument and every value is a scalar (string handles and `i32`
     /// byte measures); a trailing `pos_id` and a trap check follow
     /// exactly when the symbol is fault-capable
@@ -3118,7 +3118,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Lowers an `Array` method intrinsic (stdlib.md §9) to its opaque
-    /// `sub_rt_arr_*` runtime call. The receiver handle is the first
+    /// `subscript_rt_arr_*` runtime call. The receiver handle is the first
     /// HIR argument; element values the runtime receives are
     /// materialized and passed by pointer; a callback is evaluated to
     /// its `(code, env)` pair; kind tags come from the shared compiler
@@ -5204,7 +5204,7 @@ fn define_lambda<M: Module>(
 ) -> Result<cranelift_module::FuncId, String> {
     let params_ty: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
     let sig = ml.make_sig(&params_ty, ret, true, false)?;
-    let name = format!("ss_lambda{}", ml.lambda_count);
+    let name = format!("subscript_lambda{}", ml.lambda_count);
     ml.lambda_count += 1;
     let id = ml
         .module
@@ -5282,7 +5282,7 @@ fn define_assoc_bridge<M: Module>(
     for _ in 0..fixed_params {
         bridge_sig.params.push(AbiParam::new(types::I64));
     }
-    let name = format!("ss_assoc_bridge{}", ml.lambda_count);
+    let name = format!("subscript_assoc_bridge{}", ml.lambda_count);
     ml.lambda_count += 1;
     let id = ml
         .module
@@ -5379,7 +5379,7 @@ fn define_group_bridge<M: Module>(
     for _ in 0..5 {
         bridge_sig.params.push(AbiParam::new(types::I64));
     }
-    let name = format!("ss_group_bridge{}", ml.lambda_count);
+    let name = format!("subscript_group_bridge{}", ml.lambda_count);
     ml.lambda_count += 1;
     let id = ml
         .module
@@ -5470,7 +5470,7 @@ pub(crate) fn wrapper_for<M: Module>(
     }
     let params_ty: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
     let sig = ml.make_sig(&params_ty, &f.ret, true, false)?;
-    let sym = format!("ss_wrap_{}", ml.fns.len());
+    let sym = format!("subscript_wrap_{}", ml.fns.len());
     let id = ml
         .module
         .declare_function(&sym, cranelift_module::Linkage::Local, &sig)
@@ -5740,7 +5740,7 @@ pub(crate) fn define_generator<M: Module>(
     Ok(())
 }
 
-/// Defines the synthesized `ss_init` function: evaluates every
+/// Defines the synthesized `subscript_init` function: evaluates every
 /// module-global initializer in declaration order and registers
 /// managed globals as collection roots.
 pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String> {

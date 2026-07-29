@@ -766,7 +766,7 @@ fn p20_review_accept_entries_reach_both_generators() {
 
 #[test]
 fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
-    // P19: the old ship-tier path let ss_arr_at return its 256-byte
+    // P19: the old ship-tier path let subscript_arr_at return its 256-byte
     // scratch sentinel after trapping, then copied this 320-byte value
     // into it. Under ASan that was a global-buffer-overflow. The store
     // must now be unreachable, in addition to stdout matching the dev
@@ -837,10 +837,10 @@ fn acyclic_json_serializer_emits_no_tracking_operations() {
     let source = "class Box {\n  value: i32;\n  constructor(value: i32) { this.value = value; }\n}\nexport function main(): void {\n  print(JSON.stringify(new Box(7)));\n}\n";
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
-    assert!(c.contains("sub_rt_json_begin(ctx,"), "{c}");
-    assert!(!c.contains("sub_rt_json_begin_tracked(ctx,"), "{c}");
-    assert!(!c.contains("sub_rt_json_visit(ctx,"), "{c}");
-    assert!(!c.contains("sub_rt_json_leave(ctx,"), "{c}");
+    assert!(c.contains("subscript_rt_json_begin(ctx,"), "{c}");
+    assert!(!c.contains("subscript_rt_json_begin_tracked(ctx,"), "{c}");
+    assert!(!c.contains("subscript_rt_json_visit(ctx,"), "{c}");
+    assert!(!c.contains("subscript_rt_json_leave(ctx,"), "{c}");
 }
 
 fn provenance_fixture() -> subscript_compiler::hir::Module {
@@ -903,12 +903,12 @@ fn foreign_c_names_come_from_typed_mirror_provenance() {
     assert_eq!(c.matches("#include \"engine.h\"").count(), 1, "{c}");
     assert_eq!(c.matches("#include \"audio.h\"").count(), 1, "{c}");
     assert!(
-        c.contains("typedef struct sub_callback_string_view"),
+        c.contains("typedef struct subscript_callback_string_view"),
         "{c}"
     );
     assert!(
         c.contains(
-            "extern void sub_rt_cb_trampoline(sub_callback_string_view message, void* userdata1, void* userdata2);"
+            "extern void subscript_rt_cb_trampoline(subscript_callback_string_view message, void* userdata1, void* userdata2);"
         ),
         "{c}"
     );
@@ -916,7 +916,7 @@ fn foreign_c_names_come_from_typed_mirror_provenance() {
     assert!(c.contains("((EngItemView){"), "{c}");
     assert!(c.contains("((EngItemOut){ (EngItem*)"), "{c}");
     assert!(
-        c.contains("(EngCallback)&sub_rt_cb_trampoline"),
+        c.contains("(EngCallback)&subscript_rt_cb_trampoline"),
         "{c}"
     );
 }
@@ -1532,7 +1532,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     // `run_c_aot` links the standing harness entry, which never pins
     // the clock, so this test drives the same pipeline itself with the
     // one difference: an entry derived from `AOT_ENTRY_C` that calls
-    // `sub_rt_ctx_set_now(ctx, PINNED_MS)` before any program code
+    // `subscript_rt_ctx_set_now(ctx, PINNED_MS)` before any program code
     // runs. The harness's own entry is untouched.
     use std::path::PathBuf;
     use std::process::Command;
@@ -1547,7 +1547,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     let program = emit_c(&hir).expect("ship C emission");
     let staticlib = runtime_staticlib_path().expect("runtime staticlib");
 
-    let call_anchor = "    call_script_entry(ctx, ss_init);";
+    let call_anchor = "    call_script_entry(ctx, subscript_init);";
     assert!(
         AOT_ENTRY_C.contains(call_anchor),
         "AOT_ENTRY_C anchors moved; update this test's entry derivation"
@@ -1555,7 +1555,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     let entry = AOT_ENTRY_C.replace(
         call_anchor,
         &format!(
-            "    sub_rt_ctx_set_now(ctx, {PINNED_MS});\n    call_script_entry(ctx, ss_init);"
+            "    subscript_rt_ctx_set_now(ctx, {PINNED_MS});\n    call_script_entry(ctx, subscript_init);"
         ),
     );
 

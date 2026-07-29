@@ -52,9 +52,9 @@ fn explicit_sources_and_mirrors_can_suppress_the_generated_entry() {
     assert!(!output.join("entry.c").exists());
     let emitted = std::fs::read_to_string(output.join("program.c")).expect("read emitted C");
     assert!(emitted.contains("#include \"host.h\""), "{emitted}");
-    assert!(emitted.contains("void ss_export_init(Context* ctx)"), "{emitted}");
+    assert!(emitted.contains("void subscript_export_init(Context* ctx)"), "{emitted}");
     assert!(
-        !emitted.contains("void ss_export_main(Context* ctx) {"),
+        !emitted.contains("void subscript_export_main(Context* ctx) {"),
         "{emitted}"
     );
 }

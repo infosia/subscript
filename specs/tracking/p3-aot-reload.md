@@ -38,7 +38,7 @@ Status: COMPLETE, 2026-07-23. Contract: `specs/blocks/compiler.md` §8.
   globals, epoch-stamped coroutine frames), never set by the ship
   tier. Two unconditional, tier-neutral changes were needed for AOT:
   exported script functions get `Linkage::Export` as
-  `ss_export_<name>`, and `ss_init` is exported.
+  `subscript_export_<name>`, and `subscript_init` is exported.
 - **Flags**: dev JIT `is_pic=false`; AOT `is_pic=true`, same
   `cranelift_native` ISA on the host so only PIC differs on the
   differential path; device triples use `isa::lookup(Triple)` plus the
@@ -76,7 +76,7 @@ Status: COMPLETE, 2026-07-23. Contract: `specs/blocks/compiler.md` §8.
   state before a swap keeps its pre-swap body; named-function values
   forward through the table and pick up new bodies.
 - Module globals move to a host-owned block under reload (fresh module
-  data would silently reset state); `ss_init` runs once per session and
+  data would silently reset state); `subscript_init` runs once per session and
   the registered GC root ranges point into a block whose address never
   moves.
 - `ReloadSession::call_export` accepts zero-argument `void` exports;

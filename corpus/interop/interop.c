@@ -62,7 +62,7 @@ struct SubDevice_T {
 
 /* Deterministic scratch used to synthesize a callback message of a given
  * length. Single-threaded; refilled on each use. */
-static char sub_msgbuf[256];
+static char subscript_msgbuf[256];
 
 int32_t subChainPayloadValue(SubChainHeader *chain) {
     uint32_t h = 0u;
@@ -156,12 +156,12 @@ void subDeviceSubmit(SubDevice device, SubBufferView commands) {
         if (n < 0) {
             n = 0;
         }
-        if (n > (long long)sizeof(sub_msgbuf)) {
-            n = (long long)sizeof(sub_msgbuf);
+        if (n > (long long)sizeof(subscript_msgbuf)) {
+            n = (long long)sizeof(subscript_msgbuf);
         }
-        memset(sub_msgbuf, 'x', (size_t)n);
+        memset(subscript_msgbuf, 'x', (size_t)n);
         SubStringView msg;
-        msg.data = sub_msgbuf;
+        msg.data = subscript_msgbuf;
         msg.len = (size_t)n;
         device->cb(msg, device->cb_userdata, device->cb_userparam);
     }
@@ -316,12 +316,12 @@ void subDevicePump(SubDevice device) {
     if (n < 0) {
         n = 0;
     }
-    if (n > (long long)sizeof(sub_msgbuf)) {
-        n = (long long)sizeof(sub_msgbuf);
+    if (n > (long long)sizeof(subscript_msgbuf)) {
+        n = (long long)sizeof(subscript_msgbuf);
     }
-    memset(sub_msgbuf, 'x', (size_t)n);
+    memset(subscript_msgbuf, 'x', (size_t)n);
     SubStringView msg;
-    msg.data = sub_msgbuf;
+    msg.data = subscript_msgbuf;
     msg.len = (size_t)n;
     device->completion_cb(msg, device->completion_userdata, NULL);
 }
@@ -412,12 +412,12 @@ void subDeviceWait(SubDevice device, SubWaitList waits) {
         if (n < 0) {
             n = 0;
         }
-        if (n > (long long)sizeof(sub_msgbuf)) {
-            n = (long long)sizeof(sub_msgbuf);
+        if (n > (long long)sizeof(subscript_msgbuf)) {
+            n = (long long)sizeof(subscript_msgbuf);
         }
-        memset(sub_msgbuf, 'x', (size_t)n);
+        memset(subscript_msgbuf, 'x', (size_t)n);
         SubStringView msg;
-        msg.data = sub_msgbuf;
+        msg.data = subscript_msgbuf;
         msg.len = (size_t)n;
         device->async_cb(msg, device->async_ud1, device->async_ud2);
     }

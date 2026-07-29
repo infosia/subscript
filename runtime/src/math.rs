@@ -1,6 +1,6 @@
 //! `Math` runtime (stdlib.md §1/§2): one Rust implementation per
 //! accepted member, called by both tiers through the opaque
-//! `sub_rt_math_*` boundary in [`crate::ffi`].
+//! `subscript_rt_math_*` boundary in [`crate::ffi`].
 //!
 //! Result semantics are ECMA-262's for the accepted subset. Most
 //! members map directly to the `f64` methods; the ones whose Rust or

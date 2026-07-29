@@ -86,7 +86,7 @@ Unicode scalar's UTF-8 bytes at a stable address. It is **7× the regex
 engine**, every program that touches a string pays it, it predates P23,
 and no size line existed to reveal it until this phase drew one.
 
-**Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over a
+**Its only consumer is `subscript_rt_str_iter_code_point`** — `for…of` over a
 string, and §14.3's guarantee that the loop allocates nothing.
 *(Corrected 2026-07-27: first recorded here, and in the runtime's own
 doc comment, as serving `charAt`. `charAt` calls `alloc_str` and always
@@ -159,8 +159,8 @@ the runtime staticlib, peak RSS via `wait4`), not by unit test:
 
 The 181 MB case is gone, and the literal-in-the-loop spelling is now
 **byte-for-byte the hoisted one**. The emitted C shows the mechanism:
-one `static void*` per literal *site*, `sub_rt_regex_new` only inside
-`ss_init`, followed by `sub_rt_root_add`.
+one `static void*` per literal *site*, `subscript_rt_regex_new` only inside
+`subscript_init`, followed by `subscript_rt_root_add`.
 
 §15.5a's predicted residual growth holds and is attributable: ten
 `collect()`ed frames × 2000 **distinct** dynamic patterns → 21.36 MB;

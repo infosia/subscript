@@ -13,13 +13,13 @@
 //! The emitted translation unit **links the existing runtime static
 //! library** rather than re-implementing runtime logic in C. Every
 //! array, string, formatting, allocation, and trap operation is the
-//! same `sub_rt_*` C-ABI entry point the CLIF lowering calls, so array
+//! same `subscript_rt_*` C-ABI entry point the CLIF lowering calls, so array
 //! growth, string content, Q14 shortest-round-trip formatting, and trap
 //! reporting are byte-for-byte identical to the dev-JIT tier by
 //! construction rather than by replication. (The P4.2 spike was
 //! self-contained purely for measurement isolation.) The emitted unit
-//! exports the same host-entry surface the AOT object does — `ss_init`
-//! and `ss_export_<name>` taking the Context — so it is a drop-in
+//! exports the same host-entry surface the AOT object does — `subscript_init`
+//! and `subscript_export_<name>` taking the Context — so it is a drop-in
 //! subject for the standing gate and for the device-triple link, linked
 //! with the same [`crate::AOT_ENTRY_C`] host entry.
 //!
@@ -35,12 +35,12 @@
 //!   without any explicit copy. `FixedArray<T, N>` is a `struct { T a[N];
 //!   }` wrapper so it, too, has value semantics; its C-ABI layout is
 //!   identical to the bare array (design invariant 1).
-//! - **Reference classes** are Context allocations (`sub_rt_alloc`);
+//! - **Reference classes** are Context allocations (`subscript_rt_alloc`);
 //!   their handle is the payload pointer, and fields are read/written
 //!   through a `struct` view of the payload (the same C-ABI layout the
-//!   runtime allocates). `Context.free` is `sub_rt_delete`, `Context.collect()`
-//!   is `sub_rt_collect`.
-//! - **Checked growable `T[]`** is the runtime's array: `sub_rt_array_*`
+//!   runtime allocates). `Context.free` is `subscript_rt_delete`, `Context.collect()`
+//!   is `subscript_rt_collect`.
+//! - **Checked growable `T[]`** is the runtime's array: `subscript_rt_array_*`
 //!   for `new`/`push`/`pop`/`length`/indexing, so bounds checks, push
 //!   growth, and OOB traps match the runtime exactly.
 //! - **`FixedArray` in-place with the P4.1 proof-based bounds-check
@@ -52,7 +52,7 @@
 //!   form so the C constant round-trips with a single rounding. Compiled
 //!   `-ffp-contract=off` to match the language, which never contracts a
 //!   multiply-add.
-//! - **Q14 formatting** is the runtime's (`sub_rt_fmt_*`), so an f32
+//! - **Q14 formatting** is the runtime's (`subscript_rt_fmt_*`), so an f32
 //!   checksum prints the same bytes both tiers.
 //! - **Trap model.** Fault-capable calls are followed by an inline read
 //!   of the Context trap flag; a set flag unwinds generated C frames and
@@ -130,10 +130,10 @@ pub struct CProgram {
 
 /// Emits a C translation unit for a checked HIR module (§11).
 ///
-/// The unit exports `ss_init(Context* ctx)` and
-/// `ss_export_<name>(Context* ctx)` for each exported zero-argument
+/// The unit exports `subscript_init(Context* ctx)` and
+/// `subscript_export_<name>(Context* ctx)` for each exported zero-argument
 /// `void` function, imports the
-/// runtime's `sub_rt_*` entry points, and is linked with the runtime
+/// runtime's `subscript_rt_*` entry points, and is linked with the runtime
 /// static library and [`crate::AOT_ENTRY_C`].
 ///
 /// # Errors
@@ -147,8 +147,8 @@ pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
 /// Emits a C translation unit for a host-owned entry program.
 ///
 /// This has the same output as [`emit_c`], but permits a module with no
-/// exported `main(): void`. The translation unit still defines `ss_init`
-/// and every zero-argument `void` export as `ss_export_<name>`; the caller
+/// exported `main(): void`. The translation unit still defines `subscript_init`
+/// and every zero-argument `void` export as `subscript_export_<name>`; the caller
 /// supplies `main` and chooses which exports to drive.
 ///
 /// # Errors
@@ -570,11 +570,11 @@ impl<'m> Emitter<'m> {
                 "/* The runtime callback view and every bound string view have the same\n\
                  \x20* C ABI layout. That layout identity makes the later function-pointer\n\
                  \x20* cast to a header callback typedef sound. */\n\
-                 typedef struct sub_callback_string_view {\n\
+                 typedef struct subscript_callback_string_view {\n\
                  \x20   const uint8_t* data;\n\
                  \x20   size_t len;\n\
-                 } sub_callback_string_view;\n\
-                 extern void sub_rt_cb_trampoline(sub_callback_string_view message, void* userdata1, void* userdata2);\n\n",
+                 } subscript_callback_string_view;\n\
+                 extern void subscript_rt_cb_trampoline(subscript_callback_string_view message, void* userdata1, void* userdata2);\n\n",
             );
         }
         out.push_str(&typedefs);
@@ -706,7 +706,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "typedef struct {name} {{");
                 let class = self.class(*id)?;
                 if class.fields.is_empty() {
-                    let _ = writeln!(out, "    char sub_opaque;");
+                    let _ = writeln!(out, "    char subscript_opaque;");
                 }
                 for field in &class.fields {
                     let _ = writeln!(out, "    {};", self.field_decl(&field.name, &field.ty)?);
@@ -727,7 +727,7 @@ impl<'m> Emitter<'m> {
     // ----- signatures -----
 
     fn fn_c_name(f: &hir::Function) -> String {
-        format!("ss_fn_{}", sanitize(&f.name))
+        format!("subscript_fn_{}", sanitize(&f.name))
     }
 
     /// Parameter list for a plain function/method (aggregates by value).
@@ -756,9 +756,9 @@ impl<'m> Emitter<'m> {
         let params = self.param_list(&ctor.params)?;
         let sep = if params.is_empty() { "" } else { ", " };
         if c.is_value {
-            Ok(format!("static {cname} ss_ctor{ci}(void* ctx{sep}{params})"))
+            Ok(format!("static {cname} subscript_ctor{ci}(void* ctx{sep}{params})"))
         } else {
-            Ok(format!("static void ss_ctor{ci}(void* ctx, void* _this{}{params})",
+            Ok(format!("static void subscript_ctor{ci}(void* ctx, void* _this{}{params})",
                 if params.is_empty() { "" } else { ", " }))
         }
     }
@@ -776,7 +776,7 @@ impl<'m> Emitter<'m> {
             "void*".to_string()
         };
         Ok(format!(
-            "static {ret} ss_m{ci}_{}(void* ctx, {recv} _this{sep}{params})",
+            "static {ret} subscript_m{ci}_{}(void* ctx, {recv} _this{sep}{params})",
             sanitize(&m.name)
         ))
     }
@@ -784,15 +784,15 @@ impl<'m> Emitter<'m> {
     fn gen_creator_signature(&self, f: &hir::Function) -> Result<String, String> {
         let params = self.param_list(&f.params)?;
         if params.is_empty() {
-            Ok(format!("static void* ss_fn_{}(void* ctx)", sanitize(&f.name)))
+            Ok(format!("static void* subscript_fn_{}(void* ctx)", sanitize(&f.name)))
         } else {
-            Ok(format!("static void* ss_fn_{}(void* ctx, {params})", sanitize(&f.name)))
+            Ok(format!("static void* subscript_fn_{}(void* ctx, {params})", sanitize(&f.name)))
         }
     }
 
     fn gen_resume_signature(&self, f: &hir::Function) -> Result<String, String> {
         Ok(format!(
-            "static int32_t ss_resume_{}(void* ctx, void* _frame, void* _out)",
+            "static int32_t subscript_resume_{}(void* ctx, void* _frame, void* _out)",
             sanitize(&f.name)
         ))
     }
@@ -902,7 +902,7 @@ impl<'m> Emitter<'m> {
         }
         let ind = indent(depth);
         let _ = writeln!(out, "{ind}void* _ssroots[{n}]; memset(_ssroots, 0, sizeof _ssroots);");
-        let _ = writeln!(out, "{ind}sub_rt_shadow_push(ctx, _ssroots, {n}ull);");
+        let _ = writeln!(out, "{ind}subscript_rt_shadow_push(ctx, _ssroots, {n}ull);");
         self.has_shadow = true;
         let mut slot = 0u32;
         for p in params {
@@ -939,7 +939,7 @@ impl<'m> Emitter<'m> {
     /// Pops the shadow frame if one was pushed.
     fn emit_shadow_pop(&mut self, out: &mut String, depth: usize) {
         if self.has_shadow {
-            let _ = writeln!(out, "{}sub_rt_shadow_pop(ctx);", indent(depth));
+            let _ = writeln!(out, "{}subscript_rt_shadow_pop(ctx);", indent(depth));
         }
     }
 
@@ -1002,7 +1002,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}if ({divisor} == 0) {{");
                 let _ = writeln!(
                     out,
-                    "{}sub_rt_trap(ctx, {}u, {pos_id}u);",
+                    "{}subscript_rt_trap(ctx, {}u, {pos_id}u);",
                     indent(depth + 1),
                     TrapKind::DivisionByZero as u32
                 );
@@ -1017,7 +1017,7 @@ impl<'m> Emitter<'m> {
                         let _ = writeln!(out, "{ind}if (!({condition})) {{");
                         let _ = writeln!(
                             out,
-                            "{}sub_rt_trap(ctx, {}u, {pos_id}u);",
+                            "{}subscript_rt_trap(ctx, {}u, {pos_id}u);",
                             indent(depth + 1),
                             TrapKind::IndexOutOfBounds as u32
                         );
@@ -1037,7 +1037,7 @@ impl<'m> Emitter<'m> {
                         );
                         let _ = writeln!(
                             out,
-                            "{}(void)sub_rt_array_ptr(ctx, {handle}, {index}, {pos_id}u);",
+                            "{}(void)subscript_rt_array_ptr(ctx, {handle}, {index}, {pos_id}u);",
                             indent(depth + 1)
                         );
                         self.emit_trap_return(out, depth + 1)?;
@@ -1055,7 +1055,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}if (!({condition})) {{");
                 let _ = writeln!(
                     out,
-                    "{}sub_rt_trap(ctx, {}u, {pos_id}u);",
+                    "{}subscript_rt_trap(ctx, {}u, {pos_id}u);",
                     indent(depth + 1),
                     TrapKind::JsonResultValue as u32
                 );
@@ -1071,7 +1071,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}if ({pointer} == 0) {{");
                 let _ = writeln!(
                     out,
-                    "{}sub_rt_trap(ctx, {}u, {pos_id}u);",
+                    "{}subscript_rt_trap(ctx, {}u, {pos_id}u);",
                     indent(depth + 1),
                     TrapKind::NullNarrowing as u32
                 );
@@ -1092,7 +1092,7 @@ impl<'m> Emitter<'m> {
                 );
                 let _ = writeln!(
                     out,
-                    "{}sub_rt_trap(ctx, {}u, {pos_id}u);",
+                    "{}subscript_rt_trap(ctx, {}u, {pos_id}u);",
                     indent(depth + 1),
                     TrapKind::ClassMismatch as u32
                 );
@@ -1182,7 +1182,7 @@ impl<'m> Emitter<'m> {
     // ----- init and exports -----
 
     fn emit_init(&mut self, out: &mut String) -> Result<(), String> {
-        let _ = writeln!(out, "void ss_init(Context* ctx) {{");
+        let _ = writeln!(out, "void subscript_init(Context* ctx) {{");
         self.begin_fn(ThisCtx::None, Type::Void);
         let globals: Vec<hir::Global> = self.module.globals.to_vec();
         for g in &globals {
@@ -1193,7 +1193,7 @@ impl<'m> Emitter<'m> {
             // as in the CLIF path's `root_add`.
             let words = managed_words(&self.layouts, &g.ty)?;
             if words > 0 {
-                let _ = writeln!(out, "    sub_rt_root_add(ctx, &g_{}, {words}ull);", sanitize(&g.name));
+                let _ = writeln!(out, "    subscript_rt_root_add(ctx, &g_{}, {words}ull);", sanitize(&g.name));
             }
         }
         let _ = writeln!(out, "}}\n");
@@ -1204,7 +1204,7 @@ impl<'m> Emitter<'m> {
         for f in &self.module.functions {
             if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
                 let cn = Emitter::fn_c_name(f);
-                let _ = writeln!(out, "void ss_export_{}(Context* ctx) {{ {cn}(ctx); }}", sanitize(&f.name));
+                let _ = writeln!(out, "void subscript_export_{}(Context* ctx) {{ {cn}(ctx); }}", sanitize(&f.name));
             }
         }
         Ok(())
@@ -1338,7 +1338,7 @@ impl<'m> Emitter<'m> {
     fn emit_assoc_iter_ends(&self, out: &mut String, depth: usize) {
         let ind = indent(depth);
         for handle in self.assoc_iters.iter().rev() {
-            let _ = writeln!(out, "{ind}sub_rt_assoc_iter_end(ctx, {handle});");
+            let _ = writeln!(out, "{ind}subscript_rt_assoc_iter_end(ctx, {handle});");
         }
     }
 
@@ -1471,7 +1471,7 @@ impl<'m> Emitter<'m> {
             K::ArrayValues | K::ArrayKeys => {
                 let _ = writeln!(
                     out,
-                    "{ind1}uint64_t {bound} = (uint64_t)sub_rt_array_len(ctx, {subject_tmp});"
+                    "{ind1}uint64_t {bound} = (uint64_t)subscript_rt_array_len(ctx, {subject_tmp});"
                 );
             }
             K::FixedArrayValues => {
@@ -1483,7 +1483,7 @@ impl<'m> Emitter<'m> {
             K::MapKeys | K::MapValues | K::SetValues => {
                 let _ = writeln!(
                     out,
-                    "{ind1}uint64_t {bound} = sub_rt_assoc_iter_begin(ctx, {subject_tmp}, {pid}u);"
+                    "{ind1}uint64_t {bound} = subscript_rt_assoc_iter_begin(ctx, {subject_tmp}, {pid}u);"
                 );
                 self.emit_trap_check(out, depth + 1)?;
                 self.assoc_iters.push(subject_tmp.clone());
@@ -1491,7 +1491,7 @@ impl<'m> Emitter<'m> {
             K::StringCodePoints => {
                 let _ = writeln!(
                     out,
-                    "{ind1}uint64_t {bound} = (uint64_t)sub_rt_str_len(ctx, {subject_tmp});"
+                    "{ind1}uint64_t {bound} = (uint64_t)subscript_rt_str_len(ctx, {subject_tmp});"
                 );
             }
             other => return Err(format!("unknown ForOfKind {other:?}")),
@@ -1499,7 +1499,7 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind1}{top}: ;");
         let condition = if matches!(kind, K::ArrayValues | K::ArrayKeys) {
             format!(
-                "{index} < {bound} && {index} < (uint64_t)sub_rt_array_len(ctx, {subject_tmp})"
+                "{index} < {bound} && {index} < (uint64_t)subscript_rt_array_len(ctx, {subject_tmp})"
             )
         } else {
             format!("{index} < {bound}")
@@ -1514,7 +1514,7 @@ impl<'m> Emitter<'m> {
                 let ect = self.ctype(ty)?;
                 let _ = writeln!(
                     out,
-                    "{ind1}{binding} = ((const {ect}*)sub_rt_array_data(ctx, {subject_tmp}))[{index}];"
+                    "{ind1}{binding} = ((const {ect}*)subscript_rt_array_data(ctx, {subject_tmp}))[{index}];"
                 );
             }
             K::FixedArrayValues => {
@@ -1530,7 +1530,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind1}{cty} {value};");
                 let _ = writeln!(
                     out,
-                    "{ind1}if (!sub_rt_assoc_iter_copy(ctx, {subject_tmp}, {index}, \
+                    "{ind1}if (!subscript_rt_assoc_iter_copy(ctx, {subject_tmp}, {index}, \
                      {select}u, &{value}, {pid}u)) goto {cont};"
                 );
                 self.emit_trap_check(out, depth + 1)?;
@@ -1542,7 +1542,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind1}int32_t {next} = (int32_t){index};");
                 let _ = writeln!(
                     out,
-                    "{ind1}void* {value} = sub_rt_str_iter_code_point(ctx, {subject_tmp}, \
+                    "{ind1}void* {value} = subscript_rt_str_iter_code_point(ctx, {subject_tmp}, \
                      (int32_t){index}, &{next}, {pid}u);"
                 );
                 self.emit_trap_check(out, depth + 1)?;
@@ -1567,7 +1567,7 @@ impl<'m> Emitter<'m> {
         if matches!(kind, K::MapKeys | K::MapValues | K::SetValues) {
             let _ = writeln!(
                 out,
-                "{ind1}sub_rt_assoc_iter_end(ctx, {subject_tmp});"
+                "{ind1}subscript_rt_assoc_iter_end(ctx, {subject_tmp});"
             );
         }
         let _ = writeln!(out, "{ind}}}");
@@ -1717,10 +1717,10 @@ impl<'m> Emitter<'m> {
             hir::AmbientFn::Print => {
                 let arg = args.first().ok_or("print arity")?;
                 let h = self.eval(arg, out, depth)?;
-                let _ = writeln!(out, "{ind}sub_rt_print(ctx, {h});");
+                let _ = writeln!(out, "{ind}subscript_rt_print(ctx, {h});");
             }
             hir::AmbientFn::Collect => {
-                let _ = writeln!(out, "{ind}sub_rt_collect(ctx);");
+                let _ = writeln!(out, "{ind}subscript_rt_collect(ctx);");
             }
             hir::AmbientFn::UnsafeDelete => {
                 let arg = args.first().ok_or("Context.free arity")?;
@@ -1736,7 +1736,7 @@ impl<'m> Emitter<'m> {
                     )?;
                 }
                 let pid = self.pos_id(pos);
-                let _ = writeln!(out, "{ind}sub_rt_delete(ctx, {p}, {pid}u);");
+                let _ = writeln!(out, "{ind}subscript_rt_delete(ctx, {p}, {pid}u);");
             }
             _ => return Err("unknown ambient function".to_string()),
         }
@@ -1781,13 +1781,13 @@ impl<'m> Emitter<'m> {
                 let v = self.eval(arg, out, depth)?;
                 let _ = writeln!(
                     out,
-                    "{ind}{{ {ect} _e = {v}; sub_rt_array_push(ctx, {h}, &_e, {pid}u); }}"
+                    "{ind}{{ {ect} _e = {v}; subscript_rt_array_push(ctx, {h}, &_e, {pid}u); }}"
                 );
             }
             "pop" => {
                 let _ = writeln!(
                     out,
-                    "{ind}{{ {ect} _d; sub_rt_array_pop(ctx, {h}, &_d, {pid}u); }}"
+                    "{ind}{{ {ect} _d; subscript_rt_array_pop(ctx, {h}, &_d, {pid}u); }}"
                 );
             }
             other => return Err(format!("array mutator `{other}`")),
@@ -1847,7 +1847,7 @@ impl<'m> Emitter<'m> {
                     let v = self.eval(value, out, depth)?;
                     let pid = self.pos_id(&target.pos);
                     let call =
-                        format!("sub_rt_str_concat(ctx, {place}, {v}, {pid}u)");
+                        format!("subscript_rt_str_concat(ctx, {place}, {v}, {pid}u)");
                     let result = self.eval_site_checked_call(
                         call,
                         &Type::Str,
@@ -1957,7 +1957,7 @@ impl<'m> Emitter<'m> {
                     )?;
                 let pos_id = self.pos_id(&target.pos);
                 let call =
-                    format!("sub_rt_str_concat(ctx, {current}, {rhs_tmp}, {pos_id}u)");
+                    format!("subscript_rt_str_concat(ctx, {current}, {rhs_tmp}, {pos_id}u)");
                 self.eval_site_checked_call(call, elem, site, out, depth)?
             }
             (Some(bin @ (hir::BinOp::Div | hir::BinOp::Rem)), Some(current))
@@ -2198,7 +2198,7 @@ impl<'m> Emitter<'m> {
             K::Float(v) => {
                 if e.ty == Type::F16 {
                     Ok(format!(
-                        "sub_rt_f16_from_f64({})",
+                        "subscript_rt_f16_from_f64({})",
                         float_literal(*v, &Type::F64)
                     ))
                 } else {
@@ -2293,7 +2293,7 @@ impl<'m> Emitter<'m> {
                     let cname = self.class_name(*class)?;
                     let pid = self.pos_id(pos);
                     let call = format!(
-                        "sub_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
+                        "subscript_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
                         class.0
                     );
                     self.eval_site_checked_call(call, &e.ty, site, out, depth)
@@ -2314,11 +2314,11 @@ impl<'m> Emitter<'m> {
             K::Length(obj) => match &obj.ty {
                 Type::Array(_) => {
                     let h = self.eval(obj, out, depth)?;
-                    Ok(format!("sub_rt_array_len(ctx, {h})"))
+                    Ok(format!("subscript_rt_array_len(ctx, {h})"))
                 }
                 Type::Str => {
                     let h = self.eval(obj, out, depth)?;
-                    Ok(format!("sub_rt_str_len(ctx, {h})"))
+                    Ok(format!("subscript_rt_str_len(ctx, {h})"))
                 }
                 Type::FixedArray(_, n) => Ok(n.to_string()),
                 other => Err(format!("length of {other:?}")),
@@ -2453,7 +2453,7 @@ impl<'m> Emitter<'m> {
         };
         let pid = self.pos_id(pos);
         let call = format!(
-            "sub_rt_str_lit(ctx, (const unsigned char*){}, {}ull, {pid}u)",
+            "subscript_rt_str_lit(ctx, (const unsigned char*){}, {}ull, {pid}u)",
             c_string_literal(bytes),
             bytes.len()
         );
@@ -2504,11 +2504,11 @@ impl<'m> Emitter<'m> {
                         )?;
                     let pid = self.pos_id(pos);
                     let call =
-                        format!("sub_rt_str_concat(ctx, {l}, {r}, {pid}u)");
+                        format!("subscript_rt_str_concat(ctx, {l}, {r}, {pid}u)");
                     self.eval_site_checked_call(call, &Type::Str, site, out, depth)
                 }
-                B::Eq => Ok(format!("(sub_rt_str_eq(ctx, {l}, {r}) != 0)")),
-                B::Ne => Ok(format!("(sub_rt_str_eq(ctx, {l}, {r}) == 0)")),
+                B::Eq => Ok(format!("(subscript_rt_str_eq(ctx, {l}, {r}) != 0)")),
+                B::Ne => Ok(format!("(subscript_rt_str_eq(ctx, {l}, {r}) == 0)")),
                 _ => Err("string operator outside the run set's scope".to_string()),
             };
         }
@@ -2518,7 +2518,7 @@ impl<'m> Emitter<'m> {
         if operand_ty == Type::F16 {
             let sym = binop_sym(op)?;
             return Ok(format!(
-                "(sub_rt_f16_to_f64({l}) {sym} sub_rt_f16_to_f64({r}))"
+                "(subscript_rt_f16_to_f64({l}) {sym} subscript_rt_f16_to_f64({r}))"
             ));
         }
         let float = operand_ty.is_float();
@@ -2713,7 +2713,7 @@ impl<'m> Emitter<'m> {
                         )?;
                     let pid = self.pos_id(&target.pos);
                     let call =
-                        format!("sub_rt_str_concat(ctx, {place}, {v}, {pid}u)");
+                        format!("subscript_rt_str_concat(ctx, {place}, {v}, {pid}u)");
                     let result = self.eval_site_checked_call(
                         call,
                         &Type::Str,
@@ -2777,14 +2777,14 @@ impl<'m> Emitter<'m> {
         }
         if *to == Type::F16 {
             if matches!(from, Type::F32 | Type::F64) {
-                return Ok(format!("sub_rt_f16_from_f64((double)({v}))"));
+                return Ok(format!("subscript_rt_f16_from_f64((double)({v}))"));
             }
             return Err(format!("cast {from:?} -> f16"));
         }
         if from == Type::F16 {
             return match to {
-                Type::F32 => Ok(format!("((float)sub_rt_f16_to_f64({v}))")),
-                Type::F64 => Ok(format!("sub_rt_f16_to_f64({v})")),
+                Type::F32 => Ok(format!("((float)subscript_rt_f16_to_f64({v}))")),
+                Type::F64 => Ok(format!("subscript_rt_f16_to_f64({v})")),
                 other => Err(format!("cast f16 -> {other:?}")),
             };
         }
@@ -2963,7 +2963,7 @@ impl<'m> Emitter<'m> {
                 let ect = self.ctype(elem)?;
                 let pid = self.pos_id(pos);
                 let call =
-                    format!("sub_rt_array_new(ctx, sizeof({ect}), {pid}u)");
+                    format!("subscript_rt_array_new(ctx, sizeof({ect}), {pid}u)");
                 let h = self.eval_site_checked_call(call, ty, site, out, depth)?;
                 for e in elems {
                     let site = sites
@@ -2980,7 +2980,7 @@ impl<'m> Emitter<'m> {
                     let epid = self.pos_id(pos);
                     let _ = writeln!(
                         out,
-                        "{ind}{{ {ect} _e = {v}; sub_rt_array_push(ctx, {h}, &_e, {epid}u); }}"
+                        "{ind}{{ {ect} _e = {v}; subscript_rt_array_push(ctx, {h}, &_e, {epid}u); }}"
                     );
                     self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
                 }
@@ -3012,7 +3012,7 @@ impl<'m> Emitter<'m> {
         };
         let ect = self.ctype(elem_ty)?;
         let pid = self.pos_id(pos);
-        let call = format!("sub_rt_array_new(ctx, sizeof({ect}), {pid}u)");
+        let call = format!("subscript_rt_array_new(ctx, sizeof({ect}), {pid}u)");
         let handle = self.eval_site_checked_call(call, ty, initial, out, depth)?;
 
         for elem in elems {
@@ -3031,14 +3031,14 @@ impl<'m> Emitter<'m> {
                     let _ = writeln!(
                         out,
                         "{ind}{{ {ect} _e = {value}; \
-                         sub_rt_array_push(ctx, {handle}, &_e, {pid}u); }}"
+                         subscript_rt_array_push(ctx, {handle}, &_e, {pid}u); }}"
                     );
                 }
                 Some(hir::SpreadKind::Array) => {
                     let source = self.eval_pinned(&elem.expr, out, depth)?;
                     let _ = writeln!(
                         out,
-                        "{ind}sub_rt_array_spread_array(ctx, {handle}, {source}, {pid}u);"
+                        "{ind}subscript_rt_array_spread_array(ctx, {handle}, {source}, {pid}u);"
                     );
                 }
                 Some(hir::SpreadKind::FixedArray) => {
@@ -3048,7 +3048,7 @@ impl<'m> Emitter<'m> {
                     };
                     let _ = writeln!(
                         out,
-                        "{ind}sub_rt_array_spread_fixed(ctx, {handle}, \
+                        "{ind}subscript_rt_array_spread_fixed(ctx, {handle}, \
                          ({source}).a, {count}ull, {pid}u);"
                     );
                 }
@@ -3056,14 +3056,14 @@ impl<'m> Emitter<'m> {
                     let source = self.eval_pinned(&elem.expr, out, depth)?;
                     let _ = writeln!(
                         out,
-                        "{ind}sub_rt_array_spread_assoc(ctx, {handle}, {source}, {pid}u);"
+                        "{ind}subscript_rt_array_spread_assoc(ctx, {handle}, {source}, {pid}u);"
                     );
                 }
                 Some(hir::SpreadKind::StringCodePoints) => {
                     let source = self.eval_pinned(&elem.expr, out, depth)?;
                     let _ = writeln!(
                         out,
-                        "{ind}sub_rt_array_spread_string(ctx, {handle}, {source}, {pid}u);"
+                        "{ind}subscript_rt_array_spread_string(ctx, {handle}, {source}, {pid}u);"
                     );
                 }
                 Some(other) => return Err(format!("unknown SpreadKind {other:?}")),
@@ -3133,7 +3133,7 @@ impl<'m> Emitter<'m> {
                 return Err("template concat has a non-allocation HIR site".to_string());
             };
             let pid = self.pos_id(pos);
-            let call = format!("sub_rt_str_concat(ctx, {acc}, {piece}, {pid}u)");
+            let call = format!("subscript_rt_str_concat(ctx, {acc}, {piece}, {pid}u)");
             acc = self.eval_site_checked_call(call, &Type::Str, site, out, depth)?;
         }
         Ok(acc)
@@ -3160,23 +3160,23 @@ impl<'m> Emitter<'m> {
         let pid = self.pos_id(pos);
         let call = match ty {
             Type::I8 | Type::I16 => {
-                format!("sub_rt_fmt_i32(ctx, (int32_t)({v}), {pid}u)")
+                format!("subscript_rt_fmt_i32(ctx, (int32_t)({v}), {pid}u)")
             }
             Type::U8 | Type::U16 => {
-                format!("sub_rt_fmt_u32(ctx, (uint32_t)({v}), {pid}u)")
+                format!("subscript_rt_fmt_u32(ctx, (uint32_t)({v}), {pid}u)")
             }
-            Type::I32 | Type::Enum(_) => format!("sub_rt_fmt_i32(ctx, {v}, {pid}u)"),
-            Type::U32 => format!("sub_rt_fmt_u32(ctx, {v}, {pid}u)"),
-            Type::I64 => format!("sub_rt_fmt_i64(ctx, {v}, {pid}u)"),
-            Type::U64 => format!("sub_rt_fmt_u64(ctx, {v}, {pid}u)"),
-            Type::F32 => format!("sub_rt_fmt_f32(ctx, {v}, {pid}u)"),
-            Type::F64 => format!("sub_rt_fmt_f64(ctx, {v}, {pid}u)"),
+            Type::I32 | Type::Enum(_) => format!("subscript_rt_fmt_i32(ctx, {v}, {pid}u)"),
+            Type::U32 => format!("subscript_rt_fmt_u32(ctx, {v}, {pid}u)"),
+            Type::I64 => format!("subscript_rt_fmt_i64(ctx, {v}, {pid}u)"),
+            Type::U64 => format!("subscript_rt_fmt_u64(ctx, {v}, {pid}u)"),
+            Type::F32 => format!("subscript_rt_fmt_f32(ctx, {v}, {pid}u)"),
+            Type::F64 => format!("subscript_rt_fmt_f64(ctx, {v}, {pid}u)"),
             Type::F16 => {
                 format!(
-                    "sub_rt_fmt_f64(ctx, sub_rt_f16_to_f64({v}), {pid}u)"
+                    "subscript_rt_fmt_f64(ctx, subscript_rt_f16_to_f64({v}), {pid}u)"
                 )
             }
-            Type::Bool => format!("sub_rt_fmt_bool(ctx, {v}, {pid}u)"),
+            Type::Bool => format!("subscript_rt_fmt_bool(ctx, {v}, {pid}u)"),
             other => return Err(format!("interpolation of {other:?}")),
         };
         self.eval_site_checked_call(call, &Type::Str, site, out, depth)
@@ -3222,7 +3222,7 @@ impl<'m> Emitter<'m> {
                 let f = self.hir_fn(name)?;
                 let argv = self.call_args(&f.params.clone(), args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call = format!("ss_fn_{}(ctx{sep}{argv})", sanitize(name));
+                let call = format!("subscript_fn_{}(ctx{sep}{argv})", sanitize(name));
                 if let Some(site) = trap_site {
                     self.eval_site_checked_call(call, ret_ty, site, out, depth)
                 } else {
@@ -3273,7 +3273,7 @@ impl<'m> Emitter<'m> {
             hir::Callee::Math(f) => {
                 let argv = self.eval_list(args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call = format!("sub_rt_math_{}(ctx{sep}{argv})", f.name());
+                let call = format!("subscript_rt_math_{}(ctx{sep}{argv})", f.name());
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             // Q25/Q26 Number and parsing intrinsics all call the shared
@@ -3306,7 +3306,7 @@ impl<'m> Emitter<'m> {
                     D::New => {
                         let ms = self.eval(args.first().ok_or("Date arity")?, out, depth)?;
                         let pid = self.pos_id(pos);
-                        format!("sub_rt_date_new(ctx, {ms}, {pid}u)")
+                        format!("subscript_rt_date_new(ctx, {ms}, {pid}u)")
                     }
                     D::Utc => {
                         if args.len() != 7 {
@@ -3314,14 +3314,14 @@ impl<'m> Emitter<'m> {
                         }
                         let argv = self.eval_list(args, out, depth)?;
                         let pid = self.pos_id(pos);
-                        format!("sub_rt_date_utc(ctx, {argv}, {pid}u)")
+                        format!("subscript_rt_date_utc(ctx, {argv}, {pid}u)")
                     }
-                    D::Now => "sub_rt_date_now(ctx)".to_string(),
+                    D::Now => "subscript_rt_date_now(ctx)".to_string(),
                     D::ToIso => {
                         let ms =
                             self.eval(args.first().ok_or("toISOString receiver")?, out, depth)?;
                         let pid = self.pos_id(pos);
-                        format!("sub_rt_date_to_iso(ctx, {ms}, {pid}u)")
+                        format!("subscript_rt_date_to_iso(ctx, {ms}, {pid}u)")
                     }
                     accessor => {
                         let code = accessor
@@ -3329,7 +3329,7 @@ impl<'m> Emitter<'m> {
                             .ok_or_else(|| format!("Date intrinsic {accessor:?}"))?;
                         let ms = self
                             .eval(args.first().ok_or("Date accessor receiver")?, out, depth)?;
-                        format!("sub_rt_date_get(ctx, {ms}, {code}u)")
+                        format!("subscript_rt_date_get(ctx, {ms}, {code}u)")
                     }
                 };
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
@@ -3811,7 +3811,7 @@ impl<'m> Emitter<'m> {
                 crate::layout::assoc_key_kind(self.module, &key)?.code();
             let pid = self.pos_id(pos);
             let call = format!(
-                "sub_rt_map_group_by(ctx, {items}, {ft}.code, {ft}.env, (const void*)&{bridge}, sizeof({key_ct}), {key_kind}u, {pid}u)"
+                "subscript_rt_map_group_by(ctx, {items}, {ft}.code, {ft}.env, (const void*)&{bridge}, sizeof({key_ct}), {key_kind}u, {pid}u)"
             );
             return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
@@ -3835,7 +3835,7 @@ impl<'m> Emitter<'m> {
         if f == M::New {
             let pid = self.pos_id(pos);
             let call = format!(
-                "sub_rt_map_new(ctx, sizeof({key_ct}), sizeof({value_ct}), {key_kind}u, {pid}u)"
+                "subscript_rt_map_new(ctx, sizeof({key_ct}), sizeof({value_ct}), {key_kind}u, {pid}u)"
             );
             return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
@@ -3843,7 +3843,7 @@ impl<'m> Emitter<'m> {
         let h = self.eval_pinned(arg_at(0)?, out, depth)?;
         match f {
             M::Size => {
-                let call = format!("sub_rt_map_size(ctx, {h})");
+                let call = format!("subscript_rt_map_size(ctx, {h})");
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             M::Get => {
@@ -3852,7 +3852,7 @@ impl<'m> Emitter<'m> {
                 let result = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let _ = writeln!(out, "{ind}{value_ct} {result} = {{0}};");
-                let _ = writeln!(out, "{ind}(void)sub_rt_map_get(ctx, {h}, &{kt}, &{result});");
+                let _ = writeln!(out, "{ind}(void)subscript_rt_map_get(ctx, {h}, &{kt}, &{result});");
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -3869,7 +3869,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}{value_ct} {result} = {{0}};");
                 let _ = writeln!(
                     out,
-                    "{ind}sub_rt_map_get_or(ctx, {h}, &{kt}, &{fallback}, &{result});"
+                    "{ind}subscript_rt_map_get_or(ctx, {h}, &{kt}, &{fallback}, &{result});"
                 );
                 if checked {
                     self.emit_trap_check(out, depth)?;
@@ -3884,7 +3884,7 @@ impl<'m> Emitter<'m> {
                 let vt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{value_ct} {vt} = {value_expr};");
                 let pid = self.pos_id(pos);
-                let _ = writeln!(out, "{ind}sub_rt_map_set(ctx, {h}, &{kt}, &{vt}, {pid}u);");
+                let _ = writeln!(out, "{ind}subscript_rt_map_set(ctx, {h}, &{kt}, &{vt}, {pid}u);");
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -3900,7 +3900,7 @@ impl<'m> Emitter<'m> {
                 Ok(format!("({result} != 0)"))
             }
             M::Clear => {
-                let call = format!("sub_rt_map_clear(ctx, {h})");
+                let call = format!("subscript_rt_map_clear(ctx, {h})");
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             M::ForEach => {
@@ -3909,7 +3909,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
                 let bridge = self.emit_assoc_bridge(&key, Some(&value))?;
                 let call = format!(
-                    "sub_rt_map_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
+                    "subscript_rt_map_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
                 );
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
@@ -3950,7 +3950,7 @@ impl<'m> Emitter<'m> {
         if f == S::New {
             let pid = self.pos_id(pos);
             let call = format!(
-                "sub_rt_set_new(ctx, sizeof({key_ct}), {key_kind}u, {pid}u)"
+                "subscript_rt_set_new(ctx, sizeof({key_ct}), {key_kind}u, {pid}u)"
             );
             return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
@@ -3958,7 +3958,7 @@ impl<'m> Emitter<'m> {
         let h = self.eval_pinned(arg_at(0)?, out, depth)?;
         match f {
             S::Size => {
-                let call = format!("sub_rt_set_size(ctx, {h})");
+                let call = format!("subscript_rt_set_size(ctx, {h})");
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             S::Add => {
@@ -3966,7 +3966,7 @@ impl<'m> Emitter<'m> {
                 let kt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let pid = self.pos_id(pos);
-                let _ = writeln!(out, "{ind}sub_rt_set_add(ctx, {h}, &{kt}, {pid}u);");
+                let _ = writeln!(out, "{ind}subscript_rt_set_add(ctx, {h}, &{kt}, {pid}u);");
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -3982,7 +3982,7 @@ impl<'m> Emitter<'m> {
                 Ok(format!("({result} != 0)"))
             }
             S::Clear => {
-                let call = format!("sub_rt_set_clear(ctx, {h})");
+                let call = format!("subscript_rt_set_clear(ctx, {h})");
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             S::ForEach => {
@@ -3991,7 +3991,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
                 let bridge = self.emit_assoc_bridge(&key, None)?;
                 let call = format!(
-                    "sub_rt_set_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
+                    "subscript_rt_set_for_each(ctx, {h}, {ft}.code, {ft}.env, (const void*)&{bridge})"
                 );
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
@@ -4023,7 +4023,7 @@ impl<'m> Emitter<'m> {
     ) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
-        let name = format!("ss_assoc_bridge{n}");
+        let name = format!("subscript_assoc_bridge{n}");
         let key_ct = self.ctype(key)?;
         let (sig, call) = if let Some(value) = value {
             let value_ct = self.ctype(value)?;
@@ -4059,7 +4059,7 @@ impl<'m> Emitter<'m> {
     ) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
-        let name = format!("ss_group_bridge{n}");
+        let name = format!("subscript_group_bridge{n}");
         let elem_ct = self.ctype(elem)?;
         let key_ct = self.ctype(key)?;
         let sig = format!(
@@ -4225,7 +4225,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
                 Ok((
                     format!(
-                        "(({aggregate}){{ (const char*)sub_rt_str_data(ctx, {t}), (size_t)sub_rt_str_len(ctx, {t}) }})"
+                        "(({aggregate}){{ (const char*)subscript_rt_str_data(ctx, {t}), (size_t)subscript_rt_str_len(ctx, {t}) }})"
                     ),
                     None,
                 ))
@@ -4270,8 +4270,8 @@ impl<'m> Emitter<'m> {
                 // storage, and the dev tier reads them at this point.
                 let d = self.fresh_tmp();
                 let n = self.fresh_tmp();
-                let _ = writeln!(out, "{ind}const void* {d} = sub_rt_array_data(ctx, {t});");
-                let _ = writeln!(out, "{ind}size_t {n} = (size_t)sub_rt_array_len(ctx, {t});");
+                let _ = writeln!(out, "{ind}const void* {d} = subscript_rt_array_data(ctx, {t});");
+                let _ = writeln!(out, "{ind}size_t {n} = (size_t)subscript_rt_array_len(ctx, {t});");
                 Ok((format!("(({desc}){{ {elem_cast}{d}, {n} }})"), None))
             }
             Type::Class(id) if self.is_value_class(*id)? => {
@@ -4352,10 +4352,10 @@ impl<'m> Emitter<'m> {
                         "NULL".to_string()
                     };
                     parts.push(format!(
-                        "({callback_typedef})&sub_rt_cb_trampoline"
+                        "({callback_typedef})&subscript_rt_cb_trampoline"
                     ));
                     parts.push(format!(
-                        "sub_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{}, {})",
+                        "subscript_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{}, {})",
                         sanitize(&f.name), sanitize(&f.name), sanitize(&ud1.name), ud2_expr
                     ));
                     if has_ud2 {
@@ -4376,8 +4376,8 @@ impl<'m> Emitter<'m> {
                     // the C struct field's, so no element-specific cast is
                     // needed (unlike the standalone descriptor).
                     let fld = sanitize(&f.name);
-                    parts.push(format!("(size_t)sub_rt_array_len(ctx, {t}.{fld})"));
-                    parts.push(format!("sub_rt_array_data(ctx, {t}.{fld})"));
+                    parts.push(format!("(size_t)subscript_rt_array_len(ctx, {t}.{fld})"));
+                    parts.push(format!("subscript_rt_array_data(ctx, {t}.{fld})"));
                     i += 1;
                 }
                 _ => {
@@ -4454,7 +4454,7 @@ impl<'m> Emitter<'m> {
                 let ect = self.ctype(&elem)?;
                 let pid = self.pos_id(pos);
                 let d = self.fresh_tmp();
-                let _ = writeln!(out, "{}{ect} {d}; sub_rt_array_pop(ctx, {h}, &{d}, {pid}u);", indent(depth));
+                let _ = writeln!(out, "{}{ect} {d}; subscript_rt_array_pop(ctx, {h}, &{d}, {pid}u);", indent(depth));
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -4484,7 +4484,7 @@ impl<'m> Emitter<'m> {
                 let step = self.fresh_tmp();
                 let ind = indent(depth);
                 let _ = writeln!(out, "{ind}{ir} {step}; memset(&{step}, 0, sizeof {step});");
-                let _ = writeln!(out, "{ind}{step}.done = ss_resume_{}(ctx, {g}, &{step}.value);", sanitize(&creator));
+                let _ = writeln!(out, "{ind}{step}.done = subscript_resume_{}(ctx, {g}, &{step}.value);", sanitize(&creator));
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -4531,7 +4531,7 @@ impl<'m> Emitter<'m> {
                 out.push_str(&abuf);
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let call =
-                    format!("ss_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name));
+                    format!("subscript_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name));
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             other => Err(format!("method on {other:?}")),
@@ -4625,7 +4625,7 @@ impl<'m> Emitter<'m> {
                     )?;
                 let argv = self.call_args(&ctor.params, args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call = format!("ss_ctor{}(ctx{sep}{argv})", class.0);
+                let call = format!("subscript_ctor{}(ctx{sep}{argv})", class.0);
                 self.eval_site_checked_call(
                     call,
                     &Type::Class(class),
@@ -4648,7 +4648,7 @@ impl<'m> Emitter<'m> {
             let cname = self.class_name(class)?;
             let pid = self.pos_id(pos);
             let call = format!(
-                "sub_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
+                "subscript_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
                 class.0
             );
             let this = self.eval_site_checked_call(
@@ -4666,7 +4666,7 @@ impl<'m> Emitter<'m> {
                     )?;
                 let argv = self.call_args(&ctor.params, args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call = format!("ss_ctor{}(ctx, {this}{sep}{argv})", class.0);
+                let call = format!("subscript_ctor{}(ctx, {this}{sep}{argv})", class.0);
                 self.eval_site_checked_call(call, &Type::Void, site, out, depth)?;
             }
             Ok(this)
@@ -4676,7 +4676,7 @@ impl<'m> Emitter<'m> {
     // ----- function values and lambdas -----
 
     fn func_ref_value(&mut self, name: &str) -> Result<String, String> {
-        let wrap = format!("ss_wrap_{}", sanitize(name));
+        let wrap = format!("subscript_wrap_{}", sanitize(name));
         if self.wrappers.insert(wrap.clone()) {
             self.emit_func_wrapper(name, &wrap)?;
         }
@@ -4692,7 +4692,7 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(self.protos, "{sig};");
         let argv: Vec<String> = f.params.iter().map(|p| sanitize(&p.name)).collect();
         let asep = if argv.is_empty() { "" } else { ", " };
-        let call = format!("ss_fn_{}(ctx{asep}{})", sanitize(name), argv.join(", "));
+        let call = format!("subscript_fn_{}(ctx{asep}{})", sanitize(name), argv.join(", "));
         let _ = writeln!(self.helpers, "{sig} {{ (void)_env; {}{call}; }}",
             if f.ret == Type::Void { "" } else { "return " });
         Ok(())
@@ -4710,7 +4710,7 @@ impl<'m> Emitter<'m> {
     fn eval_lambda(&mut self, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], captures: &[hir::Capture], out: &mut String, depth: usize) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
-        let name = format!("ss_lambda{n}");
+        let name = format!("subscript_lambda{n}");
         let env_ty = format!("EnvL{n}");
         let ind = indent(depth);
 
@@ -4872,7 +4872,7 @@ impl<'m> Emitter<'m> {
                 return Err("generator has a non-allocation HIR site".to_string());
             };
             let pid = self.pos_id(pos);
-            let _ = writeln!(out, "    void* _frame = sub_rt_alloc(ctx, sizeof({gen_struct}), {}u, {pid}u);", rtc::CLASS_GENERATOR);
+            let _ = writeln!(out, "    void* _frame = subscript_rt_alloc(ctx, sizeof({gen_struct}), {}u, {pid}u);", rtc::CLASS_GENERATOR);
             self.emit_trap_site(site, TrapOperand::Pending, out, 1)
         })?;
         let _ = writeln!(out, "    {gen_struct}* _f = ({gen_struct}*)_frame;");
@@ -5243,36 +5243,36 @@ fn binop_sym(op: hir::BinOp) -> Result<&'static str, String> {
 
 fn divrem_helper(ty: &Type, is_div: bool) -> Result<&'static str, String> {
     Ok(match (ty, is_div) {
-        (Type::I8, true) => "ss_sdiv_i8",
-        (Type::I8, false) => "ss_srem_i8",
-        (Type::U8, true) => "ss_udiv_u8",
-        (Type::U8, false) => "ss_urem_u8",
-        (Type::I16, true) => "ss_sdiv_i16",
-        (Type::I16, false) => "ss_srem_i16",
-        (Type::U16, true) => "ss_udiv_u16",
-        (Type::U16, false) => "ss_urem_u16",
-        (Type::I32, true) => "ss_sdiv_i32",
-        (Type::I32, false) => "ss_srem_i32",
-        (Type::U32, true) => "ss_udiv_u32",
-        (Type::U32, false) => "ss_urem_u32",
-        (Type::I64, true) => "ss_sdiv_i64",
-        (Type::I64, false) => "ss_srem_i64",
-        (Type::U64, true) => "ss_udiv_u64",
-        (Type::U64, false) => "ss_urem_u64",
+        (Type::I8, true) => "subscript_sdiv_i8",
+        (Type::I8, false) => "subscript_srem_i8",
+        (Type::U8, true) => "subscript_udiv_u8",
+        (Type::U8, false) => "subscript_urem_u8",
+        (Type::I16, true) => "subscript_sdiv_i16",
+        (Type::I16, false) => "subscript_srem_i16",
+        (Type::U16, true) => "subscript_udiv_u16",
+        (Type::U16, false) => "subscript_urem_u16",
+        (Type::I32, true) => "subscript_sdiv_i32",
+        (Type::I32, false) => "subscript_srem_i32",
+        (Type::U32, true) => "subscript_udiv_u32",
+        (Type::U32, false) => "subscript_urem_u32",
+        (Type::I64, true) => "subscript_sdiv_i64",
+        (Type::I64, false) => "subscript_srem_i64",
+        (Type::U64, true) => "subscript_udiv_u64",
+        (Type::U64, false) => "subscript_urem_u64",
         (other, _) => return Err(format!("integer div/rem on {other:?}")),
     })
 }
 
 fn float_to_int_helper(to: &Type) -> Result<&'static str, String> {
     Ok(match to {
-        Type::I8 => "ss_f2i8",
-        Type::U8 => "ss_f2u8",
-        Type::I16 => "ss_f2i16",
-        Type::U16 => "ss_f2u16",
-        Type::I32 => "ss_f2i32",
-        Type::U32 => "ss_f2u32",
-        Type::I64 => "ss_f2i64",
-        Type::U64 => "ss_f2u64",
+        Type::I8 => "subscript_f2i8",
+        Type::U8 => "subscript_f2u8",
+        Type::I16 => "subscript_f2i16",
+        Type::U16 => "subscript_f2u16",
+        Type::I32 => "subscript_f2i32",
+        Type::U32 => "subscript_f2u32",
+        Type::I64 => "subscript_f2i64",
+        Type::U64 => "subscript_f2u64",
         other => return Err(format!("float to {other:?}")),
     })
 }
@@ -5436,18 +5436,18 @@ extern "C" {
 typedef struct {
     uint32_t class_id;
     const char *name;
-} sub_alloc_class_info;
+} subscript_alloc_class_info;
 
 typedef struct {
     const char *file;
     uint32_t line;
     uint32_t column;
-} sub_alloc_position_info;
+} subscript_alloc_position_info;
 
-extern const sub_alloc_class_info ss_alloc_classes[];
-extern const uint64_t ss_alloc_class_count;
-extern const sub_alloc_position_info ss_alloc_positions[];
-extern const uint64_t ss_alloc_position_count;
+extern const subscript_alloc_class_info subscript_alloc_classes[];
+extern const uint64_t subscript_alloc_class_count;
+extern const subscript_alloc_position_info subscript_alloc_positions[];
+extern const uint64_t subscript_alloc_position_count;
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -5466,9 +5466,9 @@ fn render_allocation_metadata_definitions(
         "\n/* Allocation attribution tables. Generated from checked HIR and the\n\
          * exact pos_id sequence above; consume through the generated\n\
          * allocation metadata header. */\n\
-         typedef struct { uint32_t class_id; const char *name; } sub_alloc_class_info;\n\
-         typedef struct { const char *file; uint32_t line; uint32_t column; } sub_alloc_position_info;\n\n\
-         const sub_alloc_class_info ss_alloc_classes[] = {\n",
+         typedef struct { uint32_t class_id; const char *name; } subscript_alloc_class_info;\n\
+         typedef struct { const char *file; uint32_t line; uint32_t column; } subscript_alloc_position_info;\n\n\
+         const subscript_alloc_class_info subscript_alloc_classes[] = {\n",
     );
     for (class_id, name) in [
         (rtc::CLASS_STRING, "string"),
@@ -5495,11 +5495,11 @@ fn render_allocation_metadata_definitions(
     }
     let _ = writeln!(
         out,
-        "}};\nconst uint64_t ss_alloc_class_count = {}u;\n",
+        "}};\nconst uint64_t subscript_alloc_class_count = {}u;\n",
         8 + module.classes.len()
     );
 
-    out.push_str("const sub_alloc_position_info ss_alloc_positions[] = {\n");
+    out.push_str("const subscript_alloc_position_info subscript_alloc_positions[] = {\n");
     if positions.is_empty() {
         out.push_str("    { \"\", 0u, 0u }, /* placeholder; count is zero */\n");
     } else {
@@ -5515,7 +5515,7 @@ fn render_allocation_metadata_definitions(
     }
     let _ = writeln!(
         out,
-        "}};\nconst uint64_t ss_alloc_position_count = {}u;",
+        "}};\nconst uint64_t subscript_alloc_position_count = {}u;",
         positions.len()
     );
     out
@@ -5549,7 +5549,7 @@ const PREAMBLE: &str = concat!(
 /* Generated by subscript's C emitter — the ship tier
  * (specs/blocks/compiler.md 11). Do not edit; fix the generator.
  * This translation unit carries the language's semantics and links the
- * runtime static library (sub_rt_*), so arrays, strings, Q14 formatting,
+ * runtime static library (subscript_rt_*), so arrays, strings, Q14 formatting,
  * and traps are identical to the dev-JIT tier. Compile -O2
  * -ffp-contract=off and link with the runtime archive and the host
  * entry (AOT_ENTRY_C). */
@@ -5558,246 +5558,246 @@ const PREAMBLE: &str = concat!(
 #include <string.h>
 
 /* Runtime C-ABI boundary (runtime/src/ffi.rs). Handles are void*. */
-extern void sub_rt_print(void* ctx, const void* s);
-extern void sub_rt_collect(void* ctx);
-extern void* sub_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
-extern void sub_rt_delete(void* ctx, void* payload, uint32_t pos_id);
-extern void sub_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
-extern void sub_rt_root_add(void* ctx, void* base, uint64_t words);
-extern void sub_rt_shadow_push(void* ctx, void* base, uint64_t slots);
-extern void sub_rt_shadow_pop(void* ctx);
-extern void* sub_rt_str_lit(void* ctx, const unsigned char* ptr, uint64_t len, uint32_t pos_id);
-extern int32_t sub_rt_str_len(void* ctx, const void* s);
-extern void* sub_rt_str_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
-extern void* sub_rt_str_slice(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);
-extern int32_t sub_rt_str_eq(void* ctx, const void* a, const void* b);
-extern void* sub_rt_fmt_i32(void* ctx, int32_t v, uint32_t pos_id);
-extern void* sub_rt_fmt_u32(void* ctx, uint32_t v, uint32_t pos_id);
-extern void* sub_rt_fmt_i64(void* ctx, int64_t v, uint32_t pos_id);
-extern void* sub_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
-extern void* sub_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
-extern void* sub_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
-extern void* sub_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
+extern void subscript_rt_print(void* ctx, const void* s);
+extern void subscript_rt_collect(void* ctx);
+extern void* subscript_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
+extern void subscript_rt_delete(void* ctx, void* payload, uint32_t pos_id);
+extern void subscript_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
+extern void subscript_rt_root_add(void* ctx, void* base, uint64_t words);
+extern void subscript_rt_shadow_push(void* ctx, void* base, uint64_t slots);
+extern void subscript_rt_shadow_pop(void* ctx);
+extern void* subscript_rt_str_lit(void* ctx, const unsigned char* ptr, uint64_t len, uint32_t pos_id);
+extern int32_t subscript_rt_str_len(void* ctx, const void* s);
+extern void* subscript_rt_str_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
+extern void* subscript_rt_str_slice(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);
+extern int32_t subscript_rt_str_eq(void* ctx, const void* a, const void* b);
+extern void* subscript_rt_fmt_i32(void* ctx, int32_t v, uint32_t pos_id);
+extern void* subscript_rt_fmt_u32(void* ctx, uint32_t v, uint32_t pos_id);
+extern void* subscript_rt_fmt_i64(void* ctx, int64_t v, uint32_t pos_id);
+extern void* subscript_rt_fmt_u64(void* ctx, uint64_t v, uint32_t pos_id);
+extern void* subscript_rt_fmt_f32(void* ctx, float v, uint32_t pos_id);
+extern void* subscript_rt_fmt_f64(void* ctx, double v, uint32_t pos_id);
+extern void* subscript_rt_fmt_bool(void* ctx, uint32_t v, uint32_t pos_id);
 /* P13 JSON.stringify builder leaves. The checker emits traversal helpers
  * for one exact static T; these runtime entries contain no RTTI. */
-extern uint64_t sub_rt_json_begin(void* ctx, uint32_t pos_id);
-extern uint64_t sub_rt_json_begin_tracked(void* ctx, uint32_t pos_id);
-extern void* sub_rt_json_finish(void* ctx, uint64_t builder, uint32_t pos_id);
-extern void sub_rt_json_raw(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
-extern void sub_rt_json_str(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
-extern void sub_rt_json_i32(void* ctx, uint64_t builder, int32_t value, uint32_t pos_id);
-extern void sub_rt_json_u32(void* ctx, uint64_t builder, uint32_t value, uint32_t pos_id);
-extern void sub_rt_json_i64(void* ctx, uint64_t builder, int64_t value, uint32_t pos_id);
-extern void sub_rt_json_u64(void* ctx, uint64_t builder, uint64_t value, uint32_t pos_id);
-extern void sub_rt_json_f32(void* ctx, uint64_t builder, float value, uint32_t pos_id);
-extern void sub_rt_json_f64(void* ctx, uint64_t builder, double value, uint32_t pos_id);
-extern void sub_rt_json_bool(void* ctx, uint64_t builder, uint8_t value, uint32_t pos_id);
-extern void sub_rt_json_date(void* ctx, uint64_t builder, int64_t value, uint32_t pos_id);
-extern void sub_rt_json_null(void* ctx, uint64_t builder, uint32_t pos_id);
-extern int32_t sub_rt_json_visit(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
-extern void sub_rt_json_leave(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
-extern uint64_t sub_rt_json_parse_begin(void* ctx, const void* text, uint32_t pos_id);
-extern void sub_rt_json_parse_end(void* ctx, uint64_t parser, uint32_t pos_id);
-extern uint64_t sub_rt_json_parse_root(void* ctx, uint64_t parser, uint32_t pos_id);
-extern int32_t sub_rt_json_parse_is_kind(void* ctx, uint64_t parser, uint64_t node, uint32_t kind, uint32_t pos_id);
-extern int32_t sub_rt_json_parse_number_fits(void* ctx, uint64_t parser, uint64_t node, uint32_t target, uint32_t pos_id);
-extern double sub_rt_json_parse_number(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
-extern uint64_t sub_rt_json_parse_integer(void* ctx, uint64_t parser, uint64_t node, uint32_t target, uint32_t pos_id);
-extern int32_t sub_rt_json_parse_bool(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
-extern void* sub_rt_json_parse_string(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
-extern int32_t sub_rt_json_parse_array_len(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
-extern uint64_t sub_rt_json_parse_array_get(void* ctx, uint64_t parser, uint64_t node, int32_t index, uint32_t pos_id);
-extern uint64_t sub_rt_json_parse_object_get(void* ctx, uint64_t parser, uint64_t node, const void* key, uint32_t pos_id);
+extern uint64_t subscript_rt_json_begin(void* ctx, uint32_t pos_id);
+extern uint64_t subscript_rt_json_begin_tracked(void* ctx, uint32_t pos_id);
+extern void* subscript_rt_json_finish(void* ctx, uint64_t builder, uint32_t pos_id);
+extern void subscript_rt_json_raw(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern void subscript_rt_json_str(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern void subscript_rt_json_i32(void* ctx, uint64_t builder, int32_t value, uint32_t pos_id);
+extern void subscript_rt_json_u32(void* ctx, uint64_t builder, uint32_t value, uint32_t pos_id);
+extern void subscript_rt_json_i64(void* ctx, uint64_t builder, int64_t value, uint32_t pos_id);
+extern void subscript_rt_json_u64(void* ctx, uint64_t builder, uint64_t value, uint32_t pos_id);
+extern void subscript_rt_json_f32(void* ctx, uint64_t builder, float value, uint32_t pos_id);
+extern void subscript_rt_json_f64(void* ctx, uint64_t builder, double value, uint32_t pos_id);
+extern void subscript_rt_json_bool(void* ctx, uint64_t builder, uint8_t value, uint32_t pos_id);
+extern void subscript_rt_json_date(void* ctx, uint64_t builder, int64_t value, uint32_t pos_id);
+extern void subscript_rt_json_null(void* ctx, uint64_t builder, uint32_t pos_id);
+extern int32_t subscript_rt_json_visit(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern void subscript_rt_json_leave(void* ctx, uint64_t builder, const void* value, uint32_t pos_id);
+extern uint64_t subscript_rt_json_parse_begin(void* ctx, const void* text, uint32_t pos_id);
+extern void subscript_rt_json_parse_end(void* ctx, uint64_t parser, uint32_t pos_id);
+extern uint64_t subscript_rt_json_parse_root(void* ctx, uint64_t parser, uint32_t pos_id);
+extern int32_t subscript_rt_json_parse_is_kind(void* ctx, uint64_t parser, uint64_t node, uint32_t kind, uint32_t pos_id);
+extern int32_t subscript_rt_json_parse_number_fits(void* ctx, uint64_t parser, uint64_t node, uint32_t target, uint32_t pos_id);
+extern double subscript_rt_json_parse_number(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern uint64_t subscript_rt_json_parse_integer(void* ctx, uint64_t parser, uint64_t node, uint32_t target, uint32_t pos_id);
+extern int32_t subscript_rt_json_parse_bool(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern void* subscript_rt_json_parse_string(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern int32_t subscript_rt_json_parse_array_len(void* ctx, uint64_t parser, uint64_t node, uint32_t pos_id);
+extern uint64_t subscript_rt_json_parse_array_get(void* ctx, uint64_t parser, uint64_t node, int32_t index, uint32_t pos_id);
+extern uint64_t subscript_rt_json_parse_object_get(void* ctx, uint64_t parser, uint64_t node, const void* key, uint32_t pos_id);
 /* Number and parsing intrinsics (stdlib.md 11, Q25/Q26).
  * Trap-capable entries carry source positions. */
-extern int32_t sub_rt_num_is_nan(void* ctx, double value);
-extern int32_t sub_rt_num_is_finite(void* ctx, double value);
-extern int32_t sub_rt_num_is_integer(void* ctx, double value);
-extern int32_t sub_rt_num_is_safe_integer(void* ctx, double value);
-extern double sub_rt_num_parse_int(void* ctx, const void* s, int32_t radix, uint32_t pos_id);
-extern double sub_rt_num_parse_float(void* ctx, const void* s, uint32_t pos_id);
-extern void* sub_rt_num_to_fixed(void* ctx, double value, int32_t digits, uint32_t pos_id);
-extern void* sub_rt_num_to_string_f32(void* ctx, float value, int32_t radix, uint32_t pos_id);
-extern void* sub_rt_num_to_string_f64(void* ctx, double value, int32_t radix, uint32_t pos_id);
-extern void* sub_rt_num_to_exponential(void* ctx, double value, int32_t digits, uint32_t pos_id);
-extern void* sub_rt_num_to_precision(void* ctx, double value, int32_t digits, uint32_t pos_id);
+extern int32_t subscript_rt_num_is_nan(void* ctx, double value);
+extern int32_t subscript_rt_num_is_finite(void* ctx, double value);
+extern int32_t subscript_rt_num_is_integer(void* ctx, double value);
+extern int32_t subscript_rt_num_is_safe_integer(void* ctx, double value);
+extern double subscript_rt_num_parse_int(void* ctx, const void* s, int32_t radix, uint32_t pos_id);
+extern double subscript_rt_num_parse_float(void* ctx, const void* s, uint32_t pos_id);
+extern void* subscript_rt_num_to_fixed(void* ctx, double value, int32_t digits, uint32_t pos_id);
+extern void* subscript_rt_num_to_string_f32(void* ctx, float value, int32_t radix, uint32_t pos_id);
+extern void* subscript_rt_num_to_string_f64(void* ctx, double value, int32_t radix, uint32_t pos_id);
+extern void* subscript_rt_num_to_exponential(void* ctx, double value, int32_t digits, uint32_t pos_id);
+extern void* subscript_rt_num_to_precision(void* ctx, double value, int32_t digits, uint32_t pos_id);
 /* IEEE binary16 is raw uint16_t storage in emitted C. All conversion is
  * behind these opaque runtime symbols; no _Float16/__fp16 operation is
  * emitted (compiler.md 16.2). */
-extern uint16_t sub_rt_f16_from_f64(double v);
-extern double sub_rt_f16_to_f64(uint16_t bits);
-extern void* sub_rt_array_new(void* ctx, uint64_t elem_size, uint32_t pos_id);
-extern int32_t sub_rt_array_len(void* ctx, const void* a);
-extern int32_t sub_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
-extern void sub_rt_array_pop(void* ctx, void* a, void* dst, uint32_t pos_id);
-extern void* sub_rt_array_ptr(void* ctx, void* a, int32_t idx, uint32_t pos_id);
-extern uint64_t sub_rt_assoc_iter_begin(void* ctx, void* value, uint32_t pos_id);
-extern int32_t sub_rt_assoc_iter_copy(void* ctx, void* value, uint64_t index, uint32_t select_value, void* out, uint32_t pos_id);
-extern void sub_rt_assoc_iter_end(void* ctx, void* value);
-extern void* sub_rt_str_iter_code_point(void* ctx, const void* s, int32_t index, int32_t* next, uint32_t pos_id);
-extern void sub_rt_array_spread_array(void* ctx, void* out, void* source, uint32_t pos_id);
-extern void sub_rt_array_spread_fixed(void* ctx, void* out, const void* data, uint64_t count, uint32_t pos_id);
-extern void sub_rt_array_spread_assoc(void* ctx, void* out, void* source, uint32_t pos_id);
-extern void sub_rt_array_spread_string(void* ctx, void* out, const void* source, uint32_t pos_id);
+extern uint16_t subscript_rt_f16_from_f64(double v);
+extern double subscript_rt_f16_to_f64(uint16_t bits);
+extern void* subscript_rt_array_new(void* ctx, uint64_t elem_size, uint32_t pos_id);
+extern int32_t subscript_rt_array_len(void* ctx, const void* a);
+extern int32_t subscript_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
+extern void subscript_rt_array_pop(void* ctx, void* a, void* dst, uint32_t pos_id);
+extern void* subscript_rt_array_ptr(void* ctx, void* a, int32_t idx, uint32_t pos_id);
+extern uint64_t subscript_rt_assoc_iter_begin(void* ctx, void* value, uint32_t pos_id);
+extern int32_t subscript_rt_assoc_iter_copy(void* ctx, void* value, uint64_t index, uint32_t select_value, void* out, uint32_t pos_id);
+extern void subscript_rt_assoc_iter_end(void* ctx, void* value);
+extern void* subscript_rt_str_iter_code_point(void* ctx, const void* s, int32_t index, int32_t* next, uint32_t pos_id);
+extern void subscript_rt_array_spread_array(void* ctx, void* out, void* source, uint32_t pos_id);
+extern void subscript_rt_array_spread_fixed(void* ctx, void* out, const void* data, uint64_t count, uint32_t pos_id);
+extern void subscript_rt_array_spread_assoc(void* ctx, void* out, void* source, uint32_t pos_id);
+extern void subscript_rt_array_spread_string(void* ctx, void* out, const void* source, uint32_t pos_id);
 /* C-boundary marshaling (P5.2b): string/array data pointers and the
  * callback binding constructor. The generic trampoline declaration and
  * its local string-view layout follow the bound header includes. */
-extern const void* sub_rt_str_data(void* ctx, const void* s);
-extern const void* sub_rt_array_data(void* ctx, const void* a);
-extern void* sub_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata1, void* userdata2);
+extern const void* subscript_rt_str_data(void* ctx, const void* s);
+extern const void* subscript_rt_array_data(void* ctx, const void* a);
+extern void* subscript_rt_cb_bind(void* ctx, const void* code, const void* env, void* userdata1, void* userdata2);
 
 /* String method intrinsics (stdlib.md 8, Q21): byte measures over the
  * immutable UTF-8 string payloads; one opaque runtime symbol per
  * accepted method, shared with the dev tier. Fault-capable entries
  * carry a trailing pos_id; the pure search predicates take none. */
-extern int32_t sub_rt_str_index_of(void* ctx, const void* s, const void* needle, int32_t from);
-extern int32_t sub_rt_str_last_index_of(void* ctx, const void* s, const void* needle);
-extern int32_t sub_rt_str_includes(void* ctx, const void* s, const void* needle, int32_t from);
-extern int32_t sub_rt_str_starts_with(void* ctx, const void* s, const void* needle, int32_t position);
-extern int32_t sub_rt_str_ends_with(void* ctx, const void* s, const void* needle, int32_t end_position);
-extern int32_t sub_rt_str_char_code_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
-extern void* sub_rt_str_split(void* ctx, const void* s, const void* sep, uint32_t pos_id);
-extern void* sub_rt_str_trim(void* ctx, const void* s, uint32_t pos_id);
-extern void* sub_rt_str_trim_start(void* ctx, const void* s, uint32_t pos_id);
-extern void* sub_rt_str_trim_end(void* ctx, const void* s, uint32_t pos_id);
-extern void* sub_rt_str_repeat(void* ctx, const void* s, int32_t n, uint32_t pos_id);
-extern void* sub_rt_str_pad_start(void* ctx, const void* s, int32_t len, const void* pad, uint32_t pos_id);
-extern void* sub_rt_str_pad_end(void* ctx, const void* s, int32_t len, const void* pad, uint32_t pos_id);
-extern void* sub_rt_str_to_upper(void* ctx, const void* s, uint32_t pos_id);
-extern void* sub_rt_str_to_lower(void* ctx, const void* s, uint32_t pos_id);
-extern void* sub_rt_str_replace(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
-extern void* sub_rt_str_replace_all(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
-extern void* sub_rt_str_substring(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);
-extern void* sub_rt_str_substr(void* ctx, const void* s, int32_t start, int32_t length, uint32_t pos_id);
-extern void* sub_rt_str_char_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
-extern int32_t sub_rt_str_code_point_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
-extern void* sub_rt_str_method_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
+extern int32_t subscript_rt_str_index_of(void* ctx, const void* s, const void* needle, int32_t from);
+extern int32_t subscript_rt_str_last_index_of(void* ctx, const void* s, const void* needle);
+extern int32_t subscript_rt_str_includes(void* ctx, const void* s, const void* needle, int32_t from);
+extern int32_t subscript_rt_str_starts_with(void* ctx, const void* s, const void* needle, int32_t position);
+extern int32_t subscript_rt_str_ends_with(void* ctx, const void* s, const void* needle, int32_t end_position);
+extern int32_t subscript_rt_str_char_code_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
+extern void* subscript_rt_str_split(void* ctx, const void* s, const void* sep, uint32_t pos_id);
+extern void* subscript_rt_str_trim(void* ctx, const void* s, uint32_t pos_id);
+extern void* subscript_rt_str_trim_start(void* ctx, const void* s, uint32_t pos_id);
+extern void* subscript_rt_str_trim_end(void* ctx, const void* s, uint32_t pos_id);
+extern void* subscript_rt_str_repeat(void* ctx, const void* s, int32_t n, uint32_t pos_id);
+extern void* subscript_rt_str_pad_start(void* ctx, const void* s, int32_t len, const void* pad, uint32_t pos_id);
+extern void* subscript_rt_str_pad_end(void* ctx, const void* s, int32_t len, const void* pad, uint32_t pos_id);
+extern void* subscript_rt_str_to_upper(void* ctx, const void* s, uint32_t pos_id);
+extern void* subscript_rt_str_to_lower(void* ctx, const void* s, uint32_t pos_id);
+extern void* subscript_rt_str_replace(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
+extern void* subscript_rt_str_replace_all(void* ctx, const void* s, const void* pat, const void* repl, uint32_t pos_id);
+extern void* subscript_rt_str_substring(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);
+extern void* subscript_rt_str_substr(void* ctx, const void* s, int32_t start, int32_t length, uint32_t pos_id);
+extern void* subscript_rt_str_char_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
+extern int32_t subscript_rt_str_code_point_at(void* ctx, const void* s, int32_t i, uint32_t pos_id);
+extern void* subscript_rt_str_method_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
 
 /* Regular-expression intrinsics (stdlib.md 15, Q31). */
-extern void* sub_rt_regex_new(void* ctx, const void* pattern, const void* flags, uint32_t pos_id);
-extern int32_t sub_rt_regex_test(void* ctx, const void* regex, const void* subject, uint32_t pos_id);
-extern void* sub_rt_regex_source(void* ctx, const void* regex, uint32_t pos_id);
-extern void* sub_rt_regex_flags(void* ctx, const void* regex, uint32_t pos_id);
-extern int32_t sub_rt_regex_search(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
-extern void* sub_rt_regex_replace(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
-extern void* sub_rt_regex_replace_all(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
-extern void* sub_rt_regex_split(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
-extern int32_t sub_rt_regex_match_start(void* ctx, const void* regex, int32_t group, uint32_t pos_id);
-extern int32_t sub_rt_regex_match_end(void* ctx, const void* regex, int32_t group, uint32_t pos_id);
+extern void* subscript_rt_regex_new(void* ctx, const void* pattern, const void* flags, uint32_t pos_id);
+extern int32_t subscript_rt_regex_test(void* ctx, const void* regex, const void* subject, uint32_t pos_id);
+extern void* subscript_rt_regex_source(void* ctx, const void* regex, uint32_t pos_id);
+extern void* subscript_rt_regex_flags(void* ctx, const void* regex, uint32_t pos_id);
+extern int32_t subscript_rt_regex_search(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
+extern void* subscript_rt_regex_replace(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
+extern void* subscript_rt_regex_replace_all(void* ctx, const void* subject, const void* regex, const void* replacement, uint32_t pos_id);
+extern void* subscript_rt_regex_split(void* ctx, const void* subject, const void* regex, uint32_t pos_id);
+extern int32_t subscript_rt_regex_match_start(void* ctx, const void* regex, int32_t group, uint32_t pos_id);
+extern int32_t subscript_rt_regex_match_end(void* ctx, const void* regex, int32_t group, uint32_t pos_id);
 
 /* Array method intrinsics (stdlib.md 9, Q22): one opaque runtime symbol
  * per accepted method, shared with the dev tier. Element values the
  * runtime receives travel by pointer; script callbacks travel as the
  * SubFn (code, env) halves; kind tags are the shared compiler mapping's
  * u32 codes; allocating entries carry a trailing pos_id. */
-extern int32_t sub_rt_arr_index_of(void* ctx, void* a, const void* x, uint32_t kind);
-extern int32_t sub_rt_arr_last_index_of(void* ctx, void* a, const void* x, uint32_t kind);
-extern int32_t sub_rt_arr_includes(void* ctx, void* a, const void* x, uint32_t kind);
-extern void* sub_rt_arr_join(void* ctx, void* a, const void* sep, uint32_t kind, uint32_t pos_id);
-extern void* sub_rt_arr_slice(void* ctx, void* a, int32_t start, int32_t end, uint32_t pos_id);
-extern void sub_rt_arr_fill(void* ctx, void* a, const void* x, int32_t start, int32_t end);
-extern void sub_rt_arr_reverse(void* ctx, void* a);
-extern void* sub_rt_arr_concat(void* ctx, void* a, void* b, uint32_t pos_id);
-extern void sub_rt_arr_for_each(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern void* sub_rt_arr_map(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id, uint32_t indexed);
-extern void* sub_rt_arr_filter(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t pos_id, uint32_t indexed);
-extern void sub_rt_arr_reduce(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
-extern int32_t sub_rt_arr_some(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern int32_t sub_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern int32_t sub_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern void sub_rt_arr_sort(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
-extern void sub_rt_arr_reduce_right(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
-extern void* sub_rt_arr_splice(void* ctx, void* a, int32_t start, int32_t delete_count, uint32_t pos_id);
-extern void sub_rt_arr_shift(void* ctx, void* a, void* out, uint32_t pos_id);
-extern int32_t sub_rt_arr_unshift(void* ctx, void* a, const void* x, uint32_t pos_id);
-extern void sub_rt_arr_copy_within(void* ctx, void* a, int32_t target, int32_t start, int32_t end);
+extern int32_t subscript_rt_arr_index_of(void* ctx, void* a, const void* x, uint32_t kind);
+extern int32_t subscript_rt_arr_last_index_of(void* ctx, void* a, const void* x, uint32_t kind);
+extern int32_t subscript_rt_arr_includes(void* ctx, void* a, const void* x, uint32_t kind);
+extern void* subscript_rt_arr_join(void* ctx, void* a, const void* sep, uint32_t kind, uint32_t pos_id);
+extern void* subscript_rt_arr_slice(void* ctx, void* a, int32_t start, int32_t end, uint32_t pos_id);
+extern void subscript_rt_arr_fill(void* ctx, void* a, const void* x, int32_t start, int32_t end);
+extern void subscript_rt_arr_reverse(void* ctx, void* a);
+extern void* subscript_rt_arr_concat(void* ctx, void* a, void* b, uint32_t pos_id);
+extern void subscript_rt_arr_for_each(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void* subscript_rt_arr_map(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id, uint32_t indexed);
+extern void* subscript_rt_arr_filter(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t pos_id, uint32_t indexed);
+extern void subscript_rt_arr_reduce(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
+extern int32_t subscript_rt_arr_some(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t subscript_rt_arr_every(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t subscript_rt_arr_find_index(void* ctx, void* a, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void subscript_rt_arr_sort(void* ctx, void* a, const void* code, const void* env, uint32_t kind);
+extern void subscript_rt_arr_reduce_right(void* ctx, void* a, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
+extern void* subscript_rt_arr_splice(void* ctx, void* a, int32_t start, int32_t delete_count, uint32_t pos_id);
+extern void subscript_rt_arr_shift(void* ctx, void* a, void* out, uint32_t pos_id);
+extern int32_t subscript_rt_arr_unshift(void* ctx, void* a, const void* x, uint32_t pos_id);
+extern void subscript_rt_arr_copy_within(void* ctx, void* a, int32_t target, int32_t start, int32_t end);
 /* Q27 callback family on in-place FixedArray storage. These mirror the
  * dynamic-array callback ABI, with `(data, len, elem_size)` replacing
  * the growable-array handle. map/filter still return dynamic arrays. */
-extern void sub_rt_fixed_arr_for_each(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern void* sub_rt_fixed_arr_map(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id, uint32_t indexed);
-extern void* sub_rt_fixed_arr_filter(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t pos_id, uint32_t indexed);
-extern void sub_rt_fixed_arr_reduce(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
-extern int32_t sub_rt_fixed_arr_some(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern int32_t sub_rt_fixed_arr_every(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern int32_t sub_rt_fixed_arr_find_index(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
-extern void sub_rt_fixed_arr_reduce_right(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
+extern void subscript_rt_fixed_arr_for_each(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void* subscript_rt_fixed_arr_map(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t ret_kind, uint64_t ret_size, uint32_t pos_id, uint32_t indexed);
+extern void* subscript_rt_fixed_arr_filter(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t pos_id, uint32_t indexed);
+extern void subscript_rt_fixed_arr_reduce(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
+extern int32_t subscript_rt_fixed_arr_some(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t subscript_rt_fixed_arr_every(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern int32_t subscript_rt_fixed_arr_find_index(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t kind, uint32_t indexed);
+extern void subscript_rt_fixed_arr_reduce_right(void* ctx, const void* data, uint64_t len, uint64_t elem_size, const void* code, const void* env, uint32_t elem_kind, uint32_t acc_kind, uint64_t acc_size, void* acc, uint32_t indexed);
 
 /* Map/Set intrinsics (stdlib.md 10, Q24): ordered entry storage and its
  * deterministic hash index live behind these shared runtime symbols.
  * Construction supplies monomorphized widths and the key-kind tag. */
-extern void* sub_rt_map_new(void* ctx, uint64_t key_size, uint64_t value_size, uint32_t key_kind, uint32_t pos_id);
-extern void* sub_rt_set_new(void* ctx, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
-extern int32_t sub_rt_map_size(void* ctx, void* map);
-extern int32_t sub_rt_set_size(void* ctx, void* set);
-extern void* sub_rt_map_set(void* ctx, void* map, const void* key, const void* value, uint32_t pos_id);
-extern void* sub_rt_set_add(void* ctx, void* set, const void* key, uint32_t pos_id);
-extern int32_t sub_rt_map_get(void* ctx, void* map, const void* key, void* out);
-extern void sub_rt_map_get_or(void* ctx, void* map, const void* key, const void* fallback, void* out);
-extern int32_t sub_rt_map_has(void* ctx, void* map, const void* key);
-extern int32_t sub_rt_set_has(void* ctx, void* set, const void* key);
-extern int32_t sub_rt_map_delete(void* ctx, void* map, const void* key);
-extern int32_t sub_rt_set_delete(void* ctx, void* set, const void* key);
-extern void sub_rt_map_clear(void* ctx, void* map);
-extern void sub_rt_set_clear(void* ctx, void* set);
-extern void sub_rt_map_for_each(void* ctx, void* map, const void* code, const void* env, const void* bridge);
-extern void sub_rt_set_for_each(void* ctx, void* set, const void* code, const void* env, const void* bridge);
-extern void* sub_rt_map_group_by(void* ctx, void* items, const void* code, const void* env, const void* bridge, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
-extern void* sub_rt_set_union(void* ctx, void* left, void* right, uint32_t pos_id);
-extern void* sub_rt_set_intersection(void* ctx, void* left, void* right, uint32_t pos_id);
-extern void* sub_rt_set_difference(void* ctx, void* left, void* right, uint32_t pos_id);
-extern void* sub_rt_set_symmetric_difference(void* ctx, void* left, void* right, uint32_t pos_id);
-extern int32_t sub_rt_set_is_subset_of(void* ctx, void* left, void* right);
-extern int32_t sub_rt_set_is_superset_of(void* ctx, void* left, void* right);
-extern int32_t sub_rt_set_is_disjoint_from(void* ctx, void* left, void* right);
+extern void* subscript_rt_map_new(void* ctx, uint64_t key_size, uint64_t value_size, uint32_t key_kind, uint32_t pos_id);
+extern void* subscript_rt_set_new(void* ctx, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
+extern int32_t subscript_rt_map_size(void* ctx, void* map);
+extern int32_t subscript_rt_set_size(void* ctx, void* set);
+extern void* subscript_rt_map_set(void* ctx, void* map, const void* key, const void* value, uint32_t pos_id);
+extern void* subscript_rt_set_add(void* ctx, void* set, const void* key, uint32_t pos_id);
+extern int32_t subscript_rt_map_get(void* ctx, void* map, const void* key, void* out);
+extern void subscript_rt_map_get_or(void* ctx, void* map, const void* key, const void* fallback, void* out);
+extern int32_t subscript_rt_map_has(void* ctx, void* map, const void* key);
+extern int32_t subscript_rt_set_has(void* ctx, void* set, const void* key);
+extern int32_t subscript_rt_map_delete(void* ctx, void* map, const void* key);
+extern int32_t subscript_rt_set_delete(void* ctx, void* set, const void* key);
+extern void subscript_rt_map_clear(void* ctx, void* map);
+extern void subscript_rt_set_clear(void* ctx, void* set);
+extern void subscript_rt_map_for_each(void* ctx, void* map, const void* code, const void* env, const void* bridge);
+extern void subscript_rt_set_for_each(void* ctx, void* set, const void* code, const void* env, const void* bridge);
+extern void* subscript_rt_map_group_by(void* ctx, void* items, const void* code, const void* env, const void* bridge, uint64_t key_size, uint32_t key_kind, uint32_t pos_id);
+extern void* subscript_rt_set_union(void* ctx, void* left, void* right, uint32_t pos_id);
+extern void* subscript_rt_set_intersection(void* ctx, void* left, void* right, uint32_t pos_id);
+extern void* subscript_rt_set_difference(void* ctx, void* left, void* right, uint32_t pos_id);
+extern void* subscript_rt_set_symmetric_difference(void* ctx, void* left, void* right, uint32_t pos_id);
+extern int32_t subscript_rt_set_is_subset_of(void* ctx, void* left, void* right);
+extern int32_t subscript_rt_set_is_superset_of(void* ctx, void* left, void* right);
+extern int32_t subscript_rt_set_is_disjoint_from(void* ctx, void* left, void* right);
 
 /* Math intrinsics (stdlib.md 1): opaque runtime symbols, never bare
  * libm calls — clang constant-folds recognized libm calls at -O2, a
  * silent dev-JIT != ship-C divergence hazard (stdlib.md 0.2). */
-extern double sub_rt_math_abs(void* ctx, double x);
-extern double sub_rt_math_acos(void* ctx, double x);
-extern double sub_rt_math_acosh(void* ctx, double x);
-extern double sub_rt_math_asin(void* ctx, double x);
-extern double sub_rt_math_asinh(void* ctx, double x);
-extern double sub_rt_math_atan(void* ctx, double x);
-extern double sub_rt_math_atanh(void* ctx, double x);
-extern double sub_rt_math_cbrt(void* ctx, double x);
-extern double sub_rt_math_ceil(void* ctx, double x);
-extern double sub_rt_math_cos(void* ctx, double x);
-extern double sub_rt_math_cosh(void* ctx, double x);
-extern double sub_rt_math_exp(void* ctx, double x);
-extern double sub_rt_math_expm1(void* ctx, double x);
-extern double sub_rt_math_floor(void* ctx, double x);
-extern double sub_rt_math_log(void* ctx, double x);
-extern double sub_rt_math_log1p(void* ctx, double x);
-extern double sub_rt_math_log10(void* ctx, double x);
-extern double sub_rt_math_log2(void* ctx, double x);
-extern double sub_rt_math_round(void* ctx, double x);
-extern double sub_rt_math_sign(void* ctx, double x);
-extern double sub_rt_math_sin(void* ctx, double x);
-extern double sub_rt_math_sinh(void* ctx, double x);
-extern double sub_rt_math_sqrt(void* ctx, double x);
-extern double sub_rt_math_tan(void* ctx, double x);
-extern double sub_rt_math_tanh(void* ctx, double x);
-extern double sub_rt_math_trunc(void* ctx, double x);
-extern double sub_rt_math_atan2(void* ctx, double y, double x);
-extern double sub_rt_math_hypot(void* ctx, double a, double b);
-extern double sub_rt_math_pow(void* ctx, double base, double exp);
-extern double sub_rt_math_max(void* ctx, double a, double b);
-extern double sub_rt_math_min(void* ctx, double a, double b);
-extern double sub_rt_math_random(void* ctx);
-extern int32_t sub_rt_math_clz32(void* ctx, uint32_t x);
-extern int32_t sub_rt_math_imul(void* ctx, int32_t a, int32_t b);
-extern double sub_rt_math_fround(void* ctx, double x);
+extern double subscript_rt_math_abs(void* ctx, double x);
+extern double subscript_rt_math_acos(void* ctx, double x);
+extern double subscript_rt_math_acosh(void* ctx, double x);
+extern double subscript_rt_math_asin(void* ctx, double x);
+extern double subscript_rt_math_asinh(void* ctx, double x);
+extern double subscript_rt_math_atan(void* ctx, double x);
+extern double subscript_rt_math_atanh(void* ctx, double x);
+extern double subscript_rt_math_cbrt(void* ctx, double x);
+extern double subscript_rt_math_ceil(void* ctx, double x);
+extern double subscript_rt_math_cos(void* ctx, double x);
+extern double subscript_rt_math_cosh(void* ctx, double x);
+extern double subscript_rt_math_exp(void* ctx, double x);
+extern double subscript_rt_math_expm1(void* ctx, double x);
+extern double subscript_rt_math_floor(void* ctx, double x);
+extern double subscript_rt_math_log(void* ctx, double x);
+extern double subscript_rt_math_log1p(void* ctx, double x);
+extern double subscript_rt_math_log10(void* ctx, double x);
+extern double subscript_rt_math_log2(void* ctx, double x);
+extern double subscript_rt_math_round(void* ctx, double x);
+extern double subscript_rt_math_sign(void* ctx, double x);
+extern double subscript_rt_math_sin(void* ctx, double x);
+extern double subscript_rt_math_sinh(void* ctx, double x);
+extern double subscript_rt_math_sqrt(void* ctx, double x);
+extern double subscript_rt_math_tan(void* ctx, double x);
+extern double subscript_rt_math_tanh(void* ctx, double x);
+extern double subscript_rt_math_trunc(void* ctx, double x);
+extern double subscript_rt_math_atan2(void* ctx, double y, double x);
+extern double subscript_rt_math_hypot(void* ctx, double a, double b);
+extern double subscript_rt_math_pow(void* ctx, double base, double exp);
+extern double subscript_rt_math_max(void* ctx, double a, double b);
+extern double subscript_rt_math_min(void* ctx, double a, double b);
+extern double subscript_rt_math_random(void* ctx);
+extern int32_t subscript_rt_math_clz32(void* ctx, uint32_t x);
+extern int32_t subscript_rt_math_imul(void* ctx, int32_t a, int32_t b);
+extern double subscript_rt_math_fround(void* ctx, double x);
 
 /* Date intrinsics (stdlib.md 3): a Date value is its int64_t epoch
  * milliseconds; the calendar arithmetic lives in the runtime so both
  * tiers share one implementation. */
-extern int64_t sub_rt_date_utc(void* ctx, int32_t y, int32_t m0, int32_t d, int32_t h, int32_t min, int32_t s, int32_t ms, uint32_t pos_id);
-extern int64_t sub_rt_date_new(void* ctx, int64_t ms, uint32_t pos_id);
-extern int64_t sub_rt_date_now(void* ctx);
-extern int32_t sub_rt_date_get(void* ctx, int64_t ms, uint32_t field);
-extern void* sub_rt_date_to_iso(void* ctx, int64_t ms, uint32_t pos_id);
+extern int64_t subscript_rt_date_utc(void* ctx, int32_t y, int32_t m0, int32_t d, int32_t h, int32_t min, int32_t s, int32_t ms, uint32_t pos_id);
+extern int64_t subscript_rt_date_new(void* ctx, int64_t ms, uint32_t pos_id);
+extern int64_t subscript_rt_date_now(void* ctx);
+extern int32_t subscript_rt_date_get(void* ctx, int64_t ms, uint32_t field);
+extern void* subscript_rt_date_to_iso(void* ctx, int64_t ms, uint32_t pos_id);
 
 /* Trap kinds (runtime/src/trap.rs). */
 enum { SS_TRAP_OOB = 1, SS_TRAP_DIV0 = 10 };
@@ -5808,123 +5808,123 @@ typedef struct { void* code; void* env; } SubFn;
 /* Mirror of the runtime ArrayHeader (runtime/src/context.rs, repr(C),
  * compiler.md invariant 1 / §10a). Generated index call sites expand
  * the bounds branch around this view; the out-of-bounds arm calls
- * sub_rt_array_ptr, the sole producer of the trap and its exact message,
+ * subscript_rt_array_ptr, the sole producer of the trap and its exact message,
  * and returns from the current script frame before any load or store. */
 typedef struct { uint64_t len; uint64_t cap; uint64_t elem_size; unsigned char* data; } SsArrayHeader;
 
 /* Integer div/rem with the language's semantics: trap on a zero divisor;
  * two's-complement wrap for signed MIN / -1 and MIN % -1. */
-static int8_t ss_sdiv_i8(void* ctx, int8_t a, int8_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int8_t subscript_sdiv_i8(void* ctx, int8_t a, int8_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (int8_t)((int32_t)a / (int32_t)b);
 }
-static int8_t ss_srem_i8(void* ctx, int8_t a, int8_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int8_t subscript_srem_i8(void* ctx, int8_t a, int8_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (int8_t)((int32_t)a % (int32_t)b);
 }
-static uint8_t ss_udiv_u8(void* ctx, uint8_t a, uint8_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint8_t subscript_udiv_u8(void* ctx, uint8_t a, uint8_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (uint8_t)((uint32_t)a / (uint32_t)b);
 }
-static uint8_t ss_urem_u8(void* ctx, uint8_t a, uint8_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint8_t subscript_urem_u8(void* ctx, uint8_t a, uint8_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (uint8_t)((uint32_t)a % (uint32_t)b);
 }
-static int16_t ss_sdiv_i16(void* ctx, int16_t a, int16_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int16_t subscript_sdiv_i16(void* ctx, int16_t a, int16_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (int16_t)((int32_t)a / (int32_t)b);
 }
-static int16_t ss_srem_i16(void* ctx, int16_t a, int16_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int16_t subscript_srem_i16(void* ctx, int16_t a, int16_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (int16_t)((int32_t)a % (int32_t)b);
 }
-static uint16_t ss_udiv_u16(void* ctx, uint16_t a, uint16_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint16_t subscript_udiv_u16(void* ctx, uint16_t a, uint16_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (uint16_t)((uint32_t)a / (uint32_t)b);
 }
-static uint16_t ss_urem_u16(void* ctx, uint16_t a, uint16_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint16_t subscript_urem_u16(void* ctx, uint16_t a, uint16_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return (uint16_t)((uint32_t)a % (uint32_t)b);
 }
-static int32_t ss_sdiv_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int32_t subscript_sdiv_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return (int32_t)(0u - (uint32_t)a);
     return a / b;
 }
-static int32_t ss_srem_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int32_t subscript_srem_i32(void* ctx, int32_t a, int32_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return 0;
     return a % b;
 }
-static uint32_t ss_udiv_u32(void* ctx, uint32_t a, uint32_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint32_t subscript_udiv_u32(void* ctx, uint32_t a, uint32_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a / b;
 }
-static uint32_t ss_urem_u32(void* ctx, uint32_t a, uint32_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint32_t subscript_urem_u32(void* ctx, uint32_t a, uint32_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a % b;
 }
-static int64_t ss_sdiv_i64(void* ctx, int64_t a, int64_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int64_t subscript_sdiv_i64(void* ctx, int64_t a, int64_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return (int64_t)(0ull - (uint64_t)a);
     return a / b;
 }
-static int64_t ss_srem_i64(void* ctx, int64_t a, int64_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static int64_t subscript_srem_i64(void* ctx, int64_t a, int64_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     if (b == -1) return 0;
     return a % b;
 }
-static uint64_t ss_udiv_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint64_t subscript_udiv_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a / b;
 }
-static uint64_t ss_urem_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
-    if (b == 0) { sub_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
+static uint64_t subscript_urem_u64(void* ctx, uint64_t a, uint64_t b, uint32_t pos) {
+    if (b == 0) { subscript_rt_trap(ctx, SS_TRAP_DIV0, pos); return 0; }
     return a % b;
 }
 
 /* Saturating float->int, matching the CLIF fcvt_to_*_sat choice. */
-static int8_t ss_f2i8(double v) {
+static int8_t subscript_f2i8(double v) {
     if (v != v) return 0;
     if (v <= -128.0) return (int8_t)-128;
     if (v >= 127.0) return (int8_t)127;
     return (int8_t)v;
 }
-static uint8_t ss_f2u8(double v) {
+static uint8_t subscript_f2u8(double v) {
     if (v != v || v <= 0.0) return 0;
     if (v >= 255.0) return (uint8_t)255;
     return (uint8_t)v;
 }
-static int16_t ss_f2i16(double v) {
+static int16_t subscript_f2i16(double v) {
     if (v != v) return 0;
     if (v <= -32768.0) return (int16_t)-32768;
     if (v >= 32767.0) return (int16_t)32767;
     return (int16_t)v;
 }
-static uint16_t ss_f2u16(double v) {
+static uint16_t subscript_f2u16(double v) {
     if (v != v || v <= 0.0) return 0;
     if (v >= 65535.0) return (uint16_t)65535;
     return (uint16_t)v;
 }
-static int32_t ss_f2i32(double v) {
+static int32_t subscript_f2i32(double v) {
     if (v != v) return 0;
     if (v <= -2147483648.0) return (int32_t)(-2147483647 - 1);
     if (v >= 2147483647.0) return 2147483647;
     return (int32_t)v;
 }
-static uint32_t ss_f2u32(double v) {
+static uint32_t subscript_f2u32(double v) {
     if (v != v) return 0;
     if (v <= 0.0) return 0;
     if (v >= 4294967295.0) return 4294967295u;
     return (uint32_t)v;
 }
-static int64_t ss_f2i64(double v) {
+static int64_t subscript_f2i64(double v) {
     if (v != v) return 0;
     if (v <= -9223372036854775808.0) return (-9223372036854775807ll - 1);
     if (v >= 9223372036854775807.0) return 9223372036854775807ll;
     return (int64_t)v;
 }
-static uint64_t ss_f2u64(double v) {
+static uint64_t subscript_f2u64(double v) {
     if (v != v) return 0;
     if (v <= 0.0) return 0;
     if (v >= 18446744073709551615.0) return 18446744073709551615ull;
@@ -5960,12 +5960,12 @@ mod tests {
     #[test]
     fn emits_the_host_entry_surface() {
         let c = emit("export function main(): void {\n  const x: f32 = 1.5;\n  print(`${x}`);\n}\n");
-        assert!(c.contains("void ss_init(Context* ctx)"));
-        assert!(c.contains("void ss_export_main(Context* ctx)"));
-        assert!(c.contains("sub_rt_fmt_f32"));
+        assert!(c.contains("void subscript_init(Context* ctx)"));
+        assert!(c.contains("void subscript_export_main(Context* ctx)"));
+        assert!(c.contains("subscript_rt_fmt_f32"));
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
-        assert!(!c.contains("sub_rt_ctx_trap_kind(ctx)"));
+        assert!(!c.contains("subscript_rt_ctx_trap_kind(ctx)"));
     }
 
     #[test]
@@ -5978,11 +5978,11 @@ mod tests {
         let c = emit_c_without_main(&module)
             .expect("host-owned exports emit")
             .source;
-        assert!(c.contains("void ss_init(Context* ctx)"));
-        assert!(c.contains("void ss_export_init(Context* ctx)"));
-        assert!(c.contains("void ss_export_update(Context* ctx)"));
-        assert!(c.contains("void ss_export_shutdown(Context* ctx)"));
-        assert!(!c.contains("void ss_export_main(Context* ctx) {"));
+        assert!(c.contains("void subscript_init(Context* ctx)"));
+        assert!(c.contains("void subscript_export_init(Context* ctx)"));
+        assert!(c.contains("void subscript_export_update(Context* ctx)"));
+        assert!(c.contains("void subscript_export_shutdown(Context* ctx)"));
+        assert!(!c.contains("void subscript_export_main(Context* ctx) {"));
         assert!(emit_c(&module).is_err());
     }
 
@@ -5996,12 +5996,12 @@ mod tests {
              \x20 }\n\
              }\n",
         );
-        let call = "sub_rt_regex_new(ctx, ";
+        let call = "subscript_rt_regex_new(ctx, ";
         assert_eq!(c.matches(call).count(), 1);
         let main = c
-            .find("void ss_export_main(Context* ctx) {")
+            .find("void subscript_export_main(Context* ctx) {")
             .expect("main definition");
-        let init = c.find("void ss_init(Context* ctx) {").expect("init definition");
+        let init = c.find("void subscript_init(Context* ctx) {").expect("init definition");
         assert!(init < main);
         assert!(c[init..main].contains(call));
         assert!(!c[main..].contains(call));
@@ -6027,16 +6027,16 @@ mod tests {
     fn value_class_is_a_by_value_struct() {
         let c = emit("@CStruct\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void {\n  const v: V = new V(1.0, 2.0);\n  print(`${v.x}`);\n}\n");
         assert!(c.contains("typedef struct Sub_0_V"));
-        assert!(c.contains("ss_ctor0(void* ctx"));
+        assert!(c.contains("subscript_ctor0(void* ctx"));
     }
 
     #[test]
     fn reference_class_uses_the_runtime_allocator() {
         let c = emit("class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  print(`${c.x}`);\n  Context.free(c);\n}\n");
-        assert!(c.contains("sub_rt_alloc"));
-        assert!(c.contains("sub_rt_delete"));
-        assert!(c.contains("ss_ctor0(ctx,"));
-        assert!(!c.contains("ss_new0(void* ctx"));
+        assert!(c.contains("subscript_rt_alloc"));
+        assert!(c.contains("subscript_rt_delete"));
+        assert!(c.contains("subscript_ctor0(ctx,"));
+        assert!(!c.contains("subscript_new0(void* ctx"));
     }
 
     #[test]
@@ -6066,7 +6066,7 @@ mod tests {
         let module = check_program(&files).expect("clean check");
         let c = emit_c(&module).expect("emit").source;
         assert!(
-            c.contains("char sub_opaque;"),
+            c.contains("char subscript_opaque;"),
             "zero-field opaque handle must emit a non-empty C11 struct:\n{c}"
         );
     }
@@ -6075,7 +6075,7 @@ mod tests {
     fn fixed_array_proven_index_is_unchecked() {
         let c = emit("export function main(): void {\n  const xs: FixedArray<i32, 4> = [10, 20, 30, 40];\n  let sum: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    sum += xs[i];\n  }\n  print(`${sum}`);\n}\n");
         assert!(
-            !c.contains("sub_rt_trap(ctx, SS_TRAP_OOB"),
+            !c.contains("subscript_rt_trap(ctx, SS_TRAP_OOB"),
             "proven index must not be checked"
         );
         assert!(c.contains("(xs).a[i]"));
@@ -6085,8 +6085,8 @@ mod tests {
     fn dynamic_array_index_is_checked() {
         let c = emit("export function main(): void {\n  const xs: i32[] = [];\n  xs.push(7);\n  print(`${xs[0]}`);\n}\n");
         assert!(c.contains("SsArrayHeader*"));
-        assert!(c.contains("sub_rt_array_ptr(ctx,"));
-        assert!(c.contains("sub_rt_array_push"));
+        assert!(c.contains("subscript_rt_array_ptr(ctx,"));
+        assert!(c.contains("subscript_rt_array_push"));
     }
 
     #[test]
@@ -6099,13 +6099,13 @@ mod tests {
         );
         // The checker-normalized defaults are visible in the emitted
         // call: indexOf's `from` 0 and padStart's " " pad literal.
-        assert!(c.contains("sub_rt_str_index_of(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_str_index_of(ctx, "), "{c}");
         assert!(c.contains(", 0)"), "normalized indexOf from: {c}");
-        assert!(c.contains("(sub_rt_str_includes(ctx, "), "{c}");
+        assert!(c.contains("(subscript_rt_str_includes(ctx, "), "{c}");
         assert!(c.contains(" != 0)"), "boolean narrowing: {c}");
-        assert!(c.contains("sub_rt_str_pad_start(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_str_trim(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_str_split(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_str_pad_start(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_str_trim(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_str_split(ctx, "), "{c}");
         // The pure predicates carry no pos_id (no `u)` suffix scan
         // needed: the signature in the preamble is the contract).
         for f in hir::StrFn::ALL {
@@ -6120,19 +6120,19 @@ mod tests {
     #[test]
     fn math_calls_use_the_opaque_runtime_symbol_never_libm() {
         // stdlib.md §0.2: a bare libm call would be constant-folded by
-        // clang at -O2 — the emitted call must be the sub_rt symbol.
+        // clang at -O2 — the emitted call must be the subscript_rt symbol.
         let c = emit("export function main(): void {\n  print(`${Math.floor(1.5)}`);\n  print(`${Math.pow(2.0, 10.0)}`);\n  print(`${Math.random()}`);\n  print(`${Math.clz32(0)}`);\n  print(`${Math.imul(2147483647, 2)}`);\n  print(`${Math.fround(1.1)}`);\n}\n");
-        assert!(c.contains("sub_rt_math_floor(ctx, 1.5)"));
-        assert!(c.contains("sub_rt_math_pow(ctx, 2.0, 10.0)"));
-        assert!(c.contains("sub_rt_math_random(ctx)"));
-        assert!(c.contains("sub_rt_math_clz32(ctx, 0u)"));
-        assert!(c.contains("sub_rt_math_imul(ctx, 2147483647, 2)"));
-        assert!(c.contains("sub_rt_math_fround(ctx, 1.1)"));
+        assert!(c.contains("subscript_rt_math_floor(ctx, 1.5)"));
+        assert!(c.contains("subscript_rt_math_pow(ctx, 2.0, 10.0)"));
+        assert!(c.contains("subscript_rt_math_random(ctx)"));
+        assert!(c.contains("subscript_rt_math_clz32(ctx, 0u)"));
+        assert!(c.contains("subscript_rt_math_imul(ctx, 2147483647, 2)"));
+        assert!(c.contains("subscript_rt_math_fround(ctx, 1.1)"));
         assert!(!c.contains("__builtin_clz"));
         // Token-boundary scan: a bare `<name>(` whose preceding character
         // is not part of an identifier is a libm call regardless of the
         // surrounding punctuation (`=floor(`, `(pow(`, line-start, ...);
-        // `sub_rt_math_<name>(` never matches because `_` precedes the name.
+        // `subscript_rt_math_<name>(` never matches because `_` precedes the name.
         fn has_bare_call(c: &str, name: &str) -> bool {
             let needle = format!("{name}(");
             let mut from = 0;
@@ -6166,13 +6166,13 @@ mod tests {
                print(parsed.toPrecision(2));\n\
              }\n",
         );
-        assert!(c.contains("sub_rt_num_parse_int(ctx, "), "{c}");
-        assert!(c.contains("(sub_rt_num_is_finite(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_num_parse_float(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_num_to_fixed(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_num_to_string_f64(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_num_to_exponential(ctx, "), "{c}");
-        assert!(c.contains("sub_rt_num_to_precision(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_num_parse_int(ctx, "), "{c}");
+        assert!(c.contains("(subscript_rt_num_is_finite(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_num_parse_float(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_num_to_fixed(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_num_to_string_f64(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_num_to_exponential(ctx, "), "{c}");
+        assert!(c.contains("subscript_rt_num_to_precision(ctx, "), "{c}");
         for f in hir::NumFn::ALL {
             assert!(
                 PREAMBLE.contains(&format!("{}(void* ctx", f.symbol())),
@@ -6188,10 +6188,10 @@ mod tests {
             "export function main(): void {\n  const h: f16 = (1.0006 as f64) as f16;\n  print(`${h as f32}`);\n}\n",
         );
         assert!(
-            c.contains("uint16_t h = sub_rt_f16_from_f64((double)"),
+            c.contains("uint16_t h = subscript_rt_f16_from_f64((double)"),
             "{c}"
         );
-        assert!(c.contains("sub_rt_f16_to_f64("), "{c}");
+        assert!(c.contains("subscript_rt_f16_to_f64("), "{c}");
 
         // The explanatory preamble comment names the forbidden C types;
         // no declaration or executable line may do so.
@@ -6238,13 +6238,13 @@ mod tests {
         let c = emit("export function main(): void {\n  print(`${Math.PI}`);\n  print(`${Math.SQRT1_2}`);\n}\n");
         assert!(c.contains("3.141592653589793"));
         assert!(c.contains("0.7071067811865476"));
-        assert!(!c.contains("sub_rt_math_PI"));
+        assert!(!c.contains("subscript_rt_math_PI"));
         // No math runtime call is emitted for a constant read (the
         // preamble's extern declarations spell `(void* ctx`, a call
         // spells `(ctx`).
-        assert!(!c.contains("sub_rt_math_pi"));
+        assert!(!c.contains("subscript_rt_math_pi"));
         for line in c.lines() {
-            if line.contains("sub_rt_math_") {
+            if line.contains("subscript_rt_math_") {
                 assert!(
                     line.starts_with("extern "),
                     "unexpected math reference: {line}"

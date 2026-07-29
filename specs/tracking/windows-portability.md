@@ -150,7 +150,7 @@ kept minimal:
   ship target, §11) was root-caused by measurement, ruling out the Windows
   port, `-fwrapv` (≈0 cost), QPC timing (ratio is method-independent), and
   opt level (ratio ~2.5x flat at -O2 and -O3). It is structural: the emitted
-  C's growable-array access was an opaque `sub_rt_array_ptr` call and its
+  C's growable-array access was an opaque `subscript_rt_array_ptr` call and its
   value-class math is copy-heavy, both of which clang optimizes on arm64 but
   not on x86. These are the two well-understood AOT-codegen costs for a
   C-ABI value-type language: out-of-line array access, and passing large
@@ -370,7 +370,7 @@ exit codes >255 (`cl` never uses them). No open CRITICAL/MAJOR.
 What each piece required, beyond the plan:
 
 1. **Emitter — no empty struct** (`cemit.rs`): a zero-field opaque handle
-   now carries `char sub_opaque;`. Byte-exact (member unread).
+   now carries `char subscript_opaque;`. Byte-exact (member unread).
 2. **Fixture exclusion** was needed in **both** `examples/` and `codegen/`
    (the plan's premise that codegen was already gated was read off a
    contaminated tree — it was not). In codegen the fixture is used by four

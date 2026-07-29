@@ -32,7 +32,7 @@ Phase Review found §15 citing a tracking file that did not exist, and
    the language does, never less (invariant 5).
 2. **One implementation, both tiers.** Every stdlib operation with a
    runtime component is implemented once, in runtime Rust, and both
-   tiers call it through an opaque `sub_rt_*` symbol. The ship tier
+   tiers call it through an opaque `subscript_rt_*` symbol. The ship tier
    never emits a direct libm call: clang constant-folds recognized libm
    calls at `-O2` with its own evaluator, which is a silent
    dev-JIT ≠ ship-C divergence hazard *(docs)*; an opaque symbol removes
@@ -87,7 +87,7 @@ and order zeros (`max(+0,-0)=+0`, `min(+0,-0)=-0`); `pow(x, ±0) === 1`
 for every `x` including `NaN`; `abs(-0) === +0`.
 
 Lowering: `Math.<fn>(…)` is an ambient-namespace intrinsic call →
-`sub_rt_math_<fn>(ctx, args…) -> f64` in both tiers. `Math.<CONST>` is a
+`subscript_rt_math_<fn>(ctx, args…) -> f64` in both tiers. `Math.<CONST>` is a
 member read folded to the literal at check time.
 
 ## 2. `Math.random` — Context-seeded, deterministic
@@ -96,7 +96,7 @@ member read folded to the literal at check time.
 seeded by splitmix64 expansion of a `u64` seed; the default seed is
 `0x5355_4253_5245_4144` and is part of this contract (the golden pins
 the sequence). The draw maps the top 53 bits to `[0, 1)` as
-`(x >> 11) as f64 * 2^-53`. A new C API `sub_rt_ctx_seed_random(ctx,
+`(x >> 11) as f64 * 2^-53`. A new C API `subscript_rt_ctx_seed_random(ctx,
 seed: u64)` reseeds (host replay control). Divergence from JS
 (unseedable, implementation-entropy) recorded as Q19; determinism is
 what a game replay and the golden corpus both need.
@@ -134,7 +134,7 @@ range **traps** with a clear report — there is no Invalid-Date value
 (divergence from JS NaN-dates, Q20; invariant 6: early errors).
 
 Clock: the Context holds the `Date.now` source — default is the system
-UTC clock; `sub_rt_ctx_set_now(ctx, ms: i64)` pins it (tests, replays).
+UTC clock; `subscript_rt_ctx_set_now(ctx, ms: i64)` pins it (tests, replays).
 Corpus entries do not call `Date.now()` (nondeterministic under the
 default); `now()` is covered by runtime unit tests and a both-tier test
 with a pinned clock.
@@ -143,7 +143,7 @@ Calendar algorithms (civil↔days conversion, day-of-week) are implemented
 in runtime Rust with direct unit tests: epoch, leap rules (2000-02-29
 valid, 1900 and 2100 not leap, 400-year rule), pre-1970 negatives, and
 known weekdays. Lowering: constructor/statics/methods are intrinsics →
-`sub_rt_date_*` on both tiers.
+`subscript_rt_date_*` on both tiers.
 
 ## 4. Corpus plan (Red first)
 
@@ -241,7 +241,7 @@ Argument errors **trap** (no NaN/RangeError values) — with `slice` the
 one exception, below.
 
 Accepted members (checker: intrinsic member calls on `Type::Str`;
-runtime `sub_rt_str_*`, one implementation, both tiers; every method
+runtime `subscript_rt_str_*`, one implementation, both tiers; every method
 returning a string allocates via the Context):
 
 - `slice(start?: i32, end?: i32): string` — **JS negative/clamp
@@ -369,7 +369,7 @@ identical across tiers — a trapping-callback cross-tier test is part
 of the gate).
 
 Accepted members on `T[]` (checker: `ArrFn` intrinsics; runtime
-`sub_rt_arr_*`, one implementation, both tiers):
+`subscript_rt_arr_*`, one implementation, both tiers):
 
 Without closures —
 - `indexOf(x)/lastIndexOf(x)/includes(x)`: scalars by value, strings
@@ -455,7 +455,7 @@ pinned S014 positions; §5 item 5 benchmarks
 Owner decision 2026-07-25 reversed the non-goal (§7). This is the
 stdlib's first **generic reference class with methods**, and its first
 **hash container**; the design rules of §0 apply unchanged (one runtime
-implementation behind opaque `sub_rt_*`, deterministic, ECMA semantics
+implementation behind opaque `subscript_rt_*`, deterministic, ECMA semantics
 for the accepted subset, `tsc` sees the ES2022 lib).
 
 ### 10.1 Shape
@@ -580,8 +580,8 @@ is silently wrong for a program that stores zero as a real value.
 
 ### 10.6 Hashing and growth
 
-One runtime implementation, both tiers, behind opaque `sub_rt_map_*` /
-`sub_rt_set_*`. Open addressing or bucketed chaining is the
+One runtime implementation, both tiers, behind opaque `subscript_rt_map_*` /
+`subscript_rt_set_*`. Open addressing or bucketed chaining is the
 implementer's choice; what this contract fixes is the observable
 behaviour:
 
@@ -730,7 +730,7 @@ since the 2026-07-25 Q14 correction uses ECMA's exponent thresholds, so
 `NaN` → `"NaN"`, `±Infinity` → `"Infinity"`/`"-Infinity"`, and a
 negative value's sign placement.
 
-One implementation behind an opaque `sub_rt_num_*` symbol on both
+One implementation behind an opaque `subscript_rt_num_*` symbol on both
 tiers (§0.2) — never the host libc's `snprintf("%.*f")`, whose
 rounding is platform-dependent.
 
@@ -759,7 +759,7 @@ cost: about 440 lines total, no external dependency, pure computation.
 
 `NaN` and `±Infinity` format as in §11.4 for all three.
 
-One implementation behind `sub_rt_num_*` on both tiers (§0.2), never
+One implementation behind `subscript_rt_num_*` on both tiers (§0.2), never
 libc. §11.4's reason (platform-dependent rounding) applies, and there
 is a second: **C's `%e` pads the exponent to two digits where ECMA does
 not** — node gives `(0).toExponential(2)` as `0.00e+0`, `printf` gives
@@ -1277,7 +1277,7 @@ stock `tsc`, which is what makes §14.2's argument checkable rather than
 asserted**; goldens generated from the dev tier; trap tuples identical
 across tiers; rejects at pinned S014 positions; and **no allocation
 attributable to a `for…of`**, verified through
-`sub_rt_ctx_live_allocations` (§18.2d) before and after a loop over a
+`subscript_rt_ctx_live_allocations` (§18.2d) before and after a loop over a
 populated container.
 
 ## 15. P23 — regular expressions (Q31)
@@ -1399,7 +1399,7 @@ Attributed by link map, the regex-calling program's bytes are
   out as a tagged handle that `str_bytes` borrows from without
   allocating. Every program that touched a string paid it.
 
-  **Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over
+  **Its only consumer is `subscript_rt_str_iter_code_point`** — `for…of` over
   a string. *(Corrected 2026-07-27: this said `charAt`, as did the
   runtime's own doc comment. `charAt` calls `alloc_str` and always
   has.)* The astral range was the whole cost: scalars below `0x10000`
@@ -1547,8 +1547,8 @@ gated.)*
   collides with a real no-match (Q24's zeroed-`get` objection
   verbatim); `search` returns `i32`, where `-1` collides with a real
   no-match (Q20's Invalid-Date objection verbatim). The budget is a
-  **Context field**, host-settable via `sub_rt_ctx_set_regex_budget`,
-  the same shape as `sub_rt_ctx_seed_random` and `sub_rt_ctx_set_now`
+  **Context field**, host-settable via `subscript_rt_ctx_set_regex_budget`,
+  the same shape as `subscript_rt_ctx_seed_random` and `subscript_rt_ctx_set_now`
   and therefore part of the deterministic Context state (§0.3).
 - **Pattern nesting: fixed upstream, no shim work needed.**
   *(Corrected 2026-07-27.)* This section first required the shim to

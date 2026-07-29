@@ -19,18 +19,18 @@
 #include <io.h>
 #endif
 
-void ss_export_update(Context *ctx);
-void ss_export_finish(Context *ctx);
+void subscript_export_update(Context *ctx);
+void subscript_export_finish(Context *ctx);
 
 /* Every script entry is bracketed so the runtime can track script depth.
  * Its void return is not a success signal; the trap kind is. */
 static bool hostCallScript(
     Context *ctx,
-    sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+    subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
-    return sub_rt_ctx_trap_kind(ctx) == 0u;
+    subscript_rt_ctx_exit_script(ctx);
+    return subscript_rt_ctx_trap_kind(ctx) == 0u;
 }
 
 /* The observer receives one script line without its trailing newline.
@@ -50,12 +50,12 @@ static void hostObserveScriptPrint(
  * the trap accessors, releases that scene's resources, and returns failure. */
 static void hostReportTrap(const Context *ctx) {
     uint64_t length = 0u;
-    const uint8_t *message = sub_rt_ctx_trap_message(ctx, &length);
+    const uint8_t *message = subscript_rt_ctx_trap_message(ctx, &length);
     fprintf(
         stderr,
         "script trap kind=%" PRIu32 " position=%" PRIu32 ": ",
-        sub_rt_ctx_trap_kind(ctx),
-        sub_rt_ctx_trap_pos_id(ctx));
+        subscript_rt_ctx_trap_kind(ctx),
+        subscript_rt_ctx_trap_pos_id(ctx));
     if (length != 0u) {
         fwrite(message, 1u, (size_t)length, stderr);
     }
@@ -63,18 +63,18 @@ static void hostReportTrap(const Context *ctx) {
 }
 
 static bool hostRunScene(uint32_t sceneNumber) {
-    Context *ctx = sub_rt_ctx_new();
+    Context *ctx = subscript_rt_ctx_new();
     if (ctx == NULL) {
         return false;
     }
     EngWorld world = engWorldCreate(NULL);
     if (world == NULL) {
-        sub_rt_ctx_release(ctx);
+        subscript_rt_ctx_release(ctx);
         return false;
     }
 
-    sub_rt_ctx_set_print_observer(ctx, hostObserveScriptPrint, stdout);
-    bool scriptAttached = hostCallScript(ctx, ss_init);
+    subscript_rt_ctx_set_print_observer(ctx, hostObserveScriptPrint, stdout);
+    bool scriptAttached = hostCallScript(ctx, subscript_init);
     if (!scriptAttached) {
         hostReportTrap(ctx);
     }
@@ -92,14 +92,14 @@ static bool hostRunScene(uint32_t sceneNumber) {
             sceneNumber,
             sceneFrame,
             engFrameIndex());
-        scriptAttached = hostCallScript(ctx, ss_export_update);
+        scriptAttached = hostCallScript(ctx, subscript_export_update);
         if (!scriptAttached) {
             hostReportTrap(ctx);
         }
     }
 
     if (scriptAttached) {
-        scriptAttached = hostCallScript(ctx, ss_export_finish);
+        scriptAttached = hostCallScript(ctx, subscript_export_finish);
         if (!scriptAttached) {
             hostReportTrap(ctx);
         }
@@ -111,10 +111,10 @@ static bool hostRunScene(uint32_t sceneNumber) {
     printf(
         "host:scene=%" PRIu32 " end live-bytes=%" PRIu64 "\n",
         sceneNumber,
-        sub_rt_ctx_live_bytes(ctx));
+        subscript_rt_ctx_live_bytes(ctx));
 
     engWorldRelease(world);
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
     return scriptAttached;
 }
 
@@ -126,7 +126,7 @@ int main(void) {
 
     /* Context release and Context.collect answer different questions.
      * Releasing ends one scene; collection reclaims unreachable allocations
-     * while a Context lives. A fresh Context re-runs ss_init, so state needed
+     * while a Context lives. A fresh Context re-runs subscript_init, so state needed
      * by the next scene must remain host-side, as engFrameIndex does here. */
     for (uint32_t sceneNumber = 1u;
          sceneNumber <= 2u;

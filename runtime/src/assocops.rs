@@ -1,6 +1,6 @@
 //! `Map` / `Set` operations (stdlib.md §10, Q24): the shared hash
 //! container implementation both execution tiers call through
-//! `sub_rt_map_*` / `sub_rt_set_*`.
+//! `subscript_rt_map_*` / `subscript_rt_set_*`.
 //!
 //! A container is a Context-managed [`AssocHeader`] pointing at two more
 //! Context allocations: an insertion-ordered entry vector and an

@@ -597,7 +597,7 @@ impl ReloadSession {
     ///
     /// A module-level variable's **initializer** is a body-position
     /// expression and is outside the declaration hash, so editing one
-    /// is *accepted and has no effect*: initializers run in `ss_init`,
+    /// is *accepted and has no effect*: initializers run in `subscript_init`,
     /// which executes once when the session starts and is never re-run
     /// by a swap — re-running it would overwrite exactly the state the
     /// swap is required to preserve. Changing a variable's name or

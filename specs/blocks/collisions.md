@@ -273,7 +273,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   *(Renamed from the bare global `collect` 2026-07-28, owner decision. A
   top-level `collect()` names no owner and reads as a library helper;
   qualifying it names the object that owns the memory. `Context` is
-  already the host's word for it — `Context*` and `sub_rt_ctx_*` in
+  already the host's word for it — `Context*` and `subscript_rt_ctx_*` in
   `runtime/include/subscript_runtime.h` — so script and host now say the
   same word for the same object.)*
 
@@ -361,7 +361,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   not worth hand-rolling. **That conclusion was wrong**: `ryu-js` — Ryū
   forked for ECMA semantics, the crate Boa uses — does exactly this and
   was already in the local cargo cache. Adopted the same day (`=1.0.3`,
-  runtime only, still behind the opaque `sub_rt_*` symbols per
+  runtime only, still behind the opaque `subscript_rt_*` symbols per
   `stdlib.md` §0.2). Verified after the change: 200 000 random bit
   patterns, zero divergences from node on either tier; the entry's own
   example now agrees (`2205594957347911.25` prints

@@ -4,7 +4,7 @@
 //! builds a finite graph of ordinary HIR helper functions. Stringify
 //! traverses language values; parse validates a transient runtime syntax
 //! tree before constructing any language value. Representation-neutral
-//! leaves go through the shared `sub_rt_json_*` runtime.
+//! leaves go through the shared `subscript_rt_json_*` runtime.
 
 use std::collections::HashSet;
 

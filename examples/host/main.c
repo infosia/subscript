@@ -21,20 +21,20 @@
 #endif
 
 /* Every exported zero-argument void script function has this generated
- * symbol and the sub_script_main_entry signature. */
-void ss_export_init(Context *ctx);
-void ss_export_update(Context *ctx);
-void ss_export_shutdown(Context *ctx);
+ * symbol and the subscript_main_entry signature. */
+void subscript_export_init(Context *ctx);
+void subscript_export_update(Context *ctx);
+void subscript_export_shutdown(Context *ctx);
 
 /* The host brackets every entry so script_depth makes trap clearing safe;
  * this helper returns only the post-hoc trap state, never a script result. */
 static bool hostCallScript(
     Context *ctx,
-    sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+    subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
-    return sub_rt_ctx_trap_kind(ctx) == 0u;
+    subscript_rt_ctx_exit_script(ctx);
+    return subscript_rt_ctx_trap_kind(ctx) == 0u;
 }
 
 /* The runtime sink is cumulative. Tracking the drained prefix preserves
@@ -44,7 +44,7 @@ static void hostDrainScriptOutput(
     const Context *ctx,
     uint64_t *drained) {
     uint64_t length = 0u;
-    const uint8_t *bytes = sub_rt_ctx_stdout(ctx, &length);
+    const uint8_t *bytes = subscript_rt_ctx_stdout(ctx, &length);
     if (length > *drained) {
         size_t available = (size_t)(length - *drained);
         fwrite(bytes + *drained, 1u, available, stdout);
@@ -58,12 +58,12 @@ static void hostDrainScriptOutput(
  * continue, while the independently owned host loop can finish cleanly. */
 static void hostReportTrap(const Context *ctx) {
     uint64_t length = 0u;
-    const uint8_t *message = sub_rt_ctx_trap_message(ctx, &length);
+    const uint8_t *message = subscript_rt_ctx_trap_message(ctx, &length);
     fprintf(
         stderr,
         "script trap kind=%" PRIu32 " position=%" PRIu32 ": ",
-        sub_rt_ctx_trap_kind(ctx),
-        sub_rt_ctx_trap_pos_id(ctx));
+        subscript_rt_ctx_trap_kind(ctx),
+        subscript_rt_ctx_trap_pos_id(ctx));
     if (length != 0u) {
         fwrite(message, 1u, (size_t)length, stderr);
     }
@@ -87,20 +87,20 @@ int main(void) {
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-    /* Context creation owns all script allocations; ss_init establishes
+    /* Context creation owns all script allocations; subscript_init establishes
      * module globals, and the matching release at the end frees the Context. */
-    Context *ctx = sub_rt_ctx_new();
+    Context *ctx = subscript_rt_ctx_new();
     if (ctx == NULL) {
         return 2;
     }
     EngWorld world = engWorldCreate(NULL);
     if (world == NULL) {
-        sub_rt_ctx_release(ctx);
+        subscript_rt_ctx_release(ctx);
         return 2;
     }
 
     uint64_t drained = 0u;
-    bool scriptAttached = hostCallScript(ctx, ss_init);
+    bool scriptAttached = hostCallScript(ctx, subscript_init);
     if (!scriptAttached) {
         hostReportTrap(ctx);
     }
@@ -110,7 +110,7 @@ int main(void) {
     if (scriptAttached) {
         engFrameBegin(world, 0.25f);
         printf("host:init index=%" PRIu64 "\n", engFrameIndex());
-        scriptAttached = hostCallScript(ctx, ss_export_init);
+        scriptAttached = hostCallScript(ctx, subscript_export_init);
         hostDrainScriptOutput(ctx, &drained);
         if (!scriptAttached) {
             hostReportTrap(ctx);
@@ -134,7 +134,7 @@ int main(void) {
             hostFrame,
             engFrameIndex());
         if (scriptAttached) {
-            scriptAttached = hostCallScript(ctx, ss_export_update);
+            scriptAttached = hostCallScript(ctx, subscript_export_update);
             hostDrainScriptOutput(ctx, &drained);
             if (!scriptAttached) {
                 hostReportTrap(ctx);
@@ -157,10 +157,10 @@ int main(void) {
     printf(
         "host:shutdown allocations-before=%" PRIu64
         " bytes-before=%" PRIu64 "\n",
-        sub_rt_ctx_live_allocations(ctx),
-        sub_rt_ctx_live_bytes(ctx));
+        subscript_rt_ctx_live_allocations(ctx),
+        subscript_rt_ctx_live_bytes(ctx));
     if (scriptAttached) {
-        scriptAttached = hostCallScript(ctx, ss_export_shutdown);
+        scriptAttached = hostCallScript(ctx, subscript_export_shutdown);
         hostDrainScriptOutput(ctx, &drained);
         if (!scriptAttached) {
             hostReportTrap(ctx);
@@ -169,12 +169,12 @@ int main(void) {
     printf(
         "host:shutdown allocations-after=%" PRIu64
         " bytes-after=%" PRIu64 "\n",
-        sub_rt_ctx_live_allocations(ctx),
-        sub_rt_ctx_live_bytes(ctx));
+        subscript_rt_ctx_live_allocations(ctx),
+        subscript_rt_ctx_live_bytes(ctx));
 
     /* The world is released on its loop thread, then the Context release
      * ends every remaining script allocation and completes host ownership. */
     engWorldRelease(world);
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
     return scriptAttached ? 0 : 3;
 }

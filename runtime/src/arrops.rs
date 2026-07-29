@@ -1,5 +1,5 @@
 //! `Array` method operations (stdlib.md §9, Q22): the one shared
-//! implementation both execution tiers call through the `sub_rt_arr_*`
+//! implementation both execution tiers call through the `subscript_rt_arr_*`
 //! entries in [`crate::ffi`].
 //!
 //! # Element marshaling

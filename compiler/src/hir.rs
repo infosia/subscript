@@ -567,7 +567,7 @@ impl AmbientFn {
 
 /// `Math` intrinsic functions (stdlib.md §1): ambient-namespace member
 /// calls typed `f64` in and out, lowered by both tiers to the opaque
-/// runtime symbol `sub_rt_math_<name>` — never the foreign-call path
+/// runtime symbol `subscript_rt_math_<name>` — never the foreign-call path
 /// and never a direct libm emission (stdlib.md §0.2). The constants
 /// (`Math.PI`, …) are not represented here: a constant member read
 /// folds to an [`ExprKind::Float`] literal at check time.
@@ -696,7 +696,7 @@ impl MathFn {
     }
 
     /// The member name, which is also the runtime symbol suffix
-    /// (`sub_rt_math_<name>`).
+    /// (`subscript_rt_math_<name>`).
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -796,7 +796,7 @@ impl MathFn {
 
 /// `Number` and parsing intrinsics (stdlib.md §11, Q25/Q26).
 /// Constants fold to [`ExprKind::Float`] at check time; every operation
-/// represented here calls one opaque `sub_rt_num_*` runtime symbol on
+/// represented here calls one opaque `subscript_rt_num_*` runtime symbol on
 /// both execution tiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -865,17 +865,17 @@ impl NumFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            NumFn::IsNaN => "sub_rt_num_is_nan",
-            NumFn::IsFinite => "sub_rt_num_is_finite",
-            NumFn::IsInteger => "sub_rt_num_is_integer",
-            NumFn::IsSafeInteger => "sub_rt_num_is_safe_integer",
-            NumFn::ParseInt => "sub_rt_num_parse_int",
-            NumFn::ParseFloat => "sub_rt_num_parse_float",
-            NumFn::ToFixed => "sub_rt_num_to_fixed",
-            NumFn::ToStringF32 => "sub_rt_num_to_string_f32",
-            NumFn::ToStringF64 => "sub_rt_num_to_string_f64",
-            NumFn::ToExponential => "sub_rt_num_to_exponential",
-            NumFn::ToPrecision => "sub_rt_num_to_precision",
+            NumFn::IsNaN => "subscript_rt_num_is_nan",
+            NumFn::IsFinite => "subscript_rt_num_is_finite",
+            NumFn::IsInteger => "subscript_rt_num_is_integer",
+            NumFn::IsSafeInteger => "subscript_rt_num_is_safe_integer",
+            NumFn::ParseInt => "subscript_rt_num_parse_int",
+            NumFn::ParseFloat => "subscript_rt_num_parse_float",
+            NumFn::ToFixed => "subscript_rt_num_to_fixed",
+            NumFn::ToStringF32 => "subscript_rt_num_to_string_f32",
+            NumFn::ToStringF64 => "subscript_rt_num_to_string_f64",
+            NumFn::ToExponential => "subscript_rt_num_to_exponential",
+            NumFn::ToPrecision => "subscript_rt_num_to_precision",
         }
     }
 
@@ -1056,34 +1056,34 @@ impl JsonFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            JsonFn::Begin => "sub_rt_json_begin",
-            JsonFn::BeginTracked => "sub_rt_json_begin_tracked",
-            JsonFn::Finish => "sub_rt_json_finish",
-            JsonFn::Raw => "sub_rt_json_raw",
-            JsonFn::Str => "sub_rt_json_str",
-            JsonFn::I32 => "sub_rt_json_i32",
-            JsonFn::U32 => "sub_rt_json_u32",
-            JsonFn::I64 => "sub_rt_json_i64",
-            JsonFn::U64 => "sub_rt_json_u64",
-            JsonFn::F32 => "sub_rt_json_f32",
-            JsonFn::F64 => "sub_rt_json_f64",
-            JsonFn::Bool => "sub_rt_json_bool",
-            JsonFn::Date => "sub_rt_json_date",
-            JsonFn::Null => "sub_rt_json_null",
-            JsonFn::Visit => "sub_rt_json_visit",
-            JsonFn::Leave => "sub_rt_json_leave",
-            JsonFn::ParseBegin => "sub_rt_json_parse_begin",
-            JsonFn::ParseEnd => "sub_rt_json_parse_end",
-            JsonFn::ParseRoot => "sub_rt_json_parse_root",
-            JsonFn::ParseIsKind => "sub_rt_json_parse_is_kind",
-            JsonFn::ParseNumberFits => "sub_rt_json_parse_number_fits",
-            JsonFn::ParseNumber => "sub_rt_json_parse_number",
-            JsonFn::ParseInteger => "sub_rt_json_parse_integer",
-            JsonFn::ParseBool => "sub_rt_json_parse_bool",
-            JsonFn::ParseString => "sub_rt_json_parse_string",
-            JsonFn::ParseArrayLen => "sub_rt_json_parse_array_len",
-            JsonFn::ParseArrayGet => "sub_rt_json_parse_array_get",
-            JsonFn::ParseObjectGet => "sub_rt_json_parse_object_get",
+            JsonFn::Begin => "subscript_rt_json_begin",
+            JsonFn::BeginTracked => "subscript_rt_json_begin_tracked",
+            JsonFn::Finish => "subscript_rt_json_finish",
+            JsonFn::Raw => "subscript_rt_json_raw",
+            JsonFn::Str => "subscript_rt_json_str",
+            JsonFn::I32 => "subscript_rt_json_i32",
+            JsonFn::U32 => "subscript_rt_json_u32",
+            JsonFn::I64 => "subscript_rt_json_i64",
+            JsonFn::U64 => "subscript_rt_json_u64",
+            JsonFn::F32 => "subscript_rt_json_f32",
+            JsonFn::F64 => "subscript_rt_json_f64",
+            JsonFn::Bool => "subscript_rt_json_bool",
+            JsonFn::Date => "subscript_rt_json_date",
+            JsonFn::Null => "subscript_rt_json_null",
+            JsonFn::Visit => "subscript_rt_json_visit",
+            JsonFn::Leave => "subscript_rt_json_leave",
+            JsonFn::ParseBegin => "subscript_rt_json_parse_begin",
+            JsonFn::ParseEnd => "subscript_rt_json_parse_end",
+            JsonFn::ParseRoot => "subscript_rt_json_parse_root",
+            JsonFn::ParseIsKind => "subscript_rt_json_parse_is_kind",
+            JsonFn::ParseNumberFits => "subscript_rt_json_parse_number_fits",
+            JsonFn::ParseNumber => "subscript_rt_json_parse_number",
+            JsonFn::ParseInteger => "subscript_rt_json_parse_integer",
+            JsonFn::ParseBool => "subscript_rt_json_parse_bool",
+            JsonFn::ParseString => "subscript_rt_json_parse_string",
+            JsonFn::ParseArrayLen => "subscript_rt_json_parse_array_len",
+            JsonFn::ParseArrayGet => "subscript_rt_json_parse_array_get",
+            JsonFn::ParseObjectGet => "subscript_rt_json_parse_object_get",
         }
     }
 
@@ -1099,40 +1099,40 @@ impl JsonFn {
 
 /// `Date` intrinsic operations (stdlib.md §3): the accepted
 /// UTC-deterministic subset, lowered by both tiers to the opaque
-/// `sub_rt_date_*` runtime symbols. A `Date` value is `i64` epoch
+/// `subscript_rt_date_*` runtime symbols. A `Date` value is `i64` epoch
 /// milliseconds in generated code ([`crate::types::Type::Date`] erases
 /// to `i64`); `getTime()` has no variant here — it is the identity on
 /// the representation and folds to the receiver at check time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum DateFn {
-    /// `new Date(ms)` → `sub_rt_date_new` (TimeClip range check; out of
+    /// `new Date(ms)` → `subscript_rt_date_new` (TimeClip range check; out of
     /// range traps, Q20 — no Invalid-Date value).
     New,
-    /// `Date.UTC(y, m0, d, h, min, s, ms)` → `sub_rt_date_utc`. The
+    /// `Date.UTC(y, m0, d, h, min, s, ms)` → `subscript_rt_date_utc`. The
     /// checker normalizes missing trailing arguments to their defaults
     /// (day 1, time components 0), so the call is always 7-argument.
     Utc,
-    /// `Date.now()` → `sub_rt_date_now` (the Context clock; pinnable
-    /// via `sub_rt_ctx_set_now`).
+    /// `Date.now()` → `subscript_rt_date_now` (the Context clock; pinnable
+    /// via `subscript_rt_ctx_set_now`).
     Now,
-    /// `getUTCFullYear()` → `sub_rt_date_get` field 0.
+    /// `getUTCFullYear()` → `subscript_rt_date_get` field 0.
     GetUtcFullYear,
-    /// `getUTCMonth()` (0-based) → `sub_rt_date_get` field 1.
+    /// `getUTCMonth()` (0-based) → `subscript_rt_date_get` field 1.
     GetUtcMonth,
-    /// `getUTCDate()` → `sub_rt_date_get` field 2.
+    /// `getUTCDate()` → `subscript_rt_date_get` field 2.
     GetUtcDate,
-    /// `getUTCDay()` (0 = Sunday) → `sub_rt_date_get` field 3.
+    /// `getUTCDay()` (0 = Sunday) → `subscript_rt_date_get` field 3.
     GetUtcDay,
-    /// `getUTCHours()` → `sub_rt_date_get` field 4.
+    /// `getUTCHours()` → `subscript_rt_date_get` field 4.
     GetUtcHours,
-    /// `getUTCMinutes()` → `sub_rt_date_get` field 5.
+    /// `getUTCMinutes()` → `subscript_rt_date_get` field 5.
     GetUtcMinutes,
-    /// `getUTCSeconds()` → `sub_rt_date_get` field 6.
+    /// `getUTCSeconds()` → `subscript_rt_date_get` field 6.
     GetUtcSeconds,
-    /// `getUTCMilliseconds()` → `sub_rt_date_get` field 7.
+    /// `getUTCMilliseconds()` → `subscript_rt_date_get` field 7.
     GetUtcMilliseconds,
-    /// `toISOString()` → `sub_rt_date_to_iso` (years 0000–9999, else a
+    /// `toISOString()` → `subscript_rt_date_to_iso` (years 0000–9999, else a
     /// trap, Q20).
     ToIso,
 }
@@ -1179,7 +1179,7 @@ impl DateFn {
         }
     }
 
-    /// The `sub_rt_date_get` field code of a UTC accessor (`None` for
+    /// The `subscript_rt_date_get` field code of a UTC accessor (`None` for
     /// the non-accessor operations). The codes are an ABI contract with
     /// the runtime's `date` module; a codegen test asserts the two
     /// tables agree.
@@ -1240,7 +1240,7 @@ impl DateFn {
 }
 
 /// `String` intrinsic methods (stdlib.md §8): the accepted Q21/Q27 subset,
-/// lowered by both tiers to opaque `sub_rt_str_*` runtime symbols. Every
+/// lowered by both tiers to opaque `subscript_rt_str_*` runtime symbols. Every
 /// index, length, and code unit is a **byte** measure (Q21); case
 /// mapping uses Unicode Default Case Conversion and trimming uses ECMA
 /// whitespace; range and argument errors trap. The receiver is always
@@ -1356,16 +1356,16 @@ impl RegexFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            RegexFn::New => "sub_rt_regex_new",
-            RegexFn::Test => "sub_rt_regex_test",
-            RegexFn::Source => "sub_rt_regex_source",
-            RegexFn::Flags => "sub_rt_regex_flags",
-            RegexFn::Search => "sub_rt_regex_search",
-            RegexFn::Replace => "sub_rt_regex_replace",
-            RegexFn::ReplaceAll => "sub_rt_regex_replace_all",
-            RegexFn::Split => "sub_rt_regex_split",
-            RegexFn::MatchStart => "sub_rt_regex_match_start",
-            RegexFn::MatchEnd => "sub_rt_regex_match_end",
+            RegexFn::New => "subscript_rt_regex_new",
+            RegexFn::Test => "subscript_rt_regex_test",
+            RegexFn::Source => "subscript_rt_regex_source",
+            RegexFn::Flags => "subscript_rt_regex_flags",
+            RegexFn::Search => "subscript_rt_regex_search",
+            RegexFn::Replace => "subscript_rt_regex_replace",
+            RegexFn::ReplaceAll => "subscript_rt_regex_replace_all",
+            RegexFn::Split => "subscript_rt_regex_split",
+            RegexFn::MatchStart => "subscript_rt_regex_match_start",
+            RegexFn::MatchEnd => "subscript_rt_regex_match_end",
         }
     }
 
@@ -1514,29 +1514,29 @@ impl StrFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            StrFn::Slice => "sub_rt_str_slice",
-            StrFn::IndexOf => "sub_rt_str_index_of",
-            StrFn::LastIndexOf => "sub_rt_str_last_index_of",
-            StrFn::Includes => "sub_rt_str_includes",
-            StrFn::StartsWith => "sub_rt_str_starts_with",
-            StrFn::EndsWith => "sub_rt_str_ends_with",
-            StrFn::CharCodeAt => "sub_rt_str_char_code_at",
-            StrFn::Split => "sub_rt_str_split",
-            StrFn::Trim => "sub_rt_str_trim",
-            StrFn::TrimStart => "sub_rt_str_trim_start",
-            StrFn::TrimEnd => "sub_rt_str_trim_end",
-            StrFn::Repeat => "sub_rt_str_repeat",
-            StrFn::PadStart => "sub_rt_str_pad_start",
-            StrFn::PadEnd => "sub_rt_str_pad_end",
-            StrFn::ToUpperCase => "sub_rt_str_to_upper",
-            StrFn::ToLowerCase => "sub_rt_str_to_lower",
-            StrFn::Replace => "sub_rt_str_replace",
-            StrFn::ReplaceAll => "sub_rt_str_replace_all",
-            StrFn::Substring => "sub_rt_str_substring",
-            StrFn::Substr => "sub_rt_str_substr",
-            StrFn::CharAt => "sub_rt_str_char_at",
-            StrFn::CodePointAt => "sub_rt_str_code_point_at",
-            StrFn::Concat => "sub_rt_str_method_concat",
+            StrFn::Slice => "subscript_rt_str_slice",
+            StrFn::IndexOf => "subscript_rt_str_index_of",
+            StrFn::LastIndexOf => "subscript_rt_str_last_index_of",
+            StrFn::Includes => "subscript_rt_str_includes",
+            StrFn::StartsWith => "subscript_rt_str_starts_with",
+            StrFn::EndsWith => "subscript_rt_str_ends_with",
+            StrFn::CharCodeAt => "subscript_rt_str_char_code_at",
+            StrFn::Split => "subscript_rt_str_split",
+            StrFn::Trim => "subscript_rt_str_trim",
+            StrFn::TrimStart => "subscript_rt_str_trim_start",
+            StrFn::TrimEnd => "subscript_rt_str_trim_end",
+            StrFn::Repeat => "subscript_rt_str_repeat",
+            StrFn::PadStart => "subscript_rt_str_pad_start",
+            StrFn::PadEnd => "subscript_rt_str_pad_end",
+            StrFn::ToUpperCase => "subscript_rt_str_to_upper",
+            StrFn::ToLowerCase => "subscript_rt_str_to_lower",
+            StrFn::Replace => "subscript_rt_str_replace",
+            StrFn::ReplaceAll => "subscript_rt_str_replace_all",
+            StrFn::Substring => "subscript_rt_str_substring",
+            StrFn::Substr => "subscript_rt_str_substr",
+            StrFn::CharAt => "subscript_rt_str_char_at",
+            StrFn::CodePointAt => "subscript_rt_str_code_point_at",
+            StrFn::Concat => "subscript_rt_str_method_concat",
         }
     }
 
@@ -1666,7 +1666,7 @@ impl StrFn {
 }
 
 /// `Array` intrinsic methods (stdlib.md §9, Q22): the accepted subset
-/// on `T[]`, lowered by both tiers to opaque `sub_rt_arr_*` runtime
+/// on `T[]`, lowered by both tiers to opaque `subscript_rt_arr_*` runtime
 /// symbols. The receiver handle is the call's first argument. Element
 /// values the runtime *receives* (search needles, `fill` values,
 /// `reduce`'s accumulator) travel by pointer, so every symbol has one
@@ -1806,27 +1806,27 @@ impl ArrFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            ArrFn::IndexOf => "sub_rt_arr_index_of",
-            ArrFn::LastIndexOf => "sub_rt_arr_last_index_of",
-            ArrFn::Includes => "sub_rt_arr_includes",
-            ArrFn::Join => "sub_rt_arr_join",
-            ArrFn::Slice => "sub_rt_arr_slice",
-            ArrFn::Fill => "sub_rt_arr_fill",
-            ArrFn::Reverse => "sub_rt_arr_reverse",
-            ArrFn::Concat => "sub_rt_arr_concat",
-            ArrFn::ForEach => "sub_rt_arr_for_each",
-            ArrFn::Map => "sub_rt_arr_map",
-            ArrFn::Filter => "sub_rt_arr_filter",
-            ArrFn::Reduce => "sub_rt_arr_reduce",
-            ArrFn::Some => "sub_rt_arr_some",
-            ArrFn::Every => "sub_rt_arr_every",
-            ArrFn::FindIndex => "sub_rt_arr_find_index",
-            ArrFn::Sort => "sub_rt_arr_sort",
-            ArrFn::ReduceRight => "sub_rt_arr_reduce_right",
-            ArrFn::Splice => "sub_rt_arr_splice",
-            ArrFn::Shift => "sub_rt_arr_shift",
-            ArrFn::Unshift => "sub_rt_arr_unshift",
-            ArrFn::CopyWithin => "sub_rt_arr_copy_within",
+            ArrFn::IndexOf => "subscript_rt_arr_index_of",
+            ArrFn::LastIndexOf => "subscript_rt_arr_last_index_of",
+            ArrFn::Includes => "subscript_rt_arr_includes",
+            ArrFn::Join => "subscript_rt_arr_join",
+            ArrFn::Slice => "subscript_rt_arr_slice",
+            ArrFn::Fill => "subscript_rt_arr_fill",
+            ArrFn::Reverse => "subscript_rt_arr_reverse",
+            ArrFn::Concat => "subscript_rt_arr_concat",
+            ArrFn::ForEach => "subscript_rt_arr_for_each",
+            ArrFn::Map => "subscript_rt_arr_map",
+            ArrFn::Filter => "subscript_rt_arr_filter",
+            ArrFn::Reduce => "subscript_rt_arr_reduce",
+            ArrFn::Some => "subscript_rt_arr_some",
+            ArrFn::Every => "subscript_rt_arr_every",
+            ArrFn::FindIndex => "subscript_rt_arr_find_index",
+            ArrFn::Sort => "subscript_rt_arr_sort",
+            ArrFn::ReduceRight => "subscript_rt_arr_reduce_right",
+            ArrFn::Splice => "subscript_rt_arr_splice",
+            ArrFn::Shift => "subscript_rt_arr_shift",
+            ArrFn::Unshift => "subscript_rt_arr_unshift",
+            ArrFn::CopyWithin => "subscript_rt_arr_copy_within",
         }
     }
 
@@ -1835,14 +1835,14 @@ impl ArrFn {
     #[must_use]
     pub fn fixed_symbol(self) -> Option<&'static str> {
         Some(match self {
-            ArrFn::ForEach => "sub_rt_fixed_arr_for_each",
-            ArrFn::Map => "sub_rt_fixed_arr_map",
-            ArrFn::Filter => "sub_rt_fixed_arr_filter",
-            ArrFn::Reduce => "sub_rt_fixed_arr_reduce",
-            ArrFn::Some => "sub_rt_fixed_arr_some",
-            ArrFn::Every => "sub_rt_fixed_arr_every",
-            ArrFn::FindIndex => "sub_rt_fixed_arr_find_index",
-            ArrFn::ReduceRight => "sub_rt_fixed_arr_reduce_right",
+            ArrFn::ForEach => "subscript_rt_fixed_arr_for_each",
+            ArrFn::Map => "subscript_rt_fixed_arr_map",
+            ArrFn::Filter => "subscript_rt_fixed_arr_filter",
+            ArrFn::Reduce => "subscript_rt_fixed_arr_reduce",
+            ArrFn::Some => "subscript_rt_fixed_arr_some",
+            ArrFn::Every => "subscript_rt_fixed_arr_every",
+            ArrFn::FindIndex => "subscript_rt_fixed_arr_find_index",
+            ArrFn::ReduceRight => "subscript_rt_fixed_arr_reduce_right",
             _ => return None,
         })
     }
@@ -2092,16 +2092,16 @@ impl MapFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            MapFn::New => "sub_rt_map_new",
-            MapFn::Size => "sub_rt_map_size",
-            MapFn::Get => "sub_rt_map_get",
-            MapFn::GetOr => "sub_rt_map_get_or",
-            MapFn::Set => "sub_rt_map_set",
-            MapFn::Has => "sub_rt_map_has",
-            MapFn::Delete => "sub_rt_map_delete",
-            MapFn::Clear => "sub_rt_map_clear",
-            MapFn::ForEach => "sub_rt_map_for_each",
-            MapFn::GroupBy => "sub_rt_map_group_by",
+            MapFn::New => "subscript_rt_map_new",
+            MapFn::Size => "subscript_rt_map_size",
+            MapFn::Get => "subscript_rt_map_get",
+            MapFn::GetOr => "subscript_rt_map_get_or",
+            MapFn::Set => "subscript_rt_map_set",
+            MapFn::Has => "subscript_rt_map_has",
+            MapFn::Delete => "subscript_rt_map_delete",
+            MapFn::Clear => "subscript_rt_map_clear",
+            MapFn::ForEach => "subscript_rt_map_for_each",
+            MapFn::GroupBy => "subscript_rt_map_group_by",
         }
     }
 
@@ -2230,20 +2230,20 @@ impl SetFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            SetFn::New => "sub_rt_set_new",
-            SetFn::Size => "sub_rt_set_size",
-            SetFn::Add => "sub_rt_set_add",
-            SetFn::Has => "sub_rt_set_has",
-            SetFn::Delete => "sub_rt_set_delete",
-            SetFn::Clear => "sub_rt_set_clear",
-            SetFn::ForEach => "sub_rt_set_for_each",
-            SetFn::Union => "sub_rt_set_union",
-            SetFn::Intersection => "sub_rt_set_intersection",
-            SetFn::Difference => "sub_rt_set_difference",
-            SetFn::SymmetricDifference => "sub_rt_set_symmetric_difference",
-            SetFn::IsSubsetOf => "sub_rt_set_is_subset_of",
-            SetFn::IsSupersetOf => "sub_rt_set_is_superset_of",
-            SetFn::IsDisjointFrom => "sub_rt_set_is_disjoint_from",
+            SetFn::New => "subscript_rt_set_new",
+            SetFn::Size => "subscript_rt_set_size",
+            SetFn::Add => "subscript_rt_set_add",
+            SetFn::Has => "subscript_rt_set_has",
+            SetFn::Delete => "subscript_rt_set_delete",
+            SetFn::Clear => "subscript_rt_set_clear",
+            SetFn::ForEach => "subscript_rt_set_for_each",
+            SetFn::Union => "subscript_rt_set_union",
+            SetFn::Intersection => "subscript_rt_set_intersection",
+            SetFn::Difference => "subscript_rt_set_difference",
+            SetFn::SymmetricDifference => "subscript_rt_set_symmetric_difference",
+            SetFn::IsSubsetOf => "subscript_rt_set_is_subset_of",
+            SetFn::IsSupersetOf => "subscript_rt_set_is_superset_of",
+            SetFn::IsDisjointFrom => "subscript_rt_set_is_disjoint_from",
         }
     }
 
@@ -3004,7 +3004,7 @@ mod tests {
     fn num_fn_table_matches_the_section_11_contract() {
         for (index, f) in NumFn::ALL.iter().enumerate() {
             assert_eq!(*f as usize, index, "NumFn::ALL out of order at {index}");
-            assert!(f.symbol().starts_with("sub_rt_num_"));
+            assert!(f.symbol().starts_with("subscript_rt_num_"));
         }
         assert!(NumFn::IsNaN.returns_bool());
         assert!(!NumFn::ParseFloat.returns_bool());
@@ -3020,7 +3020,7 @@ mod tests {
 
     #[test]
     fn date_fn_field_codes_cover_the_eight_accessors_in_order() {
-        // The sub_rt_date_get field-code contract (stdlib.md §3): the
+        // The subscript_rt_date_get field-code contract (stdlib.md §3): the
         // eight UTC accessors carry codes 0..=7 in accessor order; the
         // non-accessor operations carry none.
         let accessors = [
@@ -3105,13 +3105,13 @@ mod tests {
             );
             assert_eq!(f.takes_pos_id(), !pure, "pos_id of {}", f.name());
         }
-        // Symbols follow the sub_rt_str_* convention, distinctly.
+        // Symbols follow the subscript_rt_str_* convention, distinctly.
         let mut symbols: Vec<&str> = StrFn::ALL.iter().map(|f| f.symbol()).collect();
         symbols.sort_unstable();
         symbols.dedup();
         assert_eq!(symbols.len(), StrFn::ALL.len());
-        assert!(StrFn::ALL.iter().all(|f| f.symbol().starts_with("sub_rt_str_")));
-        assert_eq!(StrFn::ToUpperCase.symbol(), "sub_rt_str_to_upper");
+        assert!(StrFn::ALL.iter().all(|f| f.symbol().starts_with("subscript_rt_str_")));
+        assert_eq!(StrFn::ToUpperCase.symbol(), "subscript_rt_str_to_upper");
         assert_eq!(StrFn::CharCodeAt.name(), "charCodeAt");
     }
 
@@ -3126,13 +3126,13 @@ mod tests {
 
     #[test]
     fn arr_fn_shapes_match_the_section_9_contract() {
-        // Symbols follow the sub_rt_arr_* convention, distinctly.
+        // Symbols follow the subscript_rt_arr_* convention, distinctly.
         let mut symbols: Vec<&str> = ArrFn::ALL.iter().map(|f| f.symbol()).collect();
         symbols.sort_unstable();
         symbols.dedup();
         assert_eq!(symbols.len(), ArrFn::ALL.len());
-        assert!(ArrFn::ALL.iter().all(|f| f.symbol().starts_with("sub_rt_arr_")));
-        assert_eq!(ArrFn::ForEach.symbol(), "sub_rt_arr_for_each");
+        assert!(ArrFn::ALL.iter().all(|f| f.symbol().starts_with("subscript_rt_arr_")));
+        assert_eq!(ArrFn::ForEach.symbol(), "subscript_rt_arr_for_each");
         assert_eq!(ArrFn::FindIndex.name(), "findIndex");
         // Callback set: exactly the nine closure-taking methods.
         let with_cb: Vec<ArrFn> = ArrFn::ALL.iter().copied().filter(|f| f.takes_callback()).collect();
@@ -3195,11 +3195,11 @@ mod tests {
     fn map_set_fn_tables_match_the_section_10_contract() {
         for (i, f) in MapFn::ALL.iter().enumerate() {
             assert_eq!(*f as usize, i, "MapFn::ALL out of order at {i}");
-            assert!(f.symbol().starts_with("sub_rt_map_"));
+            assert!(f.symbol().starts_with("subscript_rt_map_"));
         }
         for (i, f) in SetFn::ALL.iter().enumerate() {
             assert_eq!(*f as usize, i, "SetFn::ALL out of order at {i}");
-            assert!(f.symbol().starts_with("sub_rt_set_"));
+            assert!(f.symbol().starts_with("subscript_rt_set_"));
         }
         assert!(MapFn::New.allocates());
         assert!(MapFn::Set.allocates());

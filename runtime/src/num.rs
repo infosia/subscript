@@ -2,7 +2,7 @@
 //!
 //! These functions implement the accepted ECMA surface once in Rust;
 //! the dev-JIT and ship-C tiers both reach them through opaque
-//! `sub_rt_num_*` symbols. Parsing never coerces non-strings. Numeric
+//! `subscript_rt_num_*` symbols. Parsing never coerces non-strings. Numeric
 //! formatting uses `ryu-js` or exact integer arithmetic, so it does not
 //! inherit a host libc's formatting or rounding.
 

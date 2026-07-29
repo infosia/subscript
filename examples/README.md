@@ -74,7 +74,7 @@ sh examples/context-per-scene/build.sh
 
 The host programs need a POSIX shell, the same Rust toolchain and cached
 dependencies, and the same platform C compiler; they require no additional
-SDK. Releasing a scene Context re-runs `ss_init` for the next one, so any
+SDK. Releasing a scene Context re-runs `subscript_init` for the next one, so any
 state that must span scenes stays host-side.
 
 ## How the C binding fits

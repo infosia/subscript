@@ -6,12 +6,12 @@
  * exported `main` is called for a measured warm-up phase and then for
  * each timed sample, timing every call on its own with CLOCK_MONOTONIC.
  *
- * Timed span: the `ss_export_main` call alone. Context creation, the
- * module initializer `ss_init`, reading the stdout sink, and Context
+ * Timed span: the `subscript_export_main` call alone. Context creation, the
+ * module initializer `subscript_init`, reading the stdout sink, and Context
  * release are all outside it.
  *
  * A fresh Context per run makes each run start from the same state,
- * and `ss_init` restores the module globals, so every run is the same
+ * and `subscript_init` restores the module globals, so every run is the same
  * computation; the entry checks that by comparing the sink bytes of
  * every run against the first.
  *
@@ -58,8 +58,8 @@ static uint64_t monotonic_ns(void) {
  * benchmark run is diagnosable with the same reader. */
 static void report_trap(const Context *ctx) {
     uint64_t mlen = 0;
-    const unsigned char *msg = sub_rt_ctx_trap_message(ctx, &mlen);
-    fprintf(stderr, "trap %u %u ", sub_rt_ctx_trap_kind(ctx), sub_rt_ctx_trap_pos_id(ctx));
+    const unsigned char *msg = subscript_rt_ctx_trap_message(ctx, &mlen);
+    fprintf(stderr, "trap %u %u ", subscript_rt_ctx_trap_kind(ctx), subscript_rt_ctx_trap_pos_id(ctx));
     if (mlen > 0) {
         fwrite(msg, 1, (size_t)mlen, stderr);
     }
@@ -108,41 +108,41 @@ int main(int argc, char **argv) {
                 (unsigned long long)warmup_elapsed_ns
             );
         }
-        Context *ctx = sub_rt_ctx_new();
+        Context *ctx = subscript_rt_ctx_new();
         if (ctx == NULL) {
             free(first);
             return 2;
         }
-        sub_rt_ctx_enter_script(ctx);
-        ss_init(ctx);
-        sub_rt_ctx_exit_script(ctx);
-        if (sub_rt_ctx_trap_kind(ctx) != 0) {
+        subscript_rt_ctx_enter_script(ctx);
+        subscript_init(ctx);
+        subscript_rt_ctx_exit_script(ctx);
+        if (subscript_rt_ctx_trap_kind(ctx) != 0) {
             report_trap(ctx);
-            sub_rt_ctx_release(ctx);
+            subscript_rt_ctx_release(ctx);
             free(first);
             return 3;
         }
 
-        sub_rt_ctx_enter_script(ctx);
+        subscript_rt_ctx_enter_script(ctx);
         const uint64_t start = monotonic_ns();
-        ss_export_main(ctx);
+        subscript_export_main(ctx);
         const uint64_t end = monotonic_ns();
-        sub_rt_ctx_exit_script(ctx);
+        subscript_rt_ctx_exit_script(ctx);
 
-        if (sub_rt_ctx_trap_kind(ctx) != 0) {
+        if (subscript_rt_ctx_trap_kind(ctx) != 0) {
             report_trap(ctx);
-            sub_rt_ctx_release(ctx);
+            subscript_rt_ctx_release(ctx);
             free(first);
             return 3;
         }
 
         uint64_t len = 0;
-        const unsigned char *out = sub_rt_ctx_stdout(ctx, &len);
+        const unsigned char *out = subscript_rt_ctx_stdout(ctx, &len);
         if (first == NULL) {
             first_len = (size_t)len;
             first = (unsigned char *)malloc(first_len + 1);
             if (first == NULL) {
-                sub_rt_ctx_release(ctx);
+                subscript_rt_ctx_release(ctx);
                 return 2;
             }
             if (first_len > 0) {
@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
         } else if ((size_t)len != first_len || (first_len > 0 && memcmp(out, first, first_len) != 0)) {
             stable = 0;
         }
-        sub_rt_ctx_release(ctx);
+        subscript_rt_ctx_release(ctx);
 
         if (warming) {
             warmup_elapsed_ns += end - start;

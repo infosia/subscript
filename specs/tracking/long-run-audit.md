@@ -18,7 +18,7 @@ so the clean list is evidence and not decoration.
 ### 1. The stdout sink grows per `print` and a C host cannot drain it
 
 `print` appends to `Context::stdout` (`context.rs:773-774`) and nothing on
-the C surface removes bytes: `sub_rt_ctx_stdout` takes a `const Context*`
+the C surface removes bytes: `subscript_rt_ctx_stdout` takes a `const Context*`
 and returns a pointer into the sink (`ffi.rs:4392-4400`), and the draining
 accessor `take_stdout` (`context.rs:779`) is Rust-only — the in-repo
 runners call it once at run end, which is why no gate ever noticed. The
@@ -65,7 +65,7 @@ Q13's lifetime rule, and interning removes the need.
 ### 3. A runaway script freezes the host with no recovery path
 
 Exported calls are synchronous and nothing can interrupt one: no fuel, no
-watchdog, no `sub_rt_ctx_interrupt` — the only bounded-execution
+watchdog, no `subscript_rt_ctx_interrupt` — the only bounded-execution
 mechanism in the runtime is the regex budget (`context.rs:392`,
 host-settable, added by P23 for exactly this class of fault). An accident
 as small as a wrong loop bound freezes the host's frame forever; the host

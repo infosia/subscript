@@ -33,13 +33,13 @@ pub fn render() -> Result<String, String> {
     let entry = parse_fn_type(CONTEXT_SOURCE, "ScriptMainEntry")?;
     let freed_handle_diagnostics_docs = docs_for(
         FFI_SOURCE,
-        "pub unsafe extern \"C\" fn sub_rt_ctx_set_freed_handle_diagnostics",
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_freed_handle_diagnostics",
     )?;
     let print_observer_setter_docs = docs_for(
         FFI_SOURCE,
-        "pub unsafe extern \"C\" fn sub_rt_ctx_set_print_observer",
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_print_observer",
     )?;
-    let mut functions = parse_functions(FFI_SOURCE, "sub_rt_ctx_")?;
+    let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
 
     let mut out = String::new();
@@ -55,7 +55,7 @@ pub fn render() -> Result<String, String> {
     out.push_str("/* Recommended freed-handle diagnostics retention budget. The runtime does\n");
     out.push_str(" * not treat this value specially. */\n");
     out.push_str(&format!(
-        "#define SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES \
+        "#define SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES \
          UINT64_C({})\n\n",
         crate::FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES
     ));
@@ -65,39 +65,39 @@ pub fn render() -> Result<String, String> {
     out.push_str("typedef struct Context Context;\n\n");
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
-    out.push_str(&c_fn_pointer("sub_rt_trap_observer", &observer)?);
+    out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
     out.push_str(";\n\n");
     push_comment(&mut out, &print_observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer(
-        "sub_rt_print_observer",
+        "subscript_rt_print_observer",
         &print_observer,
     )?);
     out.push_str(";\n\n");
     push_comment(&mut out, &allocation_visitor_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer(
-        "sub_rt_alloc_visitor",
+        "subscript_rt_alloc_visitor",
         &allocation_visitor,
     )?);
     out.push_str(";\n\n");
     push_comment(&mut out, &entry_docs);
     out.push_str("typedef ");
-    out.push_str(&c_fn_pointer("sub_script_main_entry", &entry)?);
+    out.push_str(&c_fn_pointer("subscript_main_entry", &entry)?);
     out.push_str(";\n\n");
-    out.push_str("/* Every linked program defines ss_init. A program with an exported main\n");
-    out.push_str(" * defines ss_export_main; every other currently supported host export is\n");
-    out.push_str(" * named `ss_export_<name>` with the same signature. */\n");
-    out.push_str(&c_function("ss_init", &entry)?);
+    out.push_str("/* Every linked program defines subscript_init. A program with an exported main\n");
+    out.push_str(" * defines subscript_export_main; every other currently supported host export is\n");
+    out.push_str(" * named `subscript_export_<name>` with the same signature. */\n");
+    out.push_str(&c_function("subscript_init", &entry)?);
     out.push_str(";\n");
-    out.push_str(&c_function("ss_export_main", &entry)?);
+    out.push_str(&c_function("subscript_export_main", &entry)?);
     out.push_str(";\n\n");
 
     for function in &functions {
-        if function.name == "sub_rt_ctx_set_freed_handle_diagnostics" {
+        if function.name == "subscript_rt_ctx_set_freed_handle_diagnostics" {
             push_comment(&mut out, &freed_handle_diagnostics_docs);
         }
-        if function.name == "sub_rt_ctx_set_print_observer" {
+        if function.name == "subscript_rt_ctx_set_print_observer" {
             push_comment(&mut out, &print_observer_setter_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
@@ -274,9 +274,9 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "*mut u64" => Ok("uint64_t*"),
         "*const u8" => Ok("const uint8_t*"),
         "*mut c_void" | "*mut std::ffi::c_void" => Ok("void*"),
-        "Option<TrapObserver>" => Ok("sub_rt_trap_observer"),
-        "Option<PrintObserver>" => Ok("sub_rt_print_observer"),
-        "Option<AllocationVisitor>" => Ok("sub_rt_alloc_visitor"),
+        "Option<TrapObserver>" => Ok("subscript_rt_trap_observer"),
+        "Option<PrintObserver>" => Ok("subscript_rt_print_observer"),
+        "Option<AllocationVisitor>" => Ok("subscript_rt_alloc_visitor"),
         other => Err(format!(
             "host header: Rust type `{other}` has no explicit C spelling"
         )),
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn generated_host_header_carries_the_observer_aliasing_rule() {
         let header = render().expect("render host header");
-        assert!(header.contains("calling any `sub_rt_*` API that takes that Context"));
+        assert!(header.contains("calling any `subscript_rt_*` API that takes that Context"));
         assert!(header.contains("pointer smuggled in `userdata`"));
         assert!(header.contains("undefined behaviour"));
     }
@@ -339,7 +339,7 @@ mod tests {
         let header = render().expect("render host header");
         assert!(header.contains("sink retains none of that line's bytes"));
         assert!(header.contains("valid only for the duration of the callback"));
-        assert!(header.contains("must not call any `sub_rt_*` function taking that Context"));
+        assert!(header.contains("must not call any `subscript_rt_*` function taking that Context"));
         assert!(header.contains("aliasing\n * violation and undefined behaviour"));
     }
 
@@ -349,7 +349,7 @@ mod tests {
         assert!(header.contains("Recommended freed-handle diagnostics retention budget"));
         assert!(header.contains("runtime does\n * not treat this value specially"));
         assert!(header.contains(
-            "#define SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES \
+            "#define SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES \
              UINT64_C(1073741824)"
         ));
         assert!(header.contains("requested payload is at least"));

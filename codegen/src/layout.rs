@@ -39,7 +39,7 @@ pub(crate) enum Repr {
 
 /// The [`hir::ArrElemKind`] of array element type `ty` under `module`'s
 /// class table (stdlib.md §9): the tag both tiers pass to the
-/// `sub_rt_arr_*` entries, computed from the one shared compiler
+/// `subscript_rt_arr_*` entries, computed from the one shared compiler
 /// mapping so the tiers cannot disagree. An error for a type the
 /// checker should have rejected (value classes, function values).
 pub(crate) fn arr_elem_kind(module: &hir::Module, ty: &Type) -> Result<hir::ArrElemKind, String> {

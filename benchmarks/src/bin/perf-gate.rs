@@ -21,7 +21,7 @@
 //!
 //! Every subject times the workload execution only, inside its own
 //! process, with a monotonic clock: the C baseline times its workload
-//! function, the AOT binary times its `ss_export_main` call, and the
+//! function, the AOT binary times its `subscript_export_main` call, and the
 //! JIT times its `main` call. Compilation, linking, process start-up,
 //! Context creation, global initialization, and I/O are all outside
 //! the timed span.
@@ -663,7 +663,7 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
 /// value-class copies, checked growable-array indexing and push growth,
 /// f32-precision arithmetic) and calls the runtime for arrays, strings,
 /// and Q14 formatting, so this measures the shipped path through clang,
-/// timed on the whole `ss_export_main` call exactly as the AOT subject.
+/// timed on the whole `subscript_export_main` call exactly as the AOT subject.
 fn measure_emitted_c(
     files: &[SourceFile],
     dir: &Path,
@@ -721,7 +721,7 @@ fn measure_emitted_c(
     let (stdout, samples) = run_subject(&exe, warmup, timed)?;
     Ok(Subject {
         name: "emitted-C",
-        span: "the ss_export_main call in the emitted-C binary (linked with the runtime)",
+        span: "the subscript_export_main call in the emitted-C binary (linked with the runtime)",
         stdout,
         samples,
         prepare: vec![("check + emit C", emit), ("compile + link (cc)", compile)],
@@ -768,7 +768,7 @@ fn measure_aot(
     let (stdout, samples) = run_subject(&exe, warmup, timed)?;
     Ok(Subject {
         name: "ship-AOT",
-        span: "the ss_export_main call in the linked binary",
+        span: "the subscript_export_main call in the linked binary",
         stdout,
         samples,
         prepare: vec![

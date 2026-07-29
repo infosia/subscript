@@ -30,7 +30,7 @@
 //!
 //! Runtime faults set the Context trap flag (offset 0). After every
 //! call that can fault — and after each emitted check via
-//! `sub_rt_trap` — generated code branches to a per-function unwind
+//! `subscript_rt_trap` — generated code branches to a per-function unwind
 //! block that pops its shadow frame and returns a zeroed value, so
 //! the whole stack returns to the driver without signals or
 //! unwinding. Each trap site carries an index into the position
@@ -112,33 +112,33 @@ pub(crate) struct RtFns {
     pub array_spread_string: FuncId,
     pub cb_bind: FuncId,
     pub cb_trampoline: FuncId,
-    /// `sub_rt_math_*` imports (stdlib.md §1), indexed by
+    /// `subscript_rt_math_*` imports (stdlib.md §1), indexed by
     /// `hir::MathFn as usize` (the [`hir::MathFn::ALL`] order).
     pub math: [FuncId; hir::MathFn::ALL.len()],
-    /// `sub_rt_num_*` imports (stdlib.md §11, Q25/Q26), indexed by
+    /// `subscript_rt_num_*` imports (stdlib.md §11, Q25/Q26), indexed by
     /// [`hir::NumFn::ALL`] discriminant order.
     pub num: [FuncId; hir::NumFn::ALL.len()],
-    /// `sub_rt_date_utc` (stdlib.md §3): 7 `i32` components + pos id → i64.
+    /// `subscript_rt_date_utc` (stdlib.md §3): 7 `i32` components + pos id → i64.
     pub date_utc: FuncId,
-    /// `sub_rt_date_new`: ms + pos id → range-checked ms.
+    /// `subscript_rt_date_new`: ms + pos id → range-checked ms.
     pub date_new: FuncId,
-    /// `sub_rt_date_now`: Context clock → i64 ms.
+    /// `subscript_rt_date_now`: Context clock → i64 ms.
     pub date_now: FuncId,
-    /// `sub_rt_date_get`: (ms, field code) → i32 UTC accessor.
+    /// `subscript_rt_date_get`: (ms, field code) → i32 UTC accessor.
     pub date_get: FuncId,
-    /// `sub_rt_date_to_iso`: (ms, pos id) → string handle.
+    /// `subscript_rt_date_to_iso`: (ms, pos id) → string handle.
     pub date_to_iso: FuncId,
     /// Checker-generated JSON serializer leaves (stdlib.md §13), indexed
     /// by [`hir::JsonFn::ALL`] discriminant order.
     pub json: [FuncId; hir::JsonFn::ALL.len()],
-    /// `sub_rt_str_*` method imports (stdlib.md §8), indexed by
+    /// `subscript_rt_str_*` method imports (stdlib.md §8), indexed by
     /// `hir::StrFn as usize` (the [`hir::StrFn::ALL`] order). Each
     /// signature is `(ctx, recv, params…[, pos_id])` per
     /// [`hir::StrFn::params`] / [`hir::StrFn::takes_pos_id`].
     pub str_ops: [FuncId; hir::StrFn::ALL.len()],
-    /// `sub_rt_regex_*` imports (stdlib.md §15).
+    /// `subscript_rt_regex_*` imports (stdlib.md §15).
     pub regex_ops: [FuncId; hir::RegexFn::ALL.len()],
-    /// `sub_rt_arr_*` method imports (stdlib.md §9), indexed by
+    /// `subscript_rt_arr_*` method imports (stdlib.md §9), indexed by
     /// `hir::ArrFn as usize` (the [`hir::ArrFn::ALL`] order). Each
     /// signature starts `(ctx, recv, …)`; element values travel by
     /// pointer, callbacks as `(code, env)`, kind tags as `u32`.
@@ -146,10 +146,10 @@ pub(crate) struct RtFns {
     /// Q27 `FixedArray<T, N>` callback-family imports. Unsupported
     /// `ArrFn` variants have no fixed-buffer entry.
     pub fixed_arr_ops: [Option<FuncId>; hir::ArrFn::ALL.len()],
-    /// `sub_rt_map_*` imports (stdlib.md §10), indexed by
+    /// `subscript_rt_map_*` imports (stdlib.md §10), indexed by
     /// [`hir::MapFn::ALL`] discriminant order.
     pub map_ops: [FuncId; hir::MapFn::ALL.len()],
-    /// `sub_rt_set_*` imports (stdlib.md §10), indexed by
+    /// `subscript_rt_set_*` imports (stdlib.md §10), indexed by
     /// [`hir::SetFn::ALL`] discriminant order.
     pub set_ops: [FuncId; hir::SetFn::ALL.len()],
 }
@@ -377,7 +377,7 @@ impl<'a, M: Module> ModLower<'a, M> {
         if let Some(&id) = self.str_data.get(bytes) {
             return Ok(id);
         }
-        let name = format!("ss_str{}", self.str_count);
+        let name = format!("subscript_str{}", self.str_count);
         self.str_count += 1;
         let id = self
             .module
@@ -501,7 +501,7 @@ fn declare_rt<M: Module>(
                 (params, F64)
             }
         };
-        math_ids.push(mk(&format!("sub_rt_math_{}", f.name()), &params, Some(ret))?);
+        math_ids.push(mk(&format!("subscript_rt_math_{}", f.name()), &params, Some(ret))?);
     }
     let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
         .try_into()
@@ -766,91 +766,91 @@ fn declare_rt<M: Module>(
         .try_into()
         .map_err(|_| internal("Set import table size"))?;
     Ok(RtFns {
-        print: mk("sub_rt_print", &[I64, I64], None)?,
-        collect: mk("sub_rt_collect", &[I64], None)?,
-        alloc: mk("sub_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
-        delete: mk("sub_rt_delete", &[I64, I64, I32], None)?,
-        trap: mk("sub_rt_trap", &[I64, I32, I32], None)?,
-        root_add: mk("sub_rt_root_add", &[I64, I64, I64], None)?,
-        shadow_push: mk("sub_rt_shadow_push", &[I64, I64, I64], None)?,
-        shadow_pop: mk("sub_rt_shadow_pop", &[I64], None)?,
-        str_lit: mk("sub_rt_str_lit", &[I64, I64, I64, I32], Some(I64))?,
-        str_len: mk("sub_rt_str_len", &[I64, I64], Some(I32))?,
-        str_concat: mk("sub_rt_str_concat", &[I64, I64, I64, I32], Some(I64))?,
-        str_eq: mk("sub_rt_str_eq", &[I64, I64, I64], Some(I32))?,
-        fmt_i32: mk("sub_rt_fmt_i32", &[I64, I32, I32], Some(I64))?,
-        fmt_u32: mk("sub_rt_fmt_u32", &[I64, I32, I32], Some(I64))?,
-        fmt_i64: mk("sub_rt_fmt_i64", &[I64, I64, I32], Some(I64))?,
-        fmt_u64: mk("sub_rt_fmt_u64", &[I64, I64, I32], Some(I64))?,
-        fmt_f32: mk("sub_rt_fmt_f32", &[I64, F32, I32], Some(I64))?,
-        fmt_f64: mk("sub_rt_fmt_f64", &[I64, F64, I32], Some(I64))?,
-        fmt_bool: mk("sub_rt_fmt_bool", &[I64, I32, I32], Some(I64))?,
-        f16_from_f64: mk("sub_rt_f16_from_f64", &[F64], Some(I16))?,
-        f16_to_f64: mk("sub_rt_f16_to_f64", &[I16], Some(F64))?,
-        array_new: mk("sub_rt_array_new", &[I64, I64, I32], Some(I64))?,
-        array_len: mk("sub_rt_array_len", &[I64, I64], Some(I32))?,
-        array_push: mk("sub_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,
-        array_pop: mk("sub_rt_array_pop", &[I64, I64, I64, I32], None)?,
-        array_ptr: mk("sub_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
-        str_data: mk("sub_rt_str_data", &[I64, I64], Some(I64))?,
-        array_data: mk("sub_rt_array_data", &[I64, I64], Some(I64))?,
+        print: mk("subscript_rt_print", &[I64, I64], None)?,
+        collect: mk("subscript_rt_collect", &[I64], None)?,
+        alloc: mk("subscript_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
+        delete: mk("subscript_rt_delete", &[I64, I64, I32], None)?,
+        trap: mk("subscript_rt_trap", &[I64, I32, I32], None)?,
+        root_add: mk("subscript_rt_root_add", &[I64, I64, I64], None)?,
+        shadow_push: mk("subscript_rt_shadow_push", &[I64, I64, I64], None)?,
+        shadow_pop: mk("subscript_rt_shadow_pop", &[I64], None)?,
+        str_lit: mk("subscript_rt_str_lit", &[I64, I64, I64, I32], Some(I64))?,
+        str_len: mk("subscript_rt_str_len", &[I64, I64], Some(I32))?,
+        str_concat: mk("subscript_rt_str_concat", &[I64, I64, I64, I32], Some(I64))?,
+        str_eq: mk("subscript_rt_str_eq", &[I64, I64, I64], Some(I32))?,
+        fmt_i32: mk("subscript_rt_fmt_i32", &[I64, I32, I32], Some(I64))?,
+        fmt_u32: mk("subscript_rt_fmt_u32", &[I64, I32, I32], Some(I64))?,
+        fmt_i64: mk("subscript_rt_fmt_i64", &[I64, I64, I32], Some(I64))?,
+        fmt_u64: mk("subscript_rt_fmt_u64", &[I64, I64, I32], Some(I64))?,
+        fmt_f32: mk("subscript_rt_fmt_f32", &[I64, F32, I32], Some(I64))?,
+        fmt_f64: mk("subscript_rt_fmt_f64", &[I64, F64, I32], Some(I64))?,
+        fmt_bool: mk("subscript_rt_fmt_bool", &[I64, I32, I32], Some(I64))?,
+        f16_from_f64: mk("subscript_rt_f16_from_f64", &[F64], Some(I16))?,
+        f16_to_f64: mk("subscript_rt_f16_to_f64", &[I16], Some(F64))?,
+        array_new: mk("subscript_rt_array_new", &[I64, I64, I32], Some(I64))?,
+        array_len: mk("subscript_rt_array_len", &[I64, I64], Some(I32))?,
+        array_push: mk("subscript_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,
+        array_pop: mk("subscript_rt_array_pop", &[I64, I64, I64, I32], None)?,
+        array_ptr: mk("subscript_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
+        str_data: mk("subscript_rt_str_data", &[I64, I64], Some(I64))?,
+        array_data: mk("subscript_rt_array_data", &[I64, I64], Some(I64))?,
         assoc_iter_begin: mk(
-            "sub_rt_assoc_iter_begin",
+            "subscript_rt_assoc_iter_begin",
             &[I64, I64, I32],
             Some(I64),
         )?,
         assoc_iter_copy: mk(
-            "sub_rt_assoc_iter_copy",
+            "subscript_rt_assoc_iter_copy",
             &[I64, I64, I64, I32, I64, I32],
             Some(I32),
         )?,
-        assoc_iter_end: mk("sub_rt_assoc_iter_end", &[I64, I64], None)?,
+        assoc_iter_end: mk("subscript_rt_assoc_iter_end", &[I64, I64], None)?,
         str_iter_code_point: mk(
-            "sub_rt_str_iter_code_point",
+            "subscript_rt_str_iter_code_point",
             &[I64, I64, I32, I64, I32],
             Some(I64),
         )?,
         array_spread_array: mk(
-            "sub_rt_array_spread_array",
+            "subscript_rt_array_spread_array",
             &[I64, I64, I64, I32],
             None,
         )?,
         array_spread_fixed: mk(
-            "sub_rt_array_spread_fixed",
+            "subscript_rt_array_spread_fixed",
             &[I64, I64, I64, I64, I32],
             None,
         )?,
         array_spread_assoc: mk(
-            "sub_rt_array_spread_assoc",
+            "subscript_rt_array_spread_assoc",
             &[I64, I64, I64, I32],
             None,
         )?,
         array_spread_string: mk(
-            "sub_rt_array_spread_string",
+            "subscript_rt_array_spread_string",
             &[I64, I64, I64, I32],
             None,
         )?,
         // (ctx, code, env, userdata1, userdata2) → binding pointer (§14.4:
         // two userdata slots).
-        cb_bind: mk("sub_rt_cb_bind", &[I64, I64, I64, I64, I64], Some(I64))?,
+        cb_bind: mk("subscript_rt_cb_bind", &[I64, I64, I64, I64, I64], Some(I64))?,
         // The generic C-ABI callback trampoline (P5.2b, §14.4). Generated
         // code never calls it — a foreign C API does — so it is imported
         // only to take its address (`func_addr`) for a callback-info
         // struct's function-pointer slot; the declared signature (message
         // as two words, then the two userdata slots) is unused.
-        cb_trampoline: mk("sub_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
+        cb_trampoline: mk("subscript_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
         math,
         num,
         // Date intrinsics (stdlib.md §3): opaque symbols on both tiers.
         date_utc: mk(
-            "sub_rt_date_utc",
+            "subscript_rt_date_utc",
             &[I64, I32, I32, I32, I32, I32, I32, I32, I32],
             Some(I64),
         )?,
-        date_new: mk("sub_rt_date_new", &[I64, I64, I32], Some(I64))?,
-        date_now: mk("sub_rt_date_now", &[I64], Some(I64))?,
-        date_get: mk("sub_rt_date_get", &[I64, I64, I32], Some(I32))?,
-        date_to_iso: mk("sub_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
+        date_new: mk("subscript_rt_date_new", &[I64, I64, I32], Some(I64))?,
+        date_now: mk("subscript_rt_date_now", &[I64], Some(I64))?,
+        date_get: mk("subscript_rt_date_get", &[I64, I64, I32], Some(I32))?,
+        date_to_iso: mk("subscript_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
         json,
         str_ops,
         regex_ops,
@@ -967,7 +967,7 @@ pub(crate) fn lower_module_with<M: Module>(
                 checked_layout_add(globals_size, size, "reload globals layout")?;
             GlobalSlot::Offset(at)
         } else {
-            let name = format!("ss_g{gi}");
+            let name = format!("subscript_g{gi}");
             let id = ml
                 .module
                 .declare_data(&name, Linkage::Local, true, false)
@@ -991,7 +991,7 @@ pub(crate) fn lower_module_with<M: Module>(
     // Declare every script function up front so bodies can call in any
     // order. Symbol names are index-based (stable and linker-clean for
     // the AOT tier; HIR names may contain `<...>` from monomorphization).
-    // Exported functions get a stable `ss_export_<name>` symbol with
+    // Exported functions get a stable `subscript_export_<name>` symbol with
     // external linkage: they are the host-entry surface (Q12) and the
     // AOT entry program resolves them at link time.
     let decl = |ml: &mut ModLower<M>, key: FnKey, sym: String, sig: &Signature, export: bool| {
@@ -1008,9 +1008,9 @@ pub(crate) fn lower_module_with<M: Module>(
         let params: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
         let export = f.exported && !f.is_generator;
         let sym = if export {
-            format!("ss_export_{}", f.name)
+            format!("subscript_export_{}", f.name)
         } else {
-            format!("ss_f{i}")
+            format!("subscript_f{i}")
         };
         if f.is_generator {
             let sig =
@@ -1020,7 +1020,7 @@ pub(crate) fn lower_module_with<M: Module>(
             decl(
                 &mut ml,
                 FnKey::Resume(f.name.clone()),
-                format!("ss_f{i}_resume"),
+                format!("subscript_f{i}_resume"),
                 &rsig,
                 false,
             )?;
@@ -1033,7 +1033,7 @@ pub(crate) fn lower_module_with<M: Module>(
         if let Some(ctor) = &c.ctor {
             let params: Vec<Type> = ctor.params.iter().map(|p| p.ty.clone()).collect();
             let sig = ml.make_sig(&params, &Type::Void, false, true)?;
-            decl(&mut ml, FnKey::Ctor(ci), format!("ss_ctor{ci}"), &sig, false)?;
+            decl(&mut ml, FnKey::Ctor(ci), format!("subscript_ctor{ci}"), &sig, false)?;
         }
         for (mi, m) in c.methods.iter().enumerate() {
             let params: Vec<Type> = m.params.iter().map(|p| p.ty.clone()).collect();
@@ -1041,7 +1041,7 @@ pub(crate) fn lower_module_with<M: Module>(
             decl(
                 &mut ml,
                 FnKey::Method(ci, m.name.clone()),
-                format!("ss_m{ci}_{mi}"),
+                format!("subscript_m{ci}_{mi}"),
                 &sig,
                 false,
             )?;
@@ -1049,7 +1049,7 @@ pub(crate) fn lower_module_with<M: Module>(
     }
     {
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
-        decl(&mut ml, FnKey::Init, "ss_init".to_string(), &sig, true)?;
+        decl(&mut ml, FnKey::Init, "subscript_init".to_string(), &sig, true)?;
     }
 
     // Define bodies.

@@ -37,6 +37,6 @@ export function main(): void {
   Context.collect();
 
   // Invariant 2: scripts have no memory-counter observable for the call
-  // above. The examples.md §5 capstone reads sub_rt_ctx_live_bytes from the
+  // above. The examples.md §5 capstone reads subscript_rt_ctx_live_bytes from the
   // host around explicit collection, as compiler.md §18.2d specifies.
 }

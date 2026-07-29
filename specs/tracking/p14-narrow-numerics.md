@@ -22,8 +22,8 @@ the unambiguous 8/16-bit C scalars.
 
 **`f16` is storage-only.** Arithmetic with an `f16` operand is S014
 ("compute via `as f32`"); conversion is one runtime implementation
-(`runtime/src/half.rs`) behind opaque `sub_rt_f16_from_f64` /
-`sub_rt_f16_to_f64` on both tiers. Rationale (§16.2): the C tier's
+(`runtime/src/half.rs`) behind opaque `subscript_rt_f16_from_f64` /
+`subscript_rt_f16_to_f64` on both tiers. Rationale (§16.2): the C tier's
 `_Float16` rounds in half precision while `__fp16` promotes to `f32`,
 so an emitted half operation is a silent dev-JIT ≠ ship-C divergence —
 the same hazard `stdlib.md` §0.2 records for libm. A rejection can be

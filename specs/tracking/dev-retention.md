@@ -186,7 +186,7 @@ Mechanism is not yet chosen; that is the next decision.
 
 `compiler.md` §8.1a-1 contracts it and the change is in: the dev tier
 releases by default, and retention becomes
-`sub_rt_ctx_set_freed_handle_diagnostics(ctx, enabled)` — per Context,
+`subscript_rt_ctx_set_freed_handle_diagnostics(ctx, enabled)` — per Context,
 host-set, default off, refused after the first allocation.
 
 The same probe that produced the problem measures the fix, both settings
@@ -232,7 +232,7 @@ and §8.1a-3 and landed together:
    are evicted (released and forgotten, joining the best-effort class)
    to make room. Rationale: a diagnostic session that exhausts the
    machine diagnoses nothing. The default is the generated header's
-   `SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES`
+   `SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES`
    (1 073 741 824), also used by the dev JIT's boolean mode parameter.
 
 The guarantee after both: diagnostics are complete for the most recently

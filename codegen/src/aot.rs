@@ -20,10 +20,10 @@
 //! # Entry program
 //!
 //! The linked program has no `main` of its own: the lowering exports
-//! `ss_init` (module-global initializer) and `ss_export_<name>` for
+//! `subscript_init` (module-global initializer) and `subscript_export_<name>` for
 //! every exported script function. The C entry creates a Context
-//! through the runtime's host-driver entry points, calls `ss_init` and
-//! `ss_export_main`, writes the Context's stdout sink to the process
+//! through the runtime's host-driver entry points, calls `subscript_init` and
+//! `subscript_export_main`, writes the Context's stdout sink to the process
 //! stdout, and reports a trap on stderr with a non-zero exit status.
 //! `print` still never writes to the process stdout itself: the bytes
 //! compared by the differential gate are the sink's.
@@ -80,9 +80,9 @@ pub struct AotObject {
 
 /// Checks `files` and emits a relocatable object for `triple`.
 ///
-/// Pass `None` for the host triple. The object defines `ss_init` and
-/// one `ss_export_<name>` per exported script function, and imports the
-/// runtime's `sub_rt_*` symbols, which the link resolves from the
+/// Pass `None` for the host triple. The object defines `subscript_init` and
+/// one `subscript_export_<name>` per exported script function, and imports the
+/// runtime's `subscript_rt_*` symbols, which the link resolves from the
 /// runtime static library.
 ///
 /// # Errors
@@ -162,10 +162,10 @@ pub const AOT_ENTRY_C: &str = concat!(
 #include <fcntl.h>
 #endif
 
-static void call_script_entry(Context *ctx, sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+static void call_script_entry(Context *ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
+    subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
@@ -176,33 +176,33 @@ int main(void) {
      * every other platform, which has no text-mode translation. */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
-    Context *ctx = sub_rt_ctx_new();
+    Context *ctx = subscript_rt_ctx_new();
     if (ctx == NULL) {
         return 2;
     }
-    call_script_entry(ctx, ss_init);
-    if (sub_rt_ctx_trap_kind(ctx) == 0) {
-        call_script_entry(ctx, ss_export_main);
+    call_script_entry(ctx, subscript_init);
+    if (subscript_rt_ctx_trap_kind(ctx) == 0) {
+        call_script_entry(ctx, subscript_export_main);
     }
     uint64_t len = 0;
-    const unsigned char *out = sub_rt_ctx_stdout(ctx, &len);
+    const unsigned char *out = subscript_rt_ctx_stdout(ctx, &len);
     if (len > 0) {
         fwrite(out, 1, (size_t)len, stdout);
     }
     fflush(stdout);
     int status = 0;
-    uint32_t kind = sub_rt_ctx_trap_kind(ctx);
+    uint32_t kind = subscript_rt_ctx_trap_kind(ctx);
     if (kind != 0) {
         uint64_t mlen = 0;
-        const unsigned char *msg = sub_rt_ctx_trap_message(ctx, &mlen);
-        fprintf(stderr, "trap %u %u ", kind, sub_rt_ctx_trap_pos_id(ctx));
+        const unsigned char *msg = subscript_rt_ctx_trap_message(ctx, &mlen);
+        fprintf(stderr, "trap %u %u ", kind, subscript_rt_ctx_trap_pos_id(ctx));
         if (mlen > 0) {
             fwrite(msg, 1, (size_t)mlen, stderr);
         }
         fputc('\n', stderr);
         status = 3;
     }
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
     return status;
 }
 "#
@@ -699,7 +699,7 @@ pub fn run_aot_with_native_libraries(
 /// compiler compiles at `-O2 -ffp-contract=off` and links with the
 /// runtime static library and the same host entry [`AOT_ENTRY_C`] the
 /// Cranelift AOT path uses — the emitted C exports the identical
-/// `ss_init` / `ss_export_main` surface, so it is a drop-in subject.
+/// `subscript_init` / `subscript_export_main` surface, so it is a drop-in subject.
 /// The whole cycle happens in a temporary directory removed before
 /// returning. The C compiler's absence is a failure, never a skip (the
 /// gate machine is the development machine, §8.3).
@@ -734,7 +734,7 @@ pub fn run_c_aot_with_native_libraries(
 /// Runs the emitted-C ship tier while refusing the `n`-th object-level
 /// Context allocation after Context creation.
 ///
-/// The injected fault is armed before `ss_init`, so module-initializer
+/// The injected fault is armed before `subscript_init`, so module-initializer
 /// allocations are part of the count. When
 /// `SUBSCRIPT_C_AOT_ASAN` is set, the generated C and host entry are
 /// compiled and linked with AddressSanitizer.
@@ -767,7 +767,7 @@ fn run_c_aot_configured(
         .join(format!("program{}", std::env::consts::EXE_SUFFIX));
     write_file(&src_path, program.source.as_bytes())?;
     let entry = if let Some(n) = fail_alloc_after {
-        let anchor = "    call_script_entry(ctx, ss_init);";
+        let anchor = "    call_script_entry(ctx, subscript_init);";
         if !AOT_ENTRY_C.contains(anchor) {
             return Err(RunError::Internal(internal(
                 "AOT entry allocation-fault anchor moved",
@@ -776,7 +776,7 @@ fn run_c_aot_configured(
         AOT_ENTRY_C.replace(
             anchor,
             &format!(
-                "    sub_rt_ctx_fail_alloc_after(ctx, {n}u);\n\
+                "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n\
                  {anchor}"
             ),
         )
@@ -957,7 +957,7 @@ mod tests {
     }
 
     /// Asserts the shape every emitted object must have: the right
-    /// format and architecture, `ss_export_main` and `ss_init` defined
+    /// format and architecture, `subscript_export_main` and `subscript_init` defined
     /// and global, and the runtime reached only as undefined imports.
     /// Mach-O global names carry a `_` prefix.
     fn assert_object_shape(bytes: &[u8], format: BinaryFormat, arch: Architecture) {
@@ -965,7 +965,7 @@ mod tests {
         assert_eq!(file.format(), format);
         assert_eq!(file.architecture(), arch);
         let prefix = if format == BinaryFormat::MachO { "_" } else { "" };
-        for name in ["ss_export_main", "ss_init"] {
+        for name in ["subscript_export_main", "subscript_init"] {
             let sym = file
                 .symbols()
                 .find(|s| s.name() == Ok(format!("{prefix}{name}").as_str()))
@@ -975,8 +975,8 @@ mod tests {
         }
         let print = file
             .symbols()
-            .find(|s| s.name() == Ok(format!("{prefix}sub_rt_print").as_str()))
-            .expect("sub_rt_print must be referenced");
+            .find(|s| s.name() == Ok(format!("{prefix}subscript_rt_print").as_str()))
+            .expect("subscript_rt_print must be referenced");
         assert!(print.is_undefined(), "the runtime is resolved at link time");
     }
 
@@ -1082,65 +1082,65 @@ static void observe(
 }
 
 static int fail(Context* ctx, int code) {
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
     return code;
 }
 
-static void call_entry(Context* ctx, sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+static void call_entry(Context* ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
+    subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = sub_rt_ctx_new();
+    Context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     struct observed_trap observed = {0};
-    sub_rt_ctx_set_trap_observer(ctx, observe, &observed);
-    call_entry(ctx, ss_init);
-    call_entry(ctx, ss_export_main);
+    subscript_rt_ctx_set_trap_observer(ctx, observe, &observed);
+    call_entry(ctx, subscript_init);
+    call_entry(ctx, subscript_export_main);
 
     if (observed.calls != 1) return fail(ctx, 10);
-    uint32_t kind = sub_rt_ctx_trap_kind(ctx);
-    uint32_t pos_id = sub_rt_ctx_trap_pos_id(ctx);
+    uint32_t kind = subscript_rt_ctx_trap_kind(ctx);
+    uint32_t pos_id = subscript_rt_ctx_trap_pos_id(ctx);
     uint64_t message_len = 0;
-    const uint8_t* message = sub_rt_ctx_trap_message(ctx, &message_len);
+    const uint8_t* message = subscript_rt_ctx_trap_message(ctx, &message_len);
     if (kind == 0) return fail(ctx, 11);
     if (observed.kind != kind || observed.pos_id != pos_id) return fail(ctx, 12);
     if (observed.message != message || observed.message_len != message_len) return fail(ctx, 13);
     if (memcmp(observed.message, message, (size_t)message_len) != 0) return fail(ctx, 14);
 
-    const uint64_t live_before = sub_rt_ctx_live_allocations(ctx);
-    const uint64_t bytes_before = sub_rt_ctx_live_bytes(ctx);
-    const uint64_t reserved_before = sub_rt_ctx_reserved_bytes(ctx);
-    sub_rt_ctx_enter_script(ctx);
-    const int cleared_while_live = sub_rt_ctx_clear_trap(ctx);
-    sub_rt_ctx_exit_script(ctx);
+    const uint64_t live_before = subscript_rt_ctx_live_allocations(ctx);
+    const uint64_t bytes_before = subscript_rt_ctx_live_bytes(ctx);
+    const uint64_t reserved_before = subscript_rt_ctx_reserved_bytes(ctx);
+    subscript_rt_ctx_enter_script(ctx);
+    const int cleared_while_live = subscript_rt_ctx_clear_trap(ctx);
+    subscript_rt_ctx_exit_script(ctx);
     if (cleared_while_live != 0) return fail(ctx, 15);
-    if (sub_rt_ctx_clear_trap(ctx) != 1) return fail(ctx, 16);
-    if (sub_rt_ctx_live_allocations(ctx) != live_before ||
-        sub_rt_ctx_live_bytes(ctx) != bytes_before ||
-        sub_rt_ctx_reserved_bytes(ctx) != reserved_before) return fail(ctx, 17);
-    if (sub_rt_ctx_trap_kind(ctx) != 0) return fail(ctx, 18);
-    call_entry(ctx, ss_export_main);
-    if (sub_rt_ctx_trap_kind(ctx) != 0) return fail(ctx, 19);
+    if (subscript_rt_ctx_clear_trap(ctx) != 1) return fail(ctx, 16);
+    if (subscript_rt_ctx_live_allocations(ctx) != live_before ||
+        subscript_rt_ctx_live_bytes(ctx) != bytes_before ||
+        subscript_rt_ctx_reserved_bytes(ctx) != reserved_before) return fail(ctx, 17);
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) return fail(ctx, 18);
+    call_entry(ctx, subscript_export_main);
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) return fail(ctx, 19);
     if (observed.calls != 1) return fail(ctx, 20);
 
     uint64_t stdout_len = 0;
-    const uint8_t* stdout_bytes = sub_rt_ctx_stdout(ctx, &stdout_len);
+    const uint8_t* stdout_bytes = subscript_rt_ctx_stdout(ctx, &stdout_len);
     if (stdout_len > 0) fwrite(stdout_bytes, 1, (size_t)stdout_len, stdout);
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
 
-    Context* cleared_ctx = sub_rt_ctx_new();
+    Context* cleared_ctx = subscript_rt_ctx_new();
     if (cleared_ctx == NULL) return 3;
     struct observed_trap cleared = {0};
-    sub_rt_ctx_set_trap_observer(cleared_ctx, observe, &cleared);
-    sub_rt_ctx_set_trap_observer(cleared_ctx, NULL, NULL);
-    call_entry(cleared_ctx, ss_init);
-    call_entry(cleared_ctx, ss_export_main);
-    if (sub_rt_ctx_trap_kind(cleared_ctx) == 0) return fail(cleared_ctx, 21);
+    subscript_rt_ctx_set_trap_observer(cleared_ctx, observe, &cleared);
+    subscript_rt_ctx_set_trap_observer(cleared_ctx, NULL, NULL);
+    call_entry(cleared_ctx, subscript_init);
+    call_entry(cleared_ctx, subscript_export_main);
+    if (subscript_rt_ctx_trap_kind(cleared_ctx) == 0) return fail(cleared_ctx, 21);
     if (cleared.calls != 0) return fail(cleared_ctx, 22);
-    sub_rt_ctx_release(cleared_ctx);
+    subscript_rt_ctx_release(cleared_ctx);
     return 0;
 }
 "#,
@@ -1178,24 +1178,24 @@ static void observe(
 }
 
 int main(void) {
-    Context* ctx = sub_rt_ctx_new();
+    Context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     uint32_t calls = 0;
-    sub_rt_ctx_set_trap_observer(ctx, observe, &calls);
-    sub_rt_ctx_enter_script(ctx);
-    ss_init(ctx);
-    sub_rt_ctx_exit_script(ctx);
-    sub_rt_ctx_enter_script(ctx);
-    ss_export_main(ctx);
-    sub_rt_ctx_exit_script(ctx);
-    if (sub_rt_ctx_trap_kind(ctx) != 0 || calls != 0) {
-        sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_set_trap_observer(ctx, observe, &calls);
+    subscript_rt_ctx_enter_script(ctx);
+    subscript_init(ctx);
+    subscript_rt_ctx_exit_script(ctx);
+    subscript_rt_ctx_enter_script(ctx);
+    subscript_export_main(ctx);
+    subscript_rt_ctx_exit_script(ctx);
+    if (subscript_rt_ctx_trap_kind(ctx) != 0 || calls != 0) {
+        subscript_rt_ctx_release(ctx);
         return 3;
     }
     uint64_t len = 0;
-    const uint8_t* bytes = sub_rt_ctx_stdout(ctx, &len);
+    const uint8_t* bytes = subscript_rt_ctx_stdout(ctx, &len);
     if (len > 0) fwrite(bytes, 1, (size_t)len, stdout);
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
     return 0;
 }
 "#,
@@ -1231,26 +1231,26 @@ int main(void) {
             r#"
 #include <stdio.h>
 
-static void call_entry(Context* ctx, sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+static void call_entry(Context* ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
+    subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = sub_rt_ctx_new();
+    Context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
-    call_entry(ctx, ss_init);
-    if (sub_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, ss_export_main);
-    if (sub_rt_ctx_trap_kind(ctx) != 0) {
-        sub_rt_ctx_release(ctx);
+    call_entry(ctx, subscript_init);
+    if (subscript_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, subscript_export_main);
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) {
+        subscript_rt_ctx_release(ctx);
         return 3;
     }
     printf("%llu %llu %llu\n",
-        (unsigned long long)sub_rt_ctx_live_allocations(ctx),
-        (unsigned long long)sub_rt_ctx_live_bytes(ctx),
-        (unsigned long long)sub_rt_ctx_reserved_bytes(ctx));
-    sub_rt_ctx_release(ctx);
+        (unsigned long long)subscript_rt_ctx_live_allocations(ctx),
+        (unsigned long long)subscript_rt_ctx_live_bytes(ctx),
+        (unsigned long long)subscript_rt_ctx_reserved_bytes(ctx));
+    subscript_rt_ctx_release(ctx);
     return 0;
 }
 "#,
@@ -1331,48 +1331,48 @@ static void visit(
 }
 
 static const char* class_name(uint32_t class_id) {
-    for (uint64_t i = 0; i < ss_alloc_class_count; ++i) {
-        if (ss_alloc_classes[i].class_id == class_id) {
-            return ss_alloc_classes[i].name;
+    for (uint64_t i = 0; i < subscript_alloc_class_count; ++i) {
+        if (subscript_alloc_classes[i].class_id == class_id) {
+            return subscript_alloc_classes[i].name;
         }
     }
     return NULL;
 }
 
-static void call_entry(Context* ctx, sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+static void call_entry(Context* ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
+    subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = sub_rt_ctx_new();
+    Context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
-    call_entry(ctx, ss_init);
-    if (sub_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, ss_export_main);
-    if (sub_rt_ctx_trap_kind(ctx) != 0) {
-        sub_rt_ctx_release(ctx);
+    call_entry(ctx, subscript_init);
+    if (subscript_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, subscript_export_main);
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) {
+        subscript_rt_ctx_release(ctx);
         return 3;
     }
 
     struct observed observed = {0};
     uint64_t visited =
-        sub_rt_ctx_visit_live_allocations(ctx, visit, &observed);
+        subscript_rt_ctx_visit_live_allocations(ctx, visit, &observed);
     if (visited != 3 || observed.count != 3 ||
-        sub_rt_ctx_live_allocations(ctx) != 3) {
-        sub_rt_ctx_release(ctx);
+        subscript_rt_ctx_live_allocations(ctx) != 3) {
+        subscript_rt_ctx_release(ctx);
         return 4;
     }
 
     for (uint64_t i = 0; i < observed.count; ++i) {
         const struct triple* triple = &observed.triples[i];
-        if (triple->pos_id >= ss_alloc_position_count) {
-            sub_rt_ctx_release(ctx);
+        if (triple->pos_id >= subscript_alloc_position_count) {
+            subscript_rt_ctx_release(ctx);
             return 5;
         }
         const char* name = class_name(triple->class_id);
-        const sub_alloc_position_info* pos =
-            &ss_alloc_positions[triple->pos_id];
+        const subscript_alloc_position_info* pos =
+            &subscript_alloc_positions[triple->pos_id];
         uint32_t expected_line = 0;
         if (triple->class_id == 0 && name != NULL &&
             strcmp(name, "Cell") == 0) {
@@ -1384,18 +1384,18 @@ int main(void) {
                    strcmp(name, "ArrayData") == 0) {
             expected_line = 8;
         } else {
-            sub_rt_ctx_release(ctx);
+            subscript_rt_ctx_release(ctx);
             return 6;
         }
         if (strcmp(pos->file, "test.ts") != 0 ||
             pos->line != expected_line) {
-            sub_rt_ctx_release(ctx);
+            subscript_rt_ctx_release(ctx);
             return 7;
         }
         printf("%u %u %llu\n", triple->class_id, triple->pos_id,
                (unsigned long long)triple->bytes);
     }
-    sub_rt_ctx_release(ctx);
+    subscript_rt_ctx_release(ctx);
     return 0;
 }
 "#,
@@ -1462,24 +1462,24 @@ int main(void) {
             r#"
 #include <stdio.h>
 
-static void call_entry(Context* ctx, sub_script_main_entry entry) {
-    sub_rt_ctx_enter_script(ctx);
+static void call_entry(Context* ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
-    sub_rt_ctx_exit_script(ctx);
+    subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = sub_rt_ctx_new();
+    Context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
-    call_entry(ctx, ss_init);
-    if (sub_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, ss_export_main);
-    if (sub_rt_ctx_trap_kind(ctx) != 0) {
-        sub_rt_ctx_release(ctx);
+    call_entry(ctx, subscript_init);
+    if (subscript_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, subscript_export_main);
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) {
+        subscript_rt_ctx_release(ctx);
         return 3;
     }
     printf("%llu\n",
-        (unsigned long long)sub_rt_ctx_live_allocations(ctx));
-    sub_rt_ctx_release(ctx);
+        (unsigned long long)subscript_rt_ctx_live_allocations(ctx));
+    subscript_rt_ctx_release(ctx);
     return 0;
 }
 "#,

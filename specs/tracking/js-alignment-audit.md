@@ -29,7 +29,7 @@ Boa uses **`ryu-js`** — Ryū forked for ECMA semantics — which was
 already in the local cargo cache. Verified before adopting: 200 000
 random `f64` bit patterns, `ryu_js::Buffer::format` versus `String(v)`
 in node, **zero divergences**. Adopted (`=1.0.3`, runtime only, still
-behind the opaque `sub_rt_*` symbols per `stdlib.md` §0.2).
+behind the opaque `subscript_rt_*` symbols per `stdlib.md` §0.2).
 
 It closed more than the tie: the `[1e-6, 1e21)` **exponent thresholds**
 that P12 hand-wrote, and the hand-written **`toFixed`** rounding

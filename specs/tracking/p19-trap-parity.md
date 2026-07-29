@@ -16,7 +16,7 @@ script function and finished its body, and an array was pushed to
 twice after the fault, so **live Context state diverged too**.
 
 The continuation path also corrupted memory: an out-of-range write to a
-320-byte `@CStruct` element went through `ss_arr_at`, which recorded
+320-byte `@CStruct` element went through `subscript_arr_at`, which recorded
 the trap and returned a 256-byte static buffer, and the caller wrote
 320 bytes into it. AddressSanitizer: `global-buffer-overflow`.
 
@@ -45,8 +45,8 @@ red commit is now the record of what the defect looked like.
 ## What landed
 
 `Callee::can_trap()` in `compiler/src/hir.rs` is the shared policy for
-calls, consumed by both lowerings. `ss_arr_at`, `ss_fa_at` and
-`ss_scratch` are gone, their checks expanded at the call sites — the
+calls, consumed by both lowerings. `subscript_arr_at`, `subscript_fa_at` and
+`subscript_scratch` are gone, their checks expanded at the call sites — the
 only shape that closes the corruption, since a C function cannot make
 its caller return. One inline Context-layout site, now machine-checked
 against `Context::trap_flag_offset()`.
@@ -105,14 +105,14 @@ non-trapping stability all hold.
 
 ## Corrected: the performance mechanism
 
-The contract first recorded `ss_arr_at` as "an out-of-line call per
+The contract first recorded `subscript_arr_at` as "an out-of-line call per
 array element access". **Wrong** — it was `static` and clang inlined
 it. The reviewer rebuilt the removed helper and compiled both shapes
 with the ship tier's own flags.
 
 The cost was what the **fallback pointer** forced: a null compare and
 `csel` per access choosing between the returned pointer and
-`ss_scratch`, that global's address held live, a reachable cold-arm
+`subscript_scratch`, that global's address held live, a reachable cold-arm
 call, and therefore an 80-byte frame with callee-saved spills. 82
 instructions against 39.
 

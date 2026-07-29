@@ -8,7 +8,7 @@
 
 /* Recommended freed-handle diagnostics retention budget. The runtime does
  * not treat this value specially. */
-#define SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES UINT64_C(1073741824)
+#define SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES UINT64_C(1073741824)
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +21,7 @@ typedef struct Context Context;
  *
  * The callback deliberately receives no [`Context`] handle. It runs
  * inside [`Context::trap`] while that method holds exclusive access to
- * the Context, so calling any `sub_rt_*` API that takes that Context
+ * the Context, so calling any `subscript_rt_*` API that takes that Context
  * (including through a pointer smuggled in `userdata`) would violate
  * Rust's aliasing rules and is undefined behaviour.
  *
@@ -29,21 +29,21 @@ typedef struct Context Context;
  * valid after the callback returns, until the trap is cleared or the
  * Context is released.
  */
-typedef void (*sub_rt_trap_observer)(void* userdata, uint32_t kind, uint32_t pos_id, const uint8_t* message, uint64_t message_len);
+typedef void (*subscript_rt_trap_observer)(void* userdata, uint32_t kind, uint32_t pos_id, const uint8_t* message, uint64_t message_len);
 
 /**
  * Host callback invoked for each line printed while it is installed.
  *
  * The callback receives no [`Context`] handle. It runs inside
  * [`Context::print_line`] while that method holds exclusive access to the
- * Context, so calling any `sub_rt_*` API that takes that Context
+ * Context, so calling any `subscript_rt_*` API that takes that Context
  * (including through a pointer smuggled in `userdata`) would violate
  * Rust's aliasing rules and is undefined behaviour.
  *
  * `line` excludes the trailing newline and is valid only for the duration
  * of the callback.
  */
-typedef void (*sub_rt_print_observer)(void* userdata, const uint8_t* line, uint64_t line_len);
+typedef void (*subscript_rt_print_observer)(void* userdata, const uint8_t* line, uint64_t line_len);
 
 /**
  * Host callback invoked once for each live Context allocation.
@@ -53,37 +53,37 @@ typedef void (*sub_rt_print_observer)(void* userdata, const uint8_t* line, uint6
  * tier and for ship-tier large allocations, size-class payload capacity
  * for ship-tier arena blocks.
  */
-typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id, uint32_t pos_id, uint64_t payload_bytes);
+typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id, uint32_t pos_id, uint64_t payload_bytes);
 
 /**
- * C calling convention shared by the module initializer (`ss_init`) and every
+ * C calling convention shared by the module initializer (`subscript_init`) and every
  * supported host export.
  *
  * A host that may clear traps brackets each call with
- * `sub_rt_ctx_enter_script` and `sub_rt_ctx_exit_script`.
+ * `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
  *
- * An ordinary run entry uses `ss_export_main`; a host-owned entry may instead
+ * An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
  * drive other zero-argument `void` exports using the symbol
- * `ss_export_<name>` and this same C signature.
+ * `subscript_export_<name>` and this same C signature.
  */
-typedef void (*sub_script_main_entry)(Context* ctx);
+typedef void (*subscript_main_entry)(Context* ctx);
 
-/* Every linked program defines ss_init. A program with an exported main
- * defines ss_export_main; every other currently supported host export is
- * named `ss_export_<name>` with the same signature. */
-void ss_init(Context* ctx);
-void ss_export_main(Context* ctx);
+/* Every linked program defines subscript_init. A program with an exported main
+ * defines subscript_export_main; every other currently supported host export is
+ * named `subscript_export_<name>` with the same signature. */
+void subscript_init(Context* ctx);
+void subscript_export_main(Context* ctx);
 
-int32_t sub_rt_ctx_clear_trap(Context* ctx);
-void sub_rt_ctx_enter_script(Context* ctx);
-void sub_rt_ctx_exit_script(Context* ctx);
-void sub_rt_ctx_fail_alloc_after(Context* ctx, uint64_t n);
-uint64_t sub_rt_ctx_live_allocations(const Context* ctx);
-uint64_t sub_rt_ctx_live_bytes(const Context* ctx);
-Context* sub_rt_ctx_new(void);
-void sub_rt_ctx_release(Context* ctx);
-uint64_t sub_rt_ctx_reserved_bytes(const Context* ctx);
-void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
+int32_t subscript_rt_ctx_clear_trap(Context* ctx);
+void subscript_rt_ctx_enter_script(Context* ctx);
+void subscript_rt_ctx_exit_script(Context* ctx);
+void subscript_rt_ctx_fail_alloc_after(Context* ctx, uint64_t n);
+uint64_t subscript_rt_ctx_live_allocations(const Context* ctx);
+uint64_t subscript_rt_ctx_live_bytes(const Context* ctx);
+Context* subscript_rt_ctx_new(void);
+void subscript_rt_ctx_release(Context* ctx);
+uint64_t subscript_rt_ctx_reserved_bytes(const Context* ctx);
+void subscript_rt_ctx_seed_random(Context* ctx, uint64_t seed);
 /**
  * Enables or disables freed-handle diagnostics for this Context.
  *
@@ -110,8 +110,8 @@ void sub_rt_ctx_seed_random(Context* ctx, uint64_t seed);
  *
  * `ctx` follows the exclusive Context contract.
  */
-int32_t sub_rt_ctx_set_freed_handle_diagnostics(Context* ctx, uint32_t enabled, uint64_t min_payload_bytes, uint64_t max_retained_bytes);
-void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
+int32_t subscript_rt_ctx_set_freed_handle_diagnostics(Context* ctx, uint32_t enabled, uint64_t min_payload_bytes, uint64_t max_retained_bytes);
+void subscript_rt_ctx_set_now(Context* ctx, int64_t ms);
 /**
  * Installs the callback invoked for each line printed by `ctx`. Passing a
  * null `observer` clears it.
@@ -122,7 +122,7 @@ void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
  *
  * The callback receives no Context handle. It runs from inside
  * [`Context::print_line`] while the Context is exclusively borrowed, so it
- * must not call any `sub_rt_*` function taking that Context (including by
+ * must not call any `subscript_rt_*` function taking that Context (including by
  * recovering the pointer from `userdata`); doing so is an aliasing
  * violation and undefined behaviour.
  *
@@ -131,14 +131,14 @@ void sub_rt_ctx_set_now(Context* ctx, int64_t ms);
  * `ctx` follows the exclusive Context contract. `observer`, when present,
  * must be callable with `userdata` and obey the no-re-entry rule above.
  */
-void sub_rt_ctx_set_print_observer(Context* ctx, sub_rt_print_observer observer, void* userdata);
-void sub_rt_ctx_set_regex_budget(Context* ctx, uint64_t budget);
-void sub_rt_ctx_set_trap_observer(Context* ctx, sub_rt_trap_observer observer, void* userdata);
-const uint8_t* sub_rt_ctx_stdout(const Context* ctx, uint64_t* len);
-uint32_t sub_rt_ctx_trap_kind(const Context* ctx);
-const uint8_t* sub_rt_ctx_trap_message(const Context* ctx, uint64_t* len);
-uint32_t sub_rt_ctx_trap_pos_id(const Context* ctx);
-uint64_t sub_rt_ctx_visit_live_allocations(const Context* ctx, sub_rt_alloc_visitor visitor, void* userdata);
+void subscript_rt_ctx_set_print_observer(Context* ctx, subscript_rt_print_observer observer, void* userdata);
+void subscript_rt_ctx_set_regex_budget(Context* ctx, uint64_t budget);
+void subscript_rt_ctx_set_trap_observer(Context* ctx, subscript_rt_trap_observer observer, void* userdata);
+const uint8_t* subscript_rt_ctx_stdout(const Context* ctx, uint64_t* len);
+uint32_t subscript_rt_ctx_trap_kind(const Context* ctx);
+const uint8_t* subscript_rt_ctx_trap_message(const Context* ctx, uint64_t* len);
+uint32_t subscript_rt_ctx_trap_pos_id(const Context* ctx);
+uint64_t subscript_rt_ctx_visit_live_allocations(const Context* ctx, subscript_rt_alloc_visitor visitor, void* userdata);
 
 #ifdef __cplusplus
 } /* extern "C" */

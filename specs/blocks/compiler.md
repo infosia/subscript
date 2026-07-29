@@ -5,7 +5,7 @@ spike from P3 to P0.5 — plan §8; Rev 2 adds the §6 P1 checker contract;
 Rev 3 adds the §7 P2 runtime/JIT contract; Rev 4 adds the §8 P3
 AOT/reload contract; Rev 5 scopes trap recovery; Rev 6 adds the §9 P4
 measurement methodology; Rev 7 adds the §10 P4.1 optimization contract;
-Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `sub_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `sub_rt_ctx_clear_trap`, and §18.2d memory accounting; Rev 24, 2026-07-27, adds the §22 P24 contract for two monotonic costs under invariant 2 — the 4.25 MiB code-point table and the dev tier's cumulative-allocation sweep; Rev 25, 2026-07-27, adds §22.5 What landed, including the measured correction that the ship-tier `tree` movement is `Context`'s 104-byte growth and not this phase). Contract for
+Rev 8 makes the ship tier C emission — §11; Rev 9 adds the §12 P5 binding contract; Rev 10 scopes dev-tier boundary-struct marshaling to arm64 — §12.3a; Rev 11 makes the crate build's C compilation target-portable so the workspace builds on Windows-MSVC — §11a; Rev 12 makes the runtime C toolchain clang-portable — §11b — and extends dev-JIT struct-by-value marshaling to Win64 — §12.3a — for a test-green Windows-x64 gate; Rev 13 inlines emitted-C growable-array element access — §10a; Rev 14 adds the §13 P6 production-C-header interop contract; Rev 15 adds the §14 P7 async/Future + remaining-shapes contract; Rev 16 adds the §8.1b P8 ship-tier arena allocator contract; Rev 17 adds the §15 P9 stdlib pointer; Rev 18 adds the §16 P14 narrow-numerics contract — `i8`/`u8`/`i16`/`u16`/`f16`, `f16` storage-only; Rev 19 adds the §17 P16 generated-API-reference contract; Rev 23, 2026-07-26, adds the §21 P21 allocation-path contract — fault injection and per-allocation attribution, superseding §18.2e; Rev 22, 2026-07-26, adds the §20 P20 trap-site-IR contract; Rev 21, 2026-07-26, adds the §19 P19 trap-unwind-parity contract — CRITICAL; Rev 20, 2026-07-26, contracts the host `subscript_rt_ctx_*` API retroactively and adds the §18.2 trap observer §18.1a host enter/exit, §18.1b the generated host header, §18.2b `subscript_rt_ctx_clear_trap`, and §18.2d memory accounting; Rev 24, 2026-07-27, adds the §22 P24 contract for two monotonic costs under invariant 2 — the 4.25 MiB code-point table and the dev tier's cumulative-allocation sweep; Rev 25, 2026-07-27, adds §22.5 What landed, including the measured correction that the ship-tier `tree` movement is `Context`'s 104-byte growth and not this phase). Contract for
 the plan's P0.5–P5 phases
 (`specs/subscript-project-plan.md` §6). Evidence lands in
 `specs/tracking/<phase>.md`.
@@ -117,6 +117,17 @@ CLAUDE.md code conventions apply to all crates (`compiler/`, `runtime/`):
 no panics in library code, `///` docs + `#![warn(missing_docs)]`,
 `#[must_use]`, `#[non_exhaustive]`, SAFETY comments on every unsafe impl,
 unit tests with every public API, one module per area.
+
+**C-visible symbol prefix.** Every symbol this project defines in the C
+namespace carries the project's name: `subscript_rt_*` for the runtime
+API the host calls (constants `SUBSCRIPT_RT_*`), and `subscript_*` for
+everything the generated program defines — `subscript_init`,
+`subscript_export_<name>`, the `subscript_main_entry` typedef, and every
+emitted helper and type. *(Renamed 2026-07-29, owner decision, from
+`sub_rt_*`/`ss_*`: `sub` alone was ambiguous. `ts_`/`tsc_` was
+considered and rejected — it reads as an embedded TypeScript runtime,
+which this project is not, and `tsc` is the name of the TypeScript
+compiler the gate runs.)*
 
 ## 6. P1 checker contract
 
@@ -319,7 +330,7 @@ would force two builds of the workspace to run one `cargo test`: the trap
 corpus needs the mode on in the same run where the accept corpus, the
 benchmarks and the examples need it off. So it is a Context-level setting
 established before the first allocation, exposed on the host C API beside
-the other `sub_rt_ctx_*` settings, defaulting to off. When on, behaviour
+the other `subscript_rt_ctx_*` settings, defaulting to off. When on, behaviour
 is exactly today's retain-and-poison, unbounded — a diagnostic session
 accepts that cost deliberately.
 
@@ -369,7 +380,7 @@ larger objects only, with the boundary host-chosen.
 **C API.** The setting and its threshold are established together:
 
 ```c
-int32_t sub_rt_ctx_set_freed_handle_diagnostics(
+int32_t subscript_rt_ctx_set_freed_handle_diagnostics(
     Context *ctx, uint32_t enabled, uint64_t min_payload_bytes);
 ```
 
@@ -448,7 +459,7 @@ frees least likely to matter.
 **C API.** The setting, threshold and budget are established together:
 
 ```c
-int32_t sub_rt_ctx_set_freed_handle_diagnostics(
+int32_t subscript_rt_ctx_set_freed_handle_diagnostics(
     Context *ctx, uint32_t enabled, uint64_t min_payload_bytes,
     uint64_t max_retained_bytes);
 ```
@@ -463,7 +474,7 @@ that is the memory actually held. Both parameters are ignored when
 **Default budget (owner, 2026-07-29): 1 GiB** (`1_073_741_824` bytes).
 The parameter has no optional form in C, so the default lives in two
 places: the generated header exposes it as
-`SUB_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES` for hosts
+`SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES` for hosts
 to pass, and the dev tier's own mode-enabling path (the JIT runner's
 boolean parameter) uses it rather than `UINT64_MAX`. A host that wants a
 different ceiling passes its own number; nothing in the runtime treats
@@ -504,7 +515,7 @@ the map, and retain-and-poison when freed-handle diagnostics are on — the
 map is what funds its trap-on-stale-handle diagnostics (§8.1a, **narrowed
 by §8.1a-1**: this paragraph described the retention as unconditional). One runtime, two allocation
 policies, selected at Context construction as today; no generated-code,
-lowering, or `sub_rt_*` ABI change.
+lowering, or `subscript_rt_*` ABI change.
 
 - **Mechanism.** The ship Context owns memory in chunks. Small
   allocations (header + payload up to a largest size class) are carved
@@ -697,7 +708,7 @@ judged.
 ## 10a. Emitted-C growable-array element access is inlined
 
 The ship-tier C emitter (§11) lowered a **growable-array** element access to
-an opaque call into the runtime staticlib (`sub_rt_array_ptr`), which the
+an opaque call into the runtime staticlib (`subscript_rt_array_ptr`), which the
 host C compiler cannot inline, cannot prove the bounds branch of, and around
 which it will not vectorize. The **FixedArray** path was already inlined
 (`base + idx*elem`), so only growable arrays paid this. Measured on
@@ -709,7 +720,7 @@ vectorize regardless — which is why the gap showed up only on x86
 The emitter now inlines the **in-bounds fast path** — a header-layout
 pointer computation `data + (int64)idx*elem_size` guarded by an inlined
 `0 <= idx < len` branch — and delegates only the **out-of-bounds case** to
-`sub_rt_array_ptr`, so the trap and its exact dynamic message stay
+`subscript_rt_array_ptr`, so the trap and its exact dynamic message stay
 byte-identical to the runtime path (the runtime is still the sole producer
 of the trap). This mirrors the FixedArray inline form and the standard AOT
 technique of keeping the bounds check but making array element access a
@@ -1203,7 +1214,7 @@ unchanged; the defect is that each registration paid for a new record.
 
 **The fix is interning.** A boundary callback is non-escaping (C5), so
 its function value is a non-capturing wrapper and `env` is always null —
-`sub_rt_cb_bind`'s own contract says so. A binding's identity is therefore
+`subscript_rt_cb_bind`'s own contract says so. A binding's identity is therefore
 the tuple **(code, userdata1, userdata2)**. `bind_callback` returns the
 existing record for a tuple it has seen, and allocates only for a new
 one.
@@ -1278,7 +1289,7 @@ Contract in `specs/blocks/stdlib.md`; collision resolutions Q19/Q20 in
 `collisions.md` §2. Compiler surface: ambient-namespace intrinsic calls
 (`Math.<fn>`), checker-folded constant member reads, and an ambient
 nominal value type erasing to `i64` (`Date`); every runtime-backed
-operation lowers to an opaque `sub_rt_math_*`/`sub_rt_date_*` call on
+operation lowers to an opaque `subscript_rt_math_*`/`subscript_rt_date_*` call on
 both tiers (never a direct libm emission — clang constant-folds libm at
 `-O2`, a cross-tier divergence hazard, `stdlib.md` §0.2). Gate:
 `stdlib.md` §5.
@@ -1320,7 +1331,7 @@ does the half-precision math.
 Per Q23: `f16` declares fields, elements and boundary parameters and
 converts with `as`; **arithmetic on `f16` operands is S014**. The
 conversion (`f16`↔`f32`/`f64`) is one runtime implementation behind an
-opaque `sub_rt_*` symbol on both tiers — never an emitted compiler
+opaque `subscript_rt_*` symbol on both tiers — never an emitted compiler
 builtin and never a direct `_Float16`/`__fp16` operation, for the
 §11/`stdlib.md` §0.2 reason: the C tier's `_Float16` rounds in half
 precision while `__fp16` promotes to `f32`, so an emitted half
@@ -1441,7 +1452,7 @@ a reduced `lib` for authoring while the `tsc` gate keeps the stock one
 ## 18. The host Context C API, and the trap observer
 
 Owner decision 2026-07-26. **This section exists partly to close a
-gap**: the `sub_rt_ctx_*` surface is what an embedding host actually
+gap**: the `subscript_rt_ctx_*` surface is what an embedding host actually
 calls, and it had no contract anywhere under `specs/` — it existed only
 in `runtime/src/ffi.rs`. A host-facing ABI with no written contract is
 the one surface where drift is least acceptable, since the host is
@@ -1450,13 +1461,13 @@ outside this repository and cannot be fixed by a commit here.
 ### 18.1 The existing surface, contracted retroactively
 
 ```c
-void            sub_rt_ctx_release(Context*);
-const uint8_t*  sub_rt_ctx_stdout(const Context*, uint64_t* len);
-void            sub_rt_ctx_seed_random(Context*, uint64_t seed);
-void            sub_rt_ctx_set_now(Context*, int64_t ms);
-uint32_t        sub_rt_ctx_trap_kind(const Context*);
-uint32_t        sub_rt_ctx_trap_pos_id(const Context*);
-const uint8_t*  sub_rt_ctx_trap_message(const Context*, uint64_t* len);
+void            subscript_rt_ctx_release(Context*);
+const uint8_t*  subscript_rt_ctx_stdout(const Context*, uint64_t* len);
+void            subscript_rt_ctx_seed_random(Context*, uint64_t seed);
+void            subscript_rt_ctx_set_now(Context*, int64_t ms);
+uint32_t        subscript_rt_ctx_trap_kind(const Context*);
+uint32_t        subscript_rt_ctx_trap_pos_id(const Context*);
+const uint8_t*  subscript_rt_ctx_trap_message(const Context*, uint64_t* len);
 ```
 
 `seed_random` (`stdlib.md` §2) and `set_now` (§3) pin the two
@@ -1473,12 +1484,12 @@ artifact from the Context.
 ### 18.2 The trap observer — observation only
 
 ```c
-typedef void (*sub_rt_trap_observer)(
+typedef void (*subscript_rt_trap_observer)(
     void* userdata, uint32_t kind, uint32_t pos_id,
     const uint8_t* message, uint64_t message_len);
 
-void sub_rt_ctx_set_trap_observer(
-    Context*, sub_rt_trap_observer observer, void* userdata);
+void subscript_rt_ctx_set_trap_observer(
+    Context*, subscript_rt_trap_observer observer, void* userdata);
 ```
 
 Called at the moment a trap is recorded, **before** the unwind, on the
@@ -1515,7 +1526,7 @@ having to poll the trap flag after every call into script.
 
 The sequence, from fault to the host getting control back:
 
-1. A runtime function, or an emitted check calling `sub_rt_trap`,
+1. A runtime function, or an emitted check calling `subscript_rt_trap`,
    detects the fault.
 2. `Context::trap(kind, message, pos_id)` stores a `TrapRecord` **if
    none is stored yet**, and sets `trap_flag = 1` **unconditionally**.
@@ -1554,7 +1565,7 @@ a borrow valid only for the callback. The host is not obliged to copy.
 
 **Re-entrancy is a memory-safety requirement, not a convention.** The
 observer runs inside `Context::trap`, which holds `&mut self`. An
-observer that calls any `sub_rt_*` function taking the Context creates
+observer that calls any `subscript_rt_*` function taking the Context creates
 an aliasing violation across the FFI boundary — undefined behaviour,
 not merely a semantic error. The C header must say so.
 
@@ -1569,10 +1580,10 @@ both-tier test is not checking that the hook mechanism differs between
 tiers — it cannot — but that the two tiers **agree on which fault is
 the originating one**.
 
-### 18.2b `sub_rt_ctx_clear_trap` — making a trapped Context callable again
+### 18.2b `subscript_rt_ctx_clear_trap` — making a trapped Context callable again
 
 ```c
-int sub_rt_ctx_clear_trap(Context*);   /* 1 = cleared, 0 = refused */
+int subscript_rt_ctx_clear_trap(Context*);   /* 1 = cleared, 0 = refused */
 ```
 
 C6 says the host decides what happens after a trap, and until now it
@@ -1605,8 +1616,8 @@ as protection.)*
    trivially correct and addresses the actual hazard directly.
 
    It is a **backstop, not a supported call**. Reaching
-   `sub_rt_ctx_clear_trap` from inside an observer already requires a
-   Context pointer, and §18.2a makes calling any `sub_rt_*` through
+   `subscript_rt_ctx_clear_trap` from inside an observer already requires a
+   Context pointer, and §18.2a makes calling any `subscript_rt_*` through
    one from there undefined behaviour. The flag turns the most likely
    such attempt into a defined refusal instead of a resumed run; it
    does not make observer re-entry a defined API, and nothing else
@@ -1619,8 +1630,8 @@ as protection.)*
 ### 18.1a Host enter/exit — making `script_depth` real
 
 ```c
-void sub_rt_ctx_enter_script(Context*);
-void sub_rt_ctx_exit_script(Context*);
+void subscript_rt_ctx_enter_script(Context*);
+void subscript_rt_ctx_exit_script(Context*);
 ```
 
 A host brackets each call into an exported function with these. They
@@ -1644,7 +1655,7 @@ implementing §18.2 and closed in the same phase; the AOT entry, the
 emitted-C preamble and the benchmark entry all consume it now instead
 of repeating declarations.)*
 
-It is a single generated header covering the `sub_rt_ctx_*`
+It is a single generated header covering the `subscript_rt_ctx_*`
 surface (§18.1, §18.1a, §18.2, §18.2b, §18.2d) and the exported-entry
 convention, **generated from the Rust declarations rather than
 hand-written**, on the `bindgen` mirror's principle (§12.2) and
@@ -1664,7 +1675,7 @@ sink survives. So:
 The host's three coherent choices, in increasing cost: accept the
 damaged state and continue; continue but detach the failing subsystem
 (which is what the observer's frame-current context is *for*); or
-release the Context and rebuild from `ss_init`, which is the only one
+release the Context and rebuild from `subscript_init`, which is the only one
 that restores consistency.
 
 **Not clearing is a silent failure mode worth naming.** The trap flag
@@ -1680,18 +1691,18 @@ non-`void` return (`emit_trap_return`). An `update(): i32` that
 trapped hands the host `0`, indistinguishable from a legitimate `0`.
 
 **The return value therefore cannot be used to detect a trap.** The
-host tests `sub_rt_ctx_trap_kind(ctx) != 0` — the accessor returns `0`
+host tests `subscript_rt_ctx_trap_kind(ctx) != 0` — the accessor returns `0`
 when no trap is pending and `TrapKind` starts at 1 — or registers an
 observer (§18.2) and tests its own flag. This is stated because
 getting it wrong is silent: the host reads a plausible zero and
 carries on.
 
-### 18.2d Memory accounting — `sub_rt_ctx_live_*` / `sub_rt_ctx_reserved_bytes`
+### 18.2d Memory accounting — `subscript_rt_ctx_live_*` / `subscript_rt_ctx_reserved_bytes`
 
 ```c
-uint64_t sub_rt_ctx_live_allocations(const Context*);
-uint64_t sub_rt_ctx_live_bytes(const Context*);
-uint64_t sub_rt_ctx_reserved_bytes(const Context*);
+uint64_t subscript_rt_ctx_live_allocations(const Context*);
+uint64_t subscript_rt_ctx_live_bytes(const Context*);
+uint64_t subscript_rt_ctx_reserved_bytes(const Context*);
 ```
 
 Owner decision 2026-07-26, and this closes a larger gap than §18.2's.
@@ -1755,7 +1766,7 @@ as reading a clock does; that is the host's to own.
 **Gate.** Across both tiers, `live_allocations` agrees for the same
 program at the same point. A program that allocates N objects and
 deletes M reports N−M. After a trapped run followed by
-`sub_rt_ctx_clear_trap`, the figures are unchanged by the clear —
+`subscript_rt_ctx_clear_trap`, the figures are unchanged by the clear —
 which is what makes §18.2b's "clearing rolls nothing back" claim
 **host-verifiable** rather than only provable inside the runtime's own
 tests. `reserved_bytes` never decreases across a `delete` alone
@@ -1789,10 +1800,10 @@ loop allocating ten thousand times has one site and no useful name.
 Sketch, to be settled when this is contracted:
 
 ```c
-typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id,
+typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id,
                                      uint32_t pos_id, uint64_t payload_bytes);
-uint64_t sub_rt_ctx_visit_live_allocations(
-    const Context*, sub_rt_alloc_visitor, void* userdata);
+uint64_t subscript_rt_ctx_visit_live_allocations(
+    const Context*, subscript_rt_alloc_visitor, void* userdata);
 ```
 
 Two things to settle then, both of which the sketch does not answer:
@@ -1811,7 +1822,7 @@ Two things to settle then, both of which the sketch does not answer:
 ### 18.2f The print observer — streaming output without retention
 
 **The stdout sink is cumulative and a C host cannot drain it.** `print`
-appends to the Context sink; `sub_rt_ctx_stdout` is a `const` read
+appends to the Context sink; `subscript_rt_ctx_stdout` is a `const` read
 returning a pointer into it; the draining accessor exists only on the
 Rust surface, where the in-repo runners call it once at run end. That is
 correct for the gate — the golden comparison wants the whole run's bytes —
@@ -1821,11 +1832,11 @@ script ever printed (`specs/tracking/long-run-audit.md`, finding 1).
 **The fix is the trap observer's shape applied to print** (§18.2 is the
 precedent, deliberately):
 
-    typedef void (*sub_rt_print_observer)(void* userdata,
+    typedef void (*subscript_rt_print_observer)(void* userdata,
                                           const uint8_t* line,
                                           uint64_t line_len);
-    void sub_rt_ctx_set_print_observer(Context* ctx,
-                                       sub_rt_print_observer observer,
+    void subscript_rt_ctx_set_print_observer(Context* ctx,
+                                       subscript_rt_print_observer observer,
                                        void* userdata);
 
 - **When set, each `print` delivers the line to the observer and retains
@@ -1833,11 +1844,11 @@ precedent, deliberately):
   bytes the sink would have stored, minus nothing — determinism is a
   property of the bytes, not of where they land.
 - **When unset — the default — behaviour is exactly today's**: the sink
-  accumulates and `sub_rt_ctx_stdout` reads it. The gate never sets an
+  accumulates and `subscript_rt_ctx_stdout` reads it. The gate never sets an
   observer, so every golden stands.
 - The observer is called during `print`, inside script execution, under
   the same constraint as the trap observer: it must not call back into
-  any `sub_rt_*` API taking this Context (§18.2's aliasing rule, stated
+  any `subscript_rt_*` API taking this Context (§18.2's aliasing rule, stated
   once there and referenced here).
 - `line`/`line_len` are the line **without** the trailing newline the
   sink stores; the observer decides its own framing. Valid only for the
@@ -1883,7 +1894,7 @@ Determinism: a corpus entry's output is byte-identical with and
 without an observer registered. This is the check that the shape
 really is observation-only.
 
-For `sub_rt_ctx_clear_trap`: a host-side test traps, clears, and calls
+For `subscript_rt_ctx_clear_trap`: a host-side test traps, clears, and calls
 script again, asserting the second call **executes** rather than
 unwinding on a stale flag; asserts a clear attempted with a live script
 frame returns 0 and leaves the trap pending; and asserts that live
@@ -1920,9 +1931,9 @@ function**:
   diverges**, not only stdout.
 
 **And the continuation path corrupts memory.** An out-of-range write to
-a 320-byte `@CStruct` array element goes through `ss_arr_at`, which
-records the trap and then returns `ss_scratch` — `static unsigned char
-ss_scratch[256]` — and the caller writes 320 bytes into it.
+a 320-byte `@CStruct` array element goes through `subscript_arr_at`, which
+records the trap and then returns `subscript_scratch` — `static unsigned char
+subscript_scratch[256]` — and the caller writes 320 bytes into it.
 AddressSanitizer reports `global-buffer-overflow`. The dev tier branches
 to unwind before the address is computed and never reaches the store.
 **This write happens only on the post-trap path.**
@@ -1991,7 +2002,7 @@ That is the point — this stage is not expected to be green.
 **Stage A (Green) — make the tiers agree.**
 
 1. **Read the trap flag inline.** The ship tier's checks currently call
-   `sub_rt_ctx_trap_kind`, an out-of-line `extern` that the link cannot
+   `subscript_rt_ctx_trap_kind`, an out-of-line `extern` that the link cannot
    inline (no LTO). Measured, 50M iterations, arm64 `-O2`: an inline
    load of the flag costs **≈0.56 ns** per check against **≈6.4 ns**
    for the call — about 11×. Do this **before** raising check density,
@@ -2007,10 +2018,10 @@ That is the point — this stage is not expected to be green.
 2. **Share the predicate** (§19.3) so both tiers check the same set.
 
 3. **Inline the checks inside the helper functions.**
-   `ss_sdiv_*`/`ss_udiv_*` (16 of them) and `ss_arr_at`/`ss_fa_at`
+   `subscript_sdiv_*`/`subscript_udiv_*` (16 of them) and `subscript_arr_at`/`subscript_fa_at`
    **cannot be fixed as functions** — a C function cannot make its
    caller return. The check must be expanded at the call site. **The
-   `ss_scratch` corruption closes only this way**; widening the buffer
+   `subscript_scratch` corruption closes only this way**; widening the buffer
    would relieve the symptom while leaving a store executing after a
    fault.
 
@@ -2055,7 +2066,7 @@ non-trapping behaviour did not move.
 - **One inline Context-layout assumption**, `*(const uint32_t*)ctx` at
   a single site in `cemit.rs` — the §19.5 exception to §18.1b, kept to
   one place so it cannot spread.
-- **`ss_arr_at`, `ss_fa_at` and `ss_scratch` are gone**, their checks
+- **`subscript_arr_at`, `subscript_fa_at` and `subscript_scratch` are gone**, their checks
   expanded at the call sites. ASan on the 320-byte `@CStruct` case:
   before, `global-buffer-overflow`, `WRITE of size 320`, exit 134;
   after, clean. A regression test pins it.
@@ -2078,15 +2089,15 @@ The C baselines agree to 1.7%, which is the control that makes the
 comparison mean anything.
 
 The result is the opposite of the expected direction. *(The mechanism
-originally recorded here — that `ss_arr_at` was "an out-of-line call
+originally recorded here — that `subscript_arr_at` was "an out-of-line call
 per array element access" — was **wrong**, and the Phase Review
-measured it: `ss_arr_at` was `static`, and clang inlined it. Corrected
+measured it: `subscript_arr_at` was `static`, and clang inlined it. Corrected
 below from the emitted assembly.)*
 
 What the old shape cost per access was not a call but everything the
 **fallback pointer** forced: a null compare and `csel` choosing
-between the returned pointer and `ss_scratch`, the global address of
-`ss_scratch` held live, a reachable cold-arm `bl _sub_rt_array_ptr`,
+between the returned pointer and `subscript_scratch`, the global address of
+`subscript_scratch` held live, a reachable cold-arm `bl _subscript_rt_array_ptr`,
 and — because that call is reachable inside the loop — an 80-byte
 frame with callee-saved spills and reloads. The loop body was 82
 instructions with a full spill set. Expanding the check at the call
@@ -2117,7 +2128,7 @@ of correctness rather than a defect. P19 then fixed the form and
 widened the coverage: **25 checks against P13's 15, and 2.4× faster**.
 
 Post-P19 is also faster than the tree that had **no** checks, because
-removing `ss_arr_at`'s per-access call outweighed adding 25 trap
+removing `subscript_arr_at`'s per-access call outweighed adding 25 trap
 checks.
 
 So **1.05× was measured on an emitter that did not do the checking the
@@ -2367,7 +2378,7 @@ the third has already happened once:
    surface on the ship tier as a *chunk* allocation failing.
 2. **`alloc` returns null on failure and the check happens after.**
    Generated code therefore holds a null payload for a window. That is
-   the shape P19 found with `ss_scratch` — a fault recorded, then
+   the shape P19 found with `subscript_scratch` — a fault recorded, then
    execution continuing through a poisoned value, which there wrote 320
    bytes into a 256-byte buffer. Nothing looks at this one.
 3. **Allocation *sequences* differed between the tiers until P20**,
@@ -2378,11 +2389,11 @@ the third has already happened once:
 **The knob.**
 
 ```c
-void sub_rt_ctx_fail_alloc_after(Context*, uint64_t n);
+void subscript_rt_ctx_fail_alloc_after(Context*, uint64_t n);
 ```
 
 The Context refuses the **n-th subsequent allocation**. This is the
-same shape as `sub_rt_ctx_set_now` and `sub_rt_ctx_seed_random`
+same shape as `subscript_rt_ctx_set_now` and `subscript_rt_ctx_seed_random`
 (§18.1): a host knob that pins a nondeterministic input so tests and
 replays reproduce, which §0.3 already establishes as the pattern.
 
@@ -2454,10 +2465,10 @@ genuinely new store; for classed blocks the store replaces one that was
 already there.
 
 ```c
-typedef void (*sub_rt_alloc_visitor)(void* userdata, uint32_t class_id,
+typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id,
                                      uint32_t pos_id, uint64_t payload_bytes);
-uint64_t sub_rt_ctx_visit_live_allocations(
-    const Context*, sub_rt_alloc_visitor, void* userdata);
+uint64_t subscript_rt_ctx_visit_live_allocations(
+    const Context*, subscript_rt_alloc_visitor, void* userdata);
 ```
 
 Read-only, like §18.2d's three figures, and with the same cost
@@ -2539,10 +2550,10 @@ every program that touches a string links it.
 **It exists to supply an address, not a computation.** Encoding a
 scalar to UTF-8 is a handful of instructions; `str_bytes` returns
 `&[u8]`, a borrow, so the bytes must live somewhere addressable, and
-the handle `sub_rt_str_iter_code_point` hands out is a tagged integer
+the handle `subscript_rt_str_iter_code_point` hands out is a tagged integer
 rather than a pointer into real memory.
 
-**Its only consumer is `sub_rt_str_iter_code_point`** — `for…of` over a
+**Its only consumer is `subscript_rt_str_iter_code_point`** — `for…of` over a
 string, and `stdlib.md` §14.3's guarantee that the loop allocates
 nothing. `charAt` calls `alloc_str` and always has. *(Both §15.1 and
 the runtime's doc comment said `charAt`; corrected 2026-07-27.)*
@@ -2662,7 +2673,7 @@ several *distinct* astral scalars. Each pinned on both tiers.
 the observable is host-side: a both-tier test asserting that iterating
 `n` repetitions of one astral scalar performs **one** allocation, and
 that BMP iteration performs **none** — using
-`sub_rt_ctx_visit_live_allocations` (§21.2), which already reports
+`subscript_rt_ctx_visit_live_allocations` (§21.2), which already reports
 `(class_id, pos_id, payload_bytes)`.
 
 **Traps.** None new. A malformed handle is `str_bytes`'s existing
@@ -2834,7 +2845,7 @@ element type alone does not distinguish them.
 The runtime has **exactly one** C-ABI callback trampoline, and its
 signature is fixed:
 
-- `runtime/src/ffi.rs` — `sub_rt_cb_trampoline(message: SubStrView,
+- `runtime/src/ffi.rs` — `subscript_rt_cb_trampoline(message: SubStrView,
   userdata1: *mut u8, userdata2: *mut u8)`, three C parameters;
 - `codegen/src/lower/mod.rs` declares it to the dev tier as
   `[I64, I64, I64, I64]` — the view flattened to two registers plus the
