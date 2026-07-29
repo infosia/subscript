@@ -273,7 +273,7 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   *(Renamed from the bare global `collect` 2026-07-28, owner decision. A
   top-level `collect()` names no owner and reads as a library helper;
   qualifying it names the object that owns the memory. `Context` is
-  already the host's word for it — `Context*` and `subscript_rt_ctx_*` in
+  already the host's word for it — `subscript_rt_context*` and `subscript_rt_ctx_*` in
   `runtime/include/subscript_runtime.h` — so script and host now say the
   same word for the same object.)*
 

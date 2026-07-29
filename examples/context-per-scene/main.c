@@ -1,8 +1,8 @@
 /*
- * main.c — two game scenes, each owning one fresh script Context.
+ * main.c — two game scenes, each owning one fresh script subscript_rt_context.
  *
  * The engine's frame record belongs to this host thread and survives both
- * scenes. Script globals and allocations belong to one Context and do not.
+ * scenes. Script globals and allocations belong to one subscript_rt_context and do not.
  */
 
 #include "engine.h"
@@ -19,13 +19,13 @@
 #include <io.h>
 #endif
 
-void subscript_export_update(Context *ctx);
-void subscript_export_finish(Context *ctx);
+void subscript_export_update(subscript_rt_context *ctx);
+void subscript_export_finish(subscript_rt_context *ctx);
 
 /* Every script entry is bracketed so the runtime can track script depth.
  * Its void return is not a success signal; the trap kind is. */
 static bool hostCallScript(
-    Context *ctx,
+    subscript_rt_context *ctx,
     subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
@@ -48,7 +48,7 @@ static void hostObserveScriptPrint(
 
 /* A trap detaches script from the current scene. The host reports it through
  * the trap accessors, releases that scene's resources, and returns failure. */
-static void hostReportTrap(const Context *ctx) {
+static void hostReportTrap(const subscript_rt_context *ctx) {
     uint64_t length = 0u;
     const uint8_t *message = subscript_rt_ctx_trap_message(ctx, &length);
     fprintf(
@@ -63,7 +63,7 @@ static void hostReportTrap(const Context *ctx) {
 }
 
 static bool hostRunScene(uint32_t sceneNumber) {
-    Context *ctx = subscript_rt_ctx_new();
+    subscript_rt_context *ctx = subscript_rt_ctx_new();
     if (ctx == NULL) {
         return false;
     }
@@ -81,7 +81,7 @@ static bool hostRunScene(uint32_t sceneNumber) {
 
     /* The host prints integer scene/frame indices. The adjacent script line
      * prints its f32 counter: it restarts while this thread-local index keeps
-     * climbing across the Context boundary. */
+     * climbing across the subscript_rt_context boundary. */
     for (uint32_t sceneFrame = 1u;
          sceneFrame <= 2u && scriptAttached;
          sceneFrame += 1u) {
@@ -105,7 +105,7 @@ static bool hostRunScene(uint32_t sceneNumber) {
         }
     }
 
-    /* live_bytes is sampled before release because release ends the Context.
+    /* live_bytes is sampled before release because release ends the subscript_rt_context.
      * Equal-sized scenes start from the same allocator floor rather than
      * inheriting the preceding scene's peak. */
     printf(
@@ -124,9 +124,9 @@ int main(void) {
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-    /* Context release and Context.collect answer different questions.
+    /* subscript_rt_context release and subscript_rt_context.collect answer different questions.
      * Releasing ends one scene; collection reclaims unreachable allocations
-     * while a Context lives. A fresh Context re-runs subscript_init, so state needed
+     * while a subscript_rt_context lives. A fresh subscript_rt_context re-runs subscript_init, so state needed
      * by the next scene must remain host-side, as engFrameIndex does here. */
     for (uint32_t sceneNumber = 1u;
          sceneNumber <= 2u;

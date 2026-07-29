@@ -545,7 +545,7 @@ fn compile_jit(
     Ok((module, lowered))
 }
 
-/// Calls one finalized `(Context*) -> void` script entry under the host
+/// Calls one finalized `(subscript_rt_context*) -> void` script entry under the host
 /// depth discipline.
 ///
 /// # Safety

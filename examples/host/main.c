@@ -2,7 +2,7 @@
  * main.c — complete C host for the capstone script.
  *
  * The host owns main, the engine world, the frame loop, trap policy,
- * script-output draining, and Context lifetime. Script entry calls cross
+ * script-output draining, and subscript_rt_context lifetime. Script entry calls cross
  * only the generated C ABI.
  */
 
@@ -22,14 +22,14 @@
 
 /* Every exported zero-argument void script function has this generated
  * symbol and the subscript_main_entry signature. */
-void subscript_export_init(Context *ctx);
-void subscript_export_update(Context *ctx);
-void subscript_export_shutdown(Context *ctx);
+void subscript_export_init(subscript_rt_context *ctx);
+void subscript_export_update(subscript_rt_context *ctx);
+void subscript_export_shutdown(subscript_rt_context *ctx);
 
 /* The host brackets every entry so script_depth makes trap clearing safe;
  * this helper returns only the post-hoc trap state, never a script result. */
 static bool hostCallScript(
-    Context *ctx,
+    subscript_rt_context *ctx,
     subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
@@ -41,7 +41,7 @@ static bool hostCallScript(
  * ordering between host lines and script lines without giving print access
  * to the process stdout. */
 static void hostDrainScriptOutput(
-    const Context *ctx,
+    const subscript_rt_context *ctx,
     uint64_t *drained) {
     uint64_t length = 0u;
     const uint8_t *bytes = subscript_rt_ctx_stdout(ctx, &length);
@@ -56,7 +56,7 @@ static void hostDrainScriptOutput(
  * exported entry returns void. This host chooses §18.1b's detach response:
  * it stops calling script after a trap, so damaged script state cannot
  * continue, while the independently owned host loop can finish cleanly. */
-static void hostReportTrap(const Context *ctx) {
+static void hostReportTrap(const subscript_rt_context *ctx) {
     uint64_t length = 0u;
     const uint8_t *message = subscript_rt_ctx_trap_message(ctx, &length);
     fprintf(
@@ -87,9 +87,9 @@ int main(void) {
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-    /* Context creation owns all script allocations; subscript_init establishes
-     * module globals, and the matching release at the end frees the Context. */
-    Context *ctx = subscript_rt_ctx_new();
+    /* subscript_rt_context creation owns all script allocations; subscript_init establishes
+     * module globals, and the matching release at the end frees the subscript_rt_context. */
+    subscript_rt_context *ctx = subscript_rt_ctx_new();
     if (ctx == NULL) {
         return 2;
     }
@@ -151,7 +151,7 @@ int main(void) {
             state.engTransform.engLayer);
     }
 
-    /* shutdown drops the last script root and calls Context.collect() explicitly.
+    /* shutdown drops the last script root and calls subscript_rt_context.collect() explicitly.
      * The before/after host figures make invariant 2 externally observable;
      * counts are portable, while byte totals describe this ship allocator. */
     printf(
@@ -172,7 +172,7 @@ int main(void) {
         subscript_rt_ctx_live_allocations(ctx),
         subscript_rt_ctx_live_bytes(ctx));
 
-    /* The world is released on its loop thread, then the Context release
+    /* The world is released on its loop thread, then the subscript_rt_context release
      * ends every remaining script allocation and completes host ownership. */
     engWorldRelease(world);
     subscript_rt_ctx_release(ctx);

@@ -120,7 +120,8 @@ unit tests with every public API, one module per area.
 
 **C-visible symbol prefix.** Every symbol this project defines in the C
 namespace carries the project's name: `subscript_rt_*` for the runtime
-API the host calls (constants `SUBSCRIPT_RT_*`), and `subscript_*` for
+API the host calls (constants `SUBSCRIPT_RT_*`, and the opaque Context
+type, `subscript_rt_context`), and `subscript_*` for
 everything the generated program defines — `subscript_init`,
 `subscript_export_<name>`, the `subscript_main_entry` typedef, and every
 emitted helper and type. *(Renamed 2026-07-29, owner decision, from
@@ -381,7 +382,7 @@ larger objects only, with the boundary host-chosen.
 
 ```c
 int32_t subscript_rt_ctx_set_freed_handle_diagnostics(
-    Context *ctx, uint32_t enabled, uint64_t min_payload_bytes);
+    subscript_rt_context *ctx, uint32_t enabled, uint64_t min_payload_bytes);
 ```
 
 Per Context, host-set, refused (returns 0) after the first allocation, as
@@ -460,7 +461,7 @@ frees least likely to matter.
 
 ```c
 int32_t subscript_rt_ctx_set_freed_handle_diagnostics(
-    Context *ctx, uint32_t enabled, uint64_t min_payload_bytes,
+    subscript_rt_context *ctx, uint32_t enabled, uint64_t min_payload_bytes,
     uint64_t max_retained_bytes);
 ```
 
@@ -1461,13 +1462,13 @@ outside this repository and cannot be fixed by a commit here.
 ### 18.1 The existing surface, contracted retroactively
 
 ```c
-void            subscript_rt_ctx_release(Context*);
-const uint8_t*  subscript_rt_ctx_stdout(const Context*, uint64_t* len);
-void            subscript_rt_ctx_seed_random(Context*, uint64_t seed);
-void            subscript_rt_ctx_set_now(Context*, int64_t ms);
-uint32_t        subscript_rt_ctx_trap_kind(const Context*);
-uint32_t        subscript_rt_ctx_trap_pos_id(const Context*);
-const uint8_t*  subscript_rt_ctx_trap_message(const Context*, uint64_t* len);
+void            subscript_rt_ctx_release(subscript_rt_context*);
+const uint8_t*  subscript_rt_ctx_stdout(const subscript_rt_context*, uint64_t* len);
+void            subscript_rt_ctx_seed_random(subscript_rt_context*, uint64_t seed);
+void            subscript_rt_ctx_set_now(subscript_rt_context*, int64_t ms);
+uint32_t        subscript_rt_ctx_trap_kind(const subscript_rt_context*);
+uint32_t        subscript_rt_ctx_trap_pos_id(const subscript_rt_context*);
+const uint8_t*  subscript_rt_ctx_trap_message(const subscript_rt_context*, uint64_t* len);
 ```
 
 `seed_random` (`stdlib.md` §2) and `set_now` (§3) pin the two
@@ -1489,7 +1490,7 @@ typedef void (*subscript_rt_trap_observer)(
     const uint8_t* message, uint64_t message_len);
 
 void subscript_rt_ctx_set_trap_observer(
-    Context*, subscript_rt_trap_observer observer, void* userdata);
+    subscript_rt_context*, subscript_rt_trap_observer observer, void* userdata);
 ```
 
 Called at the moment a trap is recorded, **before** the unwind, on the
@@ -1583,7 +1584,7 @@ the originating one**.
 ### 18.2b `subscript_rt_ctx_clear_trap` — making a trapped Context callable again
 
 ```c
-int subscript_rt_ctx_clear_trap(Context*);   /* 1 = cleared, 0 = refused */
+int subscript_rt_ctx_clear_trap(subscript_rt_context*);   /* 1 = cleared, 0 = refused */
 ```
 
 C6 says the host decides what happens after a trap, and until now it
@@ -1630,8 +1631,8 @@ as protection.)*
 ### 18.1a Host enter/exit — making `script_depth` real
 
 ```c
-void subscript_rt_ctx_enter_script(Context*);
-void subscript_rt_ctx_exit_script(Context*);
+void subscript_rt_ctx_enter_script(subscript_rt_context*);
+void subscript_rt_ctx_exit_script(subscript_rt_context*);
 ```
 
 A host brackets each call into an exported function with these. They
@@ -1700,9 +1701,9 @@ carries on.
 ### 18.2d Memory accounting — `subscript_rt_ctx_live_*` / `subscript_rt_ctx_reserved_bytes`
 
 ```c
-uint64_t subscript_rt_ctx_live_allocations(const Context*);
-uint64_t subscript_rt_ctx_live_bytes(const Context*);
-uint64_t subscript_rt_ctx_reserved_bytes(const Context*);
+uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context*);
+uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context*);
+uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context*);
 ```
 
 Owner decision 2026-07-26, and this closes a larger gap than §18.2's.
@@ -1803,7 +1804,7 @@ Sketch, to be settled when this is contracted:
 typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id,
                                      uint32_t pos_id, uint64_t payload_bytes);
 uint64_t subscript_rt_ctx_visit_live_allocations(
-    const Context*, subscript_rt_alloc_visitor, void* userdata);
+    const subscript_rt_context*, subscript_rt_alloc_visitor, void* userdata);
 ```
 
 Two things to settle then, both of which the sketch does not answer:
@@ -1835,7 +1836,7 @@ precedent, deliberately):
     typedef void (*subscript_rt_print_observer)(void* userdata,
                                           const uint8_t* line,
                                           uint64_t line_len);
-    void subscript_rt_ctx_set_print_observer(Context* ctx,
+    void subscript_rt_ctx_set_print_observer(subscript_rt_context* ctx,
                                        subscript_rt_print_observer observer,
                                        void* userdata);
 
@@ -2389,7 +2390,7 @@ the third has already happened once:
 **The knob.**
 
 ```c
-void subscript_rt_ctx_fail_alloc_after(Context*, uint64_t n);
+void subscript_rt_ctx_fail_alloc_after(subscript_rt_context*, uint64_t n);
 ```
 
 The Context refuses the **n-th subsequent allocation**. This is the
@@ -2468,7 +2469,7 @@ already there.
 typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id,
                                      uint32_t pos_id, uint64_t payload_bytes);
 uint64_t subscript_rt_ctx_visit_live_allocations(
-    const Context*, subscript_rt_alloc_visitor, void* userdata);
+    const subscript_rt_context*, subscript_rt_alloc_visitor, void* userdata);
 ```
 
 Read-only, like §18.2d's three figures, and with the same cost

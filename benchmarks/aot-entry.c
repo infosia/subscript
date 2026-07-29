@@ -6,11 +6,11 @@
  * exported `main` is called for a measured warm-up phase and then for
  * each timed sample, timing every call on its own with CLOCK_MONOTONIC.
  *
- * Timed span: the `subscript_export_main` call alone. Context creation, the
- * module initializer `subscript_init`, reading the stdout sink, and Context
+ * Timed span: the `subscript_export_main` call alone. subscript_rt_context creation, the
+ * module initializer `subscript_init`, reading the stdout sink, and subscript_rt_context
  * release are all outside it.
  *
- * A fresh Context per run makes each run start from the same state,
+ * A fresh subscript_rt_context per run makes each run start from the same state,
  * and `subscript_init` restores the module globals, so every run is the same
  * computation; the entry checks that by comparing the sink bytes of
  * every run against the first.
@@ -56,7 +56,7 @@ static uint64_t monotonic_ns(void) {
 
 /* Reports a trap the way the gate's entry program does, so a failing
  * benchmark run is diagnosable with the same reader. */
-static void report_trap(const Context *ctx) {
+static void report_trap(const subscript_rt_context *ctx) {
     uint64_t mlen = 0;
     const unsigned char *msg = subscript_rt_ctx_trap_message(ctx, &mlen);
     fprintf(stderr, "trap %u %u ", subscript_rt_ctx_trap_kind(ctx), subscript_rt_ctx_trap_pos_id(ctx));
@@ -108,7 +108,7 @@ int main(int argc, char **argv) {
                 (unsigned long long)warmup_elapsed_ns
             );
         }
-        Context *ctx = subscript_rt_ctx_new();
+        subscript_rt_context *ctx = subscript_rt_ctx_new();
         if (ctx == NULL) {
             free(first);
             return 2;

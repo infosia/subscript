@@ -18,7 +18,7 @@ so the clean list is evidence and not decoration.
 ### 1. The stdout sink grows per `print` and a C host cannot drain it
 
 `print` appends to `Context::stdout` (`context.rs:773-774`) and nothing on
-the C surface removes bytes: `subscript_rt_ctx_stdout` takes a `const Context*`
+the C surface removes bytes: `subscript_rt_ctx_stdout` takes a `const subscript_rt_context*`
 and returns a pointer into the sink (`ffi.rs:4392-4400`), and the draining
 accessor `take_stdout` (`context.rs:779`) is Rust-only — the in-repo
 runners call it once at run end, which is why no gate ever noticed. The

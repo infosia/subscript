@@ -130,8 +130,8 @@ pub struct CProgram {
 
 /// Emits a C translation unit for a checked HIR module (§11).
 ///
-/// The unit exports `subscript_init(Context* ctx)` and
-/// `subscript_export_<name>(Context* ctx)` for each exported zero-argument
+/// The unit exports `subscript_init(subscript_rt_context* ctx)` and
+/// `subscript_export_<name>(subscript_rt_context* ctx)` for each exported zero-argument
 /// `void` function, imports the
 /// runtime's `subscript_rt_*` entry points, and is linked with the runtime
 /// static library and [`crate::AOT_ENTRY_C`].
@@ -1182,7 +1182,7 @@ impl<'m> Emitter<'m> {
     // ----- init and exports -----
 
     fn emit_init(&mut self, out: &mut String) -> Result<(), String> {
-        let _ = writeln!(out, "void subscript_init(Context* ctx) {{");
+        let _ = writeln!(out, "void subscript_init(subscript_rt_context* ctx) {{");
         self.begin_fn(ThisCtx::None, Type::Void);
         let globals: Vec<hir::Global> = self.module.globals.to_vec();
         for g in &globals {
@@ -1204,7 +1204,7 @@ impl<'m> Emitter<'m> {
         for f in &self.module.functions {
             if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
                 let cn = Emitter::fn_c_name(f);
-                let _ = writeln!(out, "void subscript_export_{}(Context* ctx) {{ {cn}(ctx); }}", sanitize(&f.name));
+                let _ = writeln!(out, "void subscript_export_{}(subscript_rt_context* ctx) {{ {cn}(ctx); }}", sanitize(&f.name));
             }
         }
         Ok(())
@@ -5960,8 +5960,8 @@ mod tests {
     #[test]
     fn emits_the_host_entry_surface() {
         let c = emit("export function main(): void {\n  const x: f32 = 1.5;\n  print(`${x}`);\n}\n");
-        assert!(c.contains("void subscript_init(Context* ctx)"));
-        assert!(c.contains("void subscript_export_main(Context* ctx)"));
+        assert!(c.contains("void subscript_init(subscript_rt_context* ctx)"));
+        assert!(c.contains("void subscript_export_main(subscript_rt_context* ctx)"));
         assert!(c.contains("subscript_rt_fmt_f32"));
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
@@ -5978,11 +5978,11 @@ mod tests {
         let c = emit_c_without_main(&module)
             .expect("host-owned exports emit")
             .source;
-        assert!(c.contains("void subscript_init(Context* ctx)"));
-        assert!(c.contains("void subscript_export_init(Context* ctx)"));
-        assert!(c.contains("void subscript_export_update(Context* ctx)"));
-        assert!(c.contains("void subscript_export_shutdown(Context* ctx)"));
-        assert!(!c.contains("void subscript_export_main(Context* ctx) {"));
+        assert!(c.contains("void subscript_init(subscript_rt_context* ctx)"));
+        assert!(c.contains("void subscript_export_init(subscript_rt_context* ctx)"));
+        assert!(c.contains("void subscript_export_update(subscript_rt_context* ctx)"));
+        assert!(c.contains("void subscript_export_shutdown(subscript_rt_context* ctx)"));
+        assert!(!c.contains("void subscript_export_main(subscript_rt_context* ctx) {"));
         assert!(emit_c(&module).is_err());
     }
 
@@ -5999,9 +5999,11 @@ mod tests {
         let call = "subscript_rt_regex_new(ctx, ";
         assert_eq!(c.matches(call).count(), 1);
         let main = c
-            .find("void subscript_export_main(Context* ctx) {")
+            .find("void subscript_export_main(subscript_rt_context* ctx) {")
             .expect("main definition");
-        let init = c.find("void subscript_init(Context* ctx) {").expect("init definition");
+        let init = c
+            .find("void subscript_init(subscript_rt_context* ctx) {")
+            .expect("init definition");
         assert!(init < main);
         assert!(c[init..main].contains(call));
         assert!(!c[main..].contains(call));

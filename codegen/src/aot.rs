@@ -162,7 +162,7 @@ pub const AOT_ENTRY_C: &str = concat!(
 #include <fcntl.h>
 #endif
 
-static void call_script_entry(Context *ctx, subscript_main_entry entry) {
+static void call_script_entry(subscript_rt_context *ctx, subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
     subscript_rt_ctx_exit_script(ctx);
@@ -176,7 +176,7 @@ int main(void) {
      * every other platform, which has no text-mode translation. */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
-    Context *ctx = subscript_rt_ctx_new();
+    subscript_rt_context *ctx = subscript_rt_ctx_new();
     if (ctx == NULL) {
         return 2;
     }
@@ -1081,19 +1081,19 @@ static void observe(
     observed->message_len = message_len;
 }
 
-static int fail(Context* ctx, int code) {
+static int fail(subscript_rt_context* ctx, int code) {
     subscript_rt_ctx_release(ctx);
     return code;
 }
 
-static void call_entry(Context* ctx, subscript_main_entry entry) {
+static void call_entry(subscript_rt_context* ctx, subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
     subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = subscript_rt_ctx_new();
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     struct observed_trap observed = {0};
     subscript_rt_ctx_set_trap_observer(ctx, observe, &observed);
@@ -1131,7 +1131,7 @@ int main(void) {
     if (stdout_len > 0) fwrite(stdout_bytes, 1, (size_t)stdout_len, stdout);
     subscript_rt_ctx_release(ctx);
 
-    Context* cleared_ctx = subscript_rt_ctx_new();
+    subscript_rt_context* cleared_ctx = subscript_rt_ctx_new();
     if (cleared_ctx == NULL) return 3;
     struct observed_trap cleared = {0};
     subscript_rt_ctx_set_trap_observer(cleared_ctx, observe, &cleared);
@@ -1178,7 +1178,7 @@ static void observe(
 }
 
 int main(void) {
-    Context* ctx = subscript_rt_ctx_new();
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     uint32_t calls = 0;
     subscript_rt_ctx_set_trap_observer(ctx, observe, &calls);
@@ -1231,14 +1231,14 @@ int main(void) {
             r#"
 #include <stdio.h>
 
-static void call_entry(Context* ctx, subscript_main_entry entry) {
+static void call_entry(subscript_rt_context* ctx, subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
     subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = subscript_rt_ctx_new();
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     call_entry(ctx, subscript_init);
     if (subscript_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, subscript_export_main);
@@ -1339,14 +1339,14 @@ static const char* class_name(uint32_t class_id) {
     return NULL;
 }
 
-static void call_entry(Context* ctx, subscript_main_entry entry) {
+static void call_entry(subscript_rt_context* ctx, subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
     subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = subscript_rt_ctx_new();
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     call_entry(ctx, subscript_init);
     if (subscript_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, subscript_export_main);
@@ -1462,14 +1462,14 @@ int main(void) {
             r#"
 #include <stdio.h>
 
-static void call_entry(Context* ctx, subscript_main_entry entry) {
+static void call_entry(subscript_rt_context* ctx, subscript_main_entry entry) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
     subscript_rt_ctx_exit_script(ctx);
 }
 
 int main(void) {
-    Context* ctx = subscript_rt_ctx_new();
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
     if (ctx == NULL) return 2;
     call_entry(ctx, subscript_init);
     if (subscript_rt_ctx_trap_kind(ctx) == 0) call_entry(ctx, subscript_export_main);

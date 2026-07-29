@@ -62,7 +62,9 @@ pub fn render() -> Result<String, String> {
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
     out.push_str("#endif\n\n");
-    out.push_str("typedef struct Context Context;\n\n");
+    out.push_str(
+        "typedef struct subscript_rt_context subscript_rt_context;\n\n",
+    );
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
@@ -142,11 +144,35 @@ fn push_comment(out: &mut String, docs: &[String]) {
         out.push_str(" *");
         if !line.is_empty() {
             out.push(' ');
-            out.push_str(line);
+            out.push_str(&rewrite_context_c_type(line));
         }
         out.push('\n');
     }
     out.push_str(" */\n");
+}
+
+fn rewrite_context_c_type(text: &str) -> String {
+    const FROM: &str = "Context";
+    const TO: &str = "subscript_rt_context";
+
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0;
+    for (start, _) in text.match_indices(FROM) {
+        let end = start + FROM.len();
+        let left_is_identifier = start > 0
+            && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
+        let right_is_identifier = end < bytes.len()
+            && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_');
+        if left_is_identifier || right_is_identifier {
+            continue;
+        }
+        out.push_str(&text[cursor..start]);
+        out.push_str(TO);
+        cursor = end;
+    }
+    out.push_str(&text[cursor..]);
+    out
 }
 
 fn parse_fn_type(source: &str, name: &str) -> Result<Function, String> {
@@ -269,8 +295,8 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "i64" => Ok("int64_t"),
         "u32" => Ok("uint32_t"),
         "u64" => Ok("uint64_t"),
-        "*mut Context" => Ok("Context*"),
-        "*const Context" => Ok("const Context*"),
+        "*mut Context" => Ok("subscript_rt_context*"),
+        "*const Context" => Ok("const subscript_rt_context*"),
         "*mut u64" => Ok("uint64_t*"),
         "*const u8" => Ok("const uint8_t*"),
         "*mut c_void" | "*mut std::ffi::c_void" => Ok("void*"),
@@ -329,7 +355,9 @@ mod tests {
     #[test]
     fn generated_host_header_carries_the_observer_aliasing_rule() {
         let header = render().expect("render host header");
-        assert!(header.contains("calling any `subscript_rt_*` API that takes that Context"));
+        assert!(header.contains(
+            "calling any `subscript_rt_*` API that takes that subscript_rt_context"
+        ));
         assert!(header.contains("pointer smuggled in `userdata`"));
         assert!(header.contains("undefined behaviour"));
     }
@@ -339,7 +367,9 @@ mod tests {
         let header = render().expect("render host header");
         assert!(header.contains("sink retains none of that line's bytes"));
         assert!(header.contains("valid only for the duration of the callback"));
-        assert!(header.contains("must not call any `subscript_rt_*` function taking that Context"));
+        assert!(header.contains(
+            "must not call any `subscript_rt_*` function taking that subscript_rt_context"
+        ));
         assert!(header.contains("aliasing\n * violation and undefined behaviour"));
     }
 

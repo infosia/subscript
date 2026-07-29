@@ -294,7 +294,7 @@ int32_t subBulkConsumeF32(SubSliceF32 data) {
 /* Registration: STORE the callback + userdata; return WITHOUT firing. This
  * is the deferred model — unlike subDeviceSetLogger, which fires inside the
  * registering call. The stored userdata is the runtime callback binding; it
- * is Context-held and outlives this call (the Q13 lifetime rule), so a later
+ * is subscript_rt_context-held and outlives this call (the Q13 lifetime rule), so a later
  * pump can read it back. */
 void subDeviceOnComplete(SubDevice device, SubCompletionInfo info) {
     if (device == NULL) {
