@@ -5,7 +5,7 @@ native applications**: a **C-compatible execution and memory model
 wearing a TypeScript-subset syntax**. Because the syntax is a subset of
 TypeScript, standard TypeScript editor tooling works against it; the
 compiler adds sound static types, C-ABI data layout, deterministic
-memory, and zero-marshaling C interop.
+memory, and zero-copy C interop.
 
 It is built for a host that **owns its main loop and exposes a C ABI**,
 and that wants user-authored logic to be fast to iterate on and
