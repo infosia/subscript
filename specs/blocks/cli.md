@@ -23,7 +23,9 @@ compiler for the host's own translation units beyond the one-shot
 ## 2. Surface
 
 One binary, `subscript`, in a new top-level crate `cli/` (package
-`subscript-cli`). Four subcommands; anything else is a usage error.
+`subscript-cli`). Five subcommands; anything else is a usage error.
+*(This line said "Four" until implementation counted the list —
+corrected 2026-07-30; the list below was always the contract.)*
 
 ### 2.1 `subscript check <file.ts> [--mirror <file.d.ts>]...`
 
@@ -52,7 +54,9 @@ cannot be resolved; never guesses.
 The one-shot convenience: emit + compile + link the emitted C, the
 given host sources, and the runtime archive into `<dir>/<name>`
 (default `<dir>` = a `subscript-build` directory under the source's
-directory; never the CWD). `--run` executes the result, forwarding
+directory; never the CWD). `<name>` is the source file's stem plus
+the platform executable suffix *(fixed 2026-07-30; the contract left
+it undefined)*. `--run` executes the result, forwarding
 its exit code and leaving stdout untouched (compiler chatter goes to
 stderr, as the scripts do today). Include directories: each `--host`
 file's directory, each mirror's directory, and the runtime include
@@ -86,7 +90,10 @@ contract revision when taken.
 
 ## 4. Path resolution (runtime archive and include dir)
 
-In order: explicit flags (`--runtime-lib`, `--runtime-include`) →
+The flags are accepted by the two runtime-consuming subcommands,
+`link-flags` and `build` *(fixed 2026-07-30; the contract left
+placement unstated)*. In order: explicit flags
+(`--runtime-lib`, `--runtime-include`) →
 environment (`SUBSCRIPT_RUNTIME_LIB`, `SUBSCRIPT_RUNTIME_INCLUDE`) →
 in-repo default (`target/release/` archive per platform name,
 `runtime/include/`), building the archive via

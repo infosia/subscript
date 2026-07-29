@@ -72,6 +72,12 @@ sh examples/host/build.sh
 sh examples/context-per-scene/build.sh
 ```
 
+Both scripts are thin wrappers over the developer CLI
+([`specs/blocks/cli.md`](../specs/blocks/cli.md)): `subscript build --run`
+owns the emit → compile → link pipeline, `subscript run <file.ts>` runs a
+bindings-free example under the dev JIT, and `subscript link-flags` prints
+what a host build must add to link the emitted C.
+
 The host programs need a POSIX shell, the same Rust toolchain and cached
 dependencies, and the same platform C compiler; they require no additional
 SDK. Releasing a scene Context re-runs `subscript_init` for the next one, so any

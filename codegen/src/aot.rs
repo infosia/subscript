@@ -289,10 +289,12 @@ fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path) -> bool {
     }
 }
 
-/// The runtime static-library filename cargo produces for the host
-/// target: `subscript_runtime.lib` on windows-msvc, the GNU-style
-/// `libsubscript_runtime.a` everywhere else (Unix and windows-gnu).
-fn runtime_staticlib_name() -> &'static str {
+/// Returns the host runtime static-library filename produced by Cargo.
+///
+/// Windows MSVC uses `subscript_runtime.lib`; every other host uses
+/// `libsubscript_runtime.a`.
+#[must_use]
+pub fn runtime_staticlib_name() -> &'static str {
     if cfg!(all(windows, target_env = "msvc")) {
         "subscript_runtime.lib"
     } else {
@@ -401,14 +403,34 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// The resolved host C compiler for a ship-tier compile/link: the
-/// program to run, the environment it needs, and whether it is the MSVC
-/// `cl` driver — which takes a different flag, output, and library
-/// syntax than a GNU-style driver.
-struct HostCCompiler {
+/// Command-line spelling used by a host C compiler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CCompilerStyle {
+    /// Clang/GCC-compatible command-line spelling.
+    Unix,
+    /// Microsoft `cl` command-line spelling.
+    Msvc,
+}
+
+impl CCompilerStyle {
+    /// Returns whether this is Microsoft `cl` spelling.
+    #[must_use]
+    pub fn is_msvc(self) -> bool {
+        matches!(self, Self::Msvc)
+    }
+}
+
+/// The resolved host C compiler for a ship-tier compile/link.
+///
+/// It carries the program, the environment needed to run it, and the
+/// command-line style selected for the host.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct HostCCompiler {
     program: OsString,
     env: Vec<(OsString, OsString)>,
-    msvc: bool,
+    style: CCompilerStyle,
 }
 
 impl HostCCompiler {
@@ -416,10 +438,23 @@ impl HostCCompiler {
     /// environment applied. MSVC `cl` cannot find its own headers and
     /// import libraries without the `INCLUDE`/`LIB`/`PATH` the registry
     /// lookup supplies, so that environment travels with the program.
-    fn command(&self) -> Command {
+    #[must_use]
+    pub fn command(&self) -> Command {
         let mut command = Command::new(&self.program);
         command.envs(self.env.iter().cloned());
         command
+    }
+
+    /// Returns the resolved compiler executable.
+    #[must_use]
+    pub fn program(&self) -> &std::ffi::OsStr {
+        &self.program
+    }
+
+    /// Returns the compiler's command-line style.
+    #[must_use]
+    pub fn style(&self) -> CCompilerStyle {
+        self.style
     }
 }
 
@@ -433,12 +468,16 @@ impl HostCCompiler {
 /// [`RunError::Internal`] on windows-msvc when neither `$CC` is set nor
 /// the MSVC toolchain can be located; a missing toolchain is a failure,
 /// never a skip — the gate machine is the development machine (§8.3).
-fn host_c_compiler() -> Result<HostCCompiler, RunError> {
+pub fn host_c_compiler() -> Result<HostCCompiler, RunError> {
     if let Some(cc) = std::env::var_os("CC") {
         return Ok(HostCCompiler {
             program: cc,
             env: Vec::new(),
-            msvc: cfg!(all(windows, target_env = "msvc")),
+            style: if cfg!(all(windows, target_env = "msvc")) {
+                CCompilerStyle::Msvc
+            } else {
+                CCompilerStyle::Unix
+            },
         });
     }
 
@@ -455,7 +494,7 @@ fn host_c_compiler() -> Result<HostCCompiler, RunError> {
         Ok(HostCCompiler {
             program: tool.path().as_os_str().to_owned(),
             env: tool.env().to_vec(),
-            msvc: true,
+            style: CCompilerStyle::Msvc,
         })
     }
 
@@ -466,7 +505,7 @@ fn host_c_compiler() -> Result<HostCCompiler, RunError> {
                 .map(PathBuf::into_os_string)
                 .unwrap_or_else(|| "clang".into()),
             env: Vec::new(),
-            msvc: false,
+            style: CCompilerStyle::Unix,
         })
     }
 }
@@ -501,8 +540,8 @@ fn msvc_object_directory_arg(directory: &Path) -> OsString {
 /// with error C2124 — deferring it to a runtime infinity instead. It is
 /// at least as conservative as `/fp:precise`, so the byte-exact
 /// differential is preserved.
-fn add_c11_optimized_flags(command: &mut Command, msvc: bool) {
-    if msvc {
+pub fn add_c11_optimized_flags(command: &mut Command, style: CCompilerStyle) {
+    if style.is_msvc() {
         command.args(["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]);
     } else {
         command.args(["-std=c11", "-O2", "-fwrapv", "-ffp-contract=off"]);
@@ -510,8 +549,8 @@ fn add_c11_optimized_flags(command: &mut Command, msvc: bool) {
 }
 
 /// Adds the AddressSanitizer flags for the resolved driver.
-fn add_address_sanitizer_flags(command: &mut Command, msvc: bool) {
-    if msvc {
+fn add_address_sanitizer_flags(command: &mut Command, style: CCompilerStyle) {
+    if style.is_msvc() {
         command.args(["/fsanitize=address", "/Oy-"]);
     } else {
         command.args(["-fsanitize=address", "-fno-omit-frame-pointer"]);
@@ -521,8 +560,8 @@ fn add_address_sanitizer_flags(command: &mut Command, msvc: bool) {
 /// Adds the executable-output arguments for the resolved driver: MSVC's
 /// `/Fe:` naming plus the `-link` linker-arguments marker, or the
 /// GNU-style `-o` form.
-fn add_executable_output(command: &mut Command, executable: &Path, msvc: bool) {
-    if msvc {
+pub fn add_executable_output(command: &mut Command, executable: &Path, style: CCompilerStyle) {
+    if style.is_msvc() {
         command
             .arg(prefixed_path_arg("/Fe:", executable))
             .arg("-link");
@@ -542,24 +581,52 @@ fn object_path(directory: &Path, stem: &str) -> PathBuf {
     directory.join(format!("{stem}.{extension}"))
 }
 
-/// System import libraries the linked program needs on windows-msvc that
-/// the driver's own defaults do not supply. The runtime static library
-/// embeds Rust `std`, which references these; `rustc` passes them
-/// automatically when it links, so a manual platform-C link of the
-/// staticlib must name them (`rustc --print native-static-libs` for this
-/// host: kernel32, ntdll, userenv, ws2_32, dbghelp). Empty on every
-/// other target.
-fn runtime_system_libs() -> &'static [&'static str] {
-    if cfg!(all(windows, target_env = "msvc")) {
-        &[
-            "kernel32.lib",
-            "ntdll.lib",
-            "userenv.lib",
-            "ws2_32.lib",
-            "dbghelp.lib",
-        ]
-    } else {
-        &[]
+/// Windows system libraries required when linking the Rust runtime archive.
+pub const WINDOWS_SYSTEM_LIBRARIES: &[&str] =
+    &["kernel32", "ntdll", "userenv", "ws2_32", "dbghelp"];
+
+/// Returns the host system-library arguments for `style`.
+///
+/// The list is empty off Windows. On Windows it uses `name.lib` for
+/// Microsoft `cl` and `-lname` for a Unix-style driver. The runtime embeds
+/// Rust `std`, whose imports require the five libraries that `rustc` would
+/// otherwise pass automatically.
+#[must_use]
+pub fn runtime_system_libraries(style: CCompilerStyle) -> Vec<OsString> {
+    system_library_arguments(cfg!(windows), style)
+}
+
+fn system_library_arguments(windows: bool, style: CCompilerStyle) -> Vec<OsString> {
+    if !windows {
+        return Vec::new();
+    }
+    WINDOWS_SYSTEM_LIBRARIES
+        .iter()
+        .map(|name| {
+            if style.is_msvc() {
+                OsString::from(format!("{name}.lib"))
+            } else {
+                OsString::from(format!("-l{name}"))
+            }
+        })
+        .collect()
+}
+
+/// Returns one joined include-directory argument in the selected spelling.
+#[must_use]
+pub fn include_directory_arg(style: CCompilerStyle, directory: &Path) -> OsString {
+    let prefix = if style.is_msvc() { "/I" } else { "-I" };
+    prefixed_path_arg(prefix, directory)
+}
+
+/// Directs compiler-created object files into `directory` when required.
+///
+/// This adds MSVC's joined `/Fo:<dir>\` argument and is a no-op for a
+/// Unix-style compiler, which writes no intermediate object in a one-shot
+/// compile-and-link command.
+pub fn add_object_directory(command: &mut Command, directory: &Path, style: CCompilerStyle) {
+    if style.is_msvc() {
+        command.arg(msvc_object_directory_arg(directory));
     }
 }
 
@@ -573,14 +640,14 @@ fn require_native_symbols(
     }
 }
 
-fn add_native_compile_inputs(command: &mut Command, libraries: &[NativeLibrary], msvc: bool) {
+fn add_native_compile_inputs(
+    command: &mut Command,
+    libraries: &[NativeLibrary],
+    style: CCompilerStyle,
+) {
     for library in libraries {
         for directory in library.include_directories() {
-            if msvc {
-                command.arg("/I").arg(directory);
-            } else {
-                command.arg("-I").arg(directory);
-            }
+            command.arg(include_directory_arg(style, directory));
         }
     }
     for library in libraries {
@@ -646,19 +713,19 @@ pub fn run_aot_with_native_libraries(
 
     let cc = host_c_compiler()?;
     let mut command = cc.command();
-    if cc.msvc {
+    if cc.style().is_msvc() {
         // The C entry is the only source compiled here; direct its
         // object into the temp dir so `cl` does not litter the cwd.
-        add_c11_optimized_flags(&mut command, true);
-        command.arg(msvc_object_directory_arg(&dir.path));
+        add_c11_optimized_flags(&mut command, cc.style());
+        add_object_directory(&mut command, &dir.path, cc.style());
     }
-    add_native_compile_inputs(&mut command, libraries, cc.msvc);
+    add_native_compile_inputs(&mut command, libraries, cc.style());
     command
         .arg(&entry_path)
         .arg(&obj_path)
         .arg(&staticlib)
-        .args(runtime_system_libs());
-    add_executable_output(&mut command, &exe_path, cc.msvc);
+        .args(runtime_system_libraries(cc.style()));
+    add_executable_output(&mut command, &exe_path, cc.style());
     let link = command
         .output()
         .map_err(|e| {
@@ -795,23 +862,23 @@ fn run_c_aot_configured(
     // `-std`. Signed overflow must wrap two's-complement (the language's
     // semantics); `-fwrapv` establishes that off MSVC, `cl` wraps by
     // default (§11c).
-    add_c11_optimized_flags(&mut command, cc.msvc);
+    add_c11_optimized_flags(&mut command, cc.style());
     if address_sanitizer {
-        add_address_sanitizer_flags(&mut command, cc.msvc);
+        add_address_sanitizer_flags(&mut command, cc.style());
     }
-    if cc.msvc {
+    if cc.style().is_msvc() {
         // Two sources (the program and the entry) plus any native
         // sources are compiled in one invocation; direct their objects
         // into the temp dir under their basenames.
-        command.arg(msvc_object_directory_arg(&dir.path));
+        add_object_directory(&mut command, &dir.path, cc.style());
     }
-    add_native_compile_inputs(&mut command, libraries, cc.msvc);
+    add_native_compile_inputs(&mut command, libraries, cc.style());
     command
         .arg(&src_path)
         .arg(&entry_path)
         .arg(&staticlib)
-        .args(runtime_system_libs());
-    add_executable_output(&mut command, &exe_path, cc.msvc);
+        .args(runtime_system_libraries(cc.style()));
+    add_executable_output(&mut command, &exe_path, cc.style());
     let compile = command
         .output()
         .map_err(|e| {
@@ -875,6 +942,101 @@ mod tests {
         vec![SourceFile::new("test.ts", src)]
     }
 
+    #[test]
+    fn public_toolchain_api_carries_the_ship_contract() -> Result<(), String> {
+        assert!(!CCompilerStyle::Unix.is_msvc());
+        assert!(CCompilerStyle::Msvc.is_msvc());
+
+        let mut unix = Command::new("cc");
+        add_c11_optimized_flags(&mut unix, CCompilerStyle::Unix);
+        add_object_directory(&mut unix, Path::new("objects"), CCompilerStyle::Unix);
+        add_executable_output(&mut unix, Path::new("program"), CCompilerStyle::Unix);
+        assert_eq!(
+            unix.get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            [
+                "-std=c11",
+                "-O2",
+                "-fwrapv",
+                "-ffp-contract=off",
+                "-o",
+                "program",
+            ]
+        );
+        assert_eq!(
+            include_directory_arg(CCompilerStyle::Unix, Path::new("include")),
+            OsString::from("-Iinclude")
+        );
+
+        let mut msvc = Command::new("cl");
+        add_c11_optimized_flags(&mut msvc, CCompilerStyle::Msvc);
+        add_object_directory(&mut msvc, Path::new("objects"), CCompilerStyle::Msvc);
+        add_executable_output(&mut msvc, Path::new("program.exe"), CCompilerStyle::Msvc);
+        let msvc_args = msvc
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            &msvc_args[..5],
+            ["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]
+        );
+        assert!(msvc_args[5].starts_with("/Fo:objects"));
+        assert_eq!(&msvc_args[6..], ["/Fe:program.exe", "-link"]);
+        assert_eq!(
+            include_directory_arg(CCompilerStyle::Msvc, Path::new("include")),
+            OsString::from("/Iinclude")
+        );
+
+        assert!(matches!(
+            runtime_staticlib_name(),
+            "libsubscript_runtime.a" | "subscript_runtime.lib"
+        ));
+        assert_eq!(
+            WINDOWS_SYSTEM_LIBRARIES,
+            ["kernel32", "ntdll", "userenv", "ws2_32", "dbghelp"]
+        );
+        assert_eq!(
+            system_library_arguments(true, CCompilerStyle::Msvc),
+            [
+                "kernel32.lib",
+                "ntdll.lib",
+                "userenv.lib",
+                "ws2_32.lib",
+                "dbghelp.lib",
+            ]
+            .map(OsString::from)
+        );
+        assert_eq!(
+            system_library_arguments(true, CCompilerStyle::Unix),
+            [
+                "-lkernel32",
+                "-lntdll",
+                "-luserenv",
+                "-lws2_32",
+                "-ldbghelp",
+            ]
+            .map(OsString::from)
+        );
+        assert_eq!(
+            runtime_system_libraries(CCompilerStyle::Unix),
+            system_library_arguments(cfg!(windows), CCompilerStyle::Unix)
+        );
+
+        let compiler = host_c_compiler().map_err(|error| error.to_string())?;
+        assert!(!compiler.program().is_empty());
+        assert_eq!(
+            compiler.style(),
+            if cfg!(all(windows, target_env = "msvc")) {
+                CCompilerStyle::Msvc
+            } else {
+                CCompilerStyle::Unix
+            }
+        );
+        assert_eq!(compiler.command().get_program(), compiler.program());
+        Ok(())
+    }
+
     /// Drives the emitted-C ship tier with a test-specific C host entry.
     /// The compile/link flags and runtime inputs are exactly the ones used
     /// by `run_c_aot`; only the host driver source differs.
@@ -899,8 +1061,8 @@ mod tests {
 
         let cc = host_c_compiler().expect("resolve C compiler");
         let mut command = cc.command();
-        add_c11_optimized_flags(&mut command, cc.msvc);
-        if cc.msvc {
+        add_c11_optimized_flags(&mut command, cc.style());
+        if cc.style().is_msvc() {
             command
                 .arg(msvc_object_directory_arg(&dir.path))
                 .arg("/I")
@@ -912,8 +1074,8 @@ mod tests {
             .arg(&src_path)
             .arg(&entry_path)
             .arg(&staticlib)
-            .args(runtime_system_libs());
-        add_executable_output(&mut command, &exe_path, cc.msvc);
+            .args(runtime_system_libraries(cc.style()));
+        add_executable_output(&mut command, &exe_path, cc.style());
         let compile = command.output().expect("run C compiler");
         assert!(
             compile.status.success(),

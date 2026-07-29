@@ -16,8 +16,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use subscript_codegen::{emit_c, emit_c_without_main, AOT_ENTRY_C};
-use subscript_compiler::{check_program, SourceFile};
+use subscript_codegen::{emit_c_files, EmitCFilesError};
+use subscript_compiler::SourceFile;
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -100,50 +100,37 @@ fn main() -> ExitCode {
         ("program".to_string(), sources)
     };
 
-    let hir = match check_program(&sources) {
-        Ok(m) => m,
-        Err(diags) => {
+    let emitted = match emit_c_files(&sources, &out_dir, &label, write_entry) {
+        Ok(emitted) => emitted,
+        Err(EmitCFilesError::Diagnostics(diags)) => {
             eprintln!(
                 "emit-c: {label} did not check: {}",
-                diags.first().map(|d| d.message.as_str()).unwrap_or("no diagnostic")
+                diags
+                    .first()
+                    .map(|d| d.message.as_str())
+                    .unwrap_or("no diagnostic")
             );
             return ExitCode::FAILURE;
         }
-    };
-    let program = match if write_entry {
-        emit_c(&hir)
-    } else {
-        emit_c_without_main(&hir)
-    } {
-        Ok(p) => p,
-        Err(e) => {
+        Err(EmitCFilesError::Emission(e)) => {
             eprintln!("emit-c: {label}: {e}");
             return ExitCode::FAILURE;
         }
-    };
-
-    if write_entry {
-        let entry_c = out_dir.join("entry.c");
-        if let Err(e) = fs::write(&entry_c, AOT_ENTRY_C) {
-            eprintln!("emit-c: write {}: {e}", entry_c.display());
+        Err(error) => {
+            eprintln!("emit-c: {error}");
             return ExitCode::from(2);
         }
-        println!("wrote {}", entry_c.display());
-    }
+    };
 
-    let src = out_dir.join(format!("{label}.c"));
-    if let Err(e) = fs::write(&src, program.source.as_bytes()) {
-        eprintln!("emit-c: write {}: {e}", src.display());
-        return ExitCode::from(2);
+    if let Some(entry) = emitted.entry {
+        println!("wrote {}", entry.display());
     }
-    println!("wrote {} ({} bytes)", src.display(), program.source.len());
-
-    let metadata = out_dir.join(format!("{label}.alloc.h"));
-    if let Err(e) = fs::write(&metadata, program.allocation_metadata_header.as_bytes()) {
-        eprintln!("emit-c: write {}: {e}", metadata.display());
-        return ExitCode::from(2);
-    }
-    println!("wrote {}", metadata.display());
+    println!(
+        "wrote {} ({} bytes)",
+        emitted.source.display(),
+        emitted.source_len
+    );
+    println!("wrote {}", emitted.allocation_metadata.display());
     ExitCode::SUCCESS
 }
 
@@ -154,19 +141,16 @@ fn usage() {
     );
 }
 
-fn load_explicit(
-    mirrors: &[PathBuf],
-    sources: &[PathBuf],
-) -> Result<Vec<SourceFile>, String> {
+fn load_explicit(mirrors: &[PathBuf], sources: &[PathBuf]) -> Result<Vec<SourceFile>, String> {
     let mut out = Vec::with_capacity(mirrors.len() + sources.len());
     for path in mirrors {
-        let text = fs::read_to_string(path)
-            .map_err(|e| format!("read mirror {}: {e}", path.display()))?;
+        let text =
+            fs::read_to_string(path).map_err(|e| format!("read mirror {}: {e}", path.display()))?;
         out.push(SourceFile::ambient(path.to_string_lossy(), text));
     }
     for path in sources {
-        let text = fs::read_to_string(path)
-            .map_err(|e| format!("read source {}: {e}", path.display()))?;
+        let text =
+            fs::read_to_string(path).map_err(|e| format!("read source {}: {e}", path.display()))?;
         out.push(SourceFile::new(path.to_string_lossy(), text));
     }
     Ok(out)
@@ -192,7 +176,8 @@ fn load_entry(accept: &std::path::Path, id: &str) -> Result<Vec<SourceFile>, Str
         Ok(out)
     } else {
         let path = accept.join(format!("{id}.ts"));
-        let text = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let text =
+            fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         Ok(vec![SourceFile::new(format!("{id}.ts"), text)])
     }
 }

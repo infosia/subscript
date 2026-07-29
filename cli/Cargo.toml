@@ -1,0 +1,14 @@
+[package]
+name = "subscript-cli"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Developer command for checking, emitting, building, and running subscript programs."
+
+[[bin]]
+name = "subscript"
+path = "src/main.rs"
+
+[dependencies]
+subscript-codegen = { path = "../codegen" }
+subscript-compiler = { path = "../compiler" }
