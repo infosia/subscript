@@ -349,10 +349,43 @@ const sink: EngEventSink = new EngEventSink(
 );
 ```
 
-The host receives the objects as `void*` userdata, stores them, and
-when it later fires the callback the pointers come back to the script
-typed `object | null`; the script narrows and casts to the concrete
-class. Three rules govern the round trip:
+On the C side there is nothing runtime-specific to call: the script's
+lambda arrives as an ordinary function pointer, the objects as
+`void*`, and firing is a plain C call. Condensed from
+[`examples/engine/engine.c`](../examples/engine/engine.c) (the
+complete version checks the handle and defers through a pending
+marker):
+
+```c
+/* Registration, called by the script: store, do not fire. */
+static EngEventSink storedSink;
+
+void engWorldSetEventSink(EngWorld world, EngEventSink sink) {
+    storedSink = sink;            /* callback + both userdata slots */
+}
+
+/* Later, on the Context's thread — the capstone pumps once per frame,
+ * after the update entry returns (examples/host/main.c). */
+void hostPumpEvents(void) {
+    if (storedSink.engCallback == NULL) {
+        return;
+    }
+    EngStringView message;
+    message.engData = worldName;
+    message.engLen = worldNameLength;
+    storedSink.engCallback(          /* fires the script lambda */
+        message,
+        storedSink.engUserdata1,     /* script objects return as arguments */
+        storedSink.engUserdata2);
+}
+```
+
+The pointers come back to the script typed `object | null`; the
+script narrows and casts to the concrete class. Registration itself
+never fires (`e10` prints `deferred=0,0` before the pump and
+`ready=1,…` after), and the capstone fires from its frame loop as a
+plain call — outside the `enter`/`exit` bracket that wraps exported
+entries. Three rules govern the round trip:
 
 - **Lifetime is the script's job (Q13).** A host-held pointer does
   not root the object. Keep it reachable from script state for as
