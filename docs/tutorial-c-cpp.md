@@ -328,6 +328,47 @@ and
 and the capstone [`examples/host/game.ts`](../examples/host/game.ts)
 for the whole pattern in use.
 
+#### Round-tripping script objects through the host
+
+A host can hold references to script-side objects and hand them back
+into script code as arguments — through one decided mechanism, the
+registered callback with two userdata slots
+([`e10-c-callbacks-and-handles.ts`](../examples/e10-c-callbacks-and-handles.ts)):
+
+```ts
+const log: EventLog = new EventLog();     // script-side reference class
+const sink: EngEventSink = new EngEventSink(
+  (message, userdata1, userdata2) => {    // non-capturing (C5)
+    if (userdata1 !== null) {
+      const eventLog = userdata1 as EventLog;  // checked nominal cast
+      eventLog.hits = eventLog.hits + 1;
+    }
+  },
+  log,     // crosses to C as an opaque void*
+  null,
+);
+```
+
+The host receives the objects as `void*` userdata, stores them, and
+when it later fires the callback the pointers come back to the script
+typed `object | null`; the script narrows and casts to the concrete
+class. Three rules govern the round trip:
+
+- **Lifetime is the script's job (Q13).** A host-held pointer does
+  not root the object. Keep it reachable from script state for as
+  long as the host may fire; an object released by `Context.free` or
+  swept by `Context.collect` leaves the host holding a dangling
+  pointer — the dev tier's freed-handle diagnostics trap the use,
+  ship behavior is undefined.
+- **Fire on the Context's thread**, like every other entry (§14.6).
+- **Userdata is opaque to C.** Script-only classes do not appear in
+  your header; data the host should read belongs in mirrored
+  boundary types instead.
+
+This callback is also the only way to invoke script code with
+arguments — exported entries stay zero-argument (Q12), and recurring
+per-frame inputs belong in staged facade accessors (step 6).
+
 ### Step 6 — a frame loop: exports beyond `main`
 
 Every `export function <name>(): void` in the script becomes a C
