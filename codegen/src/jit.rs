@@ -726,6 +726,28 @@ pub fn run_jit_with_native_libraries(
     outcome
 }
 
+/// Runs the dev JIT with freed-handle diagnostics enabled and the
+/// caller-supplied native libraries available for foreign calls.
+///
+/// The mode uses threshold 0 and the recommended 1 GiB retention budget,
+/// matching [`run_jit_with_memory_accounting`] when its diagnostics argument
+/// is true.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_jit_with_native_libraries`].
+pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    let (module, lowered) = compile_jit(files, libraries)?;
+    let outcome = execute_entry(&module, &lowered, None, true).map(|run| run.stdout);
+    // SAFETY: all executions above have returned and no pointer into
+    // the JIT-allocated code/data survives (the Context held none).
+    unsafe { module.free_memory() };
+    outcome
+}
+
 /// Runs the dev tier while refusing the `n`-th object-level Context
 /// allocation after Context creation.
 ///

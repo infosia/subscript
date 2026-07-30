@@ -33,6 +33,8 @@ pub mod strops;
 pub mod trap;
 
 pub use context::{
-    Context, ScriptMainEntry, TrapObserver, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
+    Context, DiagnosticsObserver, ScriptMainEntry, TrapObserver,
+    DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
+    FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
 pub use trap::{TrapKind, TrapRecord};

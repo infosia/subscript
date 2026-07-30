@@ -26,6 +26,10 @@ pub fn render() -> Result<String, String> {
     let observer = parse_fn_type(CONTEXT_SOURCE, "TrapObserver")?;
     let print_observer_docs = docs_for(CONTEXT_SOURCE, "pub type PrintObserver")?;
     let print_observer = parse_fn_type(CONTEXT_SOURCE, "PrintObserver")?;
+    let diagnostics_observer_docs =
+        docs_for(CONTEXT_SOURCE, "pub type DiagnosticsObserver")?;
+    let diagnostics_observer =
+        parse_fn_type(CONTEXT_SOURCE, "DiagnosticsObserver")?;
     let allocation_visitor_docs =
         docs_for(CONTEXT_SOURCE, "pub type AllocationVisitor")?;
     let allocation_visitor = parse_fn_type(CONTEXT_SOURCE, "AllocationVisitor")?;
@@ -38,6 +42,10 @@ pub fn render() -> Result<String, String> {
     let print_observer_setter_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_print_observer",
+    )?;
+    let diagnostics_observer_setter_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_diagnostics_observer",
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
@@ -59,6 +67,11 @@ pub fn render() -> Result<String, String> {
          UINT64_C({})\n\n",
         crate::FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES
     ));
+    out.push_str("/* Diagnostics advisory kinds. */\n");
+    out.push_str(&format!(
+        "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C({})\n\n",
+        crate::DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE
+    ));
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
     out.push_str("#endif\n\n");
@@ -74,6 +87,13 @@ pub fn render() -> Result<String, String> {
     out.push_str(&c_fn_pointer(
         "subscript_rt_print_observer",
         &print_observer,
+    )?);
+    out.push_str(";\n\n");
+    push_comment(&mut out, &diagnostics_observer_docs);
+    out.push_str("typedef ");
+    out.push_str(&c_fn_pointer(
+        "subscript_rt_diagnostics_observer",
+        &diagnostics_observer,
     )?);
     out.push_str(";\n\n");
     push_comment(&mut out, &allocation_visitor_docs);
@@ -101,6 +121,9 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_set_print_observer" {
             push_comment(&mut out, &print_observer_setter_docs);
+        }
+        if function.name == "subscript_rt_ctx_set_diagnostics_observer" {
+            push_comment(&mut out, &diagnostics_observer_setter_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
@@ -302,6 +325,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "*mut c_void" | "*mut std::ffi::c_void" => Ok("void*"),
         "Option<TrapObserver>" => Ok("subscript_rt_trap_observer"),
         "Option<PrintObserver>" => Ok("subscript_rt_print_observer"),
+        "Option<DiagnosticsObserver>" => Ok("subscript_rt_diagnostics_observer"),
         "Option<AllocationVisitor>" => Ok("subscript_rt_alloc_visitor"),
         other => Err(format!(
             "host header: Rust type `{other}` has no explicit C spelling"
@@ -371,6 +395,18 @@ mod tests {
             "must not call any `subscript_rt_*` function taking that subscript_rt_context"
         ));
         assert!(header.contains("aliasing\n * violation and undefined behaviour"));
+    }
+
+    #[test]
+    fn generated_host_header_documents_the_diagnostics_observer_contract() {
+        let header = render().expect("render host header");
+        assert!(header.contains(
+            "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C(1)"
+        ));
+        assert!(header.contains("typedef void (*subscript_rt_diagnostics_observer)"));
+        assert!(header.contains("advisory does not trap, cancel, or otherwise change the release"));
+        assert!(header.contains("must not\n * call back into script"));
+        assert!(header.contains("registered-binding check entirely"));
     }
 
     #[test]

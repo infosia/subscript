@@ -399,12 +399,23 @@ never fires (`e10` prints `deferred=0,0` before the pump and
 plain call — outside the `enter`/`exit` bracket that wraps exported
 entries. Three rules govern the round trip:
 
-- **Lifetime is the script's job (Q13).** A host-held pointer does
-  not root the object. Keep it reachable from script state for as
-  long as the host may fire; an object released by `Context.free` or
-  swept by `Context.collect` leaves the host holding a dangling
-  pointer — the dev tier's freed-handle diagnostics trap the use,
-  ship behavior is undefined.
+- **Registered userdata survives collection.** `Context.collect`
+  roots every live binding's userdata slots, so an object handed to
+  the host is never swept while its registration lives — it is
+  released only by explicit `Context.free` or by releasing the
+  Context (`specs/blocks/compiler.md` §14.4b). One consequence to
+  plan for: replacing a registration does not release the old
+  userdata — bindings live for the whole Context — so long-lived
+  hosts free superseded userdata explicitly.
+- **Explicit `Context.free` of registered userdata is the remaining
+  hazard, and it is caught twice.** At fire time, the trampoline
+  refuses to enter script with dead userdata — a
+  `callback-userdata-freed` trap, exact while freed-handle
+  diagnostics retain the record and best-effort otherwise. At free
+  time, an optional observer
+  (`subscript_rt_ctx_set_diagnostics_observer`) reports the release
+  of still-registered userdata the moment it happens; unset, the
+  check costs nothing.
 - **Fire on the Context's thread**, like every other entry (§14.6).
 - **Userdata is opaque to C.** Script-only classes do not appear in
   your header; data the host should read belongs in mirrored

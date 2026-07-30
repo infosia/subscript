@@ -72,6 +72,9 @@ pub enum TrapKind {
     Regex = 19,
     /// A regex search exhausted the host-configured Context budget.
     RegexBudget = 20,
+    /// A registered callback fired with a userdata slot that no longer
+    /// names a live Context allocation.
+    CallbackUserdataFreed = 21,
 }
 
 impl TrapKind {
@@ -99,6 +102,7 @@ impl TrapKind {
             18 => TrapKind::JsonResultValue,
             19 => TrapKind::Regex,
             20 => TrapKind::RegexBudget,
+            21 => TrapKind::CallbackUserdataFreed,
             _ => return None,
         })
     }
@@ -127,6 +131,7 @@ impl TrapKind {
             TrapKind::JsonResultValue => "json-result-value",
             TrapKind::Regex => "regex-error",
             TrapKind::RegexBudget => "regex-budget-exhausted",
+            TrapKind::CallbackUserdataFreed => "callback-userdata-freed",
         }
     }
 }
@@ -168,7 +173,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=20u32 {
+        for v in 1..=21u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

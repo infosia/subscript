@@ -20,9 +20,12 @@ mod trap_corpus;
 mod native_fixture;
 
 use subscript_codegen::{
-    run_c_aot, run_c_aot_with_alloc_failure, run_c_aot_with_native_libraries, run_jit,
-    run_jit_with_alloc_failure, run_jit_with_memory_accounting,
-    run_jit_with_native_libraries, RunError, TrapReport,
+    run_c_aot, run_c_aot_with_alloc_failure,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_native_libraries, run_jit, run_jit_with_alloc_failure,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries,
+    run_jit_with_memory_accounting, run_jit_with_native_libraries, RunError,
+    TrapReport,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -105,6 +108,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         | "t43-regex-mutually-exclusive-flags"
         | "t44-regex-replace-all-without-global"
         | "t45-regex-sticky-last-index" => (TrapKind::Regex, 8),
+        "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -561,12 +565,13 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 45;
+    let expected_count = 46;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
-         coverage + t34 unrepresentable-layout policy, plus t39–t45 regex coverage), found {}",
+         coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, and t46 \
+         callback-userdata coverage), found {}",
         ids.len()
     );
 
@@ -595,6 +600,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         let (expected_kind, expected_line) = trap_expectation(&id);
         let freed_handle_diagnostic =
             matches!(id.as_str(), "t22-double-delete-q6" | "t23-use-after-delete-q6");
+        let callback_userdata_diagnostic = id == "t46-callback-userdata-freed";
         let (jit, ship) = if let Some(n) = allocation_failure_count(&id) {
             (
                 run_jit_with_alloc_failure(&files, n),
@@ -605,6 +611,21 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                 run_jit_with_memory_accounting(&files, true)
                     .map(|(stdout, _)| stdout),
                 run_c_aot(&files),
+            )
+        } else if callback_userdata_diagnostic {
+            #[cfg(not(all(windows, target_env = "msvc")))]
+            let libraries = [native_fixture::library()];
+            #[cfg(all(windows, target_env = "msvc"))]
+            let libraries: [subscript_codegen::NativeLibrary; 0] = [];
+            (
+                run_jit_with_freed_handle_diagnostics_and_native_libraries(
+                    &files,
+                    &libraries,
+                ),
+                run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
+                    &files,
+                    &libraries,
+                ),
             )
         } else {
             #[cfg(not(all(windows, target_env = "msvc")))]
@@ -653,6 +674,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                         Some("Context.free of an already-deleted allocation")
                     }
                     "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
+                    "t46-callback-userdata-freed" => {
+                        Some("callback userdata points to a freed allocation")
+                    }
                     _ => None,
                 };
                 if let Some(message) = freed_handle_message {

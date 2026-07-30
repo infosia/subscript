@@ -780,7 +780,7 @@ pub fn run_aot_with_native_libraries(
 /// but no native library was supplied, and [`RunError::Internal`] on
 /// emission, toolchain, compile, link, or execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, &[])
+    run_c_aot_configured(files, None, false, &[])
 }
 
 /// Compiles, links, and runs `files` through the emitted-C ship tier with
@@ -795,7 +795,25 @@ pub fn run_c_aot_with_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, libraries)
+    run_c_aot_configured(files, None, false, libraries)
+}
+
+/// Runs the emitted-C ship tier with freed-handle diagnostics enabled and
+/// the caller-supplied native libraries.
+///
+/// The host establishes threshold 0 and the recommended 1 GiB retention
+/// budget before `subscript_init`, so retained-dead diagnostics have the
+/// same coverage as the dev-JIT diagnostic runner.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as
+/// [`run_c_aot_with_native_libraries`].
+pub fn run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    run_c_aot_configured(files, None, true, libraries)
 }
 
 /// Runs the emitted-C ship tier while refusing the `n`-th object-level
@@ -813,12 +831,13 @@ pub fn run_c_aot_with_alloc_failure(
     files: &[SourceFile],
     n: u64,
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, Some(n), &[])
+    run_c_aot_configured(files, Some(n), false, &[])
 }
 
 fn run_c_aot_configured(
     files: &[SourceFile],
     fail_alloc_after: Option<u64>,
+    freed_handle_diagnostics: bool,
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
@@ -833,23 +852,30 @@ fn run_c_aot_configured(
         .path
         .join(format!("program{}", std::env::consts::EXE_SUFFIX));
     write_file(&src_path, program.source.as_bytes())?;
-    let entry = if let Some(n) = fail_alloc_after {
-        let anchor = "    call_script_entry(ctx, subscript_init);";
-        if !AOT_ENTRY_C.contains(anchor) {
-            return Err(RunError::Internal(internal(
-                "AOT entry allocation-fault anchor moved",
-            )));
-        }
-        AOT_ENTRY_C.replace(
-            anchor,
-            &format!(
-                "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n\
-                 {anchor}"
-            ),
-        )
-    } else {
-        AOT_ENTRY_C.to_string()
-    };
+    let anchor = "    call_script_entry(ctx, subscript_init);";
+    if !AOT_ENTRY_C.contains(anchor) {
+        return Err(RunError::Internal(internal(
+            "AOT entry Context-configuration anchor moved",
+        )));
+    }
+    let mut setup = String::new();
+    if freed_handle_diagnostics {
+        setup.push_str(concat!(
+            "    if (subscript_rt_ctx_set_freed_handle_diagnostics(\n",
+            "            ctx, 1u, 0u,\n",
+            "            SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES) == 0) {\n",
+            "        subscript_rt_ctx_release(ctx);\n",
+            "        return 2;\n",
+            "    }\n",
+        ));
+    }
+    if let Some(n) = fail_alloc_after {
+        setup.push_str(&format!(
+            "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n"
+        ));
+    }
+    setup.push_str(anchor);
+    let entry = AOT_ENTRY_C.replace(anchor, &setup);
     write_file(&entry_path, entry.as_bytes())?;
 
     let cc = host_c_compiler()?;

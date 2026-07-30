@@ -24,9 +24,13 @@
 mod native_fixture;
 
 use subscript_codegen::{
-    run_c_aot_with_native_libraries, run_jit, run_jit_with_native_libraries,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_native_libraries, run_jit,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries,
+    run_jit_with_native_libraries, RunError,
 };
 use subscript_compiler::SourceFile;
+use subscript_runtime::TrapKind;
 
 /// The committed ambient mirror, ingested as a global `.d.ts` surface.
 const MIRROR: &str = include_str!("../../corpus/interop/interop.generated.d.ts");
@@ -247,6 +251,62 @@ fn deferred_completion_callback_fires_on_pump() {
     // Registered but not fired (0), still not fired after submit (0), fired by
     // the pump with message length = submit sum (60) + chain depth (0) = 60.
     assert_eq!(both_tiers(&prog), b"0\n0\n60\n");
+}
+
+#[test]
+fn callback_userdata_rooting_corpus_survives_collect_on_both_tiers() {
+    let program = include_str!("../../corpus/accept/a90-callback-userdata-rooted.ts");
+    let output = both_tiers(program);
+    assert_eq!(output, b"41:7:0\n");
+    println!(
+        "a90-callback-userdata-rooted: {:?}",
+        String::from_utf8_lossy(&output)
+    );
+}
+
+#[test]
+fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
+    let files = || {
+        vec![
+            SourceFile::ambient("interop.generated.d.ts", MIRROR),
+            SourceFile::new(
+                "t46-callback-userdata-freed.ts",
+                include_str!("../../corpus/trap/t46-callback-userdata-freed.ts"),
+            ),
+        ]
+    };
+    let libraries = [native_fixture::library()];
+    let jit = run_jit_with_freed_handle_diagnostics_and_native_libraries(
+        &files(),
+        &libraries,
+    );
+    let ship = run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
+        &files(),
+        &libraries,
+    );
+
+    let report = match (jit, ship) {
+        (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+            assert_eq!(jit, ship, "diagnostic trap tuple differs by tier");
+            jit
+        }
+        (jit, ship) => panic!("expected both tiers to trap; jit={jit:?}, ship={ship:?}"),
+    };
+    assert_eq!(report.rule, TrapKind::CallbackUserdataFreed);
+    assert_eq!(
+        report.message,
+        "callback userdata points to a freed allocation"
+    );
+    assert_eq!(report.pos.file, "t46-callback-userdata-freed.ts");
+    assert_eq!(report.pos.line, 31);
+    assert_eq!(report.stdout, b"registered\nfreed\n");
+    println!(
+        "t46-callback-userdata-freed: kind={}, message={:?}, position={}, stdout={:?}",
+        report.rule,
+        report.message,
+        report.pos,
+        String::from_utf8_lossy(&report.stdout)
+    );
 }
 
 /// All five patterns composed in one program (the P5.3 "compose all five"

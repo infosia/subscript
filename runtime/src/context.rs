@@ -80,6 +80,24 @@ pub type TrapObserver = unsafe extern "C" fn(
 pub type PrintObserver =
     unsafe extern "C" fn(userdata: *mut c_void, line: *const u8, line_len: u64);
 
+/// Host callback invoked for optional runtime diagnostics advisories.
+///
+/// The callback deliberately receives no [`Context`] handle. It runs while
+/// the Context is exclusively borrowed, so calling any `subscript_rt_*` API
+/// that takes that Context (including through a pointer smuggled in
+/// `userdata`) would violate Rust's aliasing rules and is undefined
+/// behaviour. The callback is observation-only and must not call back into
+/// script.
+///
+/// `message` is valid only for the duration of the callback.
+pub type DiagnosticsObserver = unsafe extern "C" fn(
+    userdata: *mut c_void,
+    kind: u32,
+    pos_id: u32,
+    message: *const u8,
+    message_len: u64,
+);
+
 /// Host callback invoked once for each live Context allocation.
 ///
 /// `payload_bytes` follows the same tier policy as
@@ -111,6 +129,9 @@ pub const HEADER_SIZE: usize = 16;
 /// The runtime treats this as an ordinary literal budget; hosts may pass any
 /// other value accepted by [`Context::set_freed_handle_diagnostics`].
 pub const FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES: usize = 1_073_741_824;
+/// Advisory kind reported when `Context.free` releases registered callback
+/// userdata.
+pub const DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE: u32 = 1;
 /// Header state word for a live allocation (offset -16 from payload).
 pub const LIVE_STATE: u64 = 0x5355_4253_4C49_5645; // "SUBSLIVE"
 /// Header state word for a deleted/collected allocation.
@@ -393,6 +414,8 @@ pub struct Context {
     trap_observer: Option<TrapObserver>,
     trap_observer_userdata: *mut c_void,
     trap_observer_active: bool,
+    diagnostics_observer: Option<DiagnosticsObserver>,
+    diagnostics_observer_userdata: *mut c_void,
     interned: HashMap<(usize, usize), usize>,
     // One ordinary allocated string per distinct astral scalar observed by
     // string `for…of`. Values are permanent collection roots.
@@ -501,6 +524,8 @@ impl Context {
             trap_observer: None,
             trap_observer_userdata: std::ptr::null_mut(),
             trap_observer_active: false,
+            diagnostics_observer: None,
+            diagnostics_observer_userdata: std::ptr::null_mut(),
             interned: HashMap::new(),
             astral_code_points: HashMap::new(),
             shadow: Vec::new(),
@@ -862,6 +887,54 @@ impl Context {
             userdata
         } else {
             std::ptr::null_mut()
+        };
+    }
+
+    /// Installs the host observer for optional runtime diagnostics
+    /// advisories. Passing `None` clears the observer and its userdata.
+    pub fn set_diagnostics_observer(
+        &mut self,
+        observer: Option<DiagnosticsObserver>,
+        userdata: *mut c_void,
+    ) {
+        self.diagnostics_observer = observer;
+        self.diagnostics_observer_userdata = if observer.is_some() {
+            userdata
+        } else {
+            std::ptr::null_mut()
+        };
+    }
+
+    /// Reports an explicit free of registered callback userdata when the
+    /// optional diagnostics observer is installed.
+    ///
+    /// The observer-none branch returns before the binding scan, so the
+    /// default path pays neither the scan nor any retained state.
+    fn advise_callback_userdata_free(&mut self, payload: usize, pos_id: u32) {
+        let Some(observer) = self.diagnostics_observer else {
+            return;
+        };
+        if !self.is_live(payload)
+            || !self.callbacks.iter().any(|binding| {
+                binding.userdata1 as usize == payload || binding.userdata2 as usize == payload
+            })
+        {
+            return;
+        }
+
+        const MESSAGE: &[u8] = b"Context.free of registered callback userdata";
+        let userdata = self.diagnostics_observer_userdata;
+        // SAFETY: the host supplied the callback and userdata. No Context
+        // pointer is passed, and the callback contract forbids recovering
+        // and using this exclusively borrowed Context by other means.
+        unsafe {
+            observer(
+                userdata,
+                DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
+                pos_id,
+                MESSAGE.as_ptr(),
+                MESSAGE.len() as u64,
+            )
         };
     }
 
@@ -1334,6 +1407,7 @@ impl Context {
     /// A double delete or unknown pointer is undefined (Q6/§8.1b) and
     /// handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
+        self.advise_callback_userdata_free(payload, pos_id);
         if self.uses_ship_arena() {
             self.arena_release(payload);
             return;
@@ -1414,6 +1488,40 @@ impl Context {
             TrapKind::UseAfterDelete,
             "use of a deleted allocation",
             pos_id,
+        );
+        false
+    }
+
+    /// Validates one non-null callback userdata slot immediately before a
+    /// callback enters script code.
+    ///
+    /// Diagnostic retained-dead membership is checked first so a retained
+    /// header can attribute the trap to the freed allocation. Every other
+    /// absent address receives the best-effort liveness diagnostic.
+    pub(crate) fn validate_callback_userdata(&mut self, payload: *mut u8) -> bool {
+        if payload.is_null() {
+            return true;
+        }
+        let address = payload as usize;
+        if self.freed_handle_diagnostics && self.dead_allocations.contains(&address) {
+            // SAFETY: dead-set membership means the retained allocation and
+            // its complete header are still owned by this Context.
+            let pos_id =
+                unsafe { payload.offset(POS_ID_OFFSET as isize).cast::<u32>().read() };
+            self.trap(
+                TrapKind::CallbackUserdataFreed,
+                "callback userdata points to a freed allocation",
+                pos_id,
+            );
+            return false;
+        }
+        if self.is_live(address) {
+            return true;
+        }
+        self.trap(
+            TrapKind::CallbackUserdataFreed,
+            "callback userdata is not a live allocation",
+            0,
         );
         false
     }
@@ -1632,6 +1740,14 @@ impl Context {
         }
         work.extend(self.interned.values().copied());
         work.extend(self.astral_code_points.values().copied());
+        for binding in &self.callbacks {
+            for userdata in [binding.userdata1, binding.userdata2] {
+                let address = userdata as usize;
+                if !userdata.is_null() && self.is_live(address) {
+                    work.push(address);
+                }
+            }
+        }
 
         if self.uses_ship_arena() {
             // Ship tier (§8.1b): mark state lives in the block header
@@ -2490,6 +2606,146 @@ mod tests {
             1,
             "10,000 registrations of one identity must retain one record"
         );
+    }
+
+    #[test]
+    fn callback_userdata_rooted_survives_collect() {
+        fn callback_code() {}
+
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            let first = ctx.alloc(16, 1, 10);
+            let second = ctx.alloc(16, 2, 11);
+            assert!(!first.is_null() && !second.is_null(), "{tier}");
+            ctx.bind_callback(
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                first,
+                second,
+            );
+
+            ctx.collect();
+
+            assert!(ctx.is_live(first as usize), "{tier}: first userdata");
+            assert!(ctx.is_live(second as usize), "{tier}: second userdata");
+            assert_eq!(ctx.live_count(), 2, "{tier}: rooted accounting");
+        }
+    }
+
+    #[test]
+    fn callback_userdata_freed_slot_is_skipped_at_mark() {
+        fn callback_code() {}
+
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
+            let freed = ctx.alloc(16, 1, 12);
+            let unrooted = ctx.alloc(16, 2, 13);
+            assert!(!freed.is_null() && !unrooted.is_null(), "{tier}");
+            ctx.bind_callback(
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                freed,
+                std::ptr::null_mut(),
+            );
+            ctx.delete(freed as usize, 14);
+
+            ctx.collect();
+
+            assert!(!ctx.trapped(), "{tier}: mark must skip the dead slot");
+            assert!(!ctx.is_live(freed as usize), "{tier}: freed slot");
+            assert!(!ctx.is_live(unrooted as usize), "{tier}: unrooted allocation");
+            assert_eq!(ctx.live_count(), 0, "{tier}: live accounting");
+        }
+    }
+
+    #[test]
+    fn diagnostics_observer_advises_on_callback_userdata_free() {
+        fn callback_code() {}
+
+        #[derive(Debug, Default, PartialEq, Eq)]
+        struct Advisory {
+            kind: u32,
+            pos_id: u32,
+            message: Vec<u8>,
+        }
+
+        unsafe extern "C" fn observe(
+            userdata: *mut c_void,
+            kind: u32,
+            pos_id: u32,
+            message: *const u8,
+            message_len: u64,
+        ) {
+            // SAFETY: the test passes a live Advisory and the callback
+            // contract supplies `message_len` readable bytes.
+            let advisory = unsafe { &mut *userdata.cast::<Advisory>() };
+            advisory.kind = kind;
+            advisory.pos_id = pos_id;
+            // SAFETY: the observer contract keeps the message readable for
+            // the duration of this call.
+            advisory.message =
+                unsafe { std::slice::from_raw_parts(message, message_len as usize) }.to_vec();
+        }
+
+        let mut ctx = Context::new();
+        let registered = ctx.alloc(16, 1, 15);
+        assert!(!registered.is_null());
+        ctx.bind_callback(
+            callback_code as *const () as *const u8,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            registered,
+        );
+        let mut advisory = Advisory::default();
+        ctx.set_diagnostics_observer(
+            Some(observe),
+            std::ptr::from_mut(&mut advisory).cast(),
+        );
+
+        ctx.delete(registered as usize, 91);
+
+        assert_eq!(
+            advisory,
+            Advisory {
+                kind: DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
+                pos_id: 91,
+                message: b"Context.free of registered callback userdata".to_vec(),
+            }
+        );
+        assert!(!ctx.is_live(registered as usize));
+        assert!(!ctx.trapped(), "an advisory must not become a trap");
+    }
+
+    #[test]
+    fn diagnostics_observer_unset_has_zero_change() {
+        fn callback_code() {}
+
+        for (tier, mut ctx) in [
+            ("dev", Context::new()),
+            ("ship", Context::new_releasing()),
+        ] {
+            assert!(ctx.diagnostics_observer.is_none(), "{tier}");
+            assert!(ctx.diagnostics_observer_userdata.is_null(), "{tier}");
+            let registered = ctx.alloc(16, 1, 16);
+            assert!(!registered.is_null(), "{tier}");
+            ctx.bind_callback(
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                registered,
+                std::ptr::null_mut(),
+            );
+
+            ctx.delete(registered as usize, 92);
+
+            assert!(!ctx.is_live(registered as usize), "{tier}");
+            assert!(!ctx.trapped(), "{tier}: default free behavior changed");
+            assert!(ctx.dead_allocations.is_empty(), "{tier}: free retained memory");
+        }
     }
 
     #[test]

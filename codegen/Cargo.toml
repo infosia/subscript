@@ -5,6 +5,12 @@ edition = "2021"
 publish = false
 description = "HIR-to-CLIF lowering and both execution tiers of subscript. The lowering is tier-neutral: it targets any cranelift-module backend, so the dev-tier JIT and the ship-tier AOT object emitter share it unchanged."
 
+[features]
+# Opt-in only for the golden-capture helper: links the synthetic interop
+# fixture so interop entries use the same dev-JIT capture path as ordinary
+# entries without adding the fixture to production codegen binaries.
+capture-interop = []
+
 [dependencies]
 subscript-compiler = { path = "../compiler" }
 subscript-runtime = { path = "../runtime" }
@@ -36,3 +42,6 @@ object = { version = "0.36", default-features = false, features = ["read", "std"
 # Compiles and links the synthetic C fixture only into tests that name it;
 # production binaries linking subscript-codegen carry no fixture object.
 subscript-interop-fixture = { path = "tests/native-fixture" }
+
+[build-dependencies]
+cc = "1"

@@ -43,14 +43,17 @@ mod trap_sites;
 pub use aot::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_object,
     host_c_compiler, include_directory_arg, run_aot, run_aot_with_native_libraries, run_c_aot,
-    run_c_aot_with_alloc_failure, run_c_aot_with_native_libraries, runtime_staticlib_name,
-    runtime_staticlib_path, runtime_system_libraries, AotObject, CCompilerStyle, HostCCompiler,
-    AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
+    run_c_aot_with_alloc_failure,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_native_libraries, runtime_staticlib_name, runtime_staticlib_path,
+    runtime_system_libraries, AotObject, CCompilerStyle, HostCCompiler, AOT_ENTRY_C,
+    HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
 };
 pub use cemit::{emit_c, emit_c_without_main, CProgram};
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries,
     run_jit_with_memory_accounting, run_jit_with_native_libraries, BenchSamples,
     JitMemoryAccounting, RunError, TrapReport,
 };

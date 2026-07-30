@@ -10,6 +10,9 @@
  * not treat this value specially. */
 #define SUBSCRIPT_RT_FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES UINT64_C(1073741824)
 
+/* Diagnostics advisory kinds. */
+#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C(1)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,6 +47,20 @@ typedef void (*subscript_rt_trap_observer)(void* userdata, uint32_t kind, uint32
  * of the callback.
  */
 typedef void (*subscript_rt_print_observer)(void* userdata, const uint8_t* line, uint64_t line_len);
+
+/**
+ * Host callback invoked for optional runtime diagnostics advisories.
+ *
+ * The callback deliberately receives no [`subscript_rt_context`] handle. It runs while
+ * the subscript_rt_context is exclusively borrowed, so calling any `subscript_rt_*` API
+ * that takes that subscript_rt_context (including through a pointer smuggled in
+ * `userdata`) would violate Rust's aliasing rules and is undefined
+ * behaviour. The callback is observation-only and must not call back into
+ * script.
+ *
+ * `message` is valid only for the duration of the callback.
+ */
+typedef void (*subscript_rt_diagnostics_observer)(void* userdata, uint32_t kind, uint32_t pos_id, const uint8_t* message, uint64_t message_len);
 
 /**
  * Host callback invoked once for each live subscript_rt_context allocation.
@@ -84,6 +101,32 @@ subscript_rt_context* subscript_rt_ctx_new(void);
 void subscript_rt_ctx_release(subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context* ctx);
 void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
+/**
+ * Installs the observation-only callback invoked for optional runtime
+ * diagnostics advisories. Passing a null `observer` clears it.
+ *
+ * The first advisory kind is
+ * `SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE`: immediately
+ * before an explicit free releases an address held in either userdata slot
+ * of a live callback binding. Freeing such userdata is legal;
+ * the advisory does not trap, cancel, or otherwise change the release.
+ *
+ * The callback receives no subscript_rt_context handle. It runs while the subscript_rt_context is
+ * exclusively borrowed, so it must not call any `subscript_rt_*` function
+ * taking that subscript_rt_context (including by recovering the pointer from `userdata`);
+ * doing so is an aliasing violation and undefined behaviour. It must not
+ * call back into script. The message is valid only for the duration of the
+ * callback.
+ *
+ * With no observer installed (the default), explicit frees skip the
+ * registered-binding check entirely.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract. `observer`, when present,
+ * must be callable with `userdata` and obey the no-re-entry rule above.
+ */
+void subscript_rt_ctx_set_diagnostics_observer(subscript_rt_context* ctx, subscript_rt_diagnostics_observer observer, void* userdata);
 /**
  * Enables or disables freed-handle diagnostics for this subscript_rt_context.
  *

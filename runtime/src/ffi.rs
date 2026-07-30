@@ -18,7 +18,8 @@
 //! result from a trapping function is never fed into another call.
 
 use crate::context::{
-    AllocationVisitor, CallbackBinding, Context, PrintObserver, TrapObserver,
+    AllocationVisitor, CallbackBinding, Context, DiagnosticsObserver, PrintObserver,
+    TrapObserver,
 };
 use crate::trap::TrapKind;
 
@@ -4347,12 +4348,24 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
     }
     // SAFETY: `userdata1` is a live binding of the running Context.
     let rec = unsafe { &*(userdata1 as *const CallbackBinding) };
-    // SAFETY: `rec.ctx` is the live Context captured at bind time.
-    let ctx = unsafe { &mut *rec.ctx };
+    // Copy the record fields before exclusively borrowing its owning
+    // Context. Binding storage is stable for the Context's lifetime.
+    let ctx_ptr = rec.ctx;
+    let code = rec.code;
+    let env = rec.env;
+    let callback_userdata1 = rec.userdata1;
+    let callback_userdata2 = rec.userdata2;
+    // SAFETY: `ctx_ptr` is the live Context captured at bind time.
+    let ctx = unsafe { &mut *ctx_ptr };
     // A trap already stopped the script (e.g. an earlier callback in the
     // same foreign call trapped): do not run script code — a trap stops
     // the run, even when a C API fires the callback more than once.
     if ctx.trapped() {
+        return;
+    }
+    if !ctx.validate_callback_userdata(callback_userdata1)
+        || !ctx.validate_callback_userdata(callback_userdata2)
+    {
         return;
     }
     let bytes: &[u8] = if message.data.is_null() || message.len == 0 {
@@ -4366,10 +4379,18 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
     // with the host C calling convention; here the args are the `string`
     // handle and the two userdata slots (§14.4).
     type LangCb = unsafe extern "C" fn(*mut Context, *const u8, *mut u8, *mut u8, *mut u8);
-    // SAFETY: `rec.code` is a language callback wrapper of this shape.
-    let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(rec.code) };
+    // SAFETY: `code` is a language callback wrapper of this shape.
+    let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(code) };
     // SAFETY: calling generated code that never unwinds across FFI.
-    unsafe { f(rec.ctx, rec.env, s, rec.userdata1, rec.userdata2) };
+    unsafe {
+        f(
+            ctx_ptr,
+            env,
+            s,
+            callback_userdata1,
+            callback_userdata2,
+        )
+    };
 }
 
 // ----- host driver entry points -----
@@ -4525,6 +4546,39 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_print_observer(
 ) {
     // SAFETY: exclusive Context contract.
     unsafe { &mut *ctx }.set_print_observer(observer, userdata);
+}
+
+/// Installs the observation-only callback invoked for optional runtime
+/// diagnostics advisories. Passing a null `observer` clears it.
+///
+/// The first advisory kind is
+/// `SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE`: immediately
+/// before an explicit free releases an address held in either userdata slot
+/// of a live callback binding. Freeing such userdata is legal;
+/// the advisory does not trap, cancel, or otherwise change the release.
+///
+/// The callback receives no Context handle. It runs while the Context is
+/// exclusively borrowed, so it must not call any `subscript_rt_*` function
+/// taking that Context (including by recovering the pointer from `userdata`);
+/// doing so is an aliasing violation and undefined behaviour. It must not
+/// call back into script. The message is valid only for the duration of the
+/// callback.
+///
+/// With no observer installed (the default), explicit frees skip the
+/// registered-binding check entirely.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. `observer`, when present,
+/// must be callable with `userdata` and obey the no-re-entry rule above.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_set_diagnostics_observer(
+    ctx: *mut Context,
+    observer: Option<DiagnosticsObserver>,
+    userdata: *mut std::ffi::c_void,
+) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.set_diagnostics_observer(observer, userdata);
 }
 
 /// Marks entry into an exported script function.
@@ -4696,6 +4750,32 @@ mod tests {
         observed.lines.push(line.to_vec());
     }
 
+    #[derive(Default)]
+    struct ObservedAdvisory {
+        calls: u32,
+        kind: u32,
+        pos_id: u32,
+        message: Vec<u8>,
+    }
+
+    unsafe extern "C" fn observe_advisory(
+        userdata: *mut std::ffi::c_void,
+        kind: u32,
+        pos_id: u32,
+        message: *const u8,
+        message_len: u64,
+    ) {
+        // SAFETY: the test passes a live ObservedAdvisory as userdata.
+        let observed = unsafe { &mut *userdata.cast::<ObservedAdvisory>() };
+        observed.calls += 1;
+        observed.kind = kind;
+        observed.pos_id = pos_id;
+        // SAFETY: the observer contract supplies these readable message
+        // bytes for the duration of the call.
+        observed.message =
+            unsafe { std::slice::from_raw_parts(message, message_len as usize) }.to_vec();
+    }
+
     #[test]
     fn ffi_f16_conversion_round_trips_raw_binary16_storage() {
         let bits = subscript_rt_f16_from_f64(1.0006);
@@ -4762,6 +4842,61 @@ mod tests {
                 b"retained\n"
             );
             assert_eq!(observed.lines, [b"delivered".to_vec()]);
+
+            subscript_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn ffi_diagnostics_observer_advises_on_callback_userdata_free() {
+        fn callback_code() {}
+
+        let ctx = subscript_rt_ctx_new();
+        assert!(!ctx.is_null());
+        let mut observed = ObservedAdvisory::default();
+
+        // SAFETY: `ctx`, observer userdata, and the allocation remain live
+        // through their calls; the Context is released exactly once.
+        unsafe {
+            subscript_rt_ctx_set_diagnostics_observer(
+                ctx,
+                Some(observe_advisory),
+                std::ptr::from_mut(&mut observed).cast(),
+            );
+            let registered = subscript_rt_alloc(ctx, 16, 1, 20);
+            assert!(!registered.is_null());
+            subscript_rt_cb_bind(
+                ctx,
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                registered,
+                std::ptr::null_mut(),
+            );
+            subscript_rt_delete(ctx, registered, 93);
+
+            assert_eq!(observed.calls, 1);
+            assert_eq!(
+                observed.kind,
+                crate::DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE
+            );
+            assert_eq!(observed.pos_id, 93);
+            assert_eq!(
+                observed.message,
+                b"Context.free of registered callback userdata"
+            );
+            assert_eq!(subscript_rt_ctx_trap_kind(ctx), 0);
+
+            subscript_rt_ctx_set_diagnostics_observer(ctx, None, std::ptr::null_mut());
+            let after_clear = subscript_rt_alloc(ctx, 16, 1, 21);
+            subscript_rt_cb_bind(
+                ctx,
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                after_clear,
+                std::ptr::null_mut(),
+            );
+            subscript_rt_delete(ctx, after_clear, 94);
+            assert_eq!(observed.calls, 1, "null observer must clear delivery");
 
             subscript_rt_ctx_release(ctx);
         }
