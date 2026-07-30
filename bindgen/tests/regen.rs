@@ -24,7 +24,7 @@ fn committed_mirror_is_byte_identical_to_regeneration() {
     assert_eq!(
         generated, committed,
         "the committed mirror drifted from the generator output; regenerate with \
-         `subscript-bindgen --header corpus/interop/interop.h \
+         `subscript bind --header corpus/interop/interop.h \
          -o corpus/interop/interop.generated.d.ts` (never hand-edit the generated file)"
     );
 }

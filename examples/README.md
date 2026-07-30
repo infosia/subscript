@@ -87,7 +87,7 @@ state that must span scenes stays host-side.
 
 [`engine/engine.h`](engine/engine.h) is the host-facing C facade, and
 [`engine/engine.c`](engine/engine.c) is its deterministic headless
-implementation. `subscript-bindgen` generates
+implementation. `subscript bind` generates
 [`engine/engine.generated.d.ts`](engine/engine.generated.d.ts); scripts bind
 that mirror, while both execution tiers call the declared C functions
 directly. The complete host path is

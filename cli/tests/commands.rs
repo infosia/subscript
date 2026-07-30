@@ -50,20 +50,6 @@ fn subscript() -> Command {
     Command::new(env!("CARGO_BIN_EXE_subscript"))
 }
 
-fn standalone_bindgen(root: &Path) -> Command {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut command = Command::new(cargo);
-    command
-        .current_dir(root)
-        .arg("run")
-        .arg("--offline")
-        .arg("--quiet")
-        .arg("-p")
-        .arg("subscript-bindgen")
-        .arg("--");
-    command
-}
-
 fn output(command: &mut Command) -> Result<Output, String> {
     command
         .output()
@@ -135,6 +121,30 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+fn directory_sources(directory: &Path) -> Result<Vec<SourceFile>, String> {
+    let entries = std::fs::read_dir(directory)
+        .map_err(|error| format!("read {}: {error}", directory.display()))?;
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("read {} entry: {error}", directory.display()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".ts") {
+            names.push(name);
+        }
+    }
+    names.sort();
+    names.sort_by_key(|name| !name.contains("main"));
+
+    let mut sources = Vec::with_capacity(names.len());
+    for name in names {
+        let text = std::fs::read_to_string(directory.join(&name))
+            .map_err(|error| format!("read {name}: {error}"))?;
+        sources.push(SourceFile::new(name, text));
+    }
+    Ok(sources)
+}
+
 fn unresolved_import_output(specifier: &str) -> Vec<u8> {
     format!(
         concat!(
@@ -152,7 +162,7 @@ fn unresolved_import_output(specifier: &str) -> Vec<u8> {
 }
 
 #[test]
-fn bind_stdout_and_output_file_match_the_committed_mirror_and_standalone() -> Result<(), String> {
+fn bind_stdout_and_output_file_match_the_committed_mirror() -> Result<(), String> {
     let root = workspace_root();
     let header = Path::new("examples/engine/engine.h");
     let committed = std::fs::read(root.join("examples/engine/engine.generated.d.ts"))
@@ -169,18 +179,8 @@ fn bind_stdout_and_output_file_match_the_committed_mirror_and_standalone() -> Re
     assert_eq!(cli_stdout.stdout, committed);
     assert!(cli_stdout.stderr.is_empty());
 
-    let standalone_stdout = standalone_bindgen(&root)
-        .arg("--header")
-        .arg(header)
-        .output()
-        .map_err(|error| format!("run standalone bindgen: {error}"))?;
-    assert_code(&standalone_stdout, 0);
-    assert_eq!(standalone_stdout.stdout, committed);
-    assert_eq!(cli_stdout.stdout, standalone_stdout.stdout);
-
     let directory = TestDir::new()?;
     let cli_path = directory.0.join("cli.d.ts");
-    let standalone_path = directory.0.join("standalone.d.ts");
     let cli_file = output(
         subscript()
             .current_dir(&root)
@@ -193,22 +193,9 @@ fn bind_stdout_and_output_file_match_the_committed_mirror_and_standalone() -> Re
     assert!(cli_file.stdout.is_empty());
     assert!(cli_file.stderr.is_empty());
 
-    let standalone_file = standalone_bindgen(&root)
-        .arg(header)
-        .arg("-o")
-        .arg(&standalone_path)
-        .output()
-        .map_err(|error| format!("run standalone bindgen: {error}"))?;
-    assert_code(&standalone_file, 0);
-    assert!(standalone_file.stdout.is_empty());
-
     let cli_bytes = std::fs::read(&cli_path)
         .map_err(|error| format!("read {}: {error}", cli_path.display()))?;
-    let standalone_bytes = std::fs::read(&standalone_path)
-        .map_err(|error| format!("read {}: {error}", standalone_path.display()))?;
     assert_eq!(cli_bytes, committed);
-    assert_eq!(standalone_bytes, committed);
-    assert_eq!(cli_bytes, standalone_bytes);
     Ok(())
 }
 
@@ -294,11 +281,11 @@ fn a19_check_and_run_match_the_committed_golden() -> Result<(), String> {
 }
 
 #[test]
-fn a19_emit_is_byte_identical_to_emit_c_directory_mode() -> Result<(), String> {
+fn a19_emit_is_byte_identical_to_the_shared_directory_entry() -> Result<(), String> {
     let root = workspace_root();
     let directory = TestDir::new()?;
     let cli_output = directory.0.join("cli");
-    let emit_c_output = directory.0.join("emit-c");
+    let shared_output = directory.0.join("shared");
     let entry = Path::new("corpus/accept/a19-modules/main.ts");
 
     let emitted = output(
@@ -314,27 +301,20 @@ fn a19_emit_is_byte_identical_to_emit_c_directory_mode() -> Result<(), String> {
     assert!(emitted.stderr.is_empty());
 
     let module_directory = root.join("corpus/accept/a19-modules");
-    let main_source = std::fs::read_to_string(module_directory.join("main.ts"))
-        .map_err(|error| format!("read a19 main.ts: {error}"))?;
-    let math_source = std::fs::read_to_string(module_directory.join("math.ts"))
-        .map_err(|error| format!("read a19 math.ts: {error}"))?;
-    let directory_mode_sources = [
-        SourceFile::new("main.ts", main_source),
-        SourceFile::new("math.ts", math_source),
-    ];
-    subscript_codegen::emit_c_files(&directory_mode_sources, &emit_c_output, "a19-modules", true)
+    let directory_mode_sources = directory_sources(&module_directory)?;
+    subscript_codegen::emit_c_files(&directory_mode_sources, &shared_output, "a19-modules", true)
         .map_err(|error| format!("emit a19 directory-mode reference: {error}"))?;
 
-    for (cli_name, emit_c_name) in [
+    for (cli_name, shared_name) in [
         ("program.c", "a19-modules.c"),
         ("program.alloc.h", "a19-modules.alloc.h"),
         ("entry.c", "entry.c"),
     ] {
         let cli_bytes = std::fs::read(cli_output.join(cli_name))
             .map_err(|error| format!("read CLI {cli_name}: {error}"))?;
-        let emit_c_bytes = std::fs::read(emit_c_output.join(emit_c_name))
-            .map_err(|error| format!("read emit-c {emit_c_name}: {error}"))?;
-        assert_eq!(cli_bytes, emit_c_bytes, "{cli_name} differs");
+        let shared_bytes = std::fs::read(shared_output.join(shared_name))
+            .map_err(|error| format!("read shared {shared_name}: {error}"))?;
+        assert_eq!(cli_bytes, shared_bytes, "{cli_name} differs");
     }
     Ok(())
 }

@@ -466,8 +466,8 @@ fn engine_mirror_regenerates_byte_identically() {
     assert_eq!(
         regenerated, committed,
         "engine mirror is stale; regenerate with \
-         `cargo run --offline -p subscript-bindgen -- --header \
-         examples/engine/engine.h -o examples/engine/engine.generated.d.ts`"
+         `subscript bind --header examples/engine/engine.h \
+         -o examples/engine/engine.generated.d.ts`"
     );
 }
 

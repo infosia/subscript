@@ -130,6 +130,22 @@ message naming the type and creates no output file; gate 47+1
 harnesses, 708 passed, exit 0, read directly. Tutorial step 5 and the
 README CLI section now show `subscript bind`.
 
+## §11 retirements — landed and verified 2026-07-30
+
+`emit-c` and the standalone `subscript-bindgen` binary are gone
+(both `cargo run` attempts fail with no-bin-target); their CLI test
+suites retired with them, which is the 708 → 702 gate delta.
+`device-link.sh` step 1 now builds the CLI and emits from
+`corpus/accept` with the bare entry name; the reviewer ran that step
+against a pre-removal `emit-c` reference captured independently of
+the implementer — all three files `cmp`-identical, so the gated
+device halves (not runnable headlessly) consume byte-identical
+input. The a19 §9.2 comparison re-anchors to in-process
+`emit_c_files` with directory-mode file naming. Regeneration hints
+in `examples/tests/gate.rs` and `bindgen/tests/regen.rs` name
+`subscript bind`. Residual sweep outside specs/, docs/, and Cargo
+manifests: zero references. Gate 702 passed, exit 0, read directly.
+
 ## Named follow-ups (not dropped)
 
 - `run --watch` hot reload — §2.5's own future contract revision.

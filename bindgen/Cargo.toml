@@ -13,10 +13,6 @@ description = "Mirror generator (this project's own bindgen): reads the neutral 
 # the macOS Command Line Tools path). Pinned; resolvable fully offline.
 clang-sys = { version = "=1.8.1", default-features = false, features = ["runtime", "clang_11_0"] }
 
-[[bin]]
-name = "subscript-bindgen"
-path = "src/main.rs"
-
 [lib]
 name = "subscript_bindgen"
 path = "src/lib.rs"

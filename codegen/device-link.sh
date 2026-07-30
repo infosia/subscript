@@ -37,12 +37,23 @@ CODEGEN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$CODEGEN_DIR/.." && pwd)
 OUT_DIR="$CODEGEN_DIR/out"
 TARGET_DIR="$REPO_ROOT/target"
+ACCEPT_DIR="$REPO_ROOT/corpus/accept"
 RUNTIME_LIB=libsubscript_runtime.a
 ENTRY_ID=${ENTRY_ID:-a22-matrix-propagation}
 
+cd "$REPO_ROOT"
+
 # 1. Emit the ship-tier C translation unit and the generated C entry.
-cargo run --offline --release -p subscript-codegen --bin emit-c -- \
-    "$OUT_DIR" "$ENTRY_ID"
+cargo build --offline --release -p subscript-cli
+if [ -d "$ACCEPT_DIR/$ENTRY_ID" ]; then
+    ENTRY_SOURCE="$ENTRY_ID/main.ts"
+else
+    ENTRY_SOURCE="$ENTRY_ID.ts"
+fi
+(
+    cd "$ACCEPT_DIR"
+    "$TARGET_DIR/release/subscript" emit "$ENTRY_SOURCE" -o "$OUT_DIR"
+)
 
 LINKED=""
 
@@ -54,7 +65,7 @@ if [ "$HOST_OS" = "Darwin" ]; then
     cargo build --offline --release -p subscript-runtime --target aarch64-apple-ios
     xcrun --sdk iphoneos clang --target=arm64-apple-ios -miphoneos-version-min=10.0 \
         -std=c11 -O2 -fwrapv -ffp-contract=off \
-        "$OUT_DIR/$ENTRY_ID.c" \
+        "$OUT_DIR/program.c" \
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/aarch64-apple-ios/release/$RUNTIME_LIB" \
         -o "$OUT_DIR/$ENTRY_ID-ios"
@@ -96,7 +107,7 @@ export CC_aarch64_linux_android="$ANDROID_CC"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
 cargo build --offline --release -p subscript-runtime --target aarch64-linux-android
 "$ANDROID_CC" --target=aarch64-linux-android24 -std=c11 -O2 -fwrapv -ffp-contract=off \
-    "$OUT_DIR/$ENTRY_ID.c" \
+    "$OUT_DIR/program.c" \
     "$OUT_DIR/entry.c" \
     "$TARGET_DIR/aarch64-linux-android/release/$RUNTIME_LIB" \
     -o "$OUT_DIR/$ENTRY_ID-android"
