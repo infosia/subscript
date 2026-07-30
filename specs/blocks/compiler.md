@@ -1295,6 +1295,22 @@ will never fire again is legal, and the runtime cannot know
 (§14.4a's reason). Observer unset — the default — skips the check
 entirely; nothing changes for any existing program.
 
+**(B2) Binding growth is advised — Rev 2026-07-30.** The frame-shaped
+misuse — a per-frame entry registering with freshly allocated
+userdata on every call — is invisible to static analysis (the loop
+lives in the host), so it is observed dynamically. A host-set
+threshold, `subscript_rt_ctx_set_binding_count_advisory(ctx,
+threshold)`, default `UINT64_MAX`, literal semantics (0 = advise on
+the first record; no sentinels — the §8.1a-3 convention): whenever a
+**new** binding record is interned and the record count is at or
+above the threshold, the diagnostics observer receives advisory kind
+2 (`SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT`), `pos_id` 0,
+message carrying the count and threshold. Re-registering an existing
+identity interns no record (§14.4a) and never advises — an advisory
+therefore always signals real growth. No observer or default
+threshold: the check is one comparison at intern time, nothing
+retained. The static half of the same concern is `warnings.md` W003.
+
 **Golden audit, pre-registered (2026-07-30).** No committed corpus
 entry, gate program, or example both registers a sink and collects,
 so (C) moves no committed golden. If implementation moves one, stop

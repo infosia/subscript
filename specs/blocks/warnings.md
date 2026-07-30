@@ -62,6 +62,25 @@ not fire. The dev tier's freed-handle diagnostics (compiler.md
 §8.1a-1) catch the dynamic remainder; W002 is invariant 6's "clear,
 early error" for the statically obvious case.
 
+### W003 — fresh userdata registered in a loop — Rev 2026-07-30
+
+Fires on a callback-info aggregate **constructed inside a loop body**
+with a userdata slot holding an allocation made in the same
+iteration (a `new` expression as the argument, or a local whose
+initializer is a `new` in the same loop body — W001's tracking
+rules). Rationale: binding identity is `(code, userdata1, userdata2)`
+(compiler.md §14.4a), so a fresh userdata address per iteration
+interns a new record per iteration, and §14.4b roots its userdata —
+growth per iteration with no release verb, hence no mute.
+
+Recorded limits, both deliberate: a bounded setup loop registering
+one sink per item is a **known false-positive class** (legal,
+data-bounded; indistinguishable statically; the suppression story
+stays §7's deferral) — and mutating an existing aggregate's userdata
+field per iteration is a **known miss** (v1 anchors on
+construction). The dynamic half — the host-driven per-frame shape no
+static analysis can see — is compiler.md §14.4b (B2).
+
 ## 3. Surfacing (CLI)
 
 - Rendered by the §8 (cli.md) renderer shape with `warning[W001]:`
