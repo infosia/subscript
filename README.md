@@ -9,12 +9,7 @@ memory, and zero-copy C interop.
 
 It is built for a host that **owns its main loop and exposes a C ABI**,
 and that wants user-authored logic to be fast to iterate on and
-predictable at run time. Game engines are the archetype and the origin of
-the design; the same shape fits real-time audio and DSP plugins, creative
-and graphics tools, simulation, and embedded control loops. What the
-project measures is the language's properties (see the benchmarks and the
-layout proof below); the fit beyond games follows from those properties
-rather than from demonstrated adoption in each domain.
+predictable at run time.
 
 subscript is a language project — not a JavaScript runtime, not a
 JavaScript binding.
@@ -58,7 +53,7 @@ control step in an embedded system — who want:
   `tsserver` checks the permissive TypeScript superset; the language's
   sound rules (integer types, value types, nominal identity) are enforced
   by subscript's own checker, not by the editor.
-- **Zero-marshaling C interop** — bind a C header and call it directly;
+- **Zero-copy C interop** — bind a C header and call it directly;
   the language's structs *are* the C structs (layout is machine-verified
   against the platform C compiler), so no data is converted or copied at
   the boundary.
@@ -153,7 +148,7 @@ the platform C compiler and checks the language's computed
 `offsetof`/`sizeof`/`_Alignof` against the compiler's own, field by field,
 padding included.
 
-### Zero-marshaling C interop
+### Zero-copy C interop
 
 The host presents C headers; subscript binds them. A generator reads a C
 header and emits the ambient `.d.ts` mirror, and the compiler calls the C
