@@ -251,6 +251,10 @@ this repository — not from implementation effort.
    reproduce exactly. A coroutine has no scheduler state: the
    resumption order is written in your control flow.
 
+Scripts are also single-threaded by design — there are no workers and
+no cross-thread callbacks; asynchronous host work reaches the script
+on the thread that owns its Context, when the host delivers it.
+
 What replaces the pattern: asynchronous host work (I/O, threads)
 reaches scripts as C callbacks, delivered on the calling thread when
 the host pumps — never spontaneously from another thread — and the
@@ -304,9 +308,25 @@ is step 6 of the [C/C++ tutorial](tutorial-c-cpp.md).
 Arrays, strings, `Map`/`Set`, `Math`, `Date`, `JSON` (typed, via a
 declared target class), and regular expressions exist, with documented
 divergences from JavaScript where soundness or determinism requires
-them. `Math.random()` and `Date.now()` are deterministic: the host
-seeds and sets them, so replays reproduce. What is not in the subset
-is rejected with `S014` rather than silently missing at runtime.
+them. `Math.random()` starts from a fixed seed in every fresh Context
+(the host can reseed it), and `Date` observes only the time the host
+sets — so two runs of the same program produce the same output, and
+replays reproduce. What is not in the subset is rejected with `S014`
+rather than silently missing at runtime.
+
+## Programs can span files
+
+`import`/`export` between script files works as in TypeScript:
+
+```ts
+import { triangular } from "./math";
+```
+
+with the ordinary `export function` on the defining side
+(`corpus/accept/a19-modules/` is the pinned example). One current
+limitation: the `subscript` CLI accepts a single source file per
+command, so multi-file programs are compiled by the repository's
+`emit-c` tool today.
 
 ## What is rejected, and the code that says so
 

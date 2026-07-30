@@ -181,6 +181,13 @@ frame=2 value=12
 frame=3 done
 ```
 
+Programs can span files: `import { f } from "./other"` works between
+script files, with the usual `export` on the defining side
+(`corpus/accept/a19-modules/` is the pinned example). One current
+limitation to know: the CLI's `check`/`emit`/`build`/`run` accept a
+single source file, so multi-file programs compile through the
+repository's `emit-c` tool today, not yet through `subscript`.
+
 ## The memory model, in C terms
 
 - A **Context** is an owning arena your host creates and releases.
@@ -202,6 +209,13 @@ The compiler also warns statically where growth is provable: an
 allocation inside a loop that is neither released nor stored anywhere
 is `warning[W001]`; use of a variable after `Context.free` on the same
 straight line is `warning[W002]`.
+
+At runtime, the host can watch the same quantities:
+`subscript_rt_ctx_live_bytes` / `_live_allocations` /
+`_reserved_bytes` report the Context's memory, and
+`subscript_rt_ctx_visit_live_allocations` walks every live allocation
+with its class and allocation-site ids for attribution
+(`specs/blocks/compiler.md` §18.2d, §21.2).
 
 ## Embedding subscript in your host, step by step
 
@@ -368,6 +382,51 @@ So a frame loop is: stage inputs → `hostCallScript(ctx,
 subscript_export_update)` → read outputs and drain `print` text —
 once per frame, with `init` before the first frame and `shutdown`
 after the last, exactly as `main.c` does.
+
+### The rules a host must know
+
+Facts that shape a host design, collected in one place; each links its
+contract.
+
+- **A Context is single-threaded.** Every `subscript_rt_*` call and
+  every export invocation on one Context must come from one thread at
+  a time — the header calls this the exclusive Context contract, and
+  the callback model is single-threaded under the same scope
+  (`specs/blocks/compiler.md` §14.6). Different Contexts on different
+  threads are independent.
+- **Callbacks reach scripts only on your thread, only when you
+  call.** A registered script callback fires on the thread making the
+  C call, and never spontaneously from another thread — cross-thread
+  delivery is a permanent non-goal (§14.6). If your engine completes
+  work on a worker thread, hand the result to the thread that owns
+  the Context and deliver it there.
+- **Execution is deterministic, and you hold both knobs.**
+  `Math.random()` starts from a fixed contract seed in every fresh
+  Context — two runs produce the same stream —
+  and `subscript_rt_ctx_seed_random` reseeds it. `Date` observes only
+  what `subscript_rt_ctx_set_now` sets. Replays and tests reproduce
+  byte-for-byte because nothing else feeds either input.
+- **A long-running host should stream `print`, not drain it.** The
+  Context sink is cumulative and never shrinks through the C API, so
+  a script printing every frame grows it without bound. Register a
+  print observer (`subscript_rt_ctx_set_print_observer`): each line is
+  delivered to your callback and nothing is retained (§18.2f).
+- **A trapped Context can detach or recover.** After a trap, the
+  capstone's choice is to stop calling script. The alternative is
+  `subscript_rt_ctx_clear_trap`, which makes the Context callable
+  again when it is safe to (it refuses mid-entry; §18.2b).
+- **An entry that never returns is yours to contain.** Calls are
+  synchronous and nothing can interrupt one; an accidental infinite
+  loop freezes the calling thread, by accepted design — scripts are
+  trusted, and isolation against a hung script is the host's to
+  supply (Q12). The one bounded subsystem is regular expressions,
+  via `subscript_rt_ctx_set_regex_budget`.
+- **What you embed is the ship tier.** The runtime has no API for
+  loading script source at run time: the emitted C is compiled into
+  your binary like any other translation unit. The development tier
+  (the JIT behind `subscript run` and the differential gate) serves
+  the edit loop; both tiers are held byte-identical on every corpus
+  program, which is what makes the split safe.
 
 ### Step 7 — the edit loop
 
