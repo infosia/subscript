@@ -12,6 +12,7 @@
 
 /* Diagnostics advisory kinds. */
 #define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C(1)
+#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT UINT32_C(2)
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,6 +103,24 @@ void subscript_rt_ctx_release(subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context* ctx);
 void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
 /**
+ * Sets the callback-binding count advisory threshold.
+ *
+ * Whenever a new callback binding is interned and the resulting count is at
+ * least `threshold`, the installed diagnostics observer receives
+ * `SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT`, position id zero, and a
+ * message carrying the count and threshold. Re-registering an existing
+ * binding identity never advises.
+ *
+ * The threshold has literal semantics: zero advises on the first record.
+ * The default is `UINT64_MAX`. With the default threshold or no diagnostics
+ * observer, the check retains no event or message state.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
+void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint64_t threshold);
+/**
  * Installs the observation-only callback invoked for optional runtime
  * diagnostics advisories. Passing a null `observer` clears it.
  *
@@ -110,6 +129,10 @@ void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
  * before an explicit free releases an address held in either userdata slot
  * of a live callback binding. Freeing such userdata is legal;
  * the advisory does not trap, cancel, or otherwise change the release.
+ *
+ * `SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT` reports each newly
+ * interned callback binding at or above the host-configured count threshold;
+ * its position id is zero and its message carries the count and threshold.
  *
  * The callback receives no subscript_rt_context handle. It runs while the subscript_rt_context is
  * exclusively borrowed, so it must not call any `subscript_rt_*` function

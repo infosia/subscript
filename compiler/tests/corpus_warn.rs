@@ -16,6 +16,11 @@ fn corpus_dir() -> PathBuf {
 const EXPECTED: &[(&str, WarnCode, u32)] = &[
     ("w01-loop-allocation-unreleased.ts", WarnCode::W001, 15),
     ("w02-use-after-free.ts", WarnCode::W002, 16),
+    (
+        "w03-fresh-callback-userdata-loop.ts",
+        WarnCode::W003,
+        17,
+    ),
 ];
 
 fn checked_warnings(files: Vec<SourceFile>, label: &str) -> Vec<Warning> {
@@ -68,7 +73,8 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
 fn every_warning_entry_is_accepted_and_fires_at_its_pinned_line() {
     let directory = corpus_dir().join("warn");
     for (file, code, line) in EXPECTED {
-        let warnings = checked_warnings(vec![read_source(&directory.join(file), *file)], file);
+        let path = directory.join(file);
+        let warnings = checked_warnings(accept_sources(file, &path), file);
         assert!(
             warnings
                 .iter()

@@ -406,7 +406,15 @@ entries. Three rules govern the round trip:
   Context (`specs/blocks/compiler.md` §14.4b). One consequence to
   plan for: replacing a registration does not release the old
   userdata — bindings live for the whole Context — so long-lived
-  hosts free superseded userdata explicitly.
+  hosts free superseded userdata explicitly. The intended shape is a
+  long-lived userdata object re-registered as-is (identical
+  registrations intern to one record and cost nothing); registering
+  *freshly allocated* userdata repeatedly grows a record per
+  registration, and both halves of that mistake are caught — the
+  compiler warns on the loop-visible form (`W003`), and a host-set
+  threshold (`subscript_rt_ctx_set_binding_count_advisory`) reports
+  real binding growth through the diagnostics observer for the
+  per-frame form only the host's loop can produce.
 - **Explicit `Context.free` of registered userdata is the remaining
   hazard, and it is caught twice.** At fire time, the trampoline
   refuses to enter script with dead userdata — a

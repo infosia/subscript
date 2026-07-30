@@ -34,7 +34,7 @@ pub mod trap;
 
 pub use context::{
     Context, DiagnosticsObserver, ScriptMainEntry, TrapObserver,
-    DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
+    DIAGNOSTICS_ADVISORY_BINDING_COUNT, DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
     FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
 pub use trap::{TrapKind, TrapRecord};

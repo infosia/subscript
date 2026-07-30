@@ -15,6 +15,9 @@ pub enum WarnCode {
     W001,
     /// A local is used after `Context.free(local)` in the same block.
     W002,
+    /// A callback-info aggregate registers freshly allocated userdata in a
+    /// loop.
+    W003,
 }
 
 impl WarnCode {
@@ -24,6 +27,7 @@ impl WarnCode {
         match self {
             WarnCode::W001 => "W001",
             WarnCode::W002 => "W002",
+            WarnCode::W003 => "W003",
         }
     }
 
@@ -36,6 +40,9 @@ impl WarnCode {
             }
             WarnCode::W002 => {
                 "A local should not be used after `Context.free(local)` without an intervening reassignment."
+            }
+            WarnCode::W003 => {
+                "Fresh callback userdata registered in a loop creates and roots a new binding record per iteration."
             }
         }
     }
@@ -125,6 +132,7 @@ impl WarningChecker<'_> {
     fn analyze_body(&mut self, body: &[Stmt]) {
         let collect_mutes = contains_collect_in_stmts(body);
         self.analyze_w001_stmts(body, 0, collect_mutes);
+        self.analyze_w003_stmts(body, 0, &HashSet::new());
         self.analyze_w002_block(body);
         self.analyze_lambdas_in_stmts(body);
     }
@@ -371,6 +379,208 @@ impl WarningChecker<'_> {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn analyze_w003_stmts(
+        &mut self,
+        stmts: &[Stmt],
+        loop_depth: usize,
+        inherited_fresh: &HashSet<String>,
+    ) {
+        let mut fresh = inherited_fresh.clone();
+        for stmt in stmts {
+            match stmt {
+                Stmt::Let { name, init, .. } => {
+                    self.scan_w003_expr(init, loop_depth, &fresh);
+                    fresh.remove(name);
+                    if loop_depth > 0 && is_reference_new_allocation(self.module, init) {
+                        fresh.insert(name.clone());
+                    }
+                }
+                Stmt::Expr(expr) => {
+                    self.scan_w003_expr(expr, loop_depth, &fresh);
+                    if let Some(name) = directly_reassigned_local(stmt) {
+                        fresh.remove(name);
+                    }
+                }
+                Stmt::Return { value, .. } => {
+                    if let Some(value) = value {
+                        self.scan_w003_expr(value, loop_depth, &fresh);
+                    }
+                }
+                Stmt::If {
+                    cond, then, els, ..
+                } => {
+                    self.scan_w003_expr(cond, loop_depth, &fresh);
+                    self.analyze_w003_stmts(then, loop_depth, &fresh);
+                    if let Some(els) = els {
+                        self.analyze_w003_stmts(els, loop_depth, &fresh);
+                    }
+                }
+                Stmt::While { cond, body, .. } => {
+                    self.scan_w003_expr(cond, loop_depth, &fresh);
+                    self.analyze_w003_stmts(body, loop_depth + 1, &fresh);
+                }
+                Stmt::For {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    ..
+                } => {
+                    let mut body_fresh = fresh.clone();
+                    if let Some(init) = init {
+                        self.scan_w003_stmt_header(init, loop_depth, &fresh);
+                        if let Stmt::Let { name, init, .. } = init.as_ref() {
+                            body_fresh.remove(name);
+                            if loop_depth > 0
+                                && is_reference_new_allocation(self.module, init)
+                            {
+                                body_fresh.insert(name.clone());
+                            }
+                        }
+                    }
+                    if let Some(cond) = cond {
+                        self.scan_w003_expr(cond, loop_depth, &body_fresh);
+                    }
+                    if let Some(step) = step {
+                        self.scan_w003_expr(step, loop_depth, &body_fresh);
+                    }
+                    self.analyze_w003_stmts(body, loop_depth + 1, &body_fresh);
+                }
+                Stmt::ForOf {
+                    name,
+                    subject,
+                    body,
+                    ..
+                } => {
+                    self.scan_w003_expr(subject, loop_depth, &fresh);
+                    let mut body_fresh = fresh.clone();
+                    body_fresh.remove(name);
+                    self.analyze_w003_stmts(body, loop_depth + 1, &body_fresh);
+                }
+                Stmt::Switch { disc, cases, .. } => {
+                    self.scan_w003_expr(disc, loop_depth, &fresh);
+                    for case in cases {
+                        if let Some(test) = &case.test {
+                            self.scan_w003_expr(test, loop_depth, &fresh);
+                        }
+                        self.analyze_w003_stmts(&case.body, loop_depth, &fresh);
+                    }
+                }
+                Stmt::Block(body) => self.analyze_w003_stmts(body, loop_depth, &fresh),
+                Stmt::Break(_) | Stmt::Continue(_) => {}
+            }
+        }
+    }
+
+    fn scan_w003_stmt_header(
+        &mut self,
+        stmt: &Stmt,
+        loop_depth: usize,
+        fresh: &HashSet<String>,
+    ) {
+        match stmt {
+            Stmt::Let { init, .. } | Stmt::Expr(init) => {
+                self.scan_w003_expr(init, loop_depth, fresh);
+            }
+            _ => {}
+        }
+    }
+
+    fn scan_w003_expr(
+        &mut self,
+        expr: &Expr,
+        loop_depth: usize,
+        fresh: &HashSet<String>,
+    ) {
+        if loop_depth > 0
+            && callback_info_has_fresh_userdata(self.module, expr, fresh)
+        {
+            self.push(Warning::new(
+                WarnCode::W003,
+                "this callback-info aggregate registers freshly allocated userdata in each loop iteration",
+                expr.pos.clone(),
+            ));
+        }
+
+        match &expr.kind {
+            ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
+                self.scan_w003_expr(operand, loop_depth, fresh);
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.scan_w003_expr(left, loop_depth, fresh);
+                self.scan_w003_expr(right, loop_depth, fresh);
+            }
+            ExprKind::Assign { target, value, .. } => {
+                self.scan_w003_expr(target, loop_depth, fresh);
+                self.scan_w003_expr(value, loop_depth, fresh);
+            }
+            ExprKind::Call { callee, args } => {
+                match callee {
+                    Callee::Value(value) => self.scan_w003_expr(value, loop_depth, fresh),
+                    Callee::Method { recv, .. } => {
+                        self.scan_w003_expr(recv, loop_depth, fresh)
+                    }
+                    _ => {}
+                }
+                for arg in args {
+                    self.scan_w003_expr(arg, loop_depth, fresh);
+                }
+            }
+            ExprKind::New { args, .. } => {
+                for arg in args {
+                    self.scan_w003_expr(arg, loop_depth, fresh);
+                }
+            }
+            ExprKind::Field { obj, .. }
+            | ExprKind::JsonResultValue(obj)
+            | ExprKind::Length(obj) => self.scan_w003_expr(obj, loop_depth, fresh),
+            ExprKind::Index { obj, index, .. } => {
+                self.scan_w003_expr(obj, loop_depth, fresh);
+                self.scan_w003_expr(index, loop_depth, fresh);
+            }
+            ExprKind::ArrayLit(elems) => {
+                for elem in elems {
+                    self.scan_w003_expr(elem, loop_depth, fresh);
+                }
+            }
+            ExprKind::ArraySpreadLit(elems) => {
+                for elem in elems {
+                    self.scan_w003_expr(&elem.expr, loop_depth, fresh);
+                }
+            }
+            ExprKind::Template(parts) => {
+                for part in parts {
+                    if let TplPart::Expr(expr) = part {
+                        self.scan_w003_expr(expr, loop_depth, fresh);
+                    }
+                }
+            }
+            ExprKind::Yield(value) => {
+                if let Some(value) = value {
+                    self.scan_w003_expr(value, loop_depth, fresh);
+                }
+            }
+            ExprKind::Cond { cond, then, els } => {
+                self.scan_w003_expr(cond, loop_depth, fresh);
+                self.scan_w003_expr(then, loop_depth, fresh);
+                self.scan_w003_expr(els, loop_depth, fresh);
+            }
+            ExprKind::Lambda { .. }
+            | ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::Null
+            | ExprKind::This
+            | ExprKind::Local(_)
+            | ExprKind::Global(_)
+            | ExprKind::FuncRef(_)
+            | ExprKind::EnumMember { .. }
+            | ExprKind::RawNew { .. }
+            | ExprKind::Zero => {}
         }
     }
 
@@ -714,6 +924,85 @@ fn is_reference_allocation(module: &hir::Module, expr: &Expr) -> bool {
             callee: Callee::Map(MapFn::New) | Callee::Set(SetFn::New),
             ..
         } => true,
+        _ => false,
+    }
+}
+
+fn is_reference_new_allocation(module: &hir::Module, expr: &Expr) -> bool {
+    matches!(expr.kind, ExprKind::New { .. }) && is_reference_allocation(module, expr)
+}
+
+fn is_callback_userdata_slot(ty: &crate::types::Type) -> bool {
+    matches!(ty, crate::types::Type::Object)
+        || matches!(
+            ty,
+            crate::types::Type::Nullable(inner) if **inner == crate::types::Type::Object
+        )
+}
+
+fn callback_info_has_fresh_userdata(
+    module: &hir::Module,
+    expr: &Expr,
+    fresh: &HashSet<String>,
+) -> bool {
+    let ExprKind::New { class, args } = &expr.kind else {
+        return false;
+    };
+    let Some(definition) = module.classes.get(class.0) else {
+        return false;
+    };
+    if !definition.is_boundary {
+        return false;
+    }
+
+    for (index, field) in definition.fields.iter().enumerate() {
+        if !matches!(
+            field.foreign_provenance.as_ref(),
+            Some(hir::ForeignTypeProvenance::Callback { .. })
+        ) {
+            continue;
+        }
+
+        let first_userdata = index + 1;
+        let Some(first_field) = definition.fields.get(first_userdata) else {
+            continue;
+        };
+        if !is_callback_userdata_slot(&first_field.ty) {
+            continue;
+        }
+        if args
+            .get(first_userdata)
+            .is_some_and(|arg| is_fresh_userdata_argument(module, arg, fresh))
+        {
+            return true;
+        }
+
+        let second_userdata = index + 2;
+        if definition
+            .fields
+            .get(second_userdata)
+            .is_some_and(|field| is_callback_userdata_slot(&field.ty))
+            && args
+                .get(second_userdata)
+                .is_some_and(|arg| is_fresh_userdata_argument(module, arg, fresh))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_fresh_userdata_argument(
+    module: &hir::Module,
+    expr: &Expr,
+    fresh: &HashSet<String>,
+) -> bool {
+    if is_reference_new_allocation(module, expr) {
+        return true;
+    }
+    match &expr.kind {
+        ExprKind::Local(name) => fresh.contains(name),
+        ExprKind::Cast(inner) => is_fresh_userdata_argument(module, inner, fresh),
         _ => false,
     }
 }
@@ -1084,9 +1373,30 @@ mod tests {
         check_warnings(&module)
     }
 
+    fn callback_warnings(source: &str) -> Vec<Warning> {
+        let mirror = "\
+// @subscript-c-header include=\"warning-fixture.h\"
+// @subscript-c-callback typedef=\"FixtureCallback\"
+type FixtureCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+declare class FixtureCallbackInfo {
+  callback: FixtureCallback;
+  userdata1: object | null;
+  userdata2: object | null;
+  constructor(callback: FixtureCallback, userdata1: object | null, userdata2: object | null);
+}
+declare function fixtureRegister(info: FixtureCallbackInfo): void;
+";
+        let module = check_program(&[
+            SourceFile::ambient("warning-fixture.generated.d.ts", mirror),
+            SourceFile::new("test.ts", source),
+        ])
+        .expect("callback warning fixture must be accepted");
+        check_warnings(&module)
+    }
+
     #[test]
     fn every_warning_code_has_a_single_line_explanation() {
-        for code in [WarnCode::W001, WarnCode::W002] {
+        for code in [WarnCode::W001, WarnCode::W002, WarnCode::W003] {
             assert!(!code.explanation().is_empty(), "{code}");
             assert!(!code.explanation().contains('\n'), "{code}");
         }
@@ -1163,5 +1473,41 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].code, WarnCode::W002);
         assert_eq!(result[0].pos.line, 5);
+    }
+
+    #[test]
+    fn fresh_callback_userdata_warns_for_local_and_direct_new_inside_loop_only() {
+        let source =
+            "class Token { value: i32; constructor(value: i32) { this.value = value; } }\n\
+             export function main(): void {\n\
+             \x20 for (let i: i32 = 0; i < 2; i += 1) {\n\
+             \x20   const local: Token = new Token(i);\n\
+             \x20   fixtureRegister(new FixtureCallbackInfo((message, userdata1, userdata2) => {}, local, null));\n\
+             \x20   fixtureRegister(new FixtureCallbackInfo((message, userdata1, userdata2) => {}, new Token(i), null));\n\
+             \x20 }\n\
+             \x20 const outside: Token = new Token(3);\n\
+             \x20 fixtureRegister(new FixtureCallbackInfo((message, userdata1, userdata2) => {}, outside, null));\n\
+             }\n";
+        let result = callback_warnings(source);
+        assert_eq!(
+            result
+                .iter()
+                .filter(|warning| warning.code == WarnCode::W003)
+                .count(),
+            2
+        );
+        assert!(
+            result
+                .iter()
+                .all(|warning| warning.code == WarnCode::W003),
+            "fresh userdata escapes through the callback aggregate, so W001 must stay muted: {result:?}"
+        );
+        assert_eq!(
+            result
+                .iter()
+                .map(|warning| warning.pos.line)
+                .collect::<Vec<_>>(),
+            [5, 6]
+        );
     }
 }

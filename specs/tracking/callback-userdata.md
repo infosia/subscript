@@ -48,6 +48,26 @@ retention. What landed matches:
    `tsc` gate exit 0 with both new entries; gate 710 passed, exit 0,
    read directly.
 
+## B2 + W003 — the fresh-userdata-per-registration pair, 2026-07-30
+
+Landed together against §14.4b (B2) and `warnings.md` W003.
+Reviewer-run evidence:
+
+- `set_binding_count_advisory` defaults to `u64::MAX`, literal
+  semantics; `advise_binding_count` is called only on the new-record
+  path of `bind_callback` (after the intern miss — confirmed at the
+  call site), so a re-registered identity can never advise. Message
+  format `callback bindings: N registered, advisory threshold T`;
+  threshold 0 advises on the first record (both unit-tested, plus
+  FFI).
+- W003 rendering reproduced locally on
+  `corpus/warn/w03-fresh-callback-userdata-loop.ts` (17:35, the
+  aggregate construction); detection keys on boundary HIR callback
+  provenance, not class names. `a90` (one registration, no loop)
+  stays silent with the clean line — reproduced.
+- Zero-warning sweep: 91 accept + 10 example files clean. Gate 714
+  passed, exit 0, read directly; `tsc` exit 0.
+
 ## Implementer decisions recorded
 
 Fire-time position for a retained-dead slot is the freed

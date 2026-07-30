@@ -47,6 +47,10 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_diagnostics_observer",
     )?;
+    let binding_count_advisory_setter_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_binding_count_advisory",
+    )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -69,8 +73,12 @@ pub fn render() -> Result<String, String> {
     ));
     out.push_str("/* Diagnostics advisory kinds. */\n");
     out.push_str(&format!(
-        "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C({})\n\n",
+        "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C({})\n",
         crate::DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE
+    ));
+    out.push_str(&format!(
+        "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT UINT32_C({})\n\n",
+        crate::DIAGNOSTICS_ADVISORY_BINDING_COUNT
     ));
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
@@ -124,6 +132,9 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_set_diagnostics_observer" {
             push_comment(&mut out, &diagnostics_observer_setter_docs);
+        }
+        if function.name == "subscript_rt_ctx_set_binding_count_advisory" {
+            push_comment(&mut out, &binding_count_advisory_setter_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
@@ -403,10 +414,15 @@ mod tests {
         assert!(header.contains(
             "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C(1)"
         ));
+        assert!(header.contains(
+            "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT UINT32_C(2)"
+        ));
         assert!(header.contains("typedef void (*subscript_rt_diagnostics_observer)"));
         assert!(header.contains("advisory does not trap, cancel, or otherwise change the release"));
         assert!(header.contains("must not\n * call back into script"));
         assert!(header.contains("registered-binding check entirely"));
+        assert!(header.contains("Re-registering an existing\n * binding identity never advises"));
+        assert!(header.contains("The threshold has literal semantics"));
     }
 
     #[test]

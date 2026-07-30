@@ -132,6 +132,9 @@ pub const FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES: usize = 1_073_741
 /// Advisory kind reported when `Context.free` releases registered callback
 /// userdata.
 pub const DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE: u32 = 1;
+/// Advisory kind reported when the callback-binding count reaches its
+/// host-configured threshold.
+pub const DIAGNOSTICS_ADVISORY_BINDING_COUNT: u32 = 2;
 /// Header state word for a live allocation (offset -16 from payload).
 pub const LIVE_STATE: u64 = 0x5355_4253_4C49_5645; // "SUBSLIVE"
 /// Header state word for a deleted/collected allocation.
@@ -416,6 +419,7 @@ pub struct Context {
     trap_observer_active: bool,
     diagnostics_observer: Option<DiagnosticsObserver>,
     diagnostics_observer_userdata: *mut c_void,
+    binding_count_advisory_threshold: u64,
     interned: HashMap<(usize, usize), usize>,
     // One ordinary allocated string per distinct astral scalar observed by
     // string `for…of`. Values are permanent collection roots.
@@ -526,6 +530,7 @@ impl Context {
             trap_observer_active: false,
             diagnostics_observer: None,
             diagnostics_observer_userdata: std::ptr::null_mut(),
+            binding_count_advisory_threshold: u64::MAX,
             interned: HashMap::new(),
             astral_code_points: HashMap::new(),
             shadow: Vec::new(),
@@ -902,6 +907,44 @@ impl Context {
             userdata
         } else {
             std::ptr::null_mut()
+        };
+    }
+
+    /// Sets the callback-binding count at which newly interned records are
+    /// reported through the optional diagnostics observer.
+    ///
+    /// The threshold is literal: zero advises on the first record. The
+    /// default is [`u64::MAX`].
+    pub fn set_binding_count_advisory(&mut self, threshold: u64) {
+        self.binding_count_advisory_threshold = threshold;
+    }
+
+    /// Reports a newly interned callback binding when its resulting count is
+    /// at or above the configured threshold.
+    fn advise_binding_count(&mut self) {
+        let count = u64::try_from(self.callbacks.len()).unwrap_or(u64::MAX);
+        let threshold = self.binding_count_advisory_threshold;
+        if count < threshold {
+            return;
+        }
+        let Some(observer) = self.diagnostics_observer else {
+            return;
+        };
+
+        let message =
+            format!("callback bindings: {count} registered, advisory threshold {threshold}");
+        let userdata = self.diagnostics_observer_userdata;
+        // SAFETY: the host supplied the callback and userdata. No Context
+        // pointer is passed, and the callback contract forbids recovering
+        // and using this exclusively borrowed Context by other means.
+        unsafe {
+            observer(
+                userdata,
+                DIAGNOSTICS_ADVISORY_BINDING_COUNT,
+                0,
+                message.as_ptr(),
+                message.len() as u64,
+            )
         };
     }
 
@@ -2123,6 +2166,7 @@ impl Context {
         let ptr: *mut CallbackBinding = &mut *rec;
         self.callbacks.push(rec);
         self.callback_interns.insert(identity, ptr);
+        self.advise_binding_count();
         ptr as *mut u8
     }
 
@@ -2583,6 +2627,120 @@ mod tests {
     }
 
     #[test]
+    fn binding_count_advisory_reports_distinct_identity_at_threshold() {
+        fn callback_code() {}
+
+        #[derive(Default)]
+        struct Advisories(Vec<(u32, u32, Vec<u8>)>);
+
+        unsafe extern "C" fn observe(
+            userdata: *mut c_void,
+            kind: u32,
+            pos_id: u32,
+            message: *const u8,
+            message_len: u64,
+        ) {
+            // SAFETY: the test passes a live Advisories value, and the
+            // observer contract supplies readable message bytes.
+            let observed = unsafe { &mut *userdata.cast::<Advisories>() };
+            // SAFETY: the message remains readable for this callback.
+            let message =
+                unsafe { std::slice::from_raw_parts(message, message_len as usize) }.to_vec();
+            observed.0.push((kind, pos_id, message));
+        }
+
+        let mut ctx = Context::new();
+        let mut observed = Advisories::default();
+        ctx.set_diagnostics_observer(
+            Some(observe),
+            std::ptr::from_mut(&mut observed).cast(),
+        );
+        ctx.set_binding_count_advisory(2);
+        let code = callback_code as *const () as *const u8;
+        let mut first_userdata = 1u8;
+        let mut second_userdata = 2u8;
+
+        ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            std::ptr::from_mut(&mut first_userdata),
+            std::ptr::null_mut(),
+        );
+        assert!(observed.0.is_empty(), "below-threshold binding advised");
+
+        ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            std::ptr::from_mut(&mut second_userdata),
+            std::ptr::null_mut(),
+        );
+        assert_eq!(
+            observed.0,
+            [(
+                DIAGNOSTICS_ADVISORY_BINDING_COUNT,
+                0,
+                b"callback bindings: 2 registered, advisory threshold 2".to_vec(),
+            )]
+        );
+
+        let mut zero_ctx = Context::new();
+        let mut zero_observed = Advisories::default();
+        zero_ctx.set_diagnostics_observer(
+            Some(observe),
+            std::ptr::from_mut(&mut zero_observed).cast(),
+        );
+        zero_ctx.set_binding_count_advisory(0);
+        zero_ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            std::ptr::from_mut(&mut first_userdata),
+            std::ptr::null_mut(),
+        );
+        assert_eq!(
+            zero_observed.0,
+            [(
+                DIAGNOSTICS_ADVISORY_BINDING_COUNT,
+                0,
+                b"callback bindings: 1 registered, advisory threshold 0".to_vec(),
+            )],
+            "zero must be a literal first-record threshold"
+        );
+    }
+
+    #[test]
+    fn binding_count_advisory_skips_same_identity_reregistration_at_threshold() {
+        fn callback_code() {}
+
+        unsafe extern "C" fn observe(
+            userdata: *mut c_void,
+            _kind: u32,
+            _pos_id: u32,
+            _message: *const u8,
+            _message_len: u64,
+        ) {
+            // SAFETY: the test passes a live counter.
+            unsafe { *userdata.cast::<u32>() += 1 };
+        }
+
+        let mut ctx = Context::new();
+        let code = callback_code as *const () as *const u8;
+        let mut userdata = 1u8;
+        let userdata = std::ptr::from_mut(&mut userdata);
+        let first =
+            ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+
+        let mut calls = 0u32;
+        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut calls).cast());
+        ctx.set_binding_count_advisory(1);
+        let repeated =
+            ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+
+        assert_eq!(first, repeated);
+        assert_eq!(ctx.callbacks.len(), 1);
+        assert_eq!(calls, 0, "an intern hit must never advise");
+    }
+
+    #[test]
     fn callback_reregistration_has_zero_record_growth_at_frame_scale() {
         fn callback_code() {}
 
@@ -2731,6 +2889,11 @@ mod tests {
         ] {
             assert!(ctx.diagnostics_observer.is_none(), "{tier}");
             assert!(ctx.diagnostics_observer_userdata.is_null(), "{tier}");
+            assert_eq!(
+                ctx.binding_count_advisory_threshold,
+                u64::MAX,
+                "{tier}: binding advisory default changed"
+            );
             let registered = ctx.alloc(16, 1, 16);
             assert!(!registered.is_null(), "{tier}");
             ctx.bind_callback(

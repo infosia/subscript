@@ -4557,6 +4557,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_print_observer(
 /// of a live callback binding. Freeing such userdata is legal;
 /// the advisory does not trap, cancel, or otherwise change the release.
 ///
+/// `SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT` reports each newly
+/// interned callback binding at or above the host-configured count threshold;
+/// its position id is zero and its message carries the count and threshold.
+///
 /// The callback receives no Context handle. It runs while the Context is
 /// exclusively borrowed, so it must not call any `subscript_rt_*` function
 /// taking that Context (including by recovering the pointer from `userdata`);
@@ -4579,6 +4583,30 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_diagnostics_observer(
 ) {
     // SAFETY: exclusive Context contract.
     unsafe { &mut *ctx }.set_diagnostics_observer(observer, userdata);
+}
+
+/// Sets the callback-binding count advisory threshold.
+///
+/// Whenever a new callback binding is interned and the resulting count is at
+/// least `threshold`, the installed diagnostics observer receives
+/// `SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT`, position id zero, and a
+/// message carrying the count and threshold. Re-registering an existing
+/// binding identity never advises.
+///
+/// The threshold has literal semantics: zero advises on the first record.
+/// The default is `UINT64_MAX`. With the default threshold or no diagnostics
+/// observer, the check retains no event or message state.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_set_binding_count_advisory(
+    ctx: *mut Context,
+    threshold: u64,
+) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.set_binding_count_advisory(threshold);
 }
 
 /// Marks entry into an exported script function.
@@ -4897,6 +4925,69 @@ mod tests {
             );
             subscript_rt_delete(ctx, after_clear, 94);
             assert_eq!(observed.calls, 1, "null observer must clear delivery");
+
+            subscript_rt_ctx_release(ctx);
+        }
+    }
+
+    #[test]
+    fn ffi_binding_count_advisory_reports_only_new_identity_at_threshold() {
+        fn callback_code() {}
+
+        let ctx = subscript_rt_ctx_new();
+        assert!(!ctx.is_null());
+        let mut observed = ObservedAdvisory::default();
+        let mut first_userdata = 1u8;
+        let mut second_userdata = 2u8;
+
+        // SAFETY: `ctx`, observer userdata, and both callback userdata
+        // addresses remain live through these calls; the Context is released
+        // exactly once.
+        unsafe {
+            subscript_rt_ctx_set_diagnostics_observer(
+                ctx,
+                Some(observe_advisory),
+                std::ptr::from_mut(&mut observed).cast(),
+            );
+            subscript_rt_ctx_set_binding_count_advisory(ctx, 2);
+            let code = callback_code as *const () as *const u8;
+            let first = subscript_rt_cb_bind(
+                ctx,
+                code,
+                std::ptr::null(),
+                std::ptr::from_mut(&mut first_userdata),
+                std::ptr::null_mut(),
+            );
+            assert_eq!(observed.calls, 0, "below-threshold binding advised");
+
+            let second = subscript_rt_cb_bind(
+                ctx,
+                code,
+                std::ptr::null(),
+                std::ptr::from_mut(&mut second_userdata),
+                std::ptr::null_mut(),
+            );
+            assert_ne!(first, second);
+            assert_eq!(observed.calls, 1);
+            assert_eq!(
+                observed.kind,
+                crate::DIAGNOSTICS_ADVISORY_BINDING_COUNT
+            );
+            assert_eq!(observed.pos_id, 0);
+            assert_eq!(
+                observed.message,
+                b"callback bindings: 2 registered, advisory threshold 2"
+            );
+
+            let repeated = subscript_rt_cb_bind(
+                ctx,
+                code,
+                std::ptr::null(),
+                std::ptr::from_mut(&mut second_userdata),
+                std::ptr::null_mut(),
+            );
+            assert_eq!(second, repeated);
+            assert_eq!(observed.calls, 1, "same identity re-registration advised");
 
             subscript_rt_ctx_release(ctx);
         }
