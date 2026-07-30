@@ -202,3 +202,48 @@ preserving §3 (stdout stays reserved for requested answers, keeping
    over the full enum.
 5. Full gate green; corpus accept/reject harnesses and
    `Diagnostic::Display` byte-untouched.
+
+## 9. Multi-file programs — Rev 2026-07-30
+
+Owner decision. The language has modules (`import { f } from
+"./math"`; `corpus/accept/a19-modules/` pins them) but §2's
+subcommands accepted exactly one source file, so an importing program
+could not pass through the CLI at all. The CLI resolves imports from
+disk.
+
+### 9.1 Resolution
+
+All four program subcommands (`check`, `emit`, `build`, `run`), given
+the entry file, load its relative imports transitively: each
+specifier resolves against the importing file's directory to
+`<specifier>.ts`; each file loads once (paths normalized, so two
+routes to one file do not duplicate it, and cycles terminate — cycle
+*acceptance* stays the checker's question, not the loader's). What
+counts as an import is decided by the compiler's own parse, exposed
+as a library entry — the CLI performs no independent parsing of
+source text.
+
+A specifier whose file does not exist on disk is not a CLI error: the
+loader passes what it found, and the checker's existing
+"imported module … is not among the program's files" diagnostic
+reports it with a position, rendered per §8. Mirrors are ambient and
+unaffected.
+
+The assembled file set must resolve exactly as the repository's
+existing directory loading (`emit-c`, the gate harnesses) resolves
+`a19-modules` — one program, one meaning, both front doors.
+
+### 9.2 Exit criteria (pre-registered)
+
+1. `subscript check corpus/accept/a19-modules/main.ts` exits 0 with
+   the clean line.
+2. `subscript run` on the same entry matches the committed a19
+   golden byte-exact.
+3. `subscript emit` on the same entry is byte-identical to `emit-c`'s
+   directory-mode output for a19.
+4. An import naming a missing file renders the checker's diagnostic
+   with position, exit 1 — no panic, no bare IO error.
+5. A two-file cycle terminates (loader loads each file once); its
+   accept/reject outcome is whatever the checker already decides.
+6. Single-file programs: behavior and output byte-unchanged.
+7. Full gate green; no golden moves.
