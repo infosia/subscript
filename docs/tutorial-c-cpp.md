@@ -319,8 +319,7 @@ own C API: the host presents a C header, and the mirror generator
 produces the ambient declarations scripts compile against:
 
 ```sh
-cargo build --release -p subscript-bindgen
-target/release/subscript-bindgen --header engine.h -o engine.generated.d.ts
+subscript bind --header engine.h -o engine.generated.d.ts
 ```
 
 The frontend is libclang, so it parses real C — preprocessor,

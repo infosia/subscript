@@ -10,5 +10,6 @@ name = "subscript"
 path = "src/main.rs"
 
 [dependencies]
+subscript-bindgen = { path = "../bindgen" }
 subscript-codegen = { path = "../codegen" }
 subscript-compiler = { path = "../compiler" }

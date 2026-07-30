@@ -335,6 +335,7 @@ For a host with its own build system, emit the C translation unit and
 ask what the link line must add:
 
 ```sh
+subscript bind --header engine.h -o engine.generated.d.ts
 subscript emit game.ts --mirror engine.generated.d.ts --no-entry -o out/
 subscript link-flags    # runtime include dir, static archive, system libs
 ```

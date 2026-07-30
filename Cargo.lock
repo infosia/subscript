@@ -965,6 +965,7 @@ dependencies = [
 name = "subscript-cli"
 version = "0.1.0"
 dependencies = [
+ "subscript-bindgen",
  "subscript-codegen",
  "subscript-compiler",
 ]

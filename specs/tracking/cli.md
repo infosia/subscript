@@ -117,6 +117,19 @@ state. Reviewer-run §9.2 evidence:
 6. Single-file behavior unchanged (`e01` output).
 7. Gate: 47 harnesses, 705 passed, exit 0, read directly.
 
+## §10 `subscript bind` — landed and verified 2026-07-30
+
+The subcommand wraps the existing shared
+`subscript_bindgen::generate_for_header`; bindgen sources and the
+standalone binary are unchanged (59 standalone tests green). Output
+is generated fully before any write, so a rejected header leaves no
+partial mirror. Reviewer-run §10.2 evidence: stdout mode and
+positional `-o` mode both `cmp`-identical to the committed engine
+mirror; an unmappable `long` parameter exits 1 with the fail-loud
+message naming the type and creates no output file; gate 47+1
+harnesses, 708 passed, exit 0, read directly. Tutorial step 5 and the
+README CLI section now show `subscript bind`.
+
 ## Named follow-ups (not dropped)
 
 - `run --watch` hot reload — §2.5's own future contract revision.

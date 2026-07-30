@@ -95,6 +95,7 @@ fn dispatch<O: Write, E: Write>(
     match command {
         "check" => check_command(&args[1..], stderr),
         "emit" => emit_command(&args[1..], stderr),
+        "bind" => bind_command(&args[1..], stdout),
         "link-flags" => link_flags_command(&args[1..], stdout),
         "build" => build_command(&args[1..], stdout, stderr),
         "run" => run_command(&args[1..], stdout, stderr),
@@ -106,7 +107,7 @@ fn dispatch<O: Write, E: Write>(
 }
 
 fn usage() -> &'static str {
-    "usage: subscript <check|emit|link-flags|build|run> ..."
+    "usage: subscript <check|emit|bind|link-flags|build|run> ..."
 }
 
 #[derive(Debug, Default)]
@@ -213,6 +214,70 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
     emit_c_files(&files, &output, "program", write_entry)
         .map(|_| SUCCESS)
         .map_err(|error| map_emit_error(error, &files))
+}
+
+#[derive(Debug, Default)]
+struct BindArguments {
+    header: Option<PathBuf>,
+    output: Option<PathBuf>,
+}
+
+fn bind_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failure> {
+    let parsed = parse_bind_arguments(args)?;
+    let header = parsed
+        .header
+        .ok_or_else(|| Failure::usage("bind requires --header <file.h> or <file.h>"))?;
+    let source = read_text(&header, "header")?;
+    let include_spelling = header
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            Failure::usage(format!(
+                "header path `{}` has no UTF-8 basename",
+                header.display()
+            ))
+        })?;
+    let mirror = subscript_bindgen::generate_for_header(&source, include_spelling)
+        .map_err(|error| Failure::program(error.to_string()))?;
+
+    if let Some(output) = parsed.output {
+        std::fs::write(&output, mirror)
+            .map_err(|error| Failure::usage(format!("write {}: {error}", output.display())))?;
+    } else {
+        stdout
+            .write_all(mirror.as_bytes())
+            .map_err(|error| Failure::usage(format!("write bind output: {error}")))?;
+    }
+    Ok(SUCCESS)
+}
+
+fn parse_bind_arguments(args: &[OsString]) -> Result<BindArguments, Failure> {
+    let mut parsed = BindArguments::default();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].to_str() {
+            Some("--header") => {
+                let value = path_value(args, &mut index, "--header")?;
+                set_once(&mut parsed.header, value, "--header")?;
+            }
+            Some("-o") => {
+                let value = path_value(args, &mut index, "-o")?;
+                set_once(&mut parsed.output, value, "-o")?;
+            }
+            Some(flag) if flag.starts_with('-') => {
+                return Err(Failure::usage(format!("unknown option `{flag}`")));
+            }
+            _ if parsed.header.is_none() => parsed.header = Some(PathBuf::from(&args[index])),
+            _ => {
+                return Err(Failure::usage(format!(
+                    "unexpected argument `{}`",
+                    args[index].to_string_lossy()
+                )));
+            }
+        }
+        index += 1;
+    }
+    Ok(parsed)
 }
 
 #[derive(Debug)]

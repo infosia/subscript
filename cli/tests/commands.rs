@@ -50,6 +50,20 @@ fn subscript() -> Command {
     Command::new(env!("CARGO_BIN_EXE_subscript"))
 }
 
+fn standalone_bindgen(root: &Path) -> Command {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut command = Command::new(cargo);
+    command
+        .current_dir(root)
+        .arg("run")
+        .arg("--offline")
+        .arg("--quiet")
+        .arg("-p")
+        .arg("subscript-bindgen")
+        .arg("--");
+    command
+}
+
 fn output(command: &mut Command) -> Result<Output, String> {
     command
         .output()
@@ -135,6 +149,126 @@ fn unresolved_import_output(specifier: &str) -> Vec<u8> {
         specifier
     )
     .into_bytes()
+}
+
+#[test]
+fn bind_stdout_and_output_file_match_the_committed_mirror_and_standalone() -> Result<(), String> {
+    let root = workspace_root();
+    let header = Path::new("examples/engine/engine.h");
+    let committed = std::fs::read(root.join("examples/engine/engine.generated.d.ts"))
+        .map_err(|error| format!("read committed engine mirror: {error}"))?;
+
+    let cli_stdout = output(
+        subscript()
+            .current_dir(&root)
+            .arg("bind")
+            .arg("--header")
+            .arg(header),
+    )?;
+    assert_code(&cli_stdout, 0);
+    assert_eq!(cli_stdout.stdout, committed);
+    assert!(cli_stdout.stderr.is_empty());
+
+    let standalone_stdout = standalone_bindgen(&root)
+        .arg("--header")
+        .arg(header)
+        .output()
+        .map_err(|error| format!("run standalone bindgen: {error}"))?;
+    assert_code(&standalone_stdout, 0);
+    assert_eq!(standalone_stdout.stdout, committed);
+    assert_eq!(cli_stdout.stdout, standalone_stdout.stdout);
+
+    let directory = TestDir::new()?;
+    let cli_path = directory.0.join("cli.d.ts");
+    let standalone_path = directory.0.join("standalone.d.ts");
+    let cli_file = output(
+        subscript()
+            .current_dir(&root)
+            .arg("bind")
+            .arg(header)
+            .arg("-o")
+            .arg(&cli_path),
+    )?;
+    assert_code(&cli_file, 0);
+    assert!(cli_file.stdout.is_empty());
+    assert!(cli_file.stderr.is_empty());
+
+    let standalone_file = standalone_bindgen(&root)
+        .arg(header)
+        .arg("-o")
+        .arg(&standalone_path)
+        .output()
+        .map_err(|error| format!("run standalone bindgen: {error}"))?;
+    assert_code(&standalone_file, 0);
+    assert!(standalone_file.stdout.is_empty());
+
+    let cli_bytes = std::fs::read(&cli_path)
+        .map_err(|error| format!("read {}: {error}", cli_path.display()))?;
+    let standalone_bytes = std::fs::read(&standalone_path)
+        .map_err(|error| format!("read {}: {error}", standalone_path.display()))?;
+    assert_eq!(cli_bytes, committed);
+    assert_eq!(standalone_bytes, committed);
+    assert_eq!(cli_bytes, standalone_bytes);
+    Ok(())
+}
+
+#[test]
+fn bind_unmappable_construct_is_a_program_error_without_an_output_file() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    let header = directory.write("bad.h", b"typedef struct S { long n; } S;\nvoid f(S s);\n")?;
+    let mirror = directory.0.join("bad.d.ts");
+
+    let result = output(
+        subscript()
+            .arg("bind")
+            .arg("--header")
+            .arg(&header)
+            .arg("-o")
+            .arg(&mirror),
+    )?;
+    assert_code(&result, 1);
+    assert!(result.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&result.stderr),
+        concat!(
+            "subscript: bindgen: unmapped C type `long` at a boundary use site: ",
+            "it is neither a mapped scalar/builtin nor a registered named type ",
+            "(struct/enum/handle/alias/array-pair/string-view). Refusing to emit ",
+            "an invalid mirror; add a mapping or a typedef for this type.\n",
+        )
+    );
+    assert!(
+        !mirror.exists(),
+        "a rejected header left {}",
+        mirror.display()
+    );
+    Ok(())
+}
+
+#[test]
+fn bind_usage_and_io_failures_exit_two() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    let missing_argument = output(subscript().arg("bind"))?;
+    assert_code(&missing_argument, 2);
+    assert!(missing_argument.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&missing_argument.stderr)
+        .contains("bind requires --header <file.h> or <file.h>"));
+
+    let missing_header = directory.0.join("missing.h");
+    let mirror = directory.0.join("missing.d.ts");
+    let io_failure = output(
+        subscript()
+            .arg("bind")
+            .arg("--header")
+            .arg(&missing_header)
+            .arg("-o")
+            .arg(&mirror),
+    )?;
+    assert_code(&io_failure, 2);
+    assert!(io_failure.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&io_failure.stderr).contains("read header"));
+    assert!(!mirror.exists());
+    Ok(())
 }
 
 #[test]
