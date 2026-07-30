@@ -1,6 +1,7 @@
 #![warn(missing_docs)]
 //! Implementation of the `subscript` developer command.
 
+mod program_loader;
 mod runtime_paths;
 
 use std::ffi::OsString;
@@ -8,6 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use program_loader::load_program;
 use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides, RuntimePaths};
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c_files,
@@ -534,17 +536,6 @@ fn run_command<O: Write, E: Write>(
         Err(RunError::Internal(message)) => Err(Failure::usage(message)),
         Err(other) => Err(Failure::usage(other.to_string())),
     }
-}
-
-fn load_program(source: &Path, mirrors: &[PathBuf]) -> Result<Vec<SourceFile>, Failure> {
-    let mut files = Vec::with_capacity(mirrors.len() + 1);
-    for path in mirrors {
-        let text = read_text(path, "mirror")?;
-        files.push(SourceFile::ambient(path.to_string_lossy(), text));
-    }
-    let text = read_text(source, "source")?;
-    files.push(SourceFile::new(source.to_string_lossy(), text));
-    Ok(files)
 }
 
 fn read_text(path: &Path, kind: &str) -> Result<String, Failure> {

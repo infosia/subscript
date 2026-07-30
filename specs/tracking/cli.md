@@ -94,6 +94,29 @@ fire; the collect mute does not cross lambda/function boundaries;
 W002 discards tracking at control-flow joins. All precision-first,
 consistent with §2.
 
+## §9 multi-file programs — landed and verified 2026-07-30
+
+`cli/src/program_loader.rs` loads the entry's relative imports
+transitively (BFS, canonicalized paths, one load each);
+`parse_import_specifiers` (`compiler/src/parse.rs`) is the compiler's
+own answer to "what does this file import" — the CLI scans no source
+text. The loader chases only the shape the checker can resolve
+(`./name`, no separators in the remainder): `../x` and `./sub/x` are
+left unloaded so the checker's positioned S100 stays accurate — found
+by reading `resolve_imports` (stem match, `check/mod.rs`), where the
+first loader draft chased them into a misleading loaded-but-unmatched
+state. Reviewer-run §9.2 evidence:
+
+1. `check` on `a19-modules/main.ts`: clean line, exit 0.
+2. `run` on the same entry: byte-identical to the committed
+   `a19-modules.expected`.
+3. `emit` vs `emit-c` directory mode: `program.c`/`.alloc.h`/`entry.c`
+   all `cmp`-identical.
+4. Missing import: positioned S100 rendering reproduced locally.
+5. Cycle and parent/nested-import tests in the CLI suite (13 green).
+6. Single-file behavior unchanged (`e01` output).
+7. Gate: 47 harnesses, 705 passed, exit 0, read directly.
+
 ## Named follow-ups (not dropped)
 
 - `run --watch` hot reload — §2.5's own future contract revision.

@@ -64,6 +64,31 @@ fn stem_of(name: &str) -> String {
     base.strip_suffix(".ts").unwrap_or(base).to_string()
 }
 
+/// Parses one source and returns its static import module specifiers in
+/// source order.
+///
+/// Only TypeScript `import` declarations in the parsed module are
+/// returned. Import-like text in comments and string literals is not an
+/// import.
+///
+/// # Errors
+///
+/// Returns parser or ambient-provenance diagnostics for an invalid source.
+pub fn parse_import_specifiers(source: &SourceFile) -> Result<Vec<String>, Vec<Diagnostic>> {
+    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+        let program = parse_program(std::slice::from_ref(source))?;
+        let mut specifiers = Vec::new();
+        for file in program.files {
+            for item in file.module.body {
+                if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item {
+                    specifiers.push(import.src.value.to_string());
+                }
+            }
+        }
+        Ok(specifiers)
+    })
+}
+
 /// Parses every source file. Parse failures become `S100` diagnostics;
 /// the parser never panics on malformed input.
 pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec<Diagnostic>> {
@@ -196,5 +221,29 @@ mod tests {
     fn stems_strip_directories_and_extension() {
         assert_eq!(stem_of("corpus/accept/a19-modules/math.ts"), "math");
         assert_eq!(stem_of("math.ts"), "math");
+    }
+
+    #[test]
+    fn public_import_parser_returns_only_ast_import_declarations() {
+        let imports = parse_import_specifiers(&src(
+            "main.ts",
+            concat!(
+                "// import { fake } from \"./comment\";\n",
+                "const text: string = 'import from \"./string\"';\n",
+                "import { first } from \"./first\";\n",
+                "import \"./side-effect\";\n",
+                "export function main(): void { print(text); }\n",
+            ),
+        ))
+        .expect("valid source parses");
+        assert_eq!(imports, ["./first", "./side-effect"]);
+    }
+
+    #[test]
+    fn public_import_parser_reports_parse_diagnostics() {
+        let diagnostics = parse_import_specifiers(&src("bad.ts", "import {"))
+            .expect_err("invalid source must be rejected");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(diagnostics[0].pos.file, "bad.ts");
     }
 }

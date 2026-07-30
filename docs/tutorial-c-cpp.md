@@ -183,10 +183,11 @@ frame=3 done
 
 Programs can span files: `import { f } from "./other"` works between
 script files, with the usual `export` on the defining side
-(`corpus/accept/a19-modules/` is the pinned example). One current
-limitation to know: the CLI's `check`/`emit`/`build`/`run` accept a
-single source file, so multi-file programs compile through the
-repository's `emit-c` tool today, not yet through `subscript`.
+(`corpus/accept/a19-modules/` is the pinned example). The CLI follows
+relative imports from the entry file automatically — `subscript check
+main.ts` loads the whole program. The decided import surface is
+same-directory siblings (`./name`); parent or nested paths are
+rejected.
 
 ## The memory model, in C terms
 

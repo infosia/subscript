@@ -3,11 +3,12 @@
 //! checker for the collision rules (`specs/blocks/collisions.md`), and
 //! the typed HIR.
 //!
-//! The public entry point is [`check_program`]: it takes one or more
-//! source files (multi-file programs use `import`/`export`, e.g. the
-//! `a19-modules` corpus entry) and returns either a typed
+//! The primary public entry point is [`check_program`]: it takes one or
+//! more source files (multi-file programs use `import`/`export`, e.g.
+//! the `a19-modules` corpus entry) and returns either a typed
 //! [`hir::Module`] or a non-empty list of [`Diagnostic`]s with stable
-//! rule codes (S001–S013, S100) and TS positions.
+//! rule codes (S001–S013, S100) and TS positions. Loaders can use
+//! [`parse_import_specifiers`] to discover imports with the same parser.
 
 pub mod diag;
 mod diag_render;
@@ -25,6 +26,7 @@ mod warn;
 
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use diag_render::{render_diagnostics, render_warnings};
+pub use parse::parse_import_specifiers;
 pub use types::{ClassId, EnumId, FuncType, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
 

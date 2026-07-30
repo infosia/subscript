@@ -323,10 +323,12 @@ import { triangular } from "./math";
 ```
 
 with the ordinary `export function` on the defining side
-(`corpus/accept/a19-modules/` is the pinned example). One current
-limitation: the `subscript` CLI accepts a single source file per
-command, so multi-file programs are compiled by the repository's
-`emit-c` tool today.
+(`corpus/accept/a19-modules/` is the pinned example). The CLI follows
+relative imports from the entry file, so `subscript check main.ts` or
+`subscript run main.ts` loads the whole program. The decided surface
+is narrower than TypeScript's: named imports from same-directory
+siblings (`./name`) — no parent or nested paths, no packages, no
+default or namespace imports.
 
 ## What is rejected, and the code that says so
 
