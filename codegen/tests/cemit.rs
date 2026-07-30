@@ -872,22 +872,22 @@ fn provenance_fixture() -> subscript_compiler::hir::Module {
 
     const ENGINE_MIRROR: &str = "\
 // @subscript-c-header include=\"engine.h\"
-// @subscript-c-descriptor function=\"engUse\" parameter=\"engRead\" aggregate=\"EngItemView\" element=\"EngItem\" const=true
-// @subscript-c-descriptor function=\"engUse\" parameter=\"engWrite\" aggregate=\"EngItemOut\" element=\"EngItem\" const=false
-// @subscript-c-string-view function=\"engUse\" parameter=\"engLabel\" aggregate=\"EngStringView\"
-// @subscript-c-callback typedef=\"EngCallback\"
-type EngCallback = (engMessage: string, engUserdata1: object | null, engUserdata2: object | null) => void;
-declare class EngItem {
-  engValue: u32;
-  constructor(engValue: u32);
+// @subscript-c-descriptor function=\"engineUse\" parameter=\"engineRead\" aggregate=\"EngineItemView\" element=\"EngineItem\" const=true
+// @subscript-c-descriptor function=\"engineUse\" parameter=\"engineWrite\" aggregate=\"EngineItemOut\" element=\"EngineItem\" const=false
+// @subscript-c-string-view function=\"engineUse\" parameter=\"engineLabel\" aggregate=\"EngineStringView\"
+// @subscript-c-callback typedef=\"EngineCallback\"
+type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
+declare class EngineItem {
+  engineValue: u32;
+  constructor(engineValue: u32);
 }
-declare class EngSink {
-  engCallback: EngCallback;
-  engUserdata1: object | null;
-  engUserdata2: object | null;
-  constructor(engCallback: EngCallback, engUserdata1: object | null, engUserdata2: object | null);
+declare class EngineSink {
+  engineCallback: EngineCallback;
+  engineUserdata1: object | null;
+  engineUserdata2: object | null;
+  constructor(engineCallback: EngineCallback, engineUserdata1: object | null, engineUserdata2: object | null);
 }
-declare function engUse(engRead: EngItem[], engWrite: EngItem[], engLabel: string, engSink: EngSink): void;
+declare function engineUse(engineRead: EngineItem[], engineWrite: EngineItem[], engineLabel: string, engineSink: EngineSink): void;
 ";
     const AUDIO_MIRROR: &str = "\
 // @subscript-c-header include=\"audio.h\"
@@ -895,14 +895,14 @@ declare function audTick(audFrames: u32): void;
 ";
     const PROGRAM: &str = "\
 export function main(): void {
-  const engRead: EngItem[] = [new EngItem(1)];
-  const engWrite: EngItem[] = [new EngItem(0)];
-  const engSink: EngSink = new EngSink(
-    (engMessage, engUserdata1, engUserdata2) => {},
+  const engineRead: EngineItem[] = [new EngineItem(1)];
+  const engineWrite: EngineItem[] = [new EngineItem(0)];
+  const engineSink: EngineSink = new EngineSink(
+    (engineMessage, engineUserdata1, engineUserdata2) => {},
     null,
     null,
   );
-  engUse(engRead, engWrite, \"label\", engSink);
+  engineUse(engineRead, engineWrite, \"label\", engineSink);
   audTick(64);
 }
 ";
@@ -936,11 +936,11 @@ fn foreign_c_names_come_from_typed_mirror_provenance() {
         ),
         "{c}"
     );
-    assert!(c.contains("((EngStringView){"), "{c}");
-    assert!(c.contains("((EngItemView){"), "{c}");
-    assert!(c.contains("((EngItemOut){ (EngItem*)"), "{c}");
+    assert!(c.contains("((EngineStringView){"), "{c}");
+    assert!(c.contains("((EngineItemView){"), "{c}");
+    assert!(c.contains("((EngineItemOut){ (EngineItem*)"), "{c}");
     assert!(
-        c.contains("(EngCallback)&subscript_rt_cb_trampoline"),
+        c.contains("(EngineCallback)&subscript_rt_cb_trampoline"),
         "{c}"
     );
 }
@@ -953,55 +953,55 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
     let parameter = missing_parameter
         .foreign_fns
         .iter_mut()
-        .find(|function| function.name == "engUse")
+        .find(|function| function.name == "engineUse")
         .and_then(|function| {
             function
                 .params
                 .iter_mut()
-                .find(|parameter| parameter.name == "engLabel")
+                .find(|parameter| parameter.name == "engineLabel")
         })
         .expect("string parameter");
     parameter.foreign_provenance = None;
     let error = emit_c(&missing_parameter).expect_err("missing string provenance must fail");
     assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("engUse"), "{error}");
-    assert!(error.contains("engLabel"), "{error}");
+    assert!(error.contains("engineUse"), "{error}");
+    assert!(error.contains("engineLabel"), "{error}");
 
     let mut missing_descriptor = provenance_fixture();
     let parameter = missing_descriptor
         .foreign_fns
         .iter_mut()
-        .find(|function| function.name == "engUse")
+        .find(|function| function.name == "engineUse")
         .and_then(|function| {
             function
                 .params
                 .iter_mut()
-                .find(|parameter| parameter.name == "engWrite")
+                .find(|parameter| parameter.name == "engineWrite")
         })
         .expect("descriptor parameter");
     parameter.foreign_provenance = None;
     let error = emit_c(&missing_descriptor).expect_err("missing descriptor provenance must fail");
     assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("engUse"), "{error}");
-    assert!(error.contains("engWrite"), "{error}");
+    assert!(error.contains("engineUse"), "{error}");
+    assert!(error.contains("engineWrite"), "{error}");
 
     let mut missing_callback = provenance_fixture();
     let field = missing_callback
         .classes
         .iter_mut()
-        .find(|class| class.name == "EngSink")
+        .find(|class| class.name == "EngineSink")
         .and_then(|class| {
             class
                 .fields
                 .iter_mut()
-                .find(|field| field.name == "engCallback")
+                .find(|field| field.name == "engineCallback")
         })
         .expect("callback field");
     field.foreign_provenance = None;
     let error = emit_c(&missing_callback).expect_err("missing callback provenance must fail");
     assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("EngSink"), "{error}");
-    assert!(error.contains("engCallback"), "{error}");
+    assert!(error.contains("EngineSink"), "{error}");
+    assert!(error.contains("engineCallback"), "{error}");
 
     let mut missing_mirror = provenance_fixture();
     missing_mirror.foreign_mirrors.clear();

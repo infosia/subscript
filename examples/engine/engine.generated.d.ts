@@ -13,93 +13,93 @@
 // import/export), like the language prelude.
 
 // @subscript-c-header include="engine.h"
-// @subscript-c-callback typedef="EngEventCallback"
-// @subscript-c-string-view function="engWorldSetName" parameter="engName" aggregate="EngStringView"
-// @subscript-c-descriptor function="engWorldReplaceEntities" parameter="engStates" aggregate="EngEntityStateView" element="EngEntityState" const=true
-// @subscript-c-descriptor function="engWorldReadEntities" parameter="engStates" aggregate="EngEntityStateOut" element="EngEntityState" const=false
+// @subscript-c-callback typedef="EngineEventCallback"
+// @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
+// @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
+// @subscript-c-descriptor function="engineWorldReadEntities" parameter="engineStates" aggregate="EngineEntityStateOut" element="EngineEntityState" const=false
 
-declare enum EngWorldOptionKind {
-  ENG_WORLD_OPTION_TICK = 1,
-  ENG_WORLD_OPTION_ENTITY_LIMIT = 2,
+declare enum EngineWorldOptionKind {
+  ENGINE_WORLD_OPTION_TICK = 1,
+  ENGINE_WORLD_OPTION_ENTITY_LIMIT = 2,
 }
 
-declare class EngWorldOption {
-  engKind: EngWorldOptionKind;
-  engNext: EngWorldOption | null;
-  constructor(engKind: EngWorldOptionKind, engNext: EngWorldOption | null);
+declare class EngineWorldOption {
+  engineKind: EngineWorldOptionKind;
+  engineNext: EngineWorldOption | null;
+  constructor(engineKind: EngineWorldOptionKind, engineNext: EngineWorldOption | null);
 }
 
-declare class EngTickOption {
-  engHeader: EngWorldOption;
-  engTicksPerFrame: u32;
-  constructor(engHeader: EngWorldOption, engTicksPerFrame: u32);
+declare class EngineTickOption {
+  engineHeader: EngineWorldOption;
+  engineTicksPerFrame: u32;
+  constructor(engineHeader: EngineWorldOption, engineTicksPerFrame: u32);
 }
 
-declare class EngEntityLimitOption {
-  engHeader: EngWorldOption;
-  engMaximumEntities: u32;
-  constructor(engHeader: EngWorldOption, engMaximumEntities: u32);
+declare class EngineEntityLimitOption {
+  engineHeader: EngineWorldOption;
+  engineMaximumEntities: u32;
+  constructor(engineHeader: EngineWorldOption, engineMaximumEntities: u32);
 }
 
-declare class EngTransform {
-  engInheritScale: boolean;
-  engX: f32;
-  engY: f32;
-  engRotation: f32;
-  engLayer: u16;
-  constructor(engInheritScale: boolean, engX: f32, engY: f32, engRotation: f32, engLayer: u16);
+declare class EngineTransform {
+  engineInheritScale: boolean;
+  engineX: f32;
+  engineY: f32;
+  engineRotation: f32;
+  engineLayer: u16;
+  constructor(engineInheritScale: boolean, engineX: f32, engineY: f32, engineRotation: f32, engineLayer: u16);
 }
 
-declare class EngEntityState {
-  engId: u32;
-  engTransform: EngTransform;
-  engFlags: EngEntityFlags;
-  constructor(engId: u32, engTransform: EngTransform, engFlags: EngEntityFlags);
+declare class EngineEntityState {
+  engineId: u32;
+  engineTransform: EngineTransform;
+  engineFlags: EngineEntityFlags;
+  constructor(engineId: u32, engineTransform: EngineTransform, engineFlags: EngineEntityFlags);
 }
 
-declare enum EngEventKind {
-  ENG_EVENT_WORLD_READY = 0,
-  ENG_EVENT_ENTITY_CHANGED = 1,
-  ENG_EVENT_FRAME_STEPPED = 2,
+declare enum EngineEventKind {
+  ENGINE_EVENT_WORLD_READY = 0,
+  ENGINE_EVENT_ENTITY_CHANGED = 1,
+  ENGINE_EVENT_FRAME_STEPPED = 2,
 }
 
-type EngEventCallback = (engMessage: string, engUserdata1: object | null, engUserdata2: object | null) => void;
+type EngineEventCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
 
-declare class EngEventSink {
-  engCallback: EngEventCallback;
-  engUserdata1: object | null;
-  engUserdata2: object | null;
-  constructor(engCallback: EngEventCallback, engUserdata1: object | null, engUserdata2: object | null);
+declare class EngineEventSink {
+  engineCallback: EngineEventCallback;
+  engineUserdata1: object | null;
+  engineUserdata2: object | null;
+  constructor(engineCallback: EngineEventCallback, engineUserdata1: object | null, engineUserdata2: object | null);
 }
 
-interface EngWorld {
-  readonly __sub_handle_EngWorld: never;
+interface EngineWorld {
+  readonly __sub_handle_EngineWorld: never;
 }
 
-declare class EngEntityBatch {
-  engFlags: EngEntityFlags;
-  engEntityIds: u32[];
-  constructor(engFlags: EngEntityFlags, engEntityIds: u32[]);
+declare class EngineEntityBatch {
+  engineFlags: EngineEntityFlags;
+  engineEntityIds: u32[];
+  constructor(engineFlags: EngineEntityFlags, engineEntityIds: u32[]);
 }
 
-declare function engWorldCreate(engOptions: EngWorldOption | null): EngWorld;
-declare function engWorldRetain(engWorld: EngWorld): void;
-declare function engWorldRelease(engWorld: EngWorld): void;
-declare function engWorldSetName(engWorld: EngWorld, engName: string): void;
-declare function engWorldSetTransform(engWorld: EngWorld, engEntityId: u32, engTransform: EngTransform): void;
-declare function engWorldReplaceEntities(engWorld: EngWorld, engStates: EngEntityState[]): void;
-declare function engWorldReadEntities(engWorld: EngWorld, engStates: EngEntityState[]): u64;
-declare function engWorldApplyFlags(engWorld: EngWorld, engBatch: EngEntityBatch): u64;
-declare function engWorldSetEventSink(engWorld: EngWorld, engSink: EngEventSink): void;
-declare function engWorldPump(engWorld: EngWorld): void;
-declare function engWorldLastEvent(engWorld: EngWorld): EngEventKind;
-declare function engWorldStep(engWorld: EngWorld, engFixedStep: f32): void;
-declare function engFrameBegin(engWorld: EngWorld, engFixedStep: f32): void;
-declare function engFrameWorld(): EngWorld;
-declare function engFrameFixedStep(): f32;
-declare function engFrameIndex(): u64;
+declare function engineWorldCreate(engineOptions: EngineWorldOption | null): EngineWorld;
+declare function engineWorldRetain(engineWorld: EngineWorld): void;
+declare function engineWorldRelease(engineWorld: EngineWorld): void;
+declare function engineWorldSetName(engineWorld: EngineWorld, engineName: string): void;
+declare function engineWorldSetTransform(engineWorld: EngineWorld, engineEntityId: u32, engineTransform: EngineTransform): void;
+declare function engineWorldReplaceEntities(engineWorld: EngineWorld, engineStates: EngineEntityState[]): void;
+declare function engineWorldReadEntities(engineWorld: EngineWorld, engineStates: EngineEntityState[]): u64;
+declare function engineWorldApplyFlags(engineWorld: EngineWorld, engineBatch: EngineEntityBatch): u64;
+declare function engineWorldSetEventSink(engineWorld: EngineWorld, engineSink: EngineEventSink): void;
+declare function engineWorldPump(engineWorld: EngineWorld): void;
+declare function engineWorldLastEvent(engineWorld: EngineWorld): EngineEventKind;
+declare function engineWorldStep(engineWorld: EngineWorld, engineFixedStep: f32): void;
+declare function engineFrameBegin(engineWorld: EngineWorld, engineFixedStep: f32): void;
+declare function engineFrameWorld(): EngineWorld;
+declare function engineFrameFixedStep(): f32;
+declare function engineFrameIndex(): u64;
 
-type EngEntityFlags = u64;
-declare const ENG_ENTITY_FLAG_NONE = 0;
-declare const ENG_ENTITY_FLAG_ACTIVE = 1;
-declare const ENG_ENTITY_FLAG_VISIBLE = 2;
+type EngineEntityFlags = u64;
+declare const ENGINE_ENTITY_FLAG_NONE = 0;
+declare const ENGINE_ENTITY_FLAG_ACTIVE = 1;
+declare const ENGINE_ENTITY_FLAG_VISIBLE = 2;

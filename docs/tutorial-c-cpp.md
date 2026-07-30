@@ -349,7 +349,7 @@ registered callback with two userdata slots
 
 ```ts
 const log: EventLog = new EventLog();     // script-side reference class
-const sink: EngEventSink = new EngEventSink(
+const sink: EngineEventSink = new EngineEventSink(
   (message, userdata1, userdata2) => {    // non-capturing (C5)
     if (userdata1 !== null) {
       const eventLog = userdata1 as EventLog;  // checked nominal cast
@@ -370,25 +370,25 @@ marker):
 
 ```c
 /* Registration, called by the script: store, do not fire. */
-static EngEventSink storedSink;
+static EngineEventSink storedSink;
 
-void engWorldSetEventSink(EngWorld world, EngEventSink sink) {
+void engineWorldSetEventSink(EngineWorld world, EngineEventSink sink) {
     storedSink = sink;            /* callback + both userdata slots */
 }
 
 /* Later, on the Context's thread — the capstone pumps once per frame,
  * after the update entry returns (examples/host/main.c). */
 void hostPumpEvents(void) {
-    if (storedSink.engCallback == NULL) {
+    if (storedSink.engineCallback == NULL) {
         return;
     }
-    EngStringView message;
-    message.engData = worldName;
-    message.engLen = worldNameLength;
-    storedSink.engCallback(          /* fires the script lambda */
+    EngineStringView message;
+    message.engineData = worldName;
+    message.engineLen = worldNameLength;
+    storedSink.engineCallback(          /* fires the script lambda */
         message,
-        storedSink.engUserdata1,     /* script objects return as arguments */
-        storedSink.engUserdata2);
+        storedSink.engineUserdata1,     /* script objects return as arguments */
+        storedSink.engineUserdata2);
 }
 ```
 
@@ -476,8 +476,8 @@ Four facts make this the whole protocol:
   never re-entered.
 - **Data is staged, not passed.** Because entries take no arguments,
   the host records the frame's inputs in its own facade before the
-  call (`game.ts`'s `update` starts by reading `engFrameWorld()`,
-  `engFrameFixedStep()`, `engFrameIndex()`), and the script writes
+  call (`game.ts`'s `update` starts by reading `engineFrameWorld()`,
+  `engineFrameFixedStep()`, `engineFrameIndex()`), and the script writes
   results back through the same facade.
 - **Script state persists between calls.** Module-level variables
   live in the Context: `game.ts`'s `session`, created in `init`, is

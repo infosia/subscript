@@ -67,7 +67,7 @@ static bool hostRunScene(uint32_t sceneNumber) {
     if (ctx == NULL) {
         return false;
     }
-    EngWorld world = engWorldCreate(NULL);
+    EngineWorld world = engineWorldCreate(NULL);
     if (world == NULL) {
         subscript_rt_ctx_release(ctx);
         return false;
@@ -85,13 +85,13 @@ static bool hostRunScene(uint32_t sceneNumber) {
     for (uint32_t sceneFrame = 1u;
          sceneFrame <= 2u && scriptAttached;
          sceneFrame += 1u) {
-        engFrameBegin(world, 0.25f);
+        engineFrameBegin(world, 0.25f);
         printf(
             "host:scene=%" PRIu32 " scene-frame=%" PRIu32
             " engine-index=%" PRIu64 "\n",
             sceneNumber,
             sceneFrame,
-            engFrameIndex());
+            engineFrameIndex());
         scriptAttached = hostCallScript(ctx, subscript_export_update);
         if (!scriptAttached) {
             hostReportTrap(ctx);
@@ -113,7 +113,7 @@ static bool hostRunScene(uint32_t sceneNumber) {
         sceneNumber,
         subscript_rt_ctx_live_bytes(ctx));
 
-    engWorldRelease(world);
+    engineWorldRelease(world);
     subscript_rt_ctx_release(ctx);
     return scriptAttached;
 }
@@ -127,7 +127,7 @@ int main(void) {
     /* subscript_rt_context release and subscript_rt_context.collect answer different questions.
      * Releasing ends one scene; collection reclaims unreachable allocations
      * while a subscript_rt_context lives. A fresh subscript_rt_context re-runs subscript_init, so state needed
-     * by the next scene must remain host-side, as engFrameIndex does here. */
+     * by the next scene must remain host-side, as engineFrameIndex does here. */
     for (uint32_t sceneNumber = 1u;
          sceneNumber <= 2u;
          sceneNumber += 1u) {

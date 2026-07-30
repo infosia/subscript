@@ -29,12 +29,12 @@ class EventCounter {
 export function main(): void {
   // Q13: an opaque handle is host-created and uses explicit retain/release
   // lifetime instead of JavaScript object lifetime.
-  const world: EngWorld = engWorldCreate(null);
-  engWorldRetain(world);
-  engWorldRelease(world);
+  const world: EngineWorld = engineWorldCreate(null);
+  engineWorldRetain(world);
+  engineWorldRelease(world);
 
   // Q13: the C string view carries the byte length and assumes no NUL.
-  engWorldSetName(world, "world");
+  engineWorldSetName(world, "world");
 
   const log: EventLog = new EventLog();
   const counter: EventCounter = new EventCounter();
@@ -43,7 +43,7 @@ export function main(): void {
   // Rejected alternative: capturing log in this constructed sink is S009,
   // "capturing lambdas may not escape into constructed objects";
   // corpus/reject/r10-escaping-capture.ts pins C5.
-  const sink: EngEventSink = new EngEventSink(
+  const sink: EngineEventSink = new EngineEventSink(
     (message, userdata1, userdata2) => {
       if (userdata1 !== null) {
         // C7/Q13: !== null removes null from object | null; C1 identifies
@@ -65,14 +65,14 @@ export function main(): void {
 
   // Q13: registration stores the sink without firing; the host-owned pump
   // performs the deferred call on the calling thread.
-  engWorldSetEventSink(world, sink);
+  engineWorldSetEventSink(world, sink);
   print(`deferred=${log.hits},${counter.hits}`);
-  engWorldPump(world);
+  engineWorldPump(world);
   print(
-    `ready=${log.hits},${log.bytes},${counter.hits},${engWorldLastEvent(world)}`,
+    `ready=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(world)}`,
   );
 
   // Q13: retain kept one reference alive across the first release; this
   // release ends the opaque handle's lifetime.
-  engWorldRelease(world);
+  engineWorldRelease(world);
 }

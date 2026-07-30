@@ -158,7 +158,7 @@ fn accept_corpus_and_numbered_examples_have_zero_warnings() {
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
         let mut files = Vec::new();
-        if source.contains("engWorld") || source.contains("engFrame") {
+        if source.contains("engineWorld") || source.contains("engineFrame") {
             files.push(SourceFile::ambient(
                 "engine.generated.d.ts",
                 engine_mirror_source.clone(),

@@ -73,11 +73,11 @@ static void hostReportTrap(const subscript_rt_context *ctx) {
 /* Reading entity state lets the host report only integer observables:
  * count, flags, and layer. Fractional transform fields remain script output. */
 static size_t hostReadEntity(
-    EngWorld world,
-    EngEntityState *state) {
-    return engWorldReadEntities(
+    EngineWorld world,
+    EngineEntityState *state) {
+    return engineWorldReadEntities(
         world,
-        (EngEntityStateOut){state, 1u});
+        (EngineEntityStateOut){state, 1u});
 }
 
 int main(void) {
@@ -93,7 +93,7 @@ int main(void) {
     if (ctx == NULL) {
         return 2;
     }
-    EngWorld world = engWorldCreate(NULL);
+    EngineWorld world = engineWorldCreate(NULL);
     if (world == NULL) {
         subscript_rt_ctx_release(ctx);
         return 2;
@@ -108,8 +108,8 @@ int main(void) {
     /* init uses the same frame-state path as update, so its zero-argument
      * entry sees an explicit world, fixed step, and first frame index. */
     if (scriptAttached) {
-        engFrameBegin(world, 0.25f);
-        printf("host:init index=%" PRIu64 "\n", engFrameIndex());
+        engineFrameBegin(world, 0.25f);
+        printf("host:init index=%" PRIu64 "\n", engineFrameIndex());
         scriptAttached = hostCallScript(ctx, subscript_export_init);
         hostDrainScriptOutput(ctx, &drained);
         if (!scriptAttached) {
@@ -117,22 +117,22 @@ int main(void) {
         }
     }
 
-    EngEntityState state = {0};
+    EngineEntityState state = {0};
     size_t entityCount = hostReadEntity(world, &state);
     printf(
         "host:state entities=%zu flags=%" PRIu64 " layer=%" PRIu16 "\n",
         entityCount,
-        state.engFlags,
-        state.engTransform.engLayer);
+        state.engineFlags,
+        state.engineTransform.engineLayer);
 
     /* The host advances its own loop state first, records it in the facade,
      * calls update inside enter/exit, then pumps deferred engine work. */
     for (uint32_t hostFrame = 0u; hostFrame < 3u; hostFrame += 1u) {
-        engFrameBegin(world, 0.25f);
+        engineFrameBegin(world, 0.25f);
         printf(
             "host:frame=%" PRIu32 " index=%" PRIu64 "\n",
             hostFrame,
-            engFrameIndex());
+            engineFrameIndex());
         if (scriptAttached) {
             scriptAttached = hostCallScript(ctx, subscript_export_update);
             hostDrainScriptOutput(ctx, &drained);
@@ -140,15 +140,15 @@ int main(void) {
                 hostReportTrap(ctx);
             }
         }
-        engWorldPump(world);
-        state = (EngEntityState){0};
+        engineWorldPump(world);
+        state = (EngineEntityState){0};
         entityCount = hostReadEntity(world, &state);
         printf(
             "host:state entities=%zu flags=%" PRIu64
             " layer=%" PRIu16 "\n",
             entityCount,
-            state.engFlags,
-            state.engTransform.engLayer);
+            state.engineFlags,
+            state.engineTransform.engineLayer);
     }
 
     /* shutdown drops the last script root and calls subscript_rt_context.collect() explicitly.
@@ -174,7 +174,7 @@ int main(void) {
 
     /* The world is released on its loop thread, then the subscript_rt_context release
      * ends every remaining script allocation and completes host ownership. */
-    engWorldRelease(world);
+    engineWorldRelease(world);
     subscript_rt_ctx_release(ctx);
     return scriptAttached ? 0 : 3;
 }

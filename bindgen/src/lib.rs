@@ -50,9 +50,9 @@
 //!
 //! ```text
 //! // @subscript-c-header include="engine.h"
-//! // @subscript-c-descriptor function="engWorldReplaceEntities" parameter="engStates" aggregate="EngEntityStateView" element="EngEntityState" const=true
-//! // @subscript-c-string-view function="engWorldSetName" parameter="engName" aggregate="EngStringView"
-//! // @subscript-c-callback typedef="EngEventCallback"
+//! // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
+//! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
+//! // @subscript-c-callback typedef="EngineEventCallback"
 //! ```
 //!
 //! Descriptor and string-view records name a foreign `function` and its

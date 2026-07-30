@@ -2958,7 +2958,7 @@ view's data pointer is read, and the view's length lands where the
 binding pointer is read and dereferenced.
 
 *(Found 2026-07-28. The examples facade's first draft declared
-`(EngEventKind, EngStringView, void*, void*)`; `bindgen` emitted the
+`(EngineEventKind, EngineStringView, void*, void*)`; `bindgen` emitted the
 mirror, and no stage of either tier objected.)*
 
 **`bindgen` must reject a callback typedef whose signature the trampoline

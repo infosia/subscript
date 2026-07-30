@@ -26,11 +26,11 @@ class SceneState {
 let scene: SceneState = new SceneState();
 
 export function update(): void {
-  const world: EngWorld = engFrameWorld();
-  const fixedStep: f32 = engFrameFixedStep();
+  const world: EngineWorld = engineFrameWorld();
+  const fixedStep: f32 = engineFrameFixedStep();
   scene.frame += 1.0;
   scene.allocations.push(new SceneAllocation(scene.frame));
-  engWorldStep(world, fixedStep);
+  engineWorldStep(world, fixedStep);
 
   // §5 keeps fractional formatting on the script side. `scene.frame` is an
   // f32 so the script-owned counter and fixed step share that deterministic

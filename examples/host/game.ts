@@ -12,31 +12,31 @@ class SessionState {
 
 let session: SessionState | null = null;
 
-function emptyTransform(): EngTransform {
-  return new EngTransform(false, 0.0, 0.0, 0.0, 0);
+function emptyTransform(): EngineTransform {
+  return new EngineTransform(false, 0.0, 0.0, 0.0, 0);
 }
 
 // Q12: the host supplies frame state through accessors because exported
 // entries are zero-argument and void.
 export function init(): void {
-  const world: EngWorld = engFrameWorld();
-  const fixedStep: f32 = engFrameFixedStep();
-  const frameIndex: u64 = engFrameIndex();
+  const world: EngineWorld = engineFrameWorld();
+  const fixedStep: f32 = engineFrameFixedStep();
+  const frameIndex: u64 = engineFrameIndex();
   session = new SessionState();
-  engWorldSetName(world, "capstone");
-  engWorldSetTransform(
+  engineWorldSetName(world, "capstone");
+  engineWorldSetTransform(
     world,
     1,
-    new EngTransform(false, 0.0, fixedStep, 0.0, frameIndex as u16),
+    new EngineTransform(false, 0.0, fixedStep, 0.0, frameIndex as u16),
   );
-  const appliedFlags: EngEntityFlags = engWorldApplyFlags(
+  const appliedFlags: EngineEntityFlags = engineWorldApplyFlags(
     world,
-    new EngEntityBatch(
-      ENG_ENTITY_FLAG_ACTIVE | ENG_ENTITY_FLAG_VISIBLE,
+    new EngineEntityBatch(
+      ENGINE_ENTITY_FLAG_ACTIVE | ENGINE_ENTITY_FLAG_VISIBLE,
       [1],
     ),
   );
-  if (appliedFlags !== ENG_ENTITY_FLAG_NONE) {
+  if (appliedFlags !== ENGINE_ENTITY_FLAG_NONE) {
     // Q14: fractional output uses the runtime formatter, not host libc.
     print(`script:init step=${fixedStep}`);
   }
@@ -45,15 +45,15 @@ export function init(): void {
 // Q12: each host frame records the world, fixed step, and index before this
 // zero-argument entry reads them.
 export function update(): void {
-  const world: EngWorld = engFrameWorld();
-  const fixedStep: f32 = engFrameFixedStep();
-  const frameIndex: u64 = engFrameIndex();
+  const world: EngineWorld = engineFrameWorld();
+  const fixedStep: f32 = engineFrameFixedStep();
+  const frameIndex: u64 = engineFrameIndex();
   if (session !== null) {
     session.distance += fixedStep;
-    engWorldSetTransform(
+    engineWorldSetTransform(
       world,
       1,
-      new EngTransform(
+      new EngineTransform(
         false,
         session.distance,
         fixedStep,
@@ -61,17 +61,17 @@ export function update(): void {
         frameIndex as u16,
       ),
     );
-    engWorldStep(world, fixedStep);
+    engineWorldStep(world, fixedStep);
   }
 
-  const states: EngEntityState[] = [
-    new EngEntityState(0, emptyTransform(), ENG_ENTITY_FLAG_NONE),
+  const states: EngineEntityState[] = [
+    new EngineEntityState(0, emptyTransform(), ENGINE_ENTITY_FLAG_NONE),
   ];
-  const stateCount: u64 = engWorldReadEntities(world, states);
+  const stateCount: u64 = engineWorldReadEntities(world, states);
   if (stateCount !== 0) {
     // Q14: positions and fixed time remain script-formatted floats.
     print(
-      `script:update x=${states[0].engTransform.engX},step=${fixedStep}`,
+      `script:update x=${states[0].engineTransform.engineX},step=${fixedStep}`,
     );
   }
 }

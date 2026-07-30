@@ -30,19 +30,19 @@ class FixtureLog {
   }
 }
 
-function placeholderTransform(): EngTransform {
-  return new EngTransform(false, 0.0, 0.0, 0.0, 0);
+function placeholderTransform(): EngineTransform {
+  return new EngineTransform(false, 0.0, 0.0, 0.0, 0);
 }
 
 export function main(): void {
-  const limit: EngEntityLimitOption = new EngEntityLimitOption(
-    new EngWorldOption(EngWorldOptionKind.ENG_WORLD_OPTION_ENTITY_LIMIT, null),
+  const limit: EngineEntityLimitOption = new EngineEntityLimitOption(
+    new EngineWorldOption(EngineWorldOptionKind.ENGINE_WORLD_OPTION_ENTITY_LIMIT, null),
     3,
   );
-  const tick: EngTickOption = new EngTickOption(
-    new EngWorldOption(
-      EngWorldOptionKind.ENG_WORLD_OPTION_TICK,
-      limit.engHeader,
+  const tick: EngineTickOption = new EngineTickOption(
+    new EngineWorldOption(
+      EngineWorldOptionKind.ENGINE_WORLD_OPTION_TICK,
+      limit.engineHeader,
     ),
     2,
   );
@@ -50,15 +50,15 @@ export function main(): void {
   // Q13 and invariant 1: the Struct | null chain slot receives the live
   // embedded header. corpus/accept/a89-interop-chain-payload.ts and
   // compiler.md §23.7a pin reading the enclosing option payload from it.
-  const world: EngWorld = engWorldCreate(tick.engHeader);
-  engWorldRetain(world);
+  const world: EngineWorld = engineWorldCreate(tick.engineHeader);
+  engineWorldRetain(world);
 
   // Q13: a string crosses as an explicit byte-length view; no NUL is added.
-  engWorldSetName(world, "world");
+  engineWorldSetName(world, "world");
 
   const log: EventLog = new EventLog();
   const counter: EventCounter = new EventCounter();
-  const sink: EngEventSink = new EngEventSink(
+  const sink: EngineEventSink = new EngineEventSink(
     (message, userdata1, userdata2) => {
       if (userdata1 !== null) {
         // C7/Q13: !== null removes null from object | null; C1 identifies
@@ -77,83 +77,83 @@ export function main(): void {
     log,
     counter,
   );
-  engWorldSetEventSink(world, sink);
+  engineWorldSetEventSink(world, sink);
   print(`deferred=${log.hits},${counter.hits}`);
-  engWorldPump(world);
+  engineWorldPump(world);
   print(
-    `ready=${log.hits},${log.bytes},${counter.hits},${engWorldLastEvent(world)}`,
+    `ready=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(world)}`,
   );
 
-  const input: EngEntityState[] = [
-    new EngEntityState(
+  const input: EngineEntityState[] = [
+    new EngineEntityState(
       1,
-      new EngTransform(true, 1.25, -2.5, 0.5, 3),
-      ENG_ENTITY_FLAG_NONE,
+      new EngineTransform(true, 1.25, -2.5, 0.5, 3),
+      ENGINE_ENTITY_FLAG_NONE,
     ),
-    new EngEntityState(
+    new EngineEntityState(
       2,
-      new EngTransform(false, 10.0, 20.0, 0.75, 5),
-      ENG_ENTITY_FLAG_ACTIVE,
+      new EngineTransform(false, 10.0, 20.0, 0.75, 5),
+      ENGINE_ENTITY_FLAG_ACTIVE,
     ),
   ];
-  // Invariant 1: this array is borrowed as the const EngEntityStateView.
-  engWorldReplaceEntities(world, input);
+  // Invariant 1: this array is borrowed as the const EngineEntityStateView.
+  engineWorldReplaceEntities(world, input);
 
-  // Invariant 1: EngTransform crosses by value with its C padding layout.
-  engWorldSetTransform(
+  // Invariant 1: EngineTransform crosses by value with its C padding layout.
+  engineWorldSetTransform(
     world,
     2,
-    new EngTransform(true, 11.5, 22.25, 1.5, 9),
+    new EngineTransform(true, 11.5, 22.25, 1.5, 9),
   );
 
-  const output: EngEntityState[] = [
-    new EngEntityState(0, placeholderTransform(), ENG_ENTITY_FLAG_NONE),
-    new EngEntityState(0, placeholderTransform(), ENG_ENTITY_FLAG_NONE),
-    new EngEntityState(0, placeholderTransform(), ENG_ENTITY_FLAG_NONE),
+  const output: EngineEntityState[] = [
+    new EngineEntityState(0, placeholderTransform(), ENGINE_ENTITY_FLAG_NONE),
+    new EngineEntityState(0, placeholderTransform(), ENGINE_ENTITY_FLAG_NONE),
+    new EngineEntityState(0, placeholderTransform(), ENGINE_ENTITY_FLAG_NONE),
   ];
-  // §14.3: the mutable EngEntityStateOut writes this array's own storage.
-  const written: u64 = engWorldReadEntities(world, output);
+  // §14.3: the mutable EngineEntityStateOut writes this array's own storage.
+  const written: u64 = engineWorldReadEntities(world, output);
   print(`read=${written}`);
   print(
-    `entity=${output[0].engId},${output[0].engTransform.engX},${output[0].engTransform.engY},${output[0].engTransform.engRotation},${output[0].engTransform.engLayer},${output[0].engFlags}`,
+    `entity=${output[0].engineId},${output[0].engineTransform.engineX},${output[0].engineTransform.engineY},${output[0].engineTransform.engineRotation},${output[0].engineTransform.engineLayer},${output[0].engineFlags}`,
   );
   print(
-    `entity=${output[1].engId},${output[1].engTransform.engX},${output[1].engTransform.engY},${output[1].engTransform.engRotation},${output[1].engTransform.engLayer},${output[1].engFlags}`,
+    `entity=${output[1].engineId},${output[1].engineTransform.engineX},${output[1].engineTransform.engineY},${output[1].engineTransform.engineRotation},${output[1].engineTransform.engineLayer},${output[1].engineFlags}`,
   );
 
   // Q18: folded u64 flag members combine without an implicit narrowing.
-  const combined: EngEntityFlags =
-    ENG_ENTITY_FLAG_ACTIVE | ENG_ENTITY_FLAG_VISIBLE;
-  const matched: u64 = engWorldApplyFlags(
+  const combined: EngineEntityFlags =
+    ENGINE_ENTITY_FLAG_ACTIVE | ENGINE_ENTITY_FLAG_VISIBLE;
+  const matched: u64 = engineWorldApplyFlags(
     world,
-    new EngEntityBatch(combined, [1, 2, 99]),
+    new EngineEntityBatch(combined, [1, 2, 99]),
   );
-  const flagged: EngEntityState[] = [
-    new EngEntityState(0, placeholderTransform(), ENG_ENTITY_FLAG_NONE),
-    new EngEntityState(0, placeholderTransform(), ENG_ENTITY_FLAG_NONE),
+  const flagged: EngineEntityState[] = [
+    new EngineEntityState(0, placeholderTransform(), ENGINE_ENTITY_FLAG_NONE),
+    new EngineEntityState(0, placeholderTransform(), ENGINE_ENTITY_FLAG_NONE),
   ];
-  engWorldReadEntities(world, flagged);
-  print(`flags=${matched},${flagged[0].engFlags},${flagged[1].engFlags}`);
+  engineWorldReadEntities(world, flagged);
+  print(`flags=${matched},${flagged[0].engineFlags},${flagged[1].engineFlags}`);
 
-  engWorldPump(world);
+  engineWorldPump(world);
   print(
-    `changed=${log.hits},${log.bytes},${counter.hits},${engWorldLastEvent(world)}`,
+    `changed=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(world)}`,
   );
 
   // The host-owned loop records frame state before a zero-argument script
   // entry; these accessors are the boundary, not a synthetic update argument.
-  engFrameBegin(world, 0.125);
-  const current: EngWorld = engFrameWorld();
-  const fixedStep: f32 = engFrameFixedStep();
-  engWorldStep(current, fixedStep);
-  print(`frame=${engFrameIndex()},${fixedStep}`);
-  engWorldPump(current);
+  engineFrameBegin(world, 0.125);
+  const current: EngineWorld = engineFrameWorld();
+  const fixedStep: f32 = engineFrameFixedStep();
+  engineWorldStep(current, fixedStep);
+  print(`frame=${engineFrameIndex()},${fixedStep}`);
+  engineWorldPump(current);
   print(
-    `stepped=${log.hits},${log.bytes},${counter.hits},${engWorldLastEvent(current)}`,
+    `stepped=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(current)}`,
   );
 
-  engWorldRelease(world);
-  engWorldRelease(world);
+  engineWorldRelease(world);
+  engineWorldRelease(world);
 
   const device: SubDevice = subDeviceCreate(null);
   const fixtureLog: FixtureLog = new FixtureLog();
@@ -171,7 +171,7 @@ export function main(): void {
   );
   subDeviceOnComplete(device, completion);
   // The second header reconstructs SubBufferView, independently of the
-  // engine header's EngEntityStateView and mutable EngEntityStateOut.
+  // engine header's EngineEntityStateView and mutable EngineEntityStateOut.
   subDeviceSubmit(device, [2, 3, 4]);
   print(`fixture-deferred=${fixtureLog.hits}`);
   subDevicePump(device);

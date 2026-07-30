@@ -32,22 +32,22 @@ const ENGINE_MIRROR_NAME: &str = "engine.generated.d.ts";
 const INTEROP_MIRROR_NAME: &str = "interop.generated.d.ts";
 
 extern "C" {
-    fn engWorldCreate();
-    fn engWorldRetain();
-    fn engWorldRelease();
-    fn engWorldSetName();
-    fn engWorldSetTransform();
-    fn engWorldReplaceEntities();
-    fn engWorldReadEntities();
-    fn engWorldApplyFlags();
-    fn engWorldSetEventSink();
-    fn engWorldPump();
-    fn engWorldLastEvent();
-    fn engWorldStep();
-    fn engFrameBegin();
-    fn engFrameWorld();
-    fn engFrameFixedStep();
-    fn engFrameIndex();
+    fn engineWorldCreate();
+    fn engineWorldRetain();
+    fn engineWorldRelease();
+    fn engineWorldSetName();
+    fn engineWorldSetTransform();
+    fn engineWorldReplaceEntities();
+    fn engineWorldReadEntities();
+    fn engineWorldApplyFlags();
+    fn engineWorldSetEventSink();
+    fn engineWorldPump();
+    fn engineWorldLastEvent();
+    fn engineWorldStep();
+    fn engineFrameBegin();
+    fn engineFrameWorld();
+    fn engineFrameFixedStep();
+    fn engineFrameIndex();
 }
 
 #[cfg(not(all(windows, target_env = "msvc")))]
@@ -97,7 +97,7 @@ fn load_program(path: &Path, id: String) -> Result<Program, String> {
         .map_err(|error| format!("read golden {}: {error}", expected_path.display()))?;
     Ok(Program {
         id,
-        uses_engine: source.contains("engWorld") || source.contains("engFrame"),
+        uses_engine: source.contains("engineWorld") || source.contains("engineFrame"),
         uses_interop: source.contains("subDevice"),
         source,
         expected,
@@ -197,43 +197,43 @@ fn source_files(
 fn engine_library() -> NativeLibrary {
     let directory = examples_root().join("engine");
     let symbols = vec![
-        ("engWorldCreate".to_string(), engWorldCreate as *const u8),
-        ("engWorldRetain".to_string(), engWorldRetain as *const u8),
-        ("engWorldRelease".to_string(), engWorldRelease as *const u8),
-        ("engWorldSetName".to_string(), engWorldSetName as *const u8),
+        ("engineWorldCreate".to_string(), engineWorldCreate as *const u8),
+        ("engineWorldRetain".to_string(), engineWorldRetain as *const u8),
+        ("engineWorldRelease".to_string(), engineWorldRelease as *const u8),
+        ("engineWorldSetName".to_string(), engineWorldSetName as *const u8),
         (
-            "engWorldSetTransform".to_string(),
-            engWorldSetTransform as *const u8,
+            "engineWorldSetTransform".to_string(),
+            engineWorldSetTransform as *const u8,
         ),
         (
-            "engWorldReplaceEntities".to_string(),
-            engWorldReplaceEntities as *const u8,
+            "engineWorldReplaceEntities".to_string(),
+            engineWorldReplaceEntities as *const u8,
         ),
         (
-            "engWorldReadEntities".to_string(),
-            engWorldReadEntities as *const u8,
+            "engineWorldReadEntities".to_string(),
+            engineWorldReadEntities as *const u8,
         ),
         (
-            "engWorldApplyFlags".to_string(),
-            engWorldApplyFlags as *const u8,
+            "engineWorldApplyFlags".to_string(),
+            engineWorldApplyFlags as *const u8,
         ),
         (
-            "engWorldSetEventSink".to_string(),
-            engWorldSetEventSink as *const u8,
+            "engineWorldSetEventSink".to_string(),
+            engineWorldSetEventSink as *const u8,
         ),
-        ("engWorldPump".to_string(), engWorldPump as *const u8),
+        ("engineWorldPump".to_string(), engineWorldPump as *const u8),
         (
-            "engWorldLastEvent".to_string(),
-            engWorldLastEvent as *const u8,
+            "engineWorldLastEvent".to_string(),
+            engineWorldLastEvent as *const u8,
         ),
-        ("engWorldStep".to_string(), engWorldStep as *const u8),
-        ("engFrameBegin".to_string(), engFrameBegin as *const u8),
-        ("engFrameWorld".to_string(), engFrameWorld as *const u8),
+        ("engineWorldStep".to_string(), engineWorldStep as *const u8),
+        ("engineFrameBegin".to_string(), engineFrameBegin as *const u8),
+        ("engineFrameWorld".to_string(), engineFrameWorld as *const u8),
         (
-            "engFrameFixedStep".to_string(),
-            engFrameFixedStep as *const u8,
+            "engineFrameFixedStep".to_string(),
+            engineFrameFixedStep as *const u8,
         ),
-        ("engFrameIndex".to_string(), engFrameIndex as *const u8),
+        ("engineFrameIndex".to_string(), engineFrameIndex as *const u8),
     ];
     // SAFETY: build.rs links these static-lifetime functions into the test
     // process, and every address has the signature declared by engine.h and
@@ -507,10 +507,10 @@ fn two_header_gate_emits_both_provenance_vocabularies() {
         program.id
     );
     for spelling in [
-        "((EngEntityStateView){",
-        "((EngEntityStateOut){ (EngEntityState*)",
+        "((EngineEntityStateView){",
+        "((EngineEntityStateOut){ (EngineEntityState*)",
         "((SubBufferView){",
-        "engWorldReplaceEntities(",
+        "engineWorldReplaceEntities(",
         "subDeviceSubmit(",
     ] {
         assert!(

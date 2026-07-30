@@ -38,7 +38,7 @@ discriminates more strongly than a hash. A convention that is right in
 this section or it does not appear.
 
 *(Written 2026-07-28 after the first draft of the host facade grew an
-`engWorldChecksum` for no reason but that the corpus has checksums.)*
+`engineWorldChecksum` for no reason but that the corpus has checksums.)*
 
 ## 2. Layout and file conventions
 
@@ -84,7 +84,7 @@ examples/
 A phase sometimes needs a program that proves a property rather than
 teaching one. `compiler.md` §23.7's two-header binding proof is the first:
 it must bind the synthetic fixture *and* the facade in one program, and a
-reader meeting `SubDevice` beside `EngWorld` learns nothing about their own
+reader meeting `SubDevice` beside `EngineWorld` learns nothing about their own
 header from it.
 
 Such programs live in `examples/gate/`, carry a golden, and run under the
@@ -223,7 +223,7 @@ own `subscript_rt_ctx_new` … `subscript_rt_ctx_release`, and show:
    observable that proves the Context is new rather than cleared.
 2. **State that outlives a scene lives host-side.** The engine facade's
    frame record is thread-local and belongs to the host, not to the
-   Context, so `engFrameIndex()` keeps counting across the boundary while
+   Context, so `engineFrameIndex()` keeps counting across the boundary while
    the script's own counter restarts. One example, two lifetimes, and no
    new C API to demonstrate it.
 3. **The memory accounting at the boundary** — `live_bytes` at the end of

@@ -15,410 +15,410 @@
 
 /* MSVC needs its thread-storage spelling when the gate omits C11 mode. */
 #if defined(_MSC_VER)
-#define ENG_THREAD_LOCAL __declspec(thread)
+#define ENGINE_THREAD_LOCAL __declspec(thread)
 #else
-#define ENG_THREAD_LOCAL _Thread_local
+#define ENGINE_THREAD_LOCAL _Thread_local
 #endif
 
 enum {
-    ENG_WORLD_ENTITY_CAPACITY = 32,
-    ENG_WORLD_NAME_CAPACITY = 64,
-    ENG_WORLD_OPTION_LIMIT = 32
+    ENGINE_WORLD_ENTITY_CAPACITY = 32,
+    ENGINE_WORLD_NAME_CAPACITY = 64,
+    ENGINE_WORLD_OPTION_LIMIT = 32
 };
 
 /* The concrete opaque-world layout owns every per-world mutable byte:
  * lifecycle, simulation state, bounded entities, copied name bytes, and
  * deferred sink. */
-struct EngWorld_T {
-    uint32_t engReferenceCount;
-    uint32_t engTicksPerFrame;
-    uint32_t engSimulationTicks;
-    uint64_t engSimulationStepIndex;
-    size_t engEntityCapacity;
-    size_t engEntityCount;
-    EngEntityState engEntities[ENG_WORLD_ENTITY_CAPACITY];
-    char engName[ENG_WORLD_NAME_CAPACITY];
-    size_t engNameLength;
-    float engSimulationStepValue;
-    EngEventSink engEventSink;
-    EngEventKind engPendingEvent;
-    EngEventKind engLastEvent;
-    bool engEventPending;
+struct EngineWorld_T {
+    uint32_t engineReferenceCount;
+    uint32_t engineTicksPerFrame;
+    uint32_t engineSimulationTicks;
+    uint64_t engineSimulationStepIndex;
+    size_t engineEntityCapacity;
+    size_t engineEntityCount;
+    EngineEntityState engineEntities[ENGINE_WORLD_ENTITY_CAPACITY];
+    char engineName[ENGINE_WORLD_NAME_CAPACITY];
+    size_t engineNameLength;
+    float engineSimulationStepValue;
+    EngineEventSink engineEventSink;
+    EngineEventKind enginePendingEvent;
+    EngineEventKind engineLastEvent;
+    bool engineEventPending;
 };
 
 /* The frame record is separate from simulation state; thread-local storage
  * gives each host-loop thread its own current world, dt, and index. */
-typedef struct EngFrameRecord {
-    EngWorld engWorld;
-    float engFixedStep;
-    uint64_t engFrameIndex;
-} EngFrameRecord;
+typedef struct EngineFrameRecord {
+    EngineWorld engineWorld;
+    float engineFixedStep;
+    uint64_t engineFrameIndex;
+} EngineFrameRecord;
 
 /* Static thread-local initialization supplies the documented zeroed record
- * before the calling thread's first engFrameBegin. */
-static ENG_THREAD_LOCAL EngFrameRecord engFrameRecord;
+ * before the calling thread's first engineFrameBegin. */
+static ENGINE_THREAD_LOCAL EngineFrameRecord engineFrameRecord;
 
 /* Handle checking maps NULL to a no-op sentinel; a released non-NULL handle
  * is outside the C API contract and is not read for attempted validation. */
-static struct EngWorld_T *engWorldChecked(EngWorld engWorld) {
-    if (engWorld == NULL) {
+static struct EngineWorld_T *engineWorldChecked(EngineWorld engineWorld) {
+    if (engineWorld == NULL) {
         return NULL;
     }
-    return engWorld;
+    return engineWorld;
 }
 
 /* A transform copy assigns every semantic field rather than copying caller
  * padding; destination padding therefore remains the deterministic zero
  * written when its enclosing state was cleared. */
-static void engTransformCopy(
-    EngTransform *engDestination,
-    const EngTransform *engSource) {
-    engDestination->engInheritScale = engSource->engInheritScale;
-    engDestination->engX = engSource->engX;
-    engDestination->engY = engSource->engY;
-    engDestination->engRotation = engSource->engRotation;
-    engDestination->engLayer = engSource->engLayer;
+static void engineTransformCopy(
+    EngineTransform *engineDestination,
+    const EngineTransform *engineSource) {
+    engineDestination->engineInheritScale = engineSource->engineInheritScale;
+    engineDestination->engineX = engineSource->engineX;
+    engineDestination->engineY = engineSource->engineY;
+    engineDestination->engineRotation = engineSource->engineRotation;
+    engineDestination->engineLayer = engineSource->engineLayer;
 }
 
 /* An entity-state copy composes the field-wise transform copy with exact
  * integer assignments, so neither source padding nor evaluation order
  * affects stored or returned bytes. */
-static void engEntityStateCopy(
-    EngEntityState *engDestination,
-    const EngEntityState *engSource) {
-    engDestination->engId = engSource->engId;
-    engTransformCopy(
-        &engDestination->engTransform,
-        &engSource->engTransform);
-    engDestination->engFlags = engSource->engFlags;
+static void engineEntityStateCopy(
+    EngineEntityState *engineDestination,
+    const EngineEntityState *engineSource) {
+    engineDestination->engineId = engineSource->engineId;
+    engineTransformCopy(
+        &engineDestination->engineTransform,
+        &engineSource->engineTransform);
+    engineDestination->engineFlags = engineSource->engineFlags;
 }
 
 /* Option traversal consumes at most the bounded node count in pointer order.
  * Reaching the limit ignores the remainder, unknown tags are ignored, and
  * entity capacity is clamped to fixed storage. */
-static void engWorldApplyOptions(
-    struct EngWorld_T *engWorld,
-    const EngWorldOption *engOptions) {
-    const EngWorldOption *engOption = engOptions;
-    uint32_t engOptionCount = 0u;
-    while (engOption != NULL) {
-        if (engOptionCount == ENG_WORLD_OPTION_LIMIT) {
+static void engineWorldApplyOptions(
+    struct EngineWorld_T *engineWorld,
+    const EngineWorldOption *engineOptions) {
+    const EngineWorldOption *engineOption = engineOptions;
+    uint32_t engineOptionCount = 0u;
+    while (engineOption != NULL) {
+        if (engineOptionCount == ENGINE_WORLD_OPTION_LIMIT) {
             break;
         }
-        engOptionCount += 1u;
-        switch (engOption->engKind) {
-            case ENG_WORLD_OPTION_TICK: {
-                const EngTickOption *engTickOption =
-                    (const EngTickOption *)(const void *)engOption;
-                engWorld->engTicksPerFrame =
-                    engTickOption->engTicksPerFrame;
+        engineOptionCount += 1u;
+        switch (engineOption->engineKind) {
+            case ENGINE_WORLD_OPTION_TICK: {
+                const EngineTickOption *engineTickOption =
+                    (const EngineTickOption *)(const void *)engineOption;
+                engineWorld->engineTicksPerFrame =
+                    engineTickOption->engineTicksPerFrame;
                 break;
             }
-            case ENG_WORLD_OPTION_ENTITY_LIMIT: {
-                const EngEntityLimitOption *engLimitOption =
-                    (const EngEntityLimitOption *)(const void *)engOption;
-                size_t engMaximumEntities =
-                    (size_t)engLimitOption->engMaximumEntities;
-                if (engMaximumEntities > ENG_WORLD_ENTITY_CAPACITY) {
-                    engMaximumEntities = ENG_WORLD_ENTITY_CAPACITY;
+            case ENGINE_WORLD_OPTION_ENTITY_LIMIT: {
+                const EngineEntityLimitOption *engineLimitOption =
+                    (const EngineEntityLimitOption *)(const void *)engineOption;
+                size_t engineMaximumEntities =
+                    (size_t)engineLimitOption->engineMaximumEntities;
+                if (engineMaximumEntities > ENGINE_WORLD_ENTITY_CAPACITY) {
+                    engineMaximumEntities = ENGINE_WORLD_ENTITY_CAPACITY;
                 }
-                engWorld->engEntityCapacity = engMaximumEntities;
+                engineWorld->engineEntityCapacity = engineMaximumEntities;
                 break;
             }
             default:
                 break;
         }
-        engOption = engOption->engNext;
+        engineOption = engineOption->engineNext;
     }
 }
 
 /* Creation allocates one independent zeroed world, applies the optional
  * intrusive chain, and returns one opaque-handle reference or NULL. */
-EngWorld engWorldCreate(const EngWorldOption *engOptions) {
-    struct EngWorld_T *engWorld =
-        (struct EngWorld_T *)calloc(1u, sizeof(*engWorld));
-    if (engWorld == NULL) {
+EngineWorld engineWorldCreate(const EngineWorldOption *engineOptions) {
+    struct EngineWorld_T *engineWorld =
+        (struct EngineWorld_T *)calloc(1u, sizeof(*engineWorld));
+    if (engineWorld == NULL) {
         return NULL;
     }
-    engWorld->engReferenceCount = 1u;
-    engWorld->engTicksPerFrame = 1u;
-    engWorld->engEntityCapacity = ENG_WORLD_ENTITY_CAPACITY;
-    engWorld->engEventSink.engCallback = NULL;
-    engWorld->engEventSink.engUserdata1 = NULL;
-    engWorld->engEventSink.engUserdata2 = NULL;
-    engWorldApplyOptions(engWorld, engOptions);
-    return engWorld;
+    engineWorld->engineReferenceCount = 1u;
+    engineWorld->engineTicksPerFrame = 1u;
+    engineWorld->engineEntityCapacity = ENGINE_WORLD_ENTITY_CAPACITY;
+    engineWorld->engineEventSink.engineCallback = NULL;
+    engineWorld->engineEventSink.engineUserdata1 = NULL;
+    engineWorld->engineEventSink.engineUserdata2 = NULL;
+    engineWorldApplyOptions(engineWorld, engineOptions);
+    return engineWorld;
 }
 
 /* Retain advances the opaque handle's checked unsigned reference count;
  * NULL and saturated handles leave state unchanged. */
-void engWorldRetain(EngWorld engWorld) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL ||
-        engCheckedWorld->engReferenceCount == UINT32_MAX) {
+void engineWorldRetain(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        engineCheckedWorld->engineReferenceCount == UINT32_MAX) {
         return;
     }
-    engCheckedWorld->engReferenceCount += 1u;
+    engineCheckedWorld->engineReferenceCount += 1u;
 }
 
 /* Release frees the per-handle allocation after its last reference; a NULL
  * handle leaves state unchanged. */
-void engWorldRelease(EngWorld engWorld) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL) {
+void engineWorldRelease(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL) {
         return;
     }
-    engCheckedWorld->engReferenceCount -= 1u;
-    if (engCheckedWorld->engReferenceCount == 0u) {
-        if (engFrameRecord.engWorld == engWorld) {
-            engFrameRecord.engWorld = NULL;
-            engFrameRecord.engFixedStep = 0.0f;
+    engineCheckedWorld->engineReferenceCount -= 1u;
+    if (engineCheckedWorld->engineReferenceCount == 0u) {
+        if (engineFrameRecord.engineWorld == engineWorld) {
+            engineFrameRecord.engineWorld = NULL;
+            engineFrameRecord.engineFixedStep = 0.0f;
         }
-        free(engCheckedWorld);
+        free(engineCheckedWorld);
     }
 }
 
 /* Name storage copies the length-carrying view without reading or adding a
  * terminator; missing data is a no-op and the fixed bound truncates. */
-void engWorldSetName(EngWorld engWorld, EngStringView engName) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL ||
-        (engName.engLen != 0u && engName.engData == NULL)) {
+void engineWorldSetName(EngineWorld engineWorld, EngineStringView engineName) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        (engineName.engineLen != 0u && engineName.engineData == NULL)) {
         return;
     }
-    size_t engStoredLength = engName.engLen;
-    if (engStoredLength > ENG_WORLD_NAME_CAPACITY) {
-        engStoredLength = ENG_WORLD_NAME_CAPACITY;
+    size_t engineStoredLength = engineName.engineLen;
+    if (engineStoredLength > ENGINE_WORLD_NAME_CAPACITY) {
+        engineStoredLength = ENGINE_WORLD_NAME_CAPACITY;
     }
     memset(
-        engCheckedWorld->engName,
+        engineCheckedWorld->engineName,
         0,
-        sizeof(engCheckedWorld->engName));
-    if (engStoredLength != 0u) {
+        sizeof(engineCheckedWorld->engineName));
+    if (engineStoredLength != 0u) {
         memcpy(
-            engCheckedWorld->engName,
-            engName.engData,
-            engStoredLength);
+            engineCheckedWorld->engineName,
+            engineName.engineData,
+            engineStoredLength);
     }
-    engCheckedWorld->engNameLength = engStoredLength;
+    engineCheckedWorld->engineNameLength = engineStoredLength;
 }
 
 /* The by-value transform updates an existing entity or creates one within
  * the configured bound; semantic fields are copied and padding stays zero. */
-void engWorldSetTransform(
-    EngWorld engWorld,
-    uint32_t engEntityId,
-    EngTransform engTransform) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL) {
+void engineWorldSetTransform(
+    EngineWorld engineWorld,
+    uint32_t engineEntityId,
+    EngineTransform engineTransform) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL) {
         return;
     }
-    EngEntityState *engState = NULL;
-    for (size_t engIndex = 0u;
-         engIndex < engCheckedWorld->engEntityCount;
-         engIndex += 1u) {
-        if (engCheckedWorld->engEntities[engIndex].engId == engEntityId) {
-            engState = &engCheckedWorld->engEntities[engIndex];
+    EngineEntityState *engineState = NULL;
+    for (size_t engineIndex = 0u;
+         engineIndex < engineCheckedWorld->engineEntityCount;
+         engineIndex += 1u) {
+        if (engineCheckedWorld->engineEntities[engineIndex].engineId == engineEntityId) {
+            engineState = &engineCheckedWorld->engineEntities[engineIndex];
             break;
         }
     }
-    if (engState == NULL) {
-        if (engCheckedWorld->engEntityCount ==
-            engCheckedWorld->engEntityCapacity) {
+    if (engineState == NULL) {
+        if (engineCheckedWorld->engineEntityCount ==
+            engineCheckedWorld->engineEntityCapacity) {
             return;
         }
-        engState =
-            &engCheckedWorld->engEntities[engCheckedWorld->engEntityCount];
-        memset(engState, 0, sizeof(*engState));
-        engState->engId = engEntityId;
-        engState->engFlags = ENG_ENTITY_FLAG_NONE;
-        engCheckedWorld->engEntityCount += 1u;
+        engineState =
+            &engineCheckedWorld->engineEntities[engineCheckedWorld->engineEntityCount];
+        memset(engineState, 0, sizeof(*engineState));
+        engineState->engineId = engineEntityId;
+        engineState->engineFlags = ENGINE_ENTITY_FLAG_NONE;
+        engineCheckedWorld->engineEntityCount += 1u;
     }
-    engTransformCopy(&engState->engTransform, &engTransform);
-    engCheckedWorld->engPendingEvent = ENG_EVENT_ENTITY_CHANGED;
-    engCheckedWorld->engEventPending = true;
+    engineTransformCopy(&engineState->engineTransform, &engineTransform);
+    engineCheckedWorld->enginePendingEvent = ENGINE_EVENT_ENTITY_CHANGED;
+    engineCheckedWorld->engineEventPending = true;
 }
 
 /* Const-slice replacement reads every caller-owned entity in increasing
  * index order and stores only semantic fields into zeroed fixed storage. */
-void engWorldReplaceEntities(
-    EngWorld engWorld,
-    EngEntityStateView engStates) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL ||
-        (engStates.engCount != 0u && engStates.engItems == NULL)) {
+void engineWorldReplaceEntities(
+    EngineWorld engineWorld,
+    EngineEntityStateView engineStates) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        (engineStates.engineCount != 0u && engineStates.engineItems == NULL)) {
         return;
     }
-    size_t engStoredCount = engStates.engCount;
-    if (engStoredCount > engCheckedWorld->engEntityCapacity) {
-        engStoredCount = engCheckedWorld->engEntityCapacity;
+    size_t engineStoredCount = engineStates.engineCount;
+    if (engineStoredCount > engineCheckedWorld->engineEntityCapacity) {
+        engineStoredCount = engineCheckedWorld->engineEntityCapacity;
     }
     memset(
-        engCheckedWorld->engEntities,
+        engineCheckedWorld->engineEntities,
         0,
-        sizeof(engCheckedWorld->engEntities));
-    for (size_t engIndex = 0u;
-         engIndex < engStoredCount;
-         engIndex += 1u) {
-        engEntityStateCopy(
-            &engCheckedWorld->engEntities[engIndex],
-            &engStates.engItems[engIndex]);
+        sizeof(engineCheckedWorld->engineEntities));
+    for (size_t engineIndex = 0u;
+         engineIndex < engineStoredCount;
+         engineIndex += 1u) {
+        engineEntityStateCopy(
+            &engineCheckedWorld->engineEntities[engineIndex],
+            &engineStates.engineItems[engineIndex]);
     }
-    engCheckedWorld->engEntityCount = engStoredCount;
-    engCheckedWorld->engPendingEvent = ENG_EVENT_ENTITY_CHANGED;
-    engCheckedWorld->engEventPending = true;
+    engineCheckedWorld->engineEntityCount = engineStoredCount;
+    engineCheckedWorld->enginePendingEvent = ENGINE_EVENT_ENTITY_CHANGED;
+    engineCheckedWorld->engineEventPending = true;
 }
 
 /* Mutable out-array access writes the caller's own storage in increasing
  * index order; clearing each destination first makes padding deterministic. */
-size_t engWorldReadEntities(
-    EngWorld engWorld,
-    EngEntityStateOut engStates) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL ||
-        (engStates.engCount != 0u && engStates.engItems == NULL)) {
+size_t engineWorldReadEntities(
+    EngineWorld engineWorld,
+    EngineEntityStateOut engineStates) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        (engineStates.engineCount != 0u && engineStates.engineItems == NULL)) {
         return 0u;
     }
-    size_t engWritten = engStates.engCount;
-    if (engWritten > engCheckedWorld->engEntityCount) {
-        engWritten = engCheckedWorld->engEntityCount;
+    size_t engineWritten = engineStates.engineCount;
+    if (engineWritten > engineCheckedWorld->engineEntityCount) {
+        engineWritten = engineCheckedWorld->engineEntityCount;
     }
-    for (size_t engIndex = 0u;
-         engIndex < engWritten;
-         engIndex += 1u) {
+    for (size_t engineIndex = 0u;
+         engineIndex < engineWritten;
+         engineIndex += 1u) {
         memset(
-            &engStates.engItems[engIndex],
+            &engineStates.engineItems[engineIndex],
             0,
-            sizeof(engStates.engItems[engIndex]));
-        engEntityStateCopy(
-            &engStates.engItems[engIndex],
-            &engCheckedWorld->engEntities[engIndex]);
+            sizeof(engineStates.engineItems[engineIndex]));
+        engineEntityStateCopy(
+            &engineStates.engineItems[engineIndex],
+            &engineCheckedWorld->engineEntities[engineIndex]);
     }
-    return engWritten;
+    return engineWritten;
 }
 
 /* The embedded count/pointer batch reads ids in caller order and applies
  * flag bits with `|`; all matching counts advance without signed overflow. */
-size_t engWorldApplyFlags(
-    EngWorld engWorld,
-    EngEntityBatch engBatch) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL ||
-        (engBatch.engEntityIdsCount != 0u &&
-         engBatch.engEntityIds == NULL)) {
+size_t engineWorldApplyFlags(
+    EngineWorld engineWorld,
+    EngineEntityBatch engineBatch) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        (engineBatch.engineEntityIdsCount != 0u &&
+         engineBatch.engineEntityIds == NULL)) {
         return 0u;
     }
-    size_t engMatched = 0u;
-    for (size_t engIdIndex = 0u;
-         engIdIndex < engBatch.engEntityIdsCount;
-         engIdIndex += 1u) {
-        for (size_t engStateIndex = 0u;
-             engStateIndex < engCheckedWorld->engEntityCount;
-             engStateIndex += 1u) {
-            EngEntityState *engState =
-                &engCheckedWorld->engEntities[engStateIndex];
-            if (engState->engId == engBatch.engEntityIds[engIdIndex]) {
-                engState->engFlags =
-                    engState->engFlags | engBatch.engFlags;
-                engMatched += 1u;
+    size_t engineMatched = 0u;
+    for (size_t engineIdIndex = 0u;
+         engineIdIndex < engineBatch.engineEntityIdsCount;
+         engineIdIndex += 1u) {
+        for (size_t engineStateIndex = 0u;
+             engineStateIndex < engineCheckedWorld->engineEntityCount;
+             engineStateIndex += 1u) {
+            EngineEntityState *engineState =
+                &engineCheckedWorld->engineEntities[engineStateIndex];
+            if (engineState->engineId == engineBatch.engineEntityIds[engineIdIndex]) {
+                engineState->engineFlags =
+                    engineState->engineFlags | engineBatch.engineFlags;
+                engineMatched += 1u;
                 break;
             }
         }
     }
-    if (engMatched != 0u) {
-        engCheckedWorld->engPendingEvent = ENG_EVENT_ENTITY_CHANGED;
-        engCheckedWorld->engEventPending = true;
+    if (engineMatched != 0u) {
+        engineCheckedWorld->enginePendingEvent = ENGINE_EVENT_ENTITY_CHANGED;
+        engineCheckedWorld->engineEventPending = true;
     }
-    return engMatched;
+    return engineMatched;
 }
 
 /* Registration stores the callback and both userdata slots, queues a ready
  * event, and returns without invoking the callback. */
-void engWorldSetEventSink(
-    EngWorld engWorld,
-    EngEventSink engSink) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL) {
+void engineWorldSetEventSink(
+    EngineWorld engineWorld,
+    EngineEventSink engineSink) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL) {
         return;
     }
-    engCheckedWorld->engEventSink.engCallback = engSink.engCallback;
-    engCheckedWorld->engEventSink.engUserdata1 = engSink.engUserdata1;
-    engCheckedWorld->engEventSink.engUserdata2 = engSink.engUserdata2;
-    engCheckedWorld->engPendingEvent = ENG_EVENT_WORLD_READY;
-    engCheckedWorld->engEventPending = engSink.engCallback != NULL;
+    engineCheckedWorld->engineEventSink.engineCallback = engineSink.engineCallback;
+    engineCheckedWorld->engineEventSink.engineUserdata1 = engineSink.engineUserdata1;
+    engineCheckedWorld->engineEventSink.engineUserdata2 = engineSink.engineUserdata2;
+    engineCheckedWorld->enginePendingEvent = ENGINE_EVENT_WORLD_READY;
+    engineCheckedWorld->engineEventPending = engineSink.engineCallback != NULL;
 }
 
 /* The host-driven pump clears the pending marker before invoking the stored
  * sink; a callback may therefore queue later work without losing it. */
-void engWorldPump(EngWorld engWorld) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL ||
-        !engCheckedWorld->engEventPending ||
-        engCheckedWorld->engEventSink.engCallback == NULL) {
+void engineWorldPump(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        !engineCheckedWorld->engineEventPending ||
+        engineCheckedWorld->engineEventSink.engineCallback == NULL) {
         return;
     }
-    EngEventCallback engCallback =
-        engCheckedWorld->engEventSink.engCallback;
-    void *engUserdata1 =
-        engCheckedWorld->engEventSink.engUserdata1;
-    void *engUserdata2 =
-        engCheckedWorld->engEventSink.engUserdata2;
-    EngStringView engMessage;
-    engMessage.engData = engCheckedWorld->engName;
-    engMessage.engLen = engCheckedWorld->engNameLength;
-    engCheckedWorld->engLastEvent =
-        engCheckedWorld->engPendingEvent;
-    engCheckedWorld->engEventPending = false;
-    engCallback(engMessage, engUserdata1, engUserdata2);
+    EngineEventCallback engineCallback =
+        engineCheckedWorld->engineEventSink.engineCallback;
+    void *engineUserdata1 =
+        engineCheckedWorld->engineEventSink.engineUserdata1;
+    void *engineUserdata2 =
+        engineCheckedWorld->engineEventSink.engineUserdata2;
+    EngineStringView engineMessage;
+    engineMessage.engineData = engineCheckedWorld->engineName;
+    engineMessage.engineLen = engineCheckedWorld->engineNameLength;
+    engineCheckedWorld->engineLastEvent =
+        engineCheckedWorld->enginePendingEvent;
+    engineCheckedWorld->engineEventPending = false;
+    engineCallback(engineMessage, engineUserdata1, engineUserdata2);
 }
 
 /* The last delivered event is per-world state set immediately before the
  * deferred callback fires; NULL maps to the enum's zero member. */
-EngEventKind engWorldLastEvent(EngWorld engWorld) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL) {
-        return ENG_EVENT_WORLD_READY;
+EngineEventKind engineWorldLastEvent(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL) {
+        return ENGINE_EVENT_WORLD_READY;
     }
-    return engCheckedWorld->engLastEvent;
+    return engineCheckedWorld->engineLastEvent;
 }
 
 /* A simulation step records its input without floating accumulation,
  * advances per-world counters in unsigned arithmetic, and queues an event. */
-void engWorldStep(EngWorld engWorld, float engFixedStep) {
-    struct EngWorld_T *engCheckedWorld = engWorldChecked(engWorld);
-    if (engCheckedWorld == NULL) {
+void engineWorldStep(EngineWorld engineWorld, float engineFixedStep) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL) {
         return;
     }
-    engCheckedWorld->engSimulationStepValue = engFixedStep;
-    engCheckedWorld->engSimulationStepIndex += UINT64_C(1);
-    engCheckedWorld->engSimulationTicks +=
-        engCheckedWorld->engTicksPerFrame;
-    engCheckedWorld->engPendingEvent = ENG_EVENT_FRAME_STEPPED;
-    engCheckedWorld->engEventPending = true;
+    engineCheckedWorld->engineSimulationStepValue = engineFixedStep;
+    engineCheckedWorld->engineSimulationStepIndex += UINT64_C(1);
+    engineCheckedWorld->engineSimulationTicks +=
+        engineCheckedWorld->engineTicksPerFrame;
+    engineCheckedWorld->enginePendingEvent = ENGINE_EVENT_FRAME_STEPPED;
+    engineCheckedWorld->engineEventPending = true;
 }
 
 /* Frame begin updates only the calling thread's record; it does not mutate
  * the world or perform a simulation step. */
-void engFrameBegin(EngWorld engWorld, float engFixedStep) {
-    engFrameRecord.engWorld = engWorldChecked(engWorld);
-    engFrameRecord.engFixedStep = engFixedStep;
-    engFrameRecord.engFrameIndex += UINT64_C(1);
+void engineFrameBegin(EngineWorld engineWorld, float engineFixedStep) {
+    engineFrameRecord.engineWorld = engineWorldChecked(engineWorld);
+    engineFrameRecord.engineFixedStep = engineFixedStep;
+    engineFrameRecord.engineFrameIndex += UINT64_C(1);
 }
 
 /* The current frame world is the calling thread's explicit record; static
  * thread-local initialization supplies NULL before the first begin. */
-EngWorld engFrameWorld(void) {
-    return engFrameRecord.engWorld;
+EngineWorld engineFrameWorld(void) {
+    return engineFrameRecord.engineWorld;
 }
 
 /* The current fixed step is exactly the calling thread's begin value, with
  * no clock read or floating accumulation. */
-float engFrameFixedStep(void) {
-    return engFrameRecord.engFixedStep;
+float engineFrameFixedStep(void) {
+    return engineFrameRecord.engineFixedStep;
 }
 
 /* The current frame index is the calling thread's unsigned counter; no
  * process-global frame state exists. */
-uint64_t engFrameIndex(void) {
-    return engFrameRecord.engFrameIndex;
+uint64_t engineFrameIndex(void) {
+    return engineFrameRecord.engineFrameIndex;
 }
