@@ -280,3 +280,41 @@ and IO failures exit 2, as everywhere else.
    output file left behind.
 3. Standalone `subscript-bindgen` behavior byte-unchanged.
 4. Full gate green.
+
+## 11. Retirements — Rev 2026-07-30
+
+Owner decision: the two retirement decisions §2.2 and §10.1 deferred
+are taken.
+
+- **`emit-c` retires.** Its one real consumer,
+  `codegen/device-link.sh` step 1, moves to `subscript emit`, invoked
+  from `corpus/accept` with the bare entry name — the emitted
+  allocation-position source names are the only bytes that vary with
+  invocation spelling, and the bare-name form was verified
+  byte-identical to the binary's entry-id output before removal. The
+  binary's own CLI tests (`codegen/tests/emit_c_cli.rs`) retire with
+  it, superseded by the `subscript emit` tests; §9.2's emit
+  comparison re-anchors to the shared library entry `emit_c_files`.
+  The library entry and every gate built on it are untouched.
+- **Standalone `subscript-bindgen` retires.** Its only in-repo
+  consumer was its own CLI test suite — the mirror-regeneration gate
+  calls the library — and `subscript bind` (§10) is the front door.
+  The regeneration hint in `examples/tests/gate.rs` names
+  `subscript bind` now; compiler.md §13.5 carries the supersession
+  note.
+- **`emit-object`, `capture`, and `msvc-cl` do not retire**: the
+  Cranelift AOT cross-check, golden capture, and the Windows
+  toolchain shim are live roles, not redundancies.
+
+### 11.1 Exit criteria (pre-registered)
+
+1. Neither retired binary exists; `cargo test --offline --workspace`
+   green.
+2. `device-link.sh` step-1 output is byte-identical to the
+   pre-removal `emit-c` reference for the default entry (reference
+   captured 2026-07-30; the device halves themselves are gated and
+   not run — their input files being byte-identical is the
+   verification).
+3. The §9.2 emit criterion remains tested through the library entry.
+4. No reference to a retired binary outside historical tracking
+   records and this section.

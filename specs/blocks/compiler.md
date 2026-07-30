@@ -1117,7 +1117,10 @@ mirrored struct at that scale.
 ### 13.5 Generic header CLI + local capability demo
 
 `subscript-bindgen --header <path>` runs the libclang frontend on any
-header and emits the mirror. The capability is demonstrated in-session
+header and emits the mirror. *(Since 2026-07-30 this obligation is
+discharged by `subscript bind` — same library entry, byte-identical
+output, cli.md §10 — and the standalone binary is retired, cli.md
+§11.)* The capability is demonstrated in-session
 on a real production header (mirror produced, an `offsetof` spot-check
 against the platform C compiler); this run is **not committed** and the
 committed record describes it by scale/shape only. The committed proof
