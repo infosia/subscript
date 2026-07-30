@@ -313,7 +313,63 @@ and
 and the capstone [`examples/host/game.ts`](../examples/host/game.ts)
 for the whole pattern in use.
 
-### Step 6 — the edit loop
+### Step 6 — a frame loop: exports beyond `main`
+
+Every `export function <name>(): void` in the script becomes a C
+symbol `subscript_export_<name>` with the same signature — in both
+tiers, so the host code below is identical whether the script runs
+under the dev JIT or as emitted C. The generated header declares only
+`subscript_init` and `subscript_export_main`; further exports are
+yours to declare, and the shared function-pointer type
+`subscript_main_entry` names their signature:
+
+```c
+void subscript_export_init(subscript_rt_context *ctx);
+void subscript_export_update(subscript_rt_context *ctx);
+void subscript_export_shutdown(subscript_rt_context *ctx);
+```
+
+The capstone host wraps every call in the same bracket
+([`examples/host/main.c`](../examples/host/main.c)):
+
+```c
+static bool hostCallScript(
+    subscript_rt_context *ctx,
+    subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    subscript_rt_ctx_exit_script(ctx);
+    return subscript_rt_ctx_trap_kind(ctx) == 0u;
+}
+```
+
+Four facts make this the whole protocol:
+
+- **`enter`/`exit` bracket each entry.** They maintain the runtime's
+  script-depth so trap handling and observers behave correctly
+  (`specs/blocks/compiler.md` §18.1a).
+- **The return channel is the trap state, nothing else.** Entries
+  return `void`; after each call the host asks
+  `subscript_rt_ctx_trap_kind` (0 = no fault). The capstone's
+  response to a trap is to *detach* — it stops calling script entries
+  but lets its own loop finish cleanly, so damaged script state is
+  never re-entered.
+- **Data is staged, not passed.** Because entries take no arguments,
+  the host records the frame's inputs in its own facade before the
+  call (`game.ts`'s `update` starts by reading `engFrameWorld()`,
+  `engFrameFixedStep()`, `engFrameIndex()`), and the script writes
+  results back through the same facade.
+- **Script state persists between calls.** Module-level variables
+  live in the Context: `game.ts`'s `session`, created in `init`, is
+  read and updated by every following `update`. The state's lifetime
+  is the Context's, ending at `subscript_rt_ctx_release`.
+
+So a frame loop is: stage inputs → `hostCallScript(ctx,
+subscript_export_update)` → read outputs and drain `print` text —
+once per frame, with `init` before the first frame and `shutdown`
+after the last, exactly as `main.c` does.
+
+### Step 7 — the edit loop
 
 `subscript check file.ts` type-checks without building (add
 `--mirror engine.generated.d.ts` for programs that bind your header)

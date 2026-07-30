@@ -260,6 +260,45 @@ Future-shaped async without a `Promise` object; see
 and the callback model in
 [`specs/blocks/compiler.md`](../specs/blocks/compiler.md) §13.3, §14.5.
 
+## Exported functions are the host's entry points
+
+There is no top-level program: the embedding application calls your
+exports. Each `export function <name>(): void` becomes a C symbol
+`subscript_export_<name>` that the host invokes — `main` for a
+one-shot run, or `init`/`update`/`shutdown`-style entries driven once
+per frame. Exports take no arguments and return nothing; inputs are
+read from the host's declared API at the start of the entry, and
+results are written back through it. Module-level variables persist
+between calls (they live in the Context), which is how per-frame
+entries share state:
+
+```ts
+class SessionState {
+  distance: f32;
+
+  constructor() {
+    this.distance = 0.0;
+  }
+}
+
+let session: SessionState | null = null;
+
+export function init(): void {
+  session = new SessionState();
+}
+
+export function update(): void {
+  if (session !== null) {
+    session.distance += 0.016;
+  }
+}
+```
+
+The complete version — where `update` reads the frame's real inputs
+from the host's declared API instead of a constant — is
+[`examples/host/game.ts`](../examples/host/game.ts); the calling side
+is step 6 of the [C/C++ tutorial](tutorial-c-cpp.md).
+
 ## The standard library is a deliberate subset
 
 Arrays, strings, `Map`/`Set`, `Math`, `Date`, `JSON` (typed, via a
