@@ -23,9 +23,10 @@ compiler for the host's own translation units beyond the one-shot
 ## 2. Surface
 
 One binary, `subscript`, in a new top-level crate `cli/` (package
-`subscript-cli`). Five subcommands; anything else is a usage error.
-*(This line said "Four" until implementation counted the list —
-corrected 2026-07-30; the list below was always the contract.)*
+`subscript-cli`). Six subcommands — the five below plus `bind` (§10);
+anything else is a usage error. *(This line said "Four" until
+implementation counted the list — corrected 2026-07-30; the list was
+always the contract. `bind` added by §10 the same day.)*
 
 ### 2.1 `subscript check <file.ts> [--mirror <file.d.ts>]...`
 
@@ -247,3 +248,35 @@ existing directory loading (`emit-c`, the gate harnesses) resolves
    accept/reject outcome is whatever the checker already decides.
 6. Single-file programs: behavior and output byte-unchanged.
 7. Full gate green; no golden moves.
+
+## 10. `subscript bind` — Rev 2026-07-30
+
+Owner decision. Mirror generation is part of the embedding workflow
+(cli.md §1's boundary: answers and artifacts), so it gets a front
+door in the developer command rather than only the standalone
+`subscript-bindgen` binary.
+
+### 10.1 Surface
+
+`subscript bind --header <file.h> [-o <file.d.ts>]` — also accepting
+the header positionally, as the standalone tool does. Output goes to
+`-o` or stdout (the requested answer, per §3). The subcommand and
+`subscript-bindgen` call the same library entry and produce
+**byte-identical** output for the same header; the standalone binary
+remains for the existing gate and retires only by its own decision
+(the §2.2 emit/emit-c precedent).
+
+Failure classes: a construct the toolchain cannot map to a boundary
+type is a program-input failure — exit 1, the library's fail-loud
+message naming the construct, and no partial mirror written. Usage
+and IO failures exit 2, as everywhere else.
+
+### 10.2 Exit criteria (pre-registered)
+
+1. `subscript bind --header examples/engine/engine.h` output is
+   byte-identical to the committed mirror and to `subscript-bindgen`
+   on the same header — both `-o` and stdout modes.
+2. An unmappable construct: exit 1, message names the construct, no
+   output file left behind.
+3. Standalone `subscript-bindgen` behavior byte-unchanged.
+4. Full gate green.
