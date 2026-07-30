@@ -1249,6 +1249,79 @@ asserts a second record; (2) a probe-style measurement (the
 `dev-retention-probe` pattern) shows per-frame re-registration at zero
 growth per frame; (3) standing gate green, no golden moved.
 
+### 14.4b Registered callback userdata: rooted, checked at fire, advised at free — Rev 2026-07-30
+
+Owner decision. Use-after-free through callback userdata — register,
+release the object, the host fires later — is the natural failure of
+the callback model, and the general freed-handle diagnostics
+(§8.1a-1..3) are mis-shaped for it: their cost is proportional to
+*everything freed* across a window that is exactly as long as the
+host pleases. The binding records already hold the userdata pointers
+(§14.4a), so this pattern gets three targeted mechanisms whose
+standing memory cost is zero.
+
+**(C) Registered userdata is rooted.** `Context.collect`'s mark phase
+walks the live binding records and treats each userdata slot that is
+a live allocation as a root; a slot that is not one (null, freed) is
+skipped safely. No standing root table exists — the roots are derived
+from the records at mark time. Consequence, both tiers: an object
+registered as callback userdata survives collection and is released
+only by explicit `Context.free` or Context release. Q13's "userdata
+must outlive the registration" becomes a guarantee on the collect
+side. Superseded registrations keep their records (§14.4a interning),
+so they keep rooting their old userdata; the retention bound is
+distinct registrations — the already-accepted intern class. Replacing
+a registration does not release the old userdata; `Context.free`
+does.
+
+**(A) The trampoline checks liveness at fire.** Before a fired
+callback enters script code, each non-null userdata slot is checked,
+in order: in the freed-handle dead set (diagnostics mode on) — trap,
+with the freed-allocation information; otherwise not a live
+allocation — trap, best-effort in exactly §8.1a-2's class (certain
+while the address is unallocated, undefined once reused). The trap
+kind is a new stable kind for this pattern; message and position pin
+in the corpus. Cost per fire: O(1) lookups against maps that already
+exist; nothing is retained for this check.
+
+**(B) Freeing registered userdata is advised.** A new optional
+observer, `subscript_rt_ctx_set_diagnostics_observer(ctx, observer,
+userdata)`, following the §18.2/§18.2f observer rules verbatim
+(observation only, never re-entered, cleared by null). Its first
+advisory: an explicit `Context.free` whose address is a userdata slot
+of a live binding reports (advisory kind, `pos_id`, message) before
+the release proceeds. It cannot be a trap: freeing userdata the host
+will never fire again is legal, and the runtime cannot know
+(§14.4a's reason). Observer unset — the default — skips the check
+entirely; nothing changes for any existing program.
+
+**Golden audit, pre-registered (2026-07-30).** No committed corpus
+entry, gate program, or example both registers a sink and collects,
+so (C) moves no committed golden. If implementation moves one, stop
+and report; a moved golden is a finding, not an update.
+
+**Corpus.** One new interop accept entry: register with userdata,
+drop the script references, `Context.collect()`, pump — the callback
+reads its userdata fields and the output is a committed golden
+(defined behavior only under (C); this entry is the rooting proof).
+One new interop trap entry in t22/t23's gating class: register, free
+the userdata, pump — the fire-time trap's kind, message, and position
+pin (A).
+
+**Exit criteria (pre-registered).**
+
+1. The rooting accept entry runs byte-identical under both tiers.
+2. The fire-time trap entry pins (kind, message, position) under
+   both tiers with diagnostics mode on, t22/t23's class; mode-off
+   behavior is best-effort and not gated.
+3. (B): a runtime unit test and an FFI test observe the advisory on
+   free-of-registered-userdata; with the observer unset the full gate
+   is green and byte-unchanged, which is the zero-cost proof.
+4. A unit test asserts registered userdata survives collect
+   (accounting), and that a freed slot is skipped at mark without
+   fault.
+5. No committed golden moves; `tsc` gate green with the new entries.
+
 ### 14.5 Composed Future-shape async (capstone)
 
 A neutral fixture reproduces the whole model: an async op returns a
