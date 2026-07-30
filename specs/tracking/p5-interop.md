@@ -246,7 +246,7 @@ boundary type system (P5.2a); foreign-call lowering in both tiers with
 marshaling, chain-slot address-of, and the callback trampoline (P5.2b);
 and the headless five-pattern corpus slice with cross-tier-verified
 goldens in the standing gate (P5.3). The language's founding purpose —
-zero-marshaling C-ABI interop — is now proven from layout through
+zero-copy C-ABI interop — is now proven from layout through
 execution to executable corpus definition, on the arm64 ship target,
 with the dev-tier boundary-struct-by-value marshaling scoped to arm64
 and fail-loud elsewhere (§12.3a).

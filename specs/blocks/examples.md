@@ -253,7 +253,7 @@ implementer's choice; the committed `.expected` freezes it.
 | `e06-arrays-and-closures` | fixed vs growable arrays, bounds checks, `map`/`filter`/`reduce` | C5 — non-escaping capture only |
 | `e07-determinism` | seeded `Math.random`, UTC-only `Date`, deterministic number formatting | Q20/Q26 — locale- and clock-dependent APIs are rejected, not silently approximated |
 | `e08-coroutines` | `function*` stepped once per frame | C8 — coroutines, not `async` |
-| `e09-c-structs-and-slices` | binding `engine.h`: struct by value, slice, string view, enum, flags | zero marshaling — the language struct **is** the C struct (invariant 1) |
+| `e09-c-structs-and-slices` | binding `engine.h`: struct by value, slice, string view, enum, flags | zero-copy — the language struct **is** the C struct (invariant 1) |
 | `e10-c-callbacks-and-handles` | opaque handle lifecycle; callback with userdata; a deferred fire the host pumps | Q13 userdata lifetime; §14.6 — callbacks arrive on the calling thread |
 
 `examples/README.md` carries an index, the build and run instructions,

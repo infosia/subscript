@@ -33,7 +33,7 @@ engines are the archetype, not the boundary — see `CLAUDE.md`):
   not treated as a gap.
 
 Host interop crosses a C ABI only (invariant 4): the host presents C
-headers and the language binds them with zero marshaling (§4). No specific
+headers and the language binds them with zero-copy access (§4). No specific
 host header is privileged by the language.
 
 ## 2. Why this shape — prior art
@@ -78,7 +78,7 @@ vertical slice (P5) exercises them against a neutral synthetic C header.
    type tag in a common embedded header).
 2. **`(pointer, count)` array pairs** — the language's slice lowering must
    produce `(ptr, len)` with no conversion; if this fails, the
-   zero-marshaling claim fails with it.
+   zero-copy claim fails with it.
 3. **Length-carrying string views** — pointer + length, not
    NUL-terminated; the string representation must expose such a view at
    the boundary.

@@ -933,8 +933,8 @@ Two constraints the `cl` path adds, both measured:
 
 ## 12. P5 C-header binding vertical slice
 
-The language's founding purpose (plan §4): express C-ABI interop with
-zero marshaling. P5 proves it against a **neutral synthetic C header**
+The language's founding purpose (plan §4): express zero-copy C-ABI
+interop. P5 proves it against a **neutral synthetic C header**
 that exercises all five interop patterns — no real-world library is
 named or depended on (invariant 4; CLAUDE.md repo hygiene).
 
