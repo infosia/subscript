@@ -58,8 +58,12 @@ given host sources, and the runtime archive into `<dir>/<name>`
 directory; never the CWD). `<name>` is the source file's stem plus
 the platform executable suffix *(fixed 2026-07-30; the contract left
 it undefined)*. `--run` executes the result, forwarding
-its exit code and leaving stdout untouched (compiler chatter goes to
-stderr, as the scripts do today). Include directories: each `--host`
+its exit code and leaving stdout untouched. Compiler output is
+forwarded to stderr **only when compilation fails** *(revised
+2026-07-30, owner, from "chatter goes to stderr": MSVC `cl` echoes
+source names on success, which broke build-stderr byte-identity with
+`check`; Unix `cc` is silent on success, which had hidden the
+difference)*. Include directories: each `--host`
 file's directory, each mirror's directory, and the runtime include
 dir.
 

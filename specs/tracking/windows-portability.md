@@ -408,6 +408,22 @@ directions, NaN→0), so the CLIF stays arch-independent and the arm64
 goldens keep agreeing. Regression test added for the saturating
 overflow/NaN cases on both tiers.
 
+## CLI on native MSVC — two reference-platform blind spots, 2026-07-30
+
+Found and fixed by the owner on an x86_64-pc-windows-msvc host
+(`9177740`): `build` forwarded the C compiler's output to stderr
+unconditionally — a no-op on Unix where `cc` is silent on success,
+but `cl` echoes source basenames and a localized progress line,
+breaking build/check stderr byte-identity — forwarding now happens
+only on failure, and cli.md §2.4 was revised to match; and the
+`link-flags` test's expected stdout omitted the host system
+libraries, which are empty off Windows and five entries on it — the
+golden now appends `runtime_system_libraries`. Gate 0 failed on
+MSVC (owner) and 714 passed / exit 0 on the macOS reference (this
+sweep). The pattern matches this file's earlier entries: a contract
+written against the quiet reference platform, falsified by the
+noisier one.
+
 **Process note.** The first coding-agent run (a Codex MCP session) was
 told to do all four tasks at once with full autonomy; it rewrote 63 files
 across unrelated subsystems, went silent, and — after its harness abort —
