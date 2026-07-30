@@ -79,9 +79,8 @@ shim on Windows), with the §11c flag set (`/fp:strict`, joined-path
 Runs the program under the dev JIT and prints its output. v1 scope:
 programs without host C bindings (the class the JIT gate already runs
 standalone). A program needing host symbols is a clear error, not a
-crash. `--watch` (hot reload, compiler.md §8.2) is a named follow-up, **not**
-dropped: it is the dev tier's reason to exist and gets its own
-contract revision when taken.
+crash. `--watch` (hot reload, compiler.md §8.2) is contracted at §12
+(taken 2026-07-31).
 
 ## 3. Behaviour rules
 
@@ -135,7 +134,7 @@ way to run them.
 
 ## 7. Out of scope (this contract)
 
-`--watch` hot reload (named follow-up, §2.5); packaging/installers;
+packaging/installers;
 cross-compilation targets beyond the host platform; generating host
 build-system files; any change to `emit-c`, `emit-object`, `capture`,
 or `msvc-cl` beyond factoring shared library entries.
@@ -322,3 +321,60 @@ are taken.
 3. The §9.2 emit criterion remains tested through the library entry.
 4. No reference to a retired binary outside historical tracking
    records and this section.
+
+## 12. `run --watch` — hot reload at the CLI — Rev 2026-07-31
+
+Owner decision: §2.5's named follow-up is taken. The dev tier's hot
+reload (compiler.md §8.2, `ReloadSession`) is implemented and
+gate-tested but reachable only from Rust; invariant 3 makes it the
+iteration-speed argument, so it gets the CLI front door.
+
+### 12.1 Semantics
+
+`subscript run --watch <file.ts>` loads the program (§9 loader,
+imports included), checks it, and enters the watch loop:
+
+- **First accepted state starts the program**: `main` is invoked on a
+  fresh Context under the reload-capable dev runner. If the initial
+  program has diagnostics, they render (§8) and the watch continues —
+  the program starts on the first edit that checks.
+- **Change detection is mtime polling** over the loaded file set
+  (re-derived each cycle, so newly imported files join the watch);
+  the interval is implementation-chosen and not contracted. No new
+  dependencies — no network, nothing vendored.
+- **On an accepted swap** (§8.2 declaration hash unchanged): bodies
+  are swapped on the live session, the surviving Context keeps its
+  state, and `main` is invoked again. Its output streams to stdout.
+- **On a rejected swap**: the §8.2 refusal renders on stderr naming
+  the first differing declaration; the old program and its Context
+  are untouched and the watch continues.
+- **On diagnostics in the edited program**: rendered per §8; old
+  program untouched; watch continues.
+- **On a trap** (including §8.2 stale-coroutine traps): the trap
+  renders like `run`'s; the session and watch continue — a trap ends
+  a call, not the session (§8.2's tested behavior).
+- Warnings render as everywhere (`--deny-warnings` composes and
+  refuses the swap the way it refuses artifacts).
+- stdout carries program output only; every status, diagnostic, and
+  refusal goes to stderr (§3). v1 scope is `run`'s: no host C
+  bindings.
+- The process runs until interrupted; the only other exits are 2
+  (usage/IO at startup).
+
+### 12.2 Exit criteria (pre-registered)
+
+1. End-to-end (spawned process, temp files): start → edit a function
+   body → the re-invoked output shows the new behavior **and**
+   preserved module state (a module-level counter proves the Context
+   survived).
+2. Declaration edit → refusal on stderr naming the declaration; a
+   following body-only edit is accepted and runs.
+3. A broken edit renders its diagnostics and the watch continues; a
+   fixing edit runs.
+4. Editing an imported sibling (§9) triggers the cycle.
+5. stdout of the whole session contains program output only.
+6. Non-watch `run` byte-unchanged; full gate green.
+7. The demo (`examples/hot-reload/`) checks clean, joins the `tsc`
+   and zero-warning sweeps, and its walkthrough is documented; its
+   interactive session itself is not golden-pinned (the device-link
+   precedent: gated by nature, not by CI).
