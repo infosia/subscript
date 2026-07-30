@@ -315,8 +315,21 @@ runtime with `--runtime-lib`/`--runtime-include` or
 ### Step 5 — expose your engine to scripts
 
 Exported entries take no arguments, so real data crosses through your
-own C API: the host presents a C header, and the `bindgen` mirror
-generator produces the ambient declarations scripts compile against —
+own C API: the host presents a C header, and the mirror generator
+produces the ambient declarations scripts compile against:
+
+```sh
+cargo build --release -p subscript-bindgen
+target/release/subscript-bindgen --header engine.h -o engine.generated.d.ts
+```
+
+The frontend is libclang, so it parses real C — preprocessor,
+attributes, typedefs, nested structs, function-pointer typedefs,
+enums, flag typedefs. A construct it cannot map to a boundary type
+fails loud and names the construct; no invalid mirror is written. The
+output is generated code: regenerate it, never hand-edit it (this
+repository's gate rejects drift between `engine.h` and its committed
+mirror). The mirror covers —
 opaque handles, structs (which are your structs, at your offsets:
 layout identity is asserted by `offsetof` tests), enums, flags,
 callbacks with two userdata slots, and (pointer, count) descriptors as
