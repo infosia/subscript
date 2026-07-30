@@ -498,10 +498,14 @@ fn link_flags_covers_clean_and_unresolved_archive_paths() -> Result<(), String> 
             .arg(&include),
     )?;
     assert_code(&linked, 0);
-    assert_eq!(
-        linked.stdout,
-        format!("-I{}\n{}\n", include.display(), archive.display()).as_bytes()
-    );
+    let mut expected_stdout =
+        format!("-I{}\n{}\n", include.display(), archive.display()).into_bytes();
+    for library in
+        subscript_codegen::runtime_system_libraries(subscript_codegen::CCompilerStyle::Unix)
+    {
+        expected_stdout.extend_from_slice(format!("{}\n", library.to_string_lossy()).as_bytes());
+    }
+    assert_eq!(linked.stdout, expected_stdout);
     assert!(linked.stderr.is_empty());
 
     let missing = output(

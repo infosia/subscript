@@ -509,13 +509,13 @@ fn compile_build<E: Write>(
             compiler.program().to_string_lossy()
         ))
     })?;
-    stderr
-        .write_all(&output.stdout)
-        .and_then(|_| stderr.write_all(&output.stderr))
-        .map_err(|error| Failure::usage(format!("write compiler output: {error}")))?;
     if output.status.success() {
         Ok(())
     } else {
+        stderr
+            .write_all(&output.stdout)
+            .and_then(|_| stderr.write_all(&output.stderr))
+            .map_err(|error| Failure::usage(format!("write compiler output: {error}")))?;
         Err(Failure::usage(format!(
             "compiling/linking the emitted C failed with {}",
             output.status
