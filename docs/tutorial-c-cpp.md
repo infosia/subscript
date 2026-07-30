@@ -544,6 +544,28 @@ tier is a JIT and the ship tier is emitted C, both run the same
 corpus byte-identically under the repository's standing gate — the
 behavior you debug is the behavior you ship.
 
+For iteration speed, `subscript run --watch file.ts` keeps a program
+running while you edit it. A function-body edit is swapped into the
+live session — module state survives, which is the point — while an
+edit that changes a *declaration* (a class field, a signature) is
+refused by name, and a broken edit renders its diagnostics while the
+old program keeps running. A real session against
+[`examples/hot-reload/`](../examples/hot-reload/) (`sh run.sh`,
+then edit `demo.ts`):
+
+```text
+hot reload: run 1, editable result 10     # started
+hot reload: run 2, editable result 77     # body edit, swapped — run kept counting
+hot reload: run 3, editable result 99     # after a refused field edit, then a body edit
+hot reload: run 4, editable result 55     # broken edit rendered, fix swapped in
+```
+
+with the stderr side reporting each step: `watch: swapped`,
+`watch: refused: class DemoMarker`, the rendered diagnostic, and
+`watch: waiting for a fix`. In-place swap needs the JIT, so watch
+mode is dev-tier only — the two-tier gate is what makes iterating
+there and shipping C safe.
+
 ## Reading on
 
 - [`examples/README.md`](../examples/README.md) — ten single-concept

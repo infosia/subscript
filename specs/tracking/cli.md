@@ -146,6 +146,30 @@ in `examples/tests/gate.rs` and `bindgen/tests/regen.rs` name
 `subscript bind`. Residual sweep outside specs/, docs/, and Cargo
 manifests: zero references. Gate 702 passed, exit 0, read directly.
 
+## §12 `run --watch` — landed and verified 2026-07-31
+
+The watch cycle is a library state machine (`cli/src/watch.rs`
+`step()` — Swapped/Refused/Diagnostics/Unchanged), unit-tested
+without processes; the binary adds 150 ms mtime polling (file length
+supplements mtime for rapid rewrites) and rendering. One codegen
+addition: `ReloadSession::new_capturing_initializer_trap`, so an
+initializer trap does not discard the live session. Reviewer-run
+evidence, including a live driven session (start → body edit →
+declaration edit → broken edit → fix → interrupt):
+
+1. stdout carried program output only: `run 1..4` — the module
+   counter survived every swap — with the edited body's value
+   changing 10 → 77 → 99 → 55.
+2. stderr: `watch: swapped`, `watch: refused: class DemoMarker`
+   (declaration named), the §8-rendered S100 for the broken edit,
+   `watch: waiting for a fix`, then `watch: swapped` on the fix.
+3. The demo (`examples/hot-reload/`) checks clean under
+   `--deny-warnings`, is enumerated by the `tsc` include and the
+   zero-warning sweep (whose examples enumeration previously missed
+   subdirectories — extended).
+4. Gate 721 passed, exit 0, read directly; non-watch `run` tests
+   byte-unchanged.
+
 ## Named follow-ups (not dropped)
 
 - `run --watch` hot reload — §2.5's own future contract revision.

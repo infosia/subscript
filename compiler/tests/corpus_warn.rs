@@ -103,7 +103,7 @@ fn warning_table_covers_every_warning_corpus_entry() {
 }
 
 #[test]
-fn accept_corpus_and_numbered_examples_have_zero_warnings() {
+fn accept_corpus_and_examples_have_zero_warnings() {
     let accept = corpus_dir().join("accept");
     let mut accept_entries = fs::read_dir(&accept)
         .expect("read corpus/accept")
@@ -172,4 +172,14 @@ fn accept_corpus_and_numbered_examples_have_zero_warnings() {
         );
     }
     assert_eq!(example_entries.len(), 10, "numbered example count changed");
+
+    let hot_reload = examples.join("hot-reload/demo.ts");
+    let warnings = checked_warnings(
+        vec![read_source(&hot_reload, "demo.ts")],
+        "examples/hot-reload/demo.ts",
+    );
+    assert!(
+        warnings.is_empty(),
+        "examples/hot-reload/demo.ts produced warnings: {warnings:?}"
+    );
 }

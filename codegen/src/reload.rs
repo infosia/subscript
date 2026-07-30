@@ -494,6 +494,25 @@ impl ReloadSession {
         Self::new_with_native_libraries(files, &[])
     }
 
+    /// Compiles `files`, runs the module-global initializer, and returns the
+    /// live session together with any trap raised by that initializer.
+    ///
+    /// Unlike [`ReloadSession::new`], an initializer trap does not discard the
+    /// session. This is intended for reload-capable hosts, which must report a
+    /// trapped call while keeping the Context available for a later edit.
+    ///
+    /// # Errors
+    ///
+    /// [`RunError::Rejected`] when the checker rejects the program,
+    /// [`RunError::UnresolvedForeignSymbol`] when the program calls a symbol
+    /// without supplying a native library, and [`RunError::Internal`] on
+    /// backend failures. Initializer traps are returned in the tuple.
+    pub fn new_capturing_initializer_trap(
+        files: &[SourceFile],
+    ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
+        Self::build(files, &[])
+    }
+
     /// Compiles `files` in reload mode with caller-supplied native
     /// libraries, runs the module-global initializer, and returns the live
     /// session. The same libraries remain available to every accepted
@@ -508,6 +527,17 @@ impl ReloadSession {
         files: &[SourceFile],
         libraries: &[NativeLibrary],
     ) -> Result<ReloadSession, RunError> {
+        let (session, trap) = Self::build(files, libraries)?;
+        match trap {
+            Some(trap) => Err(RunError::Trap(trap)),
+            None => Ok(session),
+        }
+    }
+
+    fn build(
+        files: &[SourceFile],
+        libraries: &[NativeLibrary],
+    ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
         let hirm = check_program(files).map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
         let gen = compile(&hirm, libraries)?;
@@ -536,8 +566,12 @@ impl ReloadSession {
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
         call_slot(&mut session.ctx, &session.table, init_slot)
             .map_err(RunError::Internal)?;
-        session.check_trap()?;
-        Ok(session)
+        let trap = match session.check_trap() {
+            Ok(()) => None,
+            Err(RunError::Trap(trap)) => Some(trap),
+            Err(error) => return Err(error),
+        };
+        Ok((session, trap))
     }
 
     /// The current declaration fingerprint.
@@ -825,6 +859,23 @@ mod tests {
             Err(RunError::Trap(t)) => assert_eq!(t.rule, TrapKind::EmptyPop),
             other => panic!("expected a trap, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn initializer_trap_can_be_captured_without_dropping_the_session() {
+        let (mut s, trap) = ReloadSession::new_capturing_initializer_trap(&src(
+            "let xs: i32[] = [];\n\
+             let value: i32 = xs.pop();\n\
+             export function main(): void {\n\
+             \x20 print(\"still live\");\n\
+             }\n",
+        ))
+        .expect("session");
+        assert_eq!(trap.map(|report| report.rule), Some(TrapKind::EmptyPop));
+        assert!(s.take_output().is_empty());
+
+        s.call_main().expect("call after initializer trap");
+        assert_eq!(s.take_output(), b"still live\n");
     }
 
     #[test]

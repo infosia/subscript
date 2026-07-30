@@ -3,11 +3,14 @@
 
 mod program_loader;
 mod runtime_paths;
+/// Testable state transitions for `run --watch`.
+pub mod watch;
 
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, SystemTime};
 
 use program_loader::load_program;
 use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides, RuntimePaths};
@@ -20,6 +23,7 @@ use subscript_compiler::{
     check_program, check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile,
     Warning,
 };
+use watch::{WatchCall, WatchOutcome, WatchSession, WatchStep};
 
 const SUCCESS: u8 = 0;
 const PROGRAM_ERROR: u8 = 1;
@@ -564,11 +568,16 @@ fn run_command<O: Write, E: Write>(
 ) -> Result<u8, Failure> {
     let mut source = None;
     let mut deny_warnings = false;
+    let mut watch = false;
     for arg in args {
         match arg.to_str() {
             Some("--deny-warnings") if !deny_warnings => deny_warnings = true,
             Some("--deny-warnings") => {
                 return Err(Failure::usage("--deny-warnings may be supplied only once"));
+            }
+            Some("--watch") if !watch => watch = true,
+            Some("--watch") => {
+                return Err(Failure::usage("--watch may be supplied only once"));
             }
             Some(flag) if flag.starts_with('-') => {
                 return Err(Failure::usage(format!("unknown option `{flag}`")));
@@ -578,6 +587,9 @@ fn run_command<O: Write, E: Write>(
         }
     }
     let source = source.ok_or_else(|| Failure::usage("run requires exactly one <file.ts>"))?;
+    if watch {
+        return run_watch(&source, deny_warnings, stdout, stderr);
+    }
     let files = load_program(&source, &[])?;
     let warnings = accepted_warnings(&files)?;
     if !warnings.is_empty() {
@@ -601,6 +613,208 @@ fn run_command<O: Write, E: Write>(
         Err(RunError::Internal(message)) => Err(Failure::usage(message)),
         Err(other) => Err(Failure::usage(other.to_string())),
     }
+}
+
+const WATCH_POLL_INTERVAL: Duration = Duration::from_millis(150);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileStamp {
+    Present {
+        modified: Option<SystemTime>,
+        len: u64,
+    },
+    Missing,
+}
+
+fn file_stamp(path: &Path) -> FileStamp {
+    match std::fs::metadata(path) {
+        Ok(metadata) => FileStamp::Present {
+            modified: metadata.modified().ok(),
+            len: metadata.len(),
+        },
+        Err(_) => FileStamp::Missing,
+    }
+}
+
+#[derive(Debug)]
+struct WatchedFiles {
+    paths: Vec<PathBuf>,
+    stamps: Vec<FileStamp>,
+}
+
+impl WatchedFiles {
+    fn new(paths: Vec<PathBuf>) -> Self {
+        let stamps = paths.iter().map(|path| file_stamp(path)).collect();
+        Self { paths, stamps }
+    }
+
+    fn changed(&self) -> bool {
+        self.paths
+            .iter()
+            .zip(&self.stamps)
+            .any(|(path, stamp)| file_stamp(path) != *stamp)
+    }
+
+    fn refresh(&mut self) {
+        self.stamps = self.paths.iter().map(|path| file_stamp(path)).collect();
+    }
+}
+
+fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>, Failure> {
+    let entry = std::fs::canonicalize(entry)
+        .map_err(|error| Failure::usage(format!("resolve source {}: {error}", entry.display())))?;
+    let directory = entry
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| Failure::usage(format!("source {} has no parent directory", entry.display())))?;
+    let mut paths = vec![entry];
+    for file in files.iter().skip(1) {
+        let candidate = directory.join(&file.name);
+        let path = std::fs::canonicalize(&candidate).map_err(|error| {
+            Failure::usage(format!("resolve source {}: {error}", candidate.display()))
+        })?;
+        push_unique(&mut paths, path);
+    }
+    Ok(paths)
+}
+
+fn run_watch<O: Write, E: Write>(
+    source: &Path,
+    deny_warnings: bool,
+    stdout: &mut O,
+    stderr: &mut E,
+) -> Result<u8, Failure> {
+    let mut session = WatchSession::new(deny_warnings);
+    let mut watched = match load_program(source, &[]) {
+        Ok(initial_files) => {
+            let initial_paths = loaded_file_paths(source, &initial_files)?;
+            let initial = session.step(&initial_files);
+            if let WatchOutcome::Failed { message } = &initial.outcome {
+                if !initial.warnings.is_empty() {
+                    write_warnings(&initial_files, &initial.warnings, stderr)?;
+                }
+                return Err(Failure::usage(message.clone()));
+            }
+            write_watch_step(&initial_files, initial, stdout, stderr)?;
+            WatchedFiles::new(initial_paths)
+        }
+        Err(failure) if failure.code == PROGRAM_ERROR => {
+            // A parser diagnostic can be raised while the loader is
+            // discovering imports, before it can return a SourceFile set.
+            // Keep watching the entry so the first parseable edit can
+            // re-derive the complete loaded file set.
+            let entry = std::fs::canonicalize(source).map_err(|error| {
+                Failure::usage(format!("resolve source {}: {error}", source.display()))
+            })?;
+            session.invalidate_loaded_sources();
+            write_watch_failure(&failure, stderr)?;
+            WatchedFiles::new(vec![entry])
+        }
+        Err(failure) => return Err(failure),
+    };
+
+    loop {
+        std::thread::sleep(WATCH_POLL_INTERVAL);
+        if !watched.changed() {
+            continue;
+        }
+        watched.refresh();
+
+        let files = match load_program(source, &[]) {
+            Ok(files) => files,
+            Err(failure) => {
+                session.invalidate_loaded_sources();
+                write_watch_failure(&failure, stderr)?;
+                continue;
+            }
+        };
+        let paths = match loaded_file_paths(source, &files) {
+            Ok(paths) => paths,
+            Err(failure) => {
+                session.invalidate_loaded_sources();
+                write_watch_failure(&failure, stderr)?;
+                continue;
+            }
+        };
+        watched = WatchedFiles::new(paths);
+        let step = session.step(&files);
+        write_watch_step(&files, step, stdout, stderr)?;
+    }
+}
+
+fn write_watch_failure<E: Write>(failure: &Failure, stderr: &mut E) -> Result<(), Failure> {
+    if failure.verbatim {
+        writeln!(stderr, "{}", failure.message)
+    } else {
+        writeln!(stderr, "subscript: {}", failure.message)
+    }
+    .and_then(|_| writeln!(stderr, "watch: waiting for a fix"))
+    .and_then(|_| stderr.flush())
+    .map_err(|error| Failure::usage(format!("write watch status: {error}")))
+}
+
+fn write_watch_step<O: Write, E: Write>(
+    files: &[SourceFile],
+    step: WatchStep,
+    stdout: &mut O,
+    stderr: &mut E,
+) -> Result<(), Failure> {
+    if !step.warnings.is_empty() {
+        write_warnings(files, &step.warnings, stderr)?;
+    }
+    if !step.diagnostics.is_empty() {
+        writeln!(
+            stderr,
+            "{}",
+            render_diagnostics(files, &step.diagnostics)
+        )
+        .map_err(|error| Failure::usage(format!("write diagnostics: {error}")))?;
+    }
+
+    match step.outcome {
+        WatchOutcome::Unchanged => {}
+        WatchOutcome::Started(call) => {
+            writeln!(stderr, "watch: started")
+                .map_err(|error| Failure::usage(format!("write watch status: {error}")))?;
+            write_watch_call(call, stdout, stderr)?;
+        }
+        WatchOutcome::Swapped(call) => {
+            writeln!(stderr, "watch: swapped")
+                .map_err(|error| Failure::usage(format!("write watch status: {error}")))?;
+            write_watch_call(call, stdout, stderr)?;
+        }
+        WatchOutcome::WaitingForFix => {
+            writeln!(stderr, "watch: waiting for a fix")
+                .map_err(|error| Failure::usage(format!("write watch status: {error}")))?;
+        }
+        WatchOutcome::Refused { declaration } => {
+            writeln!(stderr, "watch: refused: {declaration}")
+                .map_err(|error| Failure::usage(format!("write watch status: {error}")))?;
+        }
+        WatchOutcome::Failed { message } => {
+            writeln!(stderr, "watch: error: {message}")
+                .map_err(|error| Failure::usage(format!("write watch status: {error}")))?;
+        }
+    }
+    stderr
+        .flush()
+        .map_err(|error| Failure::usage(format!("flush watch status: {error}")))
+}
+
+fn write_watch_call<O: Write, E: Write>(
+    call: WatchCall,
+    stdout: &mut O,
+    stderr: &mut E,
+) -> Result<(), Failure> {
+    stdout
+        .write_all(&call.output)
+        .and_then(|_| stdout.flush())
+        .map_err(|error| Failure::usage(format!("write program stdout: {error}")))?;
+    if let Some(trap) = call.trap {
+        writeln!(stderr, "subscript: {trap}")
+            .map_err(|error| Failure::usage(format!("write trap: {error}")))?;
+    }
+    Ok(())
 }
 
 fn read_text(path: &Path, kind: &str) -> Result<String, Failure> {

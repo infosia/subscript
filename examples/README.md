@@ -18,6 +18,10 @@ Read the numbered examples in order:
    script's `init`, `update`, and `shutdown` exports.
 5. [`context-per-scene/`](context-per-scene/) runs two scenes with fresh
    Contexts, showing script state reset while host frame state continues.
+6. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
+   `subscript run --watch`, and editing `demo.ts` demonstrates live
+   body swaps with surviving module state, refusal of declaration
+   edits, and diagnostics while the old program keeps running.
 
 [`gate/two-header-binding.ts`](gate/two-header-binding.ts) is a compiler
 phase-proof program, not a teaching example. It binds the `Eng…` facade and
