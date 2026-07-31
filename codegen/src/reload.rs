@@ -62,7 +62,10 @@ use std::collections::HashMap;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
 use subscript_compiler::types::display_type;
-use subscript_compiler::{check_program, hir, ClassId, Diagnostic, EnumId, Pos, SourceFile, Type};
+use subscript_compiler::{
+    check_program, hir, ClassId, Diagnostic, EnumId, Pos, SourceFile,
+    StringAliasId, Type,
+};
 use subscript_runtime::Context;
 
 use crate::jit::{register_runtime, RunError, TrapReport};
@@ -145,7 +148,13 @@ fn ty_name(m: &hir::Module, ty: &Type) -> String {
             .get(id.0)
             .map_or_else(|| format!("<enum #{}>", id.0), |e| e.name.clone())
     };
-    display_type(ty, &class, &enum_)
+    let string_alias = |id: StringAliasId| {
+        m.string_aliases.get(id.0).map_or_else(
+            || format!("<string alias #{}>", id.0),
+            |alias| alias.name.clone(),
+        )
+    };
+    display_type(ty, &class, &enum_, &string_alias)
 }
 
 /// Spells a function signature: name, parameter types in order, return
@@ -165,10 +174,11 @@ fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
 /// Computes the declaration fingerprint of a checked module (§8.2).
 ///
 /// Covered: classes (kind, field names, types, and order), enum member
-/// values, module-level variable names and types, and every function
-/// signature — free functions, constructors, and methods. Not covered:
-/// any function body, and therefore any expression, statement, or
-/// default-argument value inside one.
+/// values, Q32 string-alias member spellings and order, module-level
+/// variable names and types, and every function signature — free
+/// functions, constructors, and methods. Not covered: any function body,
+/// and therefore any expression, statement, or default-argument value
+/// inside one.
 #[must_use]
 pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
     let mut entries: Vec<(String, u64)> = Vec::new();
@@ -212,6 +222,12 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
         push(
             format!("enum {}", e.name),
             &format!("{}|{}", e.name, members.join(";")),
+        );
+    }
+    for alias in &m.string_aliases {
+        push(
+            format!("string alias {}", alias.name),
+            &format!("{}|{}", alias.name, alias.members.join(";")),
         );
     }
     for g in &m.globals {

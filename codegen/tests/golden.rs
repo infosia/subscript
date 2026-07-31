@@ -71,6 +71,22 @@ fn unicode_string_entry_matches_across_tiers_before_golden_comparison() {
 }
 
 #[test]
+fn string_literal_union_entry_matches_across_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a91-string-literal-union";
+    let sources = corpus::entry_sources(&accept, id);
+    let jit = run_jit_with_native_libraries(&sources, &[])
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &[])
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    assert_eq!(jit, ship, "{id}: tier outputs differ");
+    assert_eq!(jit, golden, "{id}: captured golden differs");
+    println!("dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+}
+
+#[test]
 fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -131,11 +147,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // coverage (a77–a81), P23 RegExp (a82–a83), and P24 code-point
     // storage coverage (a84–a87), plus the P24 astral-intern collection
     // coverage (a88), the P25 embedded chain-payload read-back
-    // coverage (a89), and callback-userdata collection rooting (a90).
+    // coverage (a89), callback-userdata collection rooting (a90), and
+    // Q32 string-literal union aliases (a91).
     assert_eq!(
         golden_ids.len(),
-        90,
-        "expected exactly 90 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        91,
+        "expected exactly 91 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -144,7 +161,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          + a77–a81 P22 for-of/container iteration/array spread), plus the \
          a82–a83 P23 regex, a84–a87 P24 code-point, and a88 P24 \
          astral-intern collection, a89 P25 embedded chain-payload read-back, \
-         and a90 callback-userdata rooting goldens, found {}",
+         a90 callback-userdata rooting, and a91 Q32 string-literal-union \
+         goldens, found {}",
         golden_ids.len()
     );
 

@@ -364,7 +364,9 @@ impl Layouts {
             Type::Bool => Repr::Scalar(types::I8),
             Type::I8 | Type::U8 => Repr::Scalar(types::I8),
             Type::I16 | Type::U16 | Type::F16 => Repr::Scalar(types::I16),
-            Type::I32 | Type::U32 | Type::Enum(_) => Repr::Scalar(types::I32),
+            Type::I32 | Type::U32 | Type::Enum(_) | Type::StringAlias(_) => {
+                Repr::Scalar(types::I32)
+            }
             // Date erases to i64 epoch milliseconds (stdlib.md §3).
             Type::I64 | Type::U64 | Type::Date => Repr::Scalar(types::I64),
             Type::F32 => Repr::Scalar(types::F32),

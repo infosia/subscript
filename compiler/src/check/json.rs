@@ -368,6 +368,7 @@ impl Checker<'_> {
                 | Type::Object
                 | Type::RegExp
                 | Type::Enum(_)
+                | Type::StringAlias(_)
                 | Type::Map(..)
                 | Type::Set(_)
                 | Type::Func(_)

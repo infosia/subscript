@@ -22,7 +22,7 @@ use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::provenance;
-use crate::types::{ClassId, EnumId, Type};
+use crate::types::{ClassId, EnumId, StringAliasId, Type};
 
 fn module_decl(item: &ast::ModuleItem) -> Option<&ast::Decl> {
     match item {
@@ -50,6 +50,31 @@ fn type_reference_name(ty: Option<&ast::TsType>) -> Option<&str> {
         return None;
     };
     Some(ident.sym.as_ref())
+}
+
+/// Extracts the declaration-ordered members of the one program type-alias
+/// form admitted by Q32.
+fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
+    let ast::TsType::TsUnionOrIntersectionType(
+        ast::TsUnionOrIntersectionType::TsUnionType(union),
+    ) = ty
+    else {
+        return None;
+    };
+    if union.types.len() < 2 {
+        return None;
+    }
+    union
+        .types
+        .iter()
+        .map(|member| match &**member {
+            ast::TsType::TsLitType(ast::TsLitType {
+                lit: ast::TsLit::Str(value),
+                ..
+            }) => Some(value.value.to_string()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The integer value of a non-negative numeric-literal expression (a flag
@@ -132,6 +157,7 @@ pub(crate) enum ScopeItem {
     Class(ClassId),
     GenericClass(String),
     Enum(EnumId),
+    StringAlias(StringAliasId),
     Global(String),
     /// A foreign C-ABI function declared by an ambient mirror (P5.2);
     /// callable but not usable as a value.
@@ -222,6 +248,7 @@ pub(crate) struct Checker<'p> {
     pub class_ids: HashMap<String, ClassId>,
     pub enums: Vec<hir::EnumDef>,
     pub enum_ids: HashMap<String, EnumId>,
+    pub string_aliases: Vec<hir::StringAliasDef>,
     pub fn_sigs: HashMap<String, FnSig>,
     pub functions: Vec<hir::Function>,
     pub global_sigs: HashMap<String, GlobalSig>,
@@ -304,6 +331,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         class_ids: HashMap::new(),
         enums: Vec::new(),
         enum_ids: HashMap::new(),
+        string_aliases: Vec::new(),
         fn_sigs: HashMap::new(),
         functions: Vec::new(),
         global_sigs: HashMap::new(),
@@ -383,6 +411,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         let mut module = hir::Module {
             classes: ck.classes,
             enums: ck.enums,
+            string_aliases: ck.string_aliases,
             globals: ck.globals,
             functions: ck.functions,
             foreign_fns: ck.foreign_defs,
@@ -612,6 +641,12 @@ impl<'p> Checker<'p> {
                     .map(|e| e.name.clone())
                     .unwrap_or_else(|| format!("<enum #{}>", id.0))
             },
+            &|id| {
+                self.string_aliases
+                    .get(id.0)
+                    .map(|alias| alias.name.clone())
+                    .unwrap_or_else(|| format!("<string alias #{}>", id.0))
+            },
         )
     }
 
@@ -648,6 +683,26 @@ impl<'p> Checker<'p> {
                 f == &**inner || (self.is_reference_class(f) && **inner == Type::Object)
             }
             (f, Type::Object) => self.is_reference_class(f),
+            _ => false,
+        }
+    }
+
+    fn contains_string_alias(ty: &Type) -> bool {
+        match ty {
+            Type::StringAlias(_) => true,
+            Type::FixedArray(element, _)
+            | Type::Array(element)
+            | Type::Set(element)
+            | Type::Nullable(element)
+            | Type::Generator(element)
+            | Type::IterResult(element) => Self::contains_string_alias(element),
+            Type::Map(key, value) => {
+                Self::contains_string_alias(key) || Self::contains_string_alias(value)
+            }
+            Type::Func(function) => {
+                function.params.iter().any(Self::contains_string_alias)
+                    || Self::contains_string_alias(&function.ret)
+            }
             _ => false,
         }
     }
@@ -754,6 +809,7 @@ impl<'p> Checker<'p> {
             ast::Decl::Fn(f) => self.collect_fn(file, f, exported),
             ast::Decl::Var(v) => self.collect_globals(file, v, exported),
             ast::Decl::TsEnum(e) => self.collect_enum(file, e, exported),
+            ast::Decl::TsTypeAlias(alias) => self.collect_string_alias(file, alias, exported),
             other => {
                 let pos = self.pos(other.span());
                 self.error(
@@ -954,6 +1010,59 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn collect_string_alias(
+        &mut self,
+        file: usize,
+        alias: &ast::TsTypeAliasDecl,
+        exported: bool,
+    ) {
+        let name = alias.id.sym.to_string();
+        let pos = self.pos(alias.id.span);
+        if alias.type_params.is_some() {
+            self.error(
+                RuleCode::S100,
+                "string-literal union aliases cannot be generic",
+                pos,
+            );
+            return;
+        }
+        let Some(members) = string_alias_members(&alias.type_ann) else {
+            self.error(
+                RuleCode::S100,
+                "type aliases are limited to a union of two or more string literals",
+                pos,
+            );
+            return;
+        };
+        if members.len() > i32::MAX as usize {
+            self.error(
+                RuleCode::S100,
+                "string-literal union has more members than fit its i32 discriminant",
+                self.pos(alias.type_ann.span()),
+            );
+            return;
+        }
+        let mut seen = HashSet::new();
+        if let Some(duplicate) = members.iter().find(|member| !seen.insert((*member).clone())) {
+            self.error(
+                RuleCode::S100,
+                format!("duplicate string-literal union member `{duplicate}`"),
+                self.pos(alias.type_ann.span()),
+            );
+            return;
+        }
+        let id = StringAliasId(self.string_aliases.len());
+        self.string_aliases.push(hir::StringAliasDef {
+            name: name.clone(),
+            members,
+            pos: pos.clone(),
+        });
+        self.register_scope_item(file, &name, ScopeItem::StringAlias(id), pos);
+        if exported {
+            self.exports[file].insert(name);
+        }
+    }
+
     fn const_int_of(&self, e: &ast::Expr) -> Option<i64> {
         match e {
             ast::Expr::Lit(ast::Lit::Num(n)) if n.value.fract() == 0.0 => Some(n.value as i64),
@@ -978,10 +1087,14 @@ impl<'p> Checker<'p> {
                 self.collect_boundary_struct(file, c)
             }
             ast::Decl::TsTypeAlias(t) => {
-                // Reserve the name; the aliased type is resolved in pass B.
-                self.type_aliases
-                    .entry(t.id.sym.to_string())
-                    .or_insert(Type::Error);
+                if string_alias_members(&t.type_ann).is_some() {
+                    self.collect_string_alias(file, t, false);
+                } else {
+                    // Reserve the name; the aliased type is resolved in pass B.
+                    self.type_aliases
+                        .entry(t.id.sym.to_string())
+                        .or_insert(Type::Error);
+                }
             }
             ast::Decl::Fn(f) => {
                 let name = f.ident.sym.to_string();
@@ -1054,6 +1167,9 @@ impl<'p> Checker<'p> {
                 _ => continue,
             };
             if let ast::Decl::TsTypeAlias(t) = decl {
+                if string_alias_members(&t.type_ann).is_some() {
+                    continue;
+                }
                 let ty = self.resolve_type(&t.type_ann);
                 self.type_aliases.insert(t.id.sym.to_string(), ty);
             }
@@ -1278,6 +1394,23 @@ impl<'p> Checker<'p> {
                 ast::Decl::Fn(f) if f.function.type_params.is_none() => {
                     let name = f.ident.sym.to_string();
                     let sig = self.resolve_fn_sig(&f.function, self.pos(f.ident.span));
+                    if self.exports[file].contains(&name) {
+                        let aliases_boundary = sig
+                            .params
+                            .iter()
+                            .any(|parameter| Self::contains_string_alias(&parameter.ty))
+                            || Self::contains_string_alias(&sig.ret);
+                        if aliases_boundary {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "exported function `{name}` has a string-literal union \
+                                     alias in its boundary signature"
+                                ),
+                                self.pos(f.ident.span),
+                            );
+                        }
+                    }
                     self.fn_sigs.insert(name, sig);
                 }
                 ast::Decl::Var(v) => {
@@ -1587,6 +1720,7 @@ impl<'p> Checker<'p> {
             | Type::F64
             | Type::Bool
             | Type::Enum(_)
+            | Type::StringAlias(_)
             | Type::Error => true,
             Type::Class(id) => self.classes[id.0].is_value,
             Type::FixedArray(elem, _) => self.value_field_ok(elem),

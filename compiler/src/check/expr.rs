@@ -25,12 +25,11 @@ pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
     }
 }
 
-/// True for expressions that are numeric literals possibly wrapped in
-/// parentheses or unary minus; these adopt the sized type of their
-/// context (C4).
+/// True for literals that can adopt a contextual type: numeric literals
+/// (C4) and string literals in a Q32 alias context.
 fn literalish(e: &ast::Expr) -> bool {
     match e {
-        ast::Expr::Lit(ast::Lit::Num(_)) => true,
+        ast::Expr::Lit(ast::Lit::Num(_) | ast::Lit::Str(_)) => true,
         ast::Expr::Paren(p) => literalish(&p.expr),
         ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => literalish(&u.arg),
         _ => false,
@@ -194,11 +193,27 @@ impl<'p> Checker<'p> {
     fn check_lit(&mut self, lit: &ast::Lit, ctx: Option<&Type>, pos: Pos) -> hir::Expr {
         match lit {
             ast::Lit::Num(n) => self.check_num_lit(n, false, ctx, pos),
-            ast::Lit::Str(s) => hir::Expr {
-                kind: ExprKind::Str(s.value.to_string()),
-                ty: Type::Str,
-                pos,
-            },
+            ast::Lit::Str(s) => {
+                let value = s.value.to_string();
+                if let Some(Type::StringAlias(id)) = ctx {
+                    if let Some(index) = self
+                        .string_aliases
+                        .get(id.0)
+                        .and_then(|alias| alias.members.iter().position(|member| member == &value))
+                    {
+                        return hir::Expr {
+                            kind: ExprKind::Int(index as i64),
+                            ty: Type::StringAlias(*id),
+                            pos,
+                        };
+                    }
+                }
+                hir::Expr {
+                    kind: ExprKind::Str(value),
+                    ty: Type::Str,
+                    pos,
+                }
+            }
             ast::Lit::Bool(b) => hir::Expr {
                 kind: ExprKind::Bool(b.value),
                 ty: Type::Bool,
@@ -374,7 +389,11 @@ impl<'p> Checker<'p> {
                 let printable = checked.ty.is_numeric()
                     || matches!(
                         checked.ty,
-                        Type::Str | Type::Bool | Type::Enum(_) | Type::Error
+                        Type::Str
+                            | Type::Bool
+                            | Type::Enum(_)
+                            | Type::StringAlias(_)
+                            | Type::Error
                     );
                 if checked.ty == Type::Date {
                     // Q20: a Date has no implicit string form (the lib's
@@ -489,6 +508,14 @@ impl<'p> Checker<'p> {
                 self.error(
                     RuleCode::S100,
                     format!("enum `{}` used as a value; use a member", name),
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            Some(ScopeItem::StringAlias(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("string-literal union alias `{name}` used as a value"),
                     pos.clone(),
                 );
                 self.err_expr(pos)
@@ -858,18 +885,19 @@ impl<'p> Checker<'p> {
             _ => {
                 let arith = matches!(b.op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
                 let outer: Option<Type> = if arith { ctx.cloned() } else { None };
-                let numeric_ctx =
-                    |t: &Type| -> Option<Type> { t.is_numeric().then(|| t.clone()) };
+                let literal_ctx = |t: &Type| -> Option<Type> {
+                    (t.is_numeric() || matches!(t, Type::StringAlias(_))).then(|| t.clone())
+                };
                 let (left, right);
                 if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
-                    let c = numeric_ctx(&r.ty).or(outer);
+                    let c = literal_ctx(&r.ty).or(outer);
                     left = self.check_expr(&b.left, c.as_ref(), fx);
                     right = r;
                 } else {
                     left = self.check_expr(&b.left, outer.as_ref(), fx);
                     let c = if literalish(&b.right) {
-                        numeric_ctx(&left.ty).or(outer)
+                        literal_ctx(&left.ty).or(outer)
                     } else {
                         outer
                     };
@@ -955,6 +983,7 @@ impl<'p> Checker<'p> {
                 let same_scalar = lt == rt
                     && (lt.is_numeric()
                         || matches!(lt, Type::Bool | Type::Str | Type::Enum(_))
+                        || matches!(lt, Type::StringAlias(_))
                         || self.is_reference_class(&lt));
                 (hop, Type::Bool, null_cmp || same_scalar)
             }
@@ -1567,6 +1596,14 @@ impl<'p> Checker<'p> {
                         Some(self.err_expr(prop_pos))
                     }
                 }
+            }
+            Some(ScopeItem::StringAlias(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("string-literal union alias `{name}` has no static values"),
+                    prop_pos.clone(),
+                );
+                Some(self.err_expr(prop_pos))
             }
             Some(ScopeItem::Global(_)) | Some(ScopeItem::Func(_))
             | Some(ScopeItem::GenericFunc(_)) | Some(ScopeItem::Foreign(_)) => None,
@@ -4546,6 +4583,14 @@ impl<'p> Checker<'p> {
                 self.error(
                     RuleCode::S100,
                     format!("enum `{}` is not callable", name),
+                    ident_pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            Some(ScopeItem::StringAlias(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("string-literal union alias `{name}` is not callable"),
                     ident_pos.clone(),
                 );
                 self.err_expr(pos)

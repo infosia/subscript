@@ -385,7 +385,7 @@ impl<'m> Emitter<'m> {
             Type::F32 => "float".to_string(),
             Type::F64 => "double".to_string(),
             Type::Bool => "int32_t".to_string(),
-            Type::Enum(_) => "int32_t".to_string(),
+            Type::Enum(_) | Type::StringAlias(_) => "int32_t".to_string(),
             Type::Void => "void".to_string(),
             Type::Str
             | Type::RegExp
@@ -436,6 +436,7 @@ impl<'m> Emitter<'m> {
             Type::F64 => "f64".to_string(),
             Type::Bool => "bool".to_string(),
             Type::Enum(id) => format!("enum{}", id.0),
+            Type::StringAlias(id) => format!("stralias{}", id.0),
             Type::Str
             | Type::RegExp
             | Type::Object
@@ -480,6 +481,29 @@ impl<'m> Emitter<'m> {
 
         // Globals.
         let mut globals = String::new();
+        if !self.module.string_aliases.is_empty() {
+            globals.push_str(
+                "typedef struct {\n\
+                 \x20   const unsigned char* data;\n\
+                 \x20   uint64_t len;\n\
+                 } SubStringAliasMember;\n",
+            );
+            for (alias_index, alias) in self.module.string_aliases.iter().enumerate() {
+                let _ = writeln!(
+                    globals,
+                    "static const SubStringAliasMember subscript_string_alias_{alias_index}[] = {{"
+                );
+                for member in &alias.members {
+                    let _ = writeln!(
+                        globals,
+                        "    {{ (const unsigned char*){}, {}ull }},",
+                        c_string_literal(member.as_bytes()),
+                        member.len()
+                    );
+                }
+                globals.push_str("};\n");
+            }
+        }
         for g in &self.module.globals {
             let _ = writeln!(globals, "static {} g_{};", self.ctype(&g.ty)?, sanitize(&g.name));
         }
@@ -1162,7 +1186,8 @@ impl<'m> Emitter<'m> {
             | Type::I64
             | Type::U64
             | Type::Bool
-            | Type::Enum(_) => {
+            | Type::Enum(_)
+            | Type::StringAlias(_) => {
                 "0".to_string()
             }
             Type::Str
@@ -3158,6 +3183,16 @@ impl<'m> Emitter<'m> {
             return Err("formatting has a non-allocation HIR site".to_string());
         };
         let pid = self.pos_id(pos);
+        if let Type::StringAlias(id) = ty {
+            let index = self.fresh_tmp();
+            let _ = writeln!(out, "{}int32_t {index} = {v};", indent(depth));
+            let table = format!("subscript_string_alias_{}", id.0);
+            let call = format!(
+                "subscript_rt_str_lit(ctx, {table}[{index}].data, \
+                 {table}[{index}].len, {pid}u)"
+            );
+            return self.eval_site_checked_call(call, &Type::Str, site, out, depth);
+        }
         let call = match ty {
             Type::I8 | Type::I16 => {
                 format!("subscript_rt_fmt_i32(ctx, (int32_t)({v}), {pid}u)")
@@ -3165,7 +3200,9 @@ impl<'m> Emitter<'m> {
             Type::U8 | Type::U16 => {
                 format!("subscript_rt_fmt_u32(ctx, (uint32_t)({v}), {pid}u)")
             }
-            Type::I32 | Type::Enum(_) => format!("subscript_rt_fmt_i32(ctx, {v}, {pid}u)"),
+            Type::I32 | Type::Enum(_) => {
+                format!("subscript_rt_fmt_i32(ctx, {v}, {pid}u)")
+            }
             Type::U32 => format!("subscript_rt_fmt_u32(ctx, {v}, {pid}u)"),
             Type::I64 => format!("subscript_rt_fmt_i64(ctx, {v}, {pid}u)"),
             Type::U64 => format!("subscript_rt_fmt_u64(ctx, {v}, {pid}u)"),

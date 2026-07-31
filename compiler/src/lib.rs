@@ -27,7 +27,7 @@ mod warn;
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use diag_render::{render_diagnostics, render_warnings};
 pub use parse::parse_import_specifiers;
-pub use types::{ClassId, EnumId, FuncType, Type};
+pub use types::{ClassId, EnumId, FuncType, StringAliasId, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
 
 /// One source file of a program.
@@ -279,6 +279,106 @@ mod tests {
     fn general_union_is_s011() {
         let err = check_one("let x: i32 | string = 1;\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S011);
+    }
+
+    #[test]
+    fn string_literal_union_members_are_contextually_typed() {
+        let module = check_one(
+            "type Format = \"a\" | \"b\";\n\
+             @CStruct\n\
+             class Box {\n\
+               value: Format;\n\
+               constructor(value: Format) { this.value = value; }\n\
+             }\n\
+             function pass(value: Format): Format { return value; }\n\
+             export function main(): void {\n\
+               const value: Format = \"a\";\n\
+               const values: Format[] = [\"a\", \"b\"];\n\
+               const box: Box = new Box(\"b\");\n\
+               print(`${pass(value)}:${values[1]}:${box.value}:${value === \"a\"}`);\n\
+             }\n",
+        )
+        .expect("Q32 member literals check cleanly in every contextual position");
+        assert_eq!(module.string_aliases.len(), 1);
+        assert_eq!(module.string_aliases[0].members, ["a", "b"]);
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Let { ty, init, .. } = &main.body[0] else {
+            panic!("first statement is a binding");
+        };
+        assert_eq!(*ty, Type::StringAlias(StringAliasId(0)));
+        assert_eq!(init.kind, hir::ExprKind::Int(0));
+    }
+
+    #[test]
+    fn string_literal_union_nonmember_is_rejected() {
+        let diagnostics = check_one(
+            "type Format = \"a\" | \"b\";\n\
+             export function main(): void {\n\
+               const value: Format = \"c\";\n\
+             }\n",
+        )
+        .expect_err("non-member literal must be rejected");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(diagnostics[0].pos.line, 3);
+    }
+
+    #[test]
+    fn same_membered_string_literal_unions_are_nominal() {
+        let diagnostics = check_one(
+            "type Left = \"a\" | \"b\";\n\
+             type Right = \"a\" | \"b\";\n\
+             export function main(): void {\n\
+               const left: Left = \"a\";\n\
+               const right: Right = left;\n\
+             }\n",
+        )
+        .expect_err("same-membered aliases must remain distinct");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(diagnostics[0].pos.line, 5);
+    }
+
+    #[test]
+    fn string_literal_union_is_rejected_in_a_boundary_signature() {
+        let diagnostics = check_program(&[
+            SourceFile::ambient(
+                "boundary.d.ts",
+                "type Format = \"a\" | \"b\";\n\
+                 declare class Boundary {\n\
+                   value: Format;\n\
+                   constructor(value: Format);\n\
+                 }\n",
+            ),
+            SourceFile::new(
+                "test.ts",
+                "export function main(): void { print(\"ok\"); }\n",
+            ),
+        ])
+        .expect_err("Q32 aliases are not boundary types");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("cannot appear in a boundary signature"),
+            "{}",
+            diagnostics[0].message
+        );
+
+        let diagnostics = check_one(
+            "type Format = \"a\" | \"b\";\n\
+             export function boundary(value: Format): void { print(`${value}`); }\n\
+             export function main(): void { print(\"ok\"); }\n",
+        )
+        .expect_err("Q32 aliases are not exported boundary types");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(
+            diagnostics[0].message.contains("boundary signature"),
+            "{}",
+            diagnostics[0].message
+        );
     }
 
     #[test]

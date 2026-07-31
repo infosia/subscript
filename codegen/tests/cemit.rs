@@ -867,6 +867,32 @@ fn acyclic_json_serializer_emits_no_tracking_operations() {
     assert!(!c.contains("subscript_rt_json_leave(ctx,"), "{c}");
 }
 
+#[test]
+fn string_literal_union_equality_emits_an_integer_compare() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "type Format = \"uint16\" | \"uint32\";\n\
+                  function same(left: Format, right: Format): boolean {\n\
+                    return left === right;\n\
+                  }\n\
+                  export function main(): void {\n\
+                    const left: Format = \"uint16\";\n\
+                    print(`${same(left, \"uint16\")}`);\n\
+                  }\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emit C").source;
+    let comparison = c
+        .lines()
+        .find(|line| line.contains("return") && line.contains("left") && line.contains("right"))
+        .unwrap_or_else(|| panic!("alias equality return is missing:\n{c}"));
+    assert_eq!(comparison.trim(), "return (left == right);");
+    assert!(
+        !comparison.contains("subscript_rt_str_eq"),
+        "Q32 equality called string comparison: {comparison}"
+    );
+}
+
 fn provenance_fixture() -> subscript_compiler::hir::Module {
     use subscript_compiler::check_program;
 

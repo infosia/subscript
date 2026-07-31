@@ -4298,6 +4298,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         };
         let pid = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pid);
+        if let Type::StringAlias(id) = ty {
+            let table = self.ml.string_alias_table_data(*id)?;
+            let gv = self.ml.module.declare_data_in_func(table, self.b.func);
+            let base = self.b.ins().symbol_value(types::I64, gv);
+            let index = self.b.ins().uextend(types::I64, v);
+            let offset = self.b.ins().ishl_imm(index, 4);
+            let entry = self.b.ins().iadd(base, offset);
+            let data = self.b.ins().load(types::I64, flags(), entry, 0);
+            let len = self.b.ins().load(types::I64, flags(), entry, 8);
+            let result = self.call_rt(
+                self.ml.rt.str_lit,
+                &[self.ctx_v, data, len, pos_v],
+                false,
+            )?;
+            self.emit_trap_site(site, TrapOperand::Pending)?;
+            return result.ok_or_else(|| internal("string alias formatting result"));
+        }
         let (f, arg) = match ty {
             Type::I8 | Type::I16 => {
                 let wide = self.b.ins().sextend(types::I32, v);

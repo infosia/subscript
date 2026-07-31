@@ -40,11 +40,11 @@ mod func;
 
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::{types, AbiParam, Signature};
+use cranelift_codegen::ir::{types, AbiParam, Endianness, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Configurable;
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
-use subscript_compiler::{hir, Pos, Type};
+use subscript_compiler::{hir, Pos, StringAliasId, Type};
 use subscript_compiler::types::MAX_AGGREGATE_BYTES;
 
 use crate::layout::{Layouts, Repr};
@@ -238,6 +238,8 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub slots: Vec<Option<FuncId>>,
     pub fn_index: HashMap<String, usize>,
     pub str_data: HashMap<Vec<u8>, DataId>,
+    /// Per-Q32-alias tables of `(member bytes pointer, byte length)`.
+    pub string_alias_tables: HashMap<StringAliasId, DataId>,
     pub globals: HashMap<String, (GlobalSlot, Type)>,
     /// Imported foreign C symbols, declared on first use (P5.2b).
     pub foreign_ids: HashMap<String, FuncId>,
@@ -396,6 +398,74 @@ impl<'a, M: Module> ModLower<'a, M> {
             .define_data(id, &desc)
             .map_err(|e| internal(format!("define data: {e}")))?;
         self.str_data.insert(bytes.to_vec(), id);
+        Ok(id)
+    }
+
+    /// Defines the declaration-ordered static formatting table for one
+    /// Q32 alias and returns its module-data id.
+    pub fn string_alias_table_data(
+        &mut self,
+        alias_id: StringAliasId,
+    ) -> Result<DataId, String> {
+        if let Some(&id) = self.string_alias_tables.get(&alias_id) {
+            return Ok(id);
+        }
+        let members = self
+            .hir
+            .string_aliases
+            .get(alias_id.0)
+            .ok_or_else(|| internal(format!("string alias id {} is out of range", alias_id.0)))?
+            .members
+            .clone();
+        let size = members
+            .len()
+            .checked_mul(16)
+            .ok_or_else(|| internal("string alias table size overflows usize"))?;
+        let mut contents = vec![0u8; size];
+        let mut member_data = Vec::with_capacity(members.len());
+        let endian = self.module.isa().endianness();
+        for (index, member) in members.iter().enumerate() {
+            member_data.push(self.literal_data(member.as_bytes())?);
+            let len = u64::try_from(member.len())
+                .map_err(|_| internal("string alias member length does not fit u64"))?;
+            let encoded = match endian {
+                Endianness::Little => len.to_le_bytes(),
+                Endianness::Big => len.to_be_bytes(),
+            };
+            let at = index
+                .checked_mul(16)
+                .and_then(|offset| offset.checked_add(8))
+                .ok_or_else(|| internal("string alias table offset overflows usize"))?;
+            let end = at
+                .checked_add(8)
+                .ok_or_else(|| internal("string alias length slot overflows usize"))?;
+            let slot = contents
+                .get_mut(at..end)
+                .ok_or_else(|| internal("string alias length slot is out of range"))?;
+            slot.copy_from_slice(&encoded);
+        }
+        let name = format!("subscript_string_alias{}", alias_id.0);
+        let id = self
+            .module
+            .declare_data(&name, Linkage::Local, false, false)
+            .map_err(|error| internal(format!("declare string alias table: {error}")))?;
+        let mut desc = DataDescription::new();
+        desc.define(contents.into_boxed_slice());
+        desc.set_align(8);
+        for (index, member_id) in member_data.into_iter().enumerate() {
+            let member = self.module.declare_data_in_data(member_id, &mut desc);
+            let offset = u32::try_from(
+                index
+                    .checked_mul(16)
+                    .ok_or_else(|| internal("string alias relocation offset overflows usize"))?,
+            )
+            .map_err(|_| internal("string alias relocation offset does not fit u32"))?;
+            desc.write_data_addr(offset, member, 0);
+        }
+        self.module
+            .define_data(id, &desc)
+            .map_err(|error| internal(format!("define string alias table: {error}")))?;
+        self.string_alias_tables.insert(alias_id, id);
         Ok(id)
     }
 
@@ -935,6 +1005,7 @@ pub(crate) fn lower_module_with<M: Module>(
         slots: Vec::new(),
         fn_index: HashMap::new(),
         str_data: HashMap::new(),
+        string_alias_tables: HashMap::new(),
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
         foreign_symbols: Vec::new(),

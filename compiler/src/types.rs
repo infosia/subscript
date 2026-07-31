@@ -31,11 +31,16 @@ pub struct ClassId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EnumId(pub usize);
 
+/// Index of a string-literal union alias inside
+/// [`crate::hir::Module::string_aliases`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StringAliasId(pub usize);
+
 /// A fully resolved language type.
 ///
 /// Sized numerics are all distinct; classes are nominal (two same-shaped
-/// classes are different types); `Nullable` is the only union form
-/// (`Ref | null`, C7).
+/// classes are different types); `Nullable` and named string-literal
+/// aliases are the only union forms (`Ref | null`, C7/Q32).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Type {
@@ -86,6 +91,11 @@ pub enum Type {
     Class(ClassId),
     /// A numeric enum.
     Enum(EnumId),
+    /// A nominal, closed string-literal union alias (Q32).
+    ///
+    /// Values are represented by an `i32` member index; the alias id is
+    /// retained here so same-membered declarations remain distinct.
+    StringAlias(StringAliasId),
     /// `FixedArray<T, N>` with `N` known at compile time (Q3).
     FixedArray(Box<Type>, u32),
     /// Dynamic array `T[]` (Q4/Q15).
@@ -130,7 +140,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
     Some(match ty {
         Type::Bool | Type::I8 | Type::U8 => (1, 1),
         Type::I16 | Type::U16 | Type::F16 => (2, 2),
-        Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
+        Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) | Type::StringAlias(_) => (4, 4),
         Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
         Type::Str
         | Type::RegExp
@@ -210,6 +220,7 @@ pub fn display_type(
     ty: &Type,
     class_name: &dyn Fn(ClassId) -> String,
     enum_name: &dyn Fn(EnumId) -> String,
+    string_alias_name: &dyn Fn(StringAliasId) -> String,
 ) -> String {
     match ty {
         Type::I8 => "i8".to_string(),
@@ -232,37 +243,50 @@ pub fn display_type(
         Type::Object => "object".to_string(),
         Type::Class(id) => class_name(*id),
         Type::Enum(id) => enum_name(*id),
+        Type::StringAlias(id) => string_alias_name(*id),
         Type::FixedArray(elem, n) => format!(
             "FixedArray<{}, {}>",
-            display_type(elem, class_name, enum_name),
+            display_type(elem, class_name, enum_name, string_alias_name),
             n
         ),
-        Type::Array(elem) => format!("{}[]", display_type(elem, class_name, enum_name)),
+        Type::Array(elem) => format!(
+            "{}[]",
+            display_type(elem, class_name, enum_name, string_alias_name)
+        ),
         Type::Map(key, value) => format!(
             "Map<{}, {}>",
-            display_type(key, class_name, enum_name),
-            display_type(value, class_name, enum_name)
+            display_type(key, class_name, enum_name, string_alias_name),
+            display_type(value, class_name, enum_name, string_alias_name)
         ),
-        Type::Set(key) => format!("Set<{}>", display_type(key, class_name, enum_name)),
+        Type::Set(key) => format!(
+            "Set<{}>",
+            display_type(key, class_name, enum_name, string_alias_name)
+        ),
         Type::Func(f) => {
             let params: Vec<String> = f
                 .params
                 .iter()
-                .map(|p| display_type(p, class_name, enum_name))
+                .map(|p| display_type(p, class_name, enum_name, string_alias_name))
                 .collect();
             format!(
                 "({}) => {}",
                 params.join(", "),
-                display_type(&f.ret, class_name, enum_name)
+                display_type(&f.ret, class_name, enum_name, string_alias_name)
             )
         }
         Type::Nullable(inner) => {
-            format!("{} | null", display_type(inner, class_name, enum_name))
+            format!(
+                "{} | null",
+                display_type(inner, class_name, enum_name, string_alias_name)
+            )
         }
-        Type::Generator(y) => format!("Generator<{}>", display_type(y, class_name, enum_name)),
+        Type::Generator(y) => format!(
+            "Generator<{}>",
+            display_type(y, class_name, enum_name, string_alias_name)
+        ),
         Type::IterResult(v) => format!(
             "{{ done: boolean; value: {} }}",
-            display_type(v, class_name, enum_name)
+            display_type(v, class_name, enum_name, string_alias_name)
         ),
         Type::Error => "<error>".to_string(),
     }
@@ -276,6 +300,7 @@ impl fmt::Display for Type {
             self,
             &|id| format!("<class #{}>", id.0),
             &|id| format!("<enum #{}>", id.0),
+            &|id| format!("<string alias #{}>", id.0),
         );
         f.write_str(&s)
     }
@@ -318,15 +343,22 @@ mod tests {
     fn display_covers_compound_types() {
         let names = |_: ClassId| "Vec3".to_string();
         let enums = |_: EnumId| "Status".to_string();
+        let aliases = |_: StringAliasId| "Format".to_string();
         assert_eq!(
-            display_type(&Type::FixedArray(Box::new(Type::F32), 16), &names, &enums),
+            display_type(
+                &Type::FixedArray(Box::new(Type::F32), 16),
+                &names,
+                &enums,
+                &aliases
+            ),
             "FixedArray<f32, 16>"
         );
         assert_eq!(
             display_type(
                 &Type::Nullable(Box::new(Type::Class(ClassId(0)))),
                 &names,
-                &enums
+                &enums,
+                &aliases
             ),
             "Vec3 | null"
         );
@@ -337,13 +369,28 @@ mod tests {
                     ret: Type::I32
                 })),
                 &names,
-                &enums
+                &enums,
+                &aliases
             ),
             "(i32) => i32"
         );
         assert_eq!(
-            display_type(&Type::Generator(Box::new(Type::I32)), &names, &enums),
+            display_type(
+                &Type::Generator(Box::new(Type::I32)),
+                &names,
+                &enums,
+                &aliases
+            ),
             "Generator<i32>"
+        );
+        assert_eq!(
+            display_type(
+                &Type::StringAlias(StringAliasId(0)),
+                &names,
+                &enums,
+                &aliases
+            ),
+            "Format"
         );
     }
 }

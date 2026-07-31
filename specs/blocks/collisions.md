@@ -125,7 +125,7 @@ position stays rejected as a general union.
 
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
-an annotation/expression; `tsc`-clean), `r62`–`r64` (Q32 boundaries).
+an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries).
 
 ### C8. `async` / generators (Q11) — coroutines only
 
@@ -924,8 +924,8 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
     before its C facade.
 
   Contract and exit criteria: `compiler.md` §24. Accept: `a91`.
-  Reject: `r62` (non-member literal), `r63` (inline literal union;
-  S011 as today), `r64` (cross-alias assignment, same members —
+  Reject: `r87` (non-member literal), `r88` (inline literal union;
+  S011 as today), `r89` (cross-alias assignment, same members —
   `tsc`-clean, proving the language is strictly narrower here).
 
 ## 3. Open items carried forward

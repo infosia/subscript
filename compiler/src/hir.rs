@@ -16,6 +16,9 @@ pub struct Module {
     pub classes: Vec<ClassDef>,
     /// Enum definitions, indexed by [`EnumId`].
     pub enums: Vec<EnumDef>,
+    /// Nominal string-literal union aliases, indexed by
+    /// [`crate::types::StringAliasId`].
+    pub string_aliases: Vec<StringAliasDef>,
     /// Module-level variables.
     pub globals: Vec<Global>,
     /// Free functions, including monomorphized generic instances.
@@ -143,6 +146,18 @@ pub struct EnumDef {
     /// Members with their constant values, in declaration order.
     pub members: Vec<(String, i64)>,
     /// Position of the declaration.
+    pub pos: Pos,
+}
+
+/// A nominal closed set of string literals (Q32).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StringAliasDef {
+    /// Source-level alias name.
+    pub name: String,
+    /// Member spellings in declaration/discriminant order.
+    pub members: Vec<String>,
+    /// Position of the alias declaration.
     pub pos: Pos,
 }
 
@@ -3316,6 +3331,7 @@ mod tests {
         let m = Module {
             classes: Vec::new(),
             enums: Vec::new(),
+            string_aliases: Vec::new(),
             globals: Vec::new(),
             functions: Vec::new(),
             foreign_fns: Vec::new(),

@@ -1,0 +1,7 @@
+echo=uint16
+literal=true
+same=true
+different=true
+array=uint32
+field=uint16
+twin=uint16

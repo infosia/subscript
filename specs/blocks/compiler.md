@@ -3169,16 +3169,16 @@ strings (the standing gate).
 `a91-string-literal-union` (accept): two aliases, one pair sharing
 member spellings; assignment, parameter passing, equality against a
 literal and a same-alias value, and template-literal printing —
-golden output contains the member strings. `r62`: non-member literal
-in an alias context, (code, line) pinned. `r63`: inline literal
-union in a parameter annotation, S011, pinned. `r64`: assignment
+golden output contains the member strings. `r87`: non-member literal
+in an alias context, (code, line) pinned. `r88`: inline literal
+union in a parameter annotation, S011, pinned. `r89`: assignment
 across same-membered aliases, `tsc`-clean, pinned.
 
 ### 24.4 Exit criteria (pre-registered)
 
 1. `a91` runs byte-identical under both tiers, member strings in the
    golden.
-2. `r62`/`r63`/`r64` pin (code, line); `r64` type-checks under stock
+2. `r87`/`r88`/`r89` pin (code, line); `r89` type-checks under stock
    `tsc` (the strictly-narrower proof).
 3. A `cemit` unit test asserts an alias equality lowers to an
    integer compare — no string-comparison call at the comparison

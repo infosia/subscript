@@ -354,6 +354,27 @@ impl<'p> Checker<'p> {
                 }
             }
             Some(ScopeItem::Enum(id)) => Type::Enum(id),
+            Some(ScopeItem::StringAlias(id)) => {
+                if self.in_boundary {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "string-literal union alias `{name}` cannot appear in a boundary signature"
+                        ),
+                        pos,
+                    );
+                    Type::Error
+                } else if r.type_params.is_some() {
+                    self.error(
+                        RuleCode::S100,
+                        format!("string-literal union alias `{name}` is not generic"),
+                        pos,
+                    );
+                    Type::Error
+                } else {
+                    Type::StringAlias(id)
+                }
+            }
             _ => {
                 self.error(
                     RuleCode::S100,
