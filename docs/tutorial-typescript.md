@@ -189,10 +189,53 @@ subscript: oob.ts:4:12: trap [index-out-of-bounds]: index 5 out of bounds for ar
 Recoverable conditions are values in the type system (`T | null`),
 not exceptions.
 
-## No `async`, no `Promise`; coroutines
+## `async`/`await` without a scheduler
 
-Suspension is a `function*` coroutine, advanced explicitly; the host
-(or your own code) calls `next()` once per step:
+`async function` and `await` are accepted, and they mean something
+slightly different from JavaScript: **nothing schedules the
+resumption**. Awaiting suspends the function — the whole chain of
+callers up to the exported entry — and it resumes only when the
+embedding host explicitly steps pending computations. There is no
+event loop, no microtask queue, and no `Promise` object at runtime
+(`Promise<T>` in your annotations is the `tsc` view only):
+
+```ts
+let readyAt: i32 = 3;
+let clock: i32 = 0;
+
+async function fetchValue(): Promise<i32> {
+  while (clock < readyAt) {
+    clock += 1;
+    await Context.suspend();   // suspend until the host's next step
+  }
+  return clock * 10;
+}
+
+export async function main(): Promise<void> {
+  const value: i32 = await fetchValue();
+  print(`ready after ${clock} steps: ${value}`);
+}
+```
+
+```sh
+$ subscript run async.ts
+ready after 3 steps: 30
+```
+
+Two awaitable forms exist, and only two: `Context.suspend()` (one
+suspension, resumed at the next step) and a **direct call of an
+`async` function in await position**. Promises are not values — a
+call you do not await is a compile error (stock `tsc` allows the
+floating promise; this language does not), so promise storage,
+`Promise.all`, `.then`, and `new Promise` do not exist. Fallible
+operations put failure in the value domain (`T | null`), as
+everywhere else — a failed `await` does not throw.
+
+## Coroutines
+
+Generator-shaped suspension is a `function*` coroutine, advanced
+explicitly; the host (or your own code) calls `next()` once per
+step:
 
 ```ts
 function* updates(): Generator<i32> {
@@ -223,33 +266,30 @@ frame=2 value=12
 frame=3 done
 ```
 
-### Why promises are absent
+### Why there is no Promise object or scheduler
 
-Three reasons, each following from a decision documented elsewhere in
-this repository — not from implementation effort.
+The same three reasons that once excluded `async` entirely now shape
+*how* it exists — each follows from a documented decision, not from
+implementation effort.
 
-1. **`await` needs an event loop to give it meaning.** In JavaScript,
-   `await` suspends, returns control to the event loop, and resumes
-   when the microtask queue schedules the continuation — the promise's
-   semantics include the loop's scheduling rules. subscript is
-   embedded and the host application owns the loop, so the language
-   has no place of its own to define *when* a continuation runs. Once
-   the host drives resumption, what remains of `await` is exactly a
-   coroutine advanced by `next()` — so that is the mechanism the
-   language keeps.
-2. **Promise lifetimes assume a garbage collector.** A pending promise
-   keeps its continuation alive: a closure capturing its environment,
-   chained through each `.then`. In JavaScript that chain is collected
-   when unreachable; subscript has no collector and memory is
-   explicit, so "who frees an abandoned chain and its captured
-   environments" has no answer. The same constraint appears in the
-   rejection table as S009 — a capturing lambda may not escape its
-   defining function — and an `await` continuation is precisely an
-   escaping capturing closure.
+1. **`await` needs someone to decide when continuations resume.** In
+   JavaScript that is the event loop's microtask queue. subscript is
+   embedded and the host owns the loop, so the language defines no
+   scheduling of its own: awaiting suspends a Context-owned frame,
+   and the host's explicit step is the only resumption. `await` here
+   is poll-driven suspension wearing JavaScript's syntax.
+2. **Promise lifetimes assume a garbage collector.** A stored pending
+   promise keeps its continuation chain alive until a collector
+   reclaims it — an unanswerable lifetime in a no-GC language. That
+   is why promises are not values here: an async call must be
+   awaited immediately, so every suspended frame sits in one linear
+   chain owned by its Context, and releasing the Context drops
+   pending frames without running anything.
 3. **Both tiers must run byte-identically.** A microtask queue is
-   scheduler state that the JIT and the emitted C would each have to
-   reproduce exactly. A coroutine has no scheduler state: the
-   resumption order is written in your control flow.
+   scheduler state to reproduce exactly in the JIT and the emitted
+   C. Poll-driven stepping has none: pending computations resume in
+   the order they were started, and the corpus pins that order under
+   both tiers.
 
 Scripts are also single-threaded by design — there are no workers and
 no cross-thread callbacks; asynchronous host work reaches the script
@@ -348,7 +388,7 @@ reshape TypeScript habits:
 | S010 | exceptions |
 | S011 | unions beyond `T \| null`, unnarrowed access |
 | S012 | `undefined` |
-| S013 | `async` / `await` / `Promise` |
+| S013 | the `Promise` object surface (`new Promise`, `.then`, combinators, un-awaited async calls) — `async`/`await` themselves are accepted, poll-driven |
 
 A consequence, stated plainly: existing npm packages and most existing
 TypeScript code will not compile, because the ecosystem is written

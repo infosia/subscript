@@ -47,7 +47,7 @@ or its governing invariant.
 | [`e05-no-exceptions`](e05-no-exceptions.ts) | Result-shaped returns, `JsonResult` parsing, and traps | There is no `throw` or `try` | C6 |
 | [`e06-arrays-and-closures`](e06-arrays-and-closures.ts) | Fixed and growable arrays, bounds checks, `map`/`filter`/`reduce` | Capturing closures may not escape | C5 |
 | [`e07-determinism`](e07-determinism.ts) | Seeded `Math.random`, UTC-only `Date`, deterministic number formatting | Locale- and clock-dependent APIs are rejected, not approximated | Q20, Q26 |
-| [`e08-coroutines`](e08-coroutines.ts) | A `function*` stepped once per frame | Coroutines replace `async`; there is no event loop | C8 |
+| [`e08-coroutines`](e08-coroutines.ts) | A `function*` stepped once per frame | Suspension is host-stepped; there is no event loop (async is poll-driven, Q34) | C8, Q34 |
 | [`e09-c-structs-and-slices`](e09-c-structs-and-slices.ts) | Binding `engine.h`: struct by value, slice, string view, enum, flags | The language struct is the C struct; no marshaling copy changes its layout | [Invariant 1](../CLAUDE.md#design-invariants-read-second) |
 | [`e10-c-callbacks-and-handles`](e10-c-callbacks-and-handles.ts) | Opaque-handle lifecycle, callback userdata, deferred pump delivery | Userdata lifetime is explicit; callbacks arrive on the calling thread | Q13, [compiler §14.6](../specs/blocks/compiler.md#146-permanent-non-goal--spontaneous-arbitrary-thread-callbacks) |
 

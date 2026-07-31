@@ -1,6 +1,6 @@
 // example: e08-coroutines
 // teaches: Advance a function* coroutine once per frame and observe each suspended value.
-// differs-from-typescript: C8 provides host-driven coroutines but no async, Promise, or event loop.
+// differs-from-typescript: C8/Q34 provide host-driven coroutines and poll-driven async; no event loop or Promise objects.
 // see: corpus/accept/a20-coroutine-generator.ts, corpus/accept/a79-for-of-generator.ts, corpus/reject/r14-async.ts, collisions.md C8, compiler.md §7
 
 function* updates(): Generator<i32> {

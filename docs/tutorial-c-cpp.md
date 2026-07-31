@@ -139,18 +139,20 @@ export function main(): void {
 sum=3
 ```
 
-### 5. Coroutines instead of async
+### 5. Async and coroutines, host-stepped
 
-There is no `async`, no promises, no event loop — and that is a
-consequence of the embedding model, not a gap: `await`'s semantics
-require an event loop that decides when continuations resume, and
-your application owns the loop; promise chains also keep captured
-environments alive until a collector frees them, and there is no
-collector. The suspension mechanism itself stays: a `function*`
-coroutine suspends at `yield`, and each `next()` call advances exactly
-one step, which matches driving script logic once per frame (the
-fuller reasoning is in the
-[TypeScript tutorial](tutorial-typescript.md#why-promises-are-absent)):
+`async`/`await` exist without an event loop: awaiting suspends a
+Context-owned frame, and your application resumes pending
+computations explicitly — `subscript_rt_ctx_async_step(ctx)` in the
+frame loop steps every pending async entry once, in start order, and
+`subscript_rt_ctx_async_pending(ctx)` counts them. There are no
+`Promise` objects at runtime and promises are not storable values,
+so there is nothing to collect and nothing schedules behind your
+back (the fuller reasoning is in the
+[TypeScript tutorial](tutorial-typescript.md#why-there-is-no-promise-object-or-scheduler)).
+Alongside `await`, generator-shaped suspension is a `function*`
+coroutine: each `next()` call advances exactly one step, which
+matches driving script logic once per frame:
 
 ```ts
 function* updates(): Generator<i32> {
@@ -527,6 +529,14 @@ contract.
   trusted, and isolation against a hung script is the host's to
   supply (Q12). The one bounded subsystem is regular expressions,
   via `subscript_rt_ctx_set_regex_budget`.
+- **Async scripts complete only if you step them.** An exported
+  `async` entry runs to its first `await` and parks; your frame loop
+  calls `subscript_rt_ctx_async_step(ctx)` to resume every pending
+  entry once (start order, deterministic) and
+  `subscript_rt_ctx_async_pending(ctx)` to see whether work remains.
+  A host that never steps leaves them parked forever — by design,
+  the same way `Context.collect` never runs unbidden. Releasing the
+  Context drops parked computations without running any remainder.
 - **What you embed is the ship tier.** The runtime has no API for
   loading script source at run time: the emitted C is compiled into
   your binary like any other translation unit. The development tier
