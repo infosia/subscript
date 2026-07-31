@@ -173,13 +173,20 @@ fn accept_corpus_and_examples_have_zero_warnings() {
     }
     assert_eq!(example_entries.len(), 10, "numbered example count changed");
 
-    let hot_reload = examples.join("hot-reload/demo.ts");
-    let warnings = checked_warnings(
-        vec![read_source(&hot_reload, "demo.ts")],
-        "examples/hot-reload/demo.ts",
-    );
-    assert!(
-        warnings.is_empty(),
-        "examples/hot-reload/demo.ts produced warnings: {warnings:?}"
-    );
+    for relative in ["hot-reload/demo.ts", "rust-host/logic.ts"] {
+        let path = examples.join(relative);
+        let warnings = checked_warnings(
+            vec![read_source(
+                &path,
+                path.file_name()
+                    .expect("example file name")
+                    .to_string_lossy(),
+            )],
+            &format!("examples/{relative}"),
+        );
+        assert!(
+            warnings.is_empty(),
+            "examples/{relative} produced warnings: {warnings:?}"
+        );
+    }
 }

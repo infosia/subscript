@@ -1,0 +1,13 @@
+[package]
+name = "subscript-example-rust-host"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+subscript-codegen = { path = "../../codegen" }
+subscript-compiler = { path = "../../compiler" }
+
+[[bin]]
+name = "rust-host"
+path = "src/main.rs"

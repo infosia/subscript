@@ -93,8 +93,12 @@ gaps to be closed later:
 - [subscript for TypeScript developers](docs/tutorial-typescript.md) —
   what changes coming from TypeScript: sized integers, explicit memory,
   value classes, traps, coroutines, and the rejection table.
+- [subscript for Rust embedders](docs/tutorial-rust.md) — embedding
+  through the crates directly: the dev tier in your process, a
+  frame-loop host with hot reload in four steps, backed by a
+  test-pinned example.
 
-Every command and output in both was run against the repository as
+Every command and output shown was run against the repository as
 committed.
 
 ## What you get

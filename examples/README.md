@@ -22,6 +22,10 @@ Read the numbered examples in order:
    `subscript run --watch`, and editing `demo.ts` demonstrates live
    body swaps with surviving module state, refusal of declaration
    edits, and diagnostics while the old program keeps running.
+7. [`rust-host/`](rust-host/) embeds through the Rust crates directly
+   (`cargo run -p subscript-example-rust-host`): a frame loop, a
+   mid-run body swap with surviving state, and a refused declaration
+   edit, with the exact output pinned by its integration test.
 
 [`gate/two-header-binding.ts`](gate/two-header-binding.ts) is a compiler
 phase-proof program, not a teaching example. It binds the `Eng…` facade and

@@ -1000,6 +1000,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "subscript-example-rust-host"
+version = "0.1.0"
+dependencies = [
+ "subscript-codegen",
+ "subscript-compiler",
+]
+
+[[package]]
 name = "subscript-examples"
 version = "0.1.0"
 dependencies = [
