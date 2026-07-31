@@ -110,6 +110,9 @@ pub(crate) struct FnSig {
     /// inferred from the body.
     pub ret: Type,
     pub is_generator: bool,
+    /// True for a Q34 poll-driven async function. `ret` is the fulfilled
+    /// type inside the required source-level `Promise<ret>` annotation.
+    pub is_async: bool,
     /// True once a generator's yield type has been inferred (generators
     /// are checked in source order; a call before that point is
     /// rejected).
@@ -188,6 +191,7 @@ pub(crate) struct Scope {
 pub(crate) struct Frame {
     pub ret: Type,
     pub is_generator: bool,
+    pub is_async: bool,
     pub yield_ty: Option<Type>,
     pub is_lambda: bool,
     pub captures: Vec<hir::Capture>,
@@ -211,6 +215,7 @@ impl FnCtx {
             frames: vec![Frame {
                 ret,
                 is_generator,
+                is_async: false,
                 yield_ty: None,
                 is_lambda: false,
                 captures: Vec::new(),
@@ -952,6 +957,7 @@ impl<'p> Checker<'p> {
                     params: Vec::new(),
                     ret: Type::Error,
                     is_generator: false,
+                    is_async: false,
                     yield_known: false,
                 },
             );
@@ -1425,6 +1431,15 @@ impl<'p> Checker<'p> {
                     let name = f.ident.sym.to_string();
                     let sig = self.resolve_fn_sig(&f.function, self.pos(f.ident.span));
                     if self.exports[file].contains(&name) {
+                        if sig.is_async && (!sig.params.is_empty() || sig.ret != Type::Void) {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "exported async function `{name}` must have the host entry signature `(): Promise<void>`"
+                                ),
+                                self.pos(f.ident.span),
+                            );
+                        }
                         let aliases_boundary = sig
                             .params
                             .iter()
@@ -1473,22 +1488,44 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Resolves a function signature (pass B). Emits S013 for `async`.
+    /// Resolves a function signature (pass B), including Q34's required
+    /// `Promise<T>` view for async declarations.
     pub(crate) fn resolve_fn_sig(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
+        let params = self.resolve_params(&f.params);
         if f.is_async {
-            self.error(
-                RuleCode::S013,
-                "`async` requires an event loop; the language has none (use coroutines)",
-                pos.clone(),
-            );
+            if f.is_generator {
+                self.error(
+                    RuleCode::S100,
+                    "a function cannot be both async and a generator",
+                    pos,
+                );
+                return FnSig {
+                    params,
+                    ret: Type::Error,
+                    is_generator: false,
+                    is_async: true,
+                    yield_known: true,
+                };
+            }
+            let ret = match &f.return_type {
+                Some(ann) => self.resolve_async_return(&ann.type_ann),
+                None => {
+                    self.error(
+                        RuleCode::S100,
+                        "async functions require an explicit `Promise<T>` return annotation",
+                        pos,
+                    );
+                    Type::Error
+                }
+            };
             return FnSig {
-                params: Vec::new(),
-                ret: Type::Error,
+                params,
+                ret,
                 is_generator: false,
+                is_async: true,
                 yield_known: true,
             };
         }
-        let params = self.resolve_params(&f.params);
         if f.is_generator {
             // The yield type is inferred from the body (checked in
             // source order); a `Generator<T>` annotation, when present,
@@ -1512,6 +1549,7 @@ impl<'p> Checker<'p> {
                 params,
                 ret: Type::Generator(Box::new(yield_ty.unwrap_or(Type::Error))),
                 is_generator: true,
+                is_async: false,
                 yield_known: known,
             };
         }
@@ -1530,6 +1568,7 @@ impl<'p> Checker<'p> {
             params,
             ret,
             is_generator: false,
+            is_async: false,
             yield_known: true,
         }
     }
@@ -1773,9 +1812,9 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    if method.function.is_generator {
+                    if method.function.is_generator || method.function.is_async {
                         let pos = self.pos(method.span);
-                        self.error(RuleCode::S100, "generator methods are not decided", pos);
+                        self.error(RuleCode::S100, "coroutine methods are not decided", pos);
                         continue;
                     }
                     let sig = self.resolve_fn_sig(&method.function, self.pos(key.span));
@@ -1973,10 +2012,8 @@ impl<'p> Checker<'p> {
         this_ty: Option<Type>,
         pos: Pos,
     ) -> Option<hir::Function> {
-        if f.is_async {
-            return None;
-        }
         let mut fx = FnCtx::new(sig.ret.clone(), sig.is_generator, this_ty);
+        fx.frames[0].is_async = sig.is_async;
         if sig.is_generator {
             if let Type::Generator(y) = &sig.ret {
                 if sig.yield_known {
@@ -2019,6 +2056,7 @@ impl<'p> Checker<'p> {
             name: name.to_string(),
             exported,
             is_generator: sig.is_generator,
+            is_async: sig.is_async,
             params,
             ret,
             body,
@@ -2104,6 +2142,7 @@ impl<'p> Checker<'p> {
                         params,
                         ret: Type::Void,
                         is_generator: false,
+                        is_async: false,
                         yield_known: true,
                     };
                     let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
@@ -2144,6 +2183,7 @@ impl<'p> Checker<'p> {
                         name: "constructor".to_string(),
                         exported: false,
                         is_generator: false,
+                        is_async: false,
                         params: hir_params,
                         ret: Type::Void,
                         body,

@@ -51,6 +51,14 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_binding_count_advisory",
     )?;
+    let async_pending_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_async_pending",
+    )?;
+    let async_step_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_async_step",
+    )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -135,6 +143,12 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_set_binding_count_advisory" {
             push_comment(&mut out, &binding_count_advisory_setter_docs);
+        }
+        if function.name == "subscript_rt_ctx_async_pending" {
+            push_comment(&mut out, &async_pending_docs);
+        }
+        if function.name == "subscript_rt_ctx_async_step" {
+            push_comment(&mut out, &async_step_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
@@ -395,6 +409,15 @@ mod tests {
         ));
         assert!(header.contains("pointer smuggled in `userdata`"));
         assert!(header.contains("undefined behaviour"));
+    }
+
+    #[test]
+    fn generated_host_header_documents_async_polling() {
+        let header = render().expect("render host header");
+        assert!(header.contains("subscript_rt_ctx_async_pending"));
+        assert!(header.contains("subscript_rt_ctx_async_step"));
+        assert!(header.contains("every root pending at call entry exactly once"));
+        assert!(header.contains("On a trapped subscript_rt_context this\n * is a no-op"));
     }
 
     #[test]

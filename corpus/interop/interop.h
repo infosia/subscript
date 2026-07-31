@@ -151,6 +151,11 @@ void subDeviceSubmit(SubDevice device, SubBufferView commands);
 void subDeviceSetLogger(SubDevice device, SubCallbackInfo logger);
 void subDeviceSetLabel(SubDevice device, SubStringView label);
 
+/* Q34 deterministic foreign poll: returns ready after two pending
+ * attempts. The caller supplies its attempt number, so repeated test runs
+ * share no hidden fixture state. */
+int32_t subDevicePoll(int32_t attempt);
+
 /* ---- Pattern 2 (cont.): typed slice descriptors, multiple element ----
  *      types.
  *

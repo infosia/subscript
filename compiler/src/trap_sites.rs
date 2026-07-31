@@ -243,6 +243,11 @@ impl Analyzer {
                     self.expr(arg);
                 }
             }
+            K::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.expr(arg);
+                }
+            }
             K::New { args, .. } => {
                 for arg in args {
                     self.expr(arg);
@@ -306,7 +311,8 @@ impl Analyzer {
             | K::FuncRef(_)
             | K::EnumMember { .. }
             | K::Zero
-            | K::RawNew { .. } => {}
+            | K::RawNew { .. }
+            | K::AsyncSuspend => {}
         }
     }
 
@@ -486,6 +492,7 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
             };
             callee_assigns || args.iter().any(|arg| expr_assigns_to(arg, name))
         }
+        K::AsyncCall { args, .. } => args.iter().any(|arg| expr_assigns_to(arg, name)),
         K::New { args, .. } => args.iter().any(|arg| expr_assigns_to(arg, name)),
         K::DescriptorLit { fields, .. } => fields
             .iter()
@@ -525,6 +532,7 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
         | K::FuncRef(_)
         | K::EnumMember { .. }
         | K::Zero
-        | K::RawNew { .. } => false,
+        | K::RawNew { .. }
+        | K::AsyncSuspend => false,
     }
 }

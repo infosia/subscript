@@ -447,6 +447,7 @@ impl Checker<'_> {
                 name: names[index].clone(),
                 exported: false,
                 is_generator: false,
+                is_async: false,
                 params: vec![
                     json_param("builder", Type::U64, &pos),
                     json_param("value", ty.clone(), &pos),
@@ -500,6 +501,7 @@ impl Checker<'_> {
             name: wrapper.clone(),
             exported: false,
             is_generator: false,
+            is_async: false,
             params: vec![json_param("value", root.clone(), &pos)],
             ret: Type::Str,
             body,
@@ -790,6 +792,7 @@ impl Checker<'_> {
                 name: validators[index].clone(),
                 exported: false,
                 is_generator: false,
+                is_async: false,
                 params: vec![
                     json_param("parser", Type::U64, &pos),
                     json_param("node", Type::U64, &pos),
@@ -805,6 +808,7 @@ impl Checker<'_> {
                 name: constructors[index].clone(),
                 exported: false,
                 is_generator: false,
+                is_async: false,
                 params: vec![
                     json_param("parser", Type::U64, &pos),
                     json_param("node", Type::U64, &pos),
@@ -850,6 +854,7 @@ impl Checker<'_> {
             name: wrapper.clone(),
             exported: false,
             is_generator: false,
+            is_async: false,
             params: vec![json_param("text", Type::Str, &pos)],
             ret: result_ty.clone(),
             body: vec![

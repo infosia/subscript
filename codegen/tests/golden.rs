@@ -103,6 +103,30 @@ fn descriptor_literal_entry_matches_across_tiers_and_golden() {
 }
 
 #[test]
+fn q34_async_entries_match_across_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    for id in [
+        "a93-async-chain",
+        "a94-async-two-roots",
+        "a95-interop-async-await",
+    ] {
+        let sources = corpus::entry_sources(&accept, id);
+        let libraries = native_libraries(&sources);
+        let jit = run_jit_with_native_libraries(&sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+        let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+        let object = run_aot_with_native_libraries(&sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: object-AOT run failed: {error}"));
+        let golden = corpus::golden_bytes(&accept, id);
+        assert_eq!(jit, ship, "{id}: tier outputs differ");
+        assert_eq!(jit, object, "{id}: generated AOT entry output differs");
+        assert_eq!(jit, golden, "{id}: captured golden differs");
+        println!("{id}:\n{}", String::from_utf8_lossy(&jit));
+    }
+}
+
+#[test]
 fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -164,12 +188,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // storage coverage (a84–a87), plus the P24 astral-intern collection
     // coverage (a88), the P25 embedded chain-payload read-back
     // coverage (a89), callback-userdata collection rooting (a90), and
-    // Q32 string-literal union aliases (a91), and Q33 descriptor literals
-    // (a92).
+    // Q32 string-literal union aliases (a91), Q33 descriptor literals
+    // (a92), and Q34 poll-driven async (a93–a95).
     assert_eq!(
         golden_ids.len(),
-        92,
-        "expected exactly 92 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        95,
+        "expected exactly 95 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -179,7 +203,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          a82–a83 P23 regex, a84–a87 P24 code-point, and a88 P24 \
          astral-intern collection, a89 P25 embedded chain-payload read-back, \
          a90 callback-userdata rooting, and a91 Q32 string-literal-union \
-         and a92 Q33 descriptor-literal goldens, found {}",
+         a92 Q33 descriptor-literal, and a93–a95 Q34 async goldens, found {}",
         golden_ids.len()
     );
 

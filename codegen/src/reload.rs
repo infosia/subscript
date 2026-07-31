@@ -162,12 +162,13 @@ fn ty_name(m: &hir::Module, ty: &Type) -> String {
 fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
     let params: Vec<String> = f.params.iter().map(|p| ty_name(m, &p.ty)).collect();
     format!(
-        "{}({}) -> {}{}{}",
+        "{}({}) -> {}{}{}{}",
         f.name,
         params.join(","),
         ty_name(m, &f.ret),
         if f.exported { " export" } else { "" },
-        if f.is_generator { " generator" } else { "" }
+        if f.is_generator { " generator" } else { "" },
+        if f.is_async { " async" } else { "" }
     )
 }
 
@@ -630,6 +631,30 @@ impl ReloadSession {
         self.check_trap()
     }
 
+    /// Number of suspended async roots currently owned by the live
+    /// Context. Calling an async export kicks a root but does not pump it;
+    /// reload-capable hosts retain the same explicit polling control as C
+    /// hosts using `subscript_rt_ctx_async_pending`.
+    #[must_use]
+    pub fn async_pending(&self) -> usize {
+        self.ctx.async_pending()
+    }
+
+    /// Polls every async root pending at call entry once, in kick order,
+    /// and returns the number still pending.
+    ///
+    /// This does not clear a pending trap: the runtime's trapped-Context
+    /// no-op rule remains observable. Old JIT generations are retained by
+    /// the session, so callbacks queued before a reload remain callable and
+    /// report the normal stale-coroutine trap.
+    pub fn async_step(&mut self) -> Result<usize, RunError> {
+        // SAFETY: the session retains every JIT module that can have placed
+        // a callback in this Context's pending queue.
+        let remaining = unsafe { self.ctx.async_step() };
+        self.check_trap()?;
+        Ok(remaining)
+    }
+
     /// Takes the stdout bytes produced since the last take.
     #[must_use]
     pub fn take_output(&mut self) -> Vec<u8> {
@@ -874,6 +899,33 @@ mod tests {
         match s.call_main() {
             Err(RunError::Trap(t)) => assert_eq!(t.rule, TrapKind::EmptyPop),
             other => panic!("expected a trap, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn suspended_async_frame_is_stale_after_reload() {
+        let before = "export async function main(): Promise<void> {\n\
+                      \x20 print(\"before\");\n\
+                      \x20 await Context.suspend();\n\
+                      \x20 print(\"old continuation\");\n\
+                      }\n";
+        let after = "export async function main(): Promise<void> {\n\
+                     \x20 print(\"before\");\n\
+                     \x20 await Context.suspend();\n\
+                     \x20 print(\"new continuation\");\n\
+                     }\n";
+        let mut session = ReloadSession::new(&src(before)).expect("session");
+        session.call_main().expect("async kick");
+        assert_eq!(session.take_output(), b"before\n");
+        assert_eq!(session.ctx.async_pending(), 1);
+        session.reload(&src(after)).expect("body-only reload");
+
+        // SAFETY: the session retains every JIT generation, including the
+        // callback queued by the pre-reload async wrapper.
+        assert_eq!(unsafe { session.ctx.async_step() }, 1);
+        match session.check_trap() {
+            Err(RunError::Trap(trap)) => assert_eq!(trap.rule, TrapKind::StaleCoroutine),
+            other => panic!("expected stale async-frame trap, got {other:?}"),
         }
     }
 

@@ -17,6 +17,7 @@ declare function print(message: string): void;
 declare namespace Context {
   function collect(): void;
   function free(value: object): void;
+  function suspend(): Promise<void>;
 }
 
 declare class JsonResult<T> {

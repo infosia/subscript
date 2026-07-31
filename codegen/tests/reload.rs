@@ -21,7 +21,7 @@ mod native_fixture;
 mod trap_corpus;
 
 use subscript_codegen::{ReloadError, ReloadSession, RunError};
-use subscript_compiler::SourceFile;
+use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
 
 fn files(text: &str) -> Vec<SourceFile> {
@@ -434,7 +434,25 @@ fn reload_mode_reproduces_every_committed_golden() {
                 continue;
             }
         };
-        match session.call_main() {
+        let module = match check_program(&sources) {
+            Ok(module) => module,
+            Err(diagnostics) => {
+                failures.push(format!("{id}: checker failed: {diagnostics:?}"));
+                continue;
+            }
+        };
+        let run = session.call_main().and_then(|()| {
+            for function in &module.functions {
+                if function.exported && function.is_async && function.name != "main" {
+                    session.call_export(&function.name)?;
+                }
+            }
+            while session.async_pending() != 0 {
+                session.async_step()?;
+            }
+            Ok(())
+        });
+        match run {
             Ok(()) => {
                 let bytes = session.take_output();
                 if bytes != golden {

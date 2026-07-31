@@ -164,14 +164,7 @@ impl<'p> Checker<'p> {
             },
             ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
             ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
-            ast::Expr::Await(_) => {
-                self.error(
-                    RuleCode::S013,
-                    "`await` requires an event loop; the language has none",
-                    pos.clone(),
-                );
-                self.err_expr(pos)
-            }
+            ast::Expr::Await(a) => self.check_await(a, fx, pos),
             ast::Expr::TsNonNull(t) => {
                 let p = self.pos(t.span);
                 self.error(
@@ -198,6 +191,116 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(p)
             }
+        }
+    }
+
+    /// Checks Q34's two awaitable forms. The AST call is handled here
+    /// instead of through the ordinary call path so an async call can never
+    /// materialize a Promise-typed value in HIR.
+    fn check_await(
+        &mut self,
+        awaited: &ast::AwaitExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        if !fx.frames.last().is_some_and(|frame| frame.is_async) {
+            self.error(
+                RuleCode::S013,
+                "`await` is only legal inside an async function",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+
+        let mut operand: &ast::Expr = &awaited.arg;
+        while let ast::Expr::Paren(paren) = operand {
+            operand = &paren.expr;
+        }
+        let ast::Expr::Call(call) = operand else {
+            self.error(
+                RuleCode::S100,
+                "awaitable expressions are exactly `Context.suspend()` and direct async calls",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        };
+        let ast::Callee::Expr(callee) = &call.callee else {
+            self.error(RuleCode::S100, "awaitable expressions must be direct calls", pos.clone());
+            return self.err_expr(pos);
+        };
+        let mut callee: &ast::Expr = callee;
+        while let ast::Expr::Paren(paren) = callee {
+            callee = &paren.expr;
+        }
+
+        if let ast::Expr::Member(member) = callee {
+            if self.is_context_namespace(&member.obj, fx)
+                && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "suspend")
+            {
+                if call.type_args.is_some() || !call.args.is_empty() {
+                    self.error(
+                        RuleCode::S100,
+                        "`Context.suspend()` takes no type arguments or value arguments",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                return hir::Expr {
+                    kind: ExprKind::AsyncSuspend,
+                    ty: Type::Void,
+                    pos,
+                };
+            }
+        }
+
+        let ast::Expr::Ident(ident) = callee else {
+            self.error(
+                RuleCode::S100,
+                "an async awaitable must be a direct call of a named async function",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        };
+        let name = ident.sym.to_string();
+        if fx.scopes.iter().rev().any(|scope| scope.vars.contains_key(&name)) {
+            self.error(
+                RuleCode::S100,
+                "an async awaitable cannot be called through a local value",
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        }
+        let Some(ScopeItem::Func(function)) = self.scope_item(&name) else {
+            self.error(
+                RuleCode::S100,
+                format!("`{name}` is not a directly declared async function"),
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        };
+        let Some(sig) = self.fn_sigs.get(&function).cloned() else {
+            return self.err_expr(pos);
+        };
+        if !sig.is_async {
+            self.error(
+                RuleCode::S100,
+                format!("`{name}` is synchronous and cannot be awaited"),
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        }
+        if call.type_args.is_some() {
+            self.error(
+                RuleCode::S100,
+                format!("`{name}` is not generic"),
+                self.pos(ident.span),
+            );
+        }
+        let args = self.check_args(&sig.params, &call.args, fx, &pos, &name);
+        hir::Expr {
+            kind: ExprKind::AsyncCall { function, args },
+            ty: sig.ret,
+            pos,
         }
     }
 
@@ -481,10 +584,14 @@ impl<'p> Checker<'p> {
                 let Some(sig) = self.fn_sigs.get(&f).cloned() else {
                     return self.err_expr(pos);
                 };
-                if sig.is_generator {
+                if sig.is_generator || sig.is_async {
                     self.error(
                         RuleCode::S100,
-                        "generators may only be called, not passed as values",
+                        if sig.is_async {
+                            "async functions are not first-class values; call them directly in await position"
+                        } else {
+                            "generators may only be called, not passed as values"
+                        },
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -560,7 +667,8 @@ impl<'p> Checker<'p> {
                     self.error(
                         RuleCode::S014,
                         "`Context` is an ambient namespace, not a value; use \
-                         `Context.collect()` or `Context.free(value)` (Q6/Q7)",
+                         `Context.collect()`, `Context.free(value)`, or await \
+                         `Context.suspend()` (Q6/Q7/Q34)",
                         pos.clone(),
                     );
                     self.err_expr(pos)
@@ -1636,13 +1744,15 @@ impl<'p> Checker<'p> {
         if is_local {
             return None;
         }
-        // `Context.<member>` (Q6/Q7): function members are intercepted
+        // `Context.<member>` (Q6/Q7/Q34): function members are intercepted
         // in call position; the namespace and its members are not values.
         if name == "Context" && self.scope_item(&name).is_none() {
-            let detail = if crate::ambient::context_fn(prop).is_some() {
-                format!("`Context.{prop}` may only be called, not read as a value (Q6/Q7)")
+            let detail = if prop == "suspend" {
+                "`Context.suspend` may only appear as the direct call in `await Context.suspend()` (Q34)".to_string()
+            } else if crate::ambient::context_fn(prop).is_some() {
+                format!("`Context.{prop}` may only be called, not read as a value (Q6/Q7/Q34)")
             } else {
-                format!("`Context.{prop}` is outside the accepted Context subset (Q6/Q7)")
+                format!("`Context.{prop}` is outside the accepted Context subset (Q6/Q7/Q34)")
             };
             self.error(RuleCode::S014, detail, prop_pos.clone());
             return Some(self.err_expr(prop_pos));
@@ -4774,6 +4884,14 @@ impl<'p> Checker<'p> {
         let Some(sig) = self.fn_sigs.get(fn_name).cloned() else {
             return self.err_expr(pos);
         };
+        if sig.is_async {
+            self.error(
+                RuleCode::S013,
+                format!("async call `{fn_name}(...)` must be immediately awaited"),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         if sig.is_generator && !sig.yield_known {
             self.error(
                 RuleCode::S100,
@@ -4908,6 +5026,29 @@ impl<'p> Checker<'p> {
         };
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
+        if matches!(name.as_str(), "then" | "catch" | "finally") {
+            self.error(
+                RuleCode::S013,
+                format!("Promise combinator `.{name}(...)` is not in the language"),
+                prop_pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Promise")
+            && !fx
+                .scopes
+                .iter()
+                .rev()
+                .any(|scope| scope.vars.contains_key("Promise"))
+            && self.scope_item("Promise").is_none()
+        {
+            self.error(
+                RuleCode::S013,
+                format!("Promise static `Promise.{name}(...)` is not in the language"),
+                prop_pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         // `Context.collect()` / `Context.free(value)` (Q6/Q7): ambient
         // namespace calls lower through the existing ambient-call path.
         if self.is_context_namespace(&m.obj, fx) {
@@ -5213,7 +5354,7 @@ impl<'p> Checker<'p> {
         if name == "Promise" {
             self.error(
                 RuleCode::S013,
-                "`Promise` requires an event loop; the language has none",
+                "Promise objects cannot be constructed; async functions expose no Promise object surface",
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -5420,8 +5561,8 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         if a.is_async {
             self.error(
-                RuleCode::S013,
-                "`async` requires an event loop; the language has none",
+                RuleCode::S100,
+                "async arrow functions are not in the decided surface; use an async function declaration",
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -5470,6 +5611,7 @@ impl<'p> Checker<'p> {
         fx.frames.push(Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             is_generator: false,
+            is_async: false,
             yield_ty: None,
             is_lambda: true,
             captures: Vec::new(),

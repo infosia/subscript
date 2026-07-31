@@ -1,0 +1,10 @@
+main:start
+middle:start
+leaf:start
+leaf:poll=0
+leaf:resume=1
+leaf:poll=1
+leaf:resume=2
+leaf:done=2
+middle:value=12
+main:value=32

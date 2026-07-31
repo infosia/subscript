@@ -91,6 +91,7 @@ declare function subDeviceRelease(device: SubDevice): void;
 declare function subDeviceSubmit(device: SubDevice, commands: u32[]): void;
 declare function subDeviceSetLogger(device: SubDevice, logger: SubCallbackInfo): void;
 declare function subDeviceSetLabel(device: SubDevice, label: string): void;
+declare function subDevicePoll(attempt: i32): i32;
 declare function subSliceChecksumF32(data: f32[]): i32;
 declare function subSliceChecksumI32(data: i32[]): i32;
 declare function subSliceChecksumF64(data: f64[]): i32;

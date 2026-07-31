@@ -122,6 +122,24 @@ pub type AllocationVisitor = unsafe extern "C" fn(
 /// `subscript_export_<name>` and this same C signature.
 pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
+/// Fixed ABI of a compiler-generated async-frame resume function.
+///
+/// `frame` is a Context-owned coroutine frame and `out` points at storage
+/// for the fulfilled value (null for the zero-argument `Promise<void>` root
+/// exports driven by the runtime). The return is 1 on completion and 0 on
+/// suspension.
+pub type AsyncResume = unsafe extern "C" fn(
+    ctx: *mut Context,
+    frame: *mut u8,
+    out: *mut u8,
+) -> u8;
+
+#[derive(Clone, Copy)]
+struct AsyncRoot {
+    frame: *mut u8,
+    resume: AsyncResume,
+}
+
 /// Bytes between an allocation's base and its payload.
 pub const HEADER_SIZE: usize = 16;
 /// Recommended byte ceiling for freed-handle diagnostic retention.
@@ -397,6 +415,11 @@ pub struct Context {
     fn_table: *const *const u8,
     globals: *mut u8,
     script_depth: u32,
+    // Q34 pending root invocations, in host kick order. Active frames are
+    // tracked separately while a callback is on the stack so explicit
+    // collection keeps the whole current frame chain alive.
+    async_roots: VecDeque<AsyncRoot>,
+    active_async_frames: Vec<usize>,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -517,6 +540,8 @@ impl Context {
             fn_table: std::ptr::null(),
             globals: std::ptr::null_mut(),
             script_depth: 0,
+            async_roots: VecDeque::new(),
+            active_async_frames: Vec::new(),
             allocations: HashMap::new(),
             dead_allocations: AddressSet::default(),
             retained_allocations: VecDeque::new(),
@@ -673,6 +698,80 @@ impl Context {
     #[must_use]
     pub fn script_depth(&self) -> u32 {
         self.script_depth
+    }
+
+    // ----- poll-driven async roots (Q34) -----
+
+    /// Runs a newly invoked async root to its first suspension or
+    /// completion, registering a suspended root at the back of the
+    /// Context's deterministic pending queue.
+    ///
+    /// # Safety
+    ///
+    /// `frame` and `resume` must be the matching compiler-generated async
+    /// frame and resume function for this Context.
+    pub unsafe fn async_kick(&mut self, frame: *mut u8, resume: AsyncResume) {
+        if frame.is_null() || self.trapped() {
+            return;
+        }
+        self.active_async_frames.push(frame as usize);
+        let ctx = self as *mut Context;
+        // SAFETY: guaranteed by the caller; the active root keeps the frame
+        // reachable if the generated body explicitly collects.
+        let done = unsafe { resume(ctx, frame, std::ptr::null_mut()) };
+        self.active_async_frames.pop();
+        if done == 0 && !self.trapped() {
+            self.async_roots.push_back(AsyncRoot { frame, resume });
+        }
+    }
+
+    /// Number of suspended async root invocations.
+    #[must_use]
+    pub fn async_pending(&self) -> usize {
+        self.async_roots.len()
+    }
+
+    /// Resumes every root that was pending at call entry exactly once, in
+    /// kick order. A root that suspends returns to the back in the same
+    /// relative order; a completed root leaves the queue.
+    ///
+    /// A trap stops the round and preserves the trapping root plus every
+    /// not-yet-stepped root. Consequently clearing a reload-staleness trap
+    /// and stepping again observes the same stale frame, matching §8.2's
+    /// coroutine behavior.
+    ///
+    /// # Safety
+    ///
+    /// Every queued callback/frame pair was supplied through
+    /// [`Context::async_kick`] and its generated code remains live.
+    pub unsafe fn async_step(&mut self) -> usize {
+        if self.trapped() || self.async_roots.is_empty() {
+            return self.async_roots.len();
+        }
+        let mut round = std::mem::take(&mut self.async_roots);
+        let active_base = self.active_async_frames.len();
+        // `round` is temporarily outside `self.async_roots`. Keep every
+        // root in the fixed poll set registered for collection, including
+        // roots not yet reached when an earlier callback collects.
+        self.active_async_frames
+            .extend(round.iter().map(|root| root.frame as usize));
+        self.enter_script();
+        while let Some(root) = round.pop_front() {
+            let ctx = self as *mut Context;
+            // SAFETY: roots enter the queue only through `async_kick`.
+            let done = unsafe { (root.resume)(ctx, root.frame, std::ptr::null_mut()) };
+            if self.trapped() {
+                self.async_roots.push_back(root);
+                self.async_roots.append(&mut round);
+                break;
+            }
+            if done == 0 {
+                self.async_roots.push_back(root);
+            }
+        }
+        self.active_async_frames.truncate(active_base);
+        self.exit_script();
+        self.async_roots.len()
     }
 
     // ----- Math.random state (stdlib.md §2) -----
@@ -1781,6 +1880,8 @@ impl Context {
                 work.push(unsafe { ((base + i * 8) as *const usize).read_unaligned() });
             }
         }
+        work.extend(self.async_roots.iter().map(|root| root.frame as usize));
+        work.extend(self.active_async_frames.iter().copied());
         work.extend(self.interned.values().copied());
         work.extend(self.astral_code_points.values().copied());
         for binding in &self.callbacks {
@@ -2402,6 +2503,93 @@ impl std::fmt::Debug for Context {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[repr(C)]
+    struct TestAsyncFrame {
+        id: u8,
+        polls: u8,
+    }
+
+    unsafe extern "C" fn test_async_resume(
+        ctx: *mut Context,
+        frame: *mut u8,
+        _out: *mut u8,
+    ) -> u8 {
+        // SAFETY: the tests pass matching live `TestAsyncFrame` values.
+        let ctx = unsafe { &mut *ctx };
+        let frame = unsafe { &mut *frame.cast::<TestAsyncFrame>() };
+        ctx.print_line(if frame.id == 1 { b"one" } else { b"two" });
+        frame.polls += 1;
+        if frame.id == 3 && frame.polls == 2 {
+            ctx.collect();
+        }
+        u8::from(frame.polls == 2)
+    }
+
+    #[test]
+    fn async_step_resumes_pending_roots_in_kick_order() {
+        let mut ctx = Context::new();
+        let mut one = TestAsyncFrame { id: 1, polls: 0 };
+        let mut two = TestAsyncFrame { id: 2, polls: 0 };
+        // SAFETY: both frames remain live until their second poll completes.
+        unsafe {
+            ctx.async_kick((&mut one as *mut TestAsyncFrame).cast(), test_async_resume);
+            ctx.async_kick((&mut two as *mut TestAsyncFrame).cast(), test_async_resume);
+        }
+        assert_eq!(ctx.async_pending(), 2);
+        assert_eq!(ctx.take_stdout(), b"one\ntwo\n");
+        // SAFETY: the queued callbacks and frames are still valid.
+        assert_eq!(unsafe { ctx.async_step() }, 0);
+        assert_eq!(ctx.take_stdout(), b"one\ntwo\n");
+    }
+
+    #[test]
+    fn async_step_on_trapped_context_is_no_op() {
+        let mut ctx = Context::new();
+        let mut frame = TestAsyncFrame { id: 1, polls: 0 };
+        // SAFETY: `frame` remains live for the test.
+        unsafe { ctx.async_kick((&mut frame as *mut TestAsyncFrame).cast(), test_async_resume) };
+        ctx.trap(TrapKind::Internal, "test trap", 7);
+        // SAFETY: the queued callback and frame remain valid, but the trap
+        // contract prevents the callback from being invoked.
+        assert_eq!(unsafe { ctx.async_step() }, 1);
+        assert_eq!(frame.polls, 1);
+        assert_eq!(ctx.async_pending(), 1);
+    }
+
+    #[test]
+    fn dropping_context_does_not_resume_suspended_async_roots() {
+        let mut frame = TestAsyncFrame { id: 1, polls: 0 };
+        {
+            let mut ctx = Context::new();
+            // SAFETY: `frame` outlives the Context and its pending queue.
+            unsafe {
+                ctx.async_kick((&mut frame as *mut TestAsyncFrame).cast(), test_async_resume)
+            };
+            assert_eq!(ctx.async_pending(), 1);
+        }
+        assert_eq!(frame.polls, 1, "teardown must not run a continuation");
+    }
+
+    #[test]
+    fn async_step_keeps_unstepped_roots_live_during_collection() {
+        let mut ctx = Context::new();
+        let first = ctx.alloc(std::mem::size_of::<TestAsyncFrame>(), CLASS_GENERATOR, 0);
+        let second = ctx.alloc(std::mem::size_of::<TestAsyncFrame>(), CLASS_GENERATOR, 0);
+        // SAFETY: both allocations have exactly the test-frame payload and
+        // remain Context-owned throughout the poll round.
+        unsafe {
+            first.cast::<TestAsyncFrame>().write(TestAsyncFrame { id: 3, polls: 0 });
+            second.cast::<TestAsyncFrame>().write(TestAsyncFrame { id: 2, polls: 0 });
+            ctx.async_kick(first, test_async_resume);
+            ctx.async_kick(second, test_async_resume);
+            assert_eq!(ctx.async_step(), 0);
+        }
+        assert!(
+            ctx.is_live(second as usize),
+            "the first root's collect must retain roots not yet polled"
+        );
+    }
 
     impl Context {
         /// Enumerable allocation count. Dev tier: total map length (live

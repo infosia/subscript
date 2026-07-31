@@ -229,6 +229,8 @@ impl ThisCtx {
 
 /// State of the generator being lowered (CPS state machine).
 struct GenState {
+    /// Whether this frame is a generator or an async function.
+    kind: FrameKind,
     /// Yield sites seen so far (resume-label counter).
     yields: u32,
     /// Cursor into the frame's `let` fields, consumed in emission order.
@@ -237,6 +239,16 @@ struct GenState {
     let_fields: Vec<String>,
     /// C type of the yielded value.
     yield_ct: String,
+    /// Cursor into child-frame pointer fields used by direct async calls.
+    child_cursor: usize,
+    /// Frame field name for each direct async call, in emission order.
+    child_fields: Vec<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    Generator,
+    Async,
 }
 
 /// C temporaries already materialized for one HIR trap site.
@@ -534,7 +546,7 @@ impl<'m> Emitter<'m> {
             }
         }
         for f in &self.module.functions {
-            if f.is_generator {
+            if f.is_generator || f.is_async {
                 let cp = self.gen_creator_signature(f)?;
                 let rp = self.gen_resume_signature(f)?;
                 let _ = writeln!(self.protos, "{cp};");
@@ -557,6 +569,8 @@ impl<'m> Emitter<'m> {
         for f in &self.module.functions {
             if f.is_generator {
                 self.emit_generator(&mut bodies, f)?;
+            } else if f.is_async {
+                self.emit_async(&mut bodies, f)?;
             } else {
                 self.emit_function(&mut bodies, f)?;
             }
@@ -825,8 +839,9 @@ impl<'m> Emitter<'m> {
     }
 
     fn gen_resume_signature(&self, f: &hir::Function) -> Result<String, String> {
+        let ret = if f.is_async { "uint8_t" } else { "int32_t" };
         Ok(format!(
-            "static int32_t subscript_resume_{}(void* ctx, void* _frame, void* _out)",
+            "static {ret} subscript_resume_{}(void* ctx, void* _frame, void* _out)",
             sanitize(&f.name)
         ))
     }
@@ -984,8 +999,9 @@ impl<'m> Emitter<'m> {
     fn emit_trap_return(&mut self, out: &mut String, depth: usize) -> Result<(), String> {
         self.emit_assoc_iter_ends(out, depth);
         self.emit_shadow_pop(out, depth);
-        if self.gen.is_some() {
-            let _ = writeln!(out, "{}return 1;", indent(depth));
+        if let Some(gen) = &self.gen {
+            let done = if gen.kind == FrameKind::Async { 0 } else { 1 };
+            let _ = writeln!(out, "{}return {done};", indent(depth));
         } else if self.current_ret == Type::Void {
             let _ = writeln!(out, "{}return;", indent(depth));
         } else {
@@ -1239,10 +1255,38 @@ impl<'m> Emitter<'m> {
     fn emit_exports(&mut self, out: &mut String) -> Result<(), String> {
         for f in &self.module.functions {
             if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
-                let cn = Emitter::fn_c_name(f);
-                let _ = writeln!(out, "void subscript_export_{}(subscript_rt_context* ctx) {{ {cn}(ctx); }}", sanitize(&f.name));
+                let export = format!("subscript_export_{}", sanitize(&f.name));
+                if f.is_async {
+                    let creator = Emitter::fn_c_name(f);
+                    let resume = format!("subscript_resume_{}", sanitize(&f.name));
+                    let _ = writeln!(out, "void {export}(subscript_rt_context* ctx) {{");
+                    let _ = writeln!(out, "    void* _frame = {creator}(ctx);");
+                    let _ = writeln!(out, "    if (*(const uint32_t*)ctx != 0u) return;");
+                    let _ = writeln!(out, "    subscript_rt_async_kick(ctx, _frame, {resume});");
+                    let _ = writeln!(out, "}}");
+                } else {
+                    let cn = Emitter::fn_c_name(f);
+                    let _ = writeln!(out, "void {export}(subscript_rt_context* ctx) {{ {cn}(ctx); }}");
+                }
             }
         }
+        let _ = writeln!(out, "void subscript_kick_async_exports(subscript_rt_context* ctx) {{");
+        for f in &self.module.functions {
+            if f.exported
+                && f.is_async
+                && f.name != "main"
+                && f.params.is_empty()
+                && f.ret == Type::Void
+            {
+                let _ = writeln!(
+                    out,
+                    "    subscript_export_{}(ctx);",
+                    sanitize(&f.name)
+                );
+                let _ = writeln!(out, "    if (*(const uint32_t*)ctx != 0u) return;");
+            }
+        }
+        let _ = writeln!(out, "}}\n");
         Ok(())
     }
 
@@ -1344,9 +1388,15 @@ impl<'m> Emitter<'m> {
 
     fn emit_return(&mut self, out: &mut String, value: Option<&hir::Expr>, depth: usize) -> Result<(), String> {
         let ind = indent(depth);
-        // Inside a generator resume body, `return` completes the
-        // coroutine: terminal state, done = 1 (C8).
-        if self.gen.is_some() {
+        // Inside a coroutine resume body, `return` completes the frame.
+        if let Some(kind) = self.gen.as_ref().map(|g| g.kind) {
+            if kind == FrameKind::Async {
+                if let Some(value) = value {
+                    let text = self.eval(value, out, depth)?;
+                    let ret = self.ctype(&value.ty)?;
+                    let _ = writeln!(out, "{ind}*({ret}*)_out = {text};");
+                }
+            }
             self.emit_assoc_iter_ends(out, depth);
             let _ = writeln!(out, "{ind}_f->_state = {GEN_DONE}; return 1;");
             return Ok(());
@@ -2397,6 +2447,13 @@ impl<'m> Emitter<'m> {
                 self.eval_lambda(params, ret, body, captures, out, depth)
             }
             K::Yield(arg) => self.eval_yield(arg.as_deref(), out, depth),
+            K::AsyncSuspend => self.eval_async_suspend(out, depth),
+            K::AsyncCall { function, args } => {
+                let sites = e.trap_sites(self.module);
+                lower_trap_sites(&sites, "async call", |sites| {
+                    self.eval_async_call(function, args, &e.ty, sites, out, depth)
+                })
+            }
             K::Cond { cond, then, els } => self.eval_cond(cond, then, els, &e.ty, out, depth),
             other => Err(format!("expression {other:?} is outside the run set's scope")),
         }
@@ -4966,6 +5023,20 @@ impl<'m> Emitter<'m> {
         Ok(field)
     }
 
+    fn gen_next_child_field(&mut self) -> Result<String, String> {
+        let g = self
+            .gen
+            .as_mut()
+            .ok_or("async child frame outside a coroutine")?;
+        let field = g
+            .child_fields
+            .get(g.child_cursor)
+            .cloned()
+            .ok_or("async child-frame cursor exhausted")?;
+        g.child_cursor += 1;
+        Ok(field)
+    }
+
     fn emit_generator(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
         let yield_ty = match &f.ret {
             Type::Generator(y) => (**y).clone(),
@@ -5031,16 +5102,120 @@ impl<'m> Emitter<'m> {
 
         self.begin_fn(ThisCtx::None, Type::I32);
         self.gen = Some(GenState {
+            kind: FrameKind::Generator,
             yields: 0,
             let_cursor: 0,
             let_fields,
             yield_ct: self.ctype(&yield_ty)?,
+            child_cursor: 0,
+            child_fields: Vec::new(),
         });
         for p in &f.params {
             self.gen_locals.push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
         }
         self.emit_block(out, &f.body, 1)?;
         // Fell off the end: done.
+        let _ = writeln!(out, "    _f->_state = {GEN_DONE}; return 1;");
+        let _ = writeln!(out, "}}\n");
+        self.gen = None;
+        self.gen_locals.clear();
+        Ok(())
+    }
+
+    fn emit_async(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
+        let frame_struct = format!("Async_{}", sanitize(&f.name));
+
+        // Async frames use the same Context-owned allocation class and
+        // conservative frame scan as generators. Child-frame pointers are
+        // explicit fields so a suspended await chain remains live.
+        let mut lets: Vec<(&str, &Type)> = Vec::new();
+        walk_lets(&f.body, &mut lets);
+        let mut let_fields = Vec::with_capacity(lets.len());
+        let mut struct_body = String::from("    int32_t _state;\n");
+        for p in &f.params {
+            let _ = writeln!(
+                struct_body,
+                "    {} {};",
+                self.ctype(&p.ty)?,
+                sanitize(&p.name)
+            );
+        }
+        for (i, (_, ty)) in lets.iter().enumerate() {
+            let field = format!("g{i}");
+            let _ = writeln!(struct_body, "    {} {};", self.ctype(ty)?, field);
+            let_fields.push(field);
+        }
+        let child_count = count_async_calls(&f.body);
+        let mut child_fields = Vec::with_capacity(child_count as usize);
+        for i in 0..child_count {
+            let field = format!("child{i}");
+            let _ = writeln!(struct_body, "    void* {field};");
+            child_fields.push(field);
+        }
+        let _ = writeln!(
+            out,
+            "typedef struct {frame_struct} {{\n{struct_body}}} {frame_struct};"
+        );
+
+        let creator_sig = self.gen_creator_signature(f)?;
+        let _ = writeln!(out, "{creator_sig} {{");
+        self.begin_fn(
+            ThisCtx::None,
+            Type::Generator(Box::new(Type::Void)),
+        );
+        let sites = f.trap_sites();
+        lower_trap_sites(&sites, "async frame creation", |sites| {
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                "async function has no HIR allocation site",
+            )?;
+            let hir::TrapSite::Allocation { pos } = site else {
+                return Err("async function has a non-allocation HIR site".to_string());
+            };
+            let pid = self.pos_id(pos);
+            let _ = writeln!(
+                out,
+                "    void* _frame = subscript_rt_alloc(ctx, sizeof({frame_struct}), {}u, {pid}u);",
+                rtc::CLASS_GENERATOR
+            );
+            self.emit_trap_site(site, TrapOperand::Pending, out, 1)
+        })?;
+        let _ = writeln!(out, "    {frame_struct}* _f = ({frame_struct}*)_frame;");
+        let _ = writeln!(out, "    _f->_state = 0;");
+        for p in &f.params {
+            let _ = writeln!(out, "    _f->{0} = {0};", sanitize(&p.name));
+        }
+        let _ = writeln!(out, "    return _frame;");
+        let _ = writeln!(out, "}}\n");
+
+        let resume_sig = self.gen_resume_signature(f)?;
+        let suspensions = count_yields(&f.body);
+        let _ = writeln!(out, "{resume_sig} {{");
+        let _ = writeln!(out, "    {frame_struct}* _f = ({frame_struct}*)_frame;");
+        let _ = writeln!(out, "    switch (_f->_state) {{");
+        let _ = writeln!(out, "        case 0: goto _gstart;");
+        for i in 0..suspensions {
+            let _ = writeln!(out, "        case {}: goto _gresume{i};", i + 1);
+        }
+        let _ = writeln!(out, "        default: return 1;");
+        let _ = writeln!(out, "    }}");
+        let _ = writeln!(out, "    _gstart: ;");
+
+        self.begin_fn(ThisCtx::None, Type::I32);
+        self.gen = Some(GenState {
+            kind: FrameKind::Async,
+            yields: 0,
+            let_cursor: 0,
+            let_fields,
+            yield_ct: self.ctype(&f.ret)?,
+            child_cursor: 0,
+            child_fields,
+        });
+        for p in &f.params {
+            self.gen_locals
+                .push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
+        }
+        self.emit_block(out, &f.body, 1)?;
         let _ = writeln!(out, "    _f->_state = {GEN_DONE}; return 1;");
         let _ = writeln!(out, "}}\n");
         self.gen = None;
@@ -5064,6 +5239,87 @@ impl<'m> Emitter<'m> {
             g.yields += 1;
         }
         Ok(String::new())
+    }
+
+    fn eval_async_suspend(&mut self, out: &mut String, depth: usize) -> Result<String, String> {
+        let ind = indent(depth);
+        let n = {
+            let g = self.gen.as_ref().ok_or("await outside a coroutine")?;
+            if g.kind != FrameKind::Async {
+                return Err("async suspension inside a generator".to_string());
+            }
+            g.yields
+        };
+        let _ = writeln!(out, "{ind}_f->_state = {}; return 0;", n + 1);
+        let _ = writeln!(out, "{ind}_gresume{n}: ;");
+        if let Some(g) = self.gen.as_mut() {
+            g.yields += 1;
+        }
+        Ok(String::new())
+    }
+
+    fn eval_async_call(
+        &mut self,
+        function: &str,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        sites: &mut TrapSiteConsumer<'_>,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let f = self.hir_fn(function)?;
+        if !f.is_async {
+            return Err(format!("async call targets non-async function `{function}`"));
+        }
+        let params = f.params.clone();
+        let argv = self.call_args(&params, args, out, depth)?;
+        let field = self.gen_next_child_field()?;
+        let n = {
+            let g = self.gen.as_ref().ok_or("async call outside a coroutine")?;
+            if g.kind != FrameKind::Async {
+                return Err("async call inside a generator".to_string());
+            }
+            g.yields
+        };
+        let ind = indent(depth);
+        let sep = if argv.is_empty() { "" } else { ", " };
+        let creator = format!("subscript_fn_{}", sanitize(function));
+        let resume = format!("subscript_resume_{}", sanitize(function));
+        let site = sites.take_required(
+            |site| matches!(site, hir::TrapSite::Call { .. }),
+            "async call has no HIR call site",
+        )?;
+        let _ = writeln!(out, "{ind}_f->{field} = {creator}(ctx{sep}{argv});");
+        self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
+        let _ = writeln!(out, "{ind}goto _aattempt{n};");
+        let _ = writeln!(out, "{ind}_gresume{n}: ;");
+        let _ = writeln!(out, "{ind}_aattempt{n}: ;");
+        let result = self.fresh_tmp();
+        let out_arg = if *ret_ty == Type::Void {
+            "0".to_string()
+        } else {
+            let cty = self.ctype(ret_ty)?;
+            let zero = self.zero_value(ret_ty)?;
+            let _ = writeln!(out, "{ind}{cty} {result} = {zero};");
+            format!("&{result}")
+        };
+        let _ = writeln!(
+            out,
+            "{ind}if (!{resume}(ctx, _f->{field}, {out_arg})) {{ _f->_state = {}; return 0; }}",
+            n + 1
+        );
+        // The single HIR call site governs every dynamic resume of this
+        // await. It was consumed above; subsequent polls still propagate
+        // a callee trap through the same caller unwind.
+        self.emit_trap_check(out, depth)?;
+        if let Some(g) = self.gen.as_mut() {
+            g.yields += 1;
+        }
+        Ok(if *ret_ty == Type::Void {
+            String::new()
+        } else {
+            result
+        })
     }
 
     // ----- HIR lookups -----
@@ -5205,6 +5461,11 @@ fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
             collect_aggr_expr(els, set);
         }
         K::Yield(Some(a)) => collect_aggr_expr(a, set),
+        K::AsyncCall { args, .. } => {
+            for arg in args {
+                collect_aggr_expr(arg, set);
+            }
+        }
         K::Lambda { params, ret, body, .. } => {
             for p in params {
                 collect_aggr_ty(&p.ty, set);
@@ -5312,6 +5573,10 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
     use hir::ExprKind as K;
     match &e.kind {
         K::Yield(arg) => 1 + arg.as_deref().map_or(0, count_yields_expr),
+        K::AsyncSuspend => 1,
+        K::AsyncCall { args, .. } => {
+            1 + args.iter().map(count_yields_expr).sum::<u32>()
+        }
         K::Unary { operand, .. } => count_yields_expr(operand),
         K::Binary { left, right, .. } => count_yields_expr(left) + count_yields_expr(right),
         K::Assign { target, value, .. } => count_yields_expr(target) + count_yields_expr(value),
@@ -5350,6 +5615,78 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
         }
         _ => 0,
     }
+}
+
+fn count_async_calls(stmts: &[hir::Stmt]) -> u32 {
+    fn expr(e: &hir::Expr) -> u32 {
+        use hir::ExprKind as K;
+        match &e.kind {
+            K::AsyncCall { args, .. } => 1 + args.iter().map(expr).sum::<u32>(),
+            K::Unary { operand, .. } | K::Cast(operand) => expr(operand),
+            K::Binary { left, right, .. } | K::Assign { target: left, value: right, .. } => {
+                expr(left) + expr(right)
+            }
+            K::Call { callee, args } => {
+                let callee_count = match callee {
+                    hir::Callee::Value(value) => expr(value),
+                    hir::Callee::Method { recv, .. } => expr(recv),
+                    _ => 0,
+                };
+                callee_count + args.iter().map(expr).sum::<u32>()
+            }
+            K::New { args, .. } => args.iter().map(expr).sum(),
+            K::DescriptorLit { fields, .. } => fields.iter().flatten().map(expr).sum(),
+            K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => expr(obj),
+            K::Index { obj, index, .. } => expr(obj) + expr(index),
+            K::ArrayLit(elems) => elems.iter().map(expr).sum(),
+            K::ArraySpreadLit(elems) => elems.iter().map(|elem| expr(&elem.expr)).sum(),
+            K::Template(parts) => parts
+                .iter()
+                .map(|part| match part {
+                    hir::TplPart::Expr(value) => expr(value),
+                    _ => 0,
+                })
+                .sum(),
+            K::Cond { cond, then, els } => expr(cond) + expr(then) + expr(els),
+            K::Yield(arg) => arg.as_deref().map_or(0, expr),
+            K::Lambda { body, .. } => count_async_calls(body),
+            _ => 0,
+        }
+    }
+
+    let mut count = 0;
+    for stmt in stmts {
+        count += match stmt {
+            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => expr(init),
+            hir::Stmt::Return { value, .. } => value.as_ref().map_or(0, expr),
+            hir::Stmt::If { cond, then, els, .. } => {
+                expr(cond)
+                    + count_async_calls(then)
+                    + els.as_deref().map_or(0, count_async_calls)
+            }
+            hir::Stmt::While { cond, body, .. } => expr(cond) + count_async_calls(body),
+            hir::Stmt::For { init, cond, step, body, .. } => {
+                init.as_deref()
+                    .map_or(0, |stmt| count_async_calls(std::slice::from_ref(stmt)))
+                    + cond.as_ref().map_or(0, expr)
+                    + step.as_ref().map_or(0, expr)
+                    + count_async_calls(body)
+            }
+            hir::Stmt::ForOf { subject, body, .. } => expr(subject) + count_async_calls(body),
+            hir::Stmt::Switch { disc, cases, .. } => {
+                expr(disc)
+                    + cases
+                        .iter()
+                        .map(|case| {
+                            case.test.as_ref().map_or(0, expr) + count_async_calls(&case.body)
+                        })
+                        .sum::<u32>()
+            }
+            hir::Stmt::Block(body) => count_async_calls(body),
+            _ => 0,
+        };
+    }
+    count
 }
 
 fn is_array_mutator(recv_ty: &Type, name: &str) -> bool {
@@ -5701,6 +6038,8 @@ const PREAMBLE: &str = concat!(
 extern void subscript_rt_print(void* ctx, const void* s);
 extern void subscript_rt_collect(void* ctx);
 extern void* subscript_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
+typedef uint8_t (*SubAsyncResume)(void* ctx, void* frame, void* out);
+extern void subscript_rt_async_kick(void* ctx, void* frame, SubAsyncResume resume);
 extern void subscript_rt_delete(void* ctx, void* payload, uint32_t pos_id);
 extern void subscript_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
 extern void subscript_rt_root_add(void* ctx, void* base, uint64_t words);

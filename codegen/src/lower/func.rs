@@ -132,6 +132,15 @@ struct GenCtx {
     next_resume: usize,
     let_offsets: Vec<u32>,
     next_let: usize,
+    child_offsets: Vec<u32>,
+    next_child: usize,
+    kind: FrameKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    Generator,
+    Async,
 }
 
 /// Terminal state word of a coroutine frame.
@@ -284,6 +293,10 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
     use hir::ExprKind as K;
     match &e.kind {
         K::Yield(arg) => 1 + arg.as_deref().map_or(0, count_yields_expr),
+        K::AsyncSuspend => 1,
+        K::AsyncCall { args, .. } => {
+            1 + args.iter().map(count_yields_expr).sum::<usize>()
+        }
         K::Unary { operand, .. } => count_yields_expr(operand),
         K::Binary { left, right, .. } => count_yields_expr(left) + count_yields_expr(right),
         K::Assign { target, value, .. } => count_yields_expr(target) + count_yields_expr(value),
@@ -325,6 +338,132 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
         // innermost function).
         _ => 0,
     }
+}
+
+fn walk_async_calls_expr(e: &hir::Expr, out: &mut usize) {
+    use hir::ExprKind as K;
+    match &e.kind {
+        K::AsyncCall { args, .. } => {
+            for arg in args {
+                walk_async_calls_expr(arg, out);
+            }
+            *out += 1;
+        }
+        K::Unary { operand, .. } | K::Cast(operand) | K::Length(operand) => {
+            walk_async_calls_expr(operand, out)
+        }
+        K::Binary { left, right, .. } => {
+            walk_async_calls_expr(left, out);
+            walk_async_calls_expr(right, out);
+        }
+        K::Assign { target, value, .. } => {
+            walk_async_calls_expr(target, out);
+            walk_async_calls_expr(value, out);
+        }
+        K::Call { callee, args } => {
+            match callee {
+                hir::Callee::Value(value) => walk_async_calls_expr(value, out),
+                hir::Callee::Method { recv, .. } => walk_async_calls_expr(recv, out),
+                _ => {}
+            }
+            for arg in args {
+                walk_async_calls_expr(arg, out);
+            }
+        }
+        K::New { args, .. } | K::ArrayLit(args) => {
+            for arg in args {
+                walk_async_calls_expr(arg, out);
+            }
+        }
+        K::DescriptorLit { fields, .. } => {
+            for value in fields.iter().flatten() {
+                walk_async_calls_expr(value, out);
+            }
+        }
+        K::Field { obj, .. } | K::JsonResultValue(obj) => walk_async_calls_expr(obj, out),
+        K::Index { obj, index, .. } => {
+            walk_async_calls_expr(obj, out);
+            walk_async_calls_expr(index, out);
+        }
+        K::ArraySpreadLit(elems) => {
+            for elem in elems {
+                walk_async_calls_expr(&elem.expr, out);
+            }
+        }
+        K::Template(parts) => {
+            for part in parts {
+                if let hir::TplPart::Expr(value) = part {
+                    walk_async_calls_expr(value, out);
+                }
+            }
+        }
+        K::Yield(Some(value)) => walk_async_calls_expr(value, out),
+        K::Cond { cond, then, els } => {
+            walk_async_calls_expr(cond, out);
+            walk_async_calls_expr(then, out);
+            walk_async_calls_expr(els, out);
+        }
+        _ => {}
+    }
+}
+
+fn count_async_calls(stmts: &[hir::Stmt]) -> usize {
+    fn walk(stmts: &[hir::Stmt], out: &mut usize) {
+        for stmt in stmts {
+            match stmt {
+                hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => {
+                    walk_async_calls_expr(init, out)
+                }
+                hir::Stmt::Return { value, .. } => {
+                    if let Some(value) = value {
+                        walk_async_calls_expr(value, out);
+                    }
+                }
+                hir::Stmt::If { cond, then, els, .. } => {
+                    walk_async_calls_expr(cond, out);
+                    walk(then, out);
+                    if let Some(els) = els {
+                        walk(els, out);
+                    }
+                }
+                hir::Stmt::While { cond, body, .. } => {
+                    walk_async_calls_expr(cond, out);
+                    walk(body, out);
+                }
+                hir::Stmt::For { init, cond, step, body, .. } => {
+                    if let Some(init) = init {
+                        walk(std::slice::from_ref(init), out);
+                    }
+                    if let Some(cond) = cond {
+                        walk_async_calls_expr(cond, out);
+                    }
+                    if let Some(step) = step {
+                        walk_async_calls_expr(step, out);
+                    }
+                    walk(body, out);
+                }
+                hir::Stmt::ForOf { subject, body, .. } => {
+                    walk_async_calls_expr(subject, out);
+                    walk(body, out);
+                }
+                hir::Stmt::Switch { disc, cases, .. } => {
+                    walk_async_calls_expr(disc, out);
+                    for case in cases {
+                        if let Some(test) = &case.test {
+                            walk_async_calls_expr(test, out);
+                        }
+                        walk(&case.body, out);
+                    }
+                }
+                hir::Stmt::Block(body) => walk(body, out),
+                hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
+                _ => {}
+            }
+        }
+    }
+    let mut count = 0;
+    walk(stmts, &mut count);
+    count
 }
 
 fn count_yields(stmts: &[hir::Stmt]) -> usize {
@@ -1164,6 +1303,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 captures,
             } => self.eval_lambda(params, ret, body, captures, &e.pos),
             K::Yield(arg) => self.eval_yield(arg.as_deref(), &e.pos),
+            K::AsyncSuspend => self.eval_async_suspend(&e.pos),
+            K::AsyncCall { function, args } => {
+                let sites = e.trap_sites(self.ml.hir);
+                lower_trap_sites(&sites, "async call", |sites| {
+                    self.eval_async_call(function, args, &e.ty, &e.pos, sites)
+                })
+            }
             K::Cond { cond, then, els } => {
                 let c = self.eval(cond)?;
                 let c = self.expect_s(c)?;
@@ -4482,6 +4628,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .genc
                 .as_mut()
                 .ok_or_else(|| internal("yield outside a generator"))?;
+            if g.kind != FrameKind::Generator {
+                return Err(internal("yield inside an async frame"));
+            }
             let state = (g.next_resume + 1) as i64;
             (g.out, g.frame, g.yield_ty.clone(), state)
         };
@@ -4505,6 +4654,130 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         g.next_resume += 1;
         self.b.switch_to_block(resume);
         Ok(RV::None)
+    }
+
+    fn next_suspend_site(&mut self) -> Result<(Value, Value, Block, i64), String> {
+        let g = self
+            .genc
+            .as_mut()
+            .ok_or_else(|| internal("suspension outside a coroutine frame"))?;
+        let state = (g.next_resume + 1) as i64;
+        let resume = *g
+            .resume_blocks
+            .get(g.next_resume)
+            .ok_or_else(|| internal("resume block table exhausted"))?;
+        g.next_resume += 1;
+        Ok((g.frame, g.out, resume, state))
+    }
+
+    fn eval_async_suspend(&mut self, pos: &Pos) -> Result<RV, String> {
+        if self.genc.as_ref().map(|g| g.kind) != Some(FrameKind::Async) {
+            return Err(internal("Context.suspend outside an async frame"));
+        }
+        let (frame, _, resume, state) = self.next_suspend_site()?;
+        let state_v = self.iconst(types::I32, state);
+        self.b.ins().store(flags(), state_v, frame, 0);
+        let zero = self.iconst(types::I8, 0);
+        self.b.ins().return_(&[zero]);
+        self.b.switch_to_block(resume);
+        self.reload_epoch_check(frame, pos)?;
+        Ok(RV::None)
+    }
+
+    fn eval_async_call(
+        &mut self,
+        function: &str,
+        args: &[hir::Expr],
+        ret: &Type,
+        pos: &Pos,
+        sites: &mut TrapSiteConsumer<'_>,
+    ) -> Result<RV, String> {
+        if self.genc.as_ref().map(|g| g.kind) != Some(FrameKind::Async) {
+            return Err(internal("async call outside an async frame"));
+        }
+        let callee = self.ml.hir_fn(function)?;
+        if !callee.is_async {
+            return Err(internal(format!("awaited non-async function `{function}`")));
+        }
+        let child_off = {
+            let g = self.genc.as_mut().ok_or_else(|| internal("async context"))?;
+            let off = *g
+                .child_offsets
+                .get(g.next_child)
+                .ok_or_else(|| internal("async child-frame offset table exhausted"))?;
+            g.next_child += 1;
+            off
+        };
+        let (parent, _, resume_block, state) = self.next_suspend_site()?;
+
+        let mut argv = vec![self.ctx_v];
+        self.push_args(&mut argv, &callee.params, args)?;
+        let checked = sites
+            .take(|site| matches!(site, hir::TrapSite::Call { .. }))
+            .is_some();
+        let created = self.call_script(&FnKey::Free(function.to_string()), &argv, checked)?;
+        let child = *created
+            .first()
+            .ok_or_else(|| internal("async creator result"))?;
+        self.b
+            .ins()
+            .store(flags(), child, parent, child_off as i32);
+
+        let (size, align) = self.ml.layouts.size_align(ret)?;
+        let out_slot = if *ret == Type::Void {
+            None
+        } else {
+            Some(self.b.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                size.max(1),
+                align_shift(align.max(1)),
+            )))
+        };
+        let attempt = self.b.create_block();
+        self.b.append_block_param(attempt, types::I64);
+        let suspended = self.b.create_block();
+        let completed = self.b.create_block();
+        self.b.ins().jump(attempt, &[BlockArg::Value(child)]);
+
+        self.b.switch_to_block(resume_block);
+        self.reload_epoch_check(parent, pos)?;
+        let resumed_child = self
+            .b
+            .ins()
+            .load(types::I64, flags(), parent, child_off as i32);
+        self.b
+            .ins()
+            .jump(attempt, &[BlockArg::Value(resumed_child)]);
+
+        self.b.switch_to_block(attempt);
+        let child = self.b.block_params(attempt)[0];
+        let out = match out_slot {
+            None => self.iconst(types::I64, 0),
+            Some(slot) => self.b.ins().stack_addr(types::I64, slot, 0),
+        };
+        let results = self.call_script(
+            &FnKey::Resume(function.to_string()),
+            &[self.ctx_v, child, out],
+            false,
+        )?;
+        self.trap_check();
+        let done = *results
+            .first()
+            .ok_or_else(|| internal("async resume result"))?;
+        self.b.ins().brif(done, completed, &[], suspended, &[]);
+
+        self.b.switch_to_block(suspended);
+        let state_v = self.iconst(types::I32, state);
+        self.b.ins().store(flags(), state_v, parent, 0);
+        let zero = self.iconst(types::I8, 0);
+        self.b.ins().return_(&[zero]);
+
+        self.b.switch_to_block(completed);
+        if *ret == Type::Void {
+            Ok(RV::None)
+        } else {
+            self.load_val(ret, out, 0)
+        }
     }
 
     // ----- statements -----
@@ -4990,12 +5263,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn emit_return(&mut self, value: Option<(RV, Type)>) -> Result<(), String> {
         self.end_assoc_iters()?;
         if self.is_resume {
-            // Generator completion: terminal state, done = 1.
-            let g = self
+            // Coroutine completion: an async frame first writes its
+            // fulfilled value through `out`; both frame kinds then store
+            // the terminal state and return done = 1.
+            let (frame, out, kind) = self
                 .genc
                 .as_ref()
-                .ok_or_else(|| internal("resume without generator context"))?;
-            let frame = g.frame;
+                .map(|g| (g.frame, g.out, g.kind))
+                .ok_or_else(|| internal("resume without coroutine context"))?;
+            if kind == FrameKind::Async {
+                match value {
+                    Some((rv, ty)) => self.store_val(&ty, out, 0, rv)?,
+                    None if self.ret_ty != Type::Void => {
+                        return Err(internal("missing async fulfilled value"));
+                    }
+                    None => {}
+                }
+            }
             let done_state = self.iconst(types::I32, GEN_DONE);
             self.b.ins().store(flags(), done_state, frame, 0);
             let one = self.iconst(types::I8, 1);
@@ -5046,17 +5330,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.b.switch_to_block(u);
             self.emit_shadow_pop()?;
             let vals = if self.is_resume {
-                // A trapped coroutine is finished: store the terminal
-                // state so a (hypothetical) later resume stays done
-                // instead of re-entering the body.
-                let g = self
+                let (frame, kind) = self
                     .genc
                     .as_ref()
-                    .ok_or_else(|| internal("resume without generator context"))?;
-                let frame = g.frame;
-                let done_state = self.iconst(types::I32, GEN_DONE);
-                self.b.ins().store(flags(), done_state, frame, 0);
-                vec![self.iconst(types::I8, 1)]
+                    .map(|g| (g.frame, g.kind))
+                    .ok_or_else(|| internal("resume without coroutine context"))?;
+                if kind == FrameKind::Generator {
+                    // A trapped explicitly-driven generator stays done.
+                    let done_state = self.iconst(types::I32, GEN_DONE);
+                    self.b.ins().store(flags(), done_state, frame, 0);
+                    vec![self.iconst(types::I8, 1)]
+                } else {
+                    // The runtime retains a trapping async root. Keeping
+                    // its suspension state makes a cleared stale-frame trap
+                    // recur on the next explicit step (§8.2/Q34).
+                    vec![self.iconst(types::I8, 0)]
+                }
             } else {
                 self.zero_return_values()?
             };
@@ -5570,8 +5859,8 @@ pub(crate) fn wrapper_for<M: Module>(
         return Ok(id);
     }
     let f = ml.hir_fn(name)?;
-    if f.is_generator {
-        return Err(internal("generators are not function values"));
+    if f.is_generator || f.is_async {
+        return Err(internal("coroutines are not function values"));
     }
     let params_ty: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
     let sig = ml.make_sig(&params_ty, &f.ret, true, false)?;
@@ -5622,11 +5911,12 @@ pub(crate) fn wrapper_for<M: Module>(
     Ok(id)
 }
 
-/// Frame layout of a generator: `(param offsets, let offsets, size)`.
+/// Frame layout shared by generators and async functions: parameter/local
+/// storage followed by one child-frame pointer for each direct awaited call.
 fn generator_frame<M: Module>(
     ml: &ModLower<M>,
     f: &hir::Function,
-) -> Result<(Vec<u32>, Vec<u32>, u32), String> {
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>, u32), String> {
     let mut off = GEN_PAYLOAD_OFF;
     let mut param_offsets = Vec::new();
     for p in &f.params {
@@ -5644,8 +5934,14 @@ fn generator_frame<M: Module>(
         let_offsets.push(off);
         off = checked_layout_add(off, s.max(1), "generator local layout")?;
     }
+    let mut child_offsets = Vec::new();
+    for _ in 0..count_async_calls(&f.body) {
+        off = round_up_layout(off, 8, "async child-frame layout")?;
+        child_offsets.push(off);
+        off = checked_layout_add(off, 8, "async child-frame layout")?;
+    }
     let size = round_up_layout(off, 8, "final generator frame layout")?;
-    Ok((param_offsets, let_offsets, size))
+    Ok((param_offsets, let_offsets, child_offsets, size))
 }
 
 /// Defines the creator and resume functions of a `function*` (C8).
@@ -5653,7 +5949,7 @@ pub(crate) fn define_generator<M: Module>(
     ml: &mut ModLower<M>,
     f: &hir::Function,
 ) -> Result<(), String> {
-    let (param_offsets, let_offsets, frame_size) = generator_frame(ml, f)?;
+    let (param_offsets, let_offsets, child_offsets, frame_size) = generator_frame(ml, f)?;
     let yield_ty = match &f.ret {
         Type::Generator(y) => (**y).clone(),
         other => return Err(internal(format!("generator return {other:?}"))),
@@ -5820,6 +6116,9 @@ pub(crate) fn define_generator<M: Module>(
                     next_resume: 0,
                     let_offsets,
                     next_let: 0,
+                    child_offsets,
+                    next_child: 0,
+                    kind: FrameKind::Generator,
                 }),
                 term: false,
             };
@@ -5842,6 +6141,302 @@ pub(crate) fn define_generator<M: Module>(
             .map_err(|e| internal(format!("define resume: {e}")))?;
         ml.module.clear_context(&mut cctx);
     }
+    Ok(())
+}
+
+/// Defines the creator and resume functions of a Q34 async declaration.
+/// The frame/state ABI is deliberately the generator ABI: allocation,
+/// parameter/local storage, reload epoch, and CPS dispatch are shared; only
+/// suspension and completion behavior differ.
+pub(crate) fn define_async<M: Module>(
+    ml: &mut ModLower<M>,
+    f: &hir::Function,
+) -> Result<(), String> {
+    let (param_offsets, let_offsets, child_offsets, frame_size) = generator_frame(ml, f)?;
+    let creator_id = ml.func_id(&FnKey::Free(f.name.clone()))?;
+    let resume_id = ml.func_id(&FnKey::Resume(f.name.clone()))?;
+
+    // Creator: allocate and initialize, but do not execute. An await site
+    // or exported host wrapper performs the first resume immediately.
+    {
+        let params_ty: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
+        let sig = ml.make_sig(
+            &params_ty,
+            &Type::Generator(Box::new(Type::Void)),
+            false,
+            false,
+        )?;
+        let mut cctx = ml.module.make_context();
+        cctx.func.signature = sig;
+        let mut fbx = FunctionBuilderContext::new();
+        {
+            let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+            let entry = b.create_block();
+            b.append_block_params_for_function_params(entry);
+            b.switch_to_block(entry);
+            let pro = split_params(ml, &mut b, entry, &Type::Void, false, false, &f.params)?;
+            let mut body = Body {
+                ml,
+                b,
+                ctx_v: pro.ctx_v,
+                env_v: None,
+                sret_v: None,
+                this_v: None,
+                ret_ty: Type::Generator(Box::new(Type::Void)),
+                is_resume: false,
+                scopes: vec![Vec::new()],
+                loops: Vec::new(),
+                assoc_iters: Vec::new(),
+                unwind: None,
+                shadow_base: None,
+                next_shadow: 0,
+                genc: None,
+                term: false,
+            };
+            let size_v = body.iconst(types::I64, i64::from(frame_size));
+            let class_v = body.iconst(types::I32, i64::from(rtc::CLASS_GENERATOR));
+            let sites = f.trap_sites();
+            let frame = lower_trap_sites(&sites, "async frame creation", |sites| {
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("async function has no HIR allocation site"),
+                )?;
+                let hir::TrapSite::Allocation { pos } = site else {
+                    return Err(internal("async function has a non-allocation HIR site"));
+                };
+                let pid = body.pos_id(pos);
+                let pos_v = body.iconst(types::I32, pid);
+                let result = body.call_rt(
+                    body.ml.rt.alloc,
+                    &[body.ctx_v, size_v, class_v, pos_v],
+                    false,
+                )?;
+                body.emit_trap_site(site, TrapOperand::Pending)?;
+                result.ok_or_else(|| internal("async frame alloc result"))
+            })?;
+            let resume_ref = body
+                .ml
+                .module
+                .declare_func_in_func(resume_id, body.b.func);
+            let resume_addr = body.b.ins().func_addr(types::I64, resume_ref);
+            body.b
+                .ins()
+                .store(flags(), resume_addr, frame, GEN_RESUME_OFF);
+            if body.ml.opts.reload {
+                let epoch_off = ctx_off(rtc::Context::reload_epoch_offset())?;
+                let epoch = body
+                    .b
+                    .ins()
+                    .load(types::I32, flags(), body.ctx_v, epoch_off);
+                body.b.ins().store(flags(), epoch, frame, GEN_EPOCH_OFF);
+            }
+            let mut value_index = 0usize;
+            for (param, off) in f.params.iter().zip(&param_offsets) {
+                let value = match body.ml.layouts.repr(&param.ty)? {
+                    Repr::None => continue,
+                    Repr::Pair => {
+                        let value = RV::P(
+                            pro.param_vals[value_index],
+                            pro.param_vals[value_index + 1],
+                        );
+                        value_index += 2;
+                        value
+                    }
+                    Repr::Agg { .. } => {
+                        let value = RV::A(pro.param_vals[value_index]);
+                        value_index += 1;
+                        value
+                    }
+                    Repr::Scalar(_) => {
+                        let value = RV::S(pro.param_vals[value_index]);
+                        value_index += 1;
+                        value
+                    }
+                };
+                body.store_val(&param.ty, frame, *off as i32, value)?;
+            }
+            body.b.ins().return_(&[frame]);
+            body.term = true;
+            body.finish()?;
+        }
+        ensure_explicit_frame_supported(&cctx.func, "async creator")?;
+        ml.module
+            .define_function(creator_id, &mut cctx)
+            .map_err(|error| internal(format!("define async creator: {error}")))?;
+        ml.module.clear_context(&mut cctx);
+    }
+
+    // Resume state machine.
+    {
+        let sig = ml.resume_sig();
+        let mut cctx = ml.module.make_context();
+        cctx.func.signature = sig;
+        let mut fbx = FunctionBuilderContext::new();
+        {
+            let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+            let entry = b.create_block();
+            b.append_block_params_for_function_params(entry);
+            b.switch_to_block(entry);
+            let values = b.block_params(entry).to_vec();
+            let (ctx_v, frame, out) = (values[0], values[1], values[2]);
+            let suspension_count = count_yields(&f.body);
+            let start = b.create_block();
+            let done_block = b.create_block();
+            let resume_blocks: Vec<Block> = (0..suspension_count)
+                .map(|_| b.create_block())
+                .collect();
+            let state = b.ins().load(types::I32, flags(), frame, 0);
+            for (index, &block) in std::iter::once(&start).chain(&resume_blocks).enumerate() {
+                let equal = b.ins().icmp_imm(IntCC::Equal, state, index as i64);
+                let next = b.create_block();
+                b.ins().brif(equal, block, &[], next, &[]);
+                b.switch_to_block(next);
+            }
+            b.ins().jump(done_block, &[]);
+            b.switch_to_block(done_block);
+            let one = b.ins().iconst(types::I8, 1);
+            b.ins().return_(&[one]);
+
+            b.switch_to_block(start);
+            let mut body = Body {
+                ml,
+                b,
+                ctx_v,
+                env_v: None,
+                sret_v: None,
+                this_v: None,
+                ret_ty: f.ret.clone(),
+                is_resume: true,
+                scopes: vec![Vec::new()],
+                loops: Vec::new(),
+                assoc_iters: Vec::new(),
+                unwind: None,
+                shadow_base: None,
+                next_shadow: 0,
+                genc: Some(GenCtx {
+                    frame,
+                    out,
+                    yield_ty: f.ret.clone(),
+                    resume_blocks,
+                    next_resume: 0,
+                    let_offsets,
+                    next_let: 0,
+                    child_offsets,
+                    next_child: 0,
+                    kind: FrameKind::Async,
+                }),
+                term: false,
+            };
+            for (param, off) in f.params.iter().zip(&param_offsets) {
+                body.bind(
+                    &param.name,
+                    Binding {
+                        ty: param.ty.clone(),
+                        storage: Storage::Frame(*off),
+                    },
+                );
+            }
+            body.lower_stmts(&f.body)?;
+            body.finish()?;
+        }
+        ensure_explicit_frame_supported(&cctx.func, "async resume")?;
+        ml.module
+            .define_function(resume_id, &mut cctx)
+            .map_err(|error| internal(format!("define async resume: {error:?}")))?;
+        ml.module.clear_context(&mut cctx);
+    }
+    Ok(())
+}
+
+/// Defines the zero-argument void host wrapper for an exported async
+/// function: create its frame, then let the runtime perform the initial
+/// resume and pending-root registration.
+pub(crate) fn define_async_export<M: Module>(
+    ml: &mut ModLower<M>,
+    f: &hir::Function,
+) -> Result<(), String> {
+    if !f.params.is_empty() || f.ret != Type::Void {
+        return Err(internal(format!(
+            "exported async function `{}` is not zero-argument Promise<void>",
+            f.name
+        )));
+    }
+    let id = ml.func_id(&FnKey::AsyncExport(f.name.clone()))?;
+    let sig = ml.make_sig(&[], &Type::Void, false, false)?;
+    let mut cctx = ml.module.make_context();
+    cctx.func.signature = sig;
+    let mut fbx = FunctionBuilderContext::new();
+    {
+        let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+        let entry = b.create_block();
+        b.append_block_params_for_function_params(entry);
+        b.switch_to_block(entry);
+        let ctx = b.block_params(entry)[0];
+        let creator = ml.func_id(&FnKey::Free(f.name.clone()))?;
+        let creator_ref = ml.module.declare_func_in_func(creator, b.func);
+        let call = b.ins().call(creator_ref, &[ctx]);
+        let frame = b.inst_results(call)[0];
+        let resume = ml.func_id(&FnKey::Resume(f.name.clone()))?;
+        let resume_ref = ml.module.declare_func_in_func(resume, b.func);
+        let resume_addr = b.ins().func_addr(types::I64, resume_ref);
+        let kick_ref = ml.module.declare_func_in_func(ml.rt.async_kick, b.func);
+        b.ins().call(kick_ref, &[ctx, frame, resume_addr]);
+        b.ins().return_(&[]);
+        b.seal_all_blocks();
+        b.finalize();
+    }
+    ensure_explicit_frame_supported(&cctx.func, "async export wrapper")?;
+    ml.module
+        .define_function(id, &mut cctx)
+        .map_err(|error| internal(format!("define async export: {error}")))?;
+    ml.module.clear_context(&mut cctx);
+    Ok(())
+}
+
+/// Defines the standard AOT-runner helper: after `main`, kick every other
+/// exported async function in declaration order. The generic AOT entry then
+/// pumps the Context to quiescence.
+pub(crate) fn define_async_runner<M: Module>(ml: &mut ModLower<M>) -> Result<(), String> {
+    let id = ml.func_id(&FnKey::AsyncRunner)?;
+    let sig = ml.make_sig(&[], &Type::Void, false, false)?;
+    let async_exports: Vec<String> = ml
+        .hir
+        .functions
+        .iter()
+        .filter(|function| function.exported && function.is_async && function.name != "main")
+        .map(|function| function.name.clone())
+        .collect();
+    let mut cctx = ml.module.make_context();
+    cctx.func.signature = sig;
+    let mut fbx = FunctionBuilderContext::new();
+    {
+        let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+        let entry = b.create_block();
+        b.append_block_params_for_function_params(entry);
+        b.switch_to_block(entry);
+        let ctx = b.block_params(entry)[0];
+        let done = b.create_block();
+        for name in async_exports {
+            let export = ml.func_id(&FnKey::AsyncExport(name))?;
+            let export_ref = ml.module.declare_func_in_func(export, b.func);
+            b.ins().call(export_ref, &[ctx]);
+            let trap = b.ins().load(types::I32, flags(), ctx, 0);
+            let clear = b.ins().icmp_imm(IntCC::Equal, trap, 0);
+            let next = b.create_block();
+            b.ins().brif(clear, next, &[], done, &[]);
+            b.switch_to_block(next);
+        }
+        b.ins().jump(done, &[]);
+        b.switch_to_block(done);
+        b.ins().return_(&[]);
+        b.seal_all_blocks();
+        b.finalize();
+    }
+    ensure_explicit_frame_supported(&cctx.func, "async standard-runner helper")?;
+    ml.module
+        .define_function(id, &mut cctx)
+        .map_err(|error| internal(format!("define async runner: {error}")))?;
+    ml.module.clear_context(&mut cctx);
     Ok(())
 }
 

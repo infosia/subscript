@@ -535,9 +535,13 @@ mod tests {
     }
 
     #[test]
-    fn async_is_s013() {
-        let err = check_one("async function f(): Promise<void> {}\n").unwrap_err();
-        assert_eq!(err[0].code, RuleCode::S013);
+    fn async_function_erases_promise_to_its_fulfilled_type() {
+        let module = check_one(
+            "async function f(): Promise<void> {\n  await Context.suspend();\n}\n",
+        )
+        .expect("async function");
+        assert!(module.functions[0].is_async);
+        assert_eq!(module.functions[0].ret, Type::Void);
     }
 
     #[test]
@@ -1374,7 +1378,8 @@ mod tests {
         assert_eq!(
             value_err[0].message,
             "`Context` is an ambient namespace, not a value; use \
-             `Context.collect()` or `Context.free(value)` (Q6/Q7)"
+             `Context.collect()`, `Context.free(value)`, or await \
+             `Context.suspend()` (Q6/Q7/Q34)"
         );
 
         let construct_err =

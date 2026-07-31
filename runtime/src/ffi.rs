@@ -18,7 +18,7 @@
 //! result from a trapping function is never fed into another call.
 
 use crate::context::{
-    AllocationVisitor, CallbackBinding, Context, DiagnosticsObserver, PrintObserver,
+    AllocationVisitor, AsyncResume, CallbackBinding, Context, DiagnosticsObserver, PrintObserver,
     TrapObserver,
 };
 use crate::trap::TrapKind;
@@ -171,6 +171,24 @@ pub unsafe extern "C" fn subscript_rt_shadow_push(ctx: *mut Context, base: *mut 
 pub unsafe extern "C" fn subscript_rt_shadow_pop(ctx: *mut Context) {
     // SAFETY: shared contract.
     unsafe { &mut *ctx }.shadow_pop();
+}
+
+/// Runs a compiler-created async root to its first suspension or completion.
+/// This is an internal generated-code ABI; embedding hosts use the
+/// `subscript_rt_ctx_async_*` driver functions below.
+///
+/// # Safety
+///
+/// Shared contract; `frame` and `resume` are a matching generated pair.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_kick(
+    ctx: *mut Context,
+    frame: *mut u8,
+    resume: Option<AsyncResume>,
+) {
+    let Some(resume) = resume else { return };
+    // SAFETY: shared contract and the caller supplies a matching pair.
+    unsafe { &mut *ctx }.async_kick(frame, resume);
 }
 
 // ----- Map / Set (stdlib.md §10, Q24) -----
@@ -4653,6 +4671,32 @@ pub unsafe extern "C" fn subscript_rt_ctx_clear_trap(ctx: *mut Context) -> i32 {
     }
     ctx.clear_trap();
     1
+}
+
+/// Returns the number of suspended async root invocations owned by `ctx`.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_async_pending(ctx: *const Context) -> u64 {
+    // SAFETY: shared Context contract.
+    unsafe { &*ctx }.async_pending() as u64
+}
+
+/// Resumes every root pending at call entry exactly once, in host kick
+/// order, and returns the number still pending. On a trapped Context this
+/// is a no-op returning the current count; an empty Context returns zero.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. Generated code for every
+/// pending root remains linked and callable.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_async_step(ctx: *mut Context) -> u64 {
+    // SAFETY: exclusive Context contract and queued callbacks were installed
+    // by generated code from the same live program.
+    unsafe { (&mut *ctx).async_step() as u64 }
 }
 
 /// Number of live Context-owned allocations.

@@ -102,6 +102,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("subscript_rt_print", ffi::subscript_rt_print as *const u8),
         ("subscript_rt_collect", ffi::subscript_rt_collect as *const u8),
         ("subscript_rt_alloc", ffi::subscript_rt_alloc as *const u8),
+        (
+            "subscript_rt_async_kick",
+            ffi::subscript_rt_async_kick as *const u8,
+        ),
         ("subscript_rt_delete", ffi::subscript_rt_delete as *const u8),
         ("subscript_rt_trap", ffi::subscript_rt_trap as *const u8),
         ("subscript_rt_root_add", ffi::subscript_rt_root_add as *const u8),
@@ -616,6 +620,22 @@ fn execute_entry(
                 main(&mut *ctx);
                 elapsed = start.elapsed();
                 ctx.exit_script();
+            }
+            if !ctx.trapped() {
+                for entry in &lowered.entries {
+                    if entry.is_async && entry.name != "main" {
+                        let entry_ptr = module.get_finalized_function(entry.id);
+                        call_script_entry(entry_ptr, &mut ctx);
+                        if ctx.trapped() {
+                            break;
+                        }
+                    }
+                }
+            }
+            while !ctx.trapped() && ctx.async_pending() != 0 {
+                // SAFETY: every pending item was registered by a generated
+                // async export wrapper in this finalized module.
+                ctx.async_step();
             }
         }
     }

@@ -195,6 +195,9 @@ pub struct Function {
     pub exported: bool,
     /// True for `function*` coroutines (C8).
     pub is_generator: bool,
+    /// True for a poll-driven `async function` (Q34). `ret` is the
+    /// fulfilled value type inside the source-level `Promise<ret>` view.
+    pub is_async: bool,
     /// Parameters, in order.
     pub params: Vec<Param>,
     /// Return type. For a generator this is `Generator<Y>` where `Y` is
@@ -214,7 +217,7 @@ impl Function {
     /// creator function. Ordinary functions have no function-level site.
     #[must_use]
     pub fn trap_sites(&self) -> Vec<TrapSite> {
-        if self.is_generator {
+        if self.is_generator || self.is_async {
             vec![TrapSite::Allocation {
                 pos: self.pos.clone(),
             }]
@@ -2718,6 +2721,16 @@ pub enum ExprKind {
     },
     /// `yield` inside a generator (C8).
     Yield(Option<Box<Expr>>),
+    /// `await Context.suspend()` inside an async function (Q34).
+    AsyncSuspend,
+    /// A direct async call in await position (Q34). The result type is
+    /// the callee's fulfilled value type; no Promise value exists in HIR.
+    AsyncCall {
+        /// Async function name.
+        function: String,
+        /// Arguments evaluated before the callee frame is created.
+        args: Vec<Expr>,
+    },
     /// Conditional expression `c ? a : b`.
     Cond {
         /// Condition (boolean).
@@ -2901,6 +2914,7 @@ impl Expr {
                 }
                 sites
             }
+            K::AsyncCall { .. } => vec![call(&self.pos)],
             K::New { class, .. } => {
                 let Some(def) = module.classes.get(class.0) else {
                     return Vec::new();
@@ -2983,6 +2997,7 @@ impl Expr {
             | K::ArrayLit(_)
             | K::Lambda { .. }
             | K::Yield(_)
+            | K::AsyncSuspend
             | K::Cond { .. } => Vec::new(),
         }
     }

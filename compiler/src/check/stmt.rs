@@ -700,7 +700,7 @@ impl<'p> Checker<'p> {
         if f.is_await {
             self.error(
                 RuleCode::S013,
-                "`for await…of` requires promises and an event loop; the language has neither",
+                "`for await…of` requires the Promise object/iterator surface, which is not in the language",
                 pos,
             );
             return;

@@ -11,6 +11,59 @@ use crate::types::{FuncType, Type};
 use super::{Checker, ScopeItem};
 
 impl<'p> Checker<'p> {
+    /// Resolves the mandatory source-level `Promise<T>` view of an async
+    /// function and returns the fulfilled `T` carried in HIR. Promise is
+    /// deliberately not a general [`Type`]: no Promise value exists in the
+    /// language (Q34).
+    pub(crate) fn resolve_async_return(&mut self, ty: &ast::TsType) -> Type {
+        let ast::TsType::TsTypeRef(reference) = ty else {
+            let pos = self.pos(ty.span());
+            self.error(
+                RuleCode::S100,
+                "async functions must return an explicitly annotated `Promise<T>`",
+                pos,
+            );
+            return Type::Error;
+        };
+        let ast::TsEntityName::Ident(ident) = &reference.type_name else {
+            let pos = self.pos(reference.span);
+            self.error(
+                RuleCode::S100,
+                "async functions must return an explicitly annotated `Promise<T>`",
+                pos,
+            );
+            return Type::Error;
+        };
+        if ident.sym.as_ref() != "Promise" {
+            let pos = self.pos(ident.span);
+            self.error(
+                RuleCode::S100,
+                "async functions must return an explicitly annotated `Promise<T>`",
+                pos,
+            );
+            return Type::Error;
+        }
+        let Some(args) = &reference.type_params else {
+            let pos = self.pos(ident.span);
+            self.error(
+                RuleCode::S100,
+                "`Promise` requires exactly one fulfilled-value type argument",
+                pos,
+            );
+            return Type::Error;
+        };
+        if args.params.len() != 1 {
+            let pos = self.pos(ident.span);
+            self.error(
+                RuleCode::S100,
+                "`Promise` requires exactly one fulfilled-value type argument",
+                pos,
+            );
+            return Type::Error;
+        }
+        self.resolve_type(&args.params[0])
+    }
+
     /// Resolves an annotation to a language type, emitting rule
     /// diagnostics for banned spellings. Errors resolve to
     /// [`Type::Error`] so one bad annotation does not cascade.
@@ -137,7 +190,7 @@ impl<'p> Checker<'p> {
             "Promise" => {
                 self.error(
                     RuleCode::S013,
-                    "`Promise` requires an event loop; the language has none",
+                    "Promise objects are not in the language; `Promise<T>` is only an async return annotation",
                     pos,
                 );
                 return Type::Error;

@@ -28,7 +28,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r11-throw.ts", RuleCode::S010, 8),
     ("r12-general-union.ts", RuleCode::S011, 8),
     ("r13-undefined.ts", RuleCode::S012, 7),
-    ("r14-async.ts", RuleCode::S013, 7),
     ("r16-math-variadic-max.ts", RuleCode::S014, 8),
     ("r18-math-value.ts", RuleCode::S014, 9),
     ("r19-date-local-accessor.ts", RuleCode::S014, 10),
@@ -103,6 +102,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r94-descriptor-method.ts", RuleCode::S100, 10),
     ("r95-descriptor-new.ts", RuleCode::S100, 14),
+    ("r96-new-promise.ts", RuleCode::S013, 8),
+    ("r97-promise-combinator.ts", RuleCode::S013, 12),
+    ("r98-promise-static.ts", RuleCode::S013, 8),
+    ("r99-await-outside-async.ts", RuleCode::S013, 7),
+    ("r100-floating-async-call.ts", RuleCode::S013, 13),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -240,8 +244,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        92,
-        "expected 85 standing reject entries plus the seven-entry P23 battery"
+        96,
+        "expected 89 standing reject entries plus the seven-entry P23 battery"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

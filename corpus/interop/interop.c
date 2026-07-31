@@ -64,6 +64,10 @@ struct SubDevice_T {
  * length. Single-threaded; refilled on each use. */
 static char subscript_msgbuf[256];
 
+int32_t subDevicePoll(int32_t attempt) {
+    return attempt >= 2 ? 1 : 0;
+}
+
 int32_t subChainPayloadValue(SubChainHeader *chain) {
     uint32_t h = 0u;
     for (SubChainHeader *n = chain; n != NULL; n = n->next) {

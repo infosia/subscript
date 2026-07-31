@@ -58,6 +58,10 @@ pub(crate) enum FnKey {
     Free(String),
     /// Generator resume function, by generator name.
     Resume(String),
+    /// Host ABI wrapper for an exported async function.
+    AsyncExport(String),
+    /// Generated standard-runner helper that kicks non-main async exports.
+    AsyncRunner,
     /// Constructor of class `usize`.
     Ctor(usize),
     /// Method `String` of class `usize`.
@@ -80,6 +84,7 @@ pub(crate) struct RtFns {
     pub root_add: FuncId,
     pub shadow_push: FuncId,
     pub shadow_pop: FuncId,
+    pub async_kick: FuncId,
     pub str_lit: FuncId,
     pub str_len: FuncId,
     pub str_concat: FuncId,
@@ -184,6 +189,8 @@ pub(crate) struct EntryPoint {
     pub name: String,
     /// Lowered function.
     pub id: FuncId,
+    /// Whether this entry is an async root wrapper (Q34).
+    pub is_async: bool,
 }
 
 /// Result of lowering a whole program.
@@ -844,6 +851,7 @@ fn declare_rt<M: Module>(
         root_add: mk("subscript_rt_root_add", &[I64, I64, I64], None)?,
         shadow_push: mk("subscript_rt_shadow_push", &[I64, I64, I64], None)?,
         shadow_pop: mk("subscript_rt_shadow_pop", &[I64], None)?,
+        async_kick: mk("subscript_rt_async_kick", &[I64, I64, I64], None)?,
         str_lit: mk("subscript_rt_str_lit", &[I64, I64, I64, I32], Some(I64))?,
         str_len: mk("subscript_rt_str_len", &[I64, I64], Some(I32))?,
         str_concat: mk("subscript_rt_str_concat", &[I64, I64, I64, I32], Some(I64))?,
@@ -962,8 +970,11 @@ pub(crate) fn aot_flags() -> Result<cranelift_codegen::settings::Flags, String> 
 fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
     for f in &ml.hir.functions {
         ml.reserve_slot(FnKey::Free(f.name.clone()));
-        if f.is_generator {
+        if f.is_generator || f.is_async {
             ml.reserve_slot(FnKey::Resume(f.name.clone()));
+            if f.is_async && f.exported {
+                ml.reserve_slot(FnKey::AsyncExport(f.name.clone()));
+            }
         } else {
             ml.reserve_slot(FnKey::Wrapper(f.name.clone()));
         }
@@ -1077,13 +1088,13 @@ pub(crate) fn lower_module_with<M: Module>(
     };
     for (i, f) in hirm.functions.iter().enumerate() {
         let params: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
-        let export = f.exported && !f.is_generator;
+        let export = f.exported && !f.is_generator && !f.is_async;
         let sym = if export {
             format!("subscript_export_{}", f.name)
         } else {
             format!("subscript_f{i}")
         };
-        if f.is_generator {
+        if f.is_generator || f.is_async {
             let sig =
                 ml.make_sig(&params, &Type::Generator(Box::new(Type::Void)), false, false)?;
             decl(&mut ml, FnKey::Free(f.name.clone()), sym, &sig, false)?;
@@ -1095,6 +1106,16 @@ pub(crate) fn lower_module_with<M: Module>(
                 &rsig,
                 false,
             )?;
+            if f.is_async && f.exported {
+                let export_sig = ml.make_sig(&[], &Type::Void, false, false)?;
+                decl(
+                    &mut ml,
+                    FnKey::AsyncExport(f.name.clone()),
+                    format!("subscript_export_{}", f.name),
+                    &export_sig,
+                    true,
+                )?;
+            }
         } else {
             let sig = ml.make_sig(&params, &f.ret, false, false)?;
             decl(&mut ml, FnKey::Free(f.name.clone()), sym, &sig, export)?;
@@ -1122,11 +1143,26 @@ pub(crate) fn lower_module_with<M: Module>(
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
         decl(&mut ml, FnKey::Init, "subscript_init".to_string(), &sig, true)?;
     }
+    {
+        let sig = ml.make_sig(&[], &Type::Void, false, false)?;
+        decl(
+            &mut ml,
+            FnKey::AsyncRunner,
+            "subscript_kick_async_exports".to_string(),
+            &sig,
+            true,
+        )?;
+    }
 
     // Define bodies.
     for f in &hirm.functions {
         if f.is_generator {
             func::define_generator(&mut ml, f)?;
+        } else if f.is_async {
+            func::define_async(&mut ml, f)?;
+            if f.exported {
+                func::define_async_export(&mut ml, f)?;
+            }
         } else {
             define_function(&mut ml, FnKey::Free(f.name.clone()), f, None)?;
         }
@@ -1140,23 +1176,40 @@ pub(crate) fn lower_module_with<M: Module>(
         }
     }
     func::define_init(&mut ml)?;
+    func::define_async_runner(&mut ml)?;
 
     let main = ml
         .fn_index
         .get("main")
         .and_then(|&i| {
             let f = &hirm.functions[i];
-            (f.exported && !f.is_generator && f.params.is_empty()).then_some(())
+            (f.exported
+                && !f.is_generator
+                && f.params.is_empty()
+                && f.ret == Type::Void)
+                .then_some(())
         })
         .ok_or_else(|| internal("no exported `main(): void` entry point"))
-        .and_then(|()| ml.func_id(&FnKey::Free("main".to_string())))?;
+        .and_then(|()| {
+            let f = &hirm.functions[*ml.fn_index.get("main").expect("main index")];
+            if f.is_async {
+                ml.func_id(&FnKey::AsyncExport("main".to_string()))
+            } else {
+                ml.func_id(&FnKey::Free("main".to_string()))
+            }
+        })?;
     let init = ml.func_id(&FnKey::Init)?;
     let mut entries = Vec::new();
     for f in &hirm.functions {
         if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
             entries.push(EntryPoint {
                 name: f.name.clone(),
-                id: ml.func_id(&FnKey::Free(f.name.clone()))?,
+                id: if f.is_async {
+                    ml.func_id(&FnKey::AsyncExport(f.name.clone()))?
+                } else {
+                    ml.func_id(&FnKey::Free(f.name.clone()))?
+                },
+                is_async: f.is_async,
             });
         }
     }

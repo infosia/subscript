@@ -36,8 +36,8 @@ pub enum RuleCode {
     S011,
     /// `undefined` is banned; the single null story is `null` (C7).
     S012,
-    /// No `async` / `await` / `Promise`; coroutines are the only
-    /// suspension mechanism (C8).
+    /// Promise object construction/combinators and un-awaited async calls
+    /// are rejected; Q34 exposes no Promise object surface (C8).
     S013,
     /// Out-of-subset standard-library use, or arithmetic on storage-only
     /// `f16` (Q23).
@@ -90,7 +90,7 @@ impl RuleCode {
             }
             RuleCode::S012 => "`undefined` is banned; the single null story is `null`.",
             RuleCode::S013 => {
-                "No `async`, `await`, or `Promise`; coroutines are the only suspension mechanism."
+                "Promise objects and combinators are not in the language; async calls must be directly awaited."
             }
             RuleCode::S014 => {
                 "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected."

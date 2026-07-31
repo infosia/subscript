@@ -309,6 +309,11 @@ impl WarningChecker<'_> {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, argument_sink);
                 }
             }
+            ExprKind::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
+                }
+            }
             ExprKind::New { args, .. } => {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
@@ -377,13 +382,16 @@ impl WarningChecker<'_> {
             | ExprKind::FuncRef(_)
             | ExprKind::EnumMember { .. }
             | ExprKind::RawNew { .. }
+            | ExprKind::AsyncSuspend
             | ExprKind::Zero => {}
         }
     }
 
     fn scan_allocation_children(&mut self, expr: &Expr, loop_depth: usize, collect_mutes: bool) {
         match &expr.kind {
-            ExprKind::New { args, .. } | ExprKind::Call { args, .. } => {
+            ExprKind::New { args, .. }
+            | ExprKind::Call { args, .. }
+            | ExprKind::AsyncCall { args, .. } => {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
@@ -549,6 +557,11 @@ impl WarningChecker<'_> {
                     self.scan_w003_expr(arg, loop_depth, fresh);
                 }
             }
+            ExprKind::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.scan_w003_expr(arg, loop_depth, fresh);
+                }
+            }
             ExprKind::New { args, .. } => {
                 for arg in args {
                     self.scan_w003_expr(arg, loop_depth, fresh);
@@ -605,6 +618,7 @@ impl WarningChecker<'_> {
             | ExprKind::FuncRef(_)
             | ExprKind::EnumMember { .. }
             | ExprKind::RawNew { .. }
+            | ExprKind::AsyncSuspend
             | ExprKind::Zero => {}
         }
     }
@@ -741,6 +755,11 @@ impl WarningChecker<'_> {
                     self.warn_w002_expr_uses(arg, freed);
                 }
             }
+            ExprKind::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.warn_w002_expr_uses(arg, freed);
+                }
+            }
             ExprKind::New { args, .. } => {
                 for arg in args {
                     self.warn_w002_expr_uses(arg, freed);
@@ -792,6 +811,7 @@ impl WarningChecker<'_> {
             | ExprKind::FuncRef(_)
             | ExprKind::EnumMember { .. }
             | ExprKind::RawNew { .. }
+            | ExprKind::AsyncSuspend
             | ExprKind::Zero => {}
         }
     }
@@ -881,6 +901,11 @@ impl WarningChecker<'_> {
                     self.analyze_lambdas_in_expr(arg);
                 }
             }
+            ExprKind::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.analyze_lambdas_in_expr(arg);
+                }
+            }
             ExprKind::New { args, .. } => {
                 for arg in args {
                     self.analyze_lambdas_in_expr(arg);
@@ -936,6 +961,7 @@ impl WarningChecker<'_> {
             | ExprKind::FuncRef(_)
             | ExprKind::EnumMember { .. }
             | ExprKind::RawNew { .. }
+            | ExprKind::AsyncSuspend
             | ExprKind::Zero => {}
         }
     }
@@ -1103,6 +1129,7 @@ fn contains_collect_in_expr(expr: &Expr) -> bool {
             };
             callee_has_collect || args.iter().any(contains_collect_in_expr)
         }
+        ExprKind::AsyncCall { args, .. } => args.iter().any(contains_collect_in_expr),
         ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
             contains_collect_in_expr(operand)
         }
@@ -1148,6 +1175,7 @@ fn contains_collect_in_expr(expr: &Expr) -> bool {
         | ExprKind::FuncRef(_)
         | ExprKind::EnumMember { .. }
         | ExprKind::RawNew { .. }
+        | ExprKind::AsyncSuspend
         | ExprKind::Zero => false,
     }
 }
@@ -1254,6 +1282,14 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
                     scan_candidate_expr(recv, name, state);
                 }
                 _ => {}
+            }
+            for arg in args {
+                scan_candidate_expr(arg, name, state);
+            }
+        }
+        ExprKind::AsyncCall { args, .. } => {
+            if args.iter().any(|arg| value_is_candidate(arg, name)) {
+                state.escaped = true;
             }
             for arg in args {
                 scan_candidate_expr(arg, name, state);
@@ -1366,6 +1402,7 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
         | ExprKind::FuncRef(_)
         | ExprKind::EnumMember { .. }
         | ExprKind::RawNew { .. }
+        | ExprKind::AsyncSuspend
         | ExprKind::Zero => {}
     }
 }

@@ -56,6 +56,8 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subDeviceSubmit",
             "subDeviceSetLogger",
             "subDeviceSetLabel",
+            // Q34 deterministic poll primitive.
+            "subDevicePoll",
             "subSliceChecksumF32",
             "subSliceChecksumI32",
             "subSliceChecksumF64",

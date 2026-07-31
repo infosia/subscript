@@ -26,6 +26,7 @@ extern "C" {
     fn subDeviceSubmit();
     fn subDeviceSetLogger();
     fn subDeviceSetLabel();
+    fn subDevicePoll();
     fn subSliceChecksumF32();
     fn subSliceChecksumI32();
     fn subSliceChecksumF64();
@@ -61,6 +62,7 @@ pub fn library() -> NativeLibrary {
         ("subDeviceSubmit".to_string(), subDeviceSubmit as *const u8),
         ("subDeviceSetLogger".to_string(), subDeviceSetLogger as *const u8),
         ("subDeviceSetLabel".to_string(), subDeviceSetLabel as *const u8),
+        ("subDevicePoll".to_string(), subDevicePoll as *const u8),
         ("subSliceChecksumF32".to_string(), subSliceChecksumF32 as *const u8),
         ("subSliceChecksumI32".to_string(), subSliceChecksumI32 as *const u8),
         ("subSliceChecksumF64".to_string(), subSliceChecksumF64 as *const u8),

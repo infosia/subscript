@@ -171,6 +171,102 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h Type, &'h Pos)>) {
     }
 }
 
+fn count_async_calls_expr(expr: &hir::Expr) -> u64 {
+    use hir::ExprKind as K;
+    match &expr.kind {
+        K::AsyncCall { args, .. } => 1 + args.iter().map(count_async_calls_expr).sum::<u64>(),
+        K::Unary { operand, .. } | K::Cast(operand) => count_async_calls_expr(operand),
+        K::Binary { left, right, .. }
+        | K::Assign {
+            target: left,
+            value: right,
+            ..
+        } => count_async_calls_expr(left) + count_async_calls_expr(right),
+        K::Call { callee, args } => {
+            let callee = match callee {
+                hir::Callee::Value(value) => count_async_calls_expr(value),
+                hir::Callee::Method { recv, .. } => count_async_calls_expr(recv),
+                _ => 0,
+            };
+            callee + args.iter().map(count_async_calls_expr).sum::<u64>()
+        }
+        K::New { args, .. } => args.iter().map(count_async_calls_expr).sum(),
+        K::DescriptorLit { fields, .. } => fields
+            .iter()
+            .flatten()
+            .map(count_async_calls_expr)
+            .sum(),
+        K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => {
+            count_async_calls_expr(obj)
+        }
+        K::Index { obj, index, .. } => {
+            count_async_calls_expr(obj) + count_async_calls_expr(index)
+        }
+        K::ArrayLit(elems) => elems.iter().map(count_async_calls_expr).sum(),
+        K::ArraySpreadLit(elems) => elems
+            .iter()
+            .map(|elem| count_async_calls_expr(&elem.expr))
+            .sum(),
+        K::Template(parts) => parts
+            .iter()
+            .map(|part| match part {
+                hir::TplPart::Expr(value) => count_async_calls_expr(value),
+                _ => 0,
+            })
+            .sum(),
+        K::Cond { cond, then, els } => {
+            count_async_calls_expr(cond)
+                + count_async_calls_expr(then)
+                + count_async_calls_expr(els)
+        }
+        K::Yield(value) => value.as_deref().map_or(0, count_async_calls_expr),
+        K::Lambda { body, .. } => count_async_calls(body),
+        _ => 0,
+    }
+}
+
+fn count_async_calls(stmts: &[hir::Stmt]) -> u64 {
+    stmts
+        .iter()
+        .map(|stmt| match stmt {
+            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => count_async_calls_expr(init),
+            hir::Stmt::Return { value, .. } => {
+                value.as_ref().map_or(0, count_async_calls_expr)
+            }
+            hir::Stmt::If { cond, then, els, .. } => {
+                count_async_calls_expr(cond)
+                    + count_async_calls(then)
+                    + els.as_deref().map_or(0, count_async_calls)
+            }
+            hir::Stmt::While { cond, body, .. } => {
+                count_async_calls_expr(cond) + count_async_calls(body)
+            }
+            hir::Stmt::For { init, cond, step, body, .. } => {
+                init.as_deref()
+                    .map_or(0, |stmt| count_async_calls(std::slice::from_ref(stmt)))
+                    + cond.as_ref().map_or(0, count_async_calls_expr)
+                    + step.as_ref().map_or(0, count_async_calls_expr)
+                    + count_async_calls(body)
+            }
+            hir::Stmt::ForOf { subject, body, .. } => {
+                count_async_calls_expr(subject) + count_async_calls(body)
+            }
+            hir::Stmt::Switch { disc, cases, .. } => {
+                count_async_calls_expr(disc)
+                    + cases
+                        .iter()
+                        .map(|case| {
+                            case.test.as_ref().map_or(0, count_async_calls_expr)
+                                + count_async_calls(&case.body)
+                        })
+                        .sum::<u64>()
+            }
+            hir::Stmt::Block(body) => count_async_calls(body),
+            _ => 0,
+        })
+        .sum()
+}
+
 struct Validator<'a> {
     classes: &'a [hir::ClassDef],
     states: Vec<Option<Outcome>>,
@@ -433,6 +529,22 @@ impl<'a> Validator<'a> {
             }
             end = next.expect("generator size checked above");
         }
+        if function.is_async {
+            let child_bytes = count_async_calls(&function.body).checked_mul(8);
+            let next = child_bytes.and_then(|bytes| end.checked_add(bytes));
+            if next.is_none_or(|size| size > limit()) {
+                self.diagnostics.push(Diagnostic::new(
+                    RuleCode::S100,
+                    format!(
+                        "async frame layout exceeds the supported aggregate limit of \
+                         {MAX_AGGREGATE_BYTES} bytes while placing awaited child frames"
+                    ),
+                    function.pos.clone(),
+                ));
+                return;
+            }
+            end = next.expect("async child-frame size checked above");
+        }
         if raw_round_up(end, 8).is_none_or(|size| size > limit()) {
             self.diagnostics.push(Diagnostic::new(
                 RuleCode::S100,
@@ -502,6 +614,11 @@ impl<'a> Validator<'a> {
                     self.validate_closures_expr(arg);
                 }
             }
+            K::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.validate_closures_expr(arg);
+                }
+            }
             K::New { args, .. } | K::ArrayLit(args) => {
                 for arg in args {
                     self.validate_closures_expr(arg);
@@ -553,6 +670,7 @@ impl<'a> Validator<'a> {
             | K::EnumMember { .. }
             | K::Zero
             | K::RawNew { .. }
+            | K::AsyncSuspend
             | K::Yield(None) => {}
         }
     }
@@ -719,6 +837,25 @@ impl<'a> Validator<'a> {
                     &expr.pos,
                 );
             }
+            K::AsyncCall { args, .. } => {
+                for arg in args {
+                    self.validate_expr_frame(arg, false, frame);
+                    if self.is_aggregate(&arg.ty) {
+                        self.add_type_slot(
+                            frame,
+                            &arg.ty,
+                            "async-call aggregate argument copy",
+                            &arg.pos,
+                        );
+                    }
+                }
+                self.add_frame_slot(
+                    frame,
+                    Layout { size: 16, align: 8 },
+                    "async-call scratch storage",
+                    &expr.pos,
+                );
+            }
             K::New { args, .. } => {
                 for arg in args {
                     self.validate_expr_frame(arg, false, frame);
@@ -817,6 +954,7 @@ impl<'a> Validator<'a> {
             | K::EnumMember { .. }
             | K::Zero
             | K::RawNew { .. }
+            | K::AsyncSuspend
             | K::Yield(None) => {}
         }
     }
@@ -953,7 +1091,7 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_function(&mut self, function: &hir::Function) {
-        if function.is_generator {
+        if function.is_generator || function.is_async {
             self.validate_generator_layout(function);
         }
         self.validate_closures_stmts(&function.body);
@@ -961,7 +1099,7 @@ impl<'a> Validator<'a> {
             &function.params,
             &function.body,
             &function.pos,
-            function.is_generator,
+            function.is_generator || function.is_async,
         );
     }
 

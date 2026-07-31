@@ -1,0 +1,4 @@
+poll:start
+poll:pending=0
+poll:pending=1
+poll:ready=2
