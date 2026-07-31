@@ -3187,3 +3187,61 @@ across same-membered aliases, `tsc`-clean, pinned.
    zero-warning sweep is unaffected.
 5. Checker unit tests: member accepted, non-member rejected,
    cross-alias rejected, boundary-signature rejection.
+
+## 25. Q33 — literal-constructible descriptor classes
+
+Owner decision 2026-07-31 (collisions.md Q33, C1/C7 exceptions;
+downstream request R1). The decision text lives in Q33; this section
+is the implementation contract.
+
+### 25.1 Checker
+
+`@Descriptor class` declares a data-only reference class: any
+constructor, method, or `extends` clause is rejected; each member is
+required (`name!: T`) or defaulted (`name?: T = expr`); `?` without
+an initializer, or an initializer on a `!` member, is rejected. An
+object literal type-checks only in a context expecting a
+`@Descriptor` class, against exactly that class: missing required
+members, excess members, and literals against unmarked classes are
+rejected; nested literals and array-of-literal members check
+recursively; Q32 alias members and defaults compose. `?` outside a
+`@Descriptor` class keeps today's rejection. Codes: reuse the
+existing paths (mismatch, closed-property) where they fit; the
+corpus entries pin whatever fires.
+
+### 25.2 Lowering (both tiers)
+
+A constructing literal lowers to the class's ordinary allocation
+followed by member stores — explicit members from the literal,
+omitted members from their default expressions, evaluated at the
+construction site. Defaults are per-construction (a fresh nested
+descriptor default is a fresh allocation, not a shared instance).
+Byte-identical behavior across tiers under the standing gate; no
+runtime additions.
+
+### 25.3 Corpus
+
+`a92-descriptor-literals` (accept): a descriptor with required,
+defaulted, Q32-alias, nested-descriptor, and array-of-descriptor
+members; constructions covering full literals, omission taking
+defaults, `{}` against an all-defaulted descriptor, nesting, and an
+argument-position call — golden prints prove filled defaults and
+overrides under both tiers. Reject: `r90` missing required member,
+`r91` excess member, `r92` literal against an unmarked class
+(`tsc`-clean — stock TS accepts it structurally; the
+strictly-narrower proof), `r93` `?` member without initializer in a
+descriptor, `r94` a method in a descriptor class.
+
+### 25.4 Exit criteria (pre-registered)
+
+1. `a92` runs byte-identical under both tiers; the golden shows a
+   default-filled value, an overridden value, and a nested default.
+2. `r90`–`r94` pin (code, line); `r92` type-checks under stock `tsc`
+   (verified standalone, recorded in its header).
+3. The prelude declares `Descriptor`; the `tsc` gate is green with
+   `a92` in the include set.
+4. No existing golden moves; full gate green; the zero-warning sweep
+   is unaffected.
+5. Checker unit tests: required-present, default-filled,
+   excess-rejected, unmarked-class-rejected, and the two member-form
+   rejections.

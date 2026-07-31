@@ -14,7 +14,10 @@ diagnostic; the `tsc` gate stays trivially green and soundness lives here.
 
 Every `class` (value or reference) is a distinct nominal type. Two
 identically-shaped classes are not interchangeable; object literals do not
-satisfy class types. `tsc` cannot enforce this (TS classes without private
+satisfy class types — with one contextual exception: a literal in a
+position expecting a **Q33 `@Descriptor` class** *constructs* that class
+(the literal has no standalone type, so nominality is undisturbed).
+`tsc` cannot enforce this (TS classes without private
 members are structural); this compiler rejects structural substitution.
 Accept: `a05`. Reject: `r06-structural-substitution` (passes a same-shaped
 class instance where the other nominal type is expected — `tsc`-clean by
@@ -115,6 +118,13 @@ Parameters with defaults (`a11`) are legal — the default fills the value;
 no `undefined` is observable. In-language `Ref | null` lowers to a
 nullable pointer; narrowing is required before member access (`tsc`
 already enforces this under `strictNullChecks`).
+
+**Q33 exception (owner, 2026-07-31): defaulted optional members on
+descriptor classes.** Inside a `@Descriptor` class (Q33) — and only
+there — `name?: T = expr` is legal: `?` requires the initializer, the
+initializer requires the `?`, omission in a constructing literal takes
+the default, and no `undefined` is observable — C7's parameter-default
+rule (`a11`) extended to members. Everywhere else `?` stays rejected.
 
 **Q32 exception (owner, 2026-07-31): closed string-literal unions as
 named aliases.** `type Name = "a" | "b";` declares a closed,
@@ -927,6 +937,44 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   Reject: `r87` (non-member literal), `r88` (inline literal union;
   S011 as today), `r89` (cross-alias assignment, same members —
   `tsc`-clean, proving the language is strictly narrower here).
+
+- **Q33 (literal-constructible descriptor classes)** — *(Owner,
+  2026-07-31; requested by the downstream WebGPU binding project,
+  whose JS-shaped API constructs every descriptor as a dictionary
+  literal: `device.createBuffer({ size: 256, usage: ... })`.)*
+
+  - **Declaration.** `@Descriptor class` (ambient decorator beside
+    `@CStruct` in the prelude) declares a **data-only reference
+    class**: no constructor, no methods, no `extends`. Members are
+    either **required** — spelled `name!: T`, the definite-assignment
+    form stock `tsc` mandates under `strict` for initializer-less
+    members (measured 2026-07-31; the `!` is imposed, not chosen) —
+    or **defaulted** — `name?: T = expr` per the C7/Q33 exception.
+    Member types are those a reference-class field may hold, plus
+    nested `@Descriptor` classes, arrays of them, and Q32 aliases.
+  - **Construction.** An object literal in a context whose expected
+    type is a `@Descriptor` class constructs that class: required
+    members must appear, omitted defaulted members take their
+    declared default at construction, excess members are rejected
+    (C1's closed-property discipline), explicit `undefined` stays
+    rejected (C7). Nesting and arrays construct recursively;
+    `{}` is legal when every member has a default. Contexts:
+    arguments, annotated initializers, fields, array elements,
+    nested members.
+  - **Runtime.** Sugar only: a literal lowers to a normal
+    reference-class allocation plus member stores — Context
+    lifetime, `Context.free`/`collect` as usual, no new runtime
+    type, no `undefined` representable.
+  - **Nominality.** Unchanged (C1): constructed *values* are nominal
+    — a `BufferDescriptor` value does not pass where a same-shaped
+    other class is expected; the literal itself has no standalone
+    type and constructs whatever its context demands. Literals
+    against unmarked classes stay rejected.
+  - **Boundary.** `@Descriptor` classes are in-language types, not
+    mirror/boundary types (v1).
+
+  Contract and exit criteria: `compiler.md` §25. Accept: `a92`.
+  Reject: `r90`–`r94`.
 
 ## 3. Open items carried forward
 
