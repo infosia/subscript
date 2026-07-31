@@ -426,3 +426,25 @@ void subDeviceWait(SubDevice device, SubWaitList waits) {
         device->async_cb(msg, device->async_ud1, device->async_ud2);
     }
 }
+
+/* ==== R5 scalar array-pairs at parameter position (compiler.md §27) ===== */
+
+uint32_t subDeviceSumBytes(size_t dataCount, const uint8_t *data) {
+    uint32_t sum = 0u;
+    for (size_t i = 0; i < dataCount; i++) {
+        sum += (uint32_t)data[i];
+    }
+    return sum;
+}
+
+void subDeviceFillBytes(size_t dataCount, uint8_t *data) {
+    for (size_t i = 0; i < dataCount; i++) {
+        data[i] = (uint8_t)(3u + (uint32_t)i * 17u);
+    }
+}
+
+void subDeviceFillShorts(size_t dataCount, uint16_t *data) {
+    for (size_t i = 0; i < dataCount; i++) {
+        data[i] = (uint16_t)(1000u + (uint32_t)i * 257u);
+    }
+}

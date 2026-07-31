@@ -4246,30 +4246,42 @@ impl<'m> Emitter<'m> {
         // argument whose marshaled form is not already a read of bound
         // temporaries is bound when a later argument emitted statements.
         let mut bufs: Vec<String> = Vec::new();
-        let mut parts: Vec<String> = Vec::new();
+        let mut part_groups: Vec<Vec<String>> = Vec::new();
         let mut pin_cts: Vec<Option<String>> = Vec::new();
         for (p, a) in ff.params.iter().zip(args) {
             let mut buf = String::new();
             let (expr, pin_ct) =
                 self.marshal_foreign_c_arg(&ff.name, p, a, &mut buf, depth)?;
             bufs.push(buf);
-            parts.push(expr);
+            part_groups.push(expr);
             pin_cts.push(pin_ct);
         }
         let mut later = false;
-        let mut pin = vec![false; parts.len()];
-        for i in (0..parts.len()).rev() {
+        let mut pin = vec![false; part_groups.len()];
+        for i in (0..part_groups.len()).rev() {
             pin[i] = later;
             later = later || !bufs[i].is_empty();
         }
-        for i in 0..parts.len() {
+        for i in 0..part_groups.len() {
             out.push_str(&bufs[i]);
             if let (true, Some(ct)) = (pin[i], pin_cts[i].clone()) {
+                if part_groups[i].len() != 1 {
+                    return Err(format!(
+                        "internal error: foreign argument group for `{}` cannot be pinned as one {ct}",
+                        ff.params[i].name
+                    ));
+                }
                 let t = self.fresh_tmp();
-                let _ = writeln!(out, "{}{ct} {t} = {};", indent(depth), parts[i]);
-                parts[i] = t;
+                let _ = writeln!(
+                    out,
+                    "{}{ct} {t} = {};",
+                    indent(depth),
+                    part_groups[i][0]
+                );
+                part_groups[i][0] = t;
             }
         }
+        let parts: Vec<String> = part_groups.into_iter().flatten().collect();
         let call = format!("{name}({})", parts.join(", "));
         // A by-value boundary-struct return (§14.2): the C compiler performs
         // the struct-return ABI; the returned header struct is copied into a
@@ -4296,11 +4308,13 @@ impl<'m> Emitter<'m> {
     /// Marshals one argument of a foreign call to a C expression (Q13),
     /// emitting any needed temporaries into `out`.
     ///
-    /// Returns the expression and, when that expression still evaluates
-    /// something of its own, the C type it can be bound to so the caller
-    /// can fix its evaluation order. `None` means the expression only
-    /// reads temporaries this function already bound (or immutable
-    /// state), so where it is evaluated cannot be observed.
+    /// Returns one or more C argument expressions and, when the sole
+    /// expression still evaluates something of its own, the C type it can
+    /// be bound to so the caller can fix its evaluation order. A §27 scalar
+    /// pair returns two expressions (count then pointer), both reading
+    /// temporaries bound here. `None` means the expression(s) only read
+    /// temporaries this function already bound (or immutable state), so
+    /// where they are evaluated cannot be observed.
     fn marshal_foreign_c_arg(
         &mut self,
         function_name: &str,
@@ -4308,7 +4322,7 @@ impl<'m> Emitter<'m> {
         arg: &hir::Expr,
         out: &mut String,
         depth: usize,
-    ) -> Result<(String, Option<String>), String> {
+    ) -> Result<(Vec<String>, Option<String>), String> {
         let ind = indent(depth);
         match &parameter.ty {
             Type::Str => {
@@ -4335,44 +4349,19 @@ impl<'m> Emitter<'m> {
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
                 Ok((
-                    format!(
+                    vec![format!(
                         "(({aggregate}){{ (const char*)subscript_rt_str_data(ctx, {t}), (size_t)subscript_rt_str_len(ctx, {t}) }})"
-                    ),
+                    )],
                     None,
                 ))
             }
             Type::Array(_) => {
-                let (desc, elem_cast) = match &parameter.foreign_provenance {
-                    Some(hir::ForeignTypeProvenance::Descriptor {
-                        aggregate,
-                        element,
-                        element_const,
-                    }) => {
-                        let elem_cast = if *element_const {
-                            String::new()
-                        } else {
-                            format!("({element}*)")
-                        };
-                        (aggregate.clone(), elem_cast)
-                    }
-                    None => {
-                        return Err(format!(
-                            "internal error at foreign function `{function_name}` parameter `{}`: missing descriptor provenance",
-                            parameter.name
-                        ));
-                    }
-                    Some(other) => {
-                        return Err(format!(
-                            "internal error at foreign function `{function_name}` parameter `{}`: expected descriptor provenance, found {other:?}",
-                            parameter.name
-                        ));
-                    }
-                };
-                // A (pointer, count) array-pair descriptor is passed BY
-                // VALUE, so C requires the compound literal to name the
-                // exact header aggregate type of the parameter. Provenance
-                // supplies that name and whether a mutable element-pointer
-                // cast is required; no language type implies either fact.
+                let provenance = parameter.foreign_provenance.clone().ok_or_else(|| {
+                    format!(
+                        "internal error at foreign function `{function_name}` parameter `{}`: missing array boundary provenance",
+                        parameter.name
+                    )
+                })?;
                 let h = self.eval(arg, out, depth)?;
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
@@ -4383,12 +4372,51 @@ impl<'m> Emitter<'m> {
                 let n = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}const void* {d} = subscript_rt_array_data(ctx, {t});");
                 let _ = writeln!(out, "{ind}size_t {n} = (size_t)subscript_rt_array_len(ctx, {t});");
-                Ok((format!("(({desc}){{ {elem_cast}{d}, {n} }})"), None))
+                match provenance {
+                    hir::ForeignTypeProvenance::Descriptor {
+                        aggregate,
+                        element,
+                        element_const,
+                    } => {
+                        // A (pointer, count) descriptor is passed BY VALUE,
+                        // so the compound literal names the exact header
+                        // aggregate type. Mutable pointers cast away the
+                        // runtime accessor's const-qualified view.
+                        let elem_cast = if element_const {
+                            String::new()
+                        } else {
+                            format!("({element}*)")
+                        };
+                        Ok((
+                            vec![format!("(({aggregate}){{ {elem_cast}{d}, {n} }})")],
+                            None,
+                        ))
+                    }
+                    hir::ForeignTypeProvenance::ScalarPair {
+                        element,
+                        element_const,
+                    } => {
+                        // §27 reconstructs the original two C parameters,
+                        // count first. The pointer addresses the language
+                        // array's own backing store, so mutable callee writes
+                        // are immediately visible after the call.
+                        let pointer = if element_const {
+                            format!("(const {element}*){d}")
+                        } else {
+                            format!("({element}*){d}")
+                        };
+                        Ok((vec![n, pointer], None))
+                    }
+                    other => Err(format!(
+                        "internal error at foreign function `{function_name}` parameter `{}`: expected array boundary provenance, found {other:?}",
+                        parameter.name
+                    )),
+                }
             }
             Type::Class(id) if self.is_value_class(*id)? => {
                 let header = self.class(*id)?.name.clone();
                 let expr = self.marshal_boundary_c_struct(*id, arg, out, depth)?;
-                Ok((expr, Some(header)))
+                Ok((vec![expr], Some(header)))
             }
             _ if self.is_boundary_struct_ptr(&parameter.ty)? => {
                 // Struct | null pointer: address of a value struct's
@@ -4401,12 +4429,12 @@ impl<'m> Emitter<'m> {
                 let cast = self.boundary_ptr_cast(&parameter.ty)?
                     .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
                 let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
-                Ok((format!("({cast})({expr})"), Some(cast)))
+                Ok((vec![format!("({cast})({expr})")], Some(cast)))
             }
             _ => {
                 let v = self.eval(arg, out, depth)?;
                 let ct = self.ctype(&parameter.ty)?;
-                Ok((v, Some(ct)))
+                Ok((vec![v], Some(ct)))
             }
         }
     }

@@ -85,6 +85,7 @@ declare class EngineItem {
   engineValue: u32;
   constructor(engineValue: u32);
 }
+
 declare class EngineSink {
   engineCallback: EngineCallback;
   engineUserdata1: object | null;
@@ -142,6 +143,29 @@ declare function engineUse(engineRead: EngineItem[], engineWrite: EngineItem[], 
         sink.fields[0].foreign_provenance,
         Some(ForeignTypeProvenance::Callback {
             typedef_name: "EngineCallback".to_string(),
+        })
+    );
+}
+
+#[test]
+fn scalar_parameter_pair_record_is_attached_to_the_typed_hir_surface() {
+    let mirror = "\
+// @subscript-c-header include=\"bytes.h\"
+// @subscript-c-scalar-pair function=\"engineFillBytes\" parameter=\"engineData\" element=\"uint8_t\" const=false
+declare function engineFillBytes(engineData: u8[]): void;
+";
+    let module = check_program(&[SourceFile::ambient("bytes.generated.d.ts", mirror)])
+        .expect("well-formed scalar-pair provenance is ingested");
+    let function = module
+        .foreign_fns
+        .iter()
+        .find(|function| function.name == "engineFillBytes")
+        .expect("scalar-pair foreign function");
+    assert_eq!(
+        function.params[0].foreign_provenance,
+        Some(ForeignTypeProvenance::ScalarPair {
+            element: "uint8_t".to_string(),
+            element_const: false,
         })
     );
 }

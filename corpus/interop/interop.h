@@ -586,4 +586,15 @@ SubFuture subDeviceKickAsync(SubDevice device, uint32_t request, SubCallbackInfo
  * wait. A no-op when nothing is registered. */
 void subDeviceWait(SubDevice device, SubWaitList waits);
 
+/* ==== R5 scalar array-pairs at parameter position (compiler.md §27) =====
+ *
+ * These functions use adjacent count-first scalar parameters directly,
+ * rather than wrapping them in a descriptor struct. The mirror collapses
+ * each pair to one language array. A const pointer reads the caller's bytes;
+ * mutable pointers fill exactly the supplied array length in place. */
+
+uint32_t subDeviceSumBytes(size_t dataCount, const uint8_t *data);
+void subDeviceFillBytes(size_t dataCount, uint8_t *data);
+void subDeviceFillShorts(size_t dataCount, uint16_t *data);
+
 #endif /* SUBSCRIPT_INTEROP_H */

@@ -2364,7 +2364,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         checked: bool,
     ) -> Result<RV, String> {
         let ff = self.ml.foreign_fn(name)?;
-        let params: Vec<Type> = ff.params.iter().map(|p| p.ty.clone()).collect();
+        let params = ff.params.clone();
         let ret = ff.ret.clone();
         if args.len() != params.len() {
             return Err(internal(format!("foreign call `{name}` arity at {pos}")));
@@ -2383,9 +2383,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if let Some(StructRet::Sret(slot)) = struct_ret {
             argv.push(slot);
         }
-        for (ty, a) in params.iter().zip(args) {
+        for (parameter, a) in params.iter().zip(args) {
             let rv = self.eval(a)?;
-            self.marshal_foreign_arg(ty, rv, &mut sig, &mut argv)?;
+            self.marshal_foreign_arg(parameter, rv, &mut sig, &mut argv)?;
         }
         match ret_repr {
             Repr::None | Repr::Agg { .. } => {}
@@ -2650,18 +2650,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     }
 
     /// Marshals one evaluated argument to a foreign call's C-ABI values
-    /// per Q13: `string` → `(const char*, size_t)`; `T[]` →
-    /// `(const T*, size_t)`; a by-value boundary struct → its fields as
-    /// eightbytes (with the callback trampoline for a function-pointer
-    /// field); `Struct | null` → a nullable struct pointer; handles,
-    /// `object | null`, and scalars → one value.
+    /// per Q13/§27: `string` → a by-value string-view aggregate; `T[]` →
+    /// either a by-value `(pointer,count)` descriptor or the two scalar-pair
+    /// ABI arguments `(count,pointer)`, according to typed provenance; a
+    /// by-value boundary struct → its fields as eightbytes (with the callback
+    /// trampoline for a function-pointer field); `Struct | null` → a nullable
+    /// struct pointer; handles, `object | null`, and scalars → one value.
     fn marshal_foreign_arg(
         &mut self,
-        ty: &Type,
+        parameter: &hir::Param,
         rv: RV,
         sig: &mut Signature,
         argv: &mut Vec<Value>,
     ) -> Result<(), String> {
+        let ty = &parameter.ty;
         match ty {
             Type::Str => {
                 // A length-carrying string view is the C aggregate
@@ -2682,9 +2684,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(())
             }
             Type::Array(_) => {
-                // A (pointer, count) descriptor is the C aggregate
-                // `{ const T *items; size_t count; }` (16 bytes, align 8),
-                // passed BY VALUE — target-specific ABI as above (§12.3a).
                 let h = self.expect_s(rv)?;
                 let data = self
                     .call_rt(self.ml.rt.array_data, &[self.ctx_v, h], false)?
@@ -2693,9 +2692,37 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .call_rt(self.ml.rt.array_len, &[self.ctx_v, h], false)?
                     .ok_or_else(|| internal("array_len result"))?;
                 let count = self.b.ins().uextend(types::I64, len32);
-                let comps = [(0u32, types::I64, data), (8u32, types::I64, count)];
-                self.push_aggregate_abi(sig, argv, &comps, 16, 8);
-                Ok(())
+                match &parameter.foreign_provenance {
+                    Some(hir::ForeignTypeProvenance::Descriptor { .. }) => {
+                        // A descriptor is the C aggregate `{ T *items;
+                        // size_t count; }` (16 bytes, align 8), passed BY
+                        // VALUE — target-specific ABI as above (§12.3a).
+                        let comps = [
+                            (0u32, types::I64, data),
+                            (8u32, types::I64, count),
+                        ];
+                        self.push_aggregate_abi(sig, argv, &comps, 16, 8);
+                        Ok(())
+                    }
+                    Some(hir::ForeignTypeProvenance::ScalarPair { .. }) => {
+                        // §27 is not an aggregate: the original C function
+                        // has two adjacent parameters, count first and
+                        // pointer second. Both come from the same language
+                        // array handle, so mutable writes land directly in
+                        // the caller's backing storage.
+                        self.push_abi(sig, argv, types::I64, count);
+                        self.push_abi(sig, argv, types::I64, data);
+                        Ok(())
+                    }
+                    None => Err(internal(format!(
+                        "foreign array parameter `{}` lacks boundary provenance",
+                        parameter.name
+                    ))),
+                    Some(other) => Err(internal(format!(
+                        "foreign array parameter `{}` has incompatible provenance {other:?}",
+                        parameter.name
+                    ))),
+                }
             }
             Type::Class(id) if self.is_value_class_ty(ty) => {
                 let addr = self.expect_a(rv)?;

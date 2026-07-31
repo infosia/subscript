@@ -20,6 +20,10 @@ pub(crate) enum Parameter {
         element: String,
         element_const: bool,
     },
+    ScalarPair {
+        element: String,
+        element_const: bool,
+    },
     StringView {
         aggregate: String,
     },
@@ -137,6 +141,41 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     },
                 );
             }
+            Parsed::ScalarPair {
+                function,
+                parameter,
+                element,
+                element_const,
+            } => {
+                if [function.as_str(), parameter.as_str(), element.as_str()].contains(&"") {
+                    return Err(malformed(
+                        name,
+                        line_number,
+                        trimmed,
+                        "scalar-pair fields must be non-empty",
+                    ));
+                }
+                let key = (function, parameter);
+                if mirror.parameters.contains_key(&key) {
+                    return Err(duplicate(
+                        name,
+                        line_number,
+                        trimmed,
+                        "parameter",
+                    ));
+                }
+                mirror.parameters.insert(
+                    key,
+                    Record {
+                        value: Parameter::ScalarPair {
+                            element,
+                            element_const,
+                        },
+                        line: line_number,
+                        raw: trimmed.to_string(),
+                    },
+                );
+            }
             Parsed::Callback(typedef_name) => {
                 if typedef_name.is_empty() {
                     return Err(malformed(
@@ -208,6 +247,12 @@ enum Parsed {
         parameter: String,
         aggregate: String,
     },
+    ScalarPair {
+        function: String,
+        parameter: String,
+        element: String,
+        element_const: bool,
+    },
     Callback(String),
 }
 
@@ -227,6 +272,12 @@ fn parse_line(body: &str) -> Result<Parsed, String> {
             function: cursor.string("function")?,
             parameter: cursor.string("parameter")?,
             aggregate: cursor.string("aggregate")?,
+        },
+        "scalar-pair" => Parsed::ScalarPair {
+            function: cursor.string("function")?,
+            parameter: cursor.string("parameter")?,
+            element: cursor.string("element")?,
+            element_const: cursor.boolean("const")?,
         },
         "callback" => Parsed::Callback(cursor.string("typedef")?),
         other => return Err(format!("unknown record kind `{other}`")),

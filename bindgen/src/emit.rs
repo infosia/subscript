@@ -310,7 +310,21 @@ fn emit_parameter_provenance(
     registry: &HashMap<String, Kind>,
     records: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    for param in params {
+    let scalar_pairs = scalar_parameter_pairs(params);
+    for (index, param) in params.iter().enumerate() {
+        if scalar_pairs.count_idx.contains(&index) {
+            continue;
+        }
+        if scalar_pairs.ptr_elem.contains_key(&index) {
+            records.push(format!(
+                "// @subscript-c-scalar-pair function={} parameter={} element={} const={}",
+                quoted(owner_name),
+                quoted(&param.name),
+                quoted(&param.base),
+                param.is_const,
+            ));
+            continue;
+        }
         match registry.get(&param.base) {
             Some(Kind::ArrayPair(_)) => {
                 let element = first_struct_field(parsed, &param.base).ok_or_else(|| {
@@ -598,6 +612,34 @@ fn embedded_array_pairs(fields: &[CField]) -> EmbeddedPairs {
     pairs
 }
 
+/// Recognizes the §27 scalar array-pair shape in a function parameter
+/// list: `size_t <n>Count` immediately followed by `[const] S* <n>`, where
+/// `S` is any scalar in [`lang_scalar`]. Unlike the struct-level §13.2
+/// embedded pair, both const input pointers and mutable callee-written
+/// pointers are accepted, and only the exact `<n>Count` spelling is part of
+/// this rule. Every other scalar pointer remains a fail-loud boundary use.
+fn scalar_parameter_pairs(params: &[CField]) -> EmbeddedPairs {
+    let mut pairs = EmbeddedPairs::default();
+    for i in 0..params.len().saturating_sub(1) {
+        let count = &params[i];
+        let ptr = &params[i + 1];
+        if count.pointer || count.array_len.is_some() || count.base != "size_t" {
+            continue;
+        }
+        if !(ptr.pointer && ptr.array_len.is_none()) {
+            continue;
+        }
+        let Some(elem) = lang_scalar(&ptr.base) else {
+            continue;
+        };
+        if count.name == format!("{}Count", ptr.name) {
+            pairs.count_idx.insert(i);
+            pairs.ptr_elem.insert(i + 1, elem.to_string());
+        }
+    }
+    pairs
+}
+
 fn emit_enum(name: &str, members: &[(String, i64)]) -> String {
     let mut s = format!("declare enum {name} {{\n");
     for (member, value) in members {
@@ -669,9 +711,17 @@ fn emit_func(
 }
 
 fn param_sig(params: &[CField], reg: &HashMap<String, Kind>) -> Result<String, ParseError> {
+    let pairs = scalar_parameter_pairs(params);
     let mut out = Vec::with_capacity(params.len());
-    for p in params {
-        out.push(format!("{}: {}", p.name, map_use(p, reg)?));
+    for (index, p) in params.iter().enumerate() {
+        if pairs.count_idx.contains(&index) {
+            continue;
+        }
+        let ty = match pairs.ptr_elem.get(&index) {
+            Some(elem) => format!("{elem}[]"),
+            None => map_use(p, reg)?,
+        };
+        out.push(format!("{}: {ty}", p.name));
     }
     Ok(out.join(", "))
 }
@@ -930,6 +980,126 @@ mod tests {
             m.contains("constructor(layer: u32, draws: u32[]);"),
             "constructor drops the count: {m}"
         );
+    }
+
+    #[test]
+    fn const_scalar_parameter_pair_collapses_to_array() {
+        let decls = vec![Decl::Func {
+            name: "subReadBytes".into(),
+            ret: field("uint32_t", false, false, ""),
+            params: vec![
+                field("size_t", false, false, "dataCount"),
+                field("uint8_t", true, true, "data"),
+            ],
+        }];
+        let m = emit(&parsed_with(decls)).expect("const scalar parameter pair maps");
+        assert!(
+            m.contains("declare function subReadBytes(data: u8[]): u32;"),
+            "{m}"
+        );
+        assert!(m.contains(
+            "// @subscript-c-scalar-pair function=\"subReadBytes\" parameter=\"data\" element=\"uint8_t\" const=true"
+        ), "{m}");
+        assert!(!m.contains("dataCount: u64"), "count is elided: {m}");
+    }
+
+    #[test]
+    fn mutable_scalar_parameter_pair_collapses_to_array() {
+        let decls = vec![Decl::Func {
+            name: "subFillBytes".into(),
+            ret: field("void", false, false, ""),
+            params: vec![
+                field("size_t", false, false, "dataCount"),
+                field("uint8_t", true, false, "data"),
+            ],
+        }];
+        let m = emit(&parsed_with(decls)).expect("mutable scalar parameter pair maps");
+        assert!(
+            m.contains("declare function subFillBytes(data: u8[]): void;"),
+            "{m}"
+        );
+        assert!(m.contains(
+            "// @subscript-c-scalar-pair function=\"subFillBytes\" parameter=\"data\" element=\"uint8_t\" const=false"
+        ), "{m}");
+    }
+
+    #[test]
+    fn u16_scalar_parameter_pair_collapses_to_array() {
+        let decls = vec![Decl::Func {
+            name: "subFillShorts".into(),
+            ret: field("void", false, false, ""),
+            params: vec![
+                field("size_t", false, false, "valuesCount"),
+                field("uint16_t", true, false, "values"),
+            ],
+        }];
+        let m = emit(&parsed_with(decls)).expect("u16 scalar parameter pair maps");
+        assert!(
+            m.contains("declare function subFillShorts(values: u16[]): void;"),
+            "{m}"
+        );
+    }
+
+    #[test]
+    fn lone_scalar_pointer_parameter_fails_loud() {
+        let decls = vec![Decl::Func {
+            name: "subReadBytes".into(),
+            ret: field("void", false, false, ""),
+            params: vec![field("uint8_t", true, true, "data")],
+        }];
+        let err = emit(&parsed_with(decls)).expect_err("lone scalar pointer must fail loud");
+        assert!(err.0.contains("uint8_t"), "{}", err.0);
+    }
+
+    #[test]
+    fn non_adjacent_scalar_parameter_pair_fails_loud() {
+        let decls = vec![Decl::Func {
+            name: "subReadBytes".into(),
+            ret: field("void", false, false, ""),
+            params: vec![
+                field("size_t", false, false, "dataCount"),
+                field("uint32_t", false, false, "tag"),
+                field("uint8_t", true, true, "data"),
+            ],
+        }];
+        let err =
+            emit(&parsed_with(decls)).expect_err("non-adjacent scalar pair must fail loud");
+        assert!(err.0.contains("uint8_t"), "{}", err.0);
+    }
+
+    #[test]
+    fn every_stdint_lang_scalar_maps_at_scalar_parameter_pair_site() {
+        let stdint = [
+            ("int8_t", "i8"),
+            ("uint8_t", "u8"),
+            ("int16_t", "i16"),
+            ("uint16_t", "u16"),
+            ("int32_t", "i32"),
+            ("uint32_t", "u32"),
+            ("int64_t", "i64"),
+            ("uint64_t", "u64"),
+        ];
+        let decls = stdint
+            .iter()
+            .enumerate()
+            .map(|(index, (c_type, _))| Decl::Func {
+                name: format!("subScalarPair{index}"),
+                ret: field("void", false, false, ""),
+                params: vec![
+                    field("size_t", false, false, "itemsCount"),
+                    field(c_type, true, index % 2 == 0, "items"),
+                ],
+            })
+            .collect();
+        let m = emit(&parsed_with(decls)).expect("every stdint scalar maps at a pair site");
+        for (index, (_, lang_type)) in stdint.iter().enumerate() {
+            assert!(
+                m.contains(&format!(
+                    "declare function subScalarPair{index}(items: {lang_type}[]): void;"
+                )),
+                "missing {lang_type} pair mapping in {m}"
+            );
+        }
     }
 
     #[test]

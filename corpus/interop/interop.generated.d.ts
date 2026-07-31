@@ -27,6 +27,9 @@
 // @subscript-c-descriptor function="subSliceChecksumF16" parameter="data" aggregate="SubSliceF16" element="SubFloat16" const=true
 // @subscript-c-descriptor function="subBulkConsumeF32" parameter="data" aggregate="SubSliceF32" element="float" const=true
 // @subscript-c-descriptor function="subDeviceWait" parameter="waits" aggregate="SubWaitList" element="SubWaitEntry" const=false
+// @subscript-c-scalar-pair function="subDeviceSumBytes" parameter="data" element="uint8_t" const=true
+// @subscript-c-scalar-pair function="subDeviceFillBytes" parameter="data" element="uint8_t" const=false
+// @subscript-c-scalar-pair function="subDeviceFillShorts" parameter="data" element="uint16_t" const=false
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -320,6 +323,9 @@ declare class SubWaitEntry {
 
 declare function subDeviceKickAsync(device: SubDevice, request: u32, info: SubCallbackInfo): SubFuture;
 declare function subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;
+declare function subDeviceSumBytes(data: u8[]): u32;
+declare function subDeviceFillBytes(data: u8[]): void;
+declare function subDeviceFillShorts(data: u16[]): void;
 
 type SubFloat16 = f16;
 

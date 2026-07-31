@@ -21,6 +21,9 @@
 //! - descriptor-embedded `(count, pointer)` array pair inside a struct
 //!   (`size_t <n>Count; const T* <n>;`) → the pointer field becomes `T[]`
 //!   with the count elided (§13.2);
+//! - adjacent scalar array-pair function parameters
+//!   (`size_t <n>Count, [const] S* <n>`) → one `S[]` parameter, with the
+//!   count parameter elided (§27);
 //! - callback userdata slot (`void*`) → `object | null`;
 //! - the supported function-pointer typedef
 //!   `(string view, void*, void*) -> void` → a `type` alias; a reachable
@@ -51,16 +54,18 @@
 //! ```text
 //! // @subscript-c-header include="engine.h"
 //! // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
+//! // @subscript-c-scalar-pair function="engineFillBytes" parameter="engineData" element="uint8_t" const=false
 //! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
 //! // @subscript-c-callback typedef="EngineEventCallback"
 //! ```
 //!
-//! Descriptor and string-view records name a foreign `function` and its
-//! absorbed `parameter`. Callback parameters have no aggregate record:
+//! Descriptor, scalar-pair, and string-view records name a foreign
+//! `function` and its absorbed `parameter`. Callback parameters have no
+//! aggregate record:
 //! the runtime trampoline uses its own layout-identical string-view struct,
 //! so no C emission site consumes that name. Quoted values use
 //! JSON-compatible escaping for quotes, backslashes, and control
-//! characters. Descriptor `const` is `true` when the descriptor's element
+//! characters. Descriptor/scalar-pair `const` is `true` when the element
 //! pointer is const and `false` for a mutable out-array. A consumer may
 //! assume one header record, exactly one record per absorbed standalone
 //! function parameter, and one callback record per reachable C

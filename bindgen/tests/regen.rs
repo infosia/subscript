@@ -96,6 +96,11 @@ fn binding_rules_are_reflected_in_the_mirror() {
     // never emitted as a named type.
     assert!(m.contains("subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;"));
     assert!(!m.contains("declare class SubWaitList"));
+    // R5 (§27). Adjacent scalar count/pointer function parameters collapse
+    // to one array in both const-input and mutable-fill directions.
+    assert!(m.contains("subDeviceSumBytes(data: u8[]): u32;"));
+    assert!(m.contains("subDeviceFillBytes(data: u8[]): void;"));
+    assert!(m.contains("subDeviceFillShorts(data: u16[]): void;"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

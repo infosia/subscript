@@ -53,6 +53,9 @@ extern "C" {
     fn subDeviceQuery();
     fn subDeviceKickAsync();
     fn subDeviceWait();
+    fn subDeviceSumBytes();
+    fn subDeviceFillBytes();
+    fn subDeviceFillShorts();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -166,6 +169,12 @@ fn interop_library() -> NativeLibrary {
             subDeviceKickAsync as *const u8,
         ),
         ("subDeviceWait".to_string(), subDeviceWait as *const u8),
+        ("subDeviceSumBytes".to_string(), subDeviceSumBytes as *const u8),
+        ("subDeviceFillBytes".to_string(), subDeviceFillBytes as *const u8),
+        (
+            "subDeviceFillShorts".to_string(),
+            subDeviceFillShorts as *const u8,
+        ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime
     // function above into this capture process, with signatures matching the

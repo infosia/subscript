@@ -89,6 +89,10 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // out-array of SubWaitEntry.
             "subDeviceKickAsync",
             "subDeviceWait",
+            // R5 (§27): adjacent count-first scalar parameter pairs.
+            "subDeviceSumBytes",
+            "subDeviceFillBytes",
+            "subDeviceFillShorts",
         ]
     );
 
@@ -142,6 +146,21 @@ fn using_program_type_checks_against_the_generated_mirror() {
     assert_eq!(set_label.params[1].ty, Type::Str);
     let submit = module.foreign_fns.iter().find(|f| f.name == "subDeviceSubmit").unwrap();
     assert_eq!(submit.params[1].ty, Type::Array(Box::new(Type::U32)));
+
+    let sum_bytes = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subDeviceSumBytes")
+        .expect("const scalar parameter pair");
+    assert_eq!(sum_bytes.params.len(), 1);
+    assert_eq!(sum_bytes.params[0].ty, Type::Array(Box::new(Type::U8)));
+    assert_eq!(
+        sum_bytes.params[0].foreign_provenance,
+        Some(hir::ForeignTypeProvenance::ScalarPair {
+            element: "uint8_t".to_string(),
+            element_const: true,
+        })
+    );
 
     // The using program's foreign calls became `Callee::Foreign` calls.
     let main = module.functions.iter().find(|f| f.name == "main").unwrap();

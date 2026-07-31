@@ -64,6 +64,14 @@ pub enum ForeignTypeProvenance {
         /// True when the descriptor's element pointer is const.
         element_const: bool,
     },
+    /// Two adjacent C parameters `size_t <n>Count, [const] S* <n>` mapped
+    /// to one language array parameter (§27).
+    ScalarPair {
+        /// C scalar element spelling used for the emitted-C pointer cast.
+        element: String,
+        /// True when the C element pointer is const (input direction).
+        element_const: bool,
+    },
     /// A by-value length-carrying C string view mapped to `string`.
     StringView {
         /// C string-view struct name used by a compound literal.

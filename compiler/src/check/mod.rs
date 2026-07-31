@@ -556,6 +556,16 @@ impl<'p> Checker<'p> {
                 element: element.clone(),
                 element_const: *element_const,
             }),
+            (
+                Type::Array(_),
+                Some(provenance::Parameter::ScalarPair {
+                    element,
+                    element_const,
+                }),
+            ) => Some(hir::ForeignTypeProvenance::ScalarPair {
+                element: element.clone(),
+                element_const: *element_const,
+            }),
             (Type::Str, Some(provenance::Parameter::StringView { aggregate })) => {
                 Some(hir::ForeignTypeProvenance::StringView {
                     aggregate: aggregate.clone(),
@@ -566,7 +576,9 @@ impl<'p> Checker<'p> {
                     RuleCode::S100,
                     format!(
                         "mirror `{}` parameter `{}.{}` absorbs an array descriptor \
-                         but has no `@subscript-c-descriptor` provenance record",
+                         or scalar parameter pair but has no \
+                         `@subscript-c-descriptor` or `@subscript-c-scalar-pair` \
+                         provenance record",
                         parsed.name, function_name, parameter_name
                     ),
                     pos,
