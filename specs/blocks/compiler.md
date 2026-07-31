@@ -3294,9 +3294,14 @@ uint64_t subscript_rt_ctx_async_step(subscript_rt_context*);  /* returns remaini
 
 `async_step` on a trapped Context is a no-op returning the pending
 count (the trampoline precedent); on an empty pending set it returns
-0. The generated AOT entry, the JIT runner, and `subscript run` pump
-`async_step` to quiescence after the entry returns — a no-op for
-synchronous programs, so no existing golden moves. The generated
+0. **Standard-runner convention** *(added 2026-07-31 when the first
+contract draft left a94 undrivable — the gate invokes only `main`)*:
+the generated AOT entry, the JIT runner, and `subscript run` invoke
+`main`, then every **other** exported async function in declaration
+order, then pump `async_step` to quiescence. A host embedding the
+runtime kicks whatever it chooses — the convention is the runners',
+not the language's. Synchronous programs see no change (no async
+exports, empty pump), so no existing golden moves. The generated
 host header documents both functions; hot-reload's §8.2 staleness
 applies to suspended async frames unchanged.
 
