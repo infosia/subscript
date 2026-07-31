@@ -36,6 +36,12 @@ fn literalish(e: &ast::Expr) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
+enum DescriptorProp<'a> {
+    Expr(&'a ast::Expr),
+    Shorthand(&'a ast::Ident),
+}
+
 fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
     match e {
         ast::Expr::Lit(ast::Lit::Regex(regex)) => Some(regex),
@@ -135,22 +141,27 @@ impl<'p> Checker<'p> {
             ast::Expr::New(n) => self.check_new(n, fx, pos),
             ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
             ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
-            ast::Expr::Object(_) => {
-                if matches!(ctx, Some(Type::Class(_))) {
+            ast::Expr::Object(object) => match ctx {
+                Some(Type::Class(id)) if self.classes[id.0].is_descriptor => {
+                    self.check_descriptor_lit(object, *id, fx, pos)
+                }
+                Some(Type::Class(_)) => {
                     self.error(
                         RuleCode::S005,
                         "object literals do not satisfy nominal class types",
                         pos.clone(),
                     );
-                } else {
+                    self.err_expr(pos)
+                }
+                _ => {
                     self.error(
                         RuleCode::S100,
                         "object literals are not in the decided surface",
                         pos.clone(),
                     );
+                    self.err_expr(pos)
                 }
-                self.err_expr(pos)
-            }
+            },
             ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
             ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
             ast::Expr::Await(_) => {
@@ -1336,6 +1347,130 @@ impl<'p> Checker<'p> {
                     pos,
                 }
             }
+        }
+    }
+
+    fn check_descriptor_lit(
+        &mut self,
+        object: &ast::ObjectLit,
+        class_id: crate::types::ClassId,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let class = self.classes[class_id.0].clone();
+        let mut provided: Vec<(String, DescriptorProp<'_>, Pos)> = Vec::new();
+        for prop in &object.props {
+            let (name, value, prop_pos) = match prop {
+                ast::PropOrSpread::Spread(spread) => {
+                    self.error(
+                        RuleCode::S100,
+                        "spread properties are not supported in descriptor literals",
+                        self.pos(spread.dot3_token),
+                    );
+                    continue;
+                }
+                ast::PropOrSpread::Prop(prop) => match &**prop {
+                    ast::Prop::KeyValue(key_value) => {
+                        let ast::PropName::Ident(key) = &key_value.key else {
+                            self.error(
+                                RuleCode::S100,
+                                "descriptor literal member names must be identifiers",
+                                self.pos(key_value.key.span()),
+                            );
+                            continue;
+                        };
+                        (
+                            key.sym.to_string(),
+                            DescriptorProp::Expr(&key_value.value),
+                            self.pos(key.span),
+                        )
+                    }
+                    ast::Prop::Shorthand(ident) => (
+                        ident.sym.to_string(),
+                        DescriptorProp::Shorthand(ident),
+                        self.pos(ident.span),
+                    ),
+                    other => {
+                        self.error(
+                            RuleCode::S100,
+                            "descriptor literals contain data properties only",
+                            self.pos(other.span()),
+                        );
+                        continue;
+                    }
+                },
+            };
+            if provided.iter().any(|(existing, _, _)| existing == &name) {
+                self.error(
+                    RuleCode::S100,
+                    format!("duplicate descriptor literal member `{name}`"),
+                    prop_pos,
+                );
+                continue;
+            }
+            if !class.fields.iter().any(|field| field.name == name) {
+                self.error(
+                    RuleCode::S004,
+                    format!(
+                        "descriptor class `{}` has no declared property `{name}`",
+                        class.name
+                    ),
+                    prop_pos,
+                );
+                continue;
+            }
+            provided.push((name, value, prop_pos));
+        }
+
+        let mut fields = Vec::with_capacity(class.fields.len());
+        for field in &class.fields {
+            let explicit = provided
+                .iter()
+                .find(|(name, _, _)| name == &field.name)
+                .map(|(_, value, _)| *value);
+            let checked = match explicit {
+                Some(DescriptorProp::Expr(value)) => {
+                    Some(self.check_expr(value, Some(&field.ty), fx))
+                }
+                Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, fx)),
+                None if field.is_defaulted => None,
+                None => {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "descriptor literal for `{}` is missing required member `{}`",
+                            class.name, field.name
+                        ),
+                        pos.clone(),
+                    );
+                    None
+                }
+            };
+            if let Some(checked) = &checked {
+                self.require_assignable(
+                    &checked.ty.clone(),
+                    &field.ty,
+                    checked.pos.clone(),
+                    "the descriptor member",
+                );
+                if self.is_capturing_value(checked, fx) {
+                    self.error(
+                        RuleCode::S009,
+                        "capturing lambdas may not escape into descriptor objects",
+                        checked.pos.clone(),
+                    );
+                }
+            }
+            fields.push(checked);
+        }
+
+        hir::Expr {
+            kind: ExprKind::DescriptorLit {
+                class: class_id,
+                fields,
+            },
+            ty: Type::Class(class_id),
+            pos,
         }
     }
 
@@ -5213,6 +5348,16 @@ impl<'p> Checker<'p> {
                 format!(
                     "opaque handle `{}` is obtained from the host, not constructed",
                     name
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        if self.classes[class_id.0].is_descriptor {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "descriptor class `{name}` is constructed with an object literal, not `new`"
                 ),
                 pos.clone(),
             );

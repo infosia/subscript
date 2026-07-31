@@ -248,6 +248,11 @@ impl Analyzer {
                     self.expr(arg);
                 }
             }
+            K::DescriptorLit { fields, .. } => {
+                for value in fields.iter_mut().flatten() {
+                    self.expr(value);
+                }
+            }
             K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => self.expr(obj),
             K::Index {
                 obj,
@@ -482,6 +487,10 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
             callee_assigns || args.iter().any(|arg| expr_assigns_to(arg, name))
         }
         K::New { args, .. } => args.iter().any(|arg| expr_assigns_to(arg, name)),
+        K::DescriptorLit { fields, .. } => fields
+            .iter()
+            .flatten()
+            .any(|value| expr_assigns_to(value, name)),
         K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => {
             expr_assigns_to(obj, name)
         }

@@ -507,6 +507,11 @@ impl<'a> Validator<'a> {
                     self.validate_closures_expr(arg);
                 }
             }
+            K::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.validate_closures_expr(value);
+                }
+            }
             K::ArraySpreadLit(elems) => {
                 for elem in elems {
                     self.validate_closures_expr(&elem.expr);
@@ -723,6 +728,19 @@ impl<'a> Validator<'a> {
                             &arg.ty,
                             "constructor aggregate argument copy",
                             &arg.pos,
+                        );
+                    }
+                }
+            }
+            K::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.validate_expr_frame(value, false, frame);
+                    if self.is_aggregate(&value.ty) {
+                        self.add_type_slot(
+                            frame,
+                            &value.ty,
+                            "descriptor aggregate member value",
+                            &value.pos,
                         );
                     }
                 }

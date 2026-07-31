@@ -382,6 +382,147 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_required_members_and_defaults_reach_hir() {
+        let module = check_one(
+            "type Mode = \"fast\" | \"safe\";\n\
+             @Descriptor\n\
+             class Child {\n\
+               value?: i32 = 7;\n\
+             }\n\
+             @Descriptor\n\
+             class Options {\n\
+               count!: i32;\n\
+               child?: Child = {};\n\
+               mode?: Mode = \"safe\";\n\
+             }\n\
+             export function main(): void {\n\
+               const options: Options = { count: 3 };\n\
+               print(`${options.count}:${options.mode}`);\n\
+             }\n",
+        )
+        .expect("required-present descriptor literal and defaults check cleanly");
+        let options = module
+            .classes
+            .iter()
+            .find(|class| class.name == "Options")
+            .expect("Options class");
+        assert!(options.is_descriptor);
+        assert!(!options.is_value);
+        assert!(!options.fields[0].is_defaulted);
+        assert!(options.fields[1].is_defaulted);
+        assert!(matches!(
+            options.fields[1].init.as_ref().map(|expr| &expr.kind),
+            Some(hir::ExprKind::DescriptorLit { .. })
+        ));
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Let { init, .. } = &main.body[0] else {
+            panic!("first statement is the descriptor binding");
+        };
+        let hir::ExprKind::DescriptorLit { fields, .. } = &init.kind else {
+            panic!("object literal lowered to DescriptorLit HIR");
+        };
+        assert!(fields[0].is_some(), "required member is explicit");
+        assert!(fields[1].is_none(), "nested member takes its default");
+        assert!(fields[2].is_none(), "Q32 alias member takes its default");
+    }
+
+    #[test]
+    fn descriptor_missing_and_excess_members_are_rejected() {
+        let missing = check_one(
+            "@Descriptor\n\
+             class Options { count!: i32; }\n\
+             export function main(): void {\n\
+               const options: Options = {};\n\
+             }\n",
+        )
+        .expect_err("missing required descriptor member");
+        assert_eq!(missing[0].code, RuleCode::S100);
+        assert!(missing[0].message.contains("missing required member `count`"));
+
+        let excess = check_one(
+            "@Descriptor\n\
+             class Options { count!: i32; }\n\
+             export function main(): void {\n\
+               const options: Options = { count: 1, extra: 2 };\n\
+             }\n",
+        )
+        .expect_err("excess descriptor member");
+        assert_eq!(excess[0].code, RuleCode::S004);
+        assert!(excess[0].message.contains("no declared property `extra`"));
+    }
+
+    #[test]
+    fn object_literal_for_unmarked_class_remains_nominally_rejected() {
+        let diagnostics = check_one(
+            "class Options { count!: i32; }\n\
+             export function main(): void {\n\
+               const options: Options = { count: 1 };\n\
+             }\n",
+        )
+        .expect_err("unmarked class must not be literal-constructible");
+        assert_eq!(diagnostics[0].code, RuleCode::S005);
+    }
+
+    #[test]
+    fn descriptor_member_forms_are_exact() {
+        let optional_without_default = check_one(
+            "@Descriptor\n\
+             class Options { count?: i32; }\n\
+             export function main(): void {}\n",
+        )
+        .expect_err("optional descriptor member without default");
+        assert_eq!(optional_without_default[0].code, RuleCode::S012);
+
+        let definite_with_default = check_one(
+            "@Descriptor\n\
+             class Options { count!: i32 = 1; }\n\
+             export function main(): void {}\n",
+        )
+        .expect_err("required descriptor member with initializer");
+        assert_eq!(definite_with_default[0].code, RuleCode::S100);
+
+        let initializer_without_optional = check_one(
+            "@Descriptor\n\
+             class Options { count: i32 = 1; }\n\
+             export function main(): void {}\n",
+        )
+        .expect_err("descriptor initializer without optional spelling");
+        assert_eq!(initializer_without_optional[0].code, RuleCode::S100);
+    }
+
+    #[test]
+    fn descriptor_explicit_undefined_stays_rejected() {
+        let diagnostics = check_one(
+            "@Descriptor\n\
+             class Options { count?: i32 = 1; }\n\
+             export function main(): void {\n\
+               const options: Options = { count: undefined };\n\
+             }\n",
+        )
+        .expect_err("undefined cannot be supplied explicitly");
+        assert_eq!(diagnostics[0].code, RuleCode::S012);
+    }
+
+    #[test]
+    fn descriptor_methods_are_rejected() {
+        let diagnostics = check_one(
+            "@Descriptor\n\
+             class Options {\n\
+               count?: i32 = 1;\n\
+               getCount(): i32 { return this.count; }\n\
+             }\n\
+             export function main(): void {}\n",
+        )
+        .expect_err("descriptor method");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("cannot declare methods"));
+    }
+
+    #[test]
     fn throw_is_s010() {
         let err =
             check_one("export function main(): void {\n  throw \"x\";\n}\n").unwrap_err();

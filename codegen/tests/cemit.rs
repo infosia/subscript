@@ -893,6 +893,27 @@ fn string_literal_union_equality_emits_an_integer_compare() {
     );
 }
 
+#[test]
+fn descriptor_nested_defaults_are_fresh_per_construction() {
+    assert_tiers_print(
+        "@Descriptor\n\
+         class Child {\n\
+           value?: i32 = 1;\n\
+         }\n\
+         @Descriptor\n\
+         class Parent {\n\
+           child?: Child = {};\n\
+         }\n\
+         export function main(): void {\n\
+           const first: Parent = {};\n\
+           const second: Parent = {};\n\
+           first.child.value = 9;\n\
+           print(`${first.child.value},${second.child.value},${first.child === second.child}`);\n\
+         }\n",
+        "9,1,false\n",
+    );
+}
+
 fn provenance_fixture() -> subscript_compiler::hir::Module {
     use subscript_compiler::check_program;
 

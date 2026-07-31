@@ -314,6 +314,16 @@ impl WarningChecker<'_> {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
             }
+            ExprKind::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.scan_w001_expr(
+                        value,
+                        loop_depth,
+                        collect_mutes,
+                        AllocationSink::Escape,
+                    );
+                }
+            }
             ExprKind::Field { obj, .. }
             | ExprKind::JsonResultValue(obj)
             | ExprKind::Length(obj) => {
@@ -376,6 +386,16 @@ impl WarningChecker<'_> {
             ExprKind::New { args, .. } | ExprKind::Call { args, .. } => {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
+                }
+            }
+            ExprKind::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.scan_w001_expr(
+                        value,
+                        loop_depth,
+                        collect_mutes,
+                        AllocationSink::Escape,
+                    );
                 }
             }
             _ => {}
@@ -532,6 +552,11 @@ impl WarningChecker<'_> {
             ExprKind::New { args, .. } => {
                 for arg in args {
                     self.scan_w003_expr(arg, loop_depth, fresh);
+                }
+            }
+            ExprKind::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.scan_w003_expr(value, loop_depth, fresh);
                 }
             }
             ExprKind::Field { obj, .. }
@@ -721,6 +746,11 @@ impl WarningChecker<'_> {
                     self.warn_w002_expr_uses(arg, freed);
                 }
             }
+            ExprKind::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.warn_w002_expr_uses(value, freed);
+                }
+            }
             ExprKind::Field { obj, .. }
             | ExprKind::JsonResultValue(obj)
             | ExprKind::Length(obj) => self.warn_w002_expr_uses(obj, freed),
@@ -856,6 +886,11 @@ impl WarningChecker<'_> {
                     self.analyze_lambdas_in_expr(arg);
                 }
             }
+            ExprKind::DescriptorLit { fields, .. } => {
+                for value in fields.iter().flatten() {
+                    self.analyze_lambdas_in_expr(value);
+                }
+            }
             ExprKind::Field { obj, .. }
             | ExprKind::JsonResultValue(obj)
             | ExprKind::Length(obj) => self.analyze_lambdas_in_expr(obj),
@@ -916,7 +951,7 @@ enum AllocationSink {
 
 fn is_reference_allocation(module: &hir::Module, expr: &Expr) -> bool {
     match &expr.kind {
-        ExprKind::New { class, .. } => module
+        ExprKind::New { class, .. } | ExprKind::DescriptorLit { class, .. } => module
             .classes
             .get(class.0)
             .is_some_and(|definition| !definition.is_value),
@@ -929,7 +964,10 @@ fn is_reference_allocation(module: &hir::Module, expr: &Expr) -> bool {
 }
 
 fn is_reference_new_allocation(module: &hir::Module, expr: &Expr) -> bool {
-    matches!(expr.kind, ExprKind::New { .. }) && is_reference_allocation(module, expr)
+    matches!(
+        expr.kind,
+        ExprKind::New { .. } | ExprKind::DescriptorLit { .. }
+    ) && is_reference_allocation(module, expr)
 }
 
 fn is_callback_userdata_slot(ty: &crate::types::Type) -> bool {
@@ -1075,6 +1113,10 @@ fn contains_collect_in_expr(expr: &Expr) -> bool {
             contains_collect_in_expr(target) || contains_collect_in_expr(value)
         }
         ExprKind::New { args, .. } => args.iter().any(contains_collect_in_expr),
+        ExprKind::DescriptorLit { fields, .. } => fields
+            .iter()
+            .flatten()
+            .any(contains_collect_in_expr),
         ExprKind::Field { obj, .. } | ExprKind::JsonResultValue(obj) | ExprKind::Length(obj) => {
             contains_collect_in_expr(obj)
         }
@@ -1272,6 +1314,18 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
             }
             for arg in args {
                 scan_candidate_expr(arg, name, state);
+            }
+        }
+        ExprKind::DescriptorLit { fields, .. } => {
+            if fields
+                .iter()
+                .flatten()
+                .any(|value| value_is_candidate(value, name))
+            {
+                state.escaped = true;
+            }
+            for value in fields.iter().flatten() {
+                scan_candidate_expr(value, name, state);
             }
         }
         ExprKind::Field { obj, .. } | ExprKind::JsonResultValue(obj) | ExprKind::Length(obj) => {

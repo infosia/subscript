@@ -258,6 +258,9 @@ struct Emitter<'m> {
     layouts: Layouts,
     /// `this` context of the current function.
     this: ThisCtx,
+    /// Temporary receiver while evaluating a Q33 descriptor member
+    /// default at its construction site.
+    descriptor_this: Option<String>,
     /// Generator lowering state, when inside a generator resume body.
     gen: Option<GenState>,
     /// Map from a source local name to a generator frame-field access
@@ -311,6 +314,7 @@ impl<'m> Emitter<'m> {
             module,
             layouts: Layouts::build(module)?,
             this: ThisCtx::None,
+            descriptor_this: None,
             gen: None,
             gen_locals: Vec::new(),
             local_types: Vec::new(),
@@ -347,6 +351,12 @@ impl<'m> Emitter<'m> {
         let n = self.label;
         self.label += 1;
         format!("_L{n}")
+    }
+
+    fn current_this_expr(&self) -> Result<String, String> {
+        self.descriptor_this
+            .clone()
+            .map_or_else(|| self.this.this_expr().map(str::to_string), Ok)
     }
 
     // ----- class / type naming -----
@@ -898,6 +908,7 @@ impl<'m> Emitter<'m> {
     /// Resets per-function emitter state.
     fn begin_fn(&mut self, this: ThisCtx, ret: Type) {
         self.this = this;
+        self.descriptor_this = None;
         self.gen = None;
         self.gen_locals.clear();
         self.local_types.clear();
@@ -2056,7 +2067,7 @@ impl<'m> Emitter<'m> {
         match &e.kind {
             K::Local(name) => Ok(self.local_ref(name)),
             K::Global(name) => Ok(format!("g_{}", sanitize(name))),
-            K::This => Ok(self.this.this_expr()?.to_string()),
+            K::This => self.current_this_expr(),
             K::Field { obj, name } => {
                 let (base, arrow) = self.field_base(obj, sites, out, depth)?;
                 Ok(format!("{base}{arrow}{}", sanitize(name)))
@@ -2242,7 +2253,7 @@ impl<'m> Emitter<'m> {
                 })
             }
             K::Null => Ok("((void*)0)".to_string()),
-            K::This => Ok(self.this.this_expr()?.to_string()),
+            K::This => self.current_this_expr(),
             K::Local(name) => Ok(self.local_ref(name)),
             K::Global(name) => Ok(format!("g_{}", sanitize(name))),
             K::FuncRef(name) => self.func_ref_value(name),
@@ -2299,6 +2310,12 @@ impl<'m> Emitter<'m> {
                 let sites = e.trap_sites(self.module);
                 lower_trap_sites(&sites, "new expression", |sites| {
                     self.eval_new(*class, args, sites, out, depth)
+                })
+            }
+            K::DescriptorLit { class, fields } => {
+                let sites = e.trap_sites(self.module);
+                lower_trap_sites(&sites, "descriptor literal", |sites| {
+                    self.eval_descriptor_lit(*class, fields, sites, out, depth)
                 })
             }
             K::Zero => self.zero_value(&e.ty),
@@ -4710,6 +4727,82 @@ impl<'m> Emitter<'m> {
         }
     }
 
+    /// Q33 descriptor sugar: an ordinary reference allocation followed by
+    /// declaration-ordered member stores. Omitted members evaluate their
+    /// checked defaults once for this construction.
+    fn eval_descriptor_lit(
+        &mut self,
+        class: ClassId,
+        fields: &[Option<hir::Expr>],
+        sites: &mut TrapSiteConsumer<'_>,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let descriptor = self.class(class)?.clone();
+        if !descriptor.is_descriptor || descriptor.is_value {
+            return Err("DescriptorLit does not name a descriptor reference class".to_string());
+        }
+        if fields.len() != descriptor.fields.len() {
+            return Err(format!(
+                "descriptor `{}` has {} fields but its literal has {} slots",
+                descriptor.name,
+                descriptor.fields.len(),
+                fields.len()
+            ));
+        }
+        let allocation = sites.take_required(
+            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+            "descriptor literal has no HIR allocation site",
+        )?;
+        let hir::TrapSite::Allocation { pos } = allocation else {
+            unreachable!()
+        };
+        let cname = self.class_name(class)?;
+        let pid = self.pos_id(pos);
+        let call = format!(
+            "subscript_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
+            class.0
+        );
+        let this = self.eval_site_checked_call(
+            call,
+            &Type::Class(class),
+            allocation,
+            out,
+            depth,
+        )?;
+
+        for (slot, field) in fields.iter().zip(&descriptor.fields) {
+            let value = match slot {
+                Some(value) => self.eval(value, out, depth)?,
+                None => {
+                    if !field.is_defaulted {
+                        return Err(format!(
+                            "required descriptor member `{}` has no literal value",
+                            field.name
+                        ));
+                    }
+                    let default = field.init.as_ref().ok_or_else(|| {
+                        format!(
+                            "defaulted descriptor member `{}` has no checked default",
+                            field.name
+                        )
+                    })?;
+                    let saved_this = self.descriptor_this.replace(this.clone());
+                    let evaluated = self.eval(default, out, depth);
+                    self.descriptor_this = saved_this;
+                    evaluated?
+                }
+            };
+            let _ = writeln!(
+                out,
+                "{}(({cname}*)({this}))->{} = {value};",
+                indent(depth),
+                sanitize(&field.name)
+            );
+        }
+        Ok(this)
+    }
+
     // ----- function values and lambdas -----
 
     fn func_ref_value(&mut self, name: &str) -> Result<String, String> {
@@ -5078,6 +5171,11 @@ fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
                 collect_aggr_expr(a, set);
             }
         }
+        K::DescriptorLit { fields, .. } => {
+            for value in fields.iter().flatten() {
+                collect_aggr_expr(value, set);
+            }
+        }
         K::Field { obj, .. } | K::JsonResultValue(obj) => collect_aggr_expr(obj, set),
         K::Length(obj) => collect_aggr_expr(obj, set),
         K::Index { obj, index, .. } => {
@@ -5228,6 +5326,11 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
             n
         }
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
+        K::DescriptorLit { fields, .. } => fields
+            .iter()
+            .flatten()
+            .map(count_yields_expr)
+            .sum(),
         K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),

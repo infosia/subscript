@@ -3230,7 +3230,9 @@ overrides under both tiers. Reject: `r90` missing required member,
 `r91` excess member, `r92` literal against an unmarked class
 (`tsc`-clean — stock TS accepts it structurally; the
 strictly-narrower proof), `r93` `?` member without initializer in a
-descriptor, `r94` a method in a descriptor class.
+descriptor, `r94` a method in a descriptor class, `r95` `new` on a
+descriptor class (`tsc`-clean; added at landing — literal
+construction is the only construction).
 
 ### 25.4 Exit criteria (pre-registered)
 

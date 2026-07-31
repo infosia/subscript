@@ -144,6 +144,7 @@ pub(crate) struct GenericFn {
 pub(crate) struct GenericClass {
     pub file: usize,
     pub is_value: bool,
+    pub is_descriptor: bool,
     pub type_params: Vec<String>,
     pub class: ast::Class,
     pub pos: Pos,
@@ -395,6 +396,16 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
             ck.cur_file = i;
             ck.subst.clear();
             ck.resolve_signatures(i);
+        }
+    }
+    // Descriptor defaults need every class and function signature, but
+    // constructing literals in ordinary bodies need the checked defaults.
+    // Check all non-generic descriptor defaults in this intermediate pass.
+    for i in 0..prog.files.len() {
+        if !prog.files[i].dts {
+            ck.cur_file = i;
+            ck.subst.clear();
+            ck.check_descriptor_defaults_in_file(i);
         }
     }
     // Pass C: bodies (program files only; mirror declarations have none).
@@ -821,28 +832,39 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn class_decorators(&mut self, class: &ast::Class) -> bool {
+    fn class_decorators(&mut self, class: &ast::Class) -> (bool, bool) {
         let mut is_value = false;
+        let mut is_descriptor = false;
         for dec in &class.decorators {
             match &*dec.expr {
                 ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct" => is_value = true,
+                ast::Expr::Ident(id) if id.sym.as_ref() == "Descriptor" => {
+                    is_descriptor = true;
+                }
                 _ => {
                     let pos = self.pos(dec.span);
                     self.error(
                         RuleCode::S100,
-                        "the only decided decorator is the ambient `@CStruct`",
+                        "the only decided decorators are the ambient `@CStruct` and `@Descriptor`",
                         pos,
                     );
                 }
             }
         }
-        is_value
+        if is_value && is_descriptor {
+            self.error(
+                RuleCode::S100,
+                "`@Descriptor` declares a reference class and cannot be combined with `@CStruct`",
+                self.pos(class.span),
+            );
+        }
+        (is_value, is_descriptor)
     }
 
     fn collect_class(&mut self, file: usize, c: &ast::ClassDecl, exported: bool) {
         let name = c.ident.sym.to_string();
         let pos = self.pos(c.ident.span);
-        let is_value = self.class_decorators(&c.class);
+        let (is_value, is_descriptor) = self.class_decorators(&c.class);
         if let Some(tp) = &c.class.type_params {
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
@@ -851,6 +873,7 @@ impl<'p> Checker<'p> {
                 GenericClass {
                     file,
                     is_value,
+                    is_descriptor,
                     type_params,
                     class: (*c.class).clone(),
                     pos: pos.clone(),
@@ -858,7 +881,7 @@ impl<'p> Checker<'p> {
             );
             self.register_scope_item(file, &name, ScopeItem::GenericClass(name.clone()), pos);
         } else {
-            let id = self.new_class(&name, is_value, pos.clone());
+            let id = self.new_class(&name, is_value, is_descriptor, pos.clone());
             self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
         }
         if exported {
@@ -866,11 +889,18 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(crate) fn new_class(&mut self, name: &str, is_value: bool, pos: Pos) -> ClassId {
+    pub(crate) fn new_class(
+        &mut self,
+        name: &str,
+        is_value: bool,
+        is_descriptor: bool,
+        pos: Pos,
+    ) -> ClassId {
         let id = ClassId(self.classes.len());
         self.classes.push(hir::ClassDef {
             name: name.to_string(),
             is_value,
+            is_descriptor,
             is_boundary: false,
             fields: Vec::new(),
             ctor: None,
@@ -1121,7 +1151,7 @@ impl<'p> Checker<'p> {
     fn collect_handle(&mut self, file: usize, i: &ast::TsInterfaceDecl) {
         let name = i.id.sym.to_string();
         let pos = self.pos(i.id.span);
-        let id = self.new_class(&name, false, pos.clone());
+        let id = self.new_class(&name, false, false, pos.clone());
         self.handle_classes.insert(id);
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }
@@ -1132,7 +1162,7 @@ impl<'p> Checker<'p> {
     fn collect_boundary_struct(&mut self, file: usize, c: &ast::ClassDecl) {
         let name = c.ident.sym.to_string();
         let pos = self.pos(c.ident.span);
-        let id = self.new_class(&name, true, pos.clone());
+        let id = self.new_class(&name, true, false, pos.clone());
         self.boundary_classes.insert(id);
         self.classes[id.0].is_boundary = true;
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
@@ -1563,10 +1593,13 @@ impl<'p> Checker<'p> {
     /// enforces C2 (no inheritance for value classes; field whitelist).
     pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class) {
         let is_value = self.classes[id.0].is_value;
+        let is_descriptor = self.classes[id.0].is_descriptor;
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
             if is_value {
                 self.error(RuleCode::S006, "value classes do not inherit", pos);
+            } else if is_descriptor {
+                self.error(RuleCode::S100, "descriptor classes do not inherit", pos);
             } else {
                 self.error(
                     RuleCode::S100,
@@ -1592,7 +1625,47 @@ impl<'p> Checker<'p> {
                         self.error(RuleCode::S100, "static fields are not decided", pos);
                         continue;
                     }
-                    if prop.is_optional {
+                    let is_defaulted = is_descriptor
+                        && prop.is_optional
+                        && prop.value.is_some()
+                        && !prop.definite;
+                    if is_descriptor {
+                        match (prop.definite, prop.is_optional, prop.value.is_some()) {
+                            (true, false, false) | (false, true, true) => {}
+                            (_, true, false) => {
+                                let pos = self.pos(prop.span);
+                                self.error(
+                                    RuleCode::S012,
+                                    "optional descriptor members require a default initializer",
+                                    pos,
+                                );
+                            }
+                            (true, _, true) => {
+                                let pos = self.pos(prop.span);
+                                self.error(
+                                    RuleCode::S100,
+                                    "a required descriptor member (`name!: T`) cannot have an initializer",
+                                    pos,
+                                );
+                            }
+                            (false, false, true) => {
+                                let pos = self.pos(prop.span);
+                                self.error(
+                                    RuleCode::S100,
+                                    "a descriptor member initializer requires the optional `?` spelling",
+                                    pos,
+                                );
+                            }
+                            _ => {
+                                let pos = self.pos(prop.span);
+                                self.error(
+                                    RuleCode::S100,
+                                    "required descriptor members must be spelled `name!: T`",
+                                    pos,
+                                );
+                            }
+                        }
+                    } else if prop.is_optional {
                         let pos = self.pos(prop.span);
                         self.error(
                             RuleCode::S012,
@@ -1644,12 +1717,21 @@ impl<'p> Checker<'p> {
                     self.classes[id.0].fields.push(hir::Field {
                         name: key.sym.to_string(),
                         ty,
+                        is_defaulted,
                         init: None,
                         foreign_provenance,
                         pos,
                     });
                 }
                 ast::ClassMember::Constructor(ctor) => {
+                    if is_descriptor {
+                        self.error(
+                            RuleCode::S100,
+                            "descriptor classes cannot declare constructors",
+                            self.pos(ctor.span),
+                        );
+                        continue;
+                    }
                     let mut params = Vec::new();
                     for p in &ctor.params {
                         match p {
@@ -1674,6 +1756,14 @@ impl<'p> Checker<'p> {
                         self.error(RuleCode::S100, "computed method names are not decided", pos);
                         continue;
                     };
+                    if is_descriptor {
+                        self.error(
+                            RuleCode::S100,
+                            "descriptor classes cannot declare methods",
+                            self.pos(key.span),
+                        );
+                        continue;
+                    }
                     if method.is_static || method.kind != ast::MethodKind::Method {
                         let pos = self.pos(method.span);
                         self.error(
@@ -1745,6 +1835,67 @@ impl<'p> Checker<'p> {
                     self.top_level.extend(out);
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn check_descriptor_defaults_in_file(&mut self, file: usize) {
+        let module = &self.prog.files[file].module;
+        for item in &module.body {
+            let decl = match item {
+                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => &export.decl,
+                ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => decl,
+                _ => continue,
+            };
+            let ast::Decl::Class(class) = decl else {
+                continue;
+            };
+            if class.class.type_params.is_some() {
+                continue;
+            }
+            let Some(&id) = self.class_ids.get(class.ident.sym.as_ref()) else {
+                continue;
+            };
+            if self.classes[id.0].is_descriptor {
+                self.check_descriptor_defaults(id, &class.class);
+            }
+        }
+    }
+
+    fn check_descriptor_defaults(&mut self, id: ClassId, class: &ast::Class) {
+        let this_ty = Type::Class(id);
+        for member in &class.body {
+            let ast::ClassMember::ClassProp(prop) = member else {
+                continue;
+            };
+            let ast::PropName::Ident(key) = &prop.key else {
+                continue;
+            };
+            let Some(value) = &prop.value else {
+                continue;
+            };
+            let field_ty = self.classes[id.0]
+                .fields
+                .iter()
+                .find(|field| field.name == key.sym.as_ref() && field.is_defaulted)
+                .map(|field| field.ty.clone());
+            let Some(field_ty) = field_ty else {
+                continue;
+            };
+            let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
+            let checked = self.check_expr(value, Some(&field_ty), &mut fx);
+            self.require_assignable(
+                &checked.ty.clone(),
+                &field_ty,
+                checked.pos.clone(),
+                "the descriptor member default",
+            );
+            if let Some(field) = self.classes[id.0]
+                .fields
+                .iter_mut()
+                .find(|field| field.name == key.sym.as_ref())
+            {
+                field.init = Some(checked);
             }
         }
     }
@@ -1915,6 +2066,9 @@ impl<'p> Checker<'p> {
 
     /// Checks field initializers, the constructor, and methods (pass C).
     pub(crate) fn check_class_body(&mut self, id: ClassId, class: &ast::Class) {
+        if self.classes[id.0].is_descriptor {
+            return;
+        }
         let this_ty = Type::Class(id);
         for member in &class.body {
             match member {
@@ -2107,9 +2261,18 @@ impl<'p> Checker<'p> {
         for (param, arg) in template.type_params.iter().zip(args) {
             self.subst.insert(param.clone(), arg.clone());
         }
-        let id = self.new_class(&name, template.is_value, template.pos.clone());
+        let id = self.new_class(
+            &name,
+            template.is_value,
+            template.is_descriptor,
+            template.pos.clone(),
+        );
         self.resolve_class_shape(id, &template.class);
-        self.check_class_body(id, &template.class);
+        if template.is_descriptor {
+            self.check_descriptor_defaults(id, &template.class);
+        } else {
+            self.check_class_body(id, &template.class);
+        }
         self.cur_file = saved_file;
         self.subst = saved_subst;
         Some(id)

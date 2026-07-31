@@ -103,6 +103,10 @@ pub struct ClassDef {
     pub name: String,
     /// True for `@CStruct class` (C-layout, copy semantics — C2).
     pub is_value: bool,
+    /// True for a literal-constructible `@Descriptor` reference class
+    /// (Q33). Descriptor classes have fields only; object literals lower
+    /// through [`ExprKind::DescriptorLit`].
+    pub is_descriptor: bool,
     /// True for a mirror-ingested boundary struct (a `declare class` in a
     /// `.d.ts`, P5.2): a C-layout value type whose constructor has no
     /// in-language body. `new` initializes its fields positionally from
@@ -129,6 +133,9 @@ pub struct Field {
     pub name: String,
     /// Resolved field type.
     pub ty: Type,
+    /// True when this is a Q33 descriptor field spelled `name?: T = expr`.
+    /// For every other field this is false.
+    pub is_defaulted: bool,
     /// Field initializer, when present.
     pub init: Option<Expr>,
     /// C typedef attached to a mirrored callback field, when present.
@@ -2646,6 +2653,15 @@ pub enum ExprKind {
         /// Constructor arguments.
         args: Vec<Expr>,
     },
+    /// Q33 descriptor construction from a contextually typed object
+    /// literal. `fields` is in class declaration order; `None` means the
+    /// declared default is evaluated for this construction.
+    DescriptorLit {
+        /// Constructed descriptor class.
+        class: ClassId,
+        /// Explicit values or omitted-default markers, one per field.
+        fields: Vec<Option<Expr>>,
+    },
     /// Checker-internal zero value used by typed JSON.parse construction.
     Zero,
     /// Checker-internal raw allocation of a reference class, bypassing
@@ -2898,6 +2914,7 @@ impl Expr {
                 }
                 sites
             }
+            K::DescriptorLit { .. } => vec![allocation(&self.pos)],
             K::RawNew { .. } => vec![allocation(&self.pos)],
             K::Field { obj, .. } if reference_value(&obj.ty) => vec![lifetime(&obj.pos)],
             K::JsonResultValue(obj) => vec![

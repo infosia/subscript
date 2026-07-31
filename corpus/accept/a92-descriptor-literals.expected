@@ -1,0 +1,7 @@
+nested-default=7,safe
+full=1,128,fast,9
+defaulted=2,64,safe
+array=2,7
+all-defaulted=true,ready
+nested-default=7,safe
+arg=3,64,safe,11,12

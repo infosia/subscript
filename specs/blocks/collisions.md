@@ -973,8 +973,13 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   - **Boundary.** `@Descriptor` classes are in-language types, not
     mirror/boundary types (v1).
 
+  - **`new` is rejected on descriptor classes** *(added at landing,
+    2026-07-31 — the implementer's resolution, adopted: literal
+    construction is the only construction, so required members can
+    never be left uninitialized).*
+
   Contract and exit criteria: `compiler.md` §25. Accept: `a92`.
-  Reject: `r90`–`r94`.
+  Reject: `r90`–`r95`.
 
 ## 3. Open items carried forward
 

@@ -298,6 +298,11 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
             n
         }
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
+        K::DescriptorLit { fields, .. } => fields
+            .iter()
+            .flatten()
+            .map(count_yields_expr)
+            .sum(),
         K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),
@@ -1069,6 +1074,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let sites = e.trap_sites(self.ml.hir);
                 lower_trap_sites(&sites, "new expression", |sites| {
                     self.eval_new(class.0, args, &e.pos, sites, None)
+                })
+            }
+            K::DescriptorLit { class, fields } => {
+                let sites = e.trap_sites(self.ml.hir);
+                lower_trap_sites(&sites, "descriptor literal", |sites| {
+                    self.eval_descriptor_lit(class.0, fields, &e.pos, sites)
                 })
             }
             K::Zero => Ok(match self.ml.layouts.repr(&e.ty)? {
@@ -3934,6 +3945,80 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         })
     }
 
+    /// Constructs a Q33 descriptor literal as an ordinary reference-class
+    /// allocation followed by declaration-ordered member stores. Omitted
+    /// members evaluate their checked defaults here, once per construction.
+    fn eval_descriptor_lit(
+        &mut self,
+        cid: usize,
+        fields: &[Option<hir::Expr>],
+        pos: &Pos,
+        sites: &mut TrapSiteConsumer<'_>,
+    ) -> Result<RV, String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .cloned()
+            .ok_or_else(|| internal("descriptor class id out of range"))?;
+        let layout = self.ml.layouts.class(cid)?.clone();
+        if !class.is_descriptor || layout.is_value {
+            return Err(internal("DescriptorLit does not name a descriptor reference class"));
+        }
+        if fields.len() != class.fields.len() {
+            return Err(internal(format!(
+                "descriptor `{}` has {} fields but its literal has {} slots",
+                class.name,
+                class.fields.len(),
+                fields.len()
+            )));
+        }
+        let site = sites.take_required(
+            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+            internal("descriptor literal has no HIR allocation site"),
+        )?;
+        let size = self.iconst(types::I64, i64::from(layout.size));
+        let class_v = self.iconst(types::I32, i64::from(cid as u32));
+        let pid = self.pos_id(pos);
+        let pos_v = self.iconst(types::I32, pid);
+        let result = self.call_rt(
+            self.ml.rt.alloc,
+            &[self.ctx_v, size, class_v, pos_v],
+            false,
+        )?;
+        self.emit_trap_site(site, TrapOperand::Pending)?;
+        let this = result.ok_or_else(|| internal("descriptor allocation result"))?;
+
+        for (index, (slot, field)) in fields.iter().zip(&class.fields).enumerate() {
+            let value = match slot {
+                Some(value) => self.eval(value)?,
+                None => {
+                    if !field.is_defaulted {
+                        return Err(internal(format!(
+                            "required descriptor member `{}` has no literal value",
+                            field.name
+                        )));
+                    }
+                    let default = field.init.as_ref().ok_or_else(|| {
+                        internal(format!(
+                            "defaulted descriptor member `{}` has no checked default",
+                            field.name
+                        ))
+                    })?;
+                    let saved_this = self.this_v;
+                    self.this_v = Some((this, cid));
+                    let evaluated = self.eval(default);
+                    self.this_v = saved_this;
+                    evaluated?
+                }
+            };
+            let offset = layout.field_offsets[index] as i32;
+            self.store_val(&field.ty, this, offset, value)?;
+        }
+        Ok(RV::S(this))
+    }
+
     /// Allocates a zeroed reference-class payload without running source
     /// field initializers or its constructor. Only checker-generated
     /// JSON.parse construction uses this path.
@@ -4177,6 +4262,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     self.eval_new(class.0, args, &e.pos, sites, Some(dest))?;
                     Ok(())
                 })
+            }
+            K::DescriptorLit { .. } => {
+                Err(internal("descriptor reference cannot build into aggregate storage"))
             }
             K::Call { callee, args } => {
                 let sites = e.trap_sites(self.ml.hir);

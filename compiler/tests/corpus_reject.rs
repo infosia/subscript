@@ -93,6 +93,16 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r87-literal-union-nonmember.ts", RuleCode::S100, 9),
     ("r88-literal-union-inline.ts", RuleCode::S011, 7),
     ("r89-literal-union-cross-alias.ts", RuleCode::S100, 13),
+    ("r90-descriptor-missing-required.ts", RuleCode::S100, 13),
+    ("r91-descriptor-excess-member.ts", RuleCode::S004, 13),
+    ("r92-literal-for-unmarked-class.ts", RuleCode::S005, 13),
+    (
+        "r93-descriptor-optional-without-default.ts",
+        RuleCode::S012,
+        9,
+    ),
+    ("r94-descriptor-method.ts", RuleCode::S100, 10),
+    ("r95-descriptor-new.ts", RuleCode::S100, 14),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -230,8 +240,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        86,
-        "expected 79 standing reject entries plus the seven-entry P23 battery"
+        92,
+        "expected 85 standing reject entries plus the seven-entry P23 battery"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

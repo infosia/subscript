@@ -24,11 +24,12 @@ impl Checker<'_> {
         if let Some(&id) = self.class_ids.get(&name) {
             return id;
         }
-        let id = self.new_class(&name, false, pos.clone());
+        let id = self.new_class(&name, false, false, pos.clone());
         self.classes[id.0].fields = vec![
             hir::Field {
                 name: "ok".to_string(),
                 ty: Type::Bool,
+                is_defaulted: false,
                 init: None,
                 foreign_provenance: None,
                 pos: pos.clone(),
@@ -36,6 +37,7 @@ impl Checker<'_> {
             hir::Field {
                 name: "value".to_string(),
                 ty: value.clone(),
+                is_defaulted: false,
                 init: None,
                 foreign_provenance: None,
                 pos,

@@ -34,6 +34,11 @@ declare function CStruct<T extends abstract new (...args: never[]) => object>(
   context: ClassDecoratorContext,
 ): T;
 
+declare function Descriptor<T extends abstract new (...args: never[]) => object>(
+  target: T,
+  context: ClassDecoratorContext,
+): T;
+
 declare interface FixedArray<T, N extends number> {
   [index: number]: T;
   readonly length: i32;
