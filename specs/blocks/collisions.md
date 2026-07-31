@@ -115,9 +115,17 @@ Parameters with defaults (`a11`) are legal — the default fills the value;
 no `undefined` is observable. In-language `Ref | null` lowers to a
 nullable pointer; narrowing is required before member access (`tsc`
 already enforces this under `strictNullChecks`).
-Accept: `a17`. Reject: `r12-general-union` (`i32 | string` field;
-`tsc`-clean), `r13-undefined` (`undefined` in an annotation/expression;
-`tsc`-clean).
+
+**Q32 exception (owner, 2026-07-31): closed string-literal unions as
+named aliases.** `type Name = "a" | "b";` declares a closed,
+nominal-by-alias literal set (Q32; `compiler.md` §24). This is far
+inside the rejected general-union space — one primitive, literals
+only, closed, alias-only: an *inline* literal union in any other
+position stays rejected as a general union.
+
+Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
+(`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
+an annotation/expression; `tsc`-clean), `r62`–`r64` (Q32 boundaries).
 
 ### C8. `async` / generators (Q11) — coroutines only
 
@@ -889,6 +897,36 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
   it **fails stock `tsc` under `strict`**, because
   `RegExpMatchArray.index` is `index?: number`. Invariant 5 excludes
   it; no design choice was involved.
+
+- **Q32 (string-literal unions)** — *(Owner, 2026-07-31; requested by
+  the downstream WebGPU binding project, whose JS-shaped API needs
+  `type GPUIndexFormat = "uint16" | "uint32";`.)* A **type alias of a
+  closed union of string literals** is a language type:
+
+  - **Alias-only and nominal-by-alias.** The alias is the type's
+    identity: two aliases with identical members are distinct types
+    (`tsc` sees them structurally — the accepted-superset rule,
+    invariant 5; the language narrows, as with C1 nominality). Inline
+    literal unions in any other position remain rejected general
+    unions (C7).
+  - **Values** are member literals in a context typed by the alias
+    (variables, parameters, fields, returns, array elements).
+    A non-member literal is a compile error.
+  - **Operations**: assignment and `===`/`!==` against member
+    literals and same-alias values; template-literal interpolation
+    prints the member string. Comparison or assignment with plain
+    `string` (or another alias) is rejected.
+  - **Representation**: an `i32` discriminant (declaration order);
+    a per-alias static string table used **only** for formatting —
+    comparisons lower to integer compares, never string compares.
+  - **Boundary**: Q32 aliases may not appear in mirrors or boundary
+    signatures (v1); a binding layer lowers them to integer enums
+    before its C facade.
+
+  Contract and exit criteria: `compiler.md` §24. Accept: `a91`.
+  Reject: `r62` (non-member literal), `r63` (inline literal union;
+  S011 as today), `r64` (cross-alias assignment, same members —
+  `tsc`-clean, proving the language is strictly narrower here).
 
 ## 3. Open items carried forward
 
