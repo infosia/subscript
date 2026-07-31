@@ -145,10 +145,18 @@ value-struct shape `{ done: boolean; value: T }`, with `value`
 zero-initialized when `done` — the `undefined`-bearing TS lib
 `IteratorResult` is only the `tsc` view (accepted superset; C7's
 `undefined` ban applies to the language type, not the lib's spelling). No
-event loop exists. `async`, `await`, and `Promise` are rejected. Host
-async C APIs surface as C-style callbacks (plan §4 pattern 4), not
-promises.
-Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
+event loop exists.
+
+**Revised 2026-07-31 (Q34): `async`/`await` are accepted** as poll-driven
+sugar over the same Context-owned frame machinery — no scheduler, no
+microtask queue, no `Promise` object; the lib `Promise<T>` is only the
+`tsc` view of an async function's value, exactly as `IteratorResult` is
+for coroutines. The model, lifetimes, and the retired `r14-async` entry
+are Q34's; `Promise` construction and combinators stay rejected. Host
+async C APIs still surface as C-style callbacks plus poll functions
+(plan §4 pattern 4); `await` consumes them through script-level polling.
+Accept: `a20`, `a93`–`a95`. Reject: `r96`–`r100` (Q34 boundaries;
+`r14-async` retired by Q34 — the construct it pinned is now legal).
 
 ## 2. Q-register resolutions not covered above
 
@@ -980,6 +988,58 @@ Accept: `a20`. Reject: `r14-async` (`async function`; `tsc`-clean).
 
   Contract and exit criteria: `compiler.md` §25. Accept: `a92`.
   Reject: `r90`–`r95`.
+
+- **Q34 (async/await — poll-driven, schedulerless)** — *(Owner,
+  2026-07-31; downstream request R4. Boa v0.21.1 was source-read as
+  the design reference for the no-scheduler architecture — see the
+  HANDOFF appendix record in `specs/tracking/q34-async.md`.)*
+
+  - **Awaitables are exactly two forms**, and neither is a value:
+    `Context.suspend()` — the primitive suspension point, ambient in
+    the prelude as `suspend(): Promise<void>`, resumed at the next
+    explicit step — and a **direct call of an `async function` in
+    await position**. An async call must be immediately awaited
+    (a floating call statement is rejected — stock `tsc` allows the
+    floating promise, so that reject entry is a strictly-narrower
+    pin); `Promise` values are never stored, passed, returned raw,
+    or combined. `new Promise`, `.then`/`.catch`/`.finally` calls,
+    and `Promise.all/race/resolve/reject` are rejected. The lib
+    `Promise<T>` type is the `tsc` view only (C8 precedent).
+  - **Structure.** Each root invocation of an async export forms a
+    single linear chain of Context-owned frames: `await f(...)` runs
+    the callee until it suspends, and suspension propagates to the
+    root. Stepping resumes the innermost suspended frame.
+    Concurrency is **multiple pending root invocations** (the
+    downstream GPU norm); one frame awaits one value at a time, and
+    combinators are impossible by construction, not merely
+    out of scope.
+  - **Driving.** Nothing schedules. The host (or the CLI runner, or
+    the generated AOT entry) steps pending roots explicitly:
+    `subscript_rt_ctx_async_pending` / `subscript_rt_ctx_async_step`
+    (`compiler.md` §26.3), stepping each pending root once per call
+    in kick order — deterministic, gate-comparable. Script
+    evaluation never pumps (the Boa separation, kept).
+  - **Lifetime and teardown (R4.4).** Suspended frames are
+    Context-owned like coroutine frames; releasing the Context drops
+    them without running continuations, and **no cleanup construct
+    is guaranteed to run** — decided now, revisited only with
+    evidence. Hot reload treats a suspended async frame as §8.2
+    treats a suspended coroutine: stale, trapping on resume.
+  - **Failure (R4.5, C6 stands).** `await` delivers the completed
+    value as-is; fallibility lives in the value domain (`T | null`
+    or result records — the API layer's policy). A trap during a
+    step trap-stops the entry per C6; a trapped Context refuses
+    further stepping until the host clears or releases it.
+  - **Exports (Q12 kept).** `export async function f(): Promise<void>`
+    lowers to the same zero-argument void C symbol; invocation runs
+    to the first suspension, completion is observable as the pending
+    count reaching zero.
+
+  Contract: `compiler.md` §26. Accept: `a93` (nested chain), `a94`
+  (two interleaved roots), `a95` (foreign-poll await — absorbs the
+  earlier Q1 corpus request). Reject: `r96` (`new Promise`), `r97`
+  (`.then` call), `r98` (`Promise.all`), `r99` (`await` outside
+  `async`), `r100` (floating async call; `tsc`-clean).
 
 ## 3. Open items carried forward
 

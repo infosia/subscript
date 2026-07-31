@@ -3247,3 +3247,84 @@ construction is the only construction).
 5. Checker unit tests: required-present, default-filled,
    excess-rejected, unmarked-class-rejected, and the two member-form
    rejections.
+
+## 26. Q34 — async/await, poll-driven
+
+Owner decision 2026-07-31 (collisions.md Q34, C8 revision; downstream
+request R4). The decision text lives in Q34; this section is the
+implementation contract. The `tsc`-acceptance of the whole surface —
+ambient `Context.suspend(): Promise<void>`, `async function` chains,
+`await` unwrapping — was probed against stock `tsc` before
+contracting.
+
+### 26.1 Checker
+
+`async function` declarations (module-level and exported) with
+explicit `Promise<T>` return annotations; `await` legal only inside
+them, applied to exactly the two Q34 awaitable forms. Rejected, with
+corpus pins: `new Promise` (r96), any `.then`/`.catch`/`.finally`
+call (r97), `Promise` statics (r98), `await` outside async (r99), a
+floating async call statement (r100 — must be awaited). Async calls
+are direct calls in await position; async function values are not
+first-class (no storing/passing references to them as promises).
+S013's meaning narrows accordingly: it now rejects the Promise
+object surface, not the keywords; `r14-async` retires (file and
+harness row removed — Q34 makes its pinned construct legal).
+
+### 26.2 Lowering (both tiers)
+
+An async function lowers onto the existing Context-owned coroutine
+frame machinery: `await Context.suspend()` is a suspend point;
+`await f(...)` allocates the callee frame, runs it to its first
+suspension or completion, and on suspension suspends the whole
+chain up to the root. A root invocation (from the host symbol) runs
+to first suspension and registers a pending root; each
+`async_step` resumes each pending root once, in kick order,
+resuming at the innermost suspended frame; a root that completes
+leaves the pending set. Frames free with their Context (teardown
+drops, no continuations). Byte-exact across tiers under the
+standing gate.
+
+### 26.3 Runtime C API and drivers
+
+```c
+uint64_t subscript_rt_ctx_async_pending(const subscript_rt_context*);
+uint64_t subscript_rt_ctx_async_step(subscript_rt_context*);  /* returns remaining */
+```
+
+`async_step` on a trapped Context is a no-op returning the pending
+count (the trampoline precedent); on an empty pending set it returns
+0. The generated AOT entry, the JIT runner, and `subscript run` pump
+`async_step` to quiescence after the entry returns — a no-op for
+synchronous programs, so no existing golden moves. The generated
+host header documents both functions; hot-reload's §8.2 staleness
+applies to suspended async frames unchanged.
+
+### 26.4 Corpus
+
+`a93-async-chain` (accept): leaf async polling a counter via
+`Context.suspend()`, middle async awaiting the leaf, async `main`
+awaiting the middle; prints pin the resume ordering and final
+values. `a94-async-two-roots`: two async exports kicked then pumped
+by the harness, interleaving deterministically in kick order.
+`a95-interop-async-await`: an async function awaiting a foreign
+poll (the interop fixture gains a deterministic poll —
+`subDevicePoll`-style, completing after a fixed call count — only if
+no existing function fits); absorbs the Q1 request. Rejects
+`r96`–`r100` as listed in Q34, `r100` `tsc`-clean (verified
+standalone, recorded in its header). `r14-async` deleted.
+
+### 26.5 Exit criteria (pre-registered)
+
+1. `a93`–`a95` byte-identical under both tiers, driven by the same
+   pump-to-quiescence entries the gate already uses.
+2. `r96`–`r100` pin (code, line); `r100` type-checks under stock
+   `tsc`; `r14` removed from tree and harness.
+3. `async_step` determinism: a unit test pins the kick-order
+   interleave; a trapped-Context step is a no-op (unit test).
+4. Prelude declares `Context.suspend`; `tsc` gate green with the new
+   accept entries included.
+5. No existing golden moves (sync programs are unaffected by the
+   pump); full gate green; zero-warning sweep unaffected.
+6. Hot reload: a suspended async frame resumes stale per §8.2's
+   existing trap (unit test at the reload layer).
