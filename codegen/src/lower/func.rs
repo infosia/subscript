@@ -28,7 +28,7 @@ use cranelift_codegen::ir::{
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
-use subscript_compiler::{hir, Pos, Type};
+use subscript_compiler::{hir, ClassId, Pos, Type};
 use subscript_compiler::types::{
     CRANELIFT_FRAME_ALIGNMENT, MAX_FRAME_BYTES,
 };
@@ -305,8 +305,9 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
     match &e.kind {
         K::Yield(arg) => 1 + arg.as_deref().map_or(0, count_yields_expr),
         K::AsyncSuspend => 1,
-        K::AsyncCall { args, .. } => {
-            1 + args.iter().map(count_yields_expr).sum::<usize>()
+        K::AsyncCall { callee, args } => {
+            1 + callee.receiver().map_or(0, count_yields_expr)
+                + args.iter().map(count_yields_expr).sum::<usize>()
         }
         K::Unary { operand, .. } => count_yields_expr(operand),
         K::Binary { left, right, .. } => count_yields_expr(left) + count_yields_expr(right),
@@ -354,7 +355,10 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
 fn walk_async_calls_expr(e: &hir::Expr, out: &mut usize) {
     use hir::ExprKind as K;
     match &e.kind {
-        K::AsyncCall { args, .. } => {
+        K::AsyncCall { callee, args } => {
+            if let Some(receiver) = callee.receiver() {
+                walk_async_calls_expr(receiver, out);
+            }
             for arg in args {
                 walk_async_calls_expr(arg, out);
             }
@@ -531,6 +535,9 @@ struct Body<'f, 'm, 'a, M: Module> {
     env_v: Option<Value>,
     sret_v: Option<Value>,
     this_v: Option<(Value, usize)>,
+    /// Async-method receiver reloaded from its frame slot at each use, so
+    /// the value is valid on every resume control-flow edge.
+    async_this: Option<(Value, u32, usize)>,
     ret_ty: Type,
     is_resume: bool,
     scopes: Vec<Vec<(String, Binding)>>,
@@ -1154,6 +1161,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Null => Ok(RV::S(self.iconst(types::I64, 0))),
             K::This => {
+                if let Some((frame, offset, cid)) = self.async_this {
+                    let receiver =
+                        self.load_val(&Type::Class(ClassId(cid)), frame, offset as i32)?;
+                    return Ok(RV::S(self.expect_s(receiver)?));
+                }
                 let (ptr, cid) = self
                     .this_v
                     .ok_or_else(|| internal("`this` outside a method"))?;
@@ -1315,10 +1327,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             } => self.eval_lambda(params, ret, body, captures, &e.pos),
             K::Yield(arg) => self.eval_yield(arg.as_deref(), &e.pos),
             K::AsyncSuspend => self.eval_async_suspend(&e.pos),
-            K::AsyncCall { function, args } => {
+            K::AsyncCall { callee, args } => {
                 let sites = e.trap_sites(self.ml.hir);
                 lower_trap_sites(&sites, "async call", |sites| {
-                    self.eval_async_call(function, args, &e.ty, &e.pos, sites)
+                    self.eval_async_call(callee, args, &e.ty, &e.pos, sites)
                 })
             }
             K::Cond { cond, then, els } => {
@@ -5395,7 +5407,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
     fn eval_async_call(
         &mut self,
-        function: &str,
+        callee: &hir::AsyncCallee,
         args: &[hir::Expr],
         ret: &Type,
         pos: &Pos,
@@ -5404,9 +5416,21 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if self.genc.as_ref().map(|g| g.kind) != Some(FrameKind::Async) {
             return Err(internal("async call outside an async frame"));
         }
-        let callee = self.ml.hir_fn(function)?;
-        if !callee.is_async {
-            return Err(internal(format!("awaited non-async function `{function}`")));
+        let (function, creator_key, resume_key) = match callee {
+            hir::AsyncCallee::Function(function) => (
+                self.ml.hir_fn(function)?,
+                FnKey::Free(function.clone()),
+                FnKey::Resume(function.clone()),
+            ),
+            hir::AsyncCallee::Method { class, name, .. } => (
+                self.ml.hir_method(class.0, name)?,
+                FnKey::Method(class.0, name.clone()),
+                FnKey::MethodResume(class.0, name.clone()),
+            ),
+            _ => return Err(internal("unknown async callee kind")),
+        };
+        if !function.is_async {
+            return Err(internal("awaited synchronous target"));
         }
         let child_off = {
             let g = self.genc.as_mut().ok_or_else(|| internal("async context"))?;
@@ -5420,11 +5444,25 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let (parent, _, resume_block, state) = self.next_suspend_site()?;
 
         let mut argv = vec![self.ctx_v];
-        self.push_args(&mut argv, &callee.params, args)?;
+        if let hir::AsyncCallee::Method { receiver, .. } = callee {
+            let value = self.eval(receiver)?;
+            let this = self.expect_s(value)?;
+            while let Some(site) =
+                sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+            {
+                self.emit_trap_site(site, TrapOperand::Value(this))?;
+            }
+            // The receiver is evaluated before the explicit arguments. Root
+            // it in the parent frame's reserved child slot while those
+            // arguments run; the creator result replaces it below.
+            self.b.ins().store(flags(), this, parent, child_off as i32);
+            argv.push(this);
+        }
+        self.push_args(&mut argv, &function.params, args)?;
         let checked = sites
             .take(|site| matches!(site, hir::TrapSite::Call { .. }))
             .is_some();
-        let created = self.call_script(&FnKey::Free(function.to_string()), &argv, checked)?;
+        let created = self.call_script(&creator_key, &argv, checked)?;
         let child = *created
             .first()
             .ok_or_else(|| internal("async creator result"))?;
@@ -5464,11 +5502,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             None => self.iconst(types::I64, 0),
             Some(slot) => self.b.ins().stack_addr(types::I64, slot, 0),
         };
-        let results = self.call_script(
-            &FnKey::Resume(function.to_string()),
-            &[self.ctx_v, child, out],
-            false,
-        )?;
+        let results = self.call_script(&resume_key, &[self.ctx_v, child, out], false)?;
         self.trap_check();
         let done = *results
             .first()
@@ -6272,6 +6306,7 @@ pub(crate) fn define_function<M: Module>(
             env_v: pro.env_v,
             sret_v: pro.sret_v,
             this_v: pro.this_v.zip(class),
+            async_this: None,
             ret_ty: ret,
             is_resume: false,
             scopes: vec![Vec::new()],
@@ -6333,6 +6368,7 @@ fn define_lambda<M: Module>(
             env_v: pro.env_v,
             sret_v: pro.sret_v,
             this_v: None,
+            async_this: None,
             ret_ty: ret.clone(),
             is_resume: false,
             scopes: vec![Vec::new()],
@@ -6620,13 +6656,25 @@ pub(crate) fn wrapper_for<M: Module>(
     Ok(id)
 }
 
-/// Frame layout shared by generators and async functions: parameter/local
-/// storage followed by one child-frame pointer for each direct awaited call.
+/// Frame layout shared by generators and async functions: an optional async
+/// method receiver, parameter/local storage, then one child-frame pointer for
+/// each direct awaited call. R13 requires the receiver to be the first payload
+/// slot.
 fn generator_frame<M: Module>(
     ml: &ModLower<M>,
     f: &hir::Function,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>, u32), String> {
+    receiver: Option<&Type>,
+) -> Result<(Option<u32>, Vec<u32>, Vec<u32>, Vec<u32>, u32), String> {
     let mut off = GEN_PAYLOAD_OFF;
+    let receiver_offset = if let Some(receiver) = receiver {
+        let (size, align) = ml.layouts.size_align(receiver)?;
+        off = round_up_layout(off, align.max(1), "async method receiver layout")?;
+        let receiver_offset = off;
+        off = checked_layout_add(off, size.max(1), "async method receiver layout")?;
+        Some(receiver_offset)
+    } else {
+        None
+    };
     let mut param_offsets = Vec::new();
     for p in &f.params {
         let (s, a) = ml.layouts.size_align(&p.ty)?;
@@ -6650,7 +6698,7 @@ fn generator_frame<M: Module>(
         off = checked_layout_add(off, 8, "async child-frame layout")?;
     }
     let size = round_up_layout(off, 8, "final generator frame layout")?;
-    Ok((param_offsets, let_offsets, child_offsets, size))
+    Ok((receiver_offset, param_offsets, let_offsets, child_offsets, size))
 }
 
 /// Defines the creator and resume functions of a `function*` (C8).
@@ -6658,7 +6706,8 @@ pub(crate) fn define_generator<M: Module>(
     ml: &mut ModLower<M>,
     f: &hir::Function,
 ) -> Result<(), String> {
-    let (param_offsets, let_offsets, child_offsets, frame_size) = generator_frame(ml, f)?;
+    let (_, param_offsets, let_offsets, child_offsets, frame_size) =
+        generator_frame(ml, f, None)?;
     let yield_ty = match &f.ret {
         Type::Generator(y) => (**y).clone(),
         other => return Err(internal(format!("generator return {other:?}"))),
@@ -6687,6 +6736,7 @@ pub(crate) fn define_generator<M: Module>(
                 env_v: None,
                 sret_v: None,
                 this_v: None,
+                async_this: None,
                 ret_ty: Type::Generator(Box::new(yield_ty.clone())),
                 is_resume: false,
                 scopes: vec![Vec::new()],
@@ -6809,6 +6859,7 @@ pub(crate) fn define_generator<M: Module>(
                 env_v: None,
                 sret_v: None,
                 this_v: None,
+                async_this: None,
                 ret_ty: Type::Void,
                 is_resume: true,
                 scopes: vec![Vec::new()],
@@ -6861,9 +6912,46 @@ pub(crate) fn define_async<M: Module>(
     ml: &mut ModLower<M>,
     f: &hir::Function,
 ) -> Result<(), String> {
-    let (param_offsets, let_offsets, child_offsets, frame_size) = generator_frame(ml, f)?;
-    let creator_id = ml.func_id(&FnKey::Free(f.name.clone()))?;
-    let resume_id = ml.func_id(&FnKey::Resume(f.name.clone()))?;
+    define_async_with(
+        ml,
+        f,
+        None,
+        FnKey::Free(f.name.clone()),
+        FnKey::Resume(f.name.clone()),
+    )
+}
+
+/// Defines the creator and resume functions of an R13 async reference-class
+/// instance method. Its receiver is the first frame payload slot.
+pub(crate) fn define_async_method<M: Module>(
+    ml: &mut ModLower<M>,
+    f: &hir::Function,
+    class: usize,
+) -> Result<(), String> {
+    if ml.layouts.class(class)?.is_value {
+        return Err(internal("async method lowering received a value class"));
+    }
+    define_async_with(
+        ml,
+        f,
+        Some(class),
+        FnKey::Method(class, f.name.clone()),
+        FnKey::MethodResume(class, f.name.clone()),
+    )
+}
+
+fn define_async_with<M: Module>(
+    ml: &mut ModLower<M>,
+    f: &hir::Function,
+    class: Option<usize>,
+    creator_key: FnKey,
+    resume_key: FnKey,
+) -> Result<(), String> {
+    let receiver_ty = class.map(|class| Type::Class(ClassId(class)));
+    let (receiver_offset, param_offsets, let_offsets, child_offsets, frame_size) =
+        generator_frame(ml, f, receiver_ty.as_ref())?;
+    let creator_id = ml.func_id(&creator_key)?;
+    let resume_id = ml.func_id(&resume_key)?;
 
     // Creator: allocate and initialize, but do not execute. An await site
     // or exported host wrapper performs the first resume immediately.
@@ -6873,7 +6961,7 @@ pub(crate) fn define_async<M: Module>(
             &params_ty,
             &Type::Generator(Box::new(Type::Void)),
             false,
-            false,
+            class.is_some(),
         )?;
         let mut cctx = ml.module.make_context();
         cctx.func.signature = sig;
@@ -6883,7 +6971,15 @@ pub(crate) fn define_async<M: Module>(
             let entry = b.create_block();
             b.append_block_params_for_function_params(entry);
             b.switch_to_block(entry);
-            let pro = split_params(ml, &mut b, entry, &Type::Void, false, false, &f.params)?;
+            let pro = split_params(
+                ml,
+                &mut b,
+                entry,
+                &Type::Void,
+                false,
+                class.is_some(),
+                &f.params,
+            )?;
             let mut body = Body {
                 ml,
                 b,
@@ -6891,6 +6987,7 @@ pub(crate) fn define_async<M: Module>(
                 env_v: None,
                 sret_v: None,
                 this_v: None,
+                async_this: None,
                 ret_ty: Type::Generator(Box::new(Type::Void)),
                 is_resume: false,
                 scopes: vec![Vec::new()],
@@ -6938,6 +7035,15 @@ pub(crate) fn define_async<M: Module>(
                     .ins()
                     .load(types::I32, flags(), body.ctx_v, epoch_off);
                 body.b.ins().store(flags(), epoch, frame, GEN_EPOCH_OFF);
+            }
+            if let (Some(receiver_ty), Some(receiver_offset)) =
+                (receiver_ty.as_ref(), receiver_offset)
+            {
+                let receiver = pro
+                    .this_v
+                    .map(RV::S)
+                    .ok_or_else(|| internal("async method creator has no receiver"))?;
+                body.store_val(receiver_ty, frame, receiver_offset as i32, receiver)?;
             }
             let mut value_index = 0usize;
             for (param, off) in f.params.iter().zip(&param_offsets) {
@@ -7014,6 +7120,9 @@ pub(crate) fn define_async<M: Module>(
                 env_v: None,
                 sret_v: None,
                 this_v: None,
+                async_this: class
+                    .zip(receiver_offset)
+                    .map(|(class, offset)| (frame, offset, class)),
                 ret_ty: f.ret.clone(),
                 is_resume: true,
                 scopes: vec![Vec::new()],
@@ -7171,6 +7280,7 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
             env_v: None,
             sret_v: None,
             this_v: None,
+            async_this: None,
             ret_ty: Type::Void,
             is_resume: false,
             scopes: vec![Vec::new()],

@@ -243,7 +243,10 @@ impl Analyzer {
                     self.expr(arg);
                 }
             }
-            K::AsyncCall { args, .. } => {
+            K::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver_mut() {
+                    self.expr(receiver);
+                }
                 for arg in args {
                     self.expr(arg);
                 }
@@ -492,7 +495,12 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
             };
             callee_assigns || args.iter().any(|arg| expr_assigns_to(arg, name))
         }
-        K::AsyncCall { args, .. } => args.iter().any(|arg| expr_assigns_to(arg, name)),
+        K::AsyncCall { callee, args } => {
+            callee
+                .receiver()
+                .is_some_and(|receiver| expr_assigns_to(receiver, name))
+                || args.iter().any(|arg| expr_assigns_to(arg, name))
+        }
         K::New { args, .. } => args.iter().any(|arg| expr_assigns_to(arg, name)),
         K::DescriptorLit { fields, .. } => fields
             .iter()

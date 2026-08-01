@@ -312,7 +312,15 @@ impl WarningChecker<'_> {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, argument_sink);
                 }
             }
-            ExprKind::AsyncCall { args, .. } => {
+            ExprKind::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.scan_w001_expr(
+                        receiver,
+                        loop_depth,
+                        collect_mutes,
+                        AllocationSink::Escape,
+                    );
+                }
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
@@ -392,9 +400,20 @@ impl WarningChecker<'_> {
 
     fn scan_allocation_children(&mut self, expr: &Expr, loop_depth: usize, collect_mutes: bool) {
         match &expr.kind {
-            ExprKind::New { args, .. }
-            | ExprKind::Call { args, .. }
-            | ExprKind::AsyncCall { args, .. } => {
+            ExprKind::New { args, .. } | ExprKind::Call { args, .. } => {
+                for arg in args {
+                    self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
+                }
+            }
+            ExprKind::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.scan_w001_expr(
+                        receiver,
+                        loop_depth,
+                        collect_mutes,
+                        AllocationSink::Escape,
+                    );
+                }
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
@@ -560,7 +579,10 @@ impl WarningChecker<'_> {
                     self.scan_w003_expr(arg, loop_depth, fresh);
                 }
             }
-            ExprKind::AsyncCall { args, .. } => {
+            ExprKind::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.scan_w003_expr(receiver, loop_depth, fresh);
+                }
                 for arg in args {
                     self.scan_w003_expr(arg, loop_depth, fresh);
                 }
@@ -758,7 +780,10 @@ impl WarningChecker<'_> {
                     self.warn_w002_expr_uses(arg, freed);
                 }
             }
-            ExprKind::AsyncCall { args, .. } => {
+            ExprKind::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.warn_w002_expr_uses(receiver, freed);
+                }
                 for arg in args {
                     self.warn_w002_expr_uses(arg, freed);
                 }
@@ -904,7 +929,10 @@ impl WarningChecker<'_> {
                     self.analyze_lambdas_in_expr(arg);
                 }
             }
-            ExprKind::AsyncCall { args, .. } => {
+            ExprKind::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.analyze_lambdas_in_expr(receiver);
+                }
                 for arg in args {
                     self.analyze_lambdas_in_expr(arg);
                 }
@@ -1132,7 +1160,10 @@ fn contains_collect_in_expr(expr: &Expr) -> bool {
             };
             callee_has_collect || args.iter().any(contains_collect_in_expr)
         }
-        ExprKind::AsyncCall { args, .. } => args.iter().any(contains_collect_in_expr),
+        ExprKind::AsyncCall { callee, args } => {
+            callee.receiver().is_some_and(contains_collect_in_expr)
+                || args.iter().any(contains_collect_in_expr)
+        }
         ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
             contains_collect_in_expr(operand)
         }
@@ -1290,9 +1321,16 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
                 scan_candidate_expr(arg, name, state);
             }
         }
-        ExprKind::AsyncCall { args, .. } => {
-            if args.iter().any(|arg| value_is_candidate(arg, name)) {
+        ExprKind::AsyncCall { callee, args } => {
+            if callee
+                .receiver()
+                .is_some_and(|receiver| value_is_candidate(receiver, name))
+                || args.iter().any(|arg| value_is_candidate(arg, name))
+            {
                 state.escaped = true;
+            }
+            if let Some(receiver) = callee.receiver() {
+                scan_candidate_expr(receiver, name, state);
             }
             for arg in args {
                 scan_candidate_expr(arg, name, state);

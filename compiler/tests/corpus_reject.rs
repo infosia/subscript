@@ -107,6 +107,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r98-promise-static.ts", RuleCode::S013, 8),
     ("r99-await-outside-async.ts", RuleCode::S013, 7),
     ("r100-floating-async-call.ts", RuleCode::S013, 13),
+    ("r101-async-static-method.ts", RuleCode::S100, 8),
+    ("r102-async-generator-method.ts", RuleCode::S100, 8),
+    ("r103-async-cstruct-method.ts", RuleCode::S100, 9),
+    ("r104-async-generic-class-method.ts", RuleCode::S100, 8),
+    ("r105-floating-async-method-call.ts", RuleCode::S013, 16),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -244,8 +249,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        96,
-        "expected 89 standing reject entries plus the seven-entry P23 battery"
+        101,
+        "expected 89 standing reject entries, the seven-entry P23 battery, and five R13 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

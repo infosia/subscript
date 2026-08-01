@@ -546,6 +546,116 @@ mod tests {
     }
 
     #[test]
+    fn async_instance_method_hir_carries_receiver_before_arguments() {
+        let module = check_one(concat!(
+            "class Worker {\n",
+            "  async sibling(value: i32): Promise<i32> { return value; }\n",
+            "  async run(): Promise<i32> { return await this.sibling(7); }\n",
+            "}\n",
+            "export async function main(): Promise<void> {\n",
+            "  const value: i32 = await new Worker().run();\n",
+            "  print(`${value}`);\n",
+            "}\n",
+        ))
+        .expect("async methods");
+        let (worker_index, class) = module
+            .classes
+            .iter()
+            .enumerate()
+            .find(|(_, class)| class.name == "Worker")
+            .expect("Worker class");
+        assert!(class.methods.iter().all(|method| method.is_async));
+
+        let run = class
+            .methods
+            .iter()
+            .find(|method| method.name == "run")
+            .expect("run method");
+        let hir::Stmt::Return { value: Some(value), .. } = &run.body[0] else {
+            panic!("run return")
+        };
+        let hir::ExprKind::AsyncCall { callee, args } = &value.kind else {
+            panic!("run async call")
+        };
+        let hir::AsyncCallee::Method {
+            class: target_class,
+            receiver,
+            name,
+        } = callee
+        else {
+            panic!("method async callee")
+        };
+        assert_eq!(target_class.0, worker_index);
+        assert_eq!(name, "sibling");
+        assert!(matches!(receiver.kind, hir::ExprKind::This));
+        assert!(matches!(
+            callee.receiver().map(|expr| &expr.kind),
+            Some(hir::ExprKind::This)
+        ));
+        assert_eq!(args.len(), 1);
+        assert!(matches!(args[0].kind, hir::ExprKind::Int(7)));
+    }
+
+    #[test]
+    fn r13_async_method_boundaries_have_pinned_checker_diagnostics() {
+        let cases = [
+            (
+                "class C {\n  static async m(): Promise<void> {}\n}\nexport function main(): void {}\n",
+                RuleCode::S100,
+                2,
+                "async static methods",
+            ),
+            (
+                "class C {\n  async *m(): AsyncGenerator<i32> { yield 1; }\n}\nexport function main(): void {}\n",
+                RuleCode::S100,
+                2,
+                "async generator methods",
+            ),
+            (
+                "@CStruct\nclass C {\n  async m(): Promise<void> {}\n}\nexport function main(): void {}\n",
+                RuleCode::S100,
+                3,
+                "`@CStruct` value classes",
+            ),
+            (
+                "class C<T> {\n  async m(value: T): Promise<T> { return value; }\n}\nexport function main(): void {}\n",
+                RuleCode::S100,
+                2,
+                "generic class templates",
+            ),
+            (
+                "class C { async m(): Promise<void> {} }\nexport function main(): void {\n  const c: C = new C();\n  c.m();\n}\n",
+                RuleCode::S013,
+                4,
+                "must be immediately awaited",
+            ),
+        ];
+        for (source, code, line, message) in cases {
+            let diagnostics = check_one(source).expect_err("R13 boundary must reject");
+            assert_eq!(diagnostics[0].code, code);
+            assert_eq!(diagnostics[0].pos.line, line);
+            assert!(diagnostics[0].message.contains(message));
+        }
+    }
+
+    #[test]
+    fn awaited_sync_method_and_async_method_value_are_rejected() {
+        let awaited = check_one(
+            "class C { m(): void {} }\nexport async function main(): Promise<void> {\n  await new C().m();\n}\n",
+        )
+        .expect_err("awaited sync method");
+        assert_eq!(awaited[0].code, RuleCode::S100);
+        assert!(awaited[0].message.contains("synchronous and cannot be awaited"));
+
+        let value = check_one(
+            "class C { async m(): Promise<void> {} }\nexport function main(): void {\n  const c: C = new C();\n  c.m;\n}\n",
+        )
+        .expect_err("async method value");
+        assert_eq!(value[0].code, RuleCode::S100);
+        assert!(value[0].message.contains("not a first-class value"));
+    }
+
+    #[test]
     fn eval_is_s002() {
         let err = check_one("export function main(): void {\n  eval(\"1\");\n}\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S002);

@@ -203,8 +203,9 @@ pub struct Function {
     pub exported: bool,
     /// True for `function*` coroutines (C8).
     pub is_generator: bool,
-    /// True for a poll-driven `async function` (Q34). `ret` is the
-    /// fulfilled value type inside the source-level `Promise<ret>` view.
+    /// True for a poll-driven async function or reference-class instance
+    /// method (Q34/R13). `ret` is the fulfilled value type inside the
+    /// source-level `Promise<ret>` view.
     pub is_async: bool,
     /// Parameters, in order.
     pub params: Vec<Param>,
@@ -2731,12 +2732,13 @@ pub enum ExprKind {
     Yield(Option<Box<Expr>>),
     /// `await Context.suspend()` inside an async function (Q34).
     AsyncSuspend,
-    /// A direct async call in await position (Q34). The result type is
+    /// A direct async call in await position (Q34/R13). The result type is
     /// the callee's fulfilled value type; no Promise value exists in HIR.
     AsyncCall {
-        /// Async function name.
-        function: String,
-        /// Arguments evaluated before the callee frame is created.
+        /// Direct free-function or reference-class method target.
+        callee: AsyncCallee,
+        /// Explicit arguments evaluated after a method receiver and before
+        /// the callee frame is created.
         args: Vec<Expr>,
     },
     /// Conditional expression `c ? a : b`.
@@ -2748,6 +2750,48 @@ pub enum ExprKind {
         /// Value when false.
         els: Box<Expr>,
     },
+}
+
+/// Target of a direct async call in await position (Q34/R13).
+///
+/// Keeping the method receiver inside the target makes its source-order
+/// relationship to the explicit arguments structural: it is evaluated once,
+/// before `ExprKind::AsyncCall::args`, and becomes the first payload slot of
+/// the callee frame.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum AsyncCallee {
+    /// A module async function by HIR name.
+    Function(String),
+    /// An async instance method on a plain reference class.
+    Method {
+        /// Declaring/receiver class.
+        class: ClassId,
+        /// Receiver expression, evaluated exactly once before arguments.
+        receiver: Box<Expr>,
+        /// Method name within `class`.
+        name: String,
+    },
+}
+
+impl AsyncCallee {
+    /// Returns the receiver of an async method target, if this is one.
+    #[must_use]
+    pub fn receiver(&self) -> Option<&Expr> {
+        match self {
+            Self::Function(_) => None,
+            Self::Method { receiver, .. } => Some(receiver),
+        }
+    }
+
+    /// Returns the receiver mutably for HIR analysis/rewriting passes.
+    #[must_use]
+    pub(crate) fn receiver_mut(&mut self) -> Option<&mut Expr> {
+        match self {
+            Self::Function(_) => None,
+            Self::Method { receiver, .. } => Some(receiver),
+        }
+    }
 }
 
 /// One element of a dynamic array literal containing spread.
@@ -2922,7 +2966,16 @@ impl Expr {
                 }
                 sites
             }
-            K::AsyncCall { .. } => vec![call(&self.pos)],
+            K::AsyncCall { callee, .. } => {
+                let mut sites = Vec::new();
+                if let Some(receiver) = callee.receiver() {
+                    if reference_value(&receiver.ty) {
+                        sites.push(lifetime(&receiver.pos));
+                    }
+                }
+                sites.push(call(&self.pos));
+                sites
+            }
             K::New { class, .. } => {
                 let Some(def) = module.classes.get(class.0) else {
                     return Vec::new();

@@ -174,7 +174,10 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h Type, &'h Pos)>) {
 fn count_async_calls_expr(expr: &hir::Expr) -> u64 {
     use hir::ExprKind as K;
     match &expr.kind {
-        K::AsyncCall { args, .. } => 1 + args.iter().map(count_async_calls_expr).sum::<u64>(),
+        K::AsyncCall { callee, args } => {
+            1 + callee.receiver().map_or(0, count_async_calls_expr)
+                + args.iter().map(count_async_calls_expr).sum::<u64>()
+        }
         K::Unary { operand, .. } | K::Cast(operand) => count_async_calls_expr(operand),
         K::Binary { left, right, .. }
         | K::Assign {
@@ -483,9 +486,28 @@ impl<'a> Validator<'a> {
         (size <= limit()).then_some(Layout { size, align })
     }
 
-    fn validate_generator_layout(&mut self, function: &hir::Function) {
+    fn validate_generator_layout(&mut self, function: &hir::Function, receiver: Option<&Type>) {
         let mut end = 16u64;
         let mut last_pos = &function.pos;
+        if let Some(receiver) = receiver {
+            let Outcome::Layout(layout) = self.type_layout(receiver) else {
+                return;
+            };
+            let next = raw_round_up(end, layout.align.max(1))
+                .and_then(|offset| offset.checked_add(layout.size.max(1)));
+            if next.is_none_or(|size| size > limit()) {
+                self.diagnostics.push(Diagnostic::new(
+                    RuleCode::S100,
+                    format!(
+                        "async frame layout exceeds the supported aggregate limit of \
+                         {MAX_AGGREGATE_BYTES} bytes while placing the method receiver"
+                    ),
+                    function.pos.clone(),
+                ));
+                return;
+            }
+            end = next.expect("async receiver size checked above");
+        }
         for param in &function.params {
             last_pos = &param.pos;
             let Outcome::Layout(layout) = self.type_layout(&param.ty) else {
@@ -614,7 +636,10 @@ impl<'a> Validator<'a> {
                     self.validate_closures_expr(arg);
                 }
             }
-            K::AsyncCall { args, .. } => {
+            K::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.validate_closures_expr(receiver);
+                }
                 for arg in args {
                     self.validate_closures_expr(arg);
                 }
@@ -837,7 +862,10 @@ impl<'a> Validator<'a> {
                     &expr.pos,
                 );
             }
-            K::AsyncCall { args, .. } => {
+            K::AsyncCall { callee, args } => {
+                if let Some(receiver) = callee.receiver() {
+                    self.validate_expr_frame(receiver, false, frame);
+                }
                 for arg in args {
                     self.validate_expr_frame(arg, false, frame);
                     if self.is_aggregate(&arg.ty) {
@@ -1090,9 +1118,9 @@ impl<'a> Validator<'a> {
         self.validate_stmts_frame(body, &mut frame, generator);
     }
 
-    fn validate_function(&mut self, function: &hir::Function) {
+    fn validate_function(&mut self, function: &hir::Function, receiver: Option<&Type>) {
         if function.is_generator || function.is_async {
-            self.validate_generator_layout(function);
+            self.validate_generator_layout(function, receiver);
         }
         self.validate_closures_stmts(&function.body);
         self.validate_plain_frame(
@@ -1126,21 +1154,25 @@ impl<'a> Validator<'a> {
             self.class_layout(id);
         }
         for function in functions {
-            self.validate_function(function);
+            self.validate_function(function, None);
         }
-        let class_functions: Vec<hir::Function> = self
+        let class_functions: Vec<(hir::Function, Option<Type>)> = self
             .classes
             .iter()
-            .flat_map(|class| {
+            .enumerate()
+            .flat_map(|(class_index, class)| {
                 class
                     .ctor
                     .iter()
-                    .chain(class.methods.iter())
                     .cloned()
+                    .map(|constructor| (constructor, None))
+                    .chain(class.methods.iter().cloned().map(move |method| {
+                        (method, Some(Type::Class(crate::types::ClassId(class_index))))
+                    }))
             })
             .collect();
-        for function in &class_functions {
-            self.validate_function(function);
+        for (function, receiver) in &class_functions {
+            self.validate_function(function, receiver.as_ref());
         }
         let mut init_frame = FrameBudget::new();
         for global in globals {

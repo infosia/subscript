@@ -66,6 +66,8 @@ pub(crate) enum FnKey {
     Ctor(usize),
     /// Method `String` of class `usize`.
     Method(usize, String),
+    /// Resume function for an async method, by class and method name.
+    MethodResume(usize, String),
     /// Env-taking wrapper for a named function used as a value.
     Wrapper(String),
     /// The synthesized global-initializer entry.
@@ -1009,6 +1011,9 @@ fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
         }
         for m in &c.methods {
             ml.reserve_slot(FnKey::Method(ci, m.name.clone()));
+            if m.is_async {
+                ml.reserve_slot(FnKey::MethodResume(ci, m.name.clone()));
+            }
         }
     }
     ml.reserve_slot(FnKey::Init);
@@ -1153,14 +1158,38 @@ pub(crate) fn lower_module_with<M: Module>(
         }
         for (mi, m) in c.methods.iter().enumerate() {
             let params: Vec<Type> = m.params.iter().map(|p| p.ty.clone()).collect();
-            let sig = ml.make_sig(&params, &m.ret, false, true)?;
-            decl(
-                &mut ml,
-                FnKey::Method(ci, m.name.clone()),
-                format!("subscript_m{ci}_{mi}"),
-                &sig,
-                false,
-            )?;
+            if m.is_async {
+                let sig = ml.make_sig(
+                    &params,
+                    &Type::Generator(Box::new(Type::Void)),
+                    false,
+                    true,
+                )?;
+                decl(
+                    &mut ml,
+                    FnKey::Method(ci, m.name.clone()),
+                    format!("subscript_m{ci}_{mi}"),
+                    &sig,
+                    false,
+                )?;
+                let resume_sig = ml.resume_sig();
+                decl(
+                    &mut ml,
+                    FnKey::MethodResume(ci, m.name.clone()),
+                    format!("subscript_m{ci}_{mi}_resume"),
+                    &resume_sig,
+                    false,
+                )?;
+            } else {
+                let sig = ml.make_sig(&params, &m.ret, false, true)?;
+                decl(
+                    &mut ml,
+                    FnKey::Method(ci, m.name.clone()),
+                    format!("subscript_m{ci}_{mi}"),
+                    &sig,
+                    false,
+                )?;
+            }
         }
     }
     {
@@ -1196,7 +1225,11 @@ pub(crate) fn lower_module_with<M: Module>(
             define_function(&mut ml, FnKey::Ctor(ci), ctor, Some(ci))?;
         }
         for m in &c.methods {
-            define_function(&mut ml, FnKey::Method(ci, m.name.clone()), m, Some(ci))?;
+            if m.is_async {
+                func::define_async_method(&mut ml, m, ci)?;
+            } else {
+                define_function(&mut ml, FnKey::Method(ci, m.name.clone()), m, Some(ci))?;
+            }
         }
     }
     func::define_init(&mut ml)?;

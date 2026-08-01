@@ -22,7 +22,7 @@ const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only 
 
 const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected.";
 
-const Q34_ASYNC: &str = "Q34 has exactly two awaitable forms: `await Context.suspend()` and `await` applied directly to a named async-function call. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.";
+const Q34_ASYNC: &str = "Q34/R13 has exactly three awaitable forms: `await Context.suspend()`, `await` applied directly to a named async-function call, and `await receiver.method(...)` for an async instance method on a plain non-generic reference class. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.";
 
 const MODULES: &str = "A program may import named exports from sibling source files with a relative `./name` specifier. The entry file and its imported siblings are checked as one program; exports are the host-visible entry surface.";
 
@@ -92,11 +92,18 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a93-async-chain.ts",
             "corpus/accept/a94-async-two-roots.ts",
             "corpus/accept/a95-interop-async-await.ts",
+            "corpus/accept/a110-async-method-receiver.ts",
+            "corpus/accept/a111-interop-async-method-poll.ts",
             "corpus/reject/r96-new-promise.ts",
             "corpus/reject/r97-promise-combinator.ts",
             "corpus/reject/r98-promise-static.ts",
             "corpus/reject/r99-await-outside-async.ts",
             "corpus/reject/r100-floating-async-call.ts",
+            "corpus/reject/r101-async-static-method.ts",
+            "corpus/reject/r102-async-generator-method.ts",
+            "corpus/reject/r103-async-cstruct-method.ts",
+            "corpus/reject/r104-async-generic-class-method.ts",
+            "corpus/reject/r105-floating-async-method-call.ts",
         ],
     },
     Feature {

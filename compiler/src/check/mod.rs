@@ -883,6 +883,20 @@ impl<'p> Checker<'p> {
         let pos = self.pos(c.ident.span);
         let (is_value, is_descriptor) = self.class_decorators(&c.class);
         if let Some(tp) = &c.class.type_params {
+            if !is_descriptor {
+                for member in &c.class.body {
+                    let ast::ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    if method.function.is_async {
+                        self.error(
+                            RuleCode::S100,
+                            "async methods on generic class templates are not in the decided surface",
+                            self.pos(method.span),
+                        );
+                    }
+                }
+            }
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
@@ -1815,7 +1829,20 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    if method.is_static || method.kind != ast::MethodKind::Method {
+                    if method.is_static {
+                        let pos = self.pos(method.span);
+                        self.error(
+                            RuleCode::S100,
+                            if method.function.is_async {
+                                "async static methods are not in the decided surface"
+                            } else {
+                                "static methods and accessors are not decided"
+                            },
+                            pos,
+                        );
+                        continue;
+                    }
+                    if method.kind != ast::MethodKind::Method {
                         let pos = self.pos(method.span);
                         self.error(
                             RuleCode::S100,
@@ -1824,9 +1851,26 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    if method.function.is_generator || method.function.is_async {
+                    if method.function.is_generator {
                         let pos = self.pos(method.span);
-                        self.error(RuleCode::S100, "coroutine methods are not decided", pos);
+                        self.error(
+                            RuleCode::S100,
+                            if method.function.is_async {
+                                "async generator methods are not in the decided surface"
+                            } else {
+                                "generator methods are not in the decided surface"
+                            },
+                            pos,
+                        );
+                        continue;
+                    }
+                    if method.function.is_async && is_value {
+                        let pos = self.pos(method.span);
+                        self.error(
+                            RuleCode::S100,
+                            "async methods on `@CStruct` value classes are not in the decided surface",
+                            pos,
+                        );
                         continue;
                     }
                     let sig = self.resolve_fn_sig(&method.function, self.pos(key.span));

@@ -1,0 +1,11 @@
+main:kick
+receiver:evaluated
+argument:evaluated
+run:start=1
+collector:collect
+collector:done
+run:resume=2
+sibling:start=2
+sibling:resume=5
+run:sibling=15
+main:done=16

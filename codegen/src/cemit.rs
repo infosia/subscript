@@ -549,8 +549,15 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(self.protos, "{proto};");
             }
             for m in &c.methods {
-                let proto = self.method_signature(ci, m)?;
-                let _ = writeln!(self.protos, "{proto};");
+                if m.is_async {
+                    let creator = self.async_method_creator_signature(ci, m)?;
+                    let resume = self.async_method_resume_signature(ci, m);
+                    let _ = writeln!(self.protos, "{creator};");
+                    let _ = writeln!(self.protos, "{resume};");
+                } else {
+                    let proto = self.method_signature(ci, m)?;
+                    let _ = writeln!(self.protos, "{proto};");
+                }
             }
         }
         for f in &self.module.functions {
@@ -571,7 +578,11 @@ impl<'m> Emitter<'m> {
                 self.emit_constructor(&mut bodies, ci, c)?;
             }
             for m in &c.methods {
-                self.emit_method(&mut bodies, ci, m)?;
+                if m.is_async {
+                    self.emit_async_method(&mut bodies, ci, m)?;
+                } else {
+                    self.emit_method(&mut bodies, ci, m)?;
+                }
             }
         }
         for f in &self.module.functions {
@@ -841,6 +852,26 @@ impl<'m> Emitter<'m> {
             "static {ret} subscript_m{ci}_{}(void* ctx, {recv} _this{sep}{params})",
             sanitize(&m.name)
         ))
+    }
+
+    fn async_method_creator_signature(
+        &self,
+        ci: usize,
+        method: &hir::Function,
+    ) -> Result<String, String> {
+        let params = self.param_list(&method.params)?;
+        let separator = if params.is_empty() { "" } else { ", " };
+        Ok(format!(
+            "static void* subscript_m{ci}_{}(void* ctx, void* _this{separator}{params})",
+            sanitize(&method.name)
+        ))
+    }
+
+    fn async_method_resume_signature(&self, ci: usize, method: &hir::Function) -> String {
+        format!(
+            "static uint8_t subscript_m{ci}_{}_resume(void* ctx, void* _frame, void* _out)",
+            sanitize(&method.name)
+        )
     }
 
     fn gen_creator_signature(&self, f: &hir::Function) -> Result<String, String> {
@@ -2462,10 +2493,10 @@ impl<'m> Emitter<'m> {
             }
             K::Yield(arg) => self.eval_yield(arg.as_deref(), out, depth),
             K::AsyncSuspend => self.eval_async_suspend(out, depth),
-            K::AsyncCall { function, args } => {
+            K::AsyncCall { callee, args } => {
                 let sites = e.trap_sites(self.module);
                 lower_trap_sites(&sites, "async call", |sites| {
-                    self.eval_async_call(function, args, &e.ty, sites, out, depth)
+                    self.eval_async_call(callee, args, &e.ty, sites, out, depth)
                 })
             }
             K::Cond { cond, then, els } => self.eval_cond(cond, then, els, &e.ty, out, depth),
@@ -5868,7 +5899,31 @@ impl<'m> Emitter<'m> {
     }
 
     fn emit_async(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
-        let frame_struct = format!("Async_{}", sanitize(&f.name));
+        self.emit_async_with(out, f, None)
+    }
+
+    fn emit_async_method(
+        &mut self,
+        out: &mut String,
+        class: usize,
+        method: &hir::Function,
+    ) -> Result<(), String> {
+        if self.class(ClassId(class))?.is_value {
+            return Err("async method lowering received a value class".to_string());
+        }
+        self.emit_async_with(out, method, Some(class))
+    }
+
+    fn emit_async_with(
+        &mut self,
+        out: &mut String,
+        f: &hir::Function,
+        class: Option<usize>,
+    ) -> Result<(), String> {
+        let frame_struct = match class {
+            Some(class) => format!("Async_m{class}_{}", sanitize(&f.name)),
+            None => format!("Async_{}", sanitize(&f.name)),
+        };
 
         // Async frames use the same Context-owned allocation class and
         // conservative frame scan as generators. Child-frame pointers are
@@ -5877,6 +5932,9 @@ impl<'m> Emitter<'m> {
         walk_lets(&f.body, &mut lets);
         let mut let_fields = Vec::with_capacity(lets.len());
         let mut struct_body = String::from("    int32_t _state;\n");
+        if class.is_some() {
+            struct_body.push_str("    void* _this;\n");
+        }
         for p in &f.params {
             let _ = writeln!(
                 struct_body,
@@ -5902,7 +5960,10 @@ impl<'m> Emitter<'m> {
             "typedef struct {frame_struct} {{\n{struct_body}}} {frame_struct};"
         );
 
-        let creator_sig = self.gen_creator_signature(f)?;
+        let creator_sig = match class {
+            Some(class) => self.async_method_creator_signature(class, f)?,
+            None => self.gen_creator_signature(f)?,
+        };
         let _ = writeln!(out, "{creator_sig} {{");
         self.begin_fn(
             ThisCtx::None,
@@ -5927,16 +5988,25 @@ impl<'m> Emitter<'m> {
         })?;
         let _ = writeln!(out, "    {frame_struct}* _f = ({frame_struct}*)_frame;");
         let _ = writeln!(out, "    _f->_state = 0;");
+        if class.is_some() {
+            let _ = writeln!(out, "    _f->_this = _this;");
+        }
         for p in &f.params {
             let _ = writeln!(out, "    _f->{0} = {0};", sanitize(&p.name));
         }
         let _ = writeln!(out, "    return _frame;");
         let _ = writeln!(out, "}}\n");
 
-        let resume_sig = self.gen_resume_signature(f)?;
+        let resume_sig = match class {
+            Some(class) => self.async_method_resume_signature(class, f),
+            None => self.gen_resume_signature(f)?,
+        };
         let suspensions = count_yields(&f.body);
         let _ = writeln!(out, "{resume_sig} {{");
         let _ = writeln!(out, "    {frame_struct}* _f = ({frame_struct}*)_frame;");
+        if class.is_some() {
+            let _ = writeln!(out, "    void* _this = _f->_this;");
+        }
         let _ = writeln!(out, "    switch (_f->_state) {{");
         let _ = writeln!(out, "        case 0: goto _gstart;");
         for i in 0..suspensions {
@@ -5946,7 +6016,14 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "    }}");
         let _ = writeln!(out, "    _gstart: ;");
 
-        self.begin_fn(ThisCtx::None, Type::I32);
+        self.begin_fn(
+            if class.is_some() {
+                ThisCtx::Reference
+            } else {
+                ThisCtx::None
+            },
+            Type::I32,
+        );
         self.gen = Some(GenState {
             kind: FrameKind::Async,
             yields: 0,
@@ -6005,19 +6082,36 @@ impl<'m> Emitter<'m> {
 
     fn eval_async_call(
         &mut self,
-        function: &str,
+        callee: &hir::AsyncCallee,
         args: &[hir::Expr],
         ret_ty: &Type,
         sites: &mut TrapSiteConsumer<'_>,
         out: &mut String,
         depth: usize,
     ) -> Result<String, String> {
-        let f = self.hir_fn(function)?;
+        let (f, creator, resume, receiver) = match callee {
+            hir::AsyncCallee::Function(function) => (
+                self.hir_fn(function)?,
+                format!("subscript_fn_{}", sanitize(function)),
+                format!("subscript_resume_{}", sanitize(function)),
+                None,
+            ),
+            hir::AsyncCallee::Method {
+                class,
+                receiver,
+                name,
+            } => (
+                self.hir_method(class.0, name)?,
+                format!("subscript_m{}_{}", class.0, sanitize(name)),
+                format!("subscript_m{}_{}_resume", class.0, sanitize(name)),
+                Some(receiver.as_ref()),
+            ),
+            _ => return Err("unknown async callee kind".to_string()),
+        };
         if !f.is_async {
-            return Err(format!("async call targets non-async function `{function}`"));
+            return Err("async call targets a synchronous declaration".to_string());
         }
         let params = f.params.clone();
-        let argv = self.call_args(&params, args, out, depth)?;
         let field = self.gen_next_child_field()?;
         let n = {
             let g = self.gen.as_ref().ok_or("async call outside a coroutine")?;
@@ -6027,14 +6121,40 @@ impl<'m> Emitter<'m> {
             g.yields
         };
         let ind = indent(depth);
-        let sep = if argv.is_empty() { "" } else { ", " };
-        let creator = format!("subscript_fn_{}", sanitize(function));
-        let resume = format!("subscript_resume_{}", sanitize(function));
+        let receiver = if let Some(receiver) = receiver {
+            let receiver_value = self.eval_pinned(receiver, out, depth)?;
+            while let Some(site) =
+                sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+            {
+                self.emit_trap_site(
+                    site,
+                    TrapOperand::Value(receiver_value.clone()),
+                    out,
+                    depth,
+                )?;
+            }
+            // Keep the receiver live if an explicit argument collects before
+            // the method creator installs it in the child frame.
+            let _ = writeln!(out, "{ind}_f->{field} = {receiver_value};");
+            Some(receiver_value)
+        } else {
+            None
+        };
+        let argv = self.call_args(&params, args, out, depth)?;
+        let explicit = if argv.is_empty() {
+            String::new()
+        } else {
+            format!(", {argv}")
+        };
+        let creator_args = match receiver {
+            Some(receiver) => format!("ctx, {receiver}{explicit}"),
+            None => format!("ctx{explicit}"),
+        };
         let site = sites.take_required(
             |site| matches!(site, hir::TrapSite::Call { .. }),
             "async call has no HIR call site",
         )?;
-        let _ = writeln!(out, "{ind}_f->{field} = {creator}(ctx{sep}{argv});");
+        let _ = writeln!(out, "{ind}_f->{field} = {creator}({creator_args});");
         self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
         let _ = writeln!(out, "{ind}goto _aattempt{n};");
         let _ = writeln!(out, "{ind}_gresume{n}: ;");
@@ -6206,7 +6326,10 @@ fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
             collect_aggr_expr(els, set);
         }
         K::Yield(Some(a)) => collect_aggr_expr(a, set),
-        K::AsyncCall { args, .. } => {
+        K::AsyncCall { callee, args } => {
+            if let Some(receiver) = callee.receiver() {
+                collect_aggr_expr(receiver, set);
+            }
             for arg in args {
                 collect_aggr_expr(arg, set);
             }
@@ -6319,8 +6442,9 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
     match &e.kind {
         K::Yield(arg) => 1 + arg.as_deref().map_or(0, count_yields_expr),
         K::AsyncSuspend => 1,
-        K::AsyncCall { args, .. } => {
-            1 + args.iter().map(count_yields_expr).sum::<u32>()
+        K::AsyncCall { callee, args } => {
+            1 + callee.receiver().map_or(0, count_yields_expr)
+                + args.iter().map(count_yields_expr).sum::<u32>()
         }
         K::Unary { operand, .. } => count_yields_expr(operand),
         K::Binary { left, right, .. } => count_yields_expr(left) + count_yields_expr(right),
@@ -6366,7 +6490,9 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> u32 {
     fn expr(e: &hir::Expr) -> u32 {
         use hir::ExprKind as K;
         match &e.kind {
-            K::AsyncCall { args, .. } => 1 + args.iter().map(expr).sum::<u32>(),
+            K::AsyncCall { callee, args } => {
+                1 + callee.receiver().map_or(0, expr) + args.iter().map(expr).sum::<u32>()
+            }
             K::Unary { operand, .. } | K::Cast(operand) => expr(operand),
             K::Binary { left, right, .. } | K::Assign { target: left, value: right, .. } => {
                 expr(left) + expr(right)

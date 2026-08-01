@@ -7,8 +7,8 @@ use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
-    self, AmbientFn, ArrFn, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, NumFn,
-    RegexFn, SetFn, StrFn, TplPart, UnOp,
+    self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn,
+    NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp,
 };
 use crate::types::{FuncType, Type};
 
@@ -194,7 +194,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Checks Q34's two awaitable forms. The AST call is handled here
+    /// Checks Q34/R13's three awaitable forms. The AST call is handled here
     /// instead of through the ordinary call path so an async call can never
     /// materialize a Promise-typed value in HIR.
     fn check_await(
@@ -219,7 +219,7 @@ impl<'p> Checker<'p> {
         let ast::Expr::Call(call) = operand else {
             self.error(
                 RuleCode::S100,
-                "awaitable expressions are exactly `Context.suspend()` and direct async calls",
+                "awaitable expressions are exactly `Context.suspend()` and direct async function or method calls",
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -253,54 +253,122 @@ impl<'p> Checker<'p> {
             }
         }
 
-        let ast::Expr::Ident(ident) = callee else {
-            self.error(
-                RuleCode::S100,
-                "an async awaitable must be a direct call of a named async function",
-                pos.clone(),
-            );
-            return self.err_expr(pos);
-        };
-        let name = ident.sym.to_string();
-        if fx.scopes.iter().rev().any(|scope| scope.vars.contains_key(&name)) {
-            self.error(
-                RuleCode::S100,
-                "an async awaitable cannot be called through a local value",
-                self.pos(ident.span),
-            );
-            return self.err_expr(pos);
-        }
-        let Some(ScopeItem::Func(function)) = self.scope_item(&name) else {
-            self.error(
-                RuleCode::S100,
-                format!("`{name}` is not a directly declared async function"),
-                self.pos(ident.span),
-            );
-            return self.err_expr(pos);
-        };
-        let Some(sig) = self.fn_sigs.get(&function).cloned() else {
-            return self.err_expr(pos);
-        };
-        if !sig.is_async {
-            self.error(
-                RuleCode::S100,
-                format!("`{name}` is synchronous and cannot be awaited"),
-                self.pos(ident.span),
-            );
-            return self.err_expr(pos);
-        }
-        if call.type_args.is_some() {
-            self.error(
-                RuleCode::S100,
-                format!("`{name}` is not generic"),
-                self.pos(ident.span),
-            );
-        }
-        let args = self.check_args(&sig.params, &call.args, fx, &pos, &name);
-        hir::Expr {
-            kind: ExprKind::AsyncCall { function, args },
-            ty: sig.ret,
-            pos,
+        match callee {
+            ast::Expr::Ident(ident) => {
+                let name = ident.sym.to_string();
+                if fx.scopes.iter().rev().any(|scope| scope.vars.contains_key(&name)) {
+                    self.error(
+                        RuleCode::S100,
+                        "an async awaitable cannot be called through a local value",
+                        self.pos(ident.span),
+                    );
+                    return self.err_expr(pos);
+                }
+                let Some(ScopeItem::Func(function)) = self.scope_item(&name) else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{name}` is not a directly declared async function"),
+                        self.pos(ident.span),
+                    );
+                    return self.err_expr(pos);
+                };
+                let Some(sig) = self.fn_sigs.get(&function).cloned() else {
+                    return self.err_expr(pos);
+                };
+                if !sig.is_async {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{name}` is synchronous and cannot be awaited"),
+                        self.pos(ident.span),
+                    );
+                    return self.err_expr(pos);
+                }
+                if call.type_args.is_some() {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{name}` is not generic"),
+                        self.pos(ident.span),
+                    );
+                }
+                let args = self.check_args(&sig.params, &call.args, fx, &pos, &name);
+                hir::Expr {
+                    kind: ExprKind::AsyncCall {
+                        callee: AsyncCallee::Function(function),
+                        args,
+                    },
+                    ty: sig.ret,
+                    pos,
+                }
+            }
+            ast::Expr::Member(member) => {
+                let ast::MemberProp::Ident(method) = &member.prop else {
+                    self.error(
+                        RuleCode::S100,
+                        "an awaited async method requires an identifier method name",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                };
+                let name = method.sym.to_string();
+                let method_pos = self.pos(method.span);
+                let receiver = self.check_receiver(&member.obj, fx);
+                let Type::Class(class) = receiver.ty.clone() else {
+                    if receiver.ty != Type::Error {
+                        let receiver_ty = self.type_name(&receiver.ty);
+                        self.error(
+                            RuleCode::S100,
+                            format!("type `{receiver_ty}` has no async method `{name}`"),
+                            method_pos,
+                        );
+                    }
+                    return self.err_expr(pos);
+                };
+                let Some(sig) = self.class_sigs[class.0].methods.get(&name).cloned() else {
+                    let class_name = self.classes[class.0].name.clone();
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{class_name}` has no method `{name}`"),
+                        method_pos,
+                    );
+                    return self.err_expr(pos);
+                };
+                if !sig.is_async {
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{name}` is synchronous and cannot be awaited"),
+                        method_pos,
+                    );
+                    return self.err_expr(pos);
+                }
+                if call.type_args.is_some() {
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{name}` is not generic"),
+                        method_pos,
+                    );
+                }
+                let args = self.check_args(&sig.params, &call.args, fx, &pos, &name);
+                hir::Expr {
+                    kind: ExprKind::AsyncCall {
+                        callee: AsyncCallee::Method {
+                            class,
+                            receiver: Box::new(receiver),
+                            name,
+                        },
+                        args,
+                    },
+                    ty: sig.ret,
+                    pos,
+                }
+            }
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    "an async awaitable must directly call a named async function or instance method",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
         }
     }
 
@@ -4188,10 +4256,16 @@ impl<'p> Checker<'p> {
                         ),
                         prop_pos.clone(),
                     );
-                } else if self.class_sigs[id.0].methods.contains_key(name) {
+                } else if let Some(sig) = self.class_sigs[id.0].methods.get(name) {
                     self.error(
                         RuleCode::S100,
-                        format!("method `{}` may only be called, not read as a value", name),
+                        if sig.is_async {
+                            format!(
+                                "async method `{name}` is not a first-class value; call it directly in await position"
+                            )
+                        } else {
+                            format!("method `{name}` may only be called, not read as a value")
+                        },
                         prop_pos.clone(),
                     );
                 } else {
@@ -5253,6 +5327,17 @@ impl<'p> Checker<'p> {
                 let sig = self.class_sigs[id.0].methods.get(&name).cloned();
                 match sig {
                     Some(sig) => {
+                        if sig.is_async {
+                            let class_name = self.classes[id.0].name.clone();
+                            self.error(
+                                RuleCode::S013,
+                                format!(
+                                    "async method call `{class_name}.{name}(...)` must be immediately awaited"
+                                ),
+                                pos.clone(),
+                            );
+                            return self.err_expr(pos);
+                        }
                         let args = self.check_args(&sig.params, &c.args, fx, &pos, &name);
                         mk(recv, args, sig.ret, pos)
                     }
