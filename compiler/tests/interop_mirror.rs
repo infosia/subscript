@@ -99,6 +99,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // R7 (§30): nested aggregate + collapsed enum pair scratch.
             "subProbeTextureDescriptorCheck",
             "subProbeTextureDescriptorFill",
+            // R8 (§31): collapsed opaque-handle pair and nullable handle
+            // fields in both aggregate directions.
+            "subProbePipelineLayoutCheck",
+            "subProbeBindGroupEntryCheck",
+            "subProbeBindGroupEntryFill",
         ]
     );
 

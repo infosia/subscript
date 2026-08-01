@@ -153,6 +153,7 @@ fn doc_commented_attribute_tagged_function_captured_with_macros_stripped() {
             CField {
                 base: "SubImageInfo".into(),
                 is_const: true,
+                nullable: false,
                 pointer: true,
                 array_len: None,
                 name: "info".into(),
@@ -160,6 +161,7 @@ fn doc_commented_attribute_tagged_function_captured_with_macros_stripped() {
             CField {
                 base: "SubImageInfo".into(),
                 is_const: false,
+                nullable: false,
                 pointer: true,
                 array_len: None,
                 name: "out".into(),

@@ -64,6 +64,7 @@ fn emit(parsed: &Parsed) -> Result<String, ParseError> {
 /// Returns [`ParseError`] under the same conditions as [`emit`].
 pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String, ParseError> {
     let registry = classify(parsed);
+    validate_nullable_positions(parsed, &registry)?;
     validate_boundary_positions(parsed, &registry)?;
     let reachable_callbacks = reachable_callbacks(parsed, &registry);
     validate_callback_shapes(parsed, &registry, &reachable_callbacks)?;
@@ -159,6 +160,73 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
         out.push('\n');
     }
     Ok(out)
+}
+
+/// Rejects every visible `_Nullable` position except a direct registered
+/// opaque-handle field of an emitted boundary struct (§31.2). The frontend
+/// records qualifiers at every nested type layer, so a pair element or an
+/// outer pointer qualifier reaches this check too instead of being erased.
+fn validate_nullable_positions(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+) -> Result<(), ParseError> {
+    for decl in &parsed.decls {
+        match decl {
+            Decl::Struct { name, fields } => {
+                for field in fields.iter().filter(|field| field.nullable) {
+                    let lowered = !field.pointer
+                        && field.array_len.is_none()
+                        && matches!(registry.get(&field.base), Some(Kind::Handle));
+                    if !lowered {
+                        return Err(ParseError(format!(
+                            "`_Nullable` on struct `{name}` field `{}` of type `{}` has no \
+                             boundary lowering; only direct registered opaque-handle fields \
+                             of boundary structs support `_Nullable`",
+                            field.name, field.base
+                        )));
+                    }
+                }
+            }
+            Decl::Func { name, ret, params } => {
+                if ret.nullable {
+                    return Err(ParseError(format!(
+                        "`_Nullable` on foreign function `{name}` return type `{}` has no \
+                         boundary lowering; only direct registered opaque-handle fields of \
+                         boundary structs support `_Nullable`",
+                        ret.base
+                    )));
+                }
+                if let Some(param) = params.iter().find(|param| param.nullable) {
+                    return Err(ParseError(format!(
+                        "`_Nullable` on foreign function `{name}` parameter `{}` of type `{}` \
+                         has no boundary lowering; only direct registered opaque-handle fields \
+                         of boundary structs support `_Nullable`",
+                        param.name, param.base
+                    )));
+                }
+            }
+            Decl::FnPtr { name, ret, params } => {
+                if ret.nullable {
+                    return Err(ParseError(format!(
+                        "`_Nullable` on callback typedef `{name}` return type `{}` has no \
+                         boundary lowering; only direct registered opaque-handle fields of \
+                         boundary structs support `_Nullable`",
+                        ret.base
+                    )));
+                }
+                if let Some(param) = params.iter().find(|param| param.nullable) {
+                    return Err(ParseError(format!(
+                        "`_Nullable` on callback typedef `{name}` parameter `{}` of type `{}` \
+                         has no boundary lowering; only direct registered opaque-handle fields \
+                         of boundary structs support `_Nullable`",
+                        param.name, param.base
+                    )));
+                }
+            }
+            Decl::Enum { .. } | Decl::Handle { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 /// Rejects C positions that the mirror vocabulary or either lowering
@@ -870,8 +938,9 @@ struct EmbeddedPairs {
 /// ONLY the shape both lowerings reconstruct: a `size_t` count field named
 /// `<n>Count` or `<n>_count` **immediately followed** by `[const] T* <n>`
 /// (count-first, contiguous). `T` may be a [`lang_scalar`] scalar, a
-/// registered enum, or a registered boundary struct. The pointer field
-/// index maps to `T[]`; the count field index is elided.
+/// registered enum, registered boundary struct, or (for const input only)
+/// a registered opaque handle. The pointer field index maps to `T[]`; the
+/// count field index is elided.
 ///
 /// This recognizer is deliberately total for pair-looking struct fields.
 /// If matching halves are non-adjacent, pointer-first, or have an
@@ -932,11 +1001,13 @@ fn embedded_array_pairs(
         } else {
             match reg.get(&ptr.base) {
                 Some(Kind::Enum | Kind::Boundary) => ptr.base.clone(),
+                Some(Kind::Handle) if ptr.is_const => ptr.base.clone(),
                 _ => {
                     return Err(ParseError(format!(
                         "struct `{owner}` fields `{}` and `{}` form an adjacent count/pointer \
                          pair with unsupported element `{}`; only lang_scalar scalars, \
-                         registered enums, and registered boundary structs have a lowering",
+                         registered enums, registered boundary structs, and registered opaque \
+                         handles have a lowering; handles are input-only and require `const H*`",
                         count.name, ptr.name, ptr.base
                     )));
                 }
@@ -1073,6 +1144,13 @@ fn param_sig(params: &[CField], reg: &HashMap<String, Kind>) -> Result<String, P
 /// Maps a C field/parameter/return type to its language boundary type
 /// (Q13).
 fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError> {
+    if f.nullable
+        && !f.pointer
+        && f.array_len.is_none()
+        && matches!(reg.get(&f.base), Some(Kind::Handle))
+    {
+        return Ok(format!("{} | null", f.base));
+    }
     if let Some(n) = f.array_len {
         // Fixed C array `T[N]` → `FixedArray<T, N>`.
         return Ok(format!("FixedArray<{}, {}>", map_element(&f.base, reg)?, n));
@@ -1194,6 +1272,7 @@ mod tests {
         CField {
             base: base.into(),
             is_const,
+            nullable: false,
             pointer,
             array_len: None,
             name: name.into(),

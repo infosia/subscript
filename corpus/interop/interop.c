@@ -560,3 +560,78 @@ void subProbeTextureDescriptorFill(SGPUProbeTextureDescriptor *descriptor) {
     descriptor->dimension = 3u;
     descriptor->usage = 165u;
 }
+
+/* ==== R8 opaque handles in aggregate positions (compiler.md §31) ===== */
+
+uint64_t subProbePipelineLayoutCheck(
+    const SubProbePipelineLayoutDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    if (selector == 0u) {
+        uint64_t sum = 0u;
+        if (descriptor->label.data != NULL) {
+            for (size_t i = 0; i < descriptor->label.len; i++) {
+                sum += (uint64_t)(unsigned char)descriptor->label.data[i];
+            }
+        }
+        return sum;
+    }
+    if (selector == 1u) {
+        return (uint64_t)descriptor->label.len;
+    }
+    if (selector == 2u) {
+        return (uint64_t)descriptor->bindGroupLayoutsCount;
+    }
+    size_t index = (size_t)(selector - 3u);
+    if (descriptor->bindGroupLayouts == NULL
+        || index >= descriptor->bindGroupLayoutsCount
+        || descriptor->bindGroupLayouts[index] == NULL) {
+        return UINT64_MAX;
+    }
+    for (size_t first = 0; first <= index; first++) {
+        if (descriptor->bindGroupLayouts[first]
+            == descriptor->bindGroupLayouts[index]) {
+            return (uint64_t)(first + 1u);
+        }
+    }
+    return UINT64_MAX - 1u;
+}
+
+uint32_t subProbeBindGroupEntryCheck(const SubProbeBindGroupEntry *entry) {
+    if (entry == NULL) {
+        return UINT32_MAX;
+    }
+    uint32_t mask = 0u;
+    if (entry->buffer != NULL) {
+        mask |= 1u;
+    }
+    if (entry->sampler != NULL) {
+        mask |= 2u;
+    }
+    if (entry->textureView != NULL) {
+        mask |= 4u;
+    }
+    return mask;
+}
+
+void subProbeBindGroupEntryFill(
+    SubProbeBindGroupEntry *entry,
+    uint32_t selected,
+    SubDevice handle) {
+    if (entry == NULL) {
+        return;
+    }
+    entry->binding = 900u + selected;
+    entry->buffer = NULL;
+    entry->sampler = NULL;
+    entry->textureView = NULL;
+    if (selected == 0u) {
+        entry->buffer = handle;
+    } else if (selected == 1u) {
+        entry->sampler = handle;
+    } else if (selected == 2u) {
+        entry->textureView = handle;
+    }
+}

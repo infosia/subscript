@@ -367,6 +367,25 @@ declare class SGPUProbeTextureDescriptor {
 declare function subProbeTextureDescriptorCheck(descriptor: SGPUProbeTextureDescriptor | null, selector: u32): u64;
 declare function subProbeTextureDescriptorFill(descriptor: SGPUProbeTextureDescriptor | null): void;
 
+declare class SubProbePipelineLayoutDescriptor {
+  label: string;
+  bindGroupLayouts: SubDevice[];
+  constructor(label: string, bindGroupLayouts: SubDevice[]);
+}
+
+declare function subProbePipelineLayoutCheck(descriptor: SubProbePipelineLayoutDescriptor | null, selector: u32): u64;
+
+declare class SubProbeBindGroupEntry {
+  binding: u32;
+  buffer: SubDevice | null;
+  sampler: SubDevice | null;
+  textureView: SubDevice | null;
+  constructor(binding: u32, buffer: SubDevice | null, sampler: SubDevice | null, textureView: SubDevice | null);
+}
+
+declare function subProbeBindGroupEntryCheck(entry: SubProbeBindGroupEntry | null): u32;
+declare function subProbeBindGroupEntryFill(entry: SubProbeBindGroupEntry | null, selected: u32, handle: SubDevice): void;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

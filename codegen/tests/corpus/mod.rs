@@ -64,6 +64,9 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subBoundaryString",
         // R7 texture descriptor: nested aggregate + struct enum pair.
         "subProbeTexture",
+        // R8 opaque-handle pair and nullable aggregate fields.
+        "subProbePipelineLayout",
+        "subProbeBindGroupEntry",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

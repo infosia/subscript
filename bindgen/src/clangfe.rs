@@ -228,7 +228,9 @@ unsafe fn visit_top_level(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), P
         CXCursor_TypedefDecl => visit_typedef(cursor, parsed)?,
         CXCursor_FunctionDecl => {
             let name = cursor_spelling(cursor);
-            let ret = strip_name(field_from_type(clang_getCursorResultType(cursor), String::new()));
+            let mut ret =
+                strip_name(field_from_type(clang_getCursorResultType(cursor), String::new()));
+            ret.nullable |= cursor_return_contains_nullable(cursor, &name);
             let params = function_params(cursor);
             record_doc(cursor, &name, parsed);
             parsed.decls.push(Decl::Func { name, ret, params });
@@ -290,7 +292,9 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
                 // `typedef R (*X)(params);` — function pointer.
                 CXType_FunctionProto => {
                     record_doc(cursor, &name, parsed);
-                    let ret = strip_name(field_from_type(clang_getResultType(pointee), String::new()));
+                    let mut ret =
+                        strip_name(field_from_type(clang_getResultType(pointee), String::new()));
+                    ret.nullable |= cursor_return_contains_nullable(cursor, &name);
                     let params = typedef_params(cursor);
                     parsed.decls.push(Decl::FnPtr { name, ret, params });
                 }
@@ -428,7 +432,7 @@ unsafe fn struct_fields(decl: CXCursor) -> Vec<CField> {
     for child in children(decl) {
         if clang_getCursorKind(child) == CXCursor_FieldDecl {
             let name = cursor_spelling(child);
-            fields.push(field_from_type(clang_getCursorType(child), name));
+            fields.push(field_from_cursor(child, name));
         }
     }
     fields
@@ -444,7 +448,7 @@ unsafe fn function_params(cursor: CXCursor) -> Vec<CField> {
     (0..n as u32)
         .map(|i| {
             let arg = clang_Cursor_getArgument(cursor, i);
-            field_from_type(clang_getCursorType(arg), cursor_spelling(arg))
+            field_from_cursor(arg, cursor_spelling(arg))
         })
         .collect()
 }
@@ -456,16 +460,28 @@ unsafe fn typedef_params(cursor: CXCursor) -> Vec<CField> {
     for child in children(cursor) {
         if clang_getCursorKind(child) == CXCursor_ParmDecl {
             let name = cursor_spelling(child);
-            params.push(field_from_type(clang_getCursorType(child), name));
+            params.push(field_from_cursor(child, name));
         }
     }
     params
+}
+
+/// Builds a field from a declaration cursor. Some libclang builds return
+/// `CXTypeNullability_Invalid` and omit a top-level nullability attribute
+/// from `clang_getTypeSpelling`, while retaining the `_Nullable` token in
+/// the cursor's type extent. Nested attributed types remain visible through
+/// [`field_from_type`], so the two sources are combined.
+unsafe fn field_from_cursor(cursor: CXCursor, name: String) -> CField {
+    let mut field = field_from_type(clang_getCursorType(cursor), name);
+    field.nullable |= cursor_contains_nullable(cursor);
+    field
 }
 
 /// Builds a [`CField`] from a clang type and a declared name, reproducing
 /// exactly the base spelling and `const`/pointer/array flags that `cparse`
 /// produced, so the emitter's output is byte-identical.
 unsafe fn field_from_type(ty: CXType, name: String) -> CField {
+    let nullable = type_contains_nullable(ty);
     let mut t = ty;
     let mut array_len = None;
     if t.kind == CXType_ConstantArray {
@@ -488,10 +504,81 @@ unsafe fn field_from_type(ty: CXType, name: String) -> CField {
     CField {
         base: base_spelling(t),
         is_const,
+        nullable,
         pointer,
         array_len,
         name,
     }
+}
+
+/// True when libclang exposes `_Nullable` on this type or on a nested
+/// pointer/array element. Checking each layer closes the silent-ignore path
+/// for both direct handle fields and pair elements such as
+/// `const H _Nullable *items`.
+unsafe fn type_contains_nullable(ty: CXType) -> bool {
+    if clang_Type_getNullability(ty) == CXTypeNullability_Nullable {
+        return true;
+    }
+    let canonical = clang_getCanonicalType(ty);
+    if clang_Type_getNullability(canonical) == CXTypeNullability_Nullable {
+        return true;
+    }
+    // The gate's libclang preserves `_Nullable` in the CXType spelling for
+    // typedef-sugar and nested attributed types even though
+    // `clang_Type_getNullability` returns Invalid for those same types.
+    // This is still type metadata supplied by libclang (not a source-text
+    // scan), and covers both `_Nullable H` and `H _Nullable`, which clang
+    // normalizes to the latter spelling.
+    if type_spelling(ty)
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .any(|token| token == "_Nullable")
+    {
+        return true;
+    }
+    match ty.kind {
+        CXType_Pointer => type_contains_nullable(clang_getPointeeType(ty)),
+        CXType_ConstantArray
+        | CXType_IncompleteArray
+        | CXType_VariableArray
+        | CXType_DependentSizedArray => type_contains_nullable(clang_getArrayElementType(ty)),
+        _ => false,
+    }
+}
+
+/// True when a declaration cursor's libclang token stream contains the
+/// `_Nullable` attribute.
+unsafe fn cursor_contains_nullable(cursor: CXCursor) -> bool {
+    cursor_tokens(cursor).iter().any(|token| token == "_Nullable")
+}
+
+/// True when `_Nullable` occurs in the return-type tokens preceding a
+/// function/function-pointer typedef's declared name.
+unsafe fn cursor_return_contains_nullable(cursor: CXCursor, name: &str) -> bool {
+    cursor_tokens(cursor)
+        .into_iter()
+        .take_while(|token| token != name)
+        .any(|token| token == "_Nullable")
+}
+
+/// Token spellings in one cursor extent, supplied by libclang.
+unsafe fn cursor_tokens(cursor: CXCursor) -> Vec<String> {
+    let tu = clang_Cursor_getTranslationUnit(cursor);
+    if tu.is_null() {
+        return Vec::new();
+    }
+    let mut raw = std::ptr::null_mut();
+    let mut len = 0;
+    clang_tokenize(tu, clang_getCursorExtent(cursor), &mut raw, &mut len);
+    if raw.is_null() || len == 0 {
+        return Vec::new();
+    }
+    let slice = std::slice::from_raw_parts(raw, len as usize);
+    let tokens = slice
+        .iter()
+        .map(|token| cxstring(clang_getTokenSpelling(tu, *token)))
+        .collect();
+    clang_disposeTokens(tu, raw, len);
+    tokens
 }
 
 /// The base type name with leading `const`/`struct`/`union`/`enum`/

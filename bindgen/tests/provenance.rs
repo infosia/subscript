@@ -597,6 +597,7 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair() {
         #include <stdint.h>
         typedef enum EngineFormat { ENGINE_FORMAT_A = 1 } EngineFormat;
         typedef struct EngineExtent { uint32_t width; uint32_t height; } EngineExtent;
+        typedef struct EngineLayoutImpl *EngineLayout;
         typedef struct EngineTexture {
             size_t viewFormatsCount;
             const EngineFormat *viewFormats;
@@ -610,6 +611,10 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair() {
             size_t extentsCount;
             const EngineExtent *extents;
         } EngineExtents;
+        typedef struct EngineLayouts {
+            size_t layoutsCount;
+            const EngineLayout *layouts;
+        } EngineLayouts;
     ";
     let mirror = generate_for_header(header, "pairs.h").expect("all lowered pairs map");
     let array_fields: Vec<&str> = mirror
@@ -622,12 +627,14 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair() {
             "  viewFormats: EngineFormat[];",
             "  values: u16[];",
             "  extents: EngineExtent[];",
+            "  layouts: EngineLayout[];",
         ],
         "every emitted array field must be one recognized collapsed pair:\n{mirror}"
     );
     assert!(!mirror.contains("viewFormatsCount"), "{mirror}");
     assert!(!mirror.contains("values_count"), "{mirror}");
     assert!(!mirror.contains("extentsCount"), "{mirror}");
+    assert!(!mirror.contains("layoutsCount"), "{mirror}");
     assert!(!mirror.contains("EngineFormat | null"), "{mirror}");
 
     for (name, declaration, expected) in [
@@ -662,6 +669,215 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair() {
         };
         assert!(error.to_string().contains(expected), "{name}: {error}");
     }
+}
+
+#[test]
+fn registered_opaque_handle_struct_pair_collapses_to_input_array() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUBindGroupLayoutImpl *SGPUBindGroupLayout;
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUPipelineLayoutDescriptor {
+            SGPUStringView label;
+            size_t bindGroupLayoutsCount;
+            const SGPUBindGroupLayout *bindGroupLayouts;
+        } SGPUPipelineLayoutDescriptor;
+        void sgpuUsePipelineLayout(const SGPUPipelineLayoutDescriptor *descriptor);
+    ";
+    let mirror = generate_for_header(header, "pipeline.h")
+        .expect("const registered opaque-handle pair maps");
+    let block = mirror
+        .split("declare class SGPUPipelineLayoutDescriptor {")
+        .nth(1)
+        .and_then(|tail| tail.split('}').next())
+        .expect("pipeline layout declare block");
+    assert!(block.contains("label: string;"), "{mirror}");
+    assert!(
+        block.contains("bindGroupLayouts: SGPUBindGroupLayout[];"),
+        "{mirror}"
+    );
+    assert!(!block.contains("bindGroupLayoutsCount"), "{mirror}");
+}
+
+#[test]
+fn mutable_registered_opaque_handle_struct_pair_fails_loud_as_input_only() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUBindGroupLayoutImpl *SGPUBindGroupLayout;
+        typedef struct SGPUPipelineLayoutDescriptor {
+            size_t bindGroupLayoutsCount;
+            SGPUBindGroupLayout *bindGroupLayouts;
+        } SGPUPipelineLayoutDescriptor;
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("mutable opaque-handle pairs have no lowering");
+    let message = error.to_string();
+    assert!(message.contains("unsupported element `SGPUBindGroupLayout`"), "{error}");
+    assert!(message.contains("handles are input-only"), "{error}");
+}
+
+#[test]
+fn nullable_handle_field_prefix_spelling_is_reported_and_lowered() {
+    let header = "
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        typedef struct SGPUSamplerImpl *SGPUSampler;
+        typedef struct SGPUTextureViewImpl *SGPUTextureView;
+        typedef struct SGPUBindGroupEntry {
+            _Nullable SGPUBuffer buffer;
+            _Nullable SGPUSampler sampler;
+            _Nullable SGPUTextureView textureView;
+        } SGPUBindGroupEntry;
+    ";
+    let mirror = generate_for_header(header, "bind-group.h")
+        .expect("prefix `_Nullable` handle field maps");
+    assert!(mirror.contains("buffer: SGPUBuffer | null;"), "{mirror}");
+    assert!(mirror.contains("sampler: SGPUSampler | null;"), "{mirror}");
+    assert!(
+        mirror.contains("textureView: SGPUTextureView | null;"),
+        "{mirror}"
+    );
+}
+
+#[test]
+fn nullable_handle_field_suffix_spelling_is_reported_and_lowered() {
+    let header = "
+        typedef struct SGPUSamplerImpl *SGPUSampler;
+        typedef struct SGPUBindGroupEntry {
+            SGPUSampler _Nullable sampler;
+        } SGPUBindGroupEntry;
+    ";
+    let mirror = generate_for_header(header, "bind-group.h")
+        .expect("suffix `_Nullable` handle field maps");
+    assert!(mirror.contains("sampler: SGPUSampler | null;"), "{mirror}");
+}
+
+#[test]
+fn unqualified_handle_field_stays_non_nullable() {
+    let header = "
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        typedef struct SGPUEntry { SGPUBuffer buffer; } SGPUEntry;
+    ";
+    let mirror = generate_for_header(header, "bind-group.h")
+        .expect("unqualified handle field maps");
+    assert!(mirror.contains("buffer: SGPUBuffer;"), "{mirror}");
+    assert!(!mirror.contains("buffer: SGPUBuffer | null;"), "{mirror}");
+}
+
+#[test]
+fn nullable_non_handle_field_fails_loud() {
+    let header = "
+        typedef struct SGPUEntry {
+            void * _Nullable userdata;
+        } SGPUEntry;
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable non-handle field must fail loud");
+    let message = error.to_string();
+    assert!(message.contains("struct `SGPUEntry` field `userdata`"), "{error}");
+    assert!(message.contains("only direct registered opaque-handle fields"), "{error}");
+}
+
+#[test]
+fn nullable_parameter_fails_loud() {
+    let header = "
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        void sgpuUse(SGPUBuffer _Nullable buffer);
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable parameter must fail loud");
+    assert!(
+        error
+            .to_string()
+            .contains("foreign function `sgpuUse` parameter `buffer`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn nullable_return_fails_loud() {
+    let header = "
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        SGPUBuffer _Nullable sgpuGet(void);
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable return must fail loud");
+    assert!(
+        error
+            .to_string()
+            .contains("foreign function `sgpuGet` return type `SGPUBuffer`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn nullable_pair_element_fails_loud() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        typedef struct SGPUEntries {
+            size_t buffersCount;
+            const SGPUBuffer _Nullable *buffers;
+        } SGPUEntries;
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable pair element must fail loud");
+    assert!(
+        error
+            .to_string()
+            .contains("struct `SGPUEntries` field `buffers`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn nullable_value_class_field_fails_loud() {
+    let header = "
+        #include <stdint.h>
+        typedef struct SGPURecord { uint32_t value; } SGPURecord;
+        typedef struct SGPUEntry {
+            SGPURecord * _Nullable record;
+        } SGPUEntry;
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable value-class field must fail loud");
+    assert!(
+        error
+            .to_string()
+            .contains("struct `SGPUEntry` field `record`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn nullable_callback_parameter_fails_loud() {
+    let header = "
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        typedef void (*SGPUCallback)(SGPUBuffer _Nullable buffer);
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable callback parameter must fail loud");
+    assert!(
+        error
+            .to_string()
+            .contains("callback typedef `SGPUCallback` parameter `buffer`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn nullable_callback_return_fails_loud() {
+    let header = "
+        typedef struct SGPUBufferImpl *SGPUBuffer;
+        typedef SGPUBuffer _Nullable (*SGPUCallback)(void);
+    ";
+    let error = generate_for_header(header, "nullable.h")
+        .expect_err("nullable callback return must fail loud");
+    assert!(
+        error
+            .to_string()
+            .contains("callback typedef `SGPUCallback` return type"),
+        "{error}"
+    );
 }
 
 #[test]

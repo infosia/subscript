@@ -60,6 +60,9 @@ extern "C" {
     fn subBoundaryStringFill();
     fn subProbeTextureDescriptorCheck();
     fn subProbeTextureDescriptorFill();
+    fn subProbePipelineLayoutCheck();
+    fn subProbeBindGroupEntryCheck();
+    fn subProbeBindGroupEntryFill();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -80,6 +83,8 @@ fn references_interop(source: &str) -> bool {
         "SubWaitEntry",
         "subBoundaryString",
         "subProbeTexture",
+        "subProbePipelineLayout",
+        "subProbeBindGroupEntry",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -196,6 +201,18 @@ fn interop_library() -> NativeLibrary {
         (
             "subProbeTextureDescriptorFill".to_string(),
             subProbeTextureDescriptorFill as *const u8,
+        ),
+        (
+            "subProbePipelineLayoutCheck".to_string(),
+            subProbePipelineLayoutCheck as *const u8,
+        ),
+        (
+            "subProbeBindGroupEntryCheck".to_string(),
+            subProbeBindGroupEntryCheck as *const u8,
+        ),
+        (
+            "subProbeBindGroupEntryFill".to_string(),
+            subProbeBindGroupEntryFill as *const u8,
         ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime

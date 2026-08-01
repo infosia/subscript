@@ -56,6 +56,9 @@ extern "C" {
     fn subBoundaryStringFill();
     fn subProbeTextureDescriptorCheck();
     fn subProbeTextureDescriptorFill();
+    fn subProbePipelineLayoutCheck();
+    fn subProbeBindGroupEntryCheck();
+    fn subProbeBindGroupEntryFill();
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -113,6 +116,18 @@ pub fn library() -> NativeLibrary {
         (
             "subProbeTextureDescriptorFill".to_string(),
             subProbeTextureDescriptorFill as *const u8,
+        ),
+        (
+            "subProbePipelineLayoutCheck".to_string(),
+            subProbePipelineLayoutCheck as *const u8,
+        ),
+        (
+            "subProbeBindGroupEntryCheck".to_string(),
+            subProbeBindGroupEntryCheck as *const u8,
+        ),
+        (
+            "subProbeBindGroupEntryFill".to_string(),
+            subProbeBindGroupEntryFill as *const u8,
         ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime

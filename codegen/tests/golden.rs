@@ -281,11 +281,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // (a92), Q34 poll-driven async (a93–a95), and R5 scalar parameter
     // array-pairs (a96), and R6 string-view fields in pointer-passed
     // boundary structs in both directions (a97–a98), and R7 texture
-    // descriptors with nested aggregates + enum pairs (a99–a100).
+    // descriptors with nested aggregates + enum pairs (a99–a100), and R8
+    // opaque-handle aggregate positions (a101–a102).
     assert_eq!(
         golden_ids.len(),
-        100,
-        "expected exactly 100 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        102,
+        "expected exactly 102 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -298,7 +299,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          a92 Q33 descriptor-literal, a93–a95 Q34 async goldens, and a96 R5 \
          scalar parameter-pair interop, a97–a98 R6 pointer-passed boundary \
          string-field interop in both directions, and a99–a100 R7 texture \
-         descriptor interop in both directions, found {}",
+         descriptor interop in both directions, and a101–a102 R8 opaque-handle \
+         aggregate interop, found {}",
         golden_ids.len()
     );
 

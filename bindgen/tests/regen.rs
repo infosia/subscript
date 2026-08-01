@@ -109,6 +109,13 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("viewFormats: SGPUProbeFormat[];"));
     assert!(!m.contains("viewFormatsCount"));
     assert!(!m.contains("SGPUProbeFormat | null"));
+    // R8 (§31). A const registered-handle pair collapses input-only, and
+    // direct `_Nullable` handle fields retain null in the mirror.
+    assert!(m.contains("bindGroupLayouts: SubDevice[];"));
+    assert!(!m.contains("bindGroupLayoutsCount"));
+    assert!(m.contains("buffer: SubDevice | null;"));
+    assert!(m.contains("sampler: SubDevice | null;"));
+    assert!(m.contains("textureView: SubDevice | null;"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

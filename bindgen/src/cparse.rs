@@ -37,6 +37,10 @@ pub struct CField {
     pub base: String,
     /// True when the declaration had a `const` qualifier.
     pub is_const: bool,
+    /// True when libclang reports a `_Nullable` qualifier anywhere in the
+    /// declared type. The emitter accepts this only for direct opaque-handle
+    /// fields; every other position fails loud before mirror emission.
+    pub nullable: bool,
     /// True when the declarator is a pointer (`*`).
     pub pointer: bool,
     /// Fixed C array length `[N]`, when present.
@@ -400,6 +404,7 @@ fn parse_field(decl: &str) -> Result<CField, ParseError> {
     Ok(CField {
         base,
         is_const,
+        nullable: false,
         pointer,
         array_len,
         name,
@@ -417,6 +422,7 @@ mod tests {
             CField {
                 base: "uint32_t".into(),
                 is_const: true,
+                nullable: false,
                 pointer: true,
                 array_len: None,
                 name: "items".into()
@@ -427,6 +433,7 @@ mod tests {
             CField {
                 base: "SubChainHeader".into(),
                 is_const: false,
+                nullable: false,
                 pointer: true,
                 array_len: None,
                 name: "next".into()
@@ -437,6 +444,7 @@ mod tests {
             CField {
                 base: "float".into(),
                 is_const: false,
+                nullable: false,
                 pointer: false,
                 array_len: Some(16),
                 name: "basis".into()

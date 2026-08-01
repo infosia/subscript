@@ -31,6 +31,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Clang enables whole-header nullability-completeness warnings as soon as
+ * one explicit qualifier appears. This fixture intentionally qualifies only
+ * the §31 handle fields under test; all older pointer positions retain their
+ * established contract and mirror, so suppress that completeness warning. */
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#endif
+
 /* Binary16 storage spelling. The gate compiler is clang (§11), where
  * `_Float16` has an unambiguous IEEE binary16 representation. Do not
  * substitute an integer fallback: bindgen must fail loud on targets
@@ -666,5 +674,45 @@ uint64_t subProbeTextureDescriptorCheck(
 /* Read-direction pin: replaces the view, embedded extent, and trailing
  * scalars. It intentionally leaves the borrowed pair intact. */
 void subProbeTextureDescriptorFill(SGPUProbeTextureDescriptor *descriptor);
+
+/* ==== R8 opaque handles in aggregate positions (compiler.md §31) =======
+ *
+ * The pipeline-layout-shaped record reuses the fixture's existing
+ * registered SubDevice opaque handle. The adjacent const handle pair must
+ * mirror as one `SubDevice[]` field and cross as the array's pointer-sized
+ * backing elements. */
+
+typedef struct SubProbePipelineLayoutDescriptor {
+    SGPUStringView label;
+    size_t bindGroupLayoutsCount;
+    const SubDevice *bindGroupLayouts;
+} SubProbePipelineLayoutDescriptor;
+
+/* Selector 0/1 reports the label byte sum/length, selector 2 the collapsed
+ * pair count, and selector 3+i the one-based index of element i's first
+ * pointer-identical occurrence. */
+uint64_t subProbePipelineLayoutCheck(
+    const SubProbePipelineLayoutDescriptor *descriptor,
+    uint32_t selector);
+
+/* A bind-group-entry-shaped record: exactly one resource handle is normally
+ * set. Both accepted `_Nullable` placements are kept in the fixture so the
+ * committed mirror exercises libclang's prefix and suffix spellings. */
+typedef struct SubProbeBindGroupEntry {
+    uint32_t binding;
+    _Nullable SubDevice buffer;
+    SubDevice _Nullable sampler;
+    SubDevice _Nullable textureView;
+} SubProbeBindGroupEntry;
+
+/* Returns bit 0/1/2 for non-NULL buffer/sampler/textureView respectively. */
+uint32_t subProbeBindGroupEntryCheck(const SubProbeBindGroupEntry *entry);
+
+/* C -> script direction: clears all three fields, writes `handle` into the
+ * selected slot (0/1/2), and records `900 + selected` in binding. */
+void subProbeBindGroupEntryFill(
+    SubProbeBindGroupEntry *entry,
+    uint32_t selected,
+    SubDevice handle);
 
 #endif /* SUBSCRIPT_INTEROP_H */
