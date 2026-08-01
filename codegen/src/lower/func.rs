@@ -2394,11 +2394,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if let Some(StructRet::Sret(slot)) = struct_ret {
             argv.push(slot);
         }
-        let mut uses_scratch_array = false;
+        let mut uses_scratch_allocations = false;
         for parameter in &params {
-            uses_scratch_array |= self.boundary_type_needs_scratch_array(&parameter.ty)?;
+            uses_scratch_allocations |=
+                self.boundary_type_needs_scratch_array(&parameter.ty)?;
         }
-        let scratch_mark = if uses_scratch_array {
+        let scratch_mark = if uses_scratch_allocations {
             Some(
                 self.call_rt(self.ml.rt.boundary_scratch_mark, &[self.ctx_v], false)?
                     .ok_or_else(|| internal("boundary_scratch_mark result"))?,
@@ -2717,9 +2718,72 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Type::Class(inner) if self.is_value_class_ty(&field.ty) => {
                     self.boundary_struct_needs_scratch_inner(inner.0, visiting)?
                 }
+                Type::Nullable(inner) => match &**inner {
+                    // A pointer member activates scratch when its target has
+                    // an absorbed lowering. Once its parent is in scratch,
+                    // §33 also rebuilds plain targets beside that lowering.
+                    Type::Class(inner)
+                        if self.is_value_class_ty(&Type::Class(*inner)) => {
+                        self.boundary_struct_needs_scratch_inner(inner.0, visiting)?
+                    }
+                    _ => false,
+                },
                 _ => false,
             };
             if lowered {
+                visiting.remove(&cid);
+                return Ok(true);
+            }
+        }
+        visiting.remove(&cid);
+        Ok(false)
+    }
+
+    /// True when an aggregate already being rebuilt must recurse rather
+    /// than copy its language bytes. Unlike the root scratch predicate, a
+    /// plain struct-pointer member is sufficient here because §33 must
+    /// redirect it to child scratch once construction is active.
+    fn boundary_struct_requires_recursive_build(&self, cid: usize) -> Result<bool, String> {
+        Ok(self.boundary_struct_needs_scratch(cid)?
+            || self.boundary_struct_contains_pointer_member(
+                cid,
+                &mut HashSet::new(),
+            )?)
+    }
+
+    fn boundary_struct_contains_pointer_member(
+        &self,
+        cid: usize,
+        visiting: &mut HashSet<usize>,
+    ) -> Result<bool, String> {
+        if !visiting.insert(cid) {
+            return Ok(false);
+        }
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        for field in &class.fields {
+            let contains = match &field.ty {
+                Type::Nullable(inner) => match &**inner {
+                    Type::Class(_) if self.is_value_class_ty(inner) => true,
+                    _ => false,
+                },
+                Type::Class(inner) if self.is_value_class_ty(&field.ty) => {
+                    self.boundary_struct_contains_pointer_member(inner.0, visiting)?
+                }
+                Type::Array(inner) => match &**inner {
+                    Type::Class(inner)
+                        if self.is_value_class_ty(&Type::Class(*inner)) => {
+                        self.boundary_struct_contains_pointer_member(inner.0, visiting)?
+                    }
+                    _ => false,
+                },
+                _ => false,
+            };
+            if contains {
                 visiting.remove(&cid);
                 return Ok(true);
             }
@@ -2750,13 +2814,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let uses = match &field.ty {
                 Type::Array(element) => match &**element {
                     Type::Class(element_cid) if self.is_value_class_ty(element) => {
-                        self.boundary_struct_needs_scratch(element_cid.0)?
+                        self.boundary_struct_requires_recursive_build(element_cid.0)?
                     }
                     _ => false,
                 },
                 Type::Class(inner) if self.is_value_class_ty(&field.ty) => {
                     self.boundary_struct_needs_scratch_array_inner(inner.0, visiting)?
                 }
+                // A recursively lowered pointer target is allocated from
+                // the same re-entrant-safe call-duration scope as §32's
+                // scratch arrays.
+                Type::Nullable(inner) => match &**inner {
+                    Type::Class(_) if self.is_value_class_ty(inner) => true,
+                    _ => false,
+                },
                 _ => false,
             };
             if uses {
@@ -2770,13 +2841,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
     fn boundary_type_needs_scratch_array(&self, ty: &Type) -> Result<bool, String> {
         match ty {
-            Type::Nullable(inner) => self.boundary_type_needs_scratch_array(inner),
+            Type::Nullable(inner) => match &**inner {
+                Type::Class(cid) if self.is_value_class_ty(inner) => {
+                    if self.boundary_struct_needs_scratch(cid.0)? {
+                        self.boundary_struct_needs_scratch_array(cid.0)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                _ => self.boundary_type_needs_scratch_array(inner),
+            },
             Type::Class(cid) if self.is_value_class_ty(ty) => {
                 self.boundary_struct_needs_scratch_array(cid.0)
             }
             Type::Array(element) => match &**element {
                 Type::Class(cid) if self.is_value_class_ty(element) => {
-                    self.boundary_struct_needs_scratch(cid.0)
+                    self.boundary_struct_requires_recursive_build(cid.0)
                 }
                 _ => Ok(false),
             },
@@ -2843,7 +2923,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let data = match &**element_ty {
                     Type::Class(cid)
                         if self.is_value_class_ty(element_ty)
-                            && self.boundary_struct_needs_scratch(cid.0)? =>
+                            && self.boundary_struct_requires_recursive_build(cid.0)? =>
                     {
                         self.marshal_boundary_array(
                             cid.0,
@@ -3079,7 +3159,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let data = match &**element_ty {
                     Type::Class(element_cid)
                         if self.is_value_class_ty(element_ty)
-                            && self.boundary_struct_needs_scratch(element_cid.0)? =>
+                            && self.boundary_struct_requires_recursive_build(element_cid.0)? =>
                     {
                         self.marshal_boundary_array(
                             element_cid.0,
@@ -3103,13 +3183,62 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .store(flags(), data, destination, c_offset + 8);
                 continue;
             }
+            if let Some(pointer_cid) = self.boundary_struct_ptr_id(&field.ty) {
+                let mark = scratch_mark.ok_or_else(|| {
+                    internal("recursive boundary pointer lacks a scratch scope")
+                })?;
+                let source_pointer = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), source, language_offset);
+                let null = self.iconst(types::I64, 0);
+                self.b
+                    .ins()
+                    .store(flags(), null, destination, c_offset);
+                let non_null = self
+                    .b
+                    .ins()
+                    .icmp_imm(IntCC::NotEqual, source_pointer, 0);
+                let populate = self.b.create_block();
+                let ready = self.b.create_block();
+                self.b.ins().brif(non_null, populate, &[], ready, &[]);
+                self.b.switch_to_block(populate);
+
+                let (_, target_size, _) = self.boundary_c_layout(pointer_cid)?;
+                let bytes = self.iconst(types::I64, i64::from(target_size));
+                let pos_id = self.pos_id(call_pos);
+                let pos_value = self.iconst(types::I32, pos_id);
+                let target_scratch = self
+                    .call_rt(
+                        self.ml.rt.boundary_scratch_alloc,
+                        &[self.ctx_v, bytes, pos_value],
+                        false,
+                    )?
+                    .ok_or_else(|| internal("boundary_scratch_alloc result"))?;
+                self.trap_check();
+                self.populate_boundary_scratch_value(
+                    pointer_cid,
+                    source_pointer,
+                    target_scratch,
+                    Some(mark),
+                    call_pos,
+                )?;
+                self.b
+                    .ins()
+                    .store(flags(), target_scratch, destination, c_offset);
+                self.b.ins().jump(ready, &[]);
+                self.b.seal_block(populate);
+                self.b.switch_to_block(ready);
+                self.b.seal_block(ready);
+                continue;
+            }
             if self.is_value_class_ty(&field.ty) {
                 let Type::Class(inner_cid) = field.ty else {
                     return Err(internal("value-class field lacks a class id"));
                 };
                 let src = self.addr_off(source, i64::from(language_offset));
                 let dest = self.addr_off(destination, i64::from(c_offset));
-                if self.boundary_struct_needs_scratch(inner_cid.0)? {
+                if self.boundary_struct_requires_recursive_build(inner_cid.0)? {
                     self.populate_boundary_scratch_value(
                         inner_cid.0,
                         src,
@@ -3275,11 +3404,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 // the C pointer/count themselves never replace the handle.
                 continue;
             }
+            if self.is_boundary_struct_ptr(&field.ty) {
+                // §33 pointer-member scratch is input-only. Never copy its
+                // transient child pointer back into language storage.
+                continue;
+            }
             if self.is_value_class_ty(&field.ty) {
                 let Type::Class(inner_cid) = field.ty else {
                     return Err(internal("value-class field lacks a class id"));
                 };
-                if self.boundary_struct_needs_scratch(inner_cid.0)? {
+                if self.boundary_struct_requires_recursive_build(inner_cid.0)? {
                     // Recursive positions are input-only in §32. Never copy
                     // expanded C bytes back over the language layout.
                     continue;

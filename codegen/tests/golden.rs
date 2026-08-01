@@ -238,6 +238,23 @@ fn recursive_boundary_pipeline_entries_match_both_tiers_and_goldens() {
 }
 
 #[test]
+fn struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a106-interop-recursive-struct-pointer-members";
+    let sources = corpus::entry_sources(&accept, id);
+    let libraries = native_libraries(&sources);
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(jit, golden, "{id}: pointer-reachable C observations are wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
 fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -305,10 +322,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // boundary structs in both directions (a97–a98), and R7 texture
     // descriptors with nested aggregates + enum pairs (a99–a100), and R8
     // opaque-handle aggregate positions (a101–a102), and R9 recursive
-    // embedded/pair-element lowering (a103–a105).
+    // embedded/pair-element lowering (a103–a105), and R10 recursive
+    // struct-pointer-member lowering (a106).
     assert_eq!(
         golden_ids.len(),
-        105,
+        106,
         "expected exactly 105 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -323,7 +341,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          scalar parameter-pair interop, a97–a98 R6 pointer-passed boundary \
          string-field interop in both directions, and a99–a100 R7 texture \
          descriptor interop in both directions, a101–a102 R8 opaque-handle \
-         aggregate interop, and a103–a105 R9 recursive lowering, found {}",
+         aggregate interop, a103–a105 R9 recursive lowering, and a106 R10 \
+         struct-pointer-member lowering, found {}",
         golden_ids.len()
     );
 

@@ -70,6 +70,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeComputePipeline",
         "subProbeRenderPipeline",
         "subProbeProgrammableStage",
+        // R10 recursive lowering through struct-pointer members.
+        "subProbeFullRenderPipeline",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

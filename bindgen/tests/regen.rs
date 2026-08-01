@@ -116,6 +116,14 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("buffer: SubDevice | null;"));
     assert!(m.contains("sampler: SubDevice | null;"));
     assert!(m.contains("textureView: SubDevice | null;"));
+    // R10 (§33). Pointer-reachable fragment state lowers through its
+    // string/pairs, and each target's nullable plain blend pointer remains
+    // explicit in the mirror.
+    assert!(m.contains("fragment: SGPUProbeFragmentState | null;"));
+    assert!(m.contains("entryPoint: string;"));
+    assert!(m.contains("constants: SGPUProbeConstantEntry[];"));
+    assert!(m.contains("targets: SGPUProbeColorTargetState[];"));
+    assert!(m.contains("blend: SGPUProbeBlendState | null;"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

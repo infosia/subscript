@@ -446,6 +446,34 @@ declare class SGPUProbeProgrammableStage {
 
 declare function subProbeProgrammableStageCheck(stage: SGPUProbeProgrammableStage | null, selector: u32): u64;
 
+declare class SGPUProbeBlendState {
+  colorOperation: u32;
+  alphaOperation: u32;
+  constructor(colorOperation: u32, alphaOperation: u32);
+}
+
+declare class SGPUProbeColorTargetState {
+  format: u32;
+  blend: SGPUProbeBlendState | null;
+  writeMask: u32;
+  constructor(format: u32, blend: SGPUProbeBlendState | null, writeMask: u32);
+}
+
+declare class SGPUProbeFragmentState {
+  entryPoint: string;
+  constants: SGPUProbeConstantEntry[];
+  targets: SGPUProbeColorTargetState[];
+  constructor(entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeColorTargetState[]);
+}
+
+declare class SGPUProbeFullRenderPipelineDescriptor {
+  label: string;
+  fragment: SGPUProbeFragmentState | null;
+  constructor(label: string, fragment: SGPUProbeFragmentState | null);
+}
+
+declare function subProbeFullRenderPipelineCheck(descriptor: SGPUProbeFullRenderPipelineDescriptor | null, selector: u32): u64;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

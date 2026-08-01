@@ -782,4 +782,43 @@ uint64_t subProbeProgrammableStageCheck(
     const SGPUProbeProgrammableStage *stage,
     uint32_t selector);
 
+/* ==== R10 lowering through struct-pointer members (compiler.md §33) ===
+ *
+ * The fragment half of the downstream render-pipeline composition:
+ * descriptor -> nullable fragment pointer -> entry-point string + constants
+ * pair + color-target pair -> nullable blend pointer. Both pointed-to
+ * structs must be rebuilt recursively while their C pointers remain valid
+ * for the whole foreign call. */
+
+typedef struct SGPUProbeBlendState {
+    uint32_t colorOperation;
+    uint32_t alphaOperation;
+} SGPUProbeBlendState;
+
+typedef struct SGPUProbeColorTargetState {
+    uint32_t format;
+    const SGPUProbeBlendState * _Nullable blend;
+    uint32_t writeMask;
+} SGPUProbeColorTargetState;
+
+typedef struct SGPUProbeFragmentState {
+    SGPUStringView entryPoint;
+    size_t constantsCount;
+    const SGPUProbeConstantEntry *constants;
+    size_t targetsCount;
+    const SGPUProbeColorTargetState *targets;
+} SGPUProbeFragmentState;
+
+typedef struct SGPUProbeFullRenderPipelineDescriptor {
+    SGPUStringView label;
+    const SGPUProbeFragmentState * _Nullable fragment;
+} SGPUProbeFullRenderPipelineDescriptor;
+
+/* Selector-based evidence covers every level. A null fragment returns
+ * 7000 + selector behind the pointer; a missing target returns 8000 +
+ * selector; a null blend returns 6000 + selector for its member selectors. */
+uint64_t subProbeFullRenderPipelineCheck(
+    const SGPUProbeFullRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
 #endif /* SUBSCRIPT_INTEROP_H */

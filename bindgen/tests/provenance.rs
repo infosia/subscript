@@ -660,6 +660,58 @@ fn recursive_string_field_pair_element_evidence_shape() {
 }
 
 #[test]
+fn recursive_render_pipeline_struct_pointer_evidence_shape() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUConstantEntry { SGPUStringView key; double value; } SGPUConstantEntry;
+        typedef struct SGPUBlendState {
+            uint32_t colorOperation;
+            uint32_t alphaOperation;
+        } SGPUBlendState;
+        typedef struct SGPUColorTargetState {
+            uint32_t format;
+            const SGPUBlendState * _Nullable blend;
+            uint32_t writeMask;
+        } SGPUColorTargetState;
+        typedef struct SGPUFragmentState {
+            SGPUStringView entryPoint;
+            size_t constantsCount;
+            const SGPUConstantEntry *constants;
+            size_t targetsCount;
+            const SGPUColorTargetState *targets;
+        } SGPUFragmentState;
+        typedef struct SGPURenderPipelineDescriptor {
+            SGPUStringView label;
+            const SGPUFragmentState * _Nullable fragment;
+            uint32_t marker;
+        } SGPURenderPipelineDescriptor;
+        void sgpuRenderPipelineCheck(const SGPURenderPipelineDescriptor *descriptor);
+    ";
+    let mirror = generate_for_header(header, "pipeline.h")
+        .expect("struct-pointer members lower recursively");
+    assert!(mirror.contains(
+        "declare class SGPUConstantEntry {\n  key: string;\n  value: f64;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPUBlendState {\n  colorOperation: u32;\n  alphaOperation: u32;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPUColorTargetState {\n  format: u32;\n  blend: SGPUBlendState | null;\n  writeMask: u32;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPUFragmentState {\n  entryPoint: string;\n  constants: SGPUConstantEntry[];\n  targets: SGPUColorTargetState[];"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPURenderPipelineDescriptor {\n  label: string;\n  fragment: SGPUFragmentState | null;\n  marker: u32;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare function sgpuRenderPipelineCheck(descriptor: SGPURenderPipelineDescriptor | null): void;"
+    ), "{mirror}");
+}
+
+#[test]
 fn recursive_read_direction_fails_loud_at_innermost_member() {
     let header = "
         #include <stddef.h>
@@ -707,6 +759,50 @@ fn recursive_pair_element_read_direction_fails_loud_at_innermost_member() {
 }
 
 #[test]
+fn recursive_struct_pointer_read_direction_fails_loud_at_innermost_member() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUFragmentState { SGPUStringView entryPoint; } SGPUFragmentState;
+        typedef struct SGPURenderPipelineDescriptor {
+            const SGPUFragmentState *fragment;
+        } SGPURenderPipelineDescriptor;
+        void sgpuReadRecursive(SGPURenderPipelineDescriptor *descriptor);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("mutable pointer-reachable scratch positions have no read lowering");
+    assert!(
+        error.to_string().contains(
+            "parameter `descriptor` may read recursively-lowered member \
+             `SGPUFragmentState.entryPoint`"
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn mutable_recursive_struct_pointer_target_fails_loud_at_innermost_member() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUFragmentState { SGPUStringView entryPoint; } SGPUFragmentState;
+        typedef struct SGPURenderPipelineDescriptor {
+            SGPUFragmentState *fragment;
+        } SGPURenderPipelineDescriptor;
+        void sgpuUse(const SGPURenderPipelineDescriptor *descriptor);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("mutable pointer targets have no recursive read lowering");
+    assert!(
+        error.to_string().contains(
+            "field `fragment` has a mutable recursively-lowered pointer target and may read \
+             `SGPUFragmentState.entryPoint`"
+        ),
+        "{error}"
+    );
+}
+
+#[test]
 fn unsupported_recursive_member_names_the_innermost_field() {
     let header = "
         #include <stddef.h>
@@ -724,6 +820,49 @@ fn unsupported_recursive_member_names_the_innermost_field() {
     );
     assert!(
         error.to_string().contains("no write-direction scratch lowering"),
+        "{error}"
+    );
+}
+
+#[test]
+fn unsupported_pointer_reachable_member_names_the_innermost_field() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef void (*SGPUUnsupportedCallback)(void);
+        typedef struct SGPUInner { SGPUUnsupportedCallback callback; } SGPUInner;
+        typedef struct SGPUOuter { SGPUStringView label; const SGPUInner *inner; } SGPUOuter;
+        void sgpuUse(const SGPUOuter *outer);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("pointer-reachable callback member has no write lowering");
+    assert!(
+        error.to_string().contains("`SGPUInner.callback` which is a callback"),
+        "{error}"
+    );
+    assert!(
+        error.to_string().contains("no write-direction scratch lowering"),
+        "{error}"
+    );
+}
+
+#[test]
+fn cyclic_pointer_reachable_lowering_fails_loud_at_innermost_member() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUNode {
+            SGPUStringView label;
+            const struct SGPUNode *next;
+        } SGPUNode;
+        void sgpuUse(const SGPUNode *node);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("cyclic pointer scratch construction must fail loud");
+    assert!(error.to_string().contains("`SGPUNode.next`"), "{error}");
+    assert!(error.to_string().contains("struct-pointer type cycle"), "{error}");
+    assert!(
+        error.to_string().contains("no finite write-direction scratch lowering"),
         "{error}"
     );
 }
@@ -782,9 +921,12 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
             EngineExtents extents;
             EngineLayouts layouts;
         } EngineNested;
-        typedef struct EngineDeepLayout {
+        typedef struct EngineDeepValues {
             size_t deepValuesCount;
             const uint16_t *deepValues;
+        } EngineDeepValues;
+        typedef struct EngineDeepLayout {
+            const EngineDeepValues * _Nullable values;
         } EngineDeepLayout;
         typedef struct EngineDeepState {
             size_t deepLayoutsCount;
@@ -1009,7 +1151,7 @@ fn nullable_pair_element_fails_loud() {
 }
 
 #[test]
-fn nullable_value_class_field_fails_loud() {
+fn nullable_struct_pointer_field_is_reported_and_lowered() {
     let header = "
         #include <stdint.h>
         typedef struct SGPURecord { uint32_t value; } SGPURecord;
@@ -1017,14 +1159,9 @@ fn nullable_value_class_field_fails_loud() {
             SGPURecord * _Nullable record;
         } SGPUEntry;
     ";
-    let error = generate_for_header(header, "nullable.h")
-        .expect_err("nullable value-class field must fail loud");
-    assert!(
-        error
-            .to_string()
-            .contains("struct `SGPUEntry` field `record`"),
-        "{error}"
-    );
+    let mirror = generate_for_header(header, "nullable.h")
+        .expect("nullable boundary-struct pointer field must lower");
+    assert!(mirror.contains("record: SGPURecord | null;"), "{mirror}");
 }
 
 #[test]
@@ -1060,7 +1197,7 @@ fn nullable_callback_return_fails_loud() {
 }
 
 #[test]
-fn every_mirror_accepted_string_field_position_has_a_recursive_lowering() {
+fn every_mirror_accepted_string_field_position_has_a_recursive_lowering_at_any_depth() {
     struct Position {
         name: &'static str,
         declaration: &'static str,
@@ -1171,6 +1308,20 @@ fn every_mirror_accepted_string_field_position_has_a_recursive_lowering() {
             "typedef struct EngineEnvelope { size_t recordsCount; const EngineRecord *records; } EngineEnvelope;\n\
              void engineUse(const EngineEnvelope *envelope);",
             "records: EngineRecord[];",
+        ),
+        (
+            "nullable struct-pointer member",
+            "typedef struct EngineEnvelope { const EngineRecord * _Nullable record; } EngineEnvelope;\n\
+             void engineUse(const EngineEnvelope *envelope);",
+            "record: EngineRecord | null;",
+        ),
+        (
+            "embedded pair element to struct-pointer member",
+            "typedef struct EnginePointerElement { const EngineRecord *record; } EnginePointerElement;\n\
+             typedef struct EnginePairState { size_t elementsCount; const EnginePointerElement *elements; } EnginePairState;\n\
+             typedef struct EngineEnvelope { EnginePairState state; } EngineEnvelope;\n\
+             void engineUse(const EngineEnvelope *envelope);",
+            "record: EngineRecord | null;",
         ),
     ] {
         let header = format!(

@@ -163,9 +163,10 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
 }
 
 /// Rejects every visible `_Nullable` position except a direct registered
-/// opaque-handle field of an emitted boundary struct (§31.2). The frontend
-/// records qualifiers at every nested type layer, so a pair element or an
-/// outer pointer qualifier reaches this check too instead of being erased.
+/// opaque-handle field (§31.2) or a boundary-struct pointer field (§33).
+/// The frontend records qualifiers at every nested type layer, so a pair
+/// element or an outer pointer qualifier reaches this check too instead of
+/// being erased.
 fn validate_nullable_positions(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
@@ -174,14 +175,18 @@ fn validate_nullable_positions(
         match decl {
             Decl::Struct { name, fields } => {
                 for field in fields.iter().filter(|field| field.nullable) {
-                    let lowered = !field.pointer
+                    let nullable_handle = !field.pointer
                         && field.array_len.is_none()
                         && matches!(registry.get(&field.base), Some(Kind::Handle));
+                    let nullable_struct_pointer = field.pointer
+                        && field.array_len.is_none()
+                        && matches!(registry.get(&field.base), Some(Kind::Boundary));
+                    let lowered = nullable_handle || nullable_struct_pointer;
                     if !lowered {
                         return Err(ParseError(format!(
                             "`_Nullable` on struct `{name}` field `{}` of type `{}` has no \
                              boundary lowering; only direct registered opaque-handle fields \
-                             of boundary structs support `_Nullable`",
+                             and boundary-struct pointer fields support `_Nullable`",
                             field.name, field.base
                         )));
                     }
@@ -311,12 +316,11 @@ fn validate_boundary_positions(
                         field.name, field.base
                     )));
                 }
-                Some(Kind::Boundary) if !field.pointer => {
+                Some(Kind::Boundary) => {
                     validate_lowerable_boundary_aggregate(
                         parsed,
                         registry,
                         name,
-                        &field.name,
                         &field.base,
                         &mut HashSet::new(),
                     )?;
@@ -324,7 +328,6 @@ fn validate_boundary_positions(
                 Some(
                     Kind::Enum
                     | Kind::Handle
-                    | Kind::Boundary
                     | Kind::Alias
                     | Kind::StringView,
                 )
@@ -392,6 +395,12 @@ fn validate_boundary_positions(
                         && !param.is_const
                         && param.array_len.is_none()
                         && matches!(registry.get(&param.base), Some(Kind::Boundary))
+                        && boundary_aggregate_needs_scratch(
+                            parsed,
+                            registry,
+                            &param.base,
+                            &mut HashSet::new(),
+                        )?
                     {
                         if let Some((inner_owner, inner_member)) =
                             first_recursive_lowered_member(
@@ -560,11 +569,11 @@ fn validate_boundary_positions(
         }
     }
     // §32 widens the direct §28 owner set to every string owner reached
-    // recursively from a script→C position: an embedded boundary aggregate
-    // or a collapsed-pair element is built by the same scratch rules as its
-    // parent. Keep collecting the direct owners so the standing audit below
-    // still proves that no mirror-visible string field exists without a
-    // call-site lowering.
+    // recursively from a script→C position through embedding or a collapsed-
+    // pair element. §33 adds boundary-struct pointer members to the same
+    // traversal. Keep collecting the direct owners so the standing audit
+    // below still proves that no mirror-visible string field exists without
+    // a call-site lowering.
     for decl in &parsed.decls {
         let Decl::Func { params, .. } = decl else {
             continue;
@@ -584,6 +593,21 @@ fn validate_boundary_positions(
                 None
             };
             if let Some(root) = root {
+                let root_needs_scratch = boundary_aggregate_needs_scratch(
+                    parsed,
+                    registry,
+                    root,
+                    &mut HashSet::new(),
+                )?;
+                if root_needs_scratch {
+                    validate_lowerable_boundary_aggregate(
+                        parsed,
+                        registry,
+                        root,
+                        root,
+                        &mut HashSet::new(),
+                    )?;
+                }
                 collect_recursive_string_owners(
                     parsed,
                     registry,
@@ -591,6 +615,7 @@ fn validate_boundary_positions(
                     &string_field_structs,
                     &mut pointer_lowered,
                     &mut HashSet::new(),
+                    root_needs_scratch,
                 )?;
             }
         }
@@ -615,14 +640,14 @@ fn validate_boundary_positions(
 }
 
 /// Proves that an aggregate nested in the §28 scratch construction has a
-/// write-direction lowering (§32). Absorbed strings and collapsed pairs
-/// recurse; callbacks, fixed arrays, and absorbed descriptor aggregates
-/// remain fail-loud at the innermost unsupported member.
+/// write-direction lowering (§32/§33). Absorbed strings, collapsed pairs,
+/// and boundary-struct pointer members recurse; callbacks, fixed arrays, and
+/// absorbed descriptor aggregates remain fail-loud at the innermost
+/// unsupported member.
 fn validate_lowerable_boundary_aggregate(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
-    owner: &str,
-    owner_field: &str,
+    root: &str,
     aggregate: &str,
     visiting: &mut HashSet<String>,
 ) -> Result<(), ParseError> {
@@ -635,18 +660,16 @@ fn validate_lowerable_boundary_aggregate(
     });
     let Some(fields) = fields else {
         return Err(ParseError(format!(
-            "string-field boundary struct `{owner}` field `{owner_field}` embeds boundary \
-             aggregate `{aggregate}`, but its declaration is unavailable for recursive \
-             C-layout validation"
+            "boundary scratch root `{root}` reaches aggregate `{aggregate}`, but its \
+             declaration is unavailable for recursive C-layout validation"
         )));
     };
     let pairs = embedded_array_pairs(aggregate, fields, registry)?;
     for (index, field) in fields.iter().enumerate() {
         if field.array_len.is_some() {
             return Err(ParseError(format!(
-                "string-field boundary struct `{owner}` field `{owner_field}` recursively \
-                 reaches `{aggregate}.{}` which is a fixed array and has no write-direction \
-                 scratch lowering",
+                "boundary scratch root `{root}` recursively reaches `{aggregate}.{}` which \
+                 is a fixed array and has no write-direction scratch lowering",
                 field.name
             )));
         }
@@ -655,11 +678,18 @@ fn validate_lowerable_boundary_aggregate(
         }
         if pairs.ptr_elem.contains_key(&index) {
             if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+                if visiting.contains(&field.base) {
+                    return Err(ParseError(format!(
+                        "boundary scratch root `{root}` recursively reaches \
+                         `{aggregate}.{}` which closes a pair-element type cycle through \
+                         `{}` and has no finite write-direction scratch lowering",
+                        field.name, field.base
+                    )));
+                }
                 validate_lowerable_boundary_aggregate(
                     parsed,
                     registry,
-                    owner,
-                    owner_field,
+                    root,
                     &field.base,
                     visiting,
                 )?;
@@ -667,31 +697,46 @@ fn validate_lowerable_boundary_aggregate(
             continue;
         }
         if field.pointer {
+            if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+                if visiting.contains(&field.base) {
+                    return Err(ParseError(format!(
+                        "boundary scratch root `{root}` recursively reaches \
+                         `{aggregate}.{}` which closes a struct-pointer type cycle through \
+                         `{}` and has no finite write-direction scratch lowering",
+                        field.name, field.base
+                    )));
+                }
+                validate_lowerable_boundary_aggregate(
+                    parsed,
+                    registry,
+                    root,
+                    &field.base,
+                    visiting,
+                )?;
+            }
             continue;
         }
         match registry.get(&field.base) {
             Some(Kind::StringView) => {}
             Some(Kind::ArrayPair(_)) => {
                 return Err(ParseError(format!(
-                    "string-field boundary struct `{owner}` field `{owner_field}` recursively \
-                     reaches `{aggregate}.{}` which is an absorbed descriptor aggregate and \
-                     has no write-direction struct-field lowering",
+                    "boundary scratch root `{root}` recursively reaches `{aggregate}.{}` \
+                     which is an absorbed descriptor aggregate and has no write-direction \
+                     struct-field lowering",
                     field.name
                 )));
             }
             Some(Kind::FnPtr) => {
                 return Err(ParseError(format!(
-                    "string-field boundary struct `{owner}` field `{owner_field}` recursively \
-                     reaches `{aggregate}.{}` which is a callback and has no write-direction \
-                     scratch lowering",
+                    "boundary scratch root `{root}` recursively reaches `{aggregate}.{}` \
+                     which is a callback and has no write-direction scratch lowering",
                     field.name
                 )));
             }
             Some(Kind::Boundary) => validate_lowerable_boundary_aggregate(
                 parsed,
                 registry,
-                owner,
-                owner_field,
+                root,
                 &field.base,
                 visiting,
             )?,
@@ -702,10 +747,64 @@ fn validate_lowerable_boundary_aggregate(
     Ok(())
 }
 
+/// Whether a pointer-passed boundary aggregate must be rebuilt in actual C
+/// layout. A pointer member makes its parent require scratch when the target
+/// itself has an absorbed lowering. Once scratch construction is active for
+/// any reason, §33 still rebuilds plain pointer targets encountered beside or
+/// below that lowering.
+fn boundary_aggregate_needs_scratch(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+    aggregate: &str,
+    visiting: &mut HashSet<String>,
+) -> Result<bool, ParseError> {
+    if !visiting.insert(aggregate.to_string()) {
+        return Ok(false);
+    }
+    let fields = parsed.decls.iter().find_map(|decl| match decl {
+        Decl::Struct { name, fields } if name == aggregate => Some(fields.as_slice()),
+        _ => None,
+    });
+    let Some(fields) = fields else {
+        visiting.remove(aggregate);
+        return Ok(false);
+    };
+    let pairs = embedded_array_pairs(aggregate, fields, registry)?;
+    for (index, field) in fields.iter().enumerate() {
+        let needs = pairs.ptr_elem.contains_key(&index)
+            || matches!(registry.get(&field.base), Some(Kind::StringView))
+            || (field.pointer
+                && field.array_len.is_none()
+                && matches!(registry.get(&field.base), Some(Kind::Boundary))
+                && boundary_aggregate_needs_scratch(
+                    parsed,
+                    registry,
+                    &field.base,
+                    visiting,
+                )?)
+            || (!field.pointer
+                && field.array_len.is_none()
+                && matches!(registry.get(&field.base), Some(Kind::Boundary))
+                && boundary_aggregate_needs_scratch(
+                    parsed,
+                    registry,
+                    &field.base,
+                    visiting,
+                )?);
+        if needs {
+            visiting.remove(aggregate);
+            return Ok(true);
+        }
+    }
+    visiting.remove(aggregate);
+    Ok(false)
+}
+
 /// Adds every direct string-field struct reached through recursively lowered
-/// by-value aggregates and collapsed-pair element positions. The traversal
-/// uses the exact pair recognizer used by emission, extending both §30 audits
-/// through recursion instead of maintaining a second approximation.
+/// by-value aggregates, collapsed-pair element positions, and boundary-
+/// struct pointer members. The traversal uses the exact pair recognizer used
+/// by emission, extending both §30 audits through every §33 axis instead of
+/// maintaining a second approximation.
 fn collect_recursive_string_owners(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
@@ -713,6 +812,7 @@ fn collect_recursive_string_owners(
     direct_string_owners: &HashSet<String>,
     lowered: &mut HashSet<String>,
     visiting: &mut HashSet<String>,
+    scratch_active: bool,
 ) -> Result<(), ParseError> {
     if !visiting.insert(aggregate.to_string()) {
         return Ok(());
@@ -734,7 +834,11 @@ fn collect_recursive_string_owners(
         let embedded_value = !field.pointer
             && field.array_len.is_none()
             && matches!(registry.get(&field.base), Some(Kind::Boundary));
-        if (pair_element || embedded_value)
+        let pointer_member = field.pointer
+            && field.array_len.is_none()
+            && !pair_element
+            && matches!(registry.get(&field.base), Some(Kind::Boundary));
+        if (pair_element || embedded_value || pointer_member)
             && matches!(registry.get(&field.base), Some(Kind::Boundary))
         {
             if pair_element && !field.is_const {
@@ -753,6 +857,22 @@ fn collect_recursive_string_owners(
                     )));
                 }
             }
+            if scratch_active && pointer_member && !field.is_const {
+                let offender = first_recursive_lowered_member(
+                    parsed,
+                    registry,
+                    &field.base,
+                    1,
+                    &mut HashSet::new(),
+                )?
+                .unwrap_or_else(|| (aggregate.to_string(), field.name.clone()));
+                return Err(ParseError(format!(
+                    "struct `{aggregate}` field `{}` has a mutable recursively-lowered \
+                     pointer target and may read `{}.{}`; recursive pointer-member \
+                     positions support script-to-C scratch construction only",
+                    field.name, offender.0, offender.1
+                )));
+            }
             collect_recursive_string_owners(
                 parsed,
                 registry,
@@ -760,6 +880,7 @@ fn collect_recursive_string_owners(
                 direct_string_owners,
                 lowered,
                 visiting,
+                scratch_active,
             )?;
         }
     }
@@ -769,8 +890,8 @@ fn collect_recursive_string_owners(
 
 /// Finds the deepest absorbed member that would require interpreting C
 /// scratch bytes back as language layout. Direct fields at the root retain
-/// their §28/§30 behavior; once an embedded aggregate or pair element is
-/// entered, §32 is script→C only.
+/// their §28/§30 behavior; once an embedded aggregate, pair element, or
+/// pointer member is entered, §32/§33 is script→C only.
 fn first_recursive_lowered_member(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
@@ -813,7 +934,24 @@ fn first_recursive_lowered_member(
             }
             continue;
         }
-        if field.pointer || field.array_len.is_some() {
+        if field.pointer {
+            if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+                if let Some(offender) = first_recursive_lowered_member(
+                    parsed,
+                    registry,
+                    &field.base,
+                    depth + 1,
+                    visiting,
+                )? {
+                    visiting.remove(aggregate);
+                    return Ok(Some(offender));
+                }
+                visiting.remove(aggregate);
+                return Ok(Some((aggregate.to_string(), field.name.clone())));
+            }
+            continue;
+        }
+        if field.array_len.is_some() {
             continue;
         }
         match registry.get(&field.base) {

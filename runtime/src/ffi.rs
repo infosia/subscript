@@ -99,7 +99,7 @@ pub unsafe extern "C" fn subscript_rt_alloc(
 }
 
 /// Begins a nested call-duration scratch scope for recursive boundary
-/// lowering (§32).
+/// element and struct-pointer lowering (§32/§33).
 ///
 /// # Safety
 ///

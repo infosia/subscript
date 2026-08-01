@@ -319,9 +319,10 @@ struct Allocation {
 }
 
 /// Host allocations used only while recursively lowering one foreign-call
-/// argument tree (§32). They are deliberately outside the managed heap: a
-/// callback may collect while C is borrowing the scratch array. Nested
-/// foreign calls take a length mark and release only their own suffix.
+/// argument tree (§32/§33). They are deliberately outside the managed heap:
+/// a callback may collect while C is borrowing scratch arrays or pointed-to
+/// structs. Nested foreign calls take a length mark and release only their
+/// own suffix.
 struct BoundaryScratchAllocation {
     base: *mut u8,
     layout: Layout,
@@ -1181,8 +1182,8 @@ impl Context {
     }
 
     /// Allocates zeroed, 16-aligned storage outside the managed heap for a
-    /// recursively lowered C element array. The matching mark release frees
-    /// it after the synchronous foreign call returns.
+    /// recursively lowered C element array or pointed-to struct. The matching
+    /// mark release frees it after the synchronous foreign call returns.
     pub fn boundary_scratch_alloc(&mut self, size: usize, pos_id: u32) -> *mut u8 {
         let Ok(layout) = Layout::from_size_align(size.max(1), 16) else {
             self.trap(
