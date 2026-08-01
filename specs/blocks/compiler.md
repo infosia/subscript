@@ -3673,3 +3673,47 @@ component; goldens by the standard capture path.
    position has a lowering, at any depth.
 4. No existing golden moves; full gate, `tsc` gate, zero-warning
    sweep, and the generated-docs gates green.
+
+## 33. R10 — lowering through struct-pointer members
+
+Owner decision 2026-08-01 (downstream request R10, the last §32
+recursion axis; blocking its render pipelines). §32's reachable set
+covers by-value embedded aggregates and pair elements; a lowered
+struct behind a **struct-pointer member** was not reachable.
+
+### 33.1 The rule
+
+Reachability extends through struct-pointer fields, recursively,
+starting from a direct foreign descriptor-pointer parameter: a
+boundary struct reachable only through `[nullable]` struct-pointer
+members gets the same recursive script→C lowering as §32. At the
+scratch construction, a non-null struct-pointer field lowers to a
+pointer to a recursively-built scratch struct (call-duration valid,
+like every §28 view and §32 scratch array); `null` lowers to
+`NULL`. The read direction stays fail-loud, diagnostics naming the
+innermost member (§32 discipline). The §30/§32 audits extend over
+the pointer-reachable set: lowered-or-loud at any depth through any
+mix of embedding, pair elements, and pointer members.
+
+### 33.2 Corpus
+
+`a106` (accept): the full render-pipeline composition at the
+downstream depth — descriptor → nullable `fragment` pointer →
+fragment state (string view + constants pair + `targets` pair whose
+elements carry a nullable `blend` pointer to a plain struct) — with
+both the null and non-null spellings exercised and a checker
+returning evidence from every level including behind the pointers.
+Goldens by the standard capture path.
+
+### 33.3 Exit criteria (pre-registered)
+
+1. `a106` byte-identical under both tiers, covering null and
+   non-null pointer fields and the values behind them.
+2. The verbatim evidence rejection at pin `aeaffcf` now mirrors and
+   lowers (bindgen-unit-tested on that shape); pointer-reachable
+   structs whose members still lack a lowering fail loud naming the
+   innermost member.
+3. The audits hold over the pointer-reachable set (extended
+   `..._at_any_depth` coverage).
+4. No existing golden moves; full gate, `tsc` gate, zero-warning
+   sweep, and the generated-docs gates green.
