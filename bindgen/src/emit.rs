@@ -162,11 +162,16 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
     Ok(out)
 }
 
+const NULLABLE_POSITION_HELP: &str = "only direct registered opaque-handle fields, \
+boundary-struct pointer fields, and direct registered opaque-handle foreign-function \
+parameters support `_Nullable`";
+
 /// Rejects every visible `_Nullable` position except a direct registered
-/// opaque-handle field (§31.2) or a boundary-struct pointer field (§33).
-/// The frontend records qualifiers at every nested type layer, so a pair
-/// element or an outer pointer qualifier reaches this check too instead of
-/// being erased.
+/// opaque-handle field (§31.2), a boundary-struct pointer field (§33), or a
+/// direct registered opaque-handle foreign-function parameter (§35). The
+/// frontend records qualifiers at every nested type layer, so a pair element
+/// or an outer pointer qualifier reaches this check too instead of being
+/// erased.
 fn validate_nullable_positions(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
@@ -175,9 +180,7 @@ fn validate_nullable_positions(
         match decl {
             Decl::Struct { name, fields } => {
                 for field in fields.iter().filter(|field| field.nullable) {
-                    let nullable_handle = !field.pointer
-                        && field.array_len.is_none()
-                        && matches!(registry.get(&field.base), Some(Kind::Handle));
+                    let nullable_handle = is_direct_registered_handle(field, registry);
                     let nullable_struct_pointer = field.pointer
                         && field.array_len.is_none()
                         && matches!(registry.get(&field.base), Some(Kind::Boundary));
@@ -185,9 +188,8 @@ fn validate_nullable_positions(
                     if !lowered {
                         return Err(ParseError(format!(
                             "`_Nullable` on struct `{name}` field `{}` of type `{}` has no \
-                             boundary lowering; only direct registered opaque-handle fields \
-                             and boundary-struct pointer fields support `_Nullable`",
-                            field.name, field.base
+                             boundary lowering; {NULLABLE_POSITION_HELP}",
+                            field.name, field.base,
                         )));
                     }
                 }
@@ -196,35 +198,33 @@ fn validate_nullable_positions(
                 if ret.nullable {
                     return Err(ParseError(format!(
                         "`_Nullable` on foreign function `{name}` return type `{}` has no \
-                         boundary lowering; only direct registered opaque-handle fields of \
-                         boundary structs support `_Nullable`",
-                        ret.base
+                         boundary lowering; {NULLABLE_POSITION_HELP}",
+                        ret.base,
                     )));
                 }
-                if let Some(param) = params.iter().find(|param| param.nullable) {
-                    return Err(ParseError(format!(
-                        "`_Nullable` on foreign function `{name}` parameter `{}` of type `{}` \
-                         has no boundary lowering; only direct registered opaque-handle fields \
-                         of boundary structs support `_Nullable`",
-                        param.name, param.base
-                    )));
+                for param in params.iter().filter(|param| param.nullable) {
+                    if !is_direct_registered_handle(param, registry) {
+                        return Err(ParseError(format!(
+                            "`_Nullable` on foreign function `{name}` parameter `{}` of type \
+                             `{}` has no boundary lowering; {NULLABLE_POSITION_HELP}",
+                            param.name, param.base,
+                        )));
+                    }
                 }
             }
             Decl::FnPtr { name, ret, params } => {
                 if ret.nullable {
                     return Err(ParseError(format!(
                         "`_Nullable` on callback typedef `{name}` return type `{}` has no \
-                         boundary lowering; only direct registered opaque-handle fields of \
-                         boundary structs support `_Nullable`",
-                        ret.base
+                         boundary lowering; {NULLABLE_POSITION_HELP}",
+                        ret.base,
                     )));
                 }
                 if let Some(param) = params.iter().find(|param| param.nullable) {
                     return Err(ParseError(format!(
                         "`_Nullable` on callback typedef `{name}` parameter `{}` of type `{}` \
-                         has no boundary lowering; only direct registered opaque-handle fields \
-                         of boundary structs support `_Nullable`",
-                        param.name, param.base
+                         has no boundary lowering; {NULLABLE_POSITION_HELP}",
+                        param.name, param.base,
                     )));
                 }
             }
@@ -232,6 +232,12 @@ fn validate_nullable_positions(
         }
     }
     Ok(())
+}
+
+fn is_direct_registered_handle(field: &CField, registry: &HashMap<String, Kind>) -> bool {
+    !field.pointer
+        && field.array_len.is_none()
+        && matches!(registry.get(&field.base), Some(Kind::Handle))
 }
 
 /// Rejects C positions that the mirror vocabulary or either lowering
@@ -1573,7 +1579,7 @@ fn param_sig(
 }
 
 /// Maps a C field/parameter/return type to its language boundary type
-/// (Q13).
+/// (Q13, §31.2, §35).
 fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError> {
     if f.nullable
         && !f.pointer

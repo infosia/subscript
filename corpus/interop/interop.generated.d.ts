@@ -475,6 +475,7 @@ declare class SGPUProbeFullRenderPipelineDescriptor {
 
 declare function subProbeFullRenderPipelineCheck(descriptor: SGPUProbeFullRenderPipelineDescriptor | null, selector: u32): u64;
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
+declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 
 type SubFloat16 = f16;
 

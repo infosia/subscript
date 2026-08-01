@@ -114,6 +114,8 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subProbeFullRenderPipelineCheck",
             // R11 (§34): registered-handle pair at parameter position.
             "subProbeQueueSubmitCheck",
+            // R12 (§35): nullable registered handle at parameter position.
+            "subProbeSetBindGroupCheck",
         ]
     );
 
@@ -167,6 +169,14 @@ fn using_program_type_checks_against_the_generated_mirror() {
     assert_eq!(set_label.params[1].ty, Type::Str);
     let submit = module.foreign_fns.iter().find(|f| f.name == "subDeviceSubmit").unwrap();
     assert_eq!(submit.params[1].ty, Type::Array(Box::new(Type::U32)));
+
+    let set_bind_group = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subProbeSetBindGroupCheck")
+        .expect("nullable handle parameter");
+    assert!(matches!(set_bind_group.params[0].ty, Type::Class(_)));
+    assert!(matches!(set_bind_group.params[1].ty, Type::Nullable(_)));
 
     let sum_bytes = module
         .foreign_fns

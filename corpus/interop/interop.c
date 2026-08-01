@@ -809,3 +809,14 @@ uint64_t subProbeQueueSubmitCheck(
     }
     return UINT64_MAX - 1u;
 }
+
+/* ==== R12 nullable handles at parameter position (compiler.md §35) = */
+
+uint32_t subProbeSetBindGroupCheck(
+    SubDevice encoder,
+    SubDevice _Nullable group) {
+    if (group == NULL) {
+        return 0u;
+    }
+    return group == encoder ? 1u : 2u;
+}

@@ -74,6 +74,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeFullRenderPipeline",
         // R11 registered-handle pairs at parameter position.
         "subProbeQueueSubmit",
+        // R12 nullable registered handles at parameter position.
+        "subProbeSetBindGroup",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

@@ -33,8 +33,9 @@
 
 /* Clang enables whole-header nullability-completeness warnings as soon as
  * one explicit qualifier appears. This fixture intentionally qualifies only
- * the §31 handle fields under test; all older pointer positions retain their
- * established contract and mirror, so suppress that completeness warning. */
+ * the §31 handle fields and §35 handle parameter under test; all older pointer
+ * positions retain their established contract and mirror, so suppress that
+ * completeness warning. */
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wnullability-completeness"
 #endif
@@ -836,5 +837,14 @@ uint64_t subProbeQueueSubmitCheck(
     size_t commandsCount,
     const SubDevice *commands,
     uint32_t selector);
+
+/* ==== R12 nullable handles at parameter position (compiler.md §35) ===
+ *
+ * Set-bind-group shape: a leading non-null encoder handle followed by a
+ * nullable bind-group handle. The result identifies NULL as 0, the leading
+ * encoder handle as 1, and a distinct live handle as 2. */
+uint32_t subProbeSetBindGroupCheck(
+    SubDevice encoder,
+    SubDevice _Nullable group);
 
 #endif /* SUBSCRIPT_INTEROP_H */

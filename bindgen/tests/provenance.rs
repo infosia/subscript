@@ -1183,6 +1183,45 @@ fn unqualified_handle_field_stays_non_nullable() {
 }
 
 #[test]
+fn nullable_handle_parameter_evidence_signature_is_reported_and_lowered() {
+    let header = "
+        typedef struct SGPURenderPassEncoderImpl *SGPURenderPassEncoder;
+        typedef struct SGPUBindGroupImpl *SGPUBindGroup;
+        void sgpuRenderPassEncoderSetBindGroup(
+            SGPURenderPassEncoder encoder,
+            SGPUBindGroup _Nullable group);
+    ";
+    let mirror = generate_for_header(header, "bind-group.h")
+        .expect("suffix `_Nullable` handle parameter maps");
+    assert!(mirror.contains(
+        "declare function sgpuRenderPassEncoderSetBindGroup(encoder: SGPURenderPassEncoder, group: SGPUBindGroup | null): void;"
+    ), "{mirror}");
+}
+
+#[test]
+fn nullable_handle_parameter_prefix_spelling_is_reported_and_lowered() {
+    let header = "
+        typedef struct SGPUBindGroupImpl *SGPUBindGroup;
+        void sgpuSetBindGroup(_Nullable SGPUBindGroup group);
+    ";
+    let mirror = generate_for_header(header, "bind-group.h")
+        .expect("prefix `_Nullable` handle parameter maps");
+    assert!(mirror.contains("group: SGPUBindGroup | null"), "{mirror}");
+}
+
+#[test]
+fn unqualified_handle_parameter_stays_non_nullable() {
+    let header = "
+        typedef struct SGPUBindGroupImpl *SGPUBindGroup;
+        void sgpuSetBindGroup(SGPUBindGroup group);
+    ";
+    let mirror = generate_for_header(header, "bind-group.h")
+        .expect("unqualified handle parameter maps");
+    assert!(mirror.contains("group: SGPUBindGroup"), "{mirror}");
+    assert!(!mirror.contains("group: SGPUBindGroup | null"), "{mirror}");
+}
+
+#[test]
 fn nullable_non_handle_field_fails_loud() {
     let header = "
         typedef struct SGPUEntry {
@@ -1193,23 +1232,23 @@ fn nullable_non_handle_field_fails_loud() {
         .expect_err("nullable non-handle field must fail loud");
     let message = error.to_string();
     assert!(message.contains("struct `SGPUEntry` field `userdata`"), "{error}");
-    assert!(message.contains("only direct registered opaque-handle fields"), "{error}");
+    assert!(message.contains(
+        "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
+    ), "{error}");
 }
 
 #[test]
-fn nullable_parameter_fails_loud() {
+fn nullable_non_handle_parameter_fails_loud() {
     let header = "
-        typedef struct SGPUBufferImpl *SGPUBuffer;
-        void sgpuUse(SGPUBuffer _Nullable buffer);
+        void sgpuUse(void * _Nullable userdata);
     ";
     let error = generate_for_header(header, "nullable.h")
-        .expect_err("nullable parameter must fail loud");
-    assert!(
-        error
-            .to_string()
-            .contains("foreign function `sgpuUse` parameter `buffer`"),
-        "{error}"
-    );
+        .expect_err("nullable non-handle parameter must fail loud");
+    let message = error.to_string();
+    assert!(message.contains("foreign function `sgpuUse` parameter `userdata`"), "{error}");
+    assert!(message.contains(
+        "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
+    ), "{error}");
 }
 
 #[test]
@@ -1226,6 +1265,9 @@ fn nullable_return_fails_loud() {
             .contains("foreign function `sgpuGet` return type `SGPUBuffer`"),
         "{error}"
     );
+    assert!(error.to_string().contains(
+        "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
+    ), "{error}");
 }
 
 #[test]
@@ -1246,6 +1288,9 @@ fn nullable_pair_element_fails_loud() {
             .contains("struct `SGPUEntries` field `buffers`"),
         "{error}"
     );
+    assert!(error.to_string().contains(
+        "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
+    ), "{error}");
 }
 
 #[test]
@@ -1276,6 +1321,9 @@ fn nullable_callback_parameter_fails_loud() {
             .contains("callback typedef `SGPUCallback` parameter `buffer`"),
         "{error}"
     );
+    assert!(error.to_string().contains(
+        "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
+    ), "{error}");
 }
 
 #[test]
@@ -1292,6 +1340,9 @@ fn nullable_callback_return_fails_loud() {
             .contains("callback typedef `SGPUCallback` return type"),
         "{error}"
     );
+    assert!(error.to_string().contains(
+        "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
+    ), "{error}");
 }
 
 #[test]
