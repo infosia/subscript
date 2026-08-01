@@ -784,3 +784,28 @@ uint64_t subProbeFullRenderPipelineCheck(
     }
     return (uint64_t)target->writeMask;
 }
+
+/* ==== R11 handle pairs at parameter position (compiler.md §34) ===== */
+
+uint64_t subProbeQueueSubmitCheck(
+    SubDevice queue,
+    size_t commandsCount,
+    const SubDevice *commands,
+    uint32_t selector) {
+    if (selector == 0u) {
+        return (uint64_t)commandsCount;
+    }
+    size_t index = (size_t)(selector - 1u);
+    if (commands == NULL || index >= commandsCount || commands[index] == NULL) {
+        return UINT64_MAX;
+    }
+    if (commands[index] == queue) {
+        return 0u;
+    }
+    for (size_t first = 0; first <= index; first++) {
+        if (commands[first] == commands[index]) {
+            return (uint64_t)(first + 1u);
+        }
+    }
+    return UINT64_MAX - 1u;
+}

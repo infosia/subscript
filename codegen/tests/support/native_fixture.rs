@@ -63,6 +63,7 @@ extern "C" {
     fn subProbeRenderPipelineCheck();
     fn subProbeProgrammableStageCheck();
     fn subProbeFullRenderPipelineCheck();
+    fn subProbeQueueSubmitCheck();
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -148,6 +149,10 @@ pub fn library() -> NativeLibrary {
         (
             "subProbeFullRenderPipelineCheck".to_string(),
             subProbeFullRenderPipelineCheck as *const u8,
+        ),
+        (
+            "subProbeQueueSubmitCheck".to_string(),
+            subProbeQueueSubmitCheck as *const u8,
         ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime

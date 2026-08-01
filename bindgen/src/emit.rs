@@ -1025,12 +1025,13 @@ fn emit_parameter_provenance(
     registry: &HashMap<String, Kind>,
     records: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    let scalar_pairs = scalar_parameter_pairs(params);
+    let parameter_pairs =
+        parameter_array_pairs("foreign function", owner_name, params, registry)?;
     for (index, param) in params.iter().enumerate() {
-        if scalar_pairs.count_idx.contains(&index) {
+        if parameter_pairs.count_idx.contains(&index) {
             continue;
         }
-        if scalar_pairs.ptr_elem.contains_key(&index) {
+        if parameter_pairs.ptr_elem.contains_key(&index) {
             records.push(format!(
                 "// @subscript-c-scalar-pair function={} parameter={} element={} const={}",
                 quoted(owner_name),
@@ -1384,32 +1385,100 @@ fn embedded_count_element_name(count: &str) -> Option<&str> {
         .or_else(|| count.strip_suffix("_count").filter(|name| !name.is_empty()))
 }
 
-/// Recognizes the §27 scalar array-pair shape in a function parameter
-/// list: `size_t <n>Count` immediately followed by `[const] S* <n>`, where
-/// `S` is any scalar in [`lang_scalar`]. Unlike the struct-level §13.2
-/// embedded pair, both const input pointers and mutable callee-written
-/// pointers are accepted, and only the exact `<n>Count` spelling is part of
-/// this rule. Every other scalar pointer remains a fail-loud boundary use.
-fn scalar_parameter_pairs(params: &[CField]) -> EmbeddedPairs {
+/// Recognizes the §27/§34 array-pair shape in a function parameter list:
+/// `size_t <n>Count` immediately followed by `[const] E* <n>`. A
+/// [`lang_scalar`] `E` supports both §27 directions; a registered opaque
+/// handle supports only §34's `const H*` input direction. Only the exact
+/// `<n>Count` spelling is part of the parameter rule.
+///
+/// Like [`embedded_array_pairs`], this recognizer is total for pair-looking
+/// positions. Registered enum/boundary elements are rejected explicitly:
+/// struct-level pairs have a lowering, but committing their direct-parameter
+/// direction and recursive writeback semantics is outside §34. Unsupported,
+/// mismatched, wrong-width, and non-adjacent shapes fail before a bare count
+/// plus nullable pointer can reach the mirror.
+fn parameter_array_pairs(
+    owner_kind: &str,
+    owner: &str,
+    params: &[CField],
+    reg: &HashMap<String, Kind>,
+) -> Result<EmbeddedPairs, ParseError> {
     let mut pairs = EmbeddedPairs::default();
-    for i in 0..params.len().saturating_sub(1) {
-        let count = &params[i];
-        let ptr = &params[i + 1];
-        if count.pointer || count.array_len.is_some() || count.base != "size_t" {
+    for (count_index, count) in params.iter().enumerate() {
+        if count.pointer || count.array_len.is_some() {
             continue;
         }
-        if !(ptr.pointer && ptr.array_len.is_none()) {
-            continue;
-        }
-        let Some(elem) = lang_scalar(&ptr.base) else {
+        let Some(element_name) = count
+            .name
+            .strip_suffix("Count")
+            .filter(|name| !name.is_empty())
+        else {
             continue;
         };
-        if count.name == format!("{}Count", ptr.name) {
-            pairs.count_idx.insert(i);
-            pairs.ptr_elem.insert(i + 1, elem.to_string());
+        let matching_pointer = params
+            .iter()
+            .enumerate()
+            .find(|(_, param)| param.pointer && param.name == element_name);
+        let immediate_pointer = params
+            .get(count_index + 1)
+            .filter(|param| param.pointer);
+        let Some((pointer_index, ptr)) = matching_pointer else {
+            if let Some(ptr) = immediate_pointer {
+                return Err(ParseError(format!(
+                    "{owner_kind} `{owner}` parameters `{}` and `{}` form an adjacent \
+                     count/pointer shape but their names do not collapse (`{}` requires \
+                     pointer parameter `{element_name}`); refusing to emit a bare count \
+                     beside a nullable pointer mirror",
+                    count.name, ptr.name, count.name
+                )));
+            }
+            continue;
+        };
+        if count.base != "size_t" {
+            return Err(ParseError(format!(
+                "{owner_kind} `{owner}` parameters `{}` and `{}` form a count/pointer \
+                 pair but the count type is `{}` instead of `size_t`; this adjacency has \
+                 no lowering",
+                count.name, ptr.name, count.base
+            )));
         }
+        if pointer_index != count_index + 1 || ptr.array_len.is_some() {
+            return Err(ParseError(format!(
+                "{owner_kind} `{owner}` parameters `{}` and `{}` form a count/pointer \
+                 pair but are not the supported adjacent count-first shape; refusing to \
+                 emit a bare count beside a nullable pointer mirror",
+                count.name, ptr.name
+            )));
+        }
+        let elem = if let Some(scalar) = lang_scalar(&ptr.base) {
+            scalar.to_string()
+        } else if matches!(reg.get(&ptr.base), Some(Kind::Handle)) && ptr.is_const {
+            ptr.base.clone()
+        } else {
+            let supported = match reg.get(&ptr.base) {
+                Some(Kind::Handle) => {
+                    "registered opaque handles are input-only and require `const H*`"
+                }
+                Some(Kind::Enum | Kind::Boundary) => {
+                    "registered enum and boundary-struct pairs are supported only at \
+                     struct level; direct parameter pairs have no lowering"
+                }
+                _ => {
+                    "only lang_scalar scalars and const registered opaque handles have a \
+                     direct parameter-pair lowering"
+                }
+            };
+            return Err(ParseError(format!(
+                "{owner_kind} `{owner}` parameters `{}` and `{}` form an adjacent \
+                 count/pointer pair with unsupported element `{}`; {supported}; refusing \
+                 to emit a bare count beside a nullable pointer mirror",
+                count.name, ptr.name, ptr.base
+            )));
+        };
+        pairs.count_idx.insert(count_index);
+        pairs.ptr_elem.insert(pointer_index, elem);
     }
-    pairs
+    Ok(pairs)
 }
 
 fn emit_enum(name: &str, members: &[(String, i64)]) -> String {
@@ -1440,7 +1509,7 @@ fn emit_fn_ptr(
 ) -> Result<String, ParseError> {
     Ok(format!(
         "type {name} = ({}) => {};",
-        param_sig(params, reg)?,
+        param_sig("callback typedef", name, params, reg)?,
         map_use(ret, reg)?
     ))
 }
@@ -1477,13 +1546,18 @@ fn emit_func(
 ) -> Result<String, ParseError> {
     Ok(format!(
         "declare function {name}({}): {};",
-        param_sig(params, reg)?,
+        param_sig("foreign function", name, params, reg)?,
         map_use(ret, reg)?
     ))
 }
 
-fn param_sig(params: &[CField], reg: &HashMap<String, Kind>) -> Result<String, ParseError> {
-    let pairs = scalar_parameter_pairs(params);
+fn param_sig(
+    owner_kind: &str,
+    owner: &str,
+    params: &[CField],
+    reg: &HashMap<String, Kind>,
+) -> Result<String, ParseError> {
+    let pairs = parameter_array_pairs(owner_kind, owner, params, reg)?;
     let mut out = Vec::with_capacity(params.len());
     for (index, p) in params.iter().enumerate() {
         if pairs.count_idx.contains(&index) {
@@ -1884,7 +1958,13 @@ mod tests {
         }];
         let err =
             emit(&parsed_with(decls)).expect_err("non-adjacent scalar pair must fail loud");
-        assert!(err.0.contains("uint8_t"), "{}", err.0);
+        assert!(
+            err.0
+                .contains("not the supported adjacent count-first shape"),
+            "{}",
+            err.0
+        );
+        assert!(err.0.contains("bare count"), "{}", err.0);
     }
 
     #[test]

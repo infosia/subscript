@@ -30,6 +30,7 @@
 // @subscript-c-scalar-pair function="subDeviceSumBytes" parameter="data" element="uint8_t" const=true
 // @subscript-c-scalar-pair function="subDeviceFillBytes" parameter="data" element="uint8_t" const=false
 // @subscript-c-scalar-pair function="subDeviceFillShorts" parameter="data" element="uint16_t" const=false
+// @subscript-c-scalar-pair function="subProbeQueueSubmitCheck" parameter="commands" element="SubDevice" const=true
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -473,6 +474,7 @@ declare class SGPUProbeFullRenderPipelineDescriptor {
 }
 
 declare function subProbeFullRenderPipelineCheck(descriptor: SGPUProbeFullRenderPipelineDescriptor | null, selector: u32): u64;
+declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 
 type SubFloat16 = f16;
 

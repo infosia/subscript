@@ -52,6 +52,7 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
         "subProbeRenderPipeline",
         "subProbeProgrammableStage",
         "subProbeFullRenderPipeline",
+        "subProbeQueueSubmit",
         // P7.1 async/Future shapes (compiler.md §14).
         "SUB_STAGE",
         "subStageMatches",
@@ -113,7 +114,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        105,
+        106,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -132,7 +133,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          R7 texture-descriptor write/read entries, the a101–a102 R8 \
          opaque-handle aggregate entries, and the a103–a105 R9 recursive \
          boundary-lowering entries, plus the a106 R10 struct-pointer-member \
-         recursive-lowering entry"
+         recursive-lowering entry, and the a107 R11 handle-parameter-pair entry"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

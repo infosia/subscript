@@ -21,9 +21,10 @@
 //! - descriptor-embedded `(count, pointer)` array pair inside a struct
 //!   (`size_t <n>Count; const T* <n>;`) → the pointer field becomes `T[]`
 //!   with the count elided (§13.2);
-//! - adjacent scalar array-pair function parameters
-//!   (`size_t <n>Count, [const] S* <n>`) → one `S[]` parameter, with the
-//!   count parameter elided (§27);
+//! - adjacent scalar or const registered-handle array-pair function
+//!   parameters (`size_t <n>Count, [const] E* <n>`) → one `E[]` parameter,
+//!   with the count parameter elided (§27/§34); mutable handles and every
+//!   unsupported pair-looking parameter position fail loud;
 //! - callback userdata slot (`void*`) → `object | null`;
 //! - the supported function-pointer typedef
 //!   `(string view, void*, void*) -> void` → a `type` alias; a reachable

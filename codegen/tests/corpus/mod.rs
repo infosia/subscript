@@ -72,6 +72,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeProgrammableStage",
         // R10 recursive lowering through struct-pointer members.
         "subProbeFullRenderPipeline",
+        // R11 registered-handle pairs at parameter position.
+        "subProbeQueueSubmit",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

@@ -101,6 +101,14 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("subDeviceSumBytes(data: u8[]): u32;"));
     assert!(m.contains("subDeviceFillBytes(data: u8[]): void;"));
     assert!(m.contains("subDeviceFillShorts(data: u16[]): void;"));
+    // R11 (§34). The final parameter-pair cell reuses the same provenance
+    // path for const registered-handle elements; neither half of the old
+    // leaked-count/nullable-pointer mirror may survive.
+    assert!(m.contains(
+        "subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;"
+    ));
+    assert!(!m.contains("commandsCount: u64"));
+    assert!(!m.contains("commands: SubDevice | null"));
     // R7 (§30). A direct string field can share its pointer scratch with a
     // recursively plain embedded aggregate and a collapsed enum-element
     // count-first pair. The count and nullable-pointer evidence shape must

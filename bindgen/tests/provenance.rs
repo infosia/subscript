@@ -892,7 +892,7 @@ fn non_adjacent_registered_enum_struct_pair_fails_loud() {
 }
 
 #[test]
-fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
+fn every_emitted_array_position_is_a_collapsed_pair_at_any_depth() {
     let header = "
         #include <stddef.h>
         #include <stdint.h>
@@ -934,6 +934,11 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
         } EngineDeepState;
         typedef struct EngineDeepRoot { EngineDeepState state; } EngineDeepRoot;
         void engineUseDeep(const EngineDeepRoot *root);
+        void engineSubmit(
+            EngineLayout queue,
+            size_t commandsCount,
+            const EngineLayout *commands);
+        void engineReadBytes(size_t bytesCount, const uint8_t *bytes);
     ";
     let mirror = generate_for_header(header, "pairs.h").expect("all lowered pairs map");
     let array_fields: Vec<&str> = mirror
@@ -952,11 +957,26 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
         ],
         "every emitted array field must be one recognized collapsed pair:\n{mirror}"
     );
+    let array_parameters: Vec<&str> = mirror
+        .lines()
+        .filter(|line| line.starts_with("declare function ") && line.contains("[]"))
+        .collect();
+    assert_eq!(
+        array_parameters,
+        vec![
+            "declare function engineSubmit(queue: EngineLayout, commands: EngineLayout[]): void;",
+            "declare function engineReadBytes(bytes: u8[]): void;",
+        ],
+        "every emitted array parameter must be one recognized collapsed pair:\n{mirror}"
+    );
     assert!(!mirror.contains("viewFormatsCount"), "{mirror}");
     assert!(!mirror.contains("values_count"), "{mirror}");
     assert!(!mirror.contains("extentsCount"), "{mirror}");
     assert!(!mirror.contains("layoutsCount"), "{mirror}");
+    assert!(!mirror.contains("commandsCount"), "{mirror}");
+    assert!(!mirror.contains("bytesCount"), "{mirror}");
     assert!(!mirror.contains("EngineFormat | null"), "{mirror}");
+    assert!(!mirror.contains("EngineLayout | null"), "{mirror}");
 
     for (name, declaration, expected) in [
         (
@@ -982,6 +1002,42 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
              typedef struct EngineBad { EngineWords words; uint32_t tag; } EngineBad;",
             "emitted array fields are reserved for collapsed adjacent count/pointer pairs",
         ),
+        (
+            "parameter wrong count width",
+            "typedef struct EngineLayoutImpl *EngineLayout;\n\
+             void engineBad(uint32_t layoutsCount, const EngineLayout *layouts);",
+            "count type is `uint32_t` instead of `size_t`",
+        ),
+        (
+            "parameter mismatched adjacent names",
+            "typedef struct EngineLayoutImpl *EngineLayout;\n\
+             void engineBad(size_t layoutsCount, const EngineLayout *items);",
+            "names do not collapse",
+        ),
+        (
+            "parameter non-adjacent handle pair",
+            "typedef struct EngineLayoutImpl *EngineLayout;\n\
+             void engineBad(size_t layoutsCount, uint32_t marker, const EngineLayout *layouts);",
+            "not the supported adjacent count-first shape",
+        ),
+        (
+            "parameter pointer-first handle pair",
+            "typedef struct EngineLayoutImpl *EngineLayout;\n\
+             void engineBad(const EngineLayout *layouts, size_t layoutsCount);",
+            "not the supported adjacent count-first shape",
+        ),
+        (
+            "unsupported registered enum parameter element",
+            "typedef enum EngineFormat { ENGINE_FORMAT_A = 1 } EngineFormat;\n\
+             void engineBad(size_t formatsCount, const EngineFormat *formats);",
+            "registered enum and boundary-struct pairs are supported only at struct level",
+        ),
+        (
+            "unsupported registered struct parameter element",
+            "typedef struct EngineItem { uint32_t value; } EngineItem;\n\
+             void engineBad(size_t itemsCount, const EngineItem *items);",
+            "registered enum and boundary-struct pairs are supported only at struct level",
+        ),
     ] {
         let source = format!("#include <stddef.h>\n#include <stdint.h>\n{declaration}");
         let error = match generate_for_header(&source, "audit.h") {
@@ -990,6 +1046,48 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
         };
         assert!(error.to_string().contains(expected), "{name}: {error}");
     }
+}
+
+#[test]
+fn registered_opaque_handle_parameter_pair_collapses_on_evidence_signature() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUQueueImpl *SGPUQueue;
+        typedef struct SGPUCommandBufferImpl *SGPUCommandBuffer;
+        void sgpuQueueSubmit(
+            SGPUQueue queue,
+            size_t commandsCount,
+            const SGPUCommandBuffer *commands);
+    ";
+    let mirror = generate_for_header(header, "queue.h")
+        .expect("const registered opaque-handle parameter pair maps");
+    assert!(mirror.contains(
+        "// @subscript-c-scalar-pair function=\"sgpuQueueSubmit\" parameter=\"commands\" element=\"SGPUCommandBuffer\" const=true"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare function sgpuQueueSubmit(queue: SGPUQueue, commands: SGPUCommandBuffer[]): void;"
+    ), "{mirror}");
+    assert!(!mirror.contains("commandsCount"), "{mirror}");
+    assert!(!mirror.contains("SGPUCommandBuffer | null"), "{mirror}");
+}
+
+#[test]
+fn mutable_registered_opaque_handle_parameter_pair_fails_loud_as_input_only() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUQueueImpl *SGPUQueue;
+        typedef struct SGPUCommandBufferImpl *SGPUCommandBuffer;
+        void sgpuQueueSubmit(
+            SGPUQueue queue,
+            size_t commandsCount,
+            SGPUCommandBuffer *commands);
+    ";
+    let error = generate_for_header(header, "queue.h")
+        .expect_err("mutable opaque-handle parameter pairs have no lowering");
+    let message = error.to_string();
+    assert!(message.contains("unsupported element `SGPUCommandBuffer`"), "{error}");
+    assert!(message.contains("handles are input-only"), "{error}");
+    assert!(message.contains("bare count"), "{error}");
 }
 
 #[test]

@@ -112,6 +112,8 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // R10 (§33): nullable struct-pointer members at fragment and
             // blend depth.
             "subProbeFullRenderPipelineCheck",
+            // R11 (§34): registered-handle pair at parameter position.
+            "subProbeQueueSubmitCheck",
         ]
     );
 

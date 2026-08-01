@@ -821,4 +821,20 @@ uint64_t subProbeFullRenderPipelineCheck(
     const SGPUProbeFullRenderPipelineDescriptor *descriptor,
     uint32_t selector);
 
+/* ==== R11 handle pairs at parameter position (compiler.md §34) ========
+ *
+ * Queue-submit shape: a leading opaque handle followed by the adjacent
+ * count-first const handle pair. The mirror must expose `queue`, one
+ * `commands: SubDevice[]`, and `selector`, with no count or nullable-value
+ * pointer parameter. */
+
+/* Selector 0 reports the collapsed pair count. Selector 1+i reports zero
+ * when command i is pointer-identical to `queue`; otherwise it reports the
+ * one-based first occurrence of that command in the submitted array. */
+uint64_t subProbeQueueSubmitCheck(
+    SubDevice queue,
+    size_t commandsCount,
+    const SubDevice *commands,
+    uint32_t selector);
+
 #endif /* SUBSCRIPT_INTEROP_H */

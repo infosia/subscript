@@ -67,6 +67,7 @@ extern "C" {
     fn subProbeRenderPipelineCheck();
     fn subProbeProgrammableStageCheck();
     fn subProbeFullRenderPipelineCheck();
+    fn subProbeQueueSubmitCheck();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -93,6 +94,7 @@ fn references_interop(source: &str) -> bool {
         "subProbeRenderPipeline",
         "subProbeProgrammableStage",
         "subProbeFullRenderPipeline",
+        "subProbeQueueSubmit",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -237,6 +239,10 @@ fn interop_library() -> NativeLibrary {
         (
             "subProbeFullRenderPipelineCheck".to_string(),
             subProbeFullRenderPipelineCheck as *const u8,
+        ),
+        (
+            "subProbeQueueSubmitCheck".to_string(),
+            subProbeQueueSubmitCheck as *const u8,
         ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime
