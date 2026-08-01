@@ -1,6 +1,7 @@
 // corpus: reject/r69-closure-environment-layout-too-large
 // purpose: Rejects two individually valid captures whose closure environment exceeds the aggregate limit.
 // exercises: closure environment layout, accumulated captures
+// questions: Q10
 // expected-error: S100 at the lambda
 
 function probe(

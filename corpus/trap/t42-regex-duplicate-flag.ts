@@ -1,7 +1,7 @@
 // corpus: trap/t42-regex-duplicate-flag
 // questions: Q31
 // purpose: Pins regex-error for a duplicated dynamic flag.
-// expected: regex-error at the RegExp constructor
+// exercises: RegExp-constructor, duplicate-flag, regex-error
 
 export function main(): void {
   print("before");

@@ -1,6 +1,8 @@
 // corpus: warn/w01-loop-allocation-unreleased
 // warning: W001
 // purpose: Identifies a reference-class allocation retained once per loop iteration.
+// exercises: reference-class, loop-allocation, unreleased-allocation
+// questions: Q6, Q7
 
 class Token {
   value: i32;

@@ -4,6 +4,7 @@
 //          across repeated matching, UTF-8 byte offsets, capture extents,
 //          capture-reinjecting split, empty-match progress, and every ECMA
 //          replacement substitution form.
+// exercises: RegExp, test, capture-extents, search, replace, replaceAll, split
 // expected: corpus/accept/a82-regex.expected
 
 export function main(): void {

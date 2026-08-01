@@ -1,6 +1,7 @@
 // corpus: reject/r71-accumulated-frame-locals-too-large
 // purpose: Rejects two individually valid local slots whose accumulated stack frame exceeds the frame limit.
 // exercises: accumulated stack-frame layout, multiple aggregate locals
+// questions: none
 // expected-error: S100 at the second local declaration
 
 function probe(

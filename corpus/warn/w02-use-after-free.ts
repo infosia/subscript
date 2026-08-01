@@ -1,6 +1,8 @@
 // corpus: warn/w02-use-after-free
 // warning: W002
 // purpose: Identifies a straight-line local use after explicit release.
+// exercises: Context.free, use-after-free, local-dataflow
+// questions: Q6
 
 class Token {
   value: i32;

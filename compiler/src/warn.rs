@@ -21,6 +21,9 @@ pub enum WarnCode {
 }
 
 impl WarnCode {
+    /// Every stable warning code, in numeric order.
+    pub const ALL: [Self; 3] = [Self::W001, Self::W002, Self::W003];
+
     /// The stable textual form of the code, e.g. `"W001"`.
     #[must_use]
     pub fn as_str(self) -> &'static str {

@@ -1,6 +1,7 @@
 // corpus: reject/r62-cstruct-fixed-array-layout-too-large
 // purpose: Rejects a CStruct field whose FixedArray exceeds the aggregate byte limit.
 // exercises: CStruct layout, FixedArray byte size
+// questions: Q3
 // expected-error: S100 at the FixedArray type
 
 @CStruct

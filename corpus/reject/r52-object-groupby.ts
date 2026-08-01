@@ -1,6 +1,7 @@
 // corpus: reject/r52-object-groupby
 // purpose: Rejects Object.groupBy because its null-prototype object
 //          result has no language type.
+// exercises: Object.groupBy, null-prototype-object, rejected-standard-library
 // expected: S014 at the groupBy member
 // questions: Q27
 

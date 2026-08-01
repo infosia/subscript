@@ -1,6 +1,7 @@
 // corpus: reject/r64-nested-fixed-array-layout-too-large
 // purpose: Rejects a nested FixedArray whose combined byte size exceeds the limit.
 // exercises: nested FixedArray layout multiplication
+// questions: Q3
 // expected-error: S100 at the outer FixedArray type
 
 export function main(): void {

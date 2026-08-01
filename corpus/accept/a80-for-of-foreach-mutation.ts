@@ -2,6 +2,7 @@
 // purpose: P22 for-of and forEach share byte-identical fixed-bound mutation traversal.
 // observable: the two spellings print identical sequences; appends do not extend and removals shorten.
 // exercises: for-of-foreach-parity, mutation-during-iteration, fixed-entry-bound
+// questions: Q30
 
 function visitArray(value: i32): void {
   print(`array:${value}`);

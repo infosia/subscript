@@ -2,6 +2,7 @@
 // purpose: P24 keeps Context-interned astral scalars live across Context.collect().
 // observable: astral for-of prints identically before and after collection.
 // exercises: for-of-string, astral-code-point, collect, p24-context-interning
+// questions: Q30, Q7
 
 export function main(): void {
   const text: string = "😀🦀😀";

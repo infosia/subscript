@@ -1,5 +1,6 @@
 // corpus: reject/r57-json-stringify-set
 // purpose: Rejects Set as JSON.stringify input instead of silently emitting {}.
+// exercises: JSON.stringify, Set, rejected-input-family
 // expected: S014 at stringify
 // questions: Q28
 

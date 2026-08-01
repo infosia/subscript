@@ -47,6 +47,25 @@ pub enum RuleCode {
 }
 
 impl RuleCode {
+    /// Every stable rule code, in numeric order.
+    pub const ALL: [Self; 15] = [
+        Self::S001,
+        Self::S002,
+        Self::S003,
+        Self::S004,
+        Self::S005,
+        Self::S006,
+        Self::S007,
+        Self::S008,
+        Self::S009,
+        Self::S010,
+        Self::S011,
+        Self::S012,
+        Self::S013,
+        Self::S014,
+        Self::S100,
+    ];
+
     /// The stable textual form of the code, e.g. `"S007"`.
     #[must_use]
     pub fn as_str(self) -> &'static str {
@@ -177,25 +196,8 @@ mod tests {
 
     #[test]
     fn every_rule_code_has_an_explanation() {
-        let codes = [
-            RuleCode::S001,
-            RuleCode::S002,
-            RuleCode::S003,
-            RuleCode::S004,
-            RuleCode::S005,
-            RuleCode::S006,
-            RuleCode::S007,
-            RuleCode::S008,
-            RuleCode::S009,
-            RuleCode::S010,
-            RuleCode::S011,
-            RuleCode::S012,
-            RuleCode::S013,
-            RuleCode::S014,
-            RuleCode::S100,
-        ];
-        assert_eq!(codes.len(), 15);
-        for code in codes {
+        assert_eq!(RuleCode::ALL.len(), 15);
+        for code in RuleCode::ALL {
             assert!(!code.explanation().is_empty(), "{code}");
             assert!(!code.explanation().contains('\n'), "{code}");
         }

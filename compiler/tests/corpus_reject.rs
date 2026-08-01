@@ -64,30 +64,30 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r49-number-to-string-radix.ts", RuleCode::S014, 9),
     ("r50-parse-int-no-radix.ts", RuleCode::S014, 8),
     ("r51-array-unshift-variadic.ts", RuleCode::S014, 10),
-    ("r52-object-groupby.ts", RuleCode::S014, 8),
-    ("r53-set-algebra-nonset.ts", RuleCode::S014, 9),
-    ("r54-map-groupby-key.ts", RuleCode::S014, 8),
-    ("r55-array-callback-container.ts", RuleCode::S014, 10),
-    ("r56-json-stringify-map.ts", RuleCode::S014, 8),
-    ("r57-json-stringify-set.ts", RuleCode::S014, 8),
-    ("r58-json-stringify-object.ts", RuleCode::S014, 11),
-    ("r59-json-stringify-function.ts", RuleCode::S014, 12),
+    ("r52-object-groupby.ts", RuleCode::S014, 9),
+    ("r53-set-algebra-nonset.ts", RuleCode::S014, 10),
+    ("r54-map-groupby-key.ts", RuleCode::S014, 9),
+    ("r55-array-callback-container.ts", RuleCode::S014, 11),
+    ("r56-json-stringify-map.ts", RuleCode::S014, 9),
+    ("r57-json-stringify-set.ts", RuleCode::S014, 9),
+    ("r58-json-stringify-object.ts", RuleCode::S014, 12),
+    ("r59-json-stringify-function.ts", RuleCode::S014, 13),
     ("r60-json-parse-no-context.ts", RuleCode::S014, 8),
     ("r61-json-parse-date.ts", RuleCode::S014, 8),
     (
         "r62-cstruct-fixed-array-layout-too-large.ts",
         RuleCode::S100,
-        8,
+        9,
     ),
     (
         "r63-local-fixed-array-layout-too-large.ts",
         RuleCode::S100,
-        7,
+        8,
     ),
     (
         "r64-nested-fixed-array-layout-too-large.ts",
         RuleCode::S100,
-        7,
+        8,
     ),
     ("r87-literal-union-nonmember.ts", RuleCode::S100, 9),
     ("r88-literal-union-inline.ts", RuleCode::S011, 7),
@@ -110,37 +110,37 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
-        9,
+        10,
     ),
     (
         "r66-coroutine-step-layout-too-large.ts",
         RuleCode::S100,
-        11,
+        12,
     ),
     (
         "r67-frame-local-boundary-too-large.ts",
         RuleCode::S100,
-        7,
+        8,
     ),
     (
         "r68-cstruct-stack-frame-too-large.ts",
         RuleCode::S100,
-        12,
+        13,
     ),
     (
         "r69-closure-environment-layout-too-large.ts",
         RuleCode::S100,
-        12,
+        13,
     ),
     (
         "r70-generator-frame-layout-too-large.ts",
         RuleCode::S100,
-        8,
+        9,
     ),
     (
         "r71-accumulated-frame-locals-too-large.ts",
         RuleCode::S100,
-        11,
+        12,
     ),
     ("r72-for-of-user-class.ts", RuleCode::S014, 13),
     ("r73-for-of-object.ts", RuleCode::S014, 12),
@@ -153,16 +153,16 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
-    ("r80-regex-exec.ts", RuleCode::S014, 8),
-    ("r81-regex-match-all.ts", RuleCode::S014, 8),
-    ("r82-regex-last-index.ts", RuleCode::S014, 8),
-    ("r83-regex-groups.ts", RuleCode::S014, 7),
-    ("r84-regex-sticky-last-index.ts", RuleCode::S014, 7),
-    ("r85-invalid-regex-literal.ts", RuleCode::S100, 7),
+    ("r80-regex-exec.ts", RuleCode::S014, 9),
+    ("r81-regex-match-all.ts", RuleCode::S014, 9),
+    ("r82-regex-last-index.ts", RuleCode::S014, 9),
+    ("r83-regex-groups.ts", RuleCode::S014, 8),
+    ("r84-regex-sticky-last-index.ts", RuleCode::S014, 8),
+    ("r85-invalid-regex-literal.ts", RuleCode::S100, 8),
     (
         "r86-regex-literal-replace-all-without-global.ts",
         RuleCode::S100,
-        7,
+        8,
     ),
 ];
 
@@ -299,11 +299,11 @@ fn omitted_regex_surface_names_each_language_gap() {
 fn aggregate_layout_rejections_pin_the_exact_construct_and_limit() {
     let dir = corpus_dir().join("reject");
     for (file, line, col) in [
-        ("r62-cstruct-fixed-array-layout-too-large.ts", 8, 9),
-        ("r63-local-fixed-array-layout-too-large.ts", 7, 15),
-        ("r64-nested-fixed-array-layout-too-large.ts", 7, 17),
-        ("r65-cstruct-field-offset-layout-too-large.ts", 9, 3),
-        ("r66-coroutine-step-layout-too-large.ts", 11, 23),
+        ("r62-cstruct-fixed-array-layout-too-large.ts", 9, 9),
+        ("r63-local-fixed-array-layout-too-large.ts", 8, 15),
+        ("r64-nested-fixed-array-layout-too-large.ts", 8, 17),
+        ("r65-cstruct-field-offset-layout-too-large.ts", 10, 3),
+        ("r66-coroutine-step-layout-too-large.ts", 12, 23),
     ] {
         let source = fs::read_to_string(dir.join(file))
             .unwrap_or_else(|e| panic!("read {file}: {e}"));
@@ -329,31 +329,31 @@ fn frame_and_synthesized_aggregate_rejections_are_checker_diagnostics() {
     for (file, line, col, required) in [
         (
             "r67-frame-local-boundary-too-large.ts",
-            7,
+            8,
             9,
             "2147483632 bytes",
         ),
         (
             "r68-cstruct-stack-frame-too-large.ts",
-            12,
+            13,
             9,
             "2147483632 bytes",
         ),
         (
             "r69-closure-environment-layout-too-large.ts",
-            12,
+            13,
             27,
             "closure environment",
         ),
         (
             "r70-generator-frame-layout-too-large.ts",
-            8,
+            9,
             3,
             "generator frame",
         ),
         (
             "r71-accumulated-frame-locals-too-large.ts",
-            11,
+            12,
             9,
             "2147483632 bytes",
         ),

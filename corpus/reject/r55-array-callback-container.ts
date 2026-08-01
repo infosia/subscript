@@ -1,5 +1,6 @@
 // corpus: reject/r55-array-callback-container
 // purpose: Rejects the callback's reference to the array being iterated.
+// exercises: Array-callback, container-parameter, non-escaping-by-construction
 // reason: f(v, i) passes a value and integer, while f(v, i, arr) passes
 //         the container reference and violates C5 non-escaping-by-construction.
 // expected: S014 naming C5 at the three-parameter callback

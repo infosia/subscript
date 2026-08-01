@@ -1,6 +1,7 @@
 // corpus: reject/r68-cstruct-stack-frame-too-large
 // purpose: Rejects the review probe obtained by removing r65's trailing u64 field and placing the value on the stack.
 // exercises: CStruct local storage, accumulated stack-frame layout
+// questions: Q2, Q3
 // expected-error: S100 at the local declaration
 
 @CStruct

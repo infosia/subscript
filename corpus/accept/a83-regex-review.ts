@@ -3,6 +3,7 @@
 // purpose: Pins regex source rendering inside character classes, every
 //          accepted flag, literal reuse across collection, and the
 //          documented non-BMP matching divergence with and without u.
+// exercises: RegExp, source, flags, collection, non-BMP-matching
 // expected: corpus/accept/a83-regex-review.expected
 
 export function main(): void {

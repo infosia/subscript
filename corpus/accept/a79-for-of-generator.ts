@@ -2,6 +2,7 @@
 // purpose: P22 drives C8 generators through the already-contracted next() protocol.
 // observable: for-of and hand-written next() print the same sequence.
 // exercises: for-of-generator, coroutine-next, iterator-result
+// questions: Q30, Q11
 
 function* values(): Generator<i32> {
   yield 3;

@@ -2,6 +2,7 @@
 // purpose: P22 array-literal spread battery over every spreadable container.
 // observable: fresh arrays preserve prefix/suffix and fused traversal order.
 // exercises: array-spread, multi-spread, fixed-array, map-keys, set, unicode-string
+// questions: Q30
 
 export function main(): void {
   const xs: i32[] = [1, 2];

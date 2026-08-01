@@ -15,6 +15,7 @@ mod diag_render;
 pub mod hir;
 pub mod types;
 pub mod api_reference;
+pub mod language_reference;
 
 mod ambient;
 mod check;

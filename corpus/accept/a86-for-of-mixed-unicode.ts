@@ -2,6 +2,7 @@
 // purpose: P24 switches between tagged BMP and allocated astral handles.
 // observable: mixed code points print in source order without representation leaks.
 // exercises: for-of-string, bmp-code-points, astral-code-points, p24-mixed-handles
+// questions: Q30
 
 export function main(): void {
   const text: string = "A😀é🦀Z";

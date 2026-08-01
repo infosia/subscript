@@ -1,7 +1,7 @@
 // corpus: trap/t44-regex-replace-all-without-global
 // questions: Q31
 // purpose: Pins regex-error when an opaque RegExp value lacks the g flag.
-// expected: regex-error at replaceAll
+// exercises: String.replaceAll, opaque-RegExp, global-flag, regex-error
 
 function replaceWith(regex: RegExp): void {
   print("before");

@@ -2,6 +2,7 @@
 // purpose: P24 keeps BMP string for-of on the allocation-free static table.
 // observable: BMP code points print in Unicode scalar order.
 // exercises: for-of-string, bmp-code-points, p24-static-table
+// questions: Q30
 
 export function main(): void {
   const text: string = "Aé漢かな";

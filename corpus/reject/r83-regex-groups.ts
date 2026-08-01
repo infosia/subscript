@@ -2,6 +2,7 @@
 // questions: Q31
 // purpose: Rejects RegExpMatchArray.groups because the language has no
 //          object with dynamic string keys.
+// exercises: RegExpMatchArray.groups, dynamic-string-keys
 // expected-error: S014 naming the dynamic-key object gap
 
 function named(match: RegExpMatchArray): string {

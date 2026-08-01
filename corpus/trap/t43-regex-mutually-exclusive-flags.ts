@@ -1,7 +1,7 @@
 // corpus: trap/t43-regex-mutually-exclusive-flags
 // questions: Q31
 // purpose: Pins regex-error for mutually exclusive dynamic flags.
-// expected: regex-error at the RegExp constructor
+// exercises: RegExp-constructor, mutually-exclusive-flags, regex-error
 
 export function main(): void {
   print("before");

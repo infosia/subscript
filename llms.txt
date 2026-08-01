@@ -1,0 +1,20 @@
+# subscript
+
+subscript is a deterministic, TypeScript-shaped embedded language with a closed compiler-checked surface.
+
+## Read order
+
+1. `generated-docs/language-reference.md` — current language rules, diagnostics, warnings, and feature guide.
+2. `generated-docs/api-reference.md` — accepted and rejected standard-library surface and divergences.
+3. `generated-docs/corpus-index.md` — executable accept, reject, warning, and trap examples.
+
+## Working loop
+
+- Run `subscript check file.ts`; each error is rendered with its stable S-code and rule text, and warnings carry stable W-codes.
+- Add `--deny-warnings` when warnings must fail the check.
+- Run `subscript run file.ts` to execute it under the development tier.
+- Run `subscript bind --header host.h -o host.generated.d.ts` to generate the ambient mirror for a C header.
+
+Do not read `specs/` for current-state answers: it is decision history, not the generated language contract.
+
+The `docs/tutorial-*` files are secondary, human-paced learning material.

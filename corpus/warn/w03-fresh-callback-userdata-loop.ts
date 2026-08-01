@@ -1,6 +1,8 @@
 // corpus: warn/w03-fresh-callback-userdata-loop
 // warning: W003
 // purpose: Identifies fresh callback userdata registered once per loop iteration.
+// exercises: callback-userdata, loop-registration, rooted-binding-record
+// questions: Q6, Q13, Q16
 
 class LogSink {
   count: i32;

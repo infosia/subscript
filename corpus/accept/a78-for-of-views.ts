@@ -2,6 +2,7 @@
 // purpose: P22 subject-only keys()/values() fusion on Array, Map, and Set.
 // observable: views print indices, keys, or values without becoming iterator values.
 // exercises: for-of-views, array-keys-values, map-keys-values, set-keys-values
+// questions: Q30
 
 export function main(): void {
   const value: string = "outer";
