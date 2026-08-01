@@ -157,6 +157,10 @@ async C APIs still surface as C-style callbacks plus poll functions
 (plan §4 pattern 4); `await` consumes them through script-level polling.
 Accept: `a20`, `a93`–`a95`. Reject: `r96`–`r100` (Q34 boundaries;
 `r14-async` retired by Q34 — the construct it pinned is now legal).
+*Revised 2026-08-02 (R13):* async instance methods on plain,
+non-generic reference classes join the surface —
+`await recv.m(...)` as a third direct-await form (`compiler.md`
+§37). Accept adds `a110`–`a111`; reject adds `r101`–`r105`.
 
 ## 2. Q-register resolutions not covered above
 
@@ -1005,6 +1009,10 @@ Accept: `a20`, `a93`–`a95`. Reject: `r96`–`r100` (Q34 boundaries;
     or combined. `new Promise`, `.then`/`.catch`/`.finally` calls,
     and `Promise.all/race/resolve/reject` are rejected. The lib
     `Promise<T>` type is the `tsc` view only (C8 precedent).
+    *(Revised 2026-08-02, R13: a direct async **method** call in
+    await position — `await recv.m(...)` on a plain, non-generic
+    reference class — is the third form; `compiler.md` §37. Still
+    not a value; the same immediate-await rule applies.)*
   - **Structure.** Each root invocation of an async export forms a
     single linear chain of Context-owned frames: `await f(...)` runs
     the callee until it suspends, and suspension propagates to the
