@@ -37,6 +37,34 @@ plus a tracked-filename check (`.env`, key material, credential files).
 Everything returned zero; the only matches were this file's own pattern
 table. The two rulings below were reported as accepted, not raised.
 
+## Sweep 2026-08-02 — clean (incremental)
+
+Boundary `d5f3d2b` (the 2026-07-29 record) to `bb78eb6`: 66 commits,
+scanned with `git log -p` so content added and later removed is still
+seen, plus every commit message in the range, the full current tree, and
+the uncommitted working-tree diff. Same pattern set as the two earlier
+sweeps.
+
+| Checked | Scope | Result |
+|---|---|---|
+| `/Users/`, `/home/…`, `C:\…`, `\\?\…`, `%AppData%`, `OneDrive`, the owner's account name | 66 commits' diffs, all their messages, current tree, pending diff | 0 |
+| `/private/tmp`, `/private/var`, `/var/folders`, `/opt/homebrew`, `/Applications/` | same | 0 |
+| relative paths escaping the repository root | current tree | 0 — the deepest, `../../../` from `benchmarks/src/bin/` and `codegen/tests/native-fixture/`, reaches the repository root and stops |
+| private keys, API keys, tokens, passwords | current tree | 0 |
+| email addresses in file content | current tree | 0 |
+| credential-shaped tracked filenames (`.env`, `*.pem`, `id_rsa`, `*.p12`, `*.keystore`) | current tree | 0 |
+
+`infosia` still appears in exactly the five ruled-on places (the forked
+`regress` URL in two `Cargo.toml`s, `Cargo.lock`'s pinned commit,
+`stdlib.md`, `p23-regex.md`) plus this file's ruling text. Reported as
+accepted under ruling 1, not raised.
+
+Scope limit, stated rather than implied: the project-name check is
+pattern-based and can only match names it is given. It confirms no
+absolute or escaping path and no new external name of the forms above
+entered the history; it is not a proof that some unnamed sibling project
+is unmentioned.
+
 ## Rulings — not violations
 
 Both were raised in the sweep and settled by the owner on 2026-07-28.

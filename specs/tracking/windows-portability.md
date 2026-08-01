@@ -516,3 +516,36 @@ warnings), and green on the arm64/Unix reference with the skipped count
 0 there — i.e. all 11 entries still compared, unchanged. No golden byte
 changes; `git diff --stat` touches one file.
 
+### Result (2026-08-02, `bb78eb6`)
+
+Landed as specified, one file, 94 insertions / 60 deletions. Measured on
+`x86_64-pc-windows-msvc` by the orchestrator, not taken from the
+implementer's report:
+
+    $ cargo test -p subscript-codegen --test golden
+    test result: ok. 18 passed; 0 failed          (was 7 passed; 11 failed)
+    $ cargo test -p subscript-codegen --test golden -- --nocapture
+    golden sweep: compared 77 entries, skipped 34 entries    (77 + 34 = 111)
+    $ cargo test --workspace
+    48 harnesses, every one `ok`, 0 failed, no new warnings
+
+`git status` lists one modified file; no golden byte changed. The 34
+skipped entries are the same set the deleted `#[cfg(msvc)]` run-set
+filter removed — the count is now printed and asserted rather than
+silent.
+
+Two review findings, both MINOR, both fixed before the commit: the new
+`compared + skipped == golden_ids.len()` assertion holds for any number
+of skips, so the reference configuration is now pinned by a
+`#[cfg(not(windows-msvc))] assert_eq!(skipped, 0)` at that one site; and
+the two helper signatures were hand-wrapped where rustfmt puts them on
+one line. Whole-file `rustfmt` was forbidden in the handoff and not run:
+this host's rustfmt disagrees with the committed formatting in 8 places
+in this file and ~873 across the repo, so formatting is not a gate here
+and a reformat would have buried the change in unrelated churn.
+
+Off windows-msvc nothing changes: the helper returns `Some` for every
+entry there, the deleted guards were all `#[cfg(msvc)]`-only, and the
+new zero-skip assertion fails loudly if that ever stops being true. The
+arm64/Unix re-run is still owed.
+
