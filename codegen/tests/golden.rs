@@ -31,23 +31,29 @@ use subscript_codegen::{
 };
 
 #[cfg(not(all(windows, target_env = "msvc")))]
-fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Vec<NativeLibrary> {
+fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
     if sources
         .iter()
         .any(|source| corpus::references_interop(&source.source))
     {
-        vec![native_fixture::library()]
+        Some(vec![native_fixture::library()])
     } else {
-        Vec::new()
+        Some(Vec::new())
     }
 }
 
-// On windows-msvc the interop fixture is excluded and every interop corpus
-// entry is filtered out before it is run, so no entry ever needs a native
-// library.
+// On windows-msvc the interop fixture is excluded, so entries that reference
+// it cannot run in this configuration.
 #[cfg(all(windows, target_env = "msvc"))]
-fn native_libraries(_sources: &[subscript_compiler::SourceFile]) -> Vec<NativeLibrary> {
-    Vec::new()
+fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
+    if sources
+        .iter()
+        .any(|source| corpus::references_interop(&source.source))
+    {
+        None
+    } else {
+        Some(Vec::new())
+    }
 }
 
 #[test]
@@ -55,7 +61,10 @@ fn unicode_string_entry_matches_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     let id = "a60-string-unicode";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -75,9 +84,13 @@ fn string_literal_union_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a91-string-literal-union";
     let sources = corpus::entry_sources(&accept, id);
-    let jit = run_jit_with_native_libraries(&sources, &[])
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-    let ship = run_c_aot_with_native_libraries(&sources, &[])
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
     let golden = corpus::golden_bytes(&accept, id);
     assert_eq!(jit, ship, "{id}: tier outputs differ");
@@ -91,9 +104,13 @@ fn descriptor_literal_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a92-descriptor-literals";
     let sources = corpus::entry_sources(&accept, id);
-    let jit = run_jit_with_native_libraries(&sources, &[])
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-    let ship = run_c_aot_with_native_libraries(&sources, &[])
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
     let golden = corpus::golden_bytes(&accept, id);
     assert_eq!(jit, ship, "{id}: tier outputs differ");
@@ -111,7 +128,10 @@ fn q34_async_entries_match_across_tiers_and_golden() {
         "a95-interop-async-await",
     ] {
         let sources = corpus::entry_sources(&accept, id);
-        let libraries = native_libraries(&sources);
+        let Some(libraries) = native_libraries(&sources) else {
+            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+            continue;
+        };
         let jit = run_jit_with_native_libraries(&sources, &libraries)
             .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
         let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -134,7 +154,10 @@ fn r13_async_method_entries_match_across_tiers_and_golden() {
         "a111-interop-async-method-poll",
     ] {
         let sources = corpus::entry_sources(&accept, id);
-        let libraries = native_libraries(&sources);
+        let Some(libraries) = native_libraries(&sources) else {
+            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+            continue;
+        };
         let jit = run_jit_with_native_libraries(&sources, &libraries)
             .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
         let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -151,7 +174,10 @@ fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a96-interop-byte-pairs";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -168,7 +194,10 @@ fn string_field_pointer_write_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a97-interop-string-field-write";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -185,7 +214,10 @@ fn string_field_pointer_read_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a98-interop-string-field-read";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -206,7 +238,10 @@ fn texture_descriptor_write_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a99-interop-texture-descriptor-write";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -223,7 +258,10 @@ fn texture_descriptor_read_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a100-interop-texture-descriptor-read";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -244,7 +282,10 @@ fn recursive_boundary_pipeline_entries_match_both_tiers_and_goldens() {
         "a105-interop-recursive-string-pair-elements",
     ] {
         let sources = corpus::entry_sources(&accept, id);
-        let libraries = native_libraries(&sources);
+        let Some(libraries) = native_libraries(&sources) else {
+            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+            continue;
+        };
         let jit = run_jit_with_native_libraries(&sources, &libraries)
             .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
         let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -262,7 +303,10 @@ fn struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a106-interop-recursive-struct-pointer-members";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -279,7 +323,10 @@ fn handle_parameter_pair_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a107-interop-handle-parameter-pair";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -296,7 +343,10 @@ fn nullable_handle_parameter_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a108-interop-nullable-handle-parameter";
     let sources = corpus::entry_sources(&accept, id);
-    let libraries = native_libraries(&sources);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let jit = run_jit_with_native_libraries(&sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
     let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -319,16 +369,10 @@ fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
         "a50-narrow-callbacks-shifts",
     ] {
         let sources = corpus::entry_sources(&accept, id);
-        // On windows-msvc the interop fixture is excluded, so the interop
-        // narrow entry (a48) is not compiled or run there.
-        #[cfg(all(windows, target_env = "msvc"))]
-        if sources
-            .iter()
-            .any(|source| corpus::references_interop(&source.source))
-        {
+        let Some(libraries) = native_libraries(&sources) else {
+            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
             continue;
-        }
-        let libraries = native_libraries(&sources);
+        };
         let jit = run_jit_with_native_libraries(&sources, &libraries)
             .unwrap_or_else(|e| panic!("{id}: dev-JIT run failed: {e}"));
         let ship = run_c_aot_with_native_libraries(&sources, &libraries)
@@ -406,27 +450,17 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
         golden_ids.len()
     );
 
-    // The count guard above checks the full committed set on every host
-    // (goldens are never deleted). On windows-msvc the interop fixture is
-    // excluded, so interop entries are filtered out of the run set here — no
-    // interop program is compiled or run there — while every other golden is
-    // still compared on both tiers.
-    #[cfg(all(windows, target_env = "msvc"))]
-    let golden_ids: Vec<String> = golden_ids
-        .into_iter()
-        .filter(|id| {
-            !corpus::entry_sources(&accept, id)
-                .iter()
-                .any(|source| corpus::references_interop(&source.source))
-        })
-        .collect();
-
     let mut failures = Vec::new();
     let mut compared = 0usize;
+    let mut skipped = 0usize;
     for id in &golden_ids {
         let golden = corpus::golden_bytes(&accept, id);
         let sources = corpus::entry_sources(&accept, id);
-        let libraries = native_libraries(&sources);
+        let Some(libraries) = native_libraries(&sources) else {
+            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+            skipped += 1;
+            continue;
+        };
         let jit = match run_jit_with_native_libraries(&sources, &libraries) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -466,6 +500,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
             ));
         }
     }
+    println!("golden sweep: compared {compared} entries, skipped {skipped} entries");
     assert!(
         failures.is_empty(),
         "{} differential failure(s):\n{}",
@@ -473,9 +508,14 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
         failures.join("\n")
     );
     assert_eq!(
-        compared,
+        compared + skipped,
         golden_ids.len(),
-        "every committed golden must be compared on both tiers (no silent skips)"
+        "every committed golden must be compared on both tiers or explicitly skipped"
+    );
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    assert_eq!(
+        skipped, 0,
+        "the reference configuration compares every committed golden and skips none"
     );
 }
 
@@ -490,16 +530,10 @@ fn cranelift_object_aot_still_matches_the_goldens_cross_check() {
     for id in corpus::golden_ids(&accept) {
         let golden = corpus::golden_bytes(&accept, &id);
         let sources = corpus::entry_sources(&accept, &id);
-        // On windows-msvc the interop fixture is excluded, so interop entries
-        // are not compiled or run in this cross-check either.
-        #[cfg(all(windows, target_env = "msvc"))]
-        if sources
-            .iter()
-            .any(|source| corpus::references_interop(&source.source))
-        {
+        let Some(libraries) = native_libraries(&sources) else {
+            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
             continue;
-        }
-        let libraries = native_libraries(&sources);
+        };
         match run_aot_with_native_libraries(&sources, &libraries) {
             Ok(bytes) if bytes == golden => {}
             Ok(bytes) => failures.push(format!(
