@@ -546,6 +546,20 @@ and a reformat would have buried the change in unrelated churn.
 
 Off windows-msvc nothing changes: the helper returns `Some` for every
 entry there, the deleted guards were all `#[cfg(msvc)]`-only, and the
-new zero-skip assertion fails loudly if that ever stops being true. The
-arm64/Unix re-run is still owed.
+new zero-skip assertion fails loudly if that ever stops being true.
+
+### arm64/Unix re-run (2026-08-02, at `cb5cd04`+`bb78eb6`)
+
+Run on the aarch64 macOS reference host, exit codes read directly:
+
+    $ cargo test --offline -p subscript-codegen --test golden -- --nocapture
+    golden sweep: compared 111 entries, skipped 0 entries
+    test result: ok. 18 passed; 0 failed         exit 0
+    $ cargo test --offline --workspace
+    48 harnesses, 806 passed, 0 failed           exit 0
+
+The 111-entry set includes R13's `a110`–`a111`; the zero-skip
+assertion held, so every entry is still compared on the reference
+configuration, and no rustc warning appeared in the run. §11c.3's
+owed re-run is closed.
 
