@@ -244,11 +244,14 @@ fn validate_boundary_positions(
                     )));
                 }
                 Some(Kind::Boundary) if !field.pointer => {
-                    return Err(ParseError(format!(
-                        "string-field boundary struct `{name}` field `{}` embeds boundary \
-                         aggregate `{}`; nested aggregate positions are not lowered",
-                        field.name, field.base
-                    )));
+                    validate_verbatim_boundary_aggregate(
+                        parsed,
+                        registry,
+                        name,
+                        &field.name,
+                        &field.base,
+                        &mut HashSet::new(),
+                    )?;
                 }
                 Some(
                     Kind::Enum
@@ -277,6 +280,29 @@ fn validate_boundary_positions(
                             "descriptor struct `{name}` forms an array of string-field \
                              boundary struct `{element}`; arrays of string-field structs \
                              have no boundary lowering"
+                        )));
+                    }
+                }
+                if !matches!(
+                    registry.get(name),
+                    Some(Kind::ArrayPair(_) | Kind::StringView)
+                ) {
+                    // A descriptor aggregate used as one emitted struct
+                    // field would also spell `T[]` in the mirror, but the
+                    // struct lowering reconstructs an adjacent count-first
+                    // pair, not a nested pointer-first descriptor. Reserve
+                    // every emitted array field for a proven adjacency.
+                    if let Some(field) = fields.iter().find(|field| {
+                        !field.pointer
+                            && field.array_len.is_none()
+                            && matches!(registry.get(&field.base), Some(Kind::ArrayPair(_)))
+                    }) {
+                        return Err(ParseError(format!(
+                            "struct `{name}` field `{}` embeds descriptor aggregate `{}`; \
+                             emitted array fields are reserved for collapsed adjacent \
+                             count/pointer pairs, and this aggregate position has no \
+                             struct-field lowering",
+                            field.name, field.base
                         )));
                     }
                 }
@@ -446,6 +472,84 @@ fn validate_boundary_positions(
             )));
         }
     }
+    Ok(())
+}
+
+/// Proves that an aggregate nested beside a string field can be copied as
+/// one C-identical byte range (§30.1). Nested value aggregates recurse;
+/// absorbed strings/descriptors/pairs and callbacks change the language
+/// representation and therefore remain fail-loud.
+fn validate_verbatim_boundary_aggregate(
+    parsed: &Parsed,
+    registry: &HashMap<String, Kind>,
+    owner: &str,
+    owner_field: &str,
+    aggregate: &str,
+    visiting: &mut HashSet<String>,
+) -> Result<(), ParseError> {
+    if !visiting.insert(aggregate.to_string()) {
+        return Ok(());
+    }
+    let fields = parsed.decls.iter().find_map(|decl| match decl {
+        Decl::Struct { name, fields } if name == aggregate => Some(fields.as_slice()),
+        _ => None,
+    });
+    let Some(fields) = fields else {
+        return Err(ParseError(format!(
+            "string-field boundary struct `{owner}` field `{owner_field}` embeds boundary \
+             aggregate `{aggregate}`, but its declaration is unavailable for recursive \
+             C-layout validation"
+        )));
+    };
+    let pairs = embedded_array_pairs(aggregate, fields, registry)?;
+    if !pairs.count_idx.is_empty() {
+        return Err(ParseError(format!(
+            "string-field boundary struct `{owner}` field `{owner_field}` embeds boundary \
+             aggregate `{aggregate}` with a collapsed count/pointer array field; that \
+             aggregate is not recursively plain C-layout data"
+        )));
+    }
+    for field in fields {
+        if field.pointer {
+            continue;
+        }
+        match registry.get(&field.base) {
+            Some(Kind::StringView) => {
+                return Err(ParseError(format!(
+                    "string-field boundary struct `{owner}` field `{owner_field}` embeds \
+                     aggregate `{aggregate}` whose field `{}` is an absorbed string view; \
+                     the aggregate is not recursively plain C-layout data",
+                    field.name
+                )));
+            }
+            Some(Kind::ArrayPair(_)) => {
+                return Err(ParseError(format!(
+                    "string-field boundary struct `{owner}` field `{owner_field}` embeds \
+                     aggregate `{aggregate}` whose field `{}` is an absorbed descriptor; \
+                     the aggregate is not recursively plain C-layout data",
+                    field.name
+                )));
+            }
+            Some(Kind::FnPtr) => {
+                return Err(ParseError(format!(
+                    "string-field boundary struct `{owner}` field `{owner_field}` embeds \
+                     aggregate `{aggregate}` whose field `{}` is a callback; the aggregate \
+                     is not recursively plain C-layout data",
+                    field.name
+                )));
+            }
+            Some(Kind::Boundary) => validate_verbatim_boundary_aggregate(
+                parsed,
+                registry,
+                owner,
+                owner_field,
+                &field.base,
+                visiting,
+            )?,
+            Some(Kind::Enum | Kind::Handle | Kind::Alias) | None => {}
+        }
+    }
+    visiting.remove(aggregate);
     Ok(())
 }
 
@@ -751,51 +855,105 @@ fn exact_f64_integer(v: i64) -> bool {
     v.unsigned_abs() <= (1u64 << 53) - 1
 }
 
-/// Descriptor-embedded `(count, pointer)` array pairs within a struct
-/// (§13.2): the index of each `const T*` pointer field mapped to its
-/// element scalar, and the set of `size_t` count-field indices to elide.
+/// Descriptor-embedded `(count, pointer)` array pairs within a struct or
+/// function parameter list: pointer indices mapped to language element
+/// spellings, and count indices elided from the mirror.
 #[derive(Default)]
 struct EmbeddedPairs {
-    /// Pointer field index → element scalar spelling (`u32`, `f32`, …).
+    /// Pointer field index → element spelling (`u32`, an enum/class name, …).
     ptr_elem: HashMap<usize, String>,
     /// Count field indices to omit from the mirror.
     count_idx: HashSet<usize>,
 }
 
-/// Recognizes embedded `(count, pointer)` array pairs (§13.2), and ONLY
-/// the one shape both lowerings reconstruct: a `size_t` count field named
-/// `<n>Count` or `<n>_count` **immediately followed** by a `const T*`
-/// pointer field named `<n>` with a scalar element (count-first,
-/// contiguous). The pointer field index maps to `T[]`; the count field
-/// index is elided. Any other spelling — pointer-first, non-adjacent
-/// count, a struct-element pointer — is deliberately NOT an embedded array:
-/// the pointer then falls through to `map_use`, where a lone scalar
-/// pointer has no boundary type and fails loud. Both lowerings marshal the
-/// pair count-immediately-before-pointer, contiguous, so recognizing any
-/// looser shape would silently mismarshal on both tiers (no `-Werror` on
-/// the AOT tier; the JIT never compiles the C struct).
-fn embedded_array_pairs(fields: &[CField]) -> EmbeddedPairs {
+/// Recognizes embedded `(count, pointer)` array pairs (§13.2/§30.2), and
+/// ONLY the shape both lowerings reconstruct: a `size_t` count field named
+/// `<n>Count` or `<n>_count` **immediately followed** by `[const] T* <n>`
+/// (count-first, contiguous). `T` may be a [`lang_scalar`] scalar, a
+/// registered enum, or a registered boundary struct. The pointer field
+/// index maps to `T[]`; the count field index is elided.
+///
+/// This recognizer is deliberately total for pair-looking struct fields.
+/// If matching halves are non-adjacent, pointer-first, or have an
+/// unsupported element, it returns a named bind error. That makes a leaked
+/// count plus `Enum | null`/`Struct | null` pointer impossible to emit.
+fn embedded_array_pairs(
+    owner: &str,
+    fields: &[CField],
+    reg: &HashMap<String, Kind>,
+) -> Result<EmbeddedPairs, ParseError> {
     let mut pairs = EmbeddedPairs::default();
-    for i in 0..fields.len().saturating_sub(1) {
-        let count = &fields[i];
-        let ptr = &fields[i + 1];
-        if count.pointer || count.array_len.is_some() || count.base != "size_t" {
+    for (count_index, count) in fields.iter().enumerate() {
+        if count.pointer || count.array_len.is_some() {
             continue;
         }
-        if !(ptr.pointer && ptr.is_const && ptr.array_len.is_none()) {
-            continue;
-        }
-        let Some(elem) = lang_scalar(&ptr.base) else {
+        let Some(element_name) = embedded_count_element_name(&count.name) else {
             continue;
         };
-        let want1 = format!("{}Count", ptr.name);
-        let want2 = format!("{}_count", ptr.name);
-        if count.name == want1 || count.name == want2 {
-            pairs.count_idx.insert(i);
-            pairs.ptr_elem.insert(i + 1, elem.to_string());
+        let matching_pointer = fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.pointer && field.name == element_name);
+        let immediate_pointer = fields
+            .get(count_index + 1)
+            .filter(|field| field.pointer);
+        let Some((pointer_index, ptr)) = matching_pointer else {
+            if let Some(ptr) = immediate_pointer {
+                return Err(ParseError(format!(
+                    "struct `{owner}` fields `{}` and `{}` form an adjacent count/pointer \
+                     shape but their names do not collapse (`{}` requires pointer field \
+                     `{element_name}`); refusing to emit a bare count beside a nullable \
+                     pointer mirror",
+                    count.name, ptr.name, count.name
+                )));
+            }
+            // A count-looking scalar without a matching pointer is still a
+            // legitimate ordinary field. The hard rule begins once both
+            // named halves exist.
+            continue;
+        };
+        if count.base != "size_t" {
+            return Err(ParseError(format!(
+                "struct `{owner}` fields `{}` and `{}` form a count/pointer pair but the \
+                 count type is `{}` instead of `size_t`; this adjacency has no lowering",
+                count.name, ptr.name, count.base
+            )));
         }
+        if pointer_index != count_index + 1 || ptr.array_len.is_some() {
+            return Err(ParseError(format!(
+                "struct `{owner}` fields `{}` and `{}` form a count/pointer pair but are not \
+                 the supported adjacent count-first shape; refusing to emit a bare count \
+                 beside a nullable pointer mirror",
+                count.name, ptr.name
+            )));
+        }
+        let elem = if let Some(scalar) = lang_scalar(&ptr.base) {
+            scalar.to_string()
+        } else {
+            match reg.get(&ptr.base) {
+                Some(Kind::Enum | Kind::Boundary) => ptr.base.clone(),
+                _ => {
+                    return Err(ParseError(format!(
+                        "struct `{owner}` fields `{}` and `{}` form an adjacent count/pointer \
+                         pair with unsupported element `{}`; only lang_scalar scalars, \
+                         registered enums, and registered boundary structs have a lowering",
+                        count.name, ptr.name, ptr.base
+                    )));
+                }
+            }
+        };
+        pairs.count_idx.insert(count_index);
+        pairs.ptr_elem.insert(pointer_index, elem);
     }
-    pairs
+    Ok(pairs)
+}
+
+/// Element field name implied by one supported count spelling.
+fn embedded_count_element_name(count: &str) -> Option<&str> {
+    count
+        .strip_suffix("Count")
+        .filter(|name| !name.is_empty())
+        .or_else(|| count.strip_suffix("_count").filter(|name| !name.is_empty()))
 }
 
 /// Recognizes the §27 scalar array-pair shape in a function parameter
@@ -864,7 +1022,7 @@ fn emit_struct(
     fields: &[CField],
     reg: &HashMap<String, Kind>,
 ) -> Result<String, ParseError> {
-    let pairs = embedded_array_pairs(fields);
+    let pairs = embedded_array_pairs(name, fields, reg)?;
     let mut s = format!("declare class {name} {{\n");
     let mut ctor: Vec<String> = Vec::new();
     for (i, f) in fields.iter().enumerate() {
@@ -1169,6 +1327,46 @@ mod tests {
     }
 
     #[test]
+    fn mutable_struct_scalar_pair_collapses_to_array() {
+        let decls = vec![Decl::Struct {
+            name: "SubFillList".into(),
+            fields: vec![
+                field("size_t", false, false, "valuesCount"),
+                field("uint16_t", true, false, "values"),
+                field("uint32_t", false, false, "tag"),
+            ],
+        }];
+        let m = emit(&parsed_with(decls)).expect("mutable embedded scalar pair maps");
+        assert!(m.contains("values: u16[];"), "{m}");
+        assert!(!m.contains("valuesCount"), "count field is elided: {m}");
+    }
+
+    #[test]
+    fn registered_enum_struct_pair_collapses_to_array() {
+        let decls = vec![
+            Decl::Enum {
+                name: "SubFormat".into(),
+                members: vec![("SUB_FORMAT_A".into(), 1), ("SUB_FORMAT_B".into(), 2)],
+            },
+            Decl::Struct {
+                name: "SubTexture".into(),
+                fields: vec![
+                    field("size_t", false, false, "viewFormatsCount"),
+                    field("SubFormat", true, true, "viewFormats"),
+                    field("uint32_t", false, false, "usage"),
+                ],
+            },
+        ];
+        let m = emit(&parsed_with(decls)).expect("registered enum pair maps");
+        assert!(m.contains("viewFormats: SubFormat[];"), "{m}");
+        assert!(!m.contains("viewFormatsCount"), "count field is elided: {m}");
+        assert!(
+            m.contains("constructor(viewFormats: SubFormat[], usage: u32);"),
+            "{m}"
+        );
+    }
+
+    #[test]
     fn const_scalar_parameter_pair_collapses_to_array() {
         let decls = vec![Decl::Func {
             name: "subReadBytes".into(),
@@ -1305,7 +1503,9 @@ mod tests {
             ],
         }];
         let err = emit(&parsed_with(decls)).expect_err("pointer-first must fail loud");
-        assert!(err.0.contains("uint32_t"), "{}", err.0);
+        assert!(err.0.contains("SubPtrFirst"), "{}", err.0);
+        assert!(err.0.contains("drawsCount"), "{}", err.0);
+        assert!(err.0.contains("adjacent count-first"), "{}", err.0);
     }
 
     #[test]
@@ -1321,7 +1521,29 @@ mod tests {
             ],
         }];
         let err = emit(&parsed_with(decls)).expect_err("non-adjacent count must fail loud");
-        assert!(err.0.contains("uint32_t"), "{}", err.0);
+        assert!(err.0.contains("SubGap"), "{}", err.0);
+        assert!(err.0.contains("bare count"), "{}", err.0);
+    }
+
+    #[test]
+    fn adjacent_struct_pair_with_mismatched_names_fails_loud() {
+        let decls = vec![
+            Decl::Enum {
+                name: "SubFormat".into(),
+                members: vec![("SUB_FORMAT_A".into(), 1)],
+            },
+            Decl::Struct {
+                name: "SubBadTexture".into(),
+                fields: vec![
+                    field("size_t", false, false, "viewFormatsCount"),
+                    field("SubFormat", true, true, "formats"),
+                ],
+            },
+        ];
+        let err = emit(&parsed_with(decls)).expect_err("mismatched adjacency must fail loud");
+        assert!(err.0.contains("SubBadTexture"), "{}", err.0);
+        assert!(err.0.contains("names do not collapse"), "{}", err.0);
+        assert!(err.0.contains("viewFormats"), "{}", err.0);
     }
 
     #[test]

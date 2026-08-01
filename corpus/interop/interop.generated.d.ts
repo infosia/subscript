@@ -339,6 +339,34 @@ declare class SubBoundaryStringRecord {
 declare function subBoundaryStringCheck(record: SubBoundaryStringRecord | null, selector: u32): u64;
 declare function subBoundaryStringFill(record: SubBoundaryStringRecord | null, emptyLabel: boolean): void;
 
+declare enum SGPUProbeFormat {
+  SGPU_PROBE_FORMAT_RGBA8 = 11,
+  SGPU_PROBE_FORMAT_BGRA8 = 29,
+  SGPU_PROBE_FORMAT_DEPTH24 = 47,
+}
+
+declare class SGPUProbeExtent3D {
+  width: u32;
+  height: u32;
+  depthOrArrayLayers: u32;
+  constructor(width: u32, height: u32, depthOrArrayLayers: u32);
+}
+
+declare class SGPUProbeTextureDescriptor {
+  label: string;
+  extent: SGPUProbeExtent3D;
+  viewFormats: SGPUProbeFormat[];
+  format: SGPUProbeFormat;
+  mipLevelCount: u32;
+  sampleCount: u32;
+  dimension: u32;
+  usage: u32;
+  constructor(label: string, extent: SGPUProbeExtent3D, viewFormats: SGPUProbeFormat[], format: SGPUProbeFormat, mipLevelCount: u32, sampleCount: u32, dimension: u32, usage: u32);
+}
+
+declare function subProbeTextureDescriptorCheck(descriptor: SGPUProbeTextureDescriptor | null, selector: u32): u64;
+declare function subProbeTextureDescriptorFill(descriptor: SGPUProbeTextureDescriptor | null): void;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

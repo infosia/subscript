@@ -58,6 +58,8 @@ extern "C" {
     fn subDeviceFillShorts();
     fn subBoundaryStringCheck();
     fn subBoundaryStringFill();
+    fn subProbeTextureDescriptorCheck();
+    fn subProbeTextureDescriptorFill();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -77,6 +79,7 @@ fn references_interop(source: &str) -> bool {
         "SubQueryStatus",
         "SubWaitEntry",
         "subBoundaryString",
+        "subProbeTexture",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -185,6 +188,14 @@ fn interop_library() -> NativeLibrary {
         (
             "subBoundaryStringFill".to_string(),
             subBoundaryStringFill as *const u8,
+        ),
+        (
+            "subProbeTextureDescriptorCheck".to_string(),
+            subProbeTextureDescriptorCheck as *const u8,
+        ),
+        (
+            "subProbeTextureDescriptorFill".to_string(),
+            subProbeTextureDescriptorFill as *const u8,
         ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime

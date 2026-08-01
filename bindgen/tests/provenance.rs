@@ -529,6 +529,142 @@ fn count_pointer_array_of_string_field_boundary_struct_is_rejected() {
 }
 
 #[test]
+fn downstream_texture_descriptor_shape_collapses_enum_pair_and_accepts_extent() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef enum SGPUProbeFormat {
+            SGPU_PROBE_FORMAT_RGBA8 = 11,
+            SGPU_PROBE_FORMAT_BGRA8 = 29
+        } SGPUProbeFormat;
+        typedef struct SGPUProbeExtent3D {
+            uint32_t width;
+            uint32_t height;
+            uint32_t depthOrArrayLayers;
+        } SGPUProbeExtent3D;
+        typedef struct SGPUProbeTextureDescriptor {
+            SGPUStringView label;
+            SGPUProbeExtent3D extent;
+            size_t viewFormatsCount;
+            const SGPUProbeFormat *viewFormats;
+            uint32_t mipLevelCount;
+            uint32_t sampleCount;
+        } SGPUProbeTextureDescriptor;
+        void sgpuProbeTextureCheck(const SGPUProbeTextureDescriptor *descriptor);
+    ";
+    let mirror = generate_for_header(header, "probe.h").expect("R7 texture shape maps");
+    let block = mirror
+        .split("declare class SGPUProbeTextureDescriptor {")
+        .nth(1)
+        .and_then(|tail| tail.split('}').next())
+        .expect("texture descriptor declare block");
+    assert!(block.contains("label: string;"), "{mirror}");
+    assert!(block.contains("extent: SGPUProbeExtent3D;"), "{mirror}");
+    assert!(block.contains("viewFormats: SGPUProbeFormat[];"), "{mirror}");
+    assert!(!block.contains("viewFormatsCount"), "{mirror}");
+    assert!(!block.contains("SGPUProbeFormat | null"), "{mirror}");
+}
+
+#[test]
+fn non_adjacent_registered_enum_struct_pair_fails_loud() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef enum EngineFormat { ENGINE_FORMAT_A = 1 } EngineFormat;
+        typedef struct EngineTexture {
+            size_t viewFormatsCount;
+            uint32_t marker;
+            const EngineFormat *viewFormats;
+        } EngineTexture;
+    ";
+    let error = generate_for_header(header, "texture.h")
+        .expect_err("non-adjacent enum pair must fail before mirror emission");
+    assert!(
+        error.to_string().contains(
+            "struct `EngineTexture` fields `viewFormatsCount` and `viewFormats` form a \
+             count/pointer pair but are not the supported adjacent count-first shape"
+        ),
+        "{error}"
+    );
+    assert!(error.to_string().contains("bare count"), "{error}");
+}
+
+#[test]
+fn every_emitted_struct_array_field_is_a_collapsed_pair() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef enum EngineFormat { ENGINE_FORMAT_A = 1 } EngineFormat;
+        typedef struct EngineExtent { uint32_t width; uint32_t height; } EngineExtent;
+        typedef struct EngineTexture {
+            size_t viewFormatsCount;
+            const EngineFormat *viewFormats;
+            uint32_t usage;
+        } EngineTexture;
+        typedef struct EngineValues {
+            size_t values_count;
+            uint16_t *values;
+        } EngineValues;
+        typedef struct EngineExtents {
+            size_t extentsCount;
+            const EngineExtent *extents;
+        } EngineExtents;
+    ";
+    let mirror = generate_for_header(header, "pairs.h").expect("all lowered pairs map");
+    let array_fields: Vec<&str> = mirror
+        .lines()
+        .filter(|line| line.starts_with("  ") && line.ends_with("[];"))
+        .collect();
+    assert_eq!(
+        array_fields,
+        vec![
+            "  viewFormats: EngineFormat[];",
+            "  values: u16[];",
+            "  extents: EngineExtent[];",
+        ],
+        "every emitted array field must be one recognized collapsed pair:\n{mirror}"
+    );
+    assert!(!mirror.contains("viewFormatsCount"), "{mirror}");
+    assert!(!mirror.contains("values_count"), "{mirror}");
+    assert!(!mirror.contains("extentsCount"), "{mirror}");
+    assert!(!mirror.contains("EngineFormat | null"), "{mirror}");
+
+    for (name, declaration, expected) in [
+        (
+            "wrong count width",
+            "typedef enum EngineFormat { ENGINE_FORMAT_A = 1 } EngineFormat;\n\
+             typedef struct EngineBad { uint32_t formatsCount; const EngineFormat *formats; } EngineBad;",
+            "count type is `uint32_t` instead of `size_t`",
+        ),
+        (
+            "mismatched adjacent names",
+            "typedef enum EngineFormat { ENGINE_FORMAT_A = 1 } EngineFormat;\n\
+             typedef struct EngineBad { size_t formatsCount; const EngineFormat *items; } EngineBad;",
+            "names do not collapse",
+        ),
+        (
+            "unsupported adjacent element",
+            "typedef struct EngineBad { size_t namesCount; const char *names; } EngineBad;",
+            "unsupported element `char`",
+        ),
+        (
+            "nested descriptor aggregate",
+            "typedef struct EngineWords { const uint32_t *items; size_t count; } EngineWords;\n\
+             typedef struct EngineBad { EngineWords words; uint32_t tag; } EngineBad;",
+            "emitted array fields are reserved for collapsed adjacent count/pointer pairs",
+        ),
+    ] {
+        let source = format!("#include <stddef.h>\n#include <stdint.h>\n{declaration}");
+        let error = match generate_for_header(&source, "audit.h") {
+            Ok(mirror) => panic!("{name}: uncollapsed pair emitted:\n{mirror}"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains(expected), "{name}: {error}");
+    }
+}
+
+#[test]
 fn every_mirror_accepted_string_field_position_has_a_lowering() {
     struct Position {
         name: &'static str,
@@ -593,6 +729,32 @@ fn every_mirror_accepted_string_field_position_has_a_lowering() {
             );
         }
     }
+
+    // §30.1 adds one recursively plain aggregate beside the direct string
+    // field to the same pointer scratch construction.
+    let aggregate_header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct EngineText { const char *data; size_t len; } EngineText;
+        typedef struct EngineExtent {
+            uint32_t width;
+            uint32_t height;
+            uint32_t depth;
+        } EngineExtent;
+        typedef struct EngineRecord {
+            EngineText label;
+            EngineExtent extent;
+            uint64_t serial;
+        } EngineRecord;
+        void engineUse(EngineRecord *record);
+    ";
+    let aggregate_mirror = generate_for_header(aggregate_header, "audit.h")
+        .expect("plain nested aggregate has pointer-scratch lowering");
+    assert!(aggregate_mirror.contains("label: string;"), "{aggregate_mirror}");
+    assert!(
+        aggregate_mirror.contains("extent: EngineExtent;"),
+        "{aggregate_mirror}"
+    );
 
     // Aggregate positions not expressible by the one direct-pointer rule.
     for (name, declaration) in [

@@ -625,4 +625,46 @@ uint64_t subBoundaryStringCheck(const SubBoundaryStringRecord *record, uint32_t 
  * the record receives a stable fixture message view. */
 void subBoundaryStringFill(SubBoundaryStringRecord *record, bool emptyLabel);
 
+/* ==== R7 nested aggregates + struct enum pairs (compiler.md §30) =======
+ *
+ * This is the downstream SGPUProbeTextureDescriptor evidence shape:
+ * a string-view label, an embedded all-scalar extent aggregate, an adjacent
+ * count-first enum-element pair, then trailing scalar fields. The mirror
+ * must expose one `viewFormats: SGPUProbeFormat[]` field and no count. */
+
+typedef enum SGPUProbeFormat {
+    SGPU_PROBE_FORMAT_RGBA8 = 11,
+    SGPU_PROBE_FORMAT_BGRA8 = 29,
+    SGPU_PROBE_FORMAT_DEPTH24 = 47
+} SGPUProbeFormat;
+
+typedef struct SGPUProbeExtent3D {
+    uint32_t width;
+    uint32_t height;
+    uint32_t depthOrArrayLayers;
+} SGPUProbeExtent3D;
+
+typedef struct SGPUProbeTextureDescriptor {
+    SGPUStringView label;
+    SGPUProbeExtent3D extent;
+    size_t viewFormatsCount;
+    const SGPUProbeFormat *viewFormats;
+    SGPUProbeFormat format;
+    uint32_t mipLevelCount;
+    uint32_t sampleCount;
+    uint32_t dimension;
+    uint32_t usage;
+} SGPUProbeTextureDescriptor;
+
+/* Selector-based checker returns every component deterministically:
+ * label sum/length, extent members, pair count/elements, then trailing
+ * scalars. Out-of-range pair selectors return UINT64_MAX. */
+uint64_t subProbeTextureDescriptorCheck(
+    const SGPUProbeTextureDescriptor *descriptor,
+    uint32_t selector);
+
+/* Read-direction pin: replaces the view, embedded extent, and trailing
+ * scalars. It intentionally leaves the borrowed pair intact. */
+void subProbeTextureDescriptorFill(SGPUProbeTextureDescriptor *descriptor);
+
 #endif /* SUBSCRIPT_INTEROP_H */

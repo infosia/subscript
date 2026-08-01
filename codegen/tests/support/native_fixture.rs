@@ -54,6 +54,8 @@ extern "C" {
     fn subDeviceFillShorts();
     fn subBoundaryStringCheck();
     fn subBoundaryStringFill();
+    fn subProbeTextureDescriptorCheck();
+    fn subProbeTextureDescriptorFill();
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -103,6 +105,14 @@ pub fn library() -> NativeLibrary {
         (
             "subBoundaryStringFill".to_string(),
             subBoundaryStringFill as *const u8,
+        ),
+        (
+            "subProbeTextureDescriptorCheck".to_string(),
+            subProbeTextureDescriptorCheck as *const u8,
+        ),
+        (
+            "subProbeTextureDescriptorFill".to_string(),
+            subProbeTextureDescriptorFill as *const u8,
         ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime

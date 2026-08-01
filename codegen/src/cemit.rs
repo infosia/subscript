@@ -4561,6 +4561,7 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind}{header_type}* {c_pointer} = NULL;");
         let _ = writeln!(out, "{ind}if ({source} != NULL) {{");
         let mut fields = Vec::with_capacity(class.fields.len());
+        let mut aggregate_copies = Vec::new();
         for field in &class.fields {
             let name = sanitize(&field.name);
             if field.ty == Type::Str {
@@ -4570,6 +4571,28 @@ impl<'m> Emitter<'m> {
                 continue;
             }
             match &field.ty {
+                Type::Array(_) => {
+                    // One mirrored array field reconstructs the original
+                    // adjacent count-first pair (§30.2). The backing store
+                    // is borrowed directly, so mutable element writes are
+                    // visible without replacing the language handle.
+                    fields.push(format!(
+                        "(size_t)subscript_rt_array_len(ctx, {source}->{name})"
+                    ));
+                    fields.push(format!(
+                        "(void*)subscript_rt_array_data(ctx, {source}->{name})"
+                    ));
+                    continue;
+                }
+                Type::Class(id) if self.is_value_class(*id)? => {
+                    // The C and language aggregates are nominally distinct
+                    // C types but have the same recursively plain layout.
+                    // Zero this positional field, then copy its object
+                    // representation after the compound initialization.
+                    fields.push("{0}".to_string());
+                    aggregate_copies.push(name);
+                    continue;
+                }
                 Type::I8
                 | Type::U8
                 | Type::I16
@@ -4601,6 +4624,13 @@ impl<'m> Emitter<'m> {
             indent(depth + 1),
             fields.join(", ")
         );
+        for name in aggregate_copies {
+            let _ = writeln!(
+                out,
+                "{}memcpy(&{scratch}.{name}, &{source}->{name}, sizeof {scratch}.{name});",
+                indent(depth + 1)
+            );
+        }
         let _ = writeln!(out, "{}{c_pointer} = &{scratch};", indent(depth + 1));
         let _ = writeln!(out, "{ind}}}");
         Ok((
@@ -4645,6 +4675,20 @@ impl<'m> Emitter<'m> {
                     writeback.source
                 );
                 self.emit_trap_check(out, depth + 1)?;
+            } else if matches!(&field.ty, Type::Array(_)) {
+                // Writes through a mutable element pointer already land in
+                // the language array. Do not replace its handle from the C
+                // scratch's transient pointer/count pair.
+                continue;
+            } else if matches!(&field.ty, Type::Class(id) if self.is_value_class(*id)?) {
+                let _ = writeln!(
+                    out,
+                    "{}memcpy(&{}->{name}, &{}.{name}, sizeof {}->{name});",
+                    indent(depth + 1),
+                    writeback.source,
+                    writeback.scratch,
+                    writeback.source
+                );
             } else {
                 let _ = writeln!(
                     out,
@@ -4736,7 +4780,7 @@ impl<'m> Emitter<'m> {
                     // needed (unlike the standalone descriptor).
                     let fld = sanitize(&f.name);
                     parts.push(format!("(size_t)subscript_rt_array_len(ctx, {t}.{fld})"));
-                    parts.push(format!("subscript_rt_array_data(ctx, {t}.{fld})"));
+                    parts.push(format!("(void*)subscript_rt_array_data(ctx, {t}.{fld})"));
                     i += 1;
                 }
                 _ => {

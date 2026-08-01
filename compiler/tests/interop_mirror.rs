@@ -96,6 +96,9 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // R6 (§28): string-view fields in pointer-passed boundary structs.
             "subBoundaryStringCheck",
             "subBoundaryStringFill",
+            // R7 (§30): nested aggregate + collapsed enum pair scratch.
+            "subProbeTextureDescriptorCheck",
+            "subProbeTextureDescriptorFill",
         ]
     );
 
@@ -171,6 +174,26 @@ fn using_program_type_checks_against_the_generated_mirror() {
         .find(|class| class.name == "SubBoundaryStringRecord")
         .expect("string-field boundary struct");
     assert_eq!(string_record.fields[0].ty, Type::Str);
+
+    let texture_descriptor = module
+        .classes
+        .iter()
+        .find(|class| class.name == "SGPUProbeTextureDescriptor")
+        .expect("R7 texture descriptor");
+    assert_eq!(texture_descriptor.fields.len(), 8);
+    assert_eq!(texture_descriptor.fields[0].ty, Type::Str);
+    assert!(matches!(texture_descriptor.fields[1].ty, Type::Class(_)));
+    assert!(matches!(
+        texture_descriptor.fields[2].ty,
+        Type::Array(ref element) if matches!(**element, Type::Enum(_))
+    ));
+    assert!(
+        texture_descriptor
+            .fields
+            .iter()
+            .all(|field| field.name != "viewFormatsCount"),
+        "collapsed pair count must not enter HIR"
+    );
 
     // The using program's foreign calls became `Callee::Foreign` calls.
     let main = module.functions.iter().find(|f| f.name == "main").unwrap();

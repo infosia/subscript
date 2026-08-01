@@ -62,6 +62,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "SubWaitEntry",
         // R6 string-view field inside a pointer-passed boundary struct.
         "subBoundaryString",
+        // R7 texture descriptor: nested aggregate + struct enum pair.
+        "subProbeTexture",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

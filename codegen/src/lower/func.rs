@@ -2895,6 +2895,32 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.b.ins().store(flags(), len, scratch, c_offset + 8);
                 continue;
             }
+            if matches!(&field.ty, Type::Array(_)) {
+                // A collapsed struct-level count/pointer pair (§30.2):
+                // the language field is one array handle while the C
+                // scratch owns the adjacent `(size_t count, T* data)`.
+                let handle = self.b.ins().load(types::I64, flags(), source, language_offset);
+                let data = self
+                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("array_data result"))?;
+                let len32 = self
+                    .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("array_len result"))?;
+                let count = self.b.ins().uextend(types::I64, len32);
+                self.b.ins().store(flags(), count, scratch, c_offset);
+                self.b.ins().store(flags(), data, scratch, c_offset + 8);
+                continue;
+            }
+            if self.is_value_class_ty(&field.ty) {
+                // Embedded boundary aggregates admitted by §30.1 are
+                // recursively plain C-layout data. Copy their complete
+                // object representation at the owning struct's C offset.
+                let (size, align) = self.boundary_c_field(&field.ty)?;
+                let src = self.addr_off(source, i64::from(language_offset));
+                let dest = self.addr_off(scratch, i64::from(c_offset));
+                self.copy_bytes(dest, src, size, align);
+                continue;
+            }
             let value = self.load_val(&field.ty, source, language_offset)?;
             let scalar = self.expect_s(value).map_err(|_| {
                 internal(format!(
@@ -2988,6 +3014,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     language_offset,
                 );
                 self.trap_check();
+                continue;
+            }
+            if matches!(&field.ty, Type::Array(_)) {
+                // The scratch pointer targets the language array backing
+                // store directly. Mutable C writes are already visible;
+                // the C pointer/count themselves never replace the handle.
+                continue;
+            }
+            if self.is_value_class_ty(&field.ty) {
+                let (size, align) = self.boundary_c_field(&field.ty)?;
+                let src = self.addr_off(writeback.scratch, i64::from(c_offset));
+                let dest = self.addr_off(writeback.source, i64::from(language_offset));
+                self.copy_bytes(dest, src, size, align);
                 continue;
             }
             let repr = self.ml.layouts.repr(&field.ty)?;

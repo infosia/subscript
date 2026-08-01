@@ -101,6 +101,14 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("subDeviceSumBytes(data: u8[]): u32;"));
     assert!(m.contains("subDeviceFillBytes(data: u8[]): void;"));
     assert!(m.contains("subDeviceFillShorts(data: u16[]): void;"));
+    // R7 (§30). A direct string field can share its pointer scratch with a
+    // recursively plain embedded aggregate and a collapsed enum-element
+    // count-first pair. The count and nullable-pointer evidence shape must
+    // never survive in the mirror.
+    assert!(m.contains("extent: SGPUProbeExtent3D;"));
+    assert!(m.contains("viewFormats: SGPUProbeFormat[];"));
+    assert!(!m.contains("viewFormatsCount"));
+    assert!(!m.contains("SGPUProbeFormat | null"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

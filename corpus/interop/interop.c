@@ -491,3 +491,72 @@ void subBoundaryStringFill(SubBoundaryStringRecord *record, bool emptyLabel) {
     record->serial = 1234u;
     record->generation = 5678u;
 }
+
+/* ==== R7 nested aggregates + struct enum pairs (compiler.md §30) ===== */
+
+uint64_t subProbeTextureDescriptorCheck(
+    const SGPUProbeTextureDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    switch (selector) {
+        case 0: {
+            uint64_t sum = 0u;
+            if (descriptor->label.data != NULL) {
+                for (size_t i = 0; i < descriptor->label.len; i++) {
+                    sum += (uint64_t)(unsigned char)descriptor->label.data[i];
+                }
+            }
+            return sum;
+        }
+        case 1:
+            return (uint64_t)descriptor->label.len;
+        case 2:
+            return (uint64_t)descriptor->extent.width;
+        case 3:
+            return (uint64_t)descriptor->extent.height;
+        case 4:
+            return (uint64_t)descriptor->extent.depthOrArrayLayers;
+        case 5:
+            return (uint64_t)descriptor->viewFormatsCount;
+        case 6:
+        case 7:
+        case 8: {
+            size_t index = (size_t)(selector - 6u);
+            if (descriptor->viewFormats == NULL || index >= descriptor->viewFormatsCount) {
+                return UINT64_MAX;
+            }
+            return (uint64_t)descriptor->viewFormats[index];
+        }
+        case 9:
+            return (uint64_t)descriptor->format;
+        case 10:
+            return (uint64_t)descriptor->mipLevelCount;
+        case 11:
+            return (uint64_t)descriptor->sampleCount;
+        case 12:
+            return (uint64_t)descriptor->dimension;
+        case 13:
+            return (uint64_t)descriptor->usage;
+        default:
+            return UINT64_MAX - 1u;
+    }
+}
+
+void subProbeTextureDescriptorFill(SGPUProbeTextureDescriptor *descriptor) {
+    static const char label[] = "filled-r7";
+    if (descriptor == NULL) {
+        return;
+    }
+    descriptor->label.data = label;
+    descriptor->label.len = sizeof(label) - 1u;
+    descriptor->extent.width = 101u;
+    descriptor->extent.height = 202u;
+    descriptor->extent.depthOrArrayLayers = 303u;
+    descriptor->format = SGPU_PROBE_FORMAT_DEPTH24;
+    descriptor->mipLevelCount = 8u;
+    descriptor->sampleCount = 4u;
+    descriptor->dimension = 3u;
+    descriptor->usage = 165u;
+}
