@@ -434,3 +434,85 @@ re-verified against the gate before commit. Lesson (one line): scope a
 coding agent to one task and an explicit file set, and confirm the agent
 process is dead before trusting a clean tree.
 
+## The copied exclusion guard was forgotten ten times, 2026-08-02
+
+Measured on `x86_64-pc-windows-msvc` at `cb5cd04` (clean tree):
+
+    $ cargo test --workspace
+    ... all other harnesses green ...
+    -p subscript-codegen --test golden: 7 passed; 11 failed
+    a111-interop-async-method-poll: dev-JIT run failed:
+      unresolved foreign symbol `subDevicePoll`:
+      no supplied native library registers it
+
+All 11 failures are that one error on a different symbol. `tsc -p
+tsconfig.json` exits 0; the tree is clean; no golden differs. The
+non-interop entry `a110-async-method-receiver` added by the same commit
+agrees dev-JIT ≡ ship-C-AOT ≡ golden, as does the whole-corpus sweep.
+
+**Root cause.** §11c constraint 2 excludes the `_Float16` interop fixture
+on windows-msvc. `a83a2aa` implemented that exclusion two ways: the
+dependency edge and the `native_fixture` module are `#[cfg]`-gated (so
+`native_libraries()` returns an empty `Vec` there), while *skipping the
+entry* is a separate `#[cfg(all(windows, target_env = "msvc"))] if
+references_interop { continue; }` guard copied at four call sites. An
+empty library list is not an error at any type — it is exactly what a
+non-interop entry gets — so a test that omits the skip guard compiles,
+runs the entry, and fails at symbol resolution.
+
+Every per-feature golden test added after `a83a2aa` omitted the guard.
+Verified by reading `codegen/tests/golden.rs` at each commit:
+
+| test (entry) | commit |
+|---|---|
+| `q34_async_…` (a95) | `8c43270` |
+| `scalar_parameter_pair_…` (a96) | `d1b79e7` |
+| `string_field_pointer_write/read_…` (a97/a98) | `8f797ce` |
+| `texture_descriptor_write/read_…` (a99/a100) | `57a572f` |
+| `recursive_boundary_pipeline_…` (a103–a105) | `aeaffcf` |
+| `struct_pointer_recursive_…` (a106) | `21054e7` |
+| `handle_parameter_pair_…` (a107) | `46bf03f` |
+| `nullable_handle_parameter_…` (a108) | `f046db1` |
+| `r13_async_method_…` (a111) | `cb5cd04` |
+
+So the windows-msvc golden harness has been red since `8c43270`, not
+since the latest commit. The "211 passed, 0 failed" recorded above is
+`a83a2aa`'s measurement and was accurate then. The reference platform is
+Unix/arm64, where the fixture builds and all 11 pass, so the arm64 gate
+never showed it.
+
+**Contract.** §11c constraint 3 (written 2026-08-02): the exclusion is
+structural — one shared helper whose return type expresses "does not run
+in this configuration", so omitting the case is a compile error rather
+than a red test on one host. Same shape as P20's TrapSite IR, where a
+missing arm became a build error.
+
+### Task plan (handoff — coding agent)
+
+One task, one file: `codegen/tests/golden.rs`. No other file may change;
+no corpus entry, golden, or production source is touched.
+
+1. Replace both `native_libraries` definitions with one pair returning
+   `Option<Vec<NativeLibrary>>`: `None` when the entry cannot run in this
+   configuration, `Some(libs)` otherwise. Off windows-msvc it is always
+   `Some` (the fixture when `corpus::references_interop`, else empty). On
+   windows-msvc it is `None` when any source references interop, else
+   `Some(Vec::new())`. The `references_interop` predicate stays in
+   `corpus`; this helper is its only consumer in this file.
+2. Every call site handles `None` by skipping that entry — `return` in a
+   single-entry test, `continue` in a loop — after printing the skipped
+   id so `--nocapture` records what was not compared.
+3. Delete the four copied `#[cfg(all(windows, target_env = "msvc"))] if
+   … { continue; }` guards (the narrow-entry loop, the sweep's run-set
+   filter, the cranelift cross-check); the helper is now the only place
+   the predicate is applied. The sweep's whole-corpus golden **count**
+   guard stays unconditional — goldens are never deleted, so that check
+   must run on every host.
+4. The sweep test reports the number of entries compared and the number
+   skipped; the skipped count is 0 off windows-msvc.
+
+Gate: `cargo test --workspace` green on this host (0 failed, no new
+warnings), and green on the arm64/Unix reference with the skipped count
+0 there — i.e. all 11 entries still compared, unchanged. No golden byte
+changes; `git diff --stat` touches one file.
+

@@ -910,7 +910,7 @@ is byte-identical to the goldens, the wrapping and `as`-conversion cases
 (e01) included; `engine.c` compiles under `cl` (C4819 only, silenced by
 `/utf-8`).
 
-Two constraints the `cl` path adds, both measured:
+Three constraints the `cl` path adds, all measured:
 
 1. **The emitter must not output an empty struct.** MSVC C mode rejects a
    zero-member struct (`error C2016`); clang accepts it. The opaque-handle
@@ -930,6 +930,28 @@ Two constraints the `cl` path adds, both measured:
    MSVC-Windows configuration the interop fixture and the two-header gate
    that binds it are therefore excluded from the gate; the clang build
    still covers them.
+
+3. **Constraint 2's exclusion is structural, not per-test.** A test that
+   names a corpus entry must obtain its native libraries from one shared
+   helper whose return type expresses "this entry does not run in this
+   configuration"; a call site that ignores that case does not compile.
+   Rationale is measured, not stylistic: constraint 2 was first
+   implemented as a `#[cfg(all(windows, target_env = "msvc"))] if
+   references_interop { continue; }` guard repeated at each call site, so
+   an added test that omitted the guard ran an interop entry against no
+   fixture and failed. Every per-feature golden test added after the
+   exclusion landed (`8c43270` onward) omitted it; measured on
+   `x86_64-pc-windows-msvc` 2026-08-02, `cargo test -p subscript-codegen
+   --test golden` was 7 passed / 11 failed, every failure the same
+   `unresolved foreign symbol ...: no supplied native library registers
+   it`. A guard that must be copied is a guard that is forgotten; the
+   type system carries it instead.
+
+   The exclusion never weakens the gate off windows-msvc: on every other
+   configuration the helper supplies the fixture for every entry that
+   references it, and the standing gate (§2, §11) compares the full run
+   set. On windows-msvc an excluded entry is compiled and run by neither
+   tier, and the run set the test reports counts only what it compared.
 
 ## 12. P5 C-header binding vertical slice
 
