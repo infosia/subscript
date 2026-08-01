@@ -4213,9 +4213,92 @@ impl<'m> Emitter<'m> {
         Ok(self.is_value_class(*id)?.then_some(*id))
     }
 
-    fn boundary_struct_has_string_field(&self, cid: ClassId) -> Result<bool, String> {
+    fn boundary_struct_needs_scratch(&self, cid: ClassId) -> Result<bool, String> {
+        self.boundary_struct_needs_scratch_inner(cid, &mut HashSet::new())
+    }
+
+    fn boundary_struct_needs_scratch_inner(
+        &self,
+        cid: ClassId,
+        visiting: &mut HashSet<ClassId>,
+    ) -> Result<bool, String> {
+        if !visiting.insert(cid) {
+            return Ok(false);
+        }
         let class = self.class(cid)?;
-        Ok(class.is_boundary && class.fields.iter().any(|field| field.ty == Type::Str))
+        if !class.is_boundary {
+            visiting.remove(&cid);
+            return Ok(false);
+        }
+        for field in &class.fields {
+            let lowered = match &field.ty {
+                Type::Str | Type::Array(_) => true,
+                Type::Class(inner) if self.is_value_class(*inner)? => {
+                    self.boundary_struct_needs_scratch_inner(*inner, visiting)?
+                }
+                _ => false,
+            };
+            if lowered {
+                visiting.remove(&cid);
+                return Ok(true);
+            }
+        }
+        visiting.remove(&cid);
+        Ok(false)
+    }
+
+    fn boundary_struct_needs_scratch_array(&self, cid: ClassId) -> Result<bool, String> {
+        self.boundary_struct_needs_scratch_array_inner(cid, &mut HashSet::new())
+    }
+
+    fn boundary_struct_needs_scratch_array_inner(
+        &self,
+        cid: ClassId,
+        visiting: &mut HashSet<ClassId>,
+    ) -> Result<bool, String> {
+        if !visiting.insert(cid) {
+            return Ok(false);
+        }
+        for field in &self.class(cid)?.fields {
+            let uses = match &field.ty {
+                Type::Array(element) => match &**element {
+                    Type::Class(element_cid) if self.is_value_class(*element_cid)? => {
+                        self.boundary_struct_needs_scratch(*element_cid)?
+                            || self.boundary_struct_needs_scratch_array_inner(
+                                *element_cid,
+                                visiting,
+                            )?
+                    }
+                    _ => false,
+                },
+                Type::Class(inner) if self.is_value_class(*inner)? => {
+                    self.boundary_struct_needs_scratch_array_inner(*inner, visiting)?
+                }
+                _ => false,
+            };
+            if uses {
+                visiting.remove(&cid);
+                return Ok(true);
+            }
+        }
+        visiting.remove(&cid);
+        Ok(false)
+    }
+
+    fn boundary_type_needs_scratch_array(&self, ty: &Type) -> Result<bool, String> {
+        match ty {
+            Type::Nullable(inner) => self.boundary_type_needs_scratch_array(inner),
+            Type::Class(cid) if self.is_value_class(*cid)? => {
+                self.boundary_struct_needs_scratch_array(*cid)
+            }
+            Type::Array(element) => match &**element {
+                Type::Class(cid) if self.is_value_class(*cid)? => {
+                    self.boundary_struct_needs_scratch(*cid)
+                }
+                _ => Ok(false),
+            },
+            _ => Ok(false),
+        }
     }
 
     /// For a boundary struct-pointer target (`Struct | null`), the foreign
@@ -4265,6 +4348,21 @@ impl<'m> Emitter<'m> {
         let ff = self.module.foreign_fns.iter().find(|f| f.name == name)
             .ok_or_else(|| format!("unknown foreign function `{name}`"))?
             .clone();
+        let mut uses_scratch_array = false;
+        for parameter in &ff.params {
+            uses_scratch_array |= self.boundary_type_needs_scratch_array(&parameter.ty)?;
+        }
+        let scratch_mark = if uses_scratch_array {
+            let mark = self.fresh_tmp();
+            let _ = writeln!(
+                out,
+                "{}uint64_t {mark} = subscript_rt_boundary_scratch_mark(ctx);",
+                indent(depth)
+            );
+            Some(mark)
+        } else {
+            None
+        };
         // Arguments are marshaled left to right (the dev tier marshals in
         // argument order). Each lands in its own statement buffer; an
         // argument whose marshaled form is not already a read of bound
@@ -4282,6 +4380,8 @@ impl<'m> Emitter<'m> {
                 &mut buf,
                 depth,
                 &mut boundary_writebacks,
+                scratch_mark.as_deref(),
+                pos,
             )?;
             bufs.push(buf);
             part_groups.push(expr);
@@ -4323,6 +4423,13 @@ impl<'m> Emitter<'m> {
                     let header_result = self.fresh_tmp();
                     let language_result = self.fresh_tmp();
                     let _ = writeln!(out, "{ind}{header_ty} {header_result} = {call};");
+                    if let Some(mark) = &scratch_mark {
+                        let _ = writeln!(
+                            out,
+                            "{}subscript_rt_boundary_scratch_release(ctx, {mark});",
+                            indent(depth)
+                        );
+                    }
                     if checked {
                         self.emit_trap_check(out, depth)?;
                     }
@@ -4332,10 +4439,44 @@ impl<'m> Emitter<'m> {
                     );
                     language_result
                 } else {
-                    self.emit_foreign_call_result(call, ret_ty, checked, out, depth)?
+                    let result = self.emit_foreign_call_result(
+                        call,
+                        ret_ty,
+                        checked && scratch_mark.is_none(),
+                        out,
+                        depth,
+                    )?;
+                    if let Some(mark) = &scratch_mark {
+                        let _ = writeln!(
+                            out,
+                            "{}subscript_rt_boundary_scratch_release(ctx, {mark});",
+                            indent(depth)
+                        );
+                        if checked {
+                            self.emit_trap_check(out, depth)?;
+                        }
+                    }
+                    result
                 }
             } else {
-                self.emit_foreign_call_result(call, ret_ty, checked, out, depth)?
+                let result = self.emit_foreign_call_result(
+                    call,
+                    ret_ty,
+                    checked && scratch_mark.is_none(),
+                    out,
+                    depth,
+                )?;
+                if let Some(mark) = &scratch_mark {
+                    let _ = writeln!(
+                        out,
+                        "{}subscript_rt_boundary_scratch_release(ctx, {mark});",
+                        indent(depth)
+                    );
+                    if checked {
+                        self.emit_trap_check(out, depth)?;
+                    }
+                }
+                result
             };
             for writeback in boundary_writebacks {
                 self.emit_string_field_boundary_writeback(writeback, pos, out, depth)?;
@@ -4354,6 +4495,13 @@ impl<'m> Emitter<'m> {
                 let h = self.fresh_tmp();
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{header_ty} {h} = {call};");
+                if let Some(mark) = &scratch_mark {
+                    let _ = writeln!(
+                        out,
+                        "{}subscript_rt_boundary_scratch_release(ctx, {mark});",
+                        indent(depth)
+                    );
+                }
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -4361,7 +4509,20 @@ impl<'m> Emitter<'m> {
                 return Ok(t);
             }
         }
-        self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+        if let Some(mark) = &scratch_mark {
+            let result = self.emit_foreign_call_result(call, ret_ty, false, out, depth)?;
+            let _ = writeln!(
+                out,
+                "{}subscript_rt_boundary_scratch_release(ctx, {mark});",
+                indent(depth)
+            );
+            if checked {
+                self.emit_trap_check(out, depth)?;
+            }
+            Ok(result)
+        } else {
+            self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+        }
     }
 
     /// Materializes a foreign-call result before pointer scratch copy-back.
@@ -4408,6 +4569,8 @@ impl<'m> Emitter<'m> {
         out: &mut String,
         depth: usize,
         boundary_writebacks: &mut Vec<BoundaryPtrWriteback>,
+        scratch_mark: Option<&str>,
+        call_pos: &Pos,
     ) -> Result<(Vec<String>, Option<String>), String> {
         let ind = indent(depth);
         match &parameter.ty {
@@ -4441,7 +4604,7 @@ impl<'m> Emitter<'m> {
                     None,
                 ))
             }
-            Type::Array(_) => {
+            Type::Array(element_ty) => {
                 let provenance = parameter.foreign_provenance.clone().ok_or_else(|| {
                     format!(
                         "internal error at foreign function `{function_name}` parameter `{}`: missing array boundary provenance",
@@ -4453,11 +4616,32 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}void* {t} = {h};");
                 // The data pointer and count are read here, not at the
                 // call: a later argument may grow the array and move its
-                // storage, and the dev tier reads them at this point.
-                let d = self.fresh_tmp();
-                let n = self.fresh_tmp();
-                let _ = writeln!(out, "{ind}const void* {d} = subscript_rt_array_data(ctx, {t});");
-                let _ = writeln!(out, "{ind}size_t {n} = (size_t)subscript_rt_array_len(ctx, {t});");
+                // storage, and the dev tier reads them at this point. A
+                // recursively lowered struct element uses a call-duration
+                // C-layout scratch array (§32).
+                let lowered_element = match &**element_ty {
+                    Type::Class(cid) if self.is_value_class(*cid)?
+                        && self.boundary_struct_needs_scratch(*cid)? => Some(*cid),
+                    _ => None,
+                };
+                let (d, n) = if let Some(element_cid) = lowered_element {
+                    self.marshal_boundary_array_c(
+                        element_cid,
+                        &t,
+                        out,
+                        depth,
+                        scratch_mark.ok_or_else(|| {
+                            "recursive boundary array lowering lacks a scratch scope".to_string()
+                        })?,
+                        call_pos,
+                    )?
+                } else {
+                    let d = self.fresh_tmp();
+                    let n = self.fresh_tmp();
+                    let _ = writeln!(out, "{ind}const void* {d} = subscript_rt_array_data(ctx, {t});");
+                    let _ = writeln!(out, "{ind}size_t {n} = (size_t)subscript_rt_array_len(ctx, {t});");
+                    (d, n)
+                };
                 match provenance {
                     hir::ForeignTypeProvenance::Descriptor {
                         aggregate,
@@ -4515,9 +4699,16 @@ impl<'m> Emitter<'m> {
                 let cid = self
                     .boundary_struct_ptr_id(&parameter.ty)?
                     .ok_or_else(|| "boundary struct ptr lacks a class id".to_string())?;
-                if self.boundary_struct_has_string_field(cid)? {
+                if self.boundary_struct_needs_scratch(cid)? {
                     let (expr, writeback) =
-                        self.marshal_string_field_boundary_c_ptr(cid, arg, out, depth)?;
+                        self.marshal_string_field_boundary_c_ptr(
+                            cid,
+                            arg,
+                            out,
+                            depth,
+                            scratch_mark,
+                            call_pos,
+                        )?;
                     boundary_writebacks.push(writeback);
                     Ok((vec![expr], None))
                 } else {
@@ -4544,6 +4735,8 @@ impl<'m> Emitter<'m> {
         arg: &hir::Expr,
         out: &mut String,
         depth: usize,
+        scratch_mark: Option<&str>,
+        call_pos: &Pos,
     ) -> Result<(String, BoundaryPtrWriteback), String> {
         let ind = indent(depth);
         let class = self.class(cid)?.clone();
@@ -4560,38 +4753,105 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind}{header_type} {scratch} = ({header_type}){{0}};");
         let _ = writeln!(out, "{ind}{header_type}* {c_pointer} = NULL;");
         let _ = writeln!(out, "{ind}if ({source} != NULL) {{");
-        let mut fields = Vec::with_capacity(class.fields.len());
+        self.emit_boundary_scratch_c_value(
+            cid,
+            &format!("*{source}"),
+            &scratch,
+            out,
+            depth + 1,
+            scratch_mark,
+            call_pos,
+        )?;
+        let _ = writeln!(out, "{}{c_pointer} = &{scratch};", indent(depth + 1));
+        let _ = writeln!(out, "{ind}}}");
+        Ok((
+            c_pointer,
+            BoundaryPtrWriteback {
+                cid,
+                source,
+                scratch,
+            },
+        ))
+    }
+
+    /// Recursively assigns one language-layout boundary value into an
+    /// actual-header-layout C lvalue (§32). Positional initialization is
+    /// intentional: collapsed pair count fields do not exist in HIR, while
+    /// the header still contains both adjacent C members.
+    fn emit_boundary_scratch_c_value(
+        &mut self,
+        cid: ClassId,
+        source: &str,
+        destination: &str,
+        out: &mut String,
+        depth: usize,
+        scratch_mark: Option<&str>,
+        call_pos: &Pos,
+    ) -> Result<(), String> {
+        let class = self.class(cid)?.clone();
+        let mut components = Vec::new();
         let mut aggregate_copies = Vec::new();
         for field in &class.fields {
-            let name = sanitize(&field.name);
-            if field.ty == Type::Str {
-                fields.push(format!(
-                    "{{ (const char*)subscript_rt_str_data(ctx, {source}->{name}), (size_t)subscript_rt_str_len(ctx, {source}->{name}) }}"
-                ));
-                continue;
-            }
+            let field_name = sanitize(&field.name);
+            let source_field = format!("({source}).{field_name}");
             match &field.ty {
-                Type::Array(_) => {
-                    // One mirrored array field reconstructs the original
-                    // adjacent count-first pair (§30.2). The backing store
-                    // is borrowed directly, so mutable element writes are
-                    // visible without replacing the language handle.
-                    fields.push(format!(
-                        "(size_t)subscript_rt_array_len(ctx, {source}->{name})"
-                    ));
-                    fields.push(format!(
-                        "(void*)subscript_rt_array_data(ctx, {source}->{name})"
-                    ));
-                    continue;
+                Type::Str => components.push(format!(
+                    "{{ (const char*)subscript_rt_str_data(ctx, {source_field}), (size_t)subscript_rt_str_len(ctx, {source_field}) }}"
+                )),
+                Type::Array(element) => {
+                    let lowered_element = match &**element {
+                        Type::Class(element_cid) if self.is_value_class(*element_cid)?
+                            && self.boundary_struct_needs_scratch(*element_cid)? => {
+                            Some(*element_cid)
+                        }
+                        _ => None,
+                    };
+                    if let Some(element_cid) = lowered_element {
+                        let (data, count) = self.marshal_boundary_array_c(
+                            element_cid,
+                            &source_field,
+                            out,
+                            depth,
+                            scratch_mark.ok_or_else(|| {
+                                "recursive boundary array lowering lacks a scratch scope"
+                                    .to_string()
+                            })?,
+                            call_pos,
+                        )?;
+                        components.push(count);
+                        components.push(data);
+                    } else {
+                        components.push(format!(
+                            "(size_t)subscript_rt_array_len(ctx, {source_field})"
+                        ));
+                        components.push(format!(
+                            "(void*)subscript_rt_array_data(ctx, {source_field})"
+                        ));
+                    }
                 }
-                Type::Class(id) if self.is_value_class(*id)? => {
-                    // The C and language aggregates are nominally distinct
-                    // C types but have the same recursively plain layout.
-                    // Zero this positional field, then copy its object
-                    // representation after the compound initialization.
-                    fields.push("{0}".to_string());
-                    aggregate_copies.push(name);
-                    continue;
+                Type::Class(inner) if self.is_value_class(*inner)? => {
+                    if self.boundary_struct_needs_scratch(*inner)? {
+                        let nested = self.fresh_tmp();
+                        let header = self.class(*inner)?.name.clone();
+                        let _ = writeln!(
+                            out,
+                            "{}{header} {nested} = ({header}){{0}};",
+                            indent(depth)
+                        );
+                        self.emit_boundary_scratch_c_value(
+                            *inner,
+                            &source_field,
+                            &nested,
+                            out,
+                            depth,
+                            scratch_mark,
+                            call_pos,
+                        )?;
+                        components.push(nested);
+                    } else {
+                        components.push("{0}".to_string());
+                        aggregate_copies.push((field_name, source_field));
+                    }
                 }
                 Type::I8
                 | Type::U8
@@ -4607,40 +4867,73 @@ impl<'m> Emitter<'m> {
                 | Type::Bool
                 | Type::Enum(_)
                 | Type::Object
-                | Type::Nullable(_) => {}
-                Type::Class(id) if !self.is_value_class(*id)? => {}
+                | Type::Nullable(_) => components.push(source_field),
+                Type::Class(inner) if !self.is_value_class(*inner)? => {
+                    components.push(source_field)
+                }
                 other => {
                     return Err(format!(
-                        "string-field boundary struct `{}` field `{}` has unsupported aggregate type {other:?}",
+                        "boundary struct `{}` field `{}` has unsupported recursive scratch type {other:?}",
                         class.name, field.name
                     ));
                 }
             }
-            fields.push(format!("{source}->{name}"));
         }
         let _ = writeln!(
             out,
-            "{}{scratch} = ({header_type}){{ {} }};",
-            indent(depth + 1),
-            fields.join(", ")
+            "{}{destination} = ({}){{ {} }};",
+            indent(depth),
+            class.name,
+            components.join(", ")
         );
-        for name in aggregate_copies {
+        for (field_name, source_field) in aggregate_copies {
             let _ = writeln!(
                 out,
-                "{}memcpy(&{scratch}.{name}, &{source}->{name}, sizeof {scratch}.{name});",
-                indent(depth + 1)
+                "{}memcpy(&({destination}).{field_name}, &{source_field}, sizeof ({destination}).{field_name});",
+                indent(depth)
             );
         }
-        let _ = writeln!(out, "{}{c_pointer} = &{scratch};", indent(depth + 1));
+        Ok(())
+    }
+
+    /// Builds a call-duration C-layout array for a collapsed pair whose
+    /// value-struct elements themselves need recursive lowering.
+    fn marshal_boundary_array_c(
+        &mut self,
+        element_cid: ClassId,
+        handle: &str,
+        out: &mut String,
+        depth: usize,
+        _scratch_mark: &str,
+        call_pos: &Pos,
+    ) -> Result<(String, String), String> {
+        let ind = indent(depth);
+        let language_element = self.class_name(element_cid)?;
+        let header_element = self.class(element_cid)?.name.clone();
+        let source = self.fresh_tmp();
+        let count = self.fresh_tmp();
+        let scratch = self.fresh_tmp();
+        let index = self.fresh_tmp();
+        let _ = writeln!(out, "{ind}size_t {count} = (size_t)subscript_rt_array_len(ctx, {handle});");
+        let _ = writeln!(out, "{ind}const {language_element}* {source} = (const {language_element}*)subscript_rt_array_data(ctx, {handle});");
+        let pos_id = self.pos_id(call_pos);
+        let _ = writeln!(
+            out,
+            "{ind}{header_element}* {scratch} = ({header_element}*)subscript_rt_boundary_scratch_alloc(ctx, (uint64_t)({count} * sizeof({header_element})), {pos_id}u);"
+        );
+        self.emit_trap_check(out, depth)?;
+        let _ = writeln!(out, "{ind}for (size_t {index} = 0; {index} < {count}; {index}++) {{");
+        self.emit_boundary_scratch_c_value(
+            element_cid,
+            &format!("{source}[{index}]"),
+            &format!("{scratch}[{index}]"),
+            out,
+            depth + 1,
+            Some(_scratch_mark),
+            call_pos,
+        )?;
         let _ = writeln!(out, "{ind}}}");
-        Ok((
-            c_pointer,
-            BoundaryPtrWriteback {
-                cid,
-                source,
-                scratch,
-            },
-        ))
+        Ok((scratch, count))
     }
 
     /// Copies one C-filled scratch record back to language layout. Direct
@@ -4680,15 +4973,31 @@ impl<'m> Emitter<'m> {
                 // the language array. Do not replace its handle from the C
                 // scratch's transient pointer/count pair.
                 continue;
-            } else if matches!(&field.ty, Type::Class(id) if self.is_value_class(*id)?) {
-                let _ = writeln!(
-                    out,
-                    "{}memcpy(&{}->{name}, &{}.{name}, sizeof {}->{name});",
-                    indent(depth + 1),
-                    writeback.source,
-                    writeback.scratch,
-                    writeback.source
-                );
+            } else if let Type::Class(id) = &field.ty {
+                if self.is_value_class(*id)? {
+                    if self.boundary_struct_needs_scratch(*id)? {
+                        // §32 admits this position in the script→C direction
+                        // only. Do not interpret its lowered C bytes as the
+                        // narrower language object representation.
+                        continue;
+                    }
+                    let _ = writeln!(
+                        out,
+                        "{}memcpy(&{}->{name}, &{}.{name}, sizeof {}->{name});",
+                        indent(depth + 1),
+                        writeback.source,
+                        writeback.scratch,
+                        writeback.source
+                    );
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "{}{}->{name} = {}.{name};",
+                        indent(depth + 1),
+                        writeback.source,
+                        writeback.scratch
+                    );
+                }
             } else {
                 let _ = writeln!(
                     out,
@@ -6330,6 +6639,9 @@ const PREAMBLE: &str = concat!(
 extern void subscript_rt_print(void* ctx, const void* s);
 extern void subscript_rt_collect(void* ctx);
 extern void* subscript_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
+extern uint64_t subscript_rt_boundary_scratch_mark(void* ctx);
+extern void* subscript_rt_boundary_scratch_alloc(void* ctx, uint64_t size, uint32_t pos_id);
+extern void subscript_rt_boundary_scratch_release(void* ctx, uint64_t mark);
 typedef uint8_t (*SubAsyncResume)(void* ctx, void* frame, void* out);
 extern void subscript_rt_async_kick(void* ctx, void* frame, SubAsyncResume resume);
 extern void subscript_rt_delete(void* ctx, void* payload, uint32_t pos_id);

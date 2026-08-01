@@ -476,7 +476,7 @@ fn by_value_string_field_boundary_struct_return_is_rejected() {
 }
 
 #[test]
-fn string_field_boundary_struct_array_is_rejected() {
+fn string_field_boundary_struct_descriptor_elements_lower_recursively() {
     let header = "
         #include <stddef.h>
         #include <stdint.h>
@@ -485,20 +485,12 @@ fn string_field_boundary_struct_array_is_rejected() {
         typedef struct EngineRecords { const EngineRecord *items; size_t count; } EngineRecords;
         void engineCheck(EngineRecords records);
     ";
-    let error = generate_for_header(header, "records.h")
-        .expect_err("an array of string-field structs must fail");
+    let mirror = generate_for_header(header, "records.h")
+        .expect("descriptor elements use a recursive scratch array");
+    assert!(mirror.contains("label: string;"), "{mirror}");
     assert!(
-        error.to_string().contains(
-            "descriptor struct `EngineRecords` forms an array of string-field boundary \
-             struct `EngineRecord`"
-        ),
-        "{error}"
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("arrays of string-field structs have no boundary lowering"),
-        "{error}"
+        mirror.contains("declare function engineCheck(records: EngineRecord[]): void;"),
+        "{mirror}"
     );
 }
 
@@ -567,6 +559,176 @@ fn downstream_texture_descriptor_shape_collapses_enum_pair_and_accepts_extent() 
 }
 
 #[test]
+fn recursive_compute_pipeline_string_field_evidence_shape() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUComputeState {
+            SGPUStringView entryPoint;
+            uint32_t constantCount;
+        } SGPUComputeState;
+        typedef struct SGPUComputePipelineDescriptor {
+            SGPUStringView label;
+            SGPUComputeState compute;
+            uint32_t marker;
+        } SGPUComputePipelineDescriptor;
+        void sgpuComputePipelineCheck(const SGPUComputePipelineDescriptor *descriptor);
+    ";
+    let mirror = generate_for_header(header, "pipeline.h")
+        .expect("embedded string-field aggregate lowers recursively");
+    assert!(mirror.contains(
+        "declare class SGPUComputeState {\n  entryPoint: string;\n  constantCount: u32;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPUComputePipelineDescriptor {\n  label: string;\n  compute: SGPUComputeState;\n  marker: u32;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare function sgpuComputePipelineCheck(descriptor: SGPUComputePipelineDescriptor | null): void;"
+    ), "{mirror}");
+}
+
+#[test]
+fn recursive_render_pipeline_collapsed_pair_evidence_shape() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUVertexAttribute {
+            uint32_t format;
+            uint64_t offset;
+        } SGPUVertexAttribute;
+        typedef struct SGPUVertexBufferLayout {
+            uint64_t arrayStride;
+            size_t attributesCount;
+            const SGPUVertexAttribute *attributes;
+        } SGPUVertexBufferLayout;
+        typedef struct SGPUVertexState {
+            size_t buffersCount;
+            const SGPUVertexBufferLayout *buffers;
+        } SGPUVertexState;
+        typedef struct SGPURenderPipelineDescriptor {
+            SGPUStringView label;
+            SGPUVertexState vertex;
+            uint32_t marker;
+        } SGPURenderPipelineDescriptor;
+        void sgpuRenderPipelineCheck(const SGPURenderPipelineDescriptor *descriptor);
+    ";
+    let mirror = generate_for_header(header, "pipeline.h")
+        .expect("embedded collapsed-pair aggregate lowers recursively");
+    assert!(mirror.contains(
+        "declare class SGPUVertexBufferLayout {\n  arrayStride: u64;\n  attributes: SGPUVertexAttribute[];"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPUVertexState {\n  buffers: SGPUVertexBufferLayout[];"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPURenderPipelineDescriptor {\n  label: string;\n  vertex: SGPUVertexState;\n  marker: u32;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare function sgpuRenderPipelineCheck(descriptor: SGPURenderPipelineDescriptor | null): void;"
+    ), "{mirror}");
+}
+
+#[test]
+fn recursive_string_field_pair_element_evidence_shape() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUConstantEntry {
+            SGPUStringView key;
+            double value;
+        } SGPUConstantEntry;
+        typedef struct SGPUProgrammableStage {
+            size_t constantsCount;
+            const SGPUConstantEntry *constants;
+            double marker;
+        } SGPUProgrammableStage;
+        void sgpuProgrammableStageCheck(const SGPUProgrammableStage *stage);
+    ";
+    let mirror = generate_for_header(header, "pipeline.h")
+        .expect("string-field pair elements lower through a scratch array");
+    assert!(mirror.contains(
+        "declare class SGPUConstantEntry {\n  key: string;\n  value: f64;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare class SGPUProgrammableStage {\n  constants: SGPUConstantEntry[];\n  marker: f64;"
+    ), "{mirror}");
+    assert!(mirror.contains(
+        "declare function sgpuProgrammableStageCheck(stage: SGPUProgrammableStage | null): void;"
+    ), "{mirror}");
+}
+
+#[test]
+fn recursive_read_direction_fails_loud_at_innermost_member() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUComputeState { SGPUStringView entryPoint; } SGPUComputeState;
+        typedef struct SGPUComputePipelineDescriptor {
+            SGPUStringView label;
+            SGPUComputeState compute;
+        } SGPUComputePipelineDescriptor;
+        void sgpuReadRecursive(SGPUComputePipelineDescriptor *descriptor);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("mutable recursive scratch positions have no read lowering");
+    assert!(
+        error.to_string().contains(
+            "parameter `descriptor` may read recursively-lowered member \
+             `SGPUComputeState.entryPoint`"
+        ),
+        "{error}"
+    );
+    assert!(error.to_string().contains("script-to-C"), "{error}");
+}
+
+#[test]
+fn recursive_pair_element_read_direction_fails_loud_at_innermost_member() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef struct SGPUConstantEntry { SGPUStringView key; double value; } SGPUConstantEntry;
+        typedef struct SGPUProgrammableStage {
+            size_t constantsCount;
+            SGPUConstantEntry *constants;
+        } SGPUProgrammableStage;
+        void sgpuReadConstants(const SGPUProgrammableStage *stage);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("mutable recursively lowered elements have no read lowering");
+    assert!(
+        error.to_string().contains(
+            "field `constants` has mutable recursively-lowered pair elements and may read \
+             `SGPUConstantEntry.key`"
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn unsupported_recursive_member_names_the_innermost_field() {
+    let header = "
+        #include <stddef.h>
+        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
+        typedef void (*SGPUUnsupportedCallback)(void);
+        typedef struct SGPUInner { SGPUUnsupportedCallback callback; } SGPUInner;
+        typedef struct SGPUOuter { SGPUStringView label; SGPUInner inner; } SGPUOuter;
+        void sgpuUse(const SGPUOuter *outer);
+    ";
+    let error = generate_for_header(header, "pipeline.h")
+        .expect_err("recursive callback member has no write lowering");
+    assert!(
+        error.to_string().contains("`SGPUInner.callback` which is a callback"),
+        "{error}"
+    );
+    assert!(
+        error.to_string().contains("no write-direction scratch lowering"),
+        "{error}"
+    );
+}
+
+#[test]
 fn non_adjacent_registered_enum_struct_pair_fails_loud() {
     let header = "
         #include <stddef.h>
@@ -591,7 +753,7 @@ fn non_adjacent_registered_enum_struct_pair_fails_loud() {
 }
 
 #[test]
-fn every_emitted_struct_array_field_is_a_collapsed_pair() {
+fn every_emitted_struct_array_field_is_a_collapsed_pair_at_any_depth() {
     let header = "
         #include <stddef.h>
         #include <stdint.h>
@@ -615,6 +777,21 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair() {
             size_t layoutsCount;
             const EngineLayout *layouts;
         } EngineLayouts;
+        typedef struct EngineNested {
+            EngineTexture texture;
+            EngineExtents extents;
+            EngineLayouts layouts;
+        } EngineNested;
+        typedef struct EngineDeepLayout {
+            size_t deepValuesCount;
+            const uint16_t *deepValues;
+        } EngineDeepLayout;
+        typedef struct EngineDeepState {
+            size_t deepLayoutsCount;
+            const EngineDeepLayout *deepLayouts;
+        } EngineDeepState;
+        typedef struct EngineDeepRoot { EngineDeepState state; } EngineDeepRoot;
+        void engineUseDeep(const EngineDeepRoot *root);
     ";
     let mirror = generate_for_header(header, "pairs.h").expect("all lowered pairs map");
     let array_fields: Vec<&str> = mirror
@@ -628,6 +805,8 @@ fn every_emitted_struct_array_field_is_a_collapsed_pair() {
             "  values: u16[];",
             "  extents: EngineExtent[];",
             "  layouts: EngineLayout[];",
+            "  deepValues: u16[];",
+            "  deepLayouts: EngineDeepLayout[];",
         ],
         "every emitted array field must be one recognized collapsed pair:\n{mirror}"
     );
@@ -881,7 +1060,7 @@ fn nullable_callback_return_fails_loud() {
 }
 
 #[test]
-fn every_mirror_accepted_string_field_position_has_a_lowering() {
+fn every_mirror_accepted_string_field_position_has_a_recursive_lowering() {
     struct Position {
         name: &'static str,
         declaration: &'static str,
@@ -972,21 +1151,43 @@ fn every_mirror_accepted_string_field_position_has_a_lowering() {
         "{aggregate_mirror}"
     );
 
-    // Aggregate positions not expressible by the one direct-pointer rule.
-    for (name, declaration) in [
+    // §32 accepts recursive aggregate and pair-element positions through
+    // script→C roots and keeps every other direction fail-loud.
+    for (name, declaration, evidence) in [
         (
             "array descriptor element",
             "typedef struct EngineRecords { const EngineRecord *items; size_t count; } EngineRecords;\n\
              void engineUse(EngineRecords records);",
-        ),
-        (
-            "count/pointer array parameters",
-            "void engineUse(size_t recordCount, const EngineRecord *records);",
+            "records: EngineRecord[]",
         ),
         (
             "nested aggregate field",
             "typedef struct EngineEnvelope { EngineRecord record; } EngineEnvelope;\n\
-             void engineUse(EngineEnvelope *envelope);",
+             void engineUse(const EngineEnvelope *envelope);",
+            "record: EngineRecord;",
+        ),
+        (
+            "collapsed pair element",
+            "typedef struct EngineEnvelope { size_t recordsCount; const EngineRecord *records; } EngineEnvelope;\n\
+             void engineUse(const EngineEnvelope *envelope);",
+            "records: EngineRecord[];",
+        ),
+    ] {
+        let header = format!(
+            "#include <stddef.h>\n#include <stdint.h>\n\
+             typedef struct EngineText {{ const char *data; size_t len; }} EngineText;\n\
+             typedef struct EngineRecord {{ EngineText label; uint64_t serial; }} EngineRecord;\n\
+             {declaration}"
+        );
+        let mirror = generate_for_header(&header, "audit.h")
+            .unwrap_or_else(|error| panic!("{name}: recursive lowering was rejected: {error}"));
+        assert!(mirror.contains(evidence), "{name}: {mirror}");
+    }
+
+    for (name, declaration) in [
+        (
+            "count/pointer array parameters",
+            "void engineUse(size_t recordCount, const EngineRecord *records);",
         ),
         (
             "callback parameter",

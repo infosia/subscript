@@ -715,4 +715,71 @@ void subProbeBindGroupEntryFill(
     uint32_t selected,
     SubDevice handle);
 
+/* ==== R9 recursive lowering at embedded positions (compiler.md §32) === */
+
+/* Case 1: compute descriptor -> embedded compute state -> string view. */
+typedef struct SGPUProbeComputeState {
+    SGPUStringView entryPoint;
+    uint32_t workgroupX;
+    uint32_t workgroupY;
+    uint64_t constantSeed;
+} SGPUProbeComputeState;
+
+typedef struct SGPUProbeComputePipelineDescriptor {
+    SGPUStringView label;
+    SGPUProbeComputeState compute;
+    uint32_t flags;
+} SGPUProbeComputePipelineDescriptor;
+
+uint64_t subProbeComputePipelineCheck(
+    const SGPUProbeComputePipelineDescriptor *descriptor,
+    uint32_t selector);
+
+/* Case 2: render descriptor -> embedded vertex state -> buffer-layout pair
+ * -> recursively rebuilt buffer-layout elements -> scalar attribute pair. */
+typedef struct SGPUProbeVertexAttribute {
+    uint32_t shaderLocation;
+    uint32_t format;
+    uint64_t offset;
+} SGPUProbeVertexAttribute;
+
+typedef struct SGPUProbeVertexBufferLayout {
+    uint64_t arrayStride;
+    uint32_t stepMode;
+    size_t attributesCount;
+    const SGPUProbeVertexAttribute *attributes;
+} SGPUProbeVertexBufferLayout;
+
+typedef struct SGPUProbeVertexState {
+    uint32_t moduleId;
+    size_t buffersCount;
+    const SGPUProbeVertexBufferLayout *buffers;
+} SGPUProbeVertexState;
+
+typedef struct SGPUProbeRenderPipelineDescriptor {
+    SGPUStringView label;
+    SGPUProbeVertexState vertex;
+    uint32_t primitive;
+} SGPUProbeRenderPipelineDescriptor;
+
+uint64_t subProbeRenderPipelineCheck(
+    const SGPUProbeRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
+/* Case 3: collapsed pair elements expand their own string views. */
+typedef struct SGPUProbeConstantEntry {
+    SGPUStringView key;
+    double value;
+} SGPUProbeConstantEntry;
+
+typedef struct SGPUProbeProgrammableStage {
+    size_t constantsCount;
+    const SGPUProbeConstantEntry *constants;
+    uint32_t stage;
+} SGPUProbeProgrammableStage;
+
+uint64_t subProbeProgrammableStageCheck(
+    const SGPUProbeProgrammableStage *stage,
+    uint32_t selector);
+
 #endif /* SUBSCRIPT_INTEROP_H */

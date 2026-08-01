@@ -57,6 +57,9 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
         "subBulk",
         "subBoundaryString",
         "subProbeTexture",
+        "subProbeComputePipeline",
+        "subProbeRenderPipeline",
+        "subProbeProgrammableStage",
         "SUB_STAGE",
         "subStageMatches",
         "subFutureMake",
@@ -140,7 +143,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         "corpus/accept/a19-modules produced warnings: {warnings:?}"
     );
     checked_files += 2;
-    assert_eq!(checked_files, 103, "accept source-file count changed");
+    assert_eq!(checked_files, 106, "accept source-file count changed");
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");

@@ -104,6 +104,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subProbePipelineLayoutCheck",
             "subProbeBindGroupEntryCheck",
             "subProbeBindGroupEntryFill",
+            // R9 (§32): recursive embedded aggregates and lowered
+            // collapsed-pair element arrays.
+            "subProbeComputePipelineCheck",
+            "subProbeRenderPipelineCheck",
+            "subProbeProgrammableStageCheck",
         ]
     );
 

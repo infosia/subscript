@@ -635,3 +635,95 @@ void subProbeBindGroupEntryFill(
         entry->textureView = handle;
     }
 }
+
+/* ==== R9 recursive lowering at embedded positions (compiler.md §32) === */
+
+static uint64_t subProbeViewSum(SGPUStringView view) {
+    uint64_t sum = 0u;
+    if (view.data != NULL) {
+        for (size_t i = 0; i < view.len; i++) {
+            sum += (uint64_t)(unsigned char)view.data[i];
+        }
+    }
+    return sum;
+}
+
+uint64_t subProbeComputePipelineCheck(
+    const SGPUProbeComputePipelineDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    switch (selector) {
+        case 0: return subProbeViewSum(descriptor->label);
+        case 1: return (uint64_t)descriptor->label.len;
+        case 2: return subProbeViewSum(descriptor->compute.entryPoint);
+        case 3: return (uint64_t)descriptor->compute.entryPoint.len;
+        case 4: return (uint64_t)descriptor->compute.workgroupX;
+        case 5: return (uint64_t)descriptor->compute.workgroupY;
+        case 6: return descriptor->compute.constantSeed;
+        case 7: return (uint64_t)descriptor->flags;
+        default: return UINT64_MAX - 1u;
+    }
+}
+
+uint64_t subProbeRenderPipelineCheck(
+    const SGPUProbeRenderPipelineDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    if (selector == 0u) return subProbeViewSum(descriptor->label);
+    if (selector == 1u) return (uint64_t)descriptor->label.len;
+    if (selector == 2u) return (uint64_t)descriptor->vertex.moduleId;
+    if (selector == 3u) return (uint64_t)descriptor->vertex.buffersCount;
+    if (descriptor->vertex.buffers == NULL || descriptor->vertex.buffersCount < 2u) {
+        return UINT64_MAX - 2u;
+    }
+    const SGPUProbeVertexBufferLayout *first = &descriptor->vertex.buffers[0];
+    const SGPUProbeVertexBufferLayout *second = &descriptor->vertex.buffers[1];
+    switch (selector) {
+        case 4: return first->arrayStride;
+        case 5: return (uint64_t)first->stepMode;
+        case 6: return (uint64_t)first->attributesCount;
+        case 7: return first->attributesCount > 0u && first->attributes != NULL
+            ? (uint64_t)first->attributes[0].shaderLocation : UINT64_MAX;
+        case 8: return first->attributesCount > 0u && first->attributes != NULL
+            ? (uint64_t)first->attributes[0].format : UINT64_MAX;
+        case 9: return first->attributesCount > 0u && first->attributes != NULL
+            ? first->attributes[0].offset : UINT64_MAX;
+        case 10: return second->arrayStride;
+        case 11: return (uint64_t)second->stepMode;
+        case 12: return (uint64_t)second->attributesCount;
+        case 13: return second->attributesCount > 1u && second->attributes != NULL
+            ? (uint64_t)second->attributes[1].shaderLocation : UINT64_MAX;
+        case 14: return second->attributesCount > 1u && second->attributes != NULL
+            ? (uint64_t)second->attributes[1].format : UINT64_MAX;
+        case 15: return second->attributesCount > 1u && second->attributes != NULL
+            ? second->attributes[1].offset : UINT64_MAX;
+        case 16: return (uint64_t)descriptor->primitive;
+        default: return UINT64_MAX - 1u;
+    }
+}
+
+uint64_t subProbeProgrammableStageCheck(
+    const SGPUProbeProgrammableStage *stage,
+    uint32_t selector) {
+    if (stage == NULL) {
+        return UINT64_MAX;
+    }
+    if (selector == 0u) return (uint64_t)stage->constantsCount;
+    if (selector == 7u) return (uint64_t)stage->stage;
+    if (stage->constants == NULL || stage->constantsCount < 2u) {
+        return UINT64_MAX - 2u;
+    }
+    switch (selector) {
+        case 1: return subProbeViewSum(stage->constants[0].key);
+        case 2: return (uint64_t)stage->constants[0].key.len;
+        case 3: return (uint64_t)stage->constants[0].value;
+        case 4: return subProbeViewSum(stage->constants[1].key);
+        case 5: return (uint64_t)stage->constants[1].key.len;
+        case 6: return (uint64_t)stage->constants[1].value;
+        default: return UINT64_MAX - 1u;
+    }
+}

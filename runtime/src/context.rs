@@ -318,6 +318,15 @@ struct Allocation {
     marked: bool,
 }
 
+/// Host allocations used only while recursively lowering one foreign-call
+/// argument tree (§32). They are deliberately outside the managed heap: a
+/// callback may collect while C is borrowing the scratch array. Nested
+/// foreign calls take a length mark and release only their own suffix.
+struct BoundaryScratchAllocation {
+    base: *mut u8,
+    layout: Layout,
+}
+
 /// One retained-and-poisoned exact-size allocation, in retirement order.
 struct RetainedAllocation {
     payload: usize,
@@ -424,6 +433,7 @@ pub struct Context {
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
     allocations: HashMap<usize, Allocation>,
+    boundary_scratch: Vec<BoundaryScratchAllocation>,
     // Diagnostic-mode retained-and-poisoned addresses. Exact membership
     // preserves double-delete classification without putting dead records
     // in the map collection sweeps.
@@ -543,6 +553,7 @@ impl Context {
             async_roots: VecDeque::new(),
             active_async_frames: Vec::new(),
             allocations: HashMap::new(),
+            boundary_scratch: Vec::new(),
             dead_allocations: AddressSet::default(),
             retained_allocations: VecDeque::new(),
             retained_bytes: 0,
@@ -1161,6 +1172,55 @@ impl Context {
             },
         );
         payload
+    }
+
+    /// Starts a nested call-duration boundary-scratch scope.
+    #[must_use]
+    pub fn boundary_scratch_mark(&self) -> usize {
+        self.boundary_scratch.len()
+    }
+
+    /// Allocates zeroed, 16-aligned storage outside the managed heap for a
+    /// recursively lowered C element array. The matching mark release frees
+    /// it after the synchronous foreign call returns.
+    pub fn boundary_scratch_alloc(&mut self, size: usize, pos_id: u32) -> *mut u8 {
+        let Ok(layout) = Layout::from_size_align(size.max(1), 16) else {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("boundary scratch allocation of {size} bytes is not representable"),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        };
+        // SAFETY: `layout` is non-empty and has a supported power-of-two
+        // alignment.
+        let base = unsafe { alloc_zeroed(layout) };
+        if base.is_null() {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("boundary scratch allocation of {size} bytes failed"),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        }
+        self.boundary_scratch
+            .push(BoundaryScratchAllocation { base, layout });
+        base
+    }
+
+    /// Releases the suffix allocated since `mark`. An out-of-range mark is
+    /// an internal ABI disagreement; release everything rather than leak.
+    pub fn boundary_scratch_release(&mut self, mark: usize) {
+        let mark = if mark <= self.boundary_scratch.len() {
+            mark
+        } else {
+            0
+        };
+        for allocation in self.boundary_scratch.drain(mark..).rev() {
+            // SAFETY: each record owns a distinct allocation made by
+            // `boundary_scratch_alloc` and is drained exactly once.
+            unsafe { dealloc(allocation.base, allocation.layout) };
+        }
     }
 
     // ----- ship-tier arena internals (§8.1b) -----
@@ -2455,6 +2515,7 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
+        self.boundary_scratch_release(0);
         for a in self.allocations.values() {
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `Context::alloc` and are freed exactly once, here.

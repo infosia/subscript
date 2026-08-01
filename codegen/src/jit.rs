@@ -103,6 +103,18 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("subscript_rt_collect", ffi::subscript_rt_collect as *const u8),
         ("subscript_rt_alloc", ffi::subscript_rt_alloc as *const u8),
         (
+            "subscript_rt_boundary_scratch_mark",
+            ffi::subscript_rt_boundary_scratch_mark as *const u8,
+        ),
+        (
+            "subscript_rt_boundary_scratch_alloc",
+            ffi::subscript_rt_boundary_scratch_alloc as *const u8,
+        ),
+        (
+            "subscript_rt_boundary_scratch_release",
+            ffi::subscript_rt_boundary_scratch_release as *const u8,
+        ),
+        (
             "subscript_rt_async_kick",
             ffi::subscript_rt_async_kick as *const u8,
         ),

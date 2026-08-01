@@ -386,6 +386,66 @@ declare class SubProbeBindGroupEntry {
 declare function subProbeBindGroupEntryCheck(entry: SubProbeBindGroupEntry | null): u32;
 declare function subProbeBindGroupEntryFill(entry: SubProbeBindGroupEntry | null, selected: u32, handle: SubDevice): void;
 
+declare class SGPUProbeComputeState {
+  entryPoint: string;
+  workgroupX: u32;
+  workgroupY: u32;
+  constantSeed: u64;
+  constructor(entryPoint: string, workgroupX: u32, workgroupY: u32, constantSeed: u64);
+}
+
+declare class SGPUProbeComputePipelineDescriptor {
+  label: string;
+  compute: SGPUProbeComputeState;
+  flags: u32;
+  constructor(label: string, compute: SGPUProbeComputeState, flags: u32);
+}
+
+declare function subProbeComputePipelineCheck(descriptor: SGPUProbeComputePipelineDescriptor | null, selector: u32): u64;
+
+declare class SGPUProbeVertexAttribute {
+  shaderLocation: u32;
+  format: u32;
+  offset: u64;
+  constructor(shaderLocation: u32, format: u32, offset: u64);
+}
+
+declare class SGPUProbeVertexBufferLayout {
+  arrayStride: u64;
+  stepMode: u32;
+  attributes: SGPUProbeVertexAttribute[];
+  constructor(arrayStride: u64, stepMode: u32, attributes: SGPUProbeVertexAttribute[]);
+}
+
+declare class SGPUProbeVertexState {
+  moduleId: u32;
+  buffers: SGPUProbeVertexBufferLayout[];
+  constructor(moduleId: u32, buffers: SGPUProbeVertexBufferLayout[]);
+}
+
+declare class SGPUProbeRenderPipelineDescriptor {
+  label: string;
+  vertex: SGPUProbeVertexState;
+  primitive: u32;
+  constructor(label: string, vertex: SGPUProbeVertexState, primitive: u32);
+}
+
+declare function subProbeRenderPipelineCheck(descriptor: SGPUProbeRenderPipelineDescriptor | null, selector: u32): u64;
+
+declare class SGPUProbeConstantEntry {
+  key: string;
+  value: f64;
+  constructor(key: string, value: f64);
+}
+
+declare class SGPUProbeProgrammableStage {
+  constants: SGPUProbeConstantEntry[];
+  stage: u32;
+  constructor(constants: SGPUProbeConstantEntry[], stage: u32);
+}
+
+declare function subProbeProgrammableStageCheck(stage: SGPUProbeProgrammableStage | null, selector: u32): u64;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

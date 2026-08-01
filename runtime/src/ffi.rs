@@ -98,6 +98,44 @@ pub unsafe extern "C" fn subscript_rt_alloc(
     unsafe { &mut *ctx }.alloc(size as usize, class_id, pos_id)
 }
 
+/// Begins a nested call-duration scratch scope for recursive boundary
+/// lowering (§32).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_boundary_scratch_mark(ctx: *mut Context) -> u64 {
+    unsafe { &*ctx }.boundary_scratch_mark() as u64
+}
+
+/// Allocates one zeroed scratch block in the current boundary scope.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_boundary_scratch_alloc(
+    ctx: *mut Context,
+    size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    unsafe { &mut *ctx }.boundary_scratch_alloc(size as usize, pos_id)
+}
+
+/// Releases every boundary scratch block allocated since `mark`.
+///
+/// # Safety
+///
+/// Shared contract; `mark` came from this Context.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_boundary_scratch_release(
+    ctx: *mut Context,
+    mark: u64,
+) {
+    unsafe { &mut *ctx }.boundary_scratch_release(mark as usize);
+}
+
 /// `Context.free(value)`: frees immediately by default. With freed-handle
 /// diagnostics enabled, a threshold-eligible allocation may be retained
 /// within the byte budget; double-delete diagnostics then follow §8.1a-3's

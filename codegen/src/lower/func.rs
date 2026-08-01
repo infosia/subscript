@@ -19,6 +19,8 @@
 //! calls the resume pointer stored in the frame, and records `done`
 //! (C8: `value` is zero-initialized when `done`).
 
+use std::collections::HashSet;
+
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
     types, AbiParam, ArgumentPurpose, Block, BlockArg, InstBuilder, MemFlags, Signature,
@@ -2392,6 +2394,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if let Some(StructRet::Sret(slot)) = struct_ret {
             argv.push(slot);
         }
+        let mut uses_scratch_array = false;
+        for parameter in &params {
+            uses_scratch_array |= self.boundary_type_needs_scratch_array(&parameter.ty)?;
+        }
+        let scratch_mark = if uses_scratch_array {
+            Some(
+                self.call_rt(self.ml.rt.boundary_scratch_mark, &[self.ctx_v], false)?
+                    .ok_or_else(|| internal("boundary_scratch_mark result"))?,
+            )
+        } else {
+            None
+        };
         let mut boundary_writebacks = Vec::new();
         for (parameter, a) in params.iter().zip(args) {
             let rv = self.eval(a)?;
@@ -2401,6 +2415,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 &mut sig,
                 &mut argv,
                 &mut boundary_writebacks,
+                scratch_mark,
+                pos,
             )?;
         }
         match ret_repr {
@@ -2427,6 +2443,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let fref = self.ml.module.declare_func_in_func(id, self.b.func);
         let inst = self.b.ins().call(fref, &argv);
         let res = self.b.inst_results(inst).to_vec();
+        if let Some(mark) = scratch_mark {
+            self.call_rt(
+                self.ml.rt.boundary_scratch_release,
+                &[self.ctx_v, mark],
+                false,
+            )?;
+        }
         // A foreign call may set the Context trap flag — directly, or via
         // a callback that trapped inside the trampoline — so check it.
         if checked {
@@ -2666,14 +2689,99 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.is_value_class_ty(inner).then_some(id.0)
     }
 
-    fn boundary_struct_has_string_field(&self, cid: usize) -> Result<bool, String> {
+    fn boundary_struct_needs_scratch(&self, cid: usize) -> Result<bool, String> {
+        self.boundary_struct_needs_scratch_inner(cid, &mut HashSet::new())
+    }
+
+    fn boundary_struct_needs_scratch_inner(
+        &self,
+        cid: usize,
+        visiting: &mut HashSet<usize>,
+    ) -> Result<bool, String> {
+        if !visiting.insert(cid) {
+            return Ok(false);
+        }
         let class = self
             .ml
             .hir
             .classes
             .get(cid)
             .ok_or_else(|| internal("boundary struct class id out of range"))?;
-        Ok(class.is_boundary && class.fields.iter().any(|field| field.ty == Type::Str))
+        if !class.is_boundary {
+            visiting.remove(&cid);
+            return Ok(false);
+        }
+        for field in &class.fields {
+            let lowered = match &field.ty {
+                Type::Str | Type::Array(_) => true,
+                Type::Class(inner) if self.is_value_class_ty(&field.ty) => {
+                    self.boundary_struct_needs_scratch_inner(inner.0, visiting)?
+                }
+                _ => false,
+            };
+            if lowered {
+                visiting.remove(&cid);
+                return Ok(true);
+            }
+        }
+        visiting.remove(&cid);
+        Ok(false)
+    }
+
+    fn boundary_struct_needs_scratch_array(&self, cid: usize) -> Result<bool, String> {
+        self.boundary_struct_needs_scratch_array_inner(cid, &mut HashSet::new())
+    }
+
+    fn boundary_struct_needs_scratch_array_inner(
+        &self,
+        cid: usize,
+        visiting: &mut HashSet<usize>,
+    ) -> Result<bool, String> {
+        if !visiting.insert(cid) {
+            return Ok(false);
+        }
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        for field in &class.fields {
+            let uses = match &field.ty {
+                Type::Array(element) => match &**element {
+                    Type::Class(element_cid) if self.is_value_class_ty(element) => {
+                        self.boundary_struct_needs_scratch(element_cid.0)?
+                    }
+                    _ => false,
+                },
+                Type::Class(inner) if self.is_value_class_ty(&field.ty) => {
+                    self.boundary_struct_needs_scratch_array_inner(inner.0, visiting)?
+                }
+                _ => false,
+            };
+            if uses {
+                visiting.remove(&cid);
+                return Ok(true);
+            }
+        }
+        visiting.remove(&cid);
+        Ok(false)
+    }
+
+    fn boundary_type_needs_scratch_array(&self, ty: &Type) -> Result<bool, String> {
+        match ty {
+            Type::Nullable(inner) => self.boundary_type_needs_scratch_array(inner),
+            Type::Class(cid) if self.is_value_class_ty(ty) => {
+                self.boundary_struct_needs_scratch_array(cid.0)
+            }
+            Type::Array(element) => match &**element {
+                Type::Class(cid) if self.is_value_class_ty(element) => {
+                    self.boundary_struct_needs_scratch(cid.0)
+                }
+                _ => Ok(false),
+            },
+            _ => Ok(false),
+        }
     }
 
     /// The pointer form of a `Struct | null` value: the address of a
@@ -2703,6 +2811,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         sig: &mut Signature,
         argv: &mut Vec<Value>,
         boundary_writebacks: &mut Vec<BoundaryPtrWriteback>,
+        scratch_mark: Option<Value>,
+        call_pos: &Pos,
     ) -> Result<(), String> {
         let ty = &parameter.ty;
         match ty {
@@ -2724,15 +2834,31 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.push_aggregate_abi(sig, argv, &comps, 16, 8);
                 Ok(())
             }
-            Type::Array(_) => {
+            Type::Array(element_ty) => {
                 let h = self.expect_s(rv)?;
-                let data = self
-                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, h], false)?
-                    .ok_or_else(|| internal("array_data result"))?;
                 let len32 = self
                     .call_rt(self.ml.rt.array_len, &[self.ctx_v, h], false)?
                     .ok_or_else(|| internal("array_len result"))?;
                 let count = self.b.ins().uextend(types::I64, len32);
+                let data = match &**element_ty {
+                    Type::Class(cid)
+                        if self.is_value_class_ty(element_ty)
+                            && self.boundary_struct_needs_scratch(cid.0)? =>
+                    {
+                        self.marshal_boundary_array(
+                            cid.0,
+                            h,
+                            len32,
+                            scratch_mark.ok_or_else(|| {
+                                internal("recursive boundary array lacks a scratch scope")
+                            })?,
+                            call_pos,
+                        )?
+                    }
+                    _ => self
+                        .call_rt(self.ml.rt.array_data, &[self.ctx_v, h], false)?
+                        .ok_or_else(|| internal("array_data result"))?,
+                };
                 match &parameter.foreign_provenance {
                     Some(hir::ForeignTypeProvenance::Descriptor { .. }) => {
                         // A descriptor is the C aggregate `{ T *items;
@@ -2774,9 +2900,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let cid = self
                     .boundary_struct_ptr_id(ty)
                     .ok_or_else(|| internal("boundary struct pointer lacks a class id"))?;
-                if self.boundary_struct_has_string_field(cid)? {
+                if self.boundary_struct_needs_scratch(cid)? {
                     let (pointer, writeback) =
-                        self.marshal_string_field_boundary_ptr(cid, v)?;
+                        self.marshal_string_field_boundary_ptr(
+                            cid,
+                            v,
+                            scratch_mark,
+                            call_pos,
+                        )?;
                     self.push_abi(sig, argv, types::I64, pointer);
                     boundary_writebacks.push(writeback);
                 } else {
@@ -2814,8 +2945,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
             Type::Bool => (1, 1),
             Type::Class(id) if self.is_value_class_ty(ty) => {
-                let l = self.ml.layouts.class(id.0)?;
-                (l.size, l.align)
+                let (_, size, align) = self.boundary_c_layout(id.0)?;
+                (size, align)
             }
             Type::Class(_) => (8, 8),
             other => return Err(internal(format!("boundary C field type {other:?}"))),
@@ -2853,16 +2984,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         cid: usize,
         source: Value,
+        scratch_mark: Option<Value>,
+        call_pos: &Pos,
     ) -> Result<(Value, BoundaryPtrWriteback), String> {
-        let class = self
-            .ml
-            .hir
-            .classes
-            .get(cid)
-            .cloned()
-            .ok_or_else(|| internal("boundary struct class id out of range"))?;
-        let language_layout = self.ml.layouts.class(cid)?.clone();
-        let (c_offsets, c_size, c_align) = self.boundary_c_layout(cid)?;
+        let (_, c_size, c_align) = self.boundary_c_layout(cid)?;
         let scratch = self.temp_slot(c_size, c_align);
         self.zero_bytes(scratch, c_size, c_align);
 
@@ -2871,71 +2996,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let ready = self.b.create_block();
         self.b.ins().brif(non_null, populate, &[], ready, &[]);
         self.b.switch_to_block(populate);
-
-        for (index, field) in class.fields.iter().enumerate() {
-            let language_offset = *language_layout
-                .field_offsets
-                .get(index)
-                .ok_or_else(|| internal("boundary language field offset"))?
-                as i32;
-            let c_offset = *c_offsets
-                .get(index)
-                .ok_or_else(|| internal("boundary C field offset"))?
-                as i32;
-            if field.ty == Type::Str {
-                let handle = self.b.ins().load(types::I64, flags(), source, language_offset);
-                let data = self
-                    .call_rt(self.ml.rt.str_data, &[self.ctx_v, handle], false)?
-                    .ok_or_else(|| internal("str_data result"))?;
-                let len32 = self
-                    .call_rt(self.ml.rt.str_len, &[self.ctx_v, handle], false)?
-                    .ok_or_else(|| internal("str_len result"))?;
-                let len = self.b.ins().uextend(types::I64, len32);
-                self.b.ins().store(flags(), data, scratch, c_offset);
-                self.b.ins().store(flags(), len, scratch, c_offset + 8);
-                continue;
-            }
-            if matches!(&field.ty, Type::Array(_)) {
-                // A collapsed struct-level count/pointer pair (§30.2):
-                // the language field is one array handle while the C
-                // scratch owns the adjacent `(size_t count, T* data)`.
-                let handle = self.b.ins().load(types::I64, flags(), source, language_offset);
-                let data = self
-                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
-                    .ok_or_else(|| internal("array_data result"))?;
-                let len32 = self
-                    .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
-                    .ok_or_else(|| internal("array_len result"))?;
-                let count = self.b.ins().uextend(types::I64, len32);
-                self.b.ins().store(flags(), count, scratch, c_offset);
-                self.b.ins().store(flags(), data, scratch, c_offset + 8);
-                continue;
-            }
-            if self.is_value_class_ty(&field.ty) {
-                // Embedded boundary aggregates admitted by §30.1 are
-                // recursively plain C-layout data. Copy their complete
-                // object representation at the owning struct's C offset.
-                let (size, align) = self.boundary_c_field(&field.ty)?;
-                let src = self.addr_off(source, i64::from(language_offset));
-                let dest = self.addr_off(scratch, i64::from(c_offset));
-                self.copy_bytes(dest, src, size, align);
-                continue;
-            }
-            let value = self.load_val(&field.ty, source, language_offset)?;
-            let scalar = self.expect_s(value).map_err(|_| {
-                internal(format!(
-                    "string-field boundary struct `{}` field `{}` is an unsupported aggregate",
-                    class.name, field.name
-                ))
-            })?;
-            let Repr::Scalar(_) = self.ml.layouts.repr(&field.ty)? else {
-                return Err(internal(format!(
-                    "string-field boundary struct `{}` field `{}` is not plain data",
-                    class.name, field.name
-                )));
-            };
-            self.b.ins().store(flags(), scalar, scratch, c_offset);
-        }
+        self.populate_boundary_scratch_value(
+            cid,
+            source,
+            scratch,
+            scratch_mark,
+            call_pos,
+        )?;
         self.b.ins().jump(ready, &[]);
         self.b.seal_block(populate);
         self.b.switch_to_block(ready);
@@ -2951,6 +3018,192 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 scratch,
             },
         ))
+    }
+
+    /// Recursively populates one actual-C-layout boundary value from the
+    /// language-layout value at `source` (§32).
+    fn populate_boundary_scratch_value(
+        &mut self,
+        cid: usize,
+        source: Value,
+        destination: Value,
+        scratch_mark: Option<Value>,
+        call_pos: &Pos,
+    ) -> Result<(), String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .cloned()
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        let language_layout = self.ml.layouts.class(cid)?.clone();
+        let (c_offsets, _, _) = self.boundary_c_layout(cid)?;
+        for (index, field) in class.fields.iter().enumerate() {
+            let language_offset = *language_layout
+                .field_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary language field offset"))?
+                as i32;
+            let c_offset = *c_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary C field offset"))?
+                as i32;
+            if field.ty == Type::Str {
+                let handle = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), source, language_offset);
+                let data = self
+                    .call_rt(self.ml.rt.str_data, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("str_data result"))?;
+                let len32 = self
+                    .call_rt(self.ml.rt.str_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("str_len result"))?;
+                let len = self.b.ins().uextend(types::I64, len32);
+                self.b.ins().store(flags(), data, destination, c_offset);
+                self.b
+                    .ins()
+                    .store(flags(), len, destination, c_offset + 8);
+                continue;
+            }
+            if let Type::Array(element_ty) = &field.ty {
+                let handle = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), source, language_offset);
+                let len32 = self
+                    .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("array_len result"))?;
+                let count = self.b.ins().uextend(types::I64, len32);
+                let data = match &**element_ty {
+                    Type::Class(element_cid)
+                        if self.is_value_class_ty(element_ty)
+                            && self.boundary_struct_needs_scratch(element_cid.0)? =>
+                    {
+                        self.marshal_boundary_array(
+                            element_cid.0,
+                            handle,
+                            len32,
+                            scratch_mark.ok_or_else(|| {
+                                internal("recursive boundary array lacks a scratch scope")
+                            })?,
+                            call_pos,
+                        )?
+                    }
+                    _ => self
+                        .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+                        .ok_or_else(|| internal("array_data result"))?,
+                };
+                self.b
+                    .ins()
+                    .store(flags(), count, destination, c_offset);
+                self.b
+                    .ins()
+                    .store(flags(), data, destination, c_offset + 8);
+                continue;
+            }
+            if self.is_value_class_ty(&field.ty) {
+                let Type::Class(inner_cid) = field.ty else {
+                    return Err(internal("value-class field lacks a class id"));
+                };
+                let src = self.addr_off(source, i64::from(language_offset));
+                let dest = self.addr_off(destination, i64::from(c_offset));
+                if self.boundary_struct_needs_scratch(inner_cid.0)? {
+                    self.populate_boundary_scratch_value(
+                        inner_cid.0,
+                        src,
+                        dest,
+                        scratch_mark,
+                        call_pos,
+                    )?;
+                } else {
+                    let layout = self.ml.layouts.class(inner_cid.0)?.clone();
+                    self.copy_bytes(dest, src, layout.size, layout.align);
+                }
+                continue;
+            }
+            let value = self.load_val(&field.ty, source, language_offset)?;
+            let scalar = self.expect_s(value).map_err(|_| {
+                internal(format!(
+                    "boundary struct `{}` field `{}` is an unsupported recursive aggregate",
+                    class.name, field.name
+                ))
+            })?;
+            let Repr::Scalar(_) = self.ml.layouts.repr(&field.ty)? else {
+                return Err(internal(format!(
+                    "boundary struct `{}` field `{}` is not recursively lowerable data",
+                    class.name, field.name
+                )));
+            };
+            self.b
+                .ins()
+                .store(flags(), scalar, destination, c_offset);
+        }
+        Ok(())
+    }
+
+    /// Builds the temporary C-layout element run for a collapsed pair whose
+    /// value-struct elements themselves contain absorbed members.
+    fn marshal_boundary_array(
+        &mut self,
+        element_cid: usize,
+        handle: Value,
+        len32: Value,
+        _scratch_mark: Value,
+        call_pos: &Pos,
+    ) -> Result<Value, String> {
+        let language_layout = self.ml.layouts.class(element_cid)?.clone();
+        let (_, c_size, _) = self.boundary_c_layout(element_cid)?;
+        let len64 = self.b.ins().uextend(types::I64, len32);
+        let bytes = self.b.ins().imul_imm(len64, i64::from(c_size));
+        let pos_id = self.pos_id(call_pos);
+        let pos_value = self.iconst(types::I32, pos_id);
+        let scratch = self
+            .call_rt(
+                self.ml.rt.boundary_scratch_alloc,
+                &[self.ctx_v, bytes, pos_value],
+                false,
+            )?
+            .ok_or_else(|| internal("boundary_scratch_alloc result"))?;
+        self.trap_check();
+        let source = self
+            .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+            .ok_or_else(|| internal("array_data result"))?;
+
+        let loop_block = self.b.create_block();
+        let body_block = self.b.create_block();
+        let done_block = self.b.create_block();
+        self.b.append_block_param(loop_block, types::I32);
+        let zero = self.iconst(types::I32, 0);
+        self.b.ins().jump(loop_block, &[BlockArg::Value(zero)]);
+        self.b.switch_to_block(loop_block);
+        let index = self.b.block_params(loop_block)[0];
+        let more = self.b.ins().icmp(IntCC::SignedLessThan, index, len32);
+        self.b.ins().brif(more, body_block, &[], done_block, &[]);
+        self.b.switch_to_block(body_block);
+        let index64 = self.b.ins().uextend(types::I64, index);
+        let source_offset = self
+            .b
+            .ins()
+            .imul_imm(index64, i64::from(language_layout.size));
+        let destination_offset = self.b.ins().imul_imm(index64, i64::from(c_size));
+        let source_element = self.b.ins().iadd(source, source_offset);
+        let destination_element = self.b.ins().iadd(scratch, destination_offset);
+        self.populate_boundary_scratch_value(
+            element_cid,
+            source_element,
+            destination_element,
+            Some(_scratch_mark),
+            call_pos,
+        )?;
+        let next = self.b.ins().iadd_imm(index, 1);
+        self.b.ins().jump(loop_block, &[BlockArg::Value(next)]);
+        self.b.seal_block(body_block);
+        self.b.seal_block(loop_block);
+        self.b.switch_to_block(done_block);
+        self.b.seal_block(done_block);
+        Ok(scratch)
     }
 
     /// Copies a C-filled scratch record back into language storage. String
@@ -3023,10 +3276,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 continue;
             }
             if self.is_value_class_ty(&field.ty) {
-                let (size, align) = self.boundary_c_field(&field.ty)?;
+                let Type::Class(inner_cid) = field.ty else {
+                    return Err(internal("value-class field lacks a class id"));
+                };
+                if self.boundary_struct_needs_scratch(inner_cid.0)? {
+                    // Recursive positions are input-only in §32. Never copy
+                    // expanded C bytes back over the language layout.
+                    continue;
+                }
+                let layout = self.ml.layouts.class(inner_cid.0)?.clone();
                 let src = self.addr_off(writeback.scratch, i64::from(c_offset));
                 let dest = self.addr_off(writeback.source, i64::from(language_offset));
-                self.copy_bytes(dest, src, size, align);
+                self.copy_bytes(dest, src, layout.size, layout.align);
                 continue;
             }
             let repr = self.ml.layouts.repr(&field.ty)?;

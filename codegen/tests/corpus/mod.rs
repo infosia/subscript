@@ -67,6 +67,9 @@ pub(crate) fn references_interop(src: &str) -> bool {
         // R8 opaque-handle pair and nullable aggregate fields.
         "subProbePipelineLayout",
         "subProbeBindGroupEntry",
+        "subProbeComputePipeline",
+        "subProbeRenderPipeline",
+        "subProbeProgrammableStage",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }
