@@ -696,6 +696,12 @@ impl<'m> Emitter<'m> {
         for f in &self.module.functions {
             self.collect_fn_aggr(f, set);
         }
+        for f in &self.module.foreign_fns {
+            for p in &f.params {
+                collect_aggr_ty(&p.ty, set);
+            }
+            collect_aggr_ty(&f.ret, set);
+        }
         Ok(())
     }
 
@@ -7292,6 +7298,57 @@ mod tests {
         assert!(
             c.contains("char subscript_opaque;"),
             "zero-field opaque handle must emit a non-empty C11 struct:\n{c}"
+        );
+    }
+
+    #[test]
+    fn every_generated_class_type_reference_has_a_typedef_definition() {
+        let files = [
+            SourceFile::ambient(
+                "fixture.generated.d.ts",
+                "// @subscript-c-header include=\"fixture.h\"\n\
+                 declare class BoundaryRecord {\n\
+                 \x20 label: string;\n\
+                 \x20 constructor(label: string);\n\
+                 }\n\
+                 declare function inspectBoundary(record: BoundaryRecord | null): u64;\n",
+            ),
+            SourceFile::new(
+                "prog.ts",
+                "export function main(): void {\n\
+                 \x20 print(`${inspectBoundary(null)}`);\n\
+                 }\n",
+            ),
+        ];
+        let module = check_program(&files).expect("clean check");
+        let c = emit_c(&module).expect("emit").source;
+        let generated_names: HashSet<&str> = c
+            .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+            .filter(|token| {
+                let Some(rest) = token.strip_prefix("Sub_") else {
+                    return false;
+                };
+                let Some((class_id, name)) = rest.split_once('_') else {
+                    return false;
+                };
+                !class_id.is_empty()
+                    && class_id.bytes().all(|byte| byte.is_ascii_digit())
+                    && !name.is_empty()
+            })
+            .collect();
+        let defined_names: HashSet<&str> = c
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("typedef struct "))
+            .filter_map(|rest| rest.split_ascii_whitespace().next())
+            .filter(|name| generated_names.contains(name))
+            .collect();
+        let missing: Vec<&str> = generated_names
+            .difference(&defined_names)
+            .copied()
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "generated class type references lack typedef definitions: {missing:?}\n{c}"
         );
     }
 
