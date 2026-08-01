@@ -597,4 +597,32 @@ uint32_t subDeviceSumBytes(size_t dataCount, const uint8_t *data);
 void subDeviceFillBytes(size_t dataCount, uint8_t *data);
 void subDeviceFillShorts(size_t dataCount, uint16_t *data);
 
+/* ==== R6 string-view fields in boundary structs (compiler.md §28) =======
+ *
+ * Keep the downstream descriptor spelling verbatim: `SGPUStringView label`
+ * is the first field, followed by uint64_t/bool scalars. The language mirror
+ * absorbs SGPUStringView into `string`; pointer-passed crossings marshal a
+ * temporary SubBoundaryStringRecord in the C layout below. */
+
+typedef struct SGPUStringView {
+    const char *data;
+    size_t len;
+} SGPUStringView;
+
+typedef struct SubBoundaryStringRecord {
+    SGPUStringView label;
+    uint64_t handle;
+    bool enabled;
+    uint64_t serial;
+    uint64_t generation;
+} SubBoundaryStringRecord;
+
+/* Selector-based checker keeps every observation in one deterministic C
+ * entry: 0 = byte sum, 1 = handle, 2 = enabled, 3 = serial. */
+uint64_t subBoundaryStringCheck(const SubBoundaryStringRecord *record, uint32_t selector);
+
+/* C -> script direction. `emptyLabel` writes an all-zero view; otherwise
+ * the record receives a stable fixture message view. */
+void subBoundaryStringFill(SubBoundaryStringRecord *record, bool emptyLabel);
+
 #endif /* SUBSCRIPT_INTEROP_H */

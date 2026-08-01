@@ -46,6 +46,7 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
         "SUB_ACCESS",
         "subAccessMatches",
         "subBulk",
+        "subBoundaryString",
         // P7.1 async/Future shapes (compiler.md §14).
         "SUB_STAGE",
         "subStageMatches",
@@ -107,7 +108,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        95,
+        97,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -121,7 +122,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          (compiler.md §23.7a), the a90 callback-userdata rooting entry, \
          the a91 Q32 string-literal-union entry, and the a92 Q33 \
          descriptor-literal entry, the three a93–a95 Q34 async entries, and \
-         the a96 R5 scalar parameter-pair interop entry"
+         the a96 R5 scalar parameter-pair interop entry, and the a97–a98 R6 \
+         pointer-passed boundary-struct string-view entries"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

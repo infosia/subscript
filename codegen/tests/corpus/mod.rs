@@ -60,6 +60,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "SubQueryStatus",
         // P7.2 composed async capstone (compiler.md §14.4/§14.5).
         "SubWaitEntry",
+        // R6 string-view field inside a pointer-passed boundary struct.
+        "subBoundaryString",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

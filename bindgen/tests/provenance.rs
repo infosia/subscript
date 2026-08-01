@@ -428,3 +428,210 @@ fn callback_typedef_descriptor_element_is_rejected() {
         "{error}"
     );
 }
+
+#[test]
+fn by_value_string_field_boundary_struct_parameter_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct EngineText { const char *data; size_t len; } EngineText;
+        typedef struct EngineRecord { EngineText label; uint64_t serial; } EngineRecord;
+        void engineCheck(EngineRecord record);
+    ";
+    let error = generate_for_header(header, "record.h")
+        .expect_err("a by-value string-field struct parameter must fail");
+    assert!(
+        error.to_string().contains(
+            "foreign function `engineCheck` parameter `record` passes string-field boundary \
+             struct `EngineRecord` by value"
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("only a direct pointer parameter has a string-field lowering"),
+        "{error}"
+    );
+}
+
+#[test]
+fn by_value_string_field_boundary_struct_return_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct EngineText { const char *data; size_t len; } EngineText;
+        typedef struct EngineRecord { EngineText label; uint64_t serial; } EngineRecord;
+        EngineRecord engineRead(void);
+    ";
+    let error = generate_for_header(header, "record.h")
+        .expect_err("a by-value string-field struct return must fail");
+    assert!(
+        error.to_string().contains(
+            "foreign function `engineRead` returns string-field boundary struct \
+             `EngineRecord` by value"
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn string_field_boundary_struct_array_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct EngineText { const char *data; size_t len; } EngineText;
+        typedef struct EngineRecord { EngineText label; uint64_t serial; } EngineRecord;
+        typedef struct EngineRecords { const EngineRecord *items; size_t count; } EngineRecords;
+        void engineCheck(EngineRecords records);
+    ";
+    let error = generate_for_header(header, "records.h")
+        .expect_err("an array of string-field structs must fail");
+    assert!(
+        error.to_string().contains(
+            "descriptor struct `EngineRecords` forms an array of string-field boundary \
+             struct `EngineRecord`"
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("arrays of string-field structs have no boundary lowering"),
+        "{error}"
+    );
+}
+
+#[test]
+fn count_pointer_array_of_string_field_boundary_struct_is_rejected() {
+    let header = "
+        #include <stddef.h>
+        #include <stdint.h>
+        typedef struct EngineText { const char *data; size_t len; } EngineText;
+        typedef struct EngineRecord { EngineText label; uint64_t serial; } EngineRecord;
+        void engineCheck(size_t recordCount, const EngineRecord *records);
+    ";
+    let error = generate_for_header(header, "records.h")
+        .expect_err("a count/pointer array of string-field structs must fail");
+    assert!(
+        error.to_string().contains(
+            "foreign function `engineCheck` parameters `recordCount` and `records` form an \
+             array of string-field boundary struct `EngineRecord`"
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("arrays of string-field structs have no boundary lowering"),
+        "{error}"
+    );
+}
+
+#[test]
+fn every_mirror_accepted_string_field_position_has_a_lowering() {
+    struct Position {
+        name: &'static str,
+        declaration: &'static str,
+        lowered: bool,
+    }
+
+    let positions = [
+        Position {
+            name: "mutable pointer parameter",
+            declaration: "void engineUse(EngineRecord *record);",
+            lowered: true,
+        },
+        Position {
+            name: "const pointer parameter",
+            declaration: "void engineUse(const EngineRecord *record);",
+            lowered: true,
+        },
+        Position {
+            name: "by-value parameter",
+            declaration: "void engineUse(EngineRecord record);",
+            lowered: false,
+        },
+        Position {
+            name: "by-value return",
+            declaration: "EngineRecord engineUse(void);",
+            lowered: false,
+        },
+        Position {
+            name: "pointer return",
+            declaration: "EngineRecord *engineUse(void);",
+            lowered: false,
+        },
+    ];
+
+    for position in positions {
+        let header = format!(
+            "#include <stddef.h>\n#include <stdint.h>\n\
+             typedef struct EngineText {{ const char *data; size_t len; }} EngineText;\n\
+             typedef struct EngineRecord {{ EngineText label; uint64_t serial; }} EngineRecord;\n\
+             {}",
+            position.declaration
+        );
+        let result = generate_for_header(&header, "audit.h");
+        let accepted = result.is_ok();
+        let detail = result.as_ref().err().map(ToString::to_string);
+        assert_eq!(
+            accepted,
+            position.lowered,
+            "{}: accepted={} but lowered={}: {:?}",
+            position.name,
+            accepted,
+            position.lowered,
+            detail
+        );
+        if let Ok(mirror) = result {
+            assert!(mirror.contains("label: string;"), "{}: {mirror}", position.name);
+            assert!(
+                mirror.contains("record: EngineRecord | null"),
+                "{}: accepted position did not retain its pointer lowering: {mirror}",
+                position.name
+            );
+        }
+    }
+
+    // Aggregate positions not expressible by the one direct-pointer rule.
+    for (name, declaration) in [
+        (
+            "array descriptor element",
+            "typedef struct EngineRecords { const EngineRecord *items; size_t count; } EngineRecords;\n\
+             void engineUse(EngineRecords records);",
+        ),
+        (
+            "count/pointer array parameters",
+            "void engineUse(size_t recordCount, const EngineRecord *records);",
+        ),
+        (
+            "nested aggregate field",
+            "typedef struct EngineEnvelope { EngineRecord record; } EngineEnvelope;\n\
+             void engineUse(EngineEnvelope *envelope);",
+        ),
+        (
+            "callback parameter",
+            "typedef void (*EngineCallback)(const EngineRecord *record);\n\
+             typedef struct EngineCallbackInfo { EngineCallback callback; } EngineCallbackInfo;\n\
+             void engineUse(const EngineRecord *record);",
+        ),
+        (
+            "no foreign pointer use",
+            "void engineUnrelated(uint32_t value);",
+        ),
+    ] {
+        let header = format!(
+            "#include <stddef.h>\n#include <stdint.h>\n\
+             typedef struct EngineText {{ const char *data; size_t len; }} EngineText;\n\
+             typedef struct EngineRecord {{ EngineText label; uint64_t serial; }} EngineRecord;\n\
+             {declaration}"
+        );
+        let result = generate_for_header(&header, "audit.h");
+        assert!(
+            result.is_err(),
+            "{name}: unlowered position was accepted:\n{}",
+            result.expect("accepted mirror")
+        );
+    }
+}

@@ -56,6 +56,8 @@ extern "C" {
     fn subDeviceSumBytes();
     fn subDeviceFillBytes();
     fn subDeviceFillShorts();
+    fn subBoundaryStringCheck();
+    fn subBoundaryStringFill();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -74,6 +76,7 @@ fn references_interop(source: &str) -> bool {
         "subStatsMake",
         "SubQueryStatus",
         "SubWaitEntry",
+        "subBoundaryString",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -174,6 +177,14 @@ fn interop_library() -> NativeLibrary {
         (
             "subDeviceFillShorts".to_string(),
             subDeviceFillShorts as *const u8,
+        ),
+        (
+            "subBoundaryStringCheck".to_string(),
+            subBoundaryStringCheck as *const u8,
+        ),
+        (
+            "subBoundaryStringFill".to_string(),
+            subBoundaryStringFill as *const u8,
         ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime

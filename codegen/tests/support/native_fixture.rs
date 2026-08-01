@@ -52,6 +52,8 @@ extern "C" {
     fn subDeviceSumBytes();
     fn subDeviceFillBytes();
     fn subDeviceFillShorts();
+    fn subBoundaryStringCheck();
+    fn subBoundaryStringFill();
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -93,6 +95,14 @@ pub fn library() -> NativeLibrary {
         (
             "subDeviceFillShorts".to_string(),
             subDeviceFillShorts as *const u8,
+        ),
+        (
+            "subBoundaryStringCheck".to_string(),
+            subBoundaryStringCheck as *const u8,
+        ),
+        (
+            "subBoundaryStringFill".to_string(),
+            subBoundaryStringFill as *const u8,
         ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime

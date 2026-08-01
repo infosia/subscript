@@ -112,6 +112,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("subscript_rt_shadow_push", ffi::subscript_rt_shadow_push as *const u8),
         ("subscript_rt_shadow_pop", ffi::subscript_rt_shadow_pop as *const u8),
         ("subscript_rt_str_lit", ffi::subscript_rt_str_lit as *const u8),
+        (
+            "subscript_rt_str_from_view",
+            ffi::subscript_rt_str_from_view as *const u8,
+        ),
         ("subscript_rt_str_len", ffi::subscript_rt_str_len as *const u8),
         ("subscript_rt_str_concat", ffi::subscript_rt_str_concat as *const u8),
         ("subscript_rt_str_slice", ffi::subscript_rt_str_slice as *const u8),

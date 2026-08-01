@@ -448,3 +448,46 @@ void subDeviceFillShorts(size_t dataCount, uint16_t *data) {
         data[i] = (uint16_t)(1000u + (uint32_t)i * 257u);
     }
 }
+
+/* ==== R6 string-view fields in pointer-passed boundary structs (§28) ==== */
+
+uint64_t subBoundaryStringCheck(const SubBoundaryStringRecord *record, uint32_t selector) {
+    if (record == NULL) {
+        return UINT64_MAX;
+    }
+    switch (selector) {
+        case 0: {
+            uint64_t sum = 0u;
+            if (record->label.data != NULL) {
+                for (size_t i = 0; i < record->label.len; i++) {
+                    sum += (uint64_t)(unsigned char)record->label.data[i];
+                }
+            }
+            return sum;
+        }
+        case 1:
+            return record->handle;
+        case 2:
+            return record->enabled ? 1u : 0u;
+        case 3:
+            return record->serial;
+        default:
+            return UINT64_MAX - 1u;
+    }
+}
+
+void subBoundaryStringFill(SubBoundaryStringRecord *record, bool emptyLabel) {
+    static const char label[] = "filled-by-c";
+    if (record == NULL) {
+        return;
+    }
+    memset(record, 0, sizeof(*record));
+    if (!emptyLabel) {
+        record->label.data = label;
+        record->label.len = sizeof(label) - 1u;
+    }
+    record->handle = 77u;
+    record->enabled = true;
+    record->serial = 1234u;
+    record->generation = 5678u;
+}

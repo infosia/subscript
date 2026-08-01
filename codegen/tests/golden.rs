@@ -144,6 +144,44 @@ fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
 }
 
 #[test]
+fn string_field_pointer_write_direction_matches_both_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a97-interop-string-field-write";
+    let sources = corpus::entry_sources(&accept, id);
+    let libraries = native_libraries(&sources);
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(jit, golden, "{id}: dev-JIT C observations are wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
+fn string_field_pointer_read_direction_matches_both_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a98-interop-string-field-read";
+    let sources = corpus::entry_sources(&accept, id);
+    let libraries = native_libraries(&sources);
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(
+        jit,
+        golden,
+        "{id}: C-filled view was not materialized"
+    );
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
 fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -207,11 +245,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // coverage (a89), callback-userdata collection rooting (a90), and
     // Q32 string-literal union aliases (a91), Q33 descriptor literals
     // (a92), Q34 poll-driven async (a93–a95), and R5 scalar parameter
-    // array-pairs (a96).
+    // array-pairs (a96), and R6 string-view fields in pointer-passed
+    // boundary structs in both directions (a97–a98).
     assert_eq!(
         golden_ids.len(),
-        96,
-        "expected exactly 96 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        98,
+        "expected exactly 98 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -222,7 +261,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          astral-intern collection, a89 P25 embedded chain-payload read-back, \
          a90 callback-userdata rooting, and a91 Q32 string-literal-union \
          a92 Q33 descriptor-literal, a93–a95 Q34 async goldens, and a96 R5 \
-         scalar parameter-pair interop, found {}",
+         scalar parameter-pair interop, plus a97–a98 R6 pointer-passed \
+         boundary string-field interop in both directions, found {}",
         golden_ids.len()
     );
 

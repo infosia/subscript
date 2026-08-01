@@ -262,6 +262,14 @@ enum TrapOperand {
     },
 }
 
+/// Post-call copy-back for a pointer-passed string-field boundary struct.
+/// The two names are C temporaries emitted while marshaling the argument.
+struct BoundaryPtrWriteback {
+    cid: ClassId,
+    source: String,
+    scratch: String,
+}
+
 struct Emitter<'m> {
     module: &'m hir::Module,
     /// C-ABI layouts, shared with the CLIF path: used for the exact same
@@ -3375,7 +3383,7 @@ impl<'m> Emitter<'m> {
                 )
             }
             hir::Callee::Foreign(name) => {
-                self.eval_foreign_call(name, args, ret_ty, out, depth, checked)
+                self.eval_foreign_call(name, args, ret_ty, pos, out, depth, checked)
             }
             // A Math intrinsic (stdlib.md §1) calls its opaque runtime
             // symbol — never a bare libm call, which clang would
@@ -4195,6 +4203,21 @@ impl<'m> Emitter<'m> {
         Ok(false)
     }
 
+    fn boundary_struct_ptr_id(&self, ty: &Type) -> Result<Option<ClassId>, String> {
+        let Type::Nullable(inner) = ty else {
+            return Ok(None);
+        };
+        let Type::Class(id) = &**inner else {
+            return Ok(None);
+        };
+        Ok(self.is_value_class(*id)?.then_some(*id))
+    }
+
+    fn boundary_struct_has_string_field(&self, cid: ClassId) -> Result<bool, String> {
+        let class = self.class(cid)?;
+        Ok(class.is_boundary && class.fields.iter().any(|field| field.ty == Type::Str))
+    }
+
     /// For a boundary struct-pointer target (`Struct | null`), the foreign
     /// header pointer type an emitted pointer expression is cast to
     /// (`HeaderStruct*`) — the header struct name, not the language name.
@@ -4231,6 +4254,7 @@ impl<'m> Emitter<'m> {
         name: &str,
         args: &[hir::Expr],
         ret_ty: &Type,
+        pos: &Pos,
         out: &mut String,
         depth: usize,
         checked: bool,
@@ -4248,10 +4272,17 @@ impl<'m> Emitter<'m> {
         let mut bufs: Vec<String> = Vec::new();
         let mut part_groups: Vec<Vec<String>> = Vec::new();
         let mut pin_cts: Vec<Option<String>> = Vec::new();
+        let mut boundary_writebacks = Vec::new();
         for (p, a) in ff.params.iter().zip(args) {
             let mut buf = String::new();
-            let (expr, pin_ct) =
-                self.marshal_foreign_c_arg(&ff.name, p, a, &mut buf, depth)?;
+            let (expr, pin_ct) = self.marshal_foreign_c_arg(
+                &ff.name,
+                p,
+                a,
+                &mut buf,
+                depth,
+                &mut boundary_writebacks,
+            )?;
             bufs.push(buf);
             part_groups.push(expr);
             pin_cts.push(pin_ct);
@@ -4283,6 +4314,34 @@ impl<'m> Emitter<'m> {
         }
         let parts: Vec<String> = part_groups.into_iter().flatten().collect();
         let call = format!("{name}({})", parts.join(", "));
+        if !boundary_writebacks.is_empty() {
+            let result = if let Type::Class(cid) = &ff.ret {
+                if self.is_value_class(*cid)? {
+                    let ind = indent(depth);
+                    let header_ty = self.class(*cid)?.name.clone();
+                    let lang_ty = self.class_name(*cid)?;
+                    let header_result = self.fresh_tmp();
+                    let language_result = self.fresh_tmp();
+                    let _ = writeln!(out, "{ind}{header_ty} {header_result} = {call};");
+                    if checked {
+                        self.emit_trap_check(out, depth)?;
+                    }
+                    let _ = writeln!(
+                        out,
+                        "{ind}{lang_ty} {language_result}; memcpy(&{language_result}, &{header_result}, sizeof {language_result});"
+                    );
+                    language_result
+                } else {
+                    self.emit_foreign_call_result(call, ret_ty, checked, out, depth)?
+                }
+            } else {
+                self.emit_foreign_call_result(call, ret_ty, checked, out, depth)?
+            };
+            for writeback in boundary_writebacks {
+                self.emit_string_field_boundary_writeback(writeback, pos, out, depth)?;
+            }
+            return Ok(result);
+        }
         // A by-value boundary-struct return (§14.2): the C compiler performs
         // the struct-return ABI; the returned header struct is copied into a
         // language value class of identical layout (invariant 1), so callers
@@ -4305,6 +4364,32 @@ impl<'m> Emitter<'m> {
         self.eval_call_with_policy(call, ret_ty, checked, out, depth)
     }
 
+    /// Materializes a foreign-call result before pointer scratch copy-back.
+    /// Foreign calls normally carry a HIR call site, but keeping the unchecked
+    /// form well-formed makes this helper total for hand-built HIR tests.
+    fn emit_foreign_call_result(
+        &mut self,
+        call: String,
+        ret_ty: &Type,
+        checked: bool,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        if checked {
+            return self.eval_checked_call(call, ret_ty, out, depth);
+        }
+        let ind = indent(depth);
+        if *ret_ty == Type::Void {
+            let _ = writeln!(out, "{ind}{call};");
+            Ok(String::new())
+        } else {
+            let result = self.fresh_tmp();
+            let ctype = self.ctype(ret_ty)?;
+            let _ = writeln!(out, "{ind}{ctype} {result} = {call};");
+            Ok(result)
+        }
+    }
+
     /// Marshals one argument of a foreign call to a C expression (Q13),
     /// emitting any needed temporaries into `out`.
     ///
@@ -4322,6 +4407,7 @@ impl<'m> Emitter<'m> {
         arg: &hir::Expr,
         out: &mut String,
         depth: usize,
+        boundary_writebacks: &mut Vec<BoundaryPtrWriteback>,
     ) -> Result<(Vec<String>, Option<String>), String> {
         let ind = indent(depth);
         match &parameter.ty {
@@ -4426,10 +4512,20 @@ impl<'m> Emitter<'m> {
                 // identical (invariant 1) so the pointer is ABI-safe, but
                 // nominally distinct, and the cast documents that intent
                 // and compiles clean on any clang.
-                let cast = self.boundary_ptr_cast(&parameter.ty)?
-                    .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
-                let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
-                Ok((vec![format!("({cast})({expr})")], Some(cast)))
+                let cid = self
+                    .boundary_struct_ptr_id(&parameter.ty)?
+                    .ok_or_else(|| "boundary struct ptr lacks a class id".to_string())?;
+                if self.boundary_struct_has_string_field(cid)? {
+                    let (expr, writeback) =
+                        self.marshal_string_field_boundary_c_ptr(cid, arg, out, depth)?;
+                    boundary_writebacks.push(writeback);
+                    Ok((vec![expr], None))
+                } else {
+                    let cast = self.boundary_ptr_cast(&parameter.ty)?
+                        .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
+                    let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
+                    Ok((vec![format!("({cast})({expr})")], Some(cast)))
+                }
             }
             _ => {
                 let v = self.eval(arg, out, depth)?;
@@ -4437,6 +4533,130 @@ impl<'m> Emitter<'m> {
                 Ok((vec![v], Some(ct)))
             }
         }
+    }
+
+    /// Builds one actual-header-layout scratch record for a pointer-passed
+    /// boundary struct containing direct string-view fields. The string data
+    /// pointers borrow the language string bytes for this call only.
+    fn marshal_string_field_boundary_c_ptr(
+        &mut self,
+        cid: ClassId,
+        arg: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<(String, BoundaryPtrWriteback), String> {
+        let ind = indent(depth);
+        let class = self.class(cid)?.clone();
+        let language_type = self.class_name(cid)?;
+        let header_type = class.name.clone();
+        let pointer_expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
+        let source = self.fresh_tmp();
+        let scratch = self.fresh_tmp();
+        let c_pointer = self.fresh_tmp();
+        let _ = writeln!(
+            out,
+            "{ind}{language_type}* {source} = ({language_type}*)({pointer_expr});"
+        );
+        let _ = writeln!(out, "{ind}{header_type} {scratch} = ({header_type}){{0}};");
+        let _ = writeln!(out, "{ind}{header_type}* {c_pointer} = NULL;");
+        let _ = writeln!(out, "{ind}if ({source} != NULL) {{");
+        let mut fields = Vec::with_capacity(class.fields.len());
+        for field in &class.fields {
+            let name = sanitize(&field.name);
+            if field.ty == Type::Str {
+                fields.push(format!(
+                    "{{ (const char*)subscript_rt_str_data(ctx, {source}->{name}), (size_t)subscript_rt_str_len(ctx, {source}->{name}) }}"
+                ));
+                continue;
+            }
+            match &field.ty {
+                Type::I8
+                | Type::U8
+                | Type::I16
+                | Type::U16
+                | Type::F16
+                | Type::I32
+                | Type::U32
+                | Type::I64
+                | Type::U64
+                | Type::F32
+                | Type::F64
+                | Type::Bool
+                | Type::Enum(_)
+                | Type::Object
+                | Type::Nullable(_) => {}
+                Type::Class(id) if !self.is_value_class(*id)? => {}
+                other => {
+                    return Err(format!(
+                        "string-field boundary struct `{}` field `{}` has unsupported aggregate type {other:?}",
+                        class.name, field.name
+                    ));
+                }
+            }
+            fields.push(format!("{source}->{name}"));
+        }
+        let _ = writeln!(
+            out,
+            "{}{scratch} = ({header_type}){{ {} }};",
+            indent(depth + 1),
+            fields.join(", ")
+        );
+        let _ = writeln!(out, "{}{c_pointer} = &{scratch};", indent(depth + 1));
+        let _ = writeln!(out, "{ind}}}");
+        Ok((
+            c_pointer,
+            BoundaryPtrWriteback {
+                cid,
+                source,
+                scratch,
+            },
+        ))
+    }
+
+    /// Copies one C-filled scratch record back to language layout. Direct
+    /// string-view fields allocate Context-owned language strings; the
+    /// generic view type avoids depending on the registered view's field
+    /// names while preserving its `{pointer,length}` C layout.
+    fn emit_string_field_boundary_writeback(
+        &mut self,
+        writeback: BoundaryPtrWriteback,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<(), String> {
+        let class = self.class(writeback.cid)?.clone();
+        let ind = indent(depth);
+        let _ = writeln!(out, "{ind}if ({} != NULL) {{", writeback.source);
+        for field in &class.fields {
+            let name = sanitize(&field.name);
+            if field.ty == Type::Str {
+                let view = self.fresh_tmp();
+                let _ = writeln!(
+                    out,
+                    "{}subscript_callback_string_view {view}; memcpy(&{view}, &{}.{name}, sizeof {view});",
+                    indent(depth + 1),
+                    writeback.scratch
+                );
+                let pos_id = self.pos_id(pos);
+                let _ = writeln!(
+                    out,
+                    "{}{}->{name} = subscript_rt_str_from_view(ctx, {view}.data, (uint64_t){view}.len, {pos_id}u);",
+                    indent(depth + 1),
+                    writeback.source
+                );
+                self.emit_trap_check(out, depth + 1)?;
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{}{}->{name} = {}.{name};",
+                    indent(depth + 1),
+                    writeback.source,
+                    writeback.scratch
+                );
+            }
+        }
+        let _ = writeln!(out, "{ind}}}");
+        Ok(())
     }
 
     /// Marshals a by-value boundary struct to the corresponding C header
@@ -6074,6 +6294,7 @@ extern void subscript_rt_root_add(void* ctx, void* base, uint64_t words);
 extern void subscript_rt_shadow_push(void* ctx, void* base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void* ctx);
 extern void* subscript_rt_str_lit(void* ctx, const unsigned char* ptr, uint64_t len, uint32_t pos_id);
+extern void* subscript_rt_str_from_view(void* ctx, const unsigned char* ptr, uint64_t len, uint32_t pos_id);
 extern int32_t subscript_rt_str_len(void* ctx, const void* s);
 extern void* subscript_rt_str_concat(void* ctx, const void* a, const void* b, uint32_t pos_id);
 extern void* subscript_rt_str_slice(void* ctx, const void* s, int32_t start, int32_t end, uint32_t pos_id);

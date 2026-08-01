@@ -84,6 +84,10 @@ pub(crate) struct ClassLayout {
 #[derive(Debug)]
 pub(crate) struct Layouts {
     classes: Vec<ClassLayout>,
+    /// Whether each value class contains one or more managed handles in its
+    /// language-layout storage. Boundary structs may contain `string` fields
+    /// even though source `@CStruct` classes keep the narrower whitelist.
+    managed_interior: Vec<bool>,
 }
 
 /// One field's name and byte offset inside its struct, as surfaced by
@@ -306,13 +310,35 @@ impl Layouts {
         for (i, slot) in b.slots.into_iter().enumerate() {
             classes.push(slot.ok_or_else(|| internal(format!("class {i} not laid out")))?);
         }
-        Ok(Layouts { classes })
+        let mut managed_interior = vec![false; n];
+        let mut managed_known = vec![false; n];
+        let mut managed_visiting = vec![false; n];
+        for id in 0..n {
+            managed_interior[id] = class_contains_managed(
+                module,
+                id,
+                &mut managed_interior,
+                &mut managed_known,
+                &mut managed_visiting,
+            )?;
+        }
+        Ok(Layouts {
+            classes,
+            managed_interior,
+        })
     }
 
     /// Layout of class `id`.
     pub fn class(&self, id: usize) -> Result<&ClassLayout, String> {
         self.classes
             .get(id)
+            .ok_or_else(|| internal(format!("class id {id} out of range")))
+    }
+
+    fn class_has_managed_interior(&self, id: usize) -> Result<bool, String> {
+        self.managed_interior
+            .get(id)
+            .copied()
             .ok_or_else(|| internal(format!("class id {id} out of range")))
     }
 
@@ -423,19 +449,106 @@ pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
     })
 }
 
-/// True when a value of `ty` is or *contains* managed handles: a
-/// managed scalar, a `FixedArray` whose elements do, or an
-/// `IterResult` whose value does. Such values must be visible to the
-/// collector wherever they are stored. (Value classes cannot contain
-/// managed fields under the C2 whitelist; if that whitelist widens,
-/// this predicate must learn to walk their fields.)
+/// True when a value of `ty` is or *contains* managed handles: a managed
+/// scalar, a boundary value class with managed fields, a `FixedArray` whose
+/// elements do, or an `IterResult` whose value does. Such values must be
+/// visible to the collector wherever they are stored.
 pub(crate) fn has_managed_interior(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
     if is_managed(layouts, ty)? {
         return Ok(true);
     }
     Ok(match ty {
+        Type::Class(id) if layouts.class(id.0)?.is_value => {
+            layouts.class_has_managed_interior(id.0)?
+        }
         Type::FixedArray(elem, _) => has_managed_interior(layouts, elem)?,
         Type::IterResult(v) => has_managed_interior(layouts, v)?,
+        _ => false,
+    })
+}
+
+/// Computes the managed-interior bit for one class without depending on
+/// byte layout. The same containment-cycle discipline as layout applies;
+/// ordinary reference classes are managed handles themselves, while value
+/// classes recursively expose their stored fields to the collector.
+fn class_contains_managed(
+    module: &hir::Module,
+    id: usize,
+    memo: &mut [bool],
+    known: &mut [bool],
+    visiting: &mut [bool],
+) -> Result<bool, String> {
+    if *known
+        .get(id)
+        .ok_or_else(|| internal(format!("class id {id} out of range")))?
+    {
+        return memo
+            .get(id)
+            .copied()
+            .ok_or_else(|| internal(format!("class id {id} out of range")));
+    }
+    let class = module
+        .classes
+        .get(id)
+        .ok_or_else(|| internal(format!("class id {id} out of range")))?;
+    if !class.is_value {
+        memo[id] = true;
+        known[id] = true;
+        return Ok(true);
+    }
+    if visiting[id] {
+        return Err(internal(format!(
+            "value-class managed-interior cycle through `{}`",
+            class.name
+        )));
+    }
+    visiting[id] = true;
+    let mut contains = false;
+    for field in &class.fields {
+        if type_contains_managed(module, &field.ty, memo, known, visiting)? {
+            contains = true;
+            break;
+        }
+    }
+    visiting[id] = false;
+    memo[id] = contains;
+    known[id] = true;
+    Ok(contains)
+}
+
+fn type_contains_managed(
+    module: &hir::Module,
+    ty: &Type,
+    memo: &mut [bool],
+    known: &mut [bool],
+    visiting: &mut [bool],
+) -> Result<bool, String> {
+    Ok(match ty {
+        Type::Str
+        | Type::RegExp
+        | Type::Object
+        | Type::Array(_)
+        | Type::Map(..)
+        | Type::Set(_)
+        | Type::Generator(_) => true,
+        Type::Nullable(inner) => match &**inner {
+            // A nullable value-class slot is a borrowed C struct pointer,
+            // not an embedded copy of the pointed-to record.
+            Type::Class(id) => !module
+                .classes
+                .get(id.0)
+                .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?
+                .is_value,
+            Type::Func(_) => true,
+            other => type_contains_managed(module, other, memo, known, visiting)?,
+        },
+        Type::Class(id) => class_contains_managed(module, id.0, memo, known, visiting)?,
+        Type::FixedArray(elem, _) => {
+            type_contains_managed(module, elem, memo, known, visiting)?
+        }
+        Type::IterResult(value) => {
+            type_contains_managed(module, value, memo, known, visiting)?
+        }
         _ => false,
     })
 }
@@ -507,6 +620,28 @@ mod tests {
             (64, 4)
         );
         assert_eq!(layouts.class(0).expect("class 0").size, 64);
+    }
+
+    #[test]
+    fn boundary_string_field_marks_the_language_struct_as_managed_interior() {
+        let module = check_program(&[
+            SourceFile::ambient(
+                "record.d.ts",
+                "declare class Record { label: string; serial: u64; \
+                 constructor(label: string, serial: u64); }\n",
+            ),
+            SourceFile::new(
+                "t.ts",
+                "export function main(): void { \
+                 const record: Record = new Record(\"rooted\", 7); \
+                 print(record.label); }\n",
+            ),
+        ])
+        .expect("clean boundary mirror");
+        let layouts = Layouts::build(&module).expect("layouts");
+        let ty = Type::Class(subscript_compiler::ClassId(0));
+        assert!(has_managed_interior(&layouts, &ty).expect("managed interior"));
+        assert_eq!(managed_words(&layouts, &ty).expect("managed words"), 2);
     }
 
     #[test]

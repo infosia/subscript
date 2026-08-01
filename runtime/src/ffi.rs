@@ -797,6 +797,58 @@ pub unsafe extern "C" fn subscript_rt_str_lit(
     unsafe { (*ctx).intern_literal(ptr, len as usize, pos_id) }
 }
 
+/// Materializes a language string by copying a C `(ptr, len)` view.
+///
+/// This is the field-level form of the callback trampoline's view-to-string
+/// copy-in. A null pointer or zero length denotes the empty string, including
+/// the all-zero view produced by a zero-filled C boundary struct.
+///
+/// # Safety
+///
+/// Shared contract; when `ptr` is non-null and `len` is nonzero it points at
+/// `len` readable bytes for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_str_from_view(
+    ctx: *mut Context,
+    ptr: *const u8,
+    len: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    // SAFETY: caller guarantees the view contract.
+    unsafe { alloc_str_from_view(ctx, ptr, len, pos_id) }
+}
+
+/// Shared implementation for callback and boundary-struct view copy-in.
+///
+/// # Safety
+///
+/// When `ptr` is non-null and `len` is nonzero it points at `len` readable
+/// bytes for this call.
+unsafe fn alloc_str_from_view(
+    ctx: &mut Context,
+    ptr: *const u8,
+    len: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        let Ok(len) = usize::try_from(len) else {
+            ctx.trap(
+                TrapKind::Internal,
+                "C string view length does not fit the host address space",
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        };
+        // SAFETY: caller guarantees this readable view.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    };
+    ctx.alloc_str(bytes, pos_id)
+}
+
 /// String byte length (Q5: `length` is the byte length).
 ///
 /// # Safety
@@ -4386,13 +4438,10 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
     {
         return;
     }
-    let bytes: &[u8] = if message.data.is_null() || message.len == 0 {
-        &[]
-    } else {
-        // SAFETY: caller guarantees `len` readable bytes at `data`.
-        unsafe { std::slice::from_raw_parts(message.data, message.len) }
-    };
-    let s = ctx.alloc_str(bytes, 0);
+    // SAFETY: the callback ABI guarantees this readable view. Reuse the
+    // boundary copy-in implementation so callback parameters and struct
+    // fields have exactly the same null/empty semantics.
+    let s = unsafe { alloc_str_from_view(ctx, message.data, message.len as u64, 0) };
     // The language function value's wrapper takes `(ctx, env, args...)`
     // with the host C calling convention; here the args are the `string`
     // handle and the two userdata slots (§14.4).
@@ -4857,6 +4906,22 @@ mod tests {
             subscript_rt_f16_to_f64(subscript_rt_f16_from_f64(-0.0)).to_bits(),
             (-0.0f64).to_bits()
         );
+    }
+
+    #[test]
+    fn ffi_string_view_copy_in_owns_bytes_and_zero_view_is_empty() {
+        let mut ctx = Context::new();
+        let ptr: *mut Context = &mut *ctx;
+        let mut bytes = *b"field-view";
+        // SAFETY: valid Context and readable views for each call.
+        unsafe {
+            let copied = subscript_rt_str_from_view(ptr, bytes.as_ptr(), bytes.len() as u64, 9);
+            bytes.fill(b'x');
+            assert_eq!(ctx.str_bytes(copied), b"field-view");
+
+            let empty = subscript_rt_str_from_view(ptr, std::ptr::null(), 0, 10);
+            assert_eq!(ctx.str_bytes(empty), b"");
+        }
     }
 
     #[test]

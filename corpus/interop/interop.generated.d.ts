@@ -327,6 +327,18 @@ declare function subDeviceSumBytes(data: u8[]): u32;
 declare function subDeviceFillBytes(data: u8[]): void;
 declare function subDeviceFillShorts(data: u16[]): void;
 
+declare class SubBoundaryStringRecord {
+  label: string;
+  handle: u64;
+  enabled: boolean;
+  serial: u64;
+  generation: u64;
+  constructor(label: string, handle: u64, enabled: boolean, serial: u64, generation: u64);
+}
+
+declare function subBoundaryStringCheck(record: SubBoundaryStringRecord | null, selector: u32): u64;
+declare function subBoundaryStringFill(record: SubBoundaryStringRecord | null, emptyLabel: boolean): void;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

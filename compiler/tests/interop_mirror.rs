@@ -93,6 +93,9 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subDeviceSumBytes",
             "subDeviceFillBytes",
             "subDeviceFillShorts",
+            // R6 (§28): string-view fields in pointer-passed boundary structs.
+            "subBoundaryStringCheck",
+            "subBoundaryStringFill",
         ]
     );
 
@@ -161,6 +164,13 @@ fn using_program_type_checks_against_the_generated_mirror() {
             element_const: true,
         })
     );
+
+    let string_record = module
+        .classes
+        .iter()
+        .find(|class| class.name == "SubBoundaryStringRecord")
+        .expect("string-field boundary struct");
+    assert_eq!(string_record.fields[0].ty, Type::Str);
 
     // The using program's foreign calls became `Callee::Foreign` calls.
     let main = module.functions.iter().find(|f| f.name == "main").unwrap();

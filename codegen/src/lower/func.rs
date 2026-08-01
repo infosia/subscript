@@ -78,6 +78,15 @@ enum StructRet {
     },
 }
 
+/// One pointer-passed boundary struct whose C-layout scratch storage must be
+/// copied back after the foreign call (§28). `source` is the language-layout
+/// struct pointer; `scratch` is the expanded C-layout record passed to C.
+struct BoundaryPtrWriteback {
+    cid: usize,
+    source: Value,
+    scratch: Value,
+}
+
 /// Where a binding lives.
 #[derive(Debug, Clone, Copy)]
 enum Storage {
@@ -2383,9 +2392,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if let Some(StructRet::Sret(slot)) = struct_ret {
             argv.push(slot);
         }
+        let mut boundary_writebacks = Vec::new();
         for (parameter, a) in params.iter().zip(args) {
             let rv = self.eval(a)?;
-            self.marshal_foreign_arg(parameter, rv, &mut sig, &mut argv)?;
+            self.marshal_foreign_arg(
+                parameter,
+                rv,
+                &mut sig,
+                &mut argv,
+                &mut boundary_writebacks,
+            )?;
         }
         match ret_repr {
             Repr::None | Repr::Agg { .. } => {}
@@ -2415,6 +2431,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         // a callback that trapped inside the trampoline — so check it.
         if checked {
             self.trap_check();
+        }
+        for writeback in boundary_writebacks {
+            self.write_back_string_field_boundary_ptr(writeback, pos)?;
         }
         Ok(match ret_repr {
             Repr::Scalar(_) => RV::S(*res.first().ok_or_else(|| internal("foreign result"))?),
@@ -2636,6 +2655,27 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         matches!(ty, Type::Nullable(inner) if self.is_value_class_ty(inner))
     }
 
+    /// Class id carried by a `Struct | null` boundary pointer.
+    fn boundary_struct_ptr_id(&self, ty: &Type) -> Option<usize> {
+        let Type::Nullable(inner) = ty else {
+            return None;
+        };
+        let Type::Class(id) = &**inner else {
+            return None;
+        };
+        self.is_value_class_ty(inner).then_some(id.0)
+    }
+
+    fn boundary_struct_has_string_field(&self, cid: usize) -> Result<bool, String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        Ok(class.is_boundary && class.fields.iter().any(|field| field.ty == Type::Str))
+    }
+
     /// The pointer form of a `Struct | null` value: the address of a
     /// struct's storage (an aggregate), or the already-pointer scalar
     /// (`null` is 0). The struct must outlive the call — its storage is
@@ -2662,6 +2702,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         rv: RV,
         sig: &mut Signature,
         argv: &mut Vec<Value>,
+        boundary_writebacks: &mut Vec<BoundaryPtrWriteback>,
     ) -> Result<(), String> {
         let ty = &parameter.ty;
         match ty {
@@ -2730,7 +2771,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             _ if self.is_boundary_struct_ptr(ty) => {
                 let v = self.boundary_ptr(rv)?;
-                self.push_abi(sig, argv, types::I64, v);
+                let cid = self
+                    .boundary_struct_ptr_id(ty)
+                    .ok_or_else(|| internal("boundary struct pointer lacks a class id"))?;
+                if self.boundary_struct_has_string_field(cid)? {
+                    let (pointer, writeback) =
+                        self.marshal_string_field_boundary_ptr(cid, v)?;
+                    self.push_abi(sig, argv, types::I64, pointer);
+                    boundary_writebacks.push(writeback);
+                } else {
+                    self.push_abi(sig, argv, types::I64, v);
+                }
                 Ok(())
             }
             _ => match self.ml.layouts.repr(ty)? {
@@ -2751,6 +2802,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn boundary_c_field(&self, ty: &Type) -> Result<(u32, u32), String> {
         Ok(match ty {
             Type::Func(_) | Type::Object | Type::Nullable(_) => (8, 8),
+            // A string field is the C view `{ const char *data; size_t len; }`,
+            // not the language's one-word string handle (§28).
+            Type::Str => (16, 8),
             // A descriptor-embedded `(count, pointer)` array field (§13.2)
             // is the C pair `size_t count; const T* ptr;` — 16 bytes, align 8.
             Type::Array(_) => (16, 8),
@@ -2763,8 +2817,202 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let l = self.ml.layouts.class(id.0)?;
                 (l.size, l.align)
             }
+            Type::Class(_) => (8, 8),
             other => return Err(internal(format!("boundary C field type {other:?}"))),
         })
+    }
+
+    /// C offsets and total layout for a mirrored boundary struct, accounting
+    /// for every absorbed field representation (notably 16-byte strings).
+    fn boundary_c_layout(&self, cid: usize) -> Result<(Vec<u32>, u32, u32), String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        let mut offsets = Vec::with_capacity(class.fields.len());
+        let mut size = 0u32;
+        let mut align = 1u32;
+        for field in &class.fields {
+            let (field_size, field_align) = self.boundary_c_field(&field.ty)?;
+            size = round_up_layout(size, field_align, "boundary C struct layout")?;
+            offsets.push(size);
+            size = checked_layout_add(size, field_size, "boundary C struct layout")?;
+            align = align.max(field_align);
+        }
+        size = round_up_layout(size.max(1), align, "final boundary C struct layout")?;
+        Ok((offsets, size, align))
+    }
+
+    /// Builds the C-layout scratch record for one non-owning pointer
+    /// crossing. Strings expand to `{data,len}` zero-copy views; every other
+    /// accepted field is copied at its C offset. A null language pointer
+    /// remains null and never touches either storage block.
+    fn marshal_string_field_boundary_ptr(
+        &mut self,
+        cid: usize,
+        source: Value,
+    ) -> Result<(Value, BoundaryPtrWriteback), String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .cloned()
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        let language_layout = self.ml.layouts.class(cid)?.clone();
+        let (c_offsets, c_size, c_align) = self.boundary_c_layout(cid)?;
+        let scratch = self.temp_slot(c_size, c_align);
+        self.zero_bytes(scratch, c_size, c_align);
+
+        let non_null = self.b.ins().icmp_imm(IntCC::NotEqual, source, 0);
+        let populate = self.b.create_block();
+        let ready = self.b.create_block();
+        self.b.ins().brif(non_null, populate, &[], ready, &[]);
+        self.b.switch_to_block(populate);
+
+        for (index, field) in class.fields.iter().enumerate() {
+            let language_offset = *language_layout
+                .field_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary language field offset"))?
+                as i32;
+            let c_offset = *c_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary C field offset"))?
+                as i32;
+            if field.ty == Type::Str {
+                let handle = self.b.ins().load(types::I64, flags(), source, language_offset);
+                let data = self
+                    .call_rt(self.ml.rt.str_data, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("str_data result"))?;
+                let len32 = self
+                    .call_rt(self.ml.rt.str_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("str_len result"))?;
+                let len = self.b.ins().uextend(types::I64, len32);
+                self.b.ins().store(flags(), data, scratch, c_offset);
+                self.b.ins().store(flags(), len, scratch, c_offset + 8);
+                continue;
+            }
+            let value = self.load_val(&field.ty, source, language_offset)?;
+            let scalar = self.expect_s(value).map_err(|_| {
+                internal(format!(
+                    "string-field boundary struct `{}` field `{}` is an unsupported aggregate",
+                    class.name, field.name
+                ))
+            })?;
+            let Repr::Scalar(_) = self.ml.layouts.repr(&field.ty)? else {
+                return Err(internal(format!(
+                    "string-field boundary struct `{}` field `{}` is not plain data",
+                    class.name, field.name
+                )));
+            };
+            self.b.ins().store(flags(), scalar, scratch, c_offset);
+        }
+        self.b.ins().jump(ready, &[]);
+        self.b.seal_block(populate);
+        self.b.switch_to_block(ready);
+        self.b.seal_block(ready);
+
+        let null = self.iconst(types::I64, 0);
+        let pointer = self.b.ins().select(non_null, scratch, null);
+        Ok((
+            pointer,
+            BoundaryPtrWriteback {
+                cid,
+                source,
+                scratch,
+            },
+        ))
+    }
+
+    /// Copies a C-filled scratch record back into language storage. String
+    /// views are copied into Context-owned language strings; all-zero views
+    /// therefore become the ordinary empty string.
+    fn write_back_string_field_boundary_ptr(
+        &mut self,
+        writeback: BoundaryPtrWriteback,
+        pos: &Pos,
+    ) -> Result<(), String> {
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(writeback.cid)
+            .cloned()
+            .ok_or_else(|| internal("boundary struct class id out of range"))?;
+        let language_layout = self.ml.layouts.class(writeback.cid)?.clone();
+        let (c_offsets, _, _) = self.boundary_c_layout(writeback.cid)?;
+        let non_null = self
+            .b
+            .ins()
+            .icmp_imm(IntCC::NotEqual, writeback.source, 0);
+        let copy = self.b.create_block();
+        let done = self.b.create_block();
+        self.b.ins().brif(non_null, copy, &[], done, &[]);
+        self.b.switch_to_block(copy);
+
+        for (index, field) in class.fields.iter().enumerate() {
+            let language_offset = *language_layout
+                .field_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary language field offset"))?
+                as i32;
+            let c_offset = *c_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary C field offset"))?
+                as i32;
+            if field.ty == Type::Str {
+                let data = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), writeback.scratch, c_offset);
+                let len = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), writeback.scratch, c_offset + 8);
+                let pos_id = self.pos_id(pos);
+                let pos_value = self.iconst(types::I32, pos_id);
+                let handle = self
+                    .call_rt(
+                        self.ml.rt.str_from_view,
+                        &[self.ctx_v, data, len, pos_value],
+                        false,
+                    )?
+                    .ok_or_else(|| internal("str_from_view result"))?;
+                self.b.ins().store(
+                    flags(),
+                    handle,
+                    writeback.source,
+                    language_offset,
+                );
+                self.trap_check();
+                continue;
+            }
+            let repr = self.ml.layouts.repr(&field.ty)?;
+            let Repr::Scalar(clif) = repr else {
+                return Err(internal(format!(
+                    "string-field boundary struct `{}` field `{}` is not plain data",
+                    class.name, field.name
+                )));
+            };
+            let value = self
+                .b
+                .ins()
+                .load(clif, flags(), writeback.scratch, c_offset);
+            self.store_val(
+                &field.ty,
+                writeback.source,
+                language_offset,
+                RV::S(value),
+            )?;
+        }
+        self.b.ins().jump(done, &[]);
+        self.b.seal_block(copy);
+        self.b.switch_to_block(done);
+        self.b.seal_block(done);
+        Ok(())
     }
 
     /// Marshals a by-value boundary struct to the C ABI. It builds the

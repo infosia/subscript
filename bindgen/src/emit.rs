@@ -180,6 +180,88 @@ fn validate_boundary_positions(
         .iter()
         .any(|decl| matches!(decl, Decl::Func { .. }));
 
+    // A direct string-view field is lowered only when its owning boundary
+    // struct crosses through a pointer parameter (§28). Keep this owner set
+    // explicit so every other appearance can fail at bind time rather than
+    // reaching two lowerings that store the one-word language string handle
+    // where C expects the two-word view.
+    let string_field_structs: HashSet<String> = parsed
+        .decls
+        .iter()
+        .filter_map(|decl| match decl {
+            Decl::Struct { name, fields }
+                if matches!(registry.get(name), Some(Kind::Boundary))
+                    && fields.iter().any(|field| {
+                        matches!(registry.get(&field.base), Some(Kind::StringView))
+                    }) =>
+            {
+                Some(name.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut pointer_lowered = HashSet::new();
+
+    for decl in &parsed.decls {
+        let Decl::Struct { name, fields } = decl else {
+            continue;
+        };
+        if !string_field_structs.contains(name) {
+            continue;
+        }
+        for field in fields {
+            if matches!(registry.get(&field.base), Some(Kind::StringView)) {
+                if field.pointer || field.array_len.is_some() {
+                    return Err(ParseError(format!(
+                        "string-field boundary struct `{name}` field `{}` uses string-view \
+                         aggregate `{}` outside the supported direct by-value field position",
+                        field.name, field.base
+                    )));
+                }
+                continue;
+            }
+            if field.array_len.is_some() {
+                return Err(ParseError(format!(
+                    "string-field boundary struct `{name}` field `{}` is a fixed array; \
+                     nested aggregate fields are not lowered in the pointer scratch struct",
+                    field.name
+                )));
+            }
+            match registry.get(&field.base) {
+                Some(Kind::ArrayPair(_)) => {
+                    return Err(ParseError(format!(
+                        "string-field boundary struct `{name}` field `{}` uses descriptor \
+                         aggregate `{}`; combined absorbed aggregate fields are not lowered",
+                        field.name, field.base
+                    )));
+                }
+                Some(Kind::FnPtr) => {
+                    return Err(ParseError(format!(
+                        "string-field boundary struct `{name}` field `{}` uses callback \
+                         typedef `{}`; callback fields are not lowered in a string-field \
+                         pointer scratch struct",
+                        field.name, field.base
+                    )));
+                }
+                Some(Kind::Boundary) if !field.pointer => {
+                    return Err(ParseError(format!(
+                        "string-field boundary struct `{name}` field `{}` embeds boundary \
+                         aggregate `{}`; nested aggregate positions are not lowered",
+                        field.name, field.base
+                    )));
+                }
+                Some(
+                    Kind::Enum
+                    | Kind::Handle
+                    | Kind::Boundary
+                    | Kind::Alias
+                    | Kind::StringView,
+                )
+                | None => {}
+            }
+        }
+    }
+
     for decl in &parsed.decls {
         match decl {
             Decl::Struct { name, fields } => {
@@ -188,6 +270,23 @@ fn validate_boundary_positions(
                         return Err(ParseError(format!(
                             "descriptor struct `{name}` has callback-typedef element \
                              `{element}`; callback typedefs cannot be descriptor elements"
+                        )));
+                    }
+                    if string_field_structs.contains(element) {
+                        return Err(ParseError(format!(
+                            "descriptor struct `{name}` forms an array of string-field \
+                             boundary struct `{element}`; arrays of string-field structs \
+                             have no boundary lowering"
+                        )));
+                    }
+                }
+                for field in fields {
+                    if string_field_structs.contains(&field.base) {
+                        return Err(ParseError(format!(
+                            "struct `{name}` field `{}` uses string-field boundary struct \
+                             `{}` in an unlisted aggregate position; only direct foreign \
+                             pointer parameters are lowered",
+                            field.name, field.base
                         )));
                     }
                 }
@@ -211,6 +310,18 @@ fn validate_boundary_positions(
                 }
             }
             Decl::Func { name, ret, params } => {
+                if string_field_structs.contains(&ret.base) {
+                    let position = if ret.pointer {
+                        "through a returned pointer"
+                    } else {
+                        "by value"
+                    };
+                    return Err(ParseError(format!(
+                        "foreign function `{name}` returns string-field boundary struct \
+                         `{}` {position}; only pointer parameters have a string-field lowering",
+                        ret.base
+                    )));
+                }
                 if !ret.pointer && ret.array_len.is_none() {
                     match registry.get(&ret.base) {
                         Some(Kind::StringView) => {
@@ -246,7 +357,47 @@ fn validate_boundary_positions(
                         | None => {}
                     }
                 }
-                for param in params {
+                for (param_index, param) in params.iter().enumerate() {
+                    if string_field_structs.contains(&param.base) {
+                        if param.pointer && param.array_len.is_none() {
+                            let adjacent_count = param_index
+                                .checked_sub(1)
+                                .and_then(|index| params.get(index))
+                                .filter(|count| {
+                                    count.base == "size_t"
+                                        && !count.pointer
+                                        && count.array_len.is_none()
+                                })
+                                .or_else(|| {
+                                    params.get(param_index + 1).filter(|count| {
+                                        count.base == "size_t"
+                                            && !count.pointer
+                                            && count.array_len.is_none()
+                                    })
+                                });
+                            if let Some(count) = adjacent_count {
+                                return Err(ParseError(format!(
+                                    "foreign function `{name}` parameters `{}` and `{}` form \
+                                     an array of string-field boundary struct `{}`; arrays of \
+                                     string-field structs have no boundary lowering",
+                                    count.name, param.name, param.base
+                                )));
+                            }
+                            pointer_lowered.insert(param.base.clone());
+                        } else {
+                            let position = if param.array_len.is_some() {
+                                "as an array"
+                            } else {
+                                "by value"
+                            };
+                            return Err(ParseError(format!(
+                                "foreign function `{name}` parameter `{}` passes \
+                                 string-field boundary struct `{}` {position}; only a \
+                                 direct pointer parameter has a string-field lowering",
+                                param.name, param.base
+                            )));
+                        }
+                    }
                     if matches!(registry.get(&param.base), Some(Kind::FnPtr)) {
                         return Err(ParseError(format!(
                             "foreign function `{name}` parameter `{}` uses callback typedef \
@@ -257,7 +408,42 @@ fn validate_boundary_positions(
                     }
                 }
             }
-            Decl::Enum { .. } | Decl::FnPtr { .. } | Decl::Handle { .. } => {}
+            Decl::FnPtr { name, ret, params } => {
+                if string_field_structs.contains(&ret.base) {
+                    return Err(ParseError(format!(
+                        "callback typedef `{name}` returns string-field boundary struct `{}`; \
+                         callback aggregate positions have no string-field lowering",
+                        ret.base
+                    )));
+                }
+                if let Some(param) = params
+                    .iter()
+                    .find(|param| string_field_structs.contains(&param.base))
+                {
+                    return Err(ParseError(format!(
+                        "callback typedef `{name}` parameter `{}` uses string-field boundary \
+                         struct `{}`; callback aggregate positions have no string-field lowering",
+                        param.name, param.base
+                    )));
+                }
+            }
+            Decl::Enum { .. } | Decl::Handle { .. } => {}
+        }
+    }
+    for owner in &string_field_structs {
+        if !pointer_lowered.contains(owner) {
+            let field = parsed.decls.iter().find_map(|decl| match decl {
+                Decl::Struct { name, fields } if name == owner => fields.iter().find(|field| {
+                    matches!(registry.get(&field.base), Some(Kind::StringView))
+                }),
+                _ => None,
+            });
+            return Err(ParseError(format!(
+                "string-field boundary struct `{owner}` field `{}` is mirror-visible but \
+                 the struct is not passed through any foreign pointer parameter; no \
+                 string-field lowering exists for this construct",
+                field.map_or("<unknown>", |field| field.name.as_str())
+            )));
         }
     }
     Ok(())
