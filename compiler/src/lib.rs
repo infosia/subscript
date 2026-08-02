@@ -645,6 +645,56 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_literals_use_nullable_context_in_all_positions() {
+        check_one(
+            "@Descriptor\n\
+             class Leaf { value?: i32 = 7; }\n\
+             @Descriptor\n\
+             class Holder { member!: Leaf | null; }\n\
+             @Descriptor\n\
+             class Outer { nested!: Holder; }\n\
+             function take(value: Leaf | null): void {}\n\
+             export function main(): void {\n\
+               const member: Holder = { member: {} };\n\
+               take({});\n\
+               const array: (Leaf | null)[] = [{}];\n\
+               const nested: Outer = { nested: { member: {} } };\n\
+               print(`${member.member !== null}:${array[0] !== null}:${nested.nested.member !== null}`);\n\
+             }\n",
+        )
+        .expect("descriptor literals use nullable member, argument, array-element, and nested contexts");
+    }
+
+    #[test]
+    fn null_in_nullable_descriptor_member_keeps_null_hir() {
+        let module = check_one(
+            "@Descriptor\n\
+             class Leaf { value?: i32 = 7; }\n\
+             @Descriptor\n\
+             class Holder { member!: Leaf | null; }\n\
+             export function main(): void {\n\
+               const holder: Holder = { member: null };\n\
+               print(`${holder.member !== null}`);\n\
+             }\n",
+        )
+        .expect("null remains assignable to a nullable descriptor member");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Let { init, .. } = &main.body[0] else {
+            panic!("first statement is the descriptor binding");
+        };
+        let hir::ExprKind::DescriptorLit { fields, .. } = &init.kind else {
+            panic!("holder object lowered to DescriptorLit HIR");
+        };
+        let member = fields[0].as_ref().expect("required member is explicit");
+        assert_eq!(member.ty, Type::Null);
+        assert!(matches!(member.kind, hir::ExprKind::Null));
+    }
+
+    #[test]
     fn descriptor_missing_and_excess_members_are_rejected() {
         let missing = check_one(
             "@Descriptor\n\
@@ -679,6 +729,22 @@ mod tests {
         )
         .expect_err("unmarked class must not be literal-constructible");
         assert_eq!(diagnostics[0].code, RuleCode::S005);
+    }
+
+    #[test]
+    fn object_literal_for_nullable_unmarked_class_remains_nominally_rejected() {
+        let diagnostics = check_one(
+            "class Options {}\n\
+             export function main(): void {\n\
+               const options: Options | null = {};\n\
+             }\n",
+        )
+        .expect_err("a nullable unmarked class must not be literal-constructible");
+        assert_eq!(diagnostics[0].code, RuleCode::S005);
+        assert_eq!(
+            diagnostics[0].message,
+            "object literals do not satisfy nominal class types"
+        );
     }
 
     #[test]

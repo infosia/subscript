@@ -36,6 +36,20 @@ fn literalish(e: &ast::Expr) -> bool {
     }
 }
 
+/// Returns the nominal class supplied by an object literal's context.
+/// Q33/R17 permits descriptor construction through either `D` or `D | null`;
+/// retaining plain classes here also preserves their specific S005 rejection.
+fn contextual_object_class(ctx: Option<&Type>) -> Option<ClassId> {
+    match ctx? {
+        Type::Class(id) => Some(*id),
+        Type::Nullable(inner) => match inner.as_ref() {
+            Type::Class(id) => Some(*id),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum DescriptorProp<'a> {
     Expr(&'a ast::Expr),
@@ -141,11 +155,11 @@ impl<'p> Checker<'p> {
             ast::Expr::New(n) => self.check_new(n, fx, pos),
             ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
             ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
-            ast::Expr::Object(object) => match ctx {
-                Some(Type::Class(id)) if self.classes[id.0].is_descriptor => {
-                    self.check_descriptor_lit(object, *id, fx, pos)
+            ast::Expr::Object(object) => match contextual_object_class(ctx) {
+                Some(id) if self.classes[id.0].is_descriptor => {
+                    self.check_descriptor_lit(object, id, fx, pos)
                 }
-                Some(Type::Class(_)) => {
+                Some(_) => {
                     self.error(
                         RuleCode::S005,
                         "object literals do not satisfy nominal class types",

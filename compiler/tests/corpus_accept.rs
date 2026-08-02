@@ -115,7 +115,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        115,
+        116,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -139,7 +139,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          null-only boundary type reachability entry, the a110–a111 R13 \
          async instance-method entries, the a112–a113 Q35 worker entries, and the \
          a114 capturing-lambda recursion review pin, the a115 R14 Q32 \
-         alias-switch entry, and the a116 R15 divergence-flow entry"
+         alias-switch entry, the a116 R15 divergence-flow entry, and the \
+         a117 R17 nullable-descriptor-literal entry"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

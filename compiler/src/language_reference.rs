@@ -18,7 +18,7 @@ const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`,
 
 const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-layout value class, copied on assignment and argument passing. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
 
-const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. Literals may be nested and may omit defaulted members. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, methods, missing required members, and excess members are rejected.";
+const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. Literals may be nested, may omit defaulted members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
 const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return.";
 
@@ -71,12 +71,14 @@ const FEATURES: &[Feature] = &[
         prose: Q33_DESCRIPTORS,
         corpus: &[
             "corpus/accept/a92-descriptor-literals.ts",
+            "corpus/accept/a117-descriptor-literal-nullable-member.ts",
             "corpus/reject/r90-descriptor-missing-required.ts",
             "corpus/reject/r91-descriptor-excess-member.ts",
             "corpus/reject/r92-literal-for-unmarked-class.ts",
             "corpus/reject/r93-descriptor-optional-without-default.ts",
             "corpus/reject/r94-descriptor-method.ts",
             "corpus/reject/r95-descriptor-new.ts",
+            "corpus/reject/r116-object-literal-nullable-class.ts",
         ],
     },
     Feature {
