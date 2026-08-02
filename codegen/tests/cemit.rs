@@ -894,6 +894,48 @@ fn string_literal_union_equality_emits_an_integer_compare() {
 }
 
 #[test]
+fn a115_string_literal_union_switch_emits_integer_c_switches() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = include_str!("../../corpus/accept/a115-switch-literal-union.ts");
+    let hir = check_program(&[SourceFile::new(
+        "a115-switch-literal-union.ts",
+        source,
+    )])
+    .expect("a115 checks cleanly");
+    let c = emit_c(&hir).expect("a115 emits C").source;
+    assert_eq!(
+        c.matches("int32_t _disc =").count(),
+        2,
+        "a115 discriminants are not emitted as i32:\n{c}"
+    );
+    assert_eq!(
+        c.matches("switch (_disc) {").count(),
+        2,
+        "a115 does not emit one C switch per source switch:\n{c}"
+    );
+    let labels = c
+        .lines()
+        .map(str::trim)
+        .filter_map(|line| {
+            line.strip_prefix("case ")
+                .and_then(|rest| rest.split_once(":"))
+                .map(|(value, _)| value)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(labels, ["0", "1", "2", "1"]);
+    assert!(
+        !c.contains("if (_disc =="),
+        "Q32 switch fell back to a comparison chain:\n{c}"
+    );
+    assert!(
+        !c.contains("subscript_rt_str_eq(ctx,"),
+        "Q32 switch called string comparison:\n{c}"
+    );
+}
+
+#[test]
 fn descriptor_nested_defaults_are_fresh_per_construction() {
     assert_tiers_print(
         "@Descriptor\n\

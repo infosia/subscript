@@ -1042,30 +1042,96 @@ impl<'p> Checker<'p> {
         let pos = self.pos(sw.span);
         let disc = self.check_expr(&sw.discriminant, None, fx);
         if !disc.ty.is_integer()
-            && !matches!(disc.ty, Type::Enum(_) | Type::Str | Type::Error)
+            && !matches!(
+                disc.ty,
+                Type::Enum(_) | Type::Str | Type::StringAlias(_) | Type::Error
+            )
         {
             let name = self.type_name(&disc.ty);
             self.error(
                 RuleCode::S100,
-                format!("switch discriminants are integers, enums, or strings; got `{}`", name),
+                format!(
+                    "switch discriminants are integers, enums, strings, or string-literal union aliases; got `{}`",
+                    name
+                ),
                 disc.pos.clone(),
             );
         }
         let disc_ty = disc.ty.clone();
+        let alias_switch = match &disc_ty {
+            Type::StringAlias(id) => self
+                .string_aliases
+                .get(id.0)
+                .map(|alias| (alias.name.clone(), alias.members.clone())),
+            _ => None,
+        };
+        let mut alias_members_seen = HashSet::new();
+        let mut alias_labels_valid = true;
+        let mut has_default = false;
         fx.switch_depth += 1;
         let mut cases = Vec::new();
         for case in &sw.cases {
             let case_pos = self.pos(case.span);
-            let test = case.test.as_ref().map(|t| {
+            let test = if let Some(t) = &case.test {
                 let checked = self.check_expr(t, Some(&disc_ty), fx);
-                self.require_assignable(
-                    &checked.ty.clone(),
-                    &disc_ty,
-                    checked.pos.clone(),
-                    "the case label",
-                );
-                checked
-            });
+                if let Some((alias_name, members)) = &alias_switch {
+                    match &**t {
+                        ast::Expr::Lit(ast::Lit::Str(label)) => {
+                            let label = label.value.to_string();
+                            if let Some(index) =
+                                members.iter().position(|member| member == &label)
+                            {
+                                self.require_assignable(
+                                    &checked.ty.clone(),
+                                    &disc_ty,
+                                    checked.pos.clone(),
+                                    "the case label",
+                                );
+                                if !alias_members_seen.insert(index) {
+                                    alias_labels_valid = false;
+                                    self.error(
+                                        RuleCode::S100,
+                                        format!(
+                                            "duplicate case label {label:?} for string-literal union alias `{alias_name}`"
+                                        ),
+                                        checked.pos.clone(),
+                                    );
+                                }
+                            } else {
+                                alias_labels_valid = false;
+                                self.error(
+                                    RuleCode::S100,
+                                    format!(
+                                        "case label {label:?} is not a member of string-literal union alias `{alias_name}`"
+                                    ),
+                                    checked.pos.clone(),
+                                );
+                            }
+                        }
+                        _ => {
+                            alias_labels_valid = false;
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "case labels for string-literal union alias `{alias_name}` must be string literals naming a member"
+                                ),
+                                checked.pos.clone(),
+                            );
+                        }
+                    }
+                } else {
+                    self.require_assignable(
+                        &checked.ty.clone(),
+                        &disc_ty,
+                        checked.pos.clone(),
+                        "the case label",
+                    );
+                }
+                Some(checked)
+            } else {
+                has_default = true;
+                None
+            };
             fx.scopes.push(Default::default());
             let mut body = Vec::new();
             for s in &case.cons {
@@ -1079,6 +1145,24 @@ impl<'p> Checker<'p> {
             });
         }
         fx.switch_depth -= 1;
+        if let Some((alias_name, members)) = &alias_switch {
+            if !has_default && alias_labels_valid && alias_members_seen.len() != members.len() {
+                let missing = members
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !alias_members_seen.contains(index))
+                    .map(|(_, member)| format!("{member:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "non-exhaustive switch over string-literal union alias `{alias_name}`; missing case labels: {missing}"
+                    ),
+                    pos.clone(),
+                );
+            }
+        }
         out.push(hir::Stmt::Switch { disc, cases, pos });
     }
 }

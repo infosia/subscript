@@ -127,6 +127,17 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r110-new-worker.ts", RuleCode::S100, 13),
     ("r111-worker-in-map-value.ts", RuleCode::S100, 19),
     (
+        "r112-switch-alias-missing-member.ts",
+        RuleCode::S100,
+        12,
+    ),
+    ("r113-switch-alias-non-member.ts", RuleCode::S100, 16),
+    (
+        "r114-switch-alias-duplicate-member.ts",
+        RuleCode::S100,
+        19,
+    ),
+    (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
         10,
@@ -263,8 +274,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        107,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, and six Q35 entries"
+        110,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, and three R14 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

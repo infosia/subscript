@@ -1760,18 +1760,46 @@ impl<'m> Emitter<'m> {
         let default_idx = cases.iter().position(|c| c.test.is_none());
         let _ = writeln!(out, "{ind}{{");
         let _ = writeln!(out, "{ind1}{dty} _disc = {dv};");
-        for (i, case) in cases.iter().enumerate() {
-            if let Some(test) = &case.test {
-                let t = self.eval(test, out, depth + 1)?;
-                let _ = writeln!(out, "{ind1}if (_disc == {t}) goto {};", labels[i]);
+        if matches!(disc.ty, Type::StringAlias(_)) {
+            // Q32/R14 case labels are checker-proven alias members, whose
+            // HIR values are declaration-order i32 discriminants. Keep the
+            // ship tier jump-table eligible and never consult string data.
+            let ind2 = indent(depth + 2);
+            let _ = writeln!(out, "{ind1}switch (_disc) {{");
+            for (i, case) in cases.iter().enumerate() {
+                if let Some(test) = &case.test {
+                    let hir::ExprKind::Int(value) = test.kind else {
+                        return Err(
+                            "string-literal union switch case is not an integer discriminant"
+                                .to_string(),
+                        );
+                    };
+                    let _ = writeln!(out, "{ind2}case {value}: goto {};", labels[i]);
+                }
             }
-        }
-        match default_idx {
-            Some(i) => {
-                let _ = writeln!(out, "{ind1}goto {};", labels[i]);
+            match default_idx {
+                Some(i) => {
+                    let _ = writeln!(out, "{ind2}default: goto {};", labels[i]);
+                }
+                None => {
+                    let _ = writeln!(out, "{ind2}default: goto {brk};");
+                }
             }
-            None => {
-                let _ = writeln!(out, "{ind1}goto {brk};");
+            let _ = writeln!(out, "{ind1}}}");
+        } else {
+            for (i, case) in cases.iter().enumerate() {
+                if let Some(test) = &case.test {
+                    let t = self.eval(test, out, depth + 1)?;
+                    let _ = writeln!(out, "{ind1}if (_disc == {t}) goto {};", labels[i]);
+                }
+            }
+            match default_idx {
+                Some(i) => {
+                    let _ = writeln!(out, "{ind1}goto {};", labels[i]);
+                }
+                None => {
+                    let _ = writeln!(out, "{ind1}goto {brk};");
+                }
             }
         }
         // Bodies fall through to the next arm unless they break.

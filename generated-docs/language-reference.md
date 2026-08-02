@@ -375,9 +375,9 @@ Corpus: [`corpus/accept/a92-descriptor-literals.ts`](../corpus/accept/a92-descri
 
 ### Q32 string-literal unions
 
-Q32 admits declared aliases whose members are string literals, such as `type Mode = "fast" | "safe"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected.
+Q32 admits declared aliases whose members are string literals, such as `type Mode = "fast" | "safe"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted.
 
-Corpus: [`corpus/accept/a91-string-literal-union.ts`](../corpus/accept/a91-string-literal-union.ts), [`corpus/reject/r87-literal-union-nonmember.ts`](../corpus/reject/r87-literal-union-nonmember.ts), [`corpus/reject/r88-literal-union-inline.ts`](../corpus/reject/r88-literal-union-inline.ts), [`corpus/reject/r89-literal-union-cross-alias.ts`](../corpus/reject/r89-literal-union-cross-alias.ts).
+Corpus: [`corpus/accept/a91-string-literal-union.ts`](../corpus/accept/a91-string-literal-union.ts), [`corpus/reject/r87-literal-union-nonmember.ts`](../corpus/reject/r87-literal-union-nonmember.ts), [`corpus/reject/r88-literal-union-inline.ts`](../corpus/reject/r88-literal-union-inline.ts), [`corpus/reject/r89-literal-union-cross-alias.ts`](../corpus/reject/r89-literal-union-cross-alias.ts), [`corpus/accept/a115-switch-literal-union.ts`](../corpus/accept/a115-switch-literal-union.ts), [`corpus/reject/r112-switch-alias-missing-member.ts`](../corpus/reject/r112-switch-alias-missing-member.ts), [`corpus/reject/r113-switch-alias-non-member.ts`](../corpus/reject/r113-switch-alias-non-member.ts), [`corpus/reject/r114-switch-alias-duplicate-member.ts`](../corpus/reject/r114-switch-alias-duplicate-member.ts).
 
 ### Q34 async
 

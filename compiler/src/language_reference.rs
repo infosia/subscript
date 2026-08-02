@@ -20,7 +20,7 @@ const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-lay
 
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. Literals may be nested and may omit defaulted members. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, methods, missing required members, and excess members are rejected.";
 
-const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected.";
+const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted.";
 
 const Q34_ASYNC: &str = "Q34/R13 has exactly three awaitable forms: `await Context.suspend()`, `await` applied directly to a named async-function call, and `await receiver.method(...)` for an async instance method on a plain non-generic reference class. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.";
 
@@ -85,6 +85,10 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r87-literal-union-nonmember.ts",
             "corpus/reject/r88-literal-union-inline.ts",
             "corpus/reject/r89-literal-union-cross-alias.ts",
+            "corpus/accept/a115-switch-literal-union.ts",
+            "corpus/reject/r112-switch-alias-missing-member.ts",
+            "corpus/reject/r113-switch-alias-non-member.ts",
+            "corpus/reject/r114-switch-alias-duplicate-member.ts",
         ],
     },
     Feature {

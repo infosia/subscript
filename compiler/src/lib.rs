@@ -383,6 +383,110 @@ mod tests {
     }
 
     #[test]
+    fn exhaustive_string_literal_union_switch_is_accepted() {
+        let module = check_one(
+            "type Format = \"a\" | \"b\" | \"c\";\n\
+             function classify(value: Format): void {\n\
+               switch (value) {\n\
+                 case \"a\": break;\n\
+                 case \"b\": break;\n\
+                 case \"c\": break;\n\
+               }\n\
+             }\n\
+             export function main(): void { classify(\"a\"); }\n",
+        )
+        .expect("an exhaustive Q32 switch checks cleanly");
+        let classify = module
+            .functions
+            .iter()
+            .find(|function| function.name == "classify")
+            .expect("classify function");
+        let hir::Stmt::Switch { cases, .. } = &classify.body[0] else {
+            panic!("classify body begins with a switch");
+        };
+        let discriminants = cases
+            .iter()
+            .map(|case| case.test.as_ref().map(|test| &test.kind))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            discriminants,
+            [
+                Some(&hir::ExprKind::Int(0)),
+                Some(&hir::ExprKind::Int(1)),
+                Some(&hir::ExprKind::Int(2)),
+            ]
+        );
+    }
+
+    #[test]
+    fn string_literal_union_switch_default_accepts_a_subset() {
+        check_one(
+            "type Format = \"a\" | \"b\" | \"c\";\n\
+             function classify(value: Format): void {\n\
+               switch (value) {\n\
+                 case \"b\": break;\n\
+                 default: break;\n\
+               }\n\
+             }\n\
+             export function main(): void { classify(\"a\"); }\n",
+        )
+        .expect("a default permits a distinct subset of Q32 members");
+    }
+
+    #[test]
+    fn string_literal_union_switch_missing_member_is_rejected() {
+        let diagnostics = check_one(
+            "type Format = \"a\" | \"b\" | \"c\";\n\
+             function classify(value: Format): void {\n\
+               switch (value) {\n\
+                 case \"a\": break;\n\
+                 case \"c\": break;\n\
+               }\n\
+             }\n",
+        )
+        .expect_err("a default-free Q32 switch must be exhaustive");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("`Format`"));
+        assert!(diagnostics[0].message.contains("\"b\""));
+    }
+
+    #[test]
+    fn string_literal_union_switch_duplicate_member_is_rejected() {
+        let diagnostics = check_one(
+            "type Format = \"a\" | \"b\";\n\
+             function classify(value: Format): void {\n\
+               switch (value) {\n\
+                 case \"a\": break;\n\
+                 case \"a\": break;\n\
+                 case \"b\": break;\n\
+               }\n\
+             }\n",
+        )
+        .expect_err("a Q32 switch member may appear only once");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("duplicate case label \"a\""));
+        assert!(diagnostics[0].message.contains("`Format`"));
+    }
+
+    #[test]
+    fn string_literal_union_switch_nonmember_is_rejected() {
+        let diagnostics = check_one(
+            "type Format = \"a\" | \"b\";\n\
+             function classify(value: Format): void {\n\
+               switch (value) {\n\
+                 case \"a\": break;\n\
+                 case \"other\": break;\n\
+                 default: break;\n\
+               }\n\
+             }\n",
+        )
+        .expect_err("a Q32 switch label must name a member");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("\"other\""));
+        assert!(diagnostics[0].message.contains("`Format`"));
+    }
+
+    #[test]
     fn descriptor_required_members_and_defaults_reach_hir() {
         let module = check_one(
             "type Mode = \"fast\" | \"safe\";\n\
