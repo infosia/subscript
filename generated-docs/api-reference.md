@@ -11,6 +11,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `print(message: string): void` | Writes one line to the Context output sink. |
+| `unreachable(): never` | Marks a call-statement path as diverging and traps if execution reaches it. |
 | `NaN: f64` | Ambient NaN literal used by floating-point APIs. |
 | `parseInt(value: string, radix: i32): f64` | Parses the longest integer prefix; the radix is required. |
 | `parseFloat(value: string): f64` | Parses the longest decimal floating-point prefix. |

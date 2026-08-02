@@ -437,6 +437,11 @@ pub enum TrapSite {
         /// Position of the call.
         pos: Pos,
     },
+    /// A reached `unreachable()` call statement traps unconditionally.
+    Unreachable {
+        /// Position of the call.
+        pos: Pos,
+    },
     /// The materialized integer divisor must be nonzero.
     DivisionByZero {
         /// Position of the division or remainder.
@@ -497,6 +502,7 @@ impl TrapSite {
         match self {
             TrapSite::Allocation { pos }
             | TrapSite::Call { pos }
+            | TrapSite::Unreachable { pos }
             | TrapSite::DivisionByZero { pos }
             | TrapSite::IndexRead { pos }
             | TrapSite::IndexWrite { pos }
@@ -565,7 +571,7 @@ pub enum BinOp {
     UShr,
 }
 
-/// Ambient prelude functions and namespace members (Q6, Q7, Q12);
+/// Ambient prelude functions and namespace members (Q6, Q7, Q12, R15);
 /// their signatures are hardcoded in the checker, not parsed from
 /// `.d.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -573,6 +579,8 @@ pub enum BinOp {
 pub enum AmbientFn {
     /// `print(message: string): void`.
     Print,
+    /// `unreachable(): never`, legal only as a call statement.
+    Unreachable,
     /// `Context.collect(): void`.
     Collect,
     /// `Context.free(value: object): void`.
@@ -581,8 +589,9 @@ pub enum AmbientFn {
 
 impl AmbientFn {
     /// Every checker-owned ambient function.
-    pub const ALL: [AmbientFn; 3] = [
+    pub const ALL: [AmbientFn; 4] = [
         AmbientFn::Print,
+        AmbientFn::Unreachable,
         AmbientFn::Collect,
         AmbientFn::UnsafeDelete,
     ];
@@ -590,7 +599,7 @@ impl AmbientFn {
     /// Whether the runtime call can leave the Context trapped.
     #[must_use]
     pub fn can_trap(self) -> bool {
-        self == AmbientFn::UnsafeDelete
+        matches!(self, AmbientFn::Unreachable | AmbientFn::UnsafeDelete)
     }
 
     /// Source-level subscript signature.
@@ -598,6 +607,7 @@ impl AmbientFn {
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
             AmbientFn::Print => "print(message: string): void",
+            AmbientFn::Unreachable => "unreachable(): never",
             AmbientFn::Collect => "collect(): void",
             AmbientFn::UnsafeDelete => "free(value: object): void",
         }
@@ -608,6 +618,9 @@ impl AmbientFn {
     pub(crate) fn api_summary(self) -> &'static str {
         match self {
             AmbientFn::Print => "Writes one line to the Context output sink.",
+            AmbientFn::Unreachable => {
+                "Marks a call-statement path as diverging and traps if execution reaches it."
+            }
             AmbientFn::Collect => "Explicitly collects unreachable Context allocations.",
             AmbientFn::UnsafeDelete => "Immediately releases a reference-class allocation.",
         }
@@ -2985,6 +2998,12 @@ impl Expr {
                     },
                 ]
             }
+            K::Call {
+                callee: Callee::Ambient(AmbientFn::Unreachable),
+                ..
+            } => vec![TrapSite::Unreachable {
+                pos: self.pos.clone(),
+            }],
             K::Call { callee, .. } => {
                 let mut sites = Vec::new();
                 if matches!(callee, Callee::Ambient(AmbientFn::UnsafeDelete)) {
@@ -3194,6 +3213,7 @@ mod tests {
     #[test]
     fn callee_trap_policy_delegates_to_operation_predicates() {
         assert!(!Callee::Ambient(AmbientFn::Print).has_call_site());
+        assert!(Callee::Ambient(AmbientFn::Unreachable).has_call_site());
         assert!(Callee::Ambient(AmbientFn::UnsafeDelete).has_call_site());
         assert!(!Callee::Math(MathFn::Abs).has_call_site());
         assert!(Callee::Num(NumFn::ParseInt).has_call_site());

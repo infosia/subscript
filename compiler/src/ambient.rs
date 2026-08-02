@@ -1,5 +1,5 @@
-//! Hardcoded ambient prelude surface (Q12): sized-numeric aliases, the
-//! host function `print`, and `Context.collect`/`Context.free`.
+//! Hardcoded ambient prelude surface (Q12/R15): sized-numeric aliases,
+//! `print`, `unreachable`, and `Context.collect`/`Context.free`.
 //!
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
 //! declarations; the checker does not parse it (P1 contract).
@@ -629,7 +629,11 @@ pub(crate) fn sized_alias(name: &str) -> Option<Type> {
 
 /// Maps an ambient function name to its identity.
 pub(crate) fn ambient_fn(name: &str) -> Option<AmbientFn> {
-    (name == "print").then_some(AmbientFn::Print)
+    Some(match name {
+        "print" => AmbientFn::Print,
+        "unreachable" => AmbientFn::Unreachable,
+        _ => return None,
+    })
 }
 
 /// Maps a `Context` namespace member name to its identity.
@@ -645,6 +649,7 @@ pub(crate) fn context_fn(name: &str) -> Option<AmbientFn> {
 pub(crate) fn ambient_params(f: AmbientFn) -> &'static [Type] {
     match f {
         AmbientFn::Print => &[Type::Str],
+        AmbientFn::Unreachable => &[],
         AmbientFn::Collect => &[],
         AmbientFn::UnsafeDelete => &[Type::Object],
     }
@@ -741,11 +746,13 @@ pub(crate) fn set_method(name: &str) -> Option<SetFn> {
 /// generator.
 pub(crate) fn accepted_api() -> Vec<ApiItem> {
     let mut out = Vec::new();
-    out.push(ApiItem {
-        group: "Global",
-        signature: AmbientFn::Print.api_signature().to_string(),
-        summary: AmbientFn::Print.api_summary(),
-    });
+    for f in [AmbientFn::Print, AmbientFn::Unreachable] {
+        out.push(ApiItem {
+            group: "Global",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
     out.push(ApiItem {
         group: "Global",
         signature: "NaN: f64".to_string(),
@@ -1241,7 +1248,9 @@ mod tests {
     #[test]
     fn ambient_functions_have_expected_shapes() {
         assert_eq!(ambient_fn("print"), Some(AmbientFn::Print));
+        assert_eq!(ambient_fn("unreachable"), Some(AmbientFn::Unreachable));
         assert_eq!(ambient_params(AmbientFn::Print), &[Type::Str]);
+        assert!(ambient_params(AmbientFn::Unreachable).is_empty());
         assert!(ambient_params(AmbientFn::Collect).is_empty());
         assert_eq!(ambient_params(AmbientFn::UnsafeDelete), &[Type::Object]);
         assert_eq!(context_fn("collect"), Some(AmbientFn::Collect));
@@ -1261,7 +1270,7 @@ mod tests {
         };
 
         for f in AmbientFn::ALL {
-            let group = if f == AmbientFn::Print {
+            let group = if matches!(f, AmbientFn::Print | AmbientFn::Unreachable) {
                 "Global"
             } else {
                 "Context"

@@ -109,6 +109,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         | "t44-regex-replace-all-without-global"
         | "t45-regex-sticky-last-index" => (TrapKind::Regex, 8),
         "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31),
+        "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -565,13 +566,13 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 46;
+    let expected_count = 47;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
-         coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, and t46 \
-         callback-userdata coverage), found {}",
+         coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, t46 \
+         callback-userdata coverage, and t47 unreachable coverage), found {}",
         ids.len()
     );
 

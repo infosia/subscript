@@ -194,6 +194,30 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Checks an expression statement, admitting the ambient
+    /// `unreachable()` only when it is the statement's direct call.
+    pub(crate) fn check_expr_stmt(&mut self, e: &ast::Expr, fx: &mut FnCtx) -> hir::Expr {
+        let mut root = e;
+        while let ast::Expr::Paren(paren) = root {
+            root = &paren.expr;
+        }
+        if let ast::Expr::Call(call) = root {
+            if let ast::Callee::Expr(callee) = &call.callee {
+                let mut callee: &ast::Expr = callee;
+                while let ast::Expr::Paren(paren) = callee {
+                    callee = &paren.expr;
+                }
+                if let ast::Expr::Ident(ident) = callee {
+                    if ident.sym.as_ref() == "unreachable" {
+                        let pos = self.pos(call.span);
+                        return self.check_named_call(ident, call, fx, pos, true);
+                    }
+                }
+            }
+        }
+        self.check_expr(e, None, fx)
+    }
+
     /// Checks Q34/R13's three awaitable forms. The AST call is handled here
     /// instead of through the ordinary call path so an async call can never
     /// materialize a Promise-typed value in HIR.
@@ -5053,7 +5077,7 @@ impl<'p> Checker<'p> {
             callee = &p.expr;
         }
         match callee {
-            ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos),
+            ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos, false),
             ast::Expr::Member(m) => self.check_method_call(m, c, ctx, fx, pos),
             other => {
                 let value = self.check_expr(other, None, fx);
@@ -5068,6 +5092,7 @@ impl<'p> Checker<'p> {
         c: &ast::CallExpr,
         fx: &mut FnCtx,
         pos: Pos,
+        unreachable_statement: bool,
     ) -> hir::Expr {
         let name = id.sym.to_string();
         let ident_pos = self.pos(id.span);
@@ -5181,6 +5206,15 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if let Some(ambient) = crate::ambient::ambient_fn(&name) {
+                    if ambient == AmbientFn::Unreachable && !unreachable_statement {
+                        self.error(
+                            RuleCode::S100,
+                            "`unreachable()` is only legal as a call statement",
+                            pos.clone(),
+                        );
+                        let _ = self.check_ambient_call(ambient, c, fx, pos.clone());
+                        return self.err_expr(pos);
+                    }
                     return self.check_ambient_call(ambient, c, fx, pos);
                 }
                 self.error(
@@ -5276,6 +5310,7 @@ impl<'p> Checker<'p> {
             .collect();
         let name = match ambient {
             AmbientFn::Print => "print",
+            AmbientFn::Unreachable => "unreachable",
             AmbientFn::Collect => "Context.collect",
             AmbientFn::UnsafeDelete => "Context.free",
         };

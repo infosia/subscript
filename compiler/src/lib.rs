@@ -487,6 +487,115 @@ mod tests {
     }
 
     #[test]
+    fn exhaustive_string_literal_union_switch_satisfies_return_flow() {
+        check_one(
+            "type GPUBufferMapState = \"unmapped\" | \"pending\" | \"mapped\";\n\
+             function lower(v: GPUBufferMapState): i32 {\n\
+               switch (v) {\n\
+                 case \"unmapped\": return 1;\n\
+                 case \"pending\": return 2;\n\
+                 case \"mapped\": return 3;\n\
+               }\n\
+             }\n\
+             export function main(): void { print(`${lower(\"mapped\")}`); }\n",
+        )
+        .expect("all diverging arms make an exhaustive Q32 switch diverge");
+    }
+
+    #[test]
+    fn exhaustive_string_literal_union_switch_with_break_fails_return_flow() {
+        let diagnostics = check_one(
+            "type Mode = \"a\" | \"b\";\n\
+             function classify(value: Mode): i32 {\n\
+               switch (value) {\n\
+                 case \"a\": return 1;\n\
+                 case \"b\": break;\n\
+               }\n\
+             }\n",
+        )
+        .expect_err("a breaking Q32 arm still falls through the switch");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("not all paths return"));
+    }
+
+    #[test]
+    fn default_bearing_switch_return_flow_is_unchanged() {
+        check_one(
+            "function classify(value: string): i32 {\n\
+               switch (value) {\n\
+                 case \"a\": return 1;\n\
+                 default: return 2;\n\
+               }\n\
+             }\n\
+             export function main(): void { print(`${classify(\"a\")}`); }\n",
+        )
+        .expect("a default-bearing all-return switch retains existing flow behavior");
+    }
+
+    #[test]
+    fn defaultless_non_alias_switches_do_not_satisfy_return_flow() {
+        for source in [
+            "function classify(value: i32): i32 { switch (value) { case 0: return 1; } }\n",
+            "function classify(value: string): i32 { switch (value) { case \"a\": return 1; } }\n",
+            "enum Mode { A, B }\nfunction classify(value: Mode): i32 { switch (value) { case Mode.A: return 1; case Mode.B: return 2; } }\n",
+        ] {
+            let diagnostics = check_one(source)
+                .expect_err("default-less non-alias switches retain conservative return flow");
+            assert_eq!(diagnostics[0].code, RuleCode::S100);
+            assert!(diagnostics[0].message.contains("not all paths return"));
+        }
+    }
+
+    #[test]
+    fn exhaustive_alias_switch_divergence_is_recursive() {
+        check_one(
+            "type Outer = \"a\" | \"b\";\n\
+             type Inner = \"x\" | \"y\";\n\
+             function classify(outer: Outer, inner: Inner): i32 {\n\
+               switch (outer) {\n\
+                 case \"a\": return 1;\n\
+                 case \"b\":\n\
+                   switch (inner) {\n\
+                     case \"x\": return 2;\n\
+                     case \"y\": unreachable();\n\
+                   }\n\
+               }\n\
+             }\n\
+             export function main(): void { print(`${classify(\"b\", \"x\")}`); }\n",
+        )
+        .expect("nested exhaustive Q32 switches compose divergence");
+    }
+
+    #[test]
+    fn unreachable_call_statement_satisfies_function_return_flow() {
+        check_one(
+            "function nonnegative(value: i32): i32 {\n\
+               if (value >= 0) { return value; }\n\
+               unreachable();\n\
+             }\n\
+             export function main(): void { print(`${nonnegative(4)}`); }\n",
+        )
+        .expect("an unreachable() tail diverges");
+    }
+
+    #[test]
+    fn exhaustive_alias_switch_satisfies_lambda_return_flow() {
+        check_one(
+            "type Mode = \"a\" | \"b\";\n\
+             export function main(): void {\n\
+               const classify: (value: Mode) => i32 = (value: Mode): i32 => {\n\
+                 switch (value) {\n\
+                   case \"a\": return 1;\n\
+                   case \"b\": return 2;\n\
+                 }\n\
+               };\n\
+               print(`${classify(\"a\")}`);\n\
+             }\n",
+        )
+        .expect("the lambda return-flow site shares exhaustive Q32 divergence");
+    }
+
+    #[test]
     fn descriptor_required_members_and_defaults_reach_hir() {
         let module = check_one(
             "type Mode = \"fast\" | \"safe\";\n\

@@ -13,6 +13,7 @@ declare type u16 = number;
 declare type f16 = number;
 
 declare function print(message: string): void;
+declare function unreachable(): never;
 
 declare namespace Context {
   function collect(): void;

@@ -375,9 +375,15 @@ Corpus: [`corpus/accept/a92-descriptor-literals.ts`](../corpus/accept/a92-descri
 
 ### Q32 string-literal unions
 
-Q32 admits declared aliases whose members are string literals, such as `type Mode = "fast" | "safe"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted.
+Q32 admits declared aliases whose members are string literals, such as `type Mode = "fast" | "safe"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return.
 
-Corpus: [`corpus/accept/a91-string-literal-union.ts`](../corpus/accept/a91-string-literal-union.ts), [`corpus/reject/r87-literal-union-nonmember.ts`](../corpus/reject/r87-literal-union-nonmember.ts), [`corpus/reject/r88-literal-union-inline.ts`](../corpus/reject/r88-literal-union-inline.ts), [`corpus/reject/r89-literal-union-cross-alias.ts`](../corpus/reject/r89-literal-union-cross-alias.ts), [`corpus/accept/a115-switch-literal-union.ts`](../corpus/accept/a115-switch-literal-union.ts), [`corpus/reject/r112-switch-alias-missing-member.ts`](../corpus/reject/r112-switch-alias-missing-member.ts), [`corpus/reject/r113-switch-alias-non-member.ts`](../corpus/reject/r113-switch-alias-non-member.ts), [`corpus/reject/r114-switch-alias-duplicate-member.ts`](../corpus/reject/r114-switch-alias-duplicate-member.ts).
+Corpus: [`corpus/accept/a91-string-literal-union.ts`](../corpus/accept/a91-string-literal-union.ts), [`corpus/reject/r87-literal-union-nonmember.ts`](../corpus/reject/r87-literal-union-nonmember.ts), [`corpus/reject/r88-literal-union-inline.ts`](../corpus/reject/r88-literal-union-inline.ts), [`corpus/reject/r89-literal-union-cross-alias.ts`](../corpus/reject/r89-literal-union-cross-alias.ts), [`corpus/accept/a115-switch-literal-union.ts`](../corpus/accept/a115-switch-literal-union.ts), [`corpus/accept/a116-exhaustive-switch-returns.ts`](../corpus/accept/a116-exhaustive-switch-returns.ts), [`corpus/reject/r112-switch-alias-missing-member.ts`](../corpus/reject/r112-switch-alias-missing-member.ts), [`corpus/reject/r113-switch-alias-non-member.ts`](../corpus/reject/r113-switch-alias-non-member.ts), [`corpus/reject/r114-switch-alias-duplicate-member.ts`](../corpus/reject/r114-switch-alias-duplicate-member.ts).
+
+### Divergence flow
+
+`unreachable()` is legal only as a call statement. It marks that path as diverging for return-flow analysis and traps with `unreachable-reached` if execution reaches the call. Returns, `unreachable()`, and recursively exhaustive Q32 switches compose as diverging statements; a switch arm that falls through or breaks does not diverge.
+
+Corpus: [`corpus/accept/a116-exhaustive-switch-returns.ts`](../corpus/accept/a116-exhaustive-switch-returns.ts), [`corpus/reject/r115-unreachable-as-value.ts`](../corpus/reject/r115-unreachable-as-value.ts), [`corpus/trap/t47-unreachable-reached.ts`](../corpus/trap/t47-unreachable-reached.ts).
 
 ### Q34 async
 

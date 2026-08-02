@@ -811,6 +811,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.trap_check();
                 Ok(())
             }
+            hir::TrapSite::Unreachable { pos } => {
+                if !matches!(operand, TrapOperand::Pending) {
+                    return Err(internal("unreachable trap site received a value"));
+                }
+                let false_value = self.iconst(types::I8, 0);
+                self.guard(false_value, TrapKind::UnreachableReached, pos)
+            }
             hir::TrapSite::DivisionByZero { pos } => {
                 let divisor = value(operand, "division")?;
                 let nonzero = self
@@ -4651,6 +4658,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let rv = self.eval(arg)?;
                 let h = self.expect_s(rv)?;
                 self.call_rt(self.ml.rt.print, &[self.ctx_v, h], checked)?;
+                Ok(RV::None)
+            }
+            hir::AmbientFn::Unreachable => {
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Unreachable { .. }),
+                    internal("unreachable() has no HIR trap site"),
+                )?;
+                self.emit_trap_site(site, TrapOperand::Pending)?;
                 Ok(RV::None)
             }
             hir::AmbientFn::Collect => {

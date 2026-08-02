@@ -1121,6 +1121,18 @@ impl<'m> Emitter<'m> {
                 }
                 self.emit_trap_check(out, depth)
             }
+            hir::TrapSite::Unreachable { pos } => {
+                if !matches!(operand, TrapOperand::Pending) {
+                    return Err("unreachable trap site received a value".to_string());
+                }
+                let pos_id = self.pos_id(pos);
+                let _ = writeln!(
+                    out,
+                    "{ind}subscript_rt_trap(ctx, {}u, {pos_id}u);",
+                    TrapKind::UnreachableReached as u32
+                );
+                self.emit_trap_return(out, depth)
+            }
             hir::TrapSite::DivisionByZero { pos } => {
                 let TrapOperand::Value(divisor) = operand else {
                     return Err("division trap site has no divisor".to_string());
@@ -1919,6 +1931,13 @@ impl<'m> Emitter<'m> {
                 let arg = args.first().ok_or("print arity")?;
                 let h = self.eval(arg, out, depth)?;
                 let _ = writeln!(out, "{ind}subscript_rt_print(ctx, {h});");
+            }
+            hir::AmbientFn::Unreachable => {
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Unreachable { .. }),
+                    "unreachable() has no HIR trap site".to_string(),
+                )?;
+                self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
             }
             hir::AmbientFn::Collect => {
                 let _ = writeln!(out, "{ind}subscript_rt_collect(ctx);");

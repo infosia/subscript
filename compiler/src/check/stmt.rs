@@ -55,9 +55,9 @@ fn root_of(key: &str) -> &str {
     key.split('.').next().unwrap_or(key)
 }
 
-/// Conservative all-paths-return analysis over checked bodies: true
-/// when every control path reaches a `return`. Used for functions with
-/// a non-void declared return type (generators are exempt).
+/// Conservative divergence analysis over checked bodies: true when every
+/// control path returns or reaches another diverging statement. Used for
+/// functions with a non-void declared return type (generators are exempt).
 pub(crate) fn always_returns(stmts: &[hir::Stmt]) -> bool {
     stmts.iter().any(stmt_returns)
 }
@@ -65,17 +65,28 @@ pub(crate) fn always_returns(stmts: &[hir::Stmt]) -> bool {
 fn stmt_returns(s: &hir::Stmt) -> bool {
     match s {
         hir::Stmt::Return { .. } => true,
+        hir::Stmt::Expr(hir::Expr {
+            kind:
+                ExprKind::Call {
+                    callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
+                    ..
+                },
+            ..
+        }) => true,
         hir::Stmt::Block(b) => always_returns(b),
         hir::Stmt::If {
             then,
             els: Some(els),
             ..
         } => always_returns(then) && always_returns(els),
-        hir::Stmt::Switch { cases, .. } => {
-            // Every case must return before any fallthrough or break;
-            // a `default` must exist or the discriminant may skip all.
-            cases.iter().any(|c| c.test.is_none())
-                && cases.iter().all(|c| always_returns(&c.body))
+        hir::Stmt::Switch { disc, cases, .. } => {
+            // Every case must diverge before fallthrough or break. A default
+            // still proves general switches cover the discriminant; Q32's
+            // checker-proven closed alias set proves a default-less switch.
+            let covers_discriminant = cases.iter().any(|c| c.test.is_none())
+                || (matches!(disc.ty, Type::StringAlias(_))
+                    && cases.iter().all(|c| c.test.is_some()));
+            covers_discriminant && cases.iter().all(|c| always_returns(&c.body))
         }
         hir::Stmt::While { cond, body, .. } => {
             is_true_literal(cond) && !contains_break(body)
@@ -288,7 +299,7 @@ impl<'p> Checker<'p> {
                 false
             }
             ast::Stmt::Expr(e) => {
-                let checked = self.check_expr(&e.expr, None, fx);
+                let checked = self.check_expr_stmt(&e.expr, fx);
                 out.push(hir::Stmt::Expr(checked));
                 false
             }
