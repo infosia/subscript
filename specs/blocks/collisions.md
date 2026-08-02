@@ -137,6 +137,13 @@ position stays rejected as a general union.
 discriminant with `case "member":` arms — integer dispatch, and
 closed-set exhaustiveness checked (`compiler.md` §41; accept adds
 `a115`, reject adds `r112`–`r114`).
+*Revised 2026-08-02 (R16):* inside a `@Descriptor` class, `name?: A`
+with no initializer (A a Q32 alias) declares an absence-capable
+member — absent is distinct from every value, spellable only by
+omission, read only through `!== undefined` presence narrowing;
+that comparison is the single legal appearance of the `undefined`
+token (C7 stands everywhere else). `compiler.md` §43; accept adds
+`a118`, reject adds `r117`–`r118`.
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
 an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries).
