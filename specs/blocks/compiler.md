@@ -3904,3 +3904,54 @@ r101–r105 as listed in §37.1.
    `Context.collect()` issued while the method was suspended.
 4. `tsc` gate green with the new accepts included; no existing
    golden moves; full gate green; zero-warning sweep unaffected.
+
+## 38. Workers round 1 — module state is Context state in both tiers
+
+Owner decision 2026-08-02. First of three rounds toward the Workers
+model (host-owned threads, one Context per thread, runtime message
+channels; the Q35 register entry lands with the final round). This
+round is the isolation prerequisite and stands on its own.
+
+Grounding, from source: the dev tier reaches every module global
+through the Context-owned block (`lower/mod.rs`'s contract — "module
+globals live in a host-owned block reached through the Context";
+the ABI slot is `Context::globals_offset()`, offset 16), while the
+ship tier emits each module global as a process-wide C `static`
+(`cemit.rs` global emission). Sequential multi-Context use never
+observes the difference because `subscript_init` reinitializes, but
+two **concurrent** Contexts of one program image would share and
+race ship-tier module state while dev-tier state stayed
+independent — a tier divergence the differential gate cannot see,
+because it drives one Context. The R6 lesson applies: tier
+agreement on the existing corpus is not correctness.
+
+### 38.1 Rule
+
+**Module state is Context state, in both tiers.** The ship tier
+emits module globals as one layout-fixed block allocated per
+Context during `subscript_init` and reached through the same
+Context slot the dev tier uses; a `static` definition for
+language-visible module state is forbidden in emitted C. Immutable
+data (string literal bytes, lookup tables) stays shared. A Context
+is thread-affine: created, driven, and released wholly on one
+thread (§14.6's single-threaded contract, restated for the
+multi-Context case); cross-thread migration of a live Context
+remains uncontracted.
+
+### 38.2 Gates
+
+1. A concurrency harness, both tiers: one program with mutating
+   module state runs in two Contexts on two OS threads
+   concurrently; each Context's per-Context stdout capture equals
+   the single-Context golden byte-exactly. Ship tier: one compiled
+   image, two Contexts — the case today's `static` emission fails.
+   Dev tier: one session per thread. Headless, deterministic (each
+   thread joins before comparison; no cross-thread ordering is
+   asserted).
+2. An emitter unit test: emitted C for a program with module
+   globals defines no `static` module-state storage.
+3. Existing goldens byte-identical (single-Context semantics are
+   unchanged); full gate and `tsc` gate green.
+4. The standing ship-tier benchmark re-measured and the ratio
+   recorded in `specs/tracking/workers.md` — global access gains an
+   indirection; the cost is measured and reported, not assumed.
