@@ -365,6 +365,8 @@ impl Drop for GlobalBlock {
 /// execution continues; refused swaps leave everything untouched.
 #[must_use = "a session owns the running program; dropping it ends the run"]
 pub struct ReloadSession {
+    // Field order is load-bearing: Context::drop closes and joins every
+    // worker before any JIT module containing worker code is released.
     ctx: Box<Context>,
     modules: Vec<JITModule>,
     table: Vec<*const u8>,
@@ -954,6 +956,49 @@ mod tests {
             session.reload(&src(source)),
             Err(ReloadError::LiveWorkers)
         ));
+    }
+
+    #[test]
+    fn reload_mode_worker_echo_round_trip_completes_without_a_trap() {
+        let source = "class Message {\n\
+                      \x20 value: i32;\n\
+                      \x20 constructor(value: i32) { this.value = value; }\n\
+                      }\n\
+                      function echo(inbox: Inbox<Message>, outbox: Outbox<Message>): void {\n\
+                      \x20 const message: Message | null = inbox.wait();\n\
+                      \x20 if (message !== null) { outbox.post(message); }\n\
+                      }\n\
+                      export function main(): void {\n\
+                      \x20 const worker: Worker<Message, Message> = Worker.spawn(echo);\n\
+                      \x20 worker.post(new Message(37));\n\
+                      \x20 worker.close();\n\
+                      \x20 worker.join();\n\
+                      \x20 const reply: Message | null = worker.poll();\n\
+                      \x20 if (reply !== null) { print(`echo=${reply.value}`); }\n\
+                      }\n";
+        let mut session = ReloadSession::new(&src(source)).expect("worker reload session");
+        session.call_main().expect("reload-mode worker round trip");
+        assert_eq!(session.take_output(), b"echo=37\n");
+        assert!(session.ctx.trap_record().is_none());
+        assert!(!session.ctx.has_live_workers());
+    }
+
+    #[test]
+    fn reload_session_declares_context_before_jit_modules() {
+        let source = include_str!("reload.rs");
+        let fields = source
+            .split_once("pub struct ReloadSession {")
+            .expect("ReloadSession declaration")
+            .1
+            .split_once('}')
+            .expect("ReloadSession field list")
+            .0;
+        let context = fields.find("ctx: Box<Context>").expect("Context field");
+        let modules = fields.find("modules: Vec<JITModule>").expect("JIT modules field");
+        assert!(
+            context < modules,
+            "ReloadSession must drop its Context, which joins workers, before JIT modules"
+        );
     }
 
     #[test]

@@ -170,6 +170,26 @@ fn r13_async_method_entries_match_across_tiers_and_golden() {
 }
 
 #[test]
+fn capturing_lambda_environment_survives_recursive_reentry() {
+    let accept = corpus::corpus_accept();
+    let id = "a114-lambda-env-recursion";
+    let sources = corpus::entry_sources(&accept, id);
+    let libraries = native_libraries(&sources).expect("a114 has no native interop dependency");
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
+    assert_eq!(
+        ship,
+        golden,
+        "{id}: ship-C-AOT output differs from the golden; dev-JIT emitted {:?}",
+        String::from_utf8_lossy(&jit)
+    );
+}
+
+#[test]
 fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a96-interop-byte-pairs";
@@ -424,11 +444,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // struct-pointer-member lowering (a106), and R11 handle parameter
     // pairs (a107), R12 nullable handle parameters (a108), and OBS-1
     // null-only boundary type reachability (a109), and R13 async instance
-    // methods (a110–a111), and Q35 workers (a112–a113).
+    // methods (a110–a111), Q35 workers (a112–a113), and the capturing-lambda
+    // recursion review pin (a114).
     assert_eq!(
         golden_ids.len(),
-        113,
-        "expected exactly 113 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        114,
+        "expected exactly 114 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -446,7 +467,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          struct-pointer-member lowering, and a107 R11 handle parameter-pair \
          interop, a108 R12 nullable handle parameter interop, a109 OBS-1 \
          null-only boundary type reachability, a110–a111 R13 async \
-         instance-method goldens, and a112–a113 Q35 worker goldens, found {}",
+         instance-method goldens, a112–a113 Q35 worker goldens, and the a114 \
+         capturing-lambda recursion review golden, found {}",
         golden_ids.len()
     );
 

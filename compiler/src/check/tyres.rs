@@ -422,7 +422,15 @@ impl<'p> Checker<'p> {
             }
             let saved = self.in_assoc_key;
             self.in_assoc_key = true;
-            let key = self.resolve_type(&args.params[0]);
+            let mut key = self.resolve_type(&args.params[0]);
+            if Self::is_context_affine_type(&key) {
+                self.error(
+                    RuleCode::S100,
+                    "Worker, Inbox, and Outbox values may not be container type arguments",
+                    self.pos(args.params[0].span()),
+                );
+                key = Type::Error;
+            }
             // Only this container's key position may temporarily admit
             // boundary-only shapes so the Q24 whitelist can issue S014.
             // A nested container's value is a general declaration even
@@ -442,7 +450,15 @@ impl<'p> Checker<'p> {
                 );
             }
             if name == "Map" {
-                let value = self.resolve_type(&args.params[1]);
+                let mut value = self.resolve_type(&args.params[1]);
+                if Self::is_context_affine_type(&value) {
+                    self.error(
+                        RuleCode::S100,
+                        "Worker, Inbox, and Outbox values may not be container type arguments",
+                        self.pos(args.params[1].span()),
+                    );
+                    value = Type::Error;
+                }
                 self.in_assoc_key = saved;
                 return Type::Map(Box::new(key), Box::new(value));
             }

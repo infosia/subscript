@@ -642,13 +642,19 @@ impl Context {
         if self.trapped() {
             return std::ptr::null_mut();
         }
+        // SAFETY: the raw reload indirection-table pointer cannot implement
+        // Send, so it crosses the thread boundary losslessly as `usize`.
+        // ReloadSession refuses swaps while a worker is live and drops this
+        // Context (which joins every worker) before freeing retained JIT
+        // modules, keeping the table and every address it contains valid.
+        let fn_table = self.fn_table as usize;
         match self.workers.spawn(
             init,
             entry,
             input_payload_size,
             output_payload_size,
             self.ship_arena,
-            self.fn_table as usize,
+            fn_table,
         ) {
             Ok(worker) => worker,
             Err(error) => {

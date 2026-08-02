@@ -149,3 +149,52 @@ utilization across the four workers under the dev tier via
 The arc is complete: §38 `1314d9d`, §39 `afd5b82`, §40 in this
 commit. A no-context review of the cumulative arc diff follows as
 the closing step.
+
+## Clean Review Then Fix (2026-08-02, arc closed)
+
+A fresh no-context reviewer read `1314d9d^..0788f4e` against
+§38–§40 and stdlib §16 and ran both tiers. Findings: 1 CRITICAL /
+1 MAJOR / 3 MINOR, all fixed same-day (contract `9a604dc`, fix
+commit below); the reviewer separately verified the worker
+synchronization, lifecycle interleavings, trap propagation, payload
+ownership, the four escape positions, and entry-shape bypasses as
+clean.
+
+- **C-1 (CRITICAL, fixed).** The ship tier emitted every capturing
+  lambda's environment as a function-local mutable `static` —
+  §38.1-forbidden process-wide state the name-based §38.2-2 test
+  missed. Wrong before Workers in plain programs: create a
+  capturing lambda, recurse, call it — dev 3 / ship 0, reviewer-
+  and implementer-reproduced (implementer Red run: dev `3`,
+  ship `0`, exit 101). C5 non-escape makes automatic storage
+  sound; `a114-lambda-env-recursion` pins the pattern under both
+  tiers and the emitter test is now an any-mutable-static audit
+  (immutable const tables whitelisted). Lesson, once: **a
+  name-based absence test pins an instance; only a class-wide
+  audit pins the class** — the same lesson as the §11c.3 copied
+  guard, in test form.
+- **M-1 (MAJOR, fixed).** Context-affinity missed container type
+  arguments: a module-global `Map<i32, Worker<…>>` stored a live
+  worker (reviewer ran it end-to-end; no memory unsafety, checker
+  hole only). Rule restated as any container type argument (Map
+  key/value, Set element); `r111-worker-in-map-value` pins
+  (`tsc`-clean), unit tests cover the rest including local
+  containers.
+- **m-2 (fixed).** `subscript_rt_globals_init` conversion-failure
+  arms now trap before returning null (both arms unit-tested;
+  reachable only off 64-bit hosts).
+- **m-3 (fixed).** Reload-mode worker echo round-trip added; the
+  reload-only worker-init branch now runs end-to-end.
+- **m-1 (fixed).** The fn-table `usize` laundering across the
+  spawn boundary carries `// SAFETY:` comments at both crossings,
+  and the load-bearing `ReloadSession` field order (Context before
+  JIT modules, so workers join before code drops) is mechanically
+  guarded. Correction to Round 2's record: "no `unsafe impl
+  Send/Sync`" was true but incomplete — a raw pointer did cross
+  threads, as a `usize`; the SAFETY rule now explicitly covers
+  laundered crossings (§40.4-6).
+
+Post-fix state: gate 48 harnesses, 828 passed, 0 failed, exit 0
+(reviewer-run, direct); `tsc` exit 0; differential gate 114
+entries, 0 skipped; zero-warning sweep green; no pre-existing
+golden moved. No open findings; the arc is closed.

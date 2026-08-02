@@ -114,14 +114,34 @@ pub unsafe extern "C" fn subscript_rt_globals_init(
     size: u64,
     align: u64,
 ) -> *mut u8 {
-    let Ok(size) = usize::try_from(size) else {
-        return std::ptr::null_mut();
-    };
-    let Ok(align) = usize::try_from(align) else {
-        return std::ptr::null_mut();
-    };
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.init_module_globals(size, align)
+    let ctx = unsafe { &mut *ctx };
+    globals_init_with_conversion(ctx, size, align, |value| usize::try_from(value).ok())
+}
+
+fn globals_init_with_conversion(
+    ctx: &mut Context,
+    size: u64,
+    align: u64,
+    mut convert: impl FnMut(u64) -> Option<usize>,
+) -> *mut u8 {
+    let Some(size) = convert(size) else {
+        ctx.trap(
+            TrapKind::Internal,
+            "module-global block layout is not representable",
+            0,
+        );
+        return std::ptr::null_mut();
+    };
+    let Some(align) = convert(align) else {
+        ctx.trap(
+            TrapKind::Internal,
+            "module-global block layout is not representable",
+            0,
+        );
+        return std::ptr::null_mut();
+    };
+    ctx.init_module_globals(size, align)
 }
 
 /// Begins a nested call-duration scratch scope for recursive boundary
@@ -5076,6 +5096,25 @@ pub unsafe extern "C" fn subscript_rt_ctx_visit_live_allocations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn globals_init_conversion_failures_trap_before_returning_null() {
+        for converted in [
+            [None, Some(8usize)],
+            [Some(8usize), None],
+        ] {
+            let mut ctx = Context::new();
+            let mut converted = converted.into_iter();
+            let globals = globals_init_with_conversion(&mut ctx, 8, 8, |_| {
+                converted.next().expect("one conversion result per argument")
+            });
+            assert!(globals.is_null());
+            let trap = ctx.trap_record().expect("conversion failure traps");
+            assert_eq!(trap.kind, TrapKind::Internal);
+            assert_eq!(trap.message, "module-global block layout is not representable");
+            assert_eq!(trap.pos_id, 0);
+        }
+    }
 
     struct ObservedTrap {
         calls: u32,

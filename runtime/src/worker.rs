@@ -334,6 +334,11 @@ fn run_worker(
     fn_table: usize,
 ) -> WorkerOutcome {
     let mut ctx = Context::new_worker(releasing_context);
+    // SAFETY: Context::worker_spawn erased this pointer to `usize` only to
+    // cross the thread boundary. ReloadSession refuses code replacement
+    // until all workers join and drops the parent Context before its JIT
+    // modules, so reconstructing the exact table pointer here is valid for
+    // the worker Context's entire lifetime.
     ctx.set_fn_table(fn_table as *const *const u8);
     let ctx_ptr = std::ptr::from_mut(ctx.as_mut());
     let mut inbox = WorkerInbox { queue: input };

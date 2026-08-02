@@ -1894,6 +1894,37 @@ mod tests {
     }
 
     #[test]
+    fn q35_context_affinity_rejects_every_container_type_argument() {
+        let cases = [
+            (
+                "Map key",
+                "Map<Worker<WorkerMessage, WorkerMessage>, i32>",
+            ),
+            (
+                "Set element",
+                "Set<Worker<WorkerMessage, WorkerMessage>>",
+            ),
+            (
+                "local Map value",
+                "Map<i32, Worker<WorkerMessage, WorkerMessage>>",
+            ),
+        ];
+        for (position, annotation) in cases {
+            let source = format!(
+                "{WORKER_DECLS}export function main(): void {{\n  const escaped: {annotation} = new {annotation}();\n}}\n"
+            );
+            let diagnostics = check_one(&source).expect_err("affine container argument");
+            assert!(
+                diagnostics.iter().any(|diagnostic| {
+                    diagnostic.code == RuleCode::S100
+                        && diagnostic.message.contains("container type arguments")
+                }),
+                "{position}: {diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
     fn q35_spawn_rejects_every_non_entry_argument_form() {
         let arguments = [
             "(inbox: Inbox<WorkerMessage>, outbox: Outbox<WorkerMessage>): void => {}",

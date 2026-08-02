@@ -5844,7 +5844,7 @@ impl<'m> Emitter<'m> {
             }
             let _ = writeln!(self.protos, "typedef struct {{ {fields}}} {env_ty};");
             let etmp = self.fresh_tmp();
-            let _ = writeln!(out, "{ind}static {env_ty} {etmp};");
+            let _ = writeln!(out, "{ind}{env_ty} {etmp};");
             for (cn, _) in &cap_tys {
                 let _ = writeln!(out, "{ind}{etmp}.{} = {};", sanitize(cn), self.local_ref(cn));
             }
@@ -7477,36 +7477,84 @@ mod tests {
     }
 
     #[test]
-    fn emitted_module_state_is_only_in_the_context_block() {
+    fn emitted_c_has_no_mutable_static_storage_definitions() {
         assert_eq!(
             rtc::Context::globals_offset(),
             16,
             "ship C reads the fixed Context globals slot"
         );
         let c = emit(
-            "let moduleStateProbe: i32 = 7;\n\
+            "type Label = \"worker\" | \"lambda\";\n\
+             let moduleStateProbe: i32 = 7;\n\
+             class Message {\n\
+             \x20 value: i32 = 0;\n\
+             }\n\
+             function echo(inbox: Inbox<Message>, outbox: Outbox<Message>): void {\n\
+             \x20 const message: Message | null = inbox.wait();\n\
+             \x20 if (message !== null) {\n\
+             \x20   outbox.post(message);\n\
+             \x20 }\n\
+             }\n\
+             function recurse(value: i32): i32 {\n\
+             \x20 const captured: i32 = value;\n\
+             \x20 const read: () => i32 = (): i32 => captured;\n\
+             \x20 if (value > 0) {\n\
+             \x20   recurse(value - 1);\n\
+             \x20 }\n\
+             \x20 return read();\n\
+             }\n\
              export function main(): void {\n\
-             \x20 moduleStateProbe += 1;\n\
-             \x20 print(`${moduleStateProbe}`);\n\
+             \x20 const label: Label = \"worker\";\n\
+             \x20 moduleStateProbe += recurse(2);\n\
+             \x20 print(`${label}:${moduleStateProbe}`);\n\
+             \x20 const worker: Worker<Message, Message> = Worker.spawn(echo);\n\
+             \x20 worker.close();\n\
+             \x20 worker.join();\n\
              }\n",
         );
         assert!(c.contains("typedef struct SubscriptModuleGlobals {"));
         assert!(c.contains("int32_t g_moduleStateProbe;"));
         assert!(c.contains("subscript_rt_globals_init(ctx, sizeof(SubscriptModuleGlobals)"));
         assert!(c.contains("subscript_globals(ctx)->g_moduleStateProbe"));
+        assert!(c.contains("static const SubStringAliasMember subscript_string_alias_0[] = {"));
+        assert!(c.contains("EnvL0 _t"));
 
-        let static_state: Vec<&str> = c
+        fn is_static_function(declaration: &str) -> bool {
+            let Some(open) = declaration.find('(') else {
+                return false;
+            };
+            let before = &declaration[..open];
+            if before.contains('=') || declaration[open + 1..].trim_start().starts_with('*') {
+                return false;
+            }
+            before
+                .split_ascii_whitespace()
+                .next_back()
+                .is_some_and(|name| {
+                    !name.is_empty()
+                        && name
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                })
+        }
+
+        // Every line-start `static` that is not a function declaration or
+        // definition declares storage. Function-pointer objects and call
+        // initializers remain storage under this classifier, so only the
+        // explicit immutable-table whitelist may survive.
+        let static_storage: Vec<&str> = c
             .lines()
             .filter(|line| {
-                line.trim_start().starts_with("static ")
-                    && line
-                        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
-                        .any(|token| token == "g_moduleStateProbe")
+                line.trim_start()
+                    .strip_prefix("static ")
+                    .is_some_and(|declaration| !is_static_function(declaration))
             })
             .collect();
         assert!(
-            static_state.is_empty(),
-            "language-visible module state was emitted as C static storage: {static_state:?}"
+            static_storage.iter().all(|line| line
+                .trim_start()
+                .starts_with("static const SubStringAliasMember subscript_string_alias_")),
+            "emitted C contains mutable or non-whitelisted static storage: {static_storage:?}"
         );
     }
 
