@@ -3950,6 +3950,36 @@ remains uncontracted.
    asserted).
 2. An emitter unit test: emitted C for a program with module
    globals defines no `static` module-state storage.
+   *(Strengthened 2026-08-02 by the arc's Clean Review: the
+   name-based test pinned the probe global and missed a second
+   mutable-static class — see 38.3. The gate is now an audit:
+   emitted C contains no mutable `static` definition of any kind;
+   immutable rodata is whitelisted explicitly.)*
+
+### 38.3 Review finding — capturing-lambda environments (2026-08-02)
+
+The arc's no-context review found the ship tier still emitting one
+mutable-static class §38.1 forbids: every capturing lambda's
+environment (`static EnvL<n> …;` at its creation site), written on
+every call, shared process-wide. This was wrong before Workers in
+plain single-threaded programs — a function that creates a
+capturing lambda, recurses, then calls the lambda reads the
+recursive call's environment (dev tier 3, ship tier 0 — verified
+live by the reviewer) — and Workers make the concurrent case
+routine. C5 (captures never escape their defining function) is
+exactly the property that makes an automatic-storage environment
+sound; the `static` was never load-bearing.
+
+Fix contract: the environment becomes function-local automatic
+storage; `a114-lambda-env-recursion` pins the recursion pattern
+Red-first (the pre-fix ship divergence is recorded, then the entry
+lands with the fix); the 38.2-2 audit above pins the class. Also
+from the same review, runtime-side: `subscript_rt_globals_init`'s
+size/align conversion-failure arms must trap before returning null
+(today they return bare null and emitted `subscript_init` returns
+with no trap recorded — the harness then proceeds and crashes on
+the null globals slot; reachable only off 64-bit hosts, fixed
+loudly anyway).
 3. Existing goldens byte-identical (single-Context semantics are
    unchanged); full gate and `tsc` gate green.
 4. The standing ship-tier benchmark re-measured and the ratio
@@ -4059,6 +4089,14 @@ generics. Enforced, each with a corpus pin:
   class field, array element, or lambda capture rejects (r109 pins
   the module-global case; one pin for the class, the checker
   covers all four escape positions with unit tests).
+  *(Amended 2026-08-02, arc Clean Review: "array element" was
+  implemented for the three array positions but not for container
+  type arguments — a module-global `Map<i32, Worker<…>>` stored
+  and retrieved a live worker, verified end-to-end. The rule as
+  now written: an affine type is illegal as ANY container type
+  argument — `Map` key and value, `Set` element, alongside the
+  array positions. r111 pins the Map-value case; unit tests cover
+  the rest.)*
 - `new Worker(...)` rejects with the checker's own diagnostic
   (r110; `tsc` also rejects via the private constructor — not a
   `tsc`-clean pin, recorded as such).
@@ -4110,7 +4148,18 @@ picks up the new entries).
    way.
 3. Checker unit tests cover all four escape positions and the
    non-entry spawn arguments.
-4. Reload refusal with live workers (unit test).
+4. Reload refusal with live workers (unit test). *(Added
+   2026-08-02, arc Clean Review m-3: plus a reload-mode worker
+   echo round-trip — the reload-only init branch in the worker
+   entry path runs end-to-end, not only the Refused pin.)*
 5. `tsc` gate green with prelude + new corpus + `e11` included; no
    existing golden moves; full gate green; zero-warning sweep
    green; generated-docs byte-compare gates green.
+6. *(Added 2026-08-02, arc Clean Review m-1)*: the reload-session
+   fn-table pointer crosses to worker threads laundered as
+   `usize`; the invariant that makes it sound (LiveWorkers refusal
+   plus ReloadSession field order joining workers before code is
+   dropped) is written as a `// SAFETY:` comment at the crossing
+   and pinned by a comment-presence assertion or field-order
+   test — the §39.3 SAFETY rule applies to laundered crossings,
+   not only to literal `unsafe impl`.
