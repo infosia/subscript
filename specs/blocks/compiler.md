@@ -4450,3 +4450,31 @@ fix.
    composition against the C layout (the `offsetof` convention).
 4. No existing golden moves; full gate green; `tsc` gate green;
    bindgen regeneration byte-compare green.
+
+### 44.5 Round 2 — the remaining axis (2026-08-03)
+
+`a119` did not reproduce (§44 tracking). The downstream then
+reported that **both** tiers fail (dev-JIT aborts in
+`Context::array_len`; ship-C-AOT takes SIGSEGV), with no program
+output first, and supplied its mirror and generated conversion.
+The reviewer reproduced six further construction shapes against the
+existing fixture — helper-returned struct temporaries as
+constructor arguments, `push`-built element arrays, string-bearing
+elements, null and non-null pointer elements in one array, a
+defaulted array member taking its default, and the maximal
+combination — **all clean under the capture harness**.
+
+One structural axis remains untested, visible only in the
+downstream's C facade: the struct behind the nullable pointer
+**inside an array element** is itself an aggregate of nested
+structs (`SGPUBlendState { SGPUBlendComponent color, alpha; }`),
+where the fixture's counterpart holds two scalars. §32's recursion
+is pinned at other positions but never at this one: array element →
+nullable pointer → struct → nested struct.
+
+The fixture gains that depth; `a120-interop-nested-behind-element-pointer`
+drives it Red-first with the same null/non-null and empty/non-empty
+coverage. If it too runs clean, the fixture axis is exhausted and
+the next request is the downstream's **preprocessed C facade
+declarations** for these structs — the one artifact not yet
+supplied, and the only remaining place the shapes can differ.
