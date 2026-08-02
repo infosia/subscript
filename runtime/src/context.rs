@@ -47,6 +47,7 @@ use std::ffi::c_void;
 use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::trap::{TrapKind, TrapRecord};
+use crate::worker::{PostResult, Worker, WorkerEntry, WorkerInit, WorkerOutcome, WorkerSet};
 
 /// Host callback invoked when a Context records its first trap.
 ///
@@ -294,11 +295,23 @@ struct LargeAlloc {
 /// `Arc` so a test can observe that `Drop` released everything.
 #[cfg(test)]
 #[derive(Default)]
-struct ArenaStats {
+pub(crate) struct ArenaStats {
     chunks: std::sync::atomic::AtomicUsize,
     large: std::sync::atomic::AtomicUsize,
     membership_lookups: std::sync::atomic::AtomicUsize,
     container_delete_entries: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+impl ArenaStats {
+    pub(crate) fn owned_resources(&self) -> (usize, usize) {
+        use std::sync::atomic::Ordering;
+
+        (
+            self.chunks.load(Ordering::SeqCst),
+            self.large.load(Ordering::SeqCst),
+        )
+    }
 }
 
 /// Payload layout of a dynamic array (Q4): length, capacity, element
@@ -434,6 +447,9 @@ pub struct Context {
     // instead points `globals` at storage owned by its ReloadSession and
     // leaves this empty.
     module_globals: Option<ModuleGlobals>,
+    // Parent-owned worker handles. Queue synchronization lives entirely in
+    // the worker module; the Context itself remains thread-affine.
+    workers: WorkerSet,
     script_depth: u32,
     // Q34 pending root invocations, in host kick order. Active frames are
     // tracked separately while a callback is on the stack so explicit
@@ -561,6 +577,7 @@ impl Context {
             fn_table: std::ptr::null(),
             globals: std::ptr::null_mut(),
             module_globals: None,
+            workers: WorkerSet::default(),
             script_depth: 0,
             async_roots: VecDeque::new(),
             active_async_frames: Vec::new(),
@@ -605,6 +622,118 @@ impl Context {
             #[cfg(test)]
             stats: Default::default(),
         })
+    }
+
+    /// Creates the dedicated Context owned by one runtime worker.
+    ///
+    /// Called only inside the new worker thread so the Context is created,
+    /// driven, and released without crossing a thread boundary.
+    pub(crate) fn new_worker(releasing: bool) -> Box<Context> {
+        Self::with_tier(releasing)
+    }
+
+    pub(crate) fn worker_spawn(
+        &mut self,
+        init: WorkerInit,
+        entry: WorkerEntry,
+        input_payload_size: usize,
+        output_payload_size: usize,
+    ) -> *mut Worker {
+        if self.trapped() {
+            return std::ptr::null_mut();
+        }
+        match self.workers.spawn(
+            init,
+            entry,
+            input_payload_size,
+            output_payload_size,
+            self.ship_arena,
+        ) {
+            Ok(worker) => worker,
+            Err(error) => {
+                self.trap(
+                    TrapKind::AllocationFailure,
+                    format!("worker thread creation failed: {error}"),
+                    0,
+                );
+                std::ptr::null_mut()
+            }
+        }
+    }
+
+    pub(crate) unsafe fn worker_post(
+        &mut self,
+        worker: *mut Worker,
+        payload: *const u8,
+    ) -> bool {
+        if self.trapped() {
+            return false;
+        }
+        // SAFETY: the FFI caller supplies one readable fixed-size payload.
+        match unsafe { self.workers.post(worker, payload) } {
+            Some(PostResult::Posted) => true,
+            Some(PostResult::Closed) => false,
+            Some(PostResult::NullPayload) => {
+                self.trap(
+                    TrapKind::Internal,
+                    "worker post received a null non-empty payload",
+                    0,
+                );
+                false
+            }
+            None => {
+                self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+                false
+            }
+        }
+    }
+
+    pub(crate) fn worker_poll(&mut self, worker: *mut Worker) -> *mut u8 {
+        if self.trapped() {
+            return std::ptr::null_mut();
+        }
+        let Some(receive) = self.workers.poll(worker) else {
+            self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+            return std::ptr::null_mut();
+        };
+        crate::worker::materialize_parent(self, receive)
+    }
+
+    pub(crate) fn worker_close(&mut self, worker: *mut Worker) {
+        if !self.workers.close(worker) {
+            self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+        }
+    }
+
+    pub(crate) fn worker_join(&mut self, worker: *mut Worker) -> bool {
+        let Some(outcome) = self.workers.join(worker) else {
+            self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+            return false;
+        };
+        match outcome {
+            WorkerOutcome::Clean => true,
+            WorkerOutcome::Trapped(record) => {
+                self.trap(
+                    TrapKind::WorkerTrapped,
+                    format!(
+                        "worker trapped with {} at position {}: {}",
+                        record.kind.rule(),
+                        record.pos_id,
+                        record.message
+                    ),
+                    0,
+                );
+                false
+            }
+            WorkerOutcome::ThreadFailed => {
+                self.trap(
+                    TrapKind::WorkerTrapped,
+                    "worker thread ended without a runtime outcome",
+                    0,
+                );
+                false
+            }
+        }
     }
 
     /// Enables or disables diagnostics for handles to freed allocations.
@@ -1864,6 +1993,11 @@ impl Context {
         live_layout_bytes.saturating_add(self.retained_bytes)
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_arena_stats(&self) -> std::sync::Arc<ArenaStats> {
+        std::sync::Arc::clone(&self.stats)
+    }
+
     /// Visits every live allocation and returns the number visited.
     ///
     /// The iteration order is unspecified. A null visitor performs no
@@ -2574,6 +2708,9 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
+        // Closing before joining wakes children blocked in inbox waits. The
+        // worker threads release their own Contexts before join completes.
+        self.workers.shutdown();
         self.boundary_scratch_release(0);
         if let Some(block) = self.module_globals.take() {
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in

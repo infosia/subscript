@@ -22,6 +22,7 @@ use crate::context::{
     TrapObserver,
 };
 use crate::trap::TrapKind;
+use crate::worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};
 
 /// Narrows an `f64` to raw IEEE 754 binary16 storage bits using
 /// round-to-nearest-even. Overflow becomes infinity; subnormals, signed
@@ -4529,6 +4530,210 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
 // host entry program uses to drive an AOT-linked script
 // (`specs/blocks/compiler.md` §8.1): create a Context, call the
 // program's exported entries, then read the sink and the trap state.
+
+/// Spawns a runtime-owned OS thread with a fresh dedicated Context.
+///
+/// The worker thread calls `init`, then calls `entry` with its Context and
+/// worker-side endpoints unless initialization trapped. `input_payload_size`
+/// is the byte size accepted by [`subscript_rt_worker_post`];
+/// `output_payload_size` is the byte size accepted by
+/// [`subscript_rt_worker_outbox_post`]. Both queues are unbounded byte-copy
+/// queues. The returned handle is owned by `parent` and remains valid until
+/// that Context is released. Null is returned after a parent trap when a
+/// callback is missing, a size is not representable, or thread creation
+/// fails.
+///
+/// # Safety
+///
+/// `parent` follows the exclusive Context contract. `init` and `entry` must
+/// be linked C-callable functions that obey the runtime trap discipline and
+/// remain callable until the worker is joined.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_spawn(
+    parent: *mut Context,
+    init: Option<WorkerInit>,
+    entry: Option<WorkerEntry>,
+    input_payload_size: u64,
+    output_payload_size: u64,
+) -> *mut Worker {
+    // SAFETY: shared exclusive Context contract.
+    let parent = unsafe { &mut *parent };
+    let Some(init) = init else {
+        parent.trap(TrapKind::Internal, "worker spawn requires an initializer", 0);
+        return std::ptr::null_mut();
+    };
+    let Some(entry) = entry else {
+        parent.trap(TrapKind::Internal, "worker spawn requires an entry", 0);
+        return std::ptr::null_mut();
+    };
+    let Ok(input_payload_size) = usize::try_from(input_payload_size) else {
+        parent.trap(
+            TrapKind::AllocationFailure,
+            "worker input payload size is not representable",
+            0,
+        );
+        return std::ptr::null_mut();
+    };
+    let Ok(output_payload_size) = usize::try_from(output_payload_size) else {
+        parent.trap(
+            TrapKind::AllocationFailure,
+            "worker output payload size is not representable",
+            0,
+        );
+        return std::ptr::null_mut();
+    };
+    parent.worker_spawn(init, entry, input_payload_size, output_payload_size)
+}
+
+/// Copies one fixed-size payload into a worker's parent-to-worker queue.
+///
+/// Posting never blocks. Returns 1 when accepted and 0 when the worker input
+/// is closed or the Context is trapped.
+///
+/// # Safety
+///
+/// `parent` follows the exclusive Context contract; `worker` belongs to it.
+/// `payload` points to the input payload size supplied at spawn (and may be
+/// null only when that size is zero).
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_post(
+    parent: *mut Context,
+    worker: *mut Worker,
+    payload: *const u8,
+) -> i32 {
+    // SAFETY: forwarded parent, worker, and payload contracts.
+    i32::from(unsafe { &mut *parent }.worker_post(worker, payload))
+}
+
+/// Non-blockingly receives one worker-to-parent message.
+///
+/// A message is copied into a fresh allocation owned by `parent` and that
+/// allocation is returned. Null means that no message is currently queued,
+/// the output is closed and drained, or the Context trapped while allocating.
+///
+/// # Safety
+///
+/// `parent` follows the exclusive Context contract and `worker` belongs to it.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_poll(
+    parent: *mut Context,
+    worker: *mut Worker,
+) -> *mut u8 {
+    // SAFETY: forwarded parent and worker contracts.
+    unsafe { &mut *parent }.worker_poll(worker)
+}
+
+/// Closes a worker's parent-to-worker queue.
+///
+/// Already queued messages remain receivable. After they are drained, worker
+/// inbox receives observe end-of-input as a null result. The operation is
+/// idempotent.
+///
+/// # Safety
+///
+/// `parent` follows the exclusive Context contract and `worker` belongs to it.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_close(
+    parent: *mut Context,
+    worker: *mut Worker,
+) {
+    // SAFETY: forwarded parent and worker contracts.
+    unsafe { &mut *parent }.worker_close(worker);
+}
+
+/// Joins a worker thread, blocking until its entry and Context teardown end.
+///
+/// Returns 1 for a clean worker. If the worker Context trapped, this returns 0
+/// and records trap kind 22 (`worker-trapped`) on the joining Context. Joining
+/// an already joined worker repeats its recorded outcome.
+///
+/// # Safety
+///
+/// `parent` follows the exclusive Context contract and `worker` belongs to it.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_join(
+    parent: *mut Context,
+    worker: *mut Worker,
+) -> i32 {
+    // SAFETY: forwarded parent and worker contracts.
+    i32::from(unsafe { &mut *parent }.worker_join(worker))
+}
+
+/// Blocks until one parent-to-worker message or end-of-input is available.
+///
+/// A message is copied into a fresh allocation owned by the worker `ctx`.
+/// Null reports closed-and-drained input or a trap. The blocking path sleeps
+/// on an OS condition variable and never spins.
+///
+/// # Safety
+///
+/// `ctx` is the current worker's exclusive Context and `inbox` is the live
+/// endpoint passed to that worker's entry.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_inbox_wait(
+    ctx: *mut Context,
+    inbox: *mut WorkerInbox,
+) -> *mut u8 {
+    // SAFETY: forwarded worker Context and endpoint contracts.
+    unsafe { crate::worker::inbox_wait(&mut *ctx, inbox) }
+}
+
+/// Non-blockingly receives one parent-to-worker message.
+///
+/// A message is copied into a fresh allocation owned by the worker `ctx`.
+/// Null means no queued message, closed-and-drained input, or a trap.
+///
+/// # Safety
+///
+/// `ctx` is the current worker's exclusive Context and `inbox` is the live
+/// endpoint passed to that worker's entry.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_inbox_poll(
+    ctx: *mut Context,
+    inbox: *mut WorkerInbox,
+) -> *mut u8 {
+    // SAFETY: forwarded worker Context and endpoint contracts.
+    unsafe { crate::worker::inbox_poll(&mut *ctx, inbox) }
+}
+
+/// Copies one fixed-size payload into the worker-to-parent queue.
+///
+/// Posting never blocks. Returns 1 when accepted and 0 when the endpoint or
+/// Context is no longer usable.
+///
+/// # Safety
+///
+/// `ctx` is the current worker's exclusive Context, `outbox` is its live
+/// endpoint, and `payload` points to the output payload size supplied at
+/// spawn (or is null only when that size is zero).
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_outbox_post(
+    ctx: *mut Context,
+    outbox: *mut WorkerOutbox,
+    payload: *const u8,
+) -> i32 {
+    // SAFETY: forwarded worker Context, endpoint, and payload contracts.
+    let ctx = unsafe { &mut *ctx };
+    match unsafe { crate::worker::outbox_post(ctx, outbox, payload) } {
+        crate::worker::PostResult::Posted => 1,
+        crate::worker::PostResult::Closed => 0,
+        crate::worker::PostResult::NullPayload => {
+            ctx.trap(
+                TrapKind::Internal,
+                "worker outbox post received a null non-empty payload",
+                0,
+            );
+            0
+        }
+    }
+}
 
 /// Creates a Context and transfers ownership to the caller, who must
 /// return it with [`subscript_rt_ctx_release`]. Never null.

@@ -75,6 +75,8 @@ pub enum TrapKind {
     /// A registered callback fired with a userdata slot that no longer
     /// names a live Context allocation.
     CallbackUserdataFreed = 21,
+    /// Joining a runtime worker whose dedicated Context trapped.
+    WorkerTrapped = 22,
 }
 
 impl TrapKind {
@@ -103,6 +105,7 @@ impl TrapKind {
             19 => TrapKind::Regex,
             20 => TrapKind::RegexBudget,
             21 => TrapKind::CallbackUserdataFreed,
+            22 => TrapKind::WorkerTrapped,
             _ => return None,
         })
     }
@@ -132,6 +135,7 @@ impl TrapKind {
             TrapKind::Regex => "regex-error",
             TrapKind::RegexBudget => "regex-budget-exhausted",
             TrapKind::CallbackUserdataFreed => "callback-userdata-freed",
+            TrapKind::WorkerTrapped => "worker-trapped",
         }
     }
 }
@@ -173,7 +177,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=21u32 {
+        for v in 1..=22u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
@@ -191,6 +195,13 @@ mod tests {
         assert_eq!(TrapKind::Regex as u32, 19);
         assert_eq!(TrapKind::from_u32(19), Some(TrapKind::Regex));
         assert_eq!(TrapKind::Regex.rule(), "regex-error");
+    }
+
+    #[test]
+    fn worker_trapped_kind_has_stable_number_and_rule() {
+        assert_eq!(TrapKind::WorkerTrapped as u32, 22);
+        assert_eq!(TrapKind::from_u32(22), Some(TrapKind::WorkerTrapped));
+        assert_eq!(TrapKind::WorkerTrapped.rule(), "worker-trapped");
     }
 
     #[test]

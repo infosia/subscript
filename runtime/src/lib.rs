@@ -31,6 +31,7 @@ pub mod num;
 pub(crate) mod regexops;
 pub mod strops;
 pub mod trap;
+pub mod worker;
 
 pub use context::{
     Context, DiagnosticsObserver, ScriptMainEntry, TrapObserver,
@@ -38,3 +39,4 @@ pub use context::{
     FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
 pub use trap::{TrapKind, TrapRecord};
+pub use worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};

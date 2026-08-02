@@ -86,6 +86,35 @@ echo round-trip, and the inference form (`const w =
 Worker.spawn(entry)` with no type arguments). `lib` is ES2022 only,
 so the DOM `Worker` name is not in scope and the name is free.
 
-## Round 2 result
+## Round 2 result (2026-08-02, landed)
+
+Landed per §39: `runtime/src/worker.rs` (new module — threads,
+queues, endpoints, lifecycle; all synchronization confined here,
+`Mutex`+`Condvar`, no spinning, and **no `unsafe impl Send/Sync`
+needed** — entry/init cross as `extern "C" fn` pointers and
+payloads as owned byte buffers), `context.rs` (parent ownership;
+release-time close→join→free), `ffi.rs` (eight public
+`subscript_rt_worker_*` functions), `trap.rs`
+(`WorkerTrapped = 22`), `host_header.rs` + regenerated
+`subscript_runtime.h` (whole worker API is public-header, with
+opaque worker/inbox/outbox types and the two function-pointer
+typedefs).
+
+Implementer decisions recorded: worker Contexts inherit the
+parent's allocation tier; join is repeatable and repeats the
+recorded outcome; `close` drains already-queued input before
+end-of-input; parent teardown closes all workers before joining;
+join-trap carries the worker's trap detail in the joining Context's
+message.
+
+Reviewer verification: gate 48 harnesses, 817 passed, 0 failed,
+exit 0 read directly; `tsc` exit 0; corpus/goldens untouched;
+header regenerated through its generator with the byte-compare
+gate green. Eight new tests including the C-ABI echo round-trip,
+trap-kind-22 propagation on join, two concurrent workers with
+per-worker set assertions only, and parent release with a live
+blocked worker.
+
+## Round 3 result
 
 (pending)
