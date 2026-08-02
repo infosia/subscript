@@ -788,6 +788,107 @@ mod tests {
     }
 
     #[test]
+    fn absence_capable_alias_member_omission_uses_reserved_discriminant() {
+        let module = check_one(
+            "type Compare = \"never\" | \"less\";\n\
+             @Descriptor\n\
+             class Sampler { compare?: Compare; }\n\
+             export function main(): void {\n\
+               const sampler: Sampler = {};\n\
+               if (sampler.compare !== undefined) {\n\
+                 const present: Compare = sampler.compare;\n\
+                 print(`${present}`);\n\
+               } else {\n\
+                 print(\"absent\");\n\
+               }\n\
+               if (sampler.compare === undefined) {\n\
+                 print(\"still absent\");\n\
+               } else {\n\
+                 const present: Compare = sampler.compare;\n\
+                 print(`${present}`);\n\
+               }\n\
+             }\n",
+        )
+        .expect("presence arms read an absence-capable member as its Q32 alias");
+
+        let sampler = module
+            .classes
+            .iter()
+            .find(|class| class.name == "Sampler")
+            .expect("Sampler descriptor");
+        assert!(sampler.fields[0].is_absence_capable);
+        assert!(!sampler.fields[0].is_defaulted);
+
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Let { init, .. } = &main.body[0] else {
+            panic!("first statement is the descriptor binding");
+        };
+        let hir::ExprKind::DescriptorLit { fields, .. } = &init.kind else {
+            panic!("object literal lowered to DescriptorLit HIR");
+        };
+        assert!(matches!(
+            fields[0].as_ref().map(|field| (&field.kind, &field.ty)),
+            Some((
+                hir::ExprKind::Int(types::ABSENT_STRING_ALIAS_DISCRIMINANT),
+                Type::StringAlias(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn absence_capable_member_read_in_absent_arm_is_rejected() {
+        let diagnostics = check_one(
+            "type Compare = \"never\" | \"less\";\n\
+             @Descriptor\n\
+             class Sampler { compare?: Compare; }\n\
+             export function main(): void {\n\
+               const sampler: Sampler = {};\n\
+               if (sampler.compare === undefined) {\n\
+                 print(`${sampler.compare}`);\n\
+               }\n\
+             }\n",
+        )
+        .expect_err("the absent arm must not permit a member read");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("presence test"));
+    }
+
+    #[test]
+    fn absence_capable_member_reassignment_invalidates_narrowing() {
+        let diagnostics = check_one(
+            "type Compare = \"never\" | \"less\";\n\
+             @Descriptor\n\
+             class Sampler { compare?: Compare; }\n\
+             export function main(): void {\n\
+               const sampler: Sampler = { compare: \"less\" };\n\
+               if (sampler.compare !== undefined) {\n\
+                 sampler.compare = \"never\";\n\
+                 print(`${sampler.compare}`);\n\
+               }\n\
+             }\n",
+        )
+        .expect_err("field reassignment must kill the presence fact");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(diagnostics[0].message.contains("presence test"));
+    }
+
+    #[test]
+    fn undefined_outside_absence_presence_tests_stays_rejected() {
+        for source in [
+            "export function main(): void { const value = undefined; }\n",
+            "export function main(): void { const value: i32 = 1; print(`${value !== undefined}`); }\n",
+        ] {
+            let diagnostics = check_one(source)
+                .expect_err("ordinary undefined use remains outside the language");
+            assert_eq!(diagnostics[0].code, RuleCode::S012);
+        }
+    }
+
+    #[test]
     fn descriptor_methods_are_rejected() {
         let diagnostics = check_one(
             "@Descriptor\n\

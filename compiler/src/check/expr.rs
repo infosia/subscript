@@ -10,7 +10,9 @@ use crate::hir::{
     self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn,
     NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
 };
-use crate::types::{ClassId, FuncType, Type};
+use crate::types::{
+    ClassId, FuncType, Type, ABSENT_STRING_ALIAS_DISCRIMINANT,
+};
 
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
 
@@ -34,6 +36,24 @@ fn literalish(e: &ast::Expr) -> bool {
         ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => literalish(&u.arg),
         _ => false,
     }
+}
+
+/// Recognizes the one token whose ordinary identifier path is banned by C7.
+/// R16 handles it before general expression checking only for strict
+/// comparisons against an absence-capable descriptor member.
+fn is_undefined_ident(e: &ast::Expr) -> bool {
+    match e {
+        ast::Expr::Ident(id) => id.sym.as_ref() == "undefined",
+        ast::Expr::Paren(paren) => is_undefined_ident(&paren.expr),
+        _ => false,
+    }
+}
+
+fn unparen_expr(mut e: &ast::Expr) -> &ast::Expr {
+    while let ast::Expr::Paren(paren) = e {
+        e = &paren.expr;
+    }
+    e
 }
 
 /// Returns the nominal class supplied by an object literal's context.
@@ -1062,6 +1082,11 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         use ast::BinaryOp as B;
+        if matches!(b.op, B::EqEqEq | B::NotEqEq) {
+            if let Some(presence) = self.check_absence_presence_comparison(b, fx, pos.clone()) {
+                return presence;
+            }
+        }
         match b.op {
             B::LogicalAnd | B::LogicalOr => {
                 let left = self.check_expr(&b.left, None, fx);
@@ -1131,6 +1156,78 @@ impl<'p> Checker<'p> {
                 self.bin_result(b.op, left, right, pos)
             }
         }
+    }
+
+    /// Checks R16's sole legal `undefined` appearance. The source token is
+    /// erased to the reserved i32 discriminant in HIR, so both backends use
+    /// their ordinary integer comparison lowering.
+    fn check_absence_presence_comparison(
+        &mut self,
+        binary: &ast::BinExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> Option<hir::Expr> {
+        let left_undefined = is_undefined_ident(&binary.left);
+        let right_undefined = is_undefined_ident(&binary.right);
+        if !left_undefined && !right_undefined {
+            return None;
+        }
+
+        let undefined_source = if left_undefined {
+            &*binary.left
+        } else {
+            &*binary.right
+        };
+        if left_undefined && right_undefined {
+            self.error(
+                RuleCode::S012,
+                "`undefined` is legal only in a presence test on an absence-capable descriptor member",
+                self.pos(undefined_source.span()),
+            );
+            return Some(self.err_expr(pos));
+        }
+
+        let member_source = if left_undefined {
+            &*binary.right
+        } else {
+            &*binary.left
+        };
+        let checked = match unparen_expr(member_source) {
+            ast::Expr::Member(member) => self.check_member_read_inner(member, fx, true),
+            other => self.check_expr(other, None, fx),
+        };
+        if !self.is_absence_capable_member_expr(&checked) {
+            self.error(
+                RuleCode::S012,
+                "`undefined` is legal only in a presence test on an absence-capable descriptor member",
+                self.pos(undefined_source.span()),
+            );
+            return Some(self.err_expr(pos));
+        }
+
+        let sentinel = hir::Expr {
+            kind: ExprKind::Int(ABSENT_STRING_ALIAS_DISCRIMINANT),
+            ty: checked.ty.clone(),
+            pos: self.pos(undefined_source.span()),
+        };
+        let (left, right) = if left_undefined {
+            (sentinel, checked)
+        } else {
+            (checked, sentinel)
+        };
+        Some(hir::Expr {
+            kind: ExprKind::Binary {
+                op: if binary.op == ast::BinaryOp::EqEqEq {
+                    BinOp::Eq
+                } else {
+                    BinOp::Ne
+                },
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+            ty: Type::Bool,
+            pos,
+        })
     }
 
     fn bin_result(
@@ -1655,6 +1752,11 @@ impl<'p> Checker<'p> {
                 }
                 Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, fx)),
                 None if field.is_defaulted => None,
+                None if field.is_absence_capable => Some(hir::Expr {
+                    kind: ExprKind::Int(ABSENT_STRING_ALIAS_DISCRIMINANT),
+                    ty: field.ty.clone(),
+                    pos: pos.clone(),
+                }),
                 None => {
                     self.error(
                         RuleCode::S100,
@@ -4410,6 +4512,15 @@ impl<'p> Checker<'p> {
     }
 
     fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
+        self.check_member_read_inner(m, fx, false)
+    }
+
+    fn check_member_read_inner(
+        &mut self,
+        m: &ast::MemberExpr,
+        fx: &mut FnCtx,
+        allow_absence_test: bool,
+    ) -> hir::Expr {
         let pos = self.pos(m.span);
         match &m.prop {
             ast::MemberProp::Computed(c) => {
@@ -4428,6 +4539,18 @@ impl<'p> Checker<'p> {
                 let obj = self.check_receiver(&m.obj, fx);
                 let mut expr = self.member_on(obj, &name, prop_pos, false);
                 self.apply_narrowing(&mut expr, fx);
+                let narrowed = path_key(&expr).is_some_and(|key| fx.narrowed.contains(&key));
+                if self.is_absence_capable_member_expr(&expr)
+                    && !allow_absence_test
+                    && !narrowed
+                {
+                    self.error(
+                        RuleCode::S100,
+                        "an absence-capable descriptor member may be read only after an `!== undefined` presence test",
+                        expr.pos.clone(),
+                    );
+                    expr.ty = Type::Error;
+                }
                 expr
             }
             ast::MemberProp::PrivateName(_) => {
@@ -4439,6 +4562,19 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
         }
+    }
+
+    fn is_absence_capable_member_expr(&self, expr: &hir::Expr) -> bool {
+        let ExprKind::Field { obj, name } = &expr.kind else {
+            return false;
+        };
+        let Type::Class(class) = &obj.ty else {
+            return false;
+        };
+        self.classes[class.0]
+            .fields
+            .iter()
+            .any(|field| field.name == name.as_str() && field.is_absence_capable)
     }
 
     fn check_index(&mut self, obj: hir::Expr, index: hir::Expr, pos: Pos) -> hir::Expr {

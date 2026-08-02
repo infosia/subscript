@@ -1,0 +1,6 @@
+present:present=less,lod=4
+present:negative=present:less
+other:absent,lod=8
+other:negative=absent
+empty:absent,lod=32
+empty:negative=absent

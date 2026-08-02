@@ -446,11 +446,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // null-only boundary type reachability (a109), and R13 async instance
     // methods (a110–a111), Q35 workers (a112–a113), and the capturing-lambda
     // recursion review pin (a114), R14 Q32 alias switches (a115), R15
-    // divergence flow (a116), and R17 nullable descriptor literals (a117).
+    // divergence flow (a116), R17 nullable descriptor literals (a117),
+    // and R16 absence-capable descriptor members (a118).
     assert_eq!(
         golden_ids.len(),
-        117,
-        "expected exactly 117 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        118,
+        "expected exactly 118 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -471,7 +472,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          instance-method goldens, a112–a113 Q35 worker goldens, and the a114 \
          capturing-lambda recursion review golden, the a115 R14 Q32 \
          alias-switch golden, the a116 R15 divergence-flow golden, and the \
-         a117 R17 nullable-descriptor-literal golden, found {}",
+         a117 R17 nullable-descriptor-literal golden, and the a118 R16 \
+         absence-capable descriptor-member golden, found {}",
         golden_ids.len()
     );
 

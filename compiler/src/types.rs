@@ -13,6 +13,12 @@ pub const MAX_AGGREGATE_BYTES: u32 = i32::MAX as u32;
 /// targets.
 pub const CRANELIFT_FRAME_ALIGNMENT: u32 = 16;
 
+/// Reserved Q32 discriminant used for an absent descriptor member (R16).
+///
+/// Ordinary alias members are numbered from zero in declaration order,
+/// so this value is outside every member set.
+pub const ABSENT_STRING_ALIAS_DISCRIMINANT: i64 = -1;
+
 /// Maximum supported accumulated Cranelift frame storage.
 ///
 /// The aarch64 ABI lowering adjusts the stack pointer with a signed

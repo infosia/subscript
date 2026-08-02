@@ -895,6 +895,38 @@ fn string_literal_union_equality_emits_an_integer_compare() {
 }
 
 #[test]
+fn absence_presence_test_emits_reserved_integer_compare() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "type Compare = \"never\" | \"less\";\n\
+                  @Descriptor\n\
+                  class Sampler { compare?: Compare; }\n\
+                  function present(sampler: Sampler): boolean {\n\
+                    return sampler.compare !== undefined;\n\
+                  }\n\
+                  export function main(): void {\n\
+                    const sampler: Sampler = {};\n\
+                    print(`${present(sampler)}`);\n\
+                  }\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emits C").source;
+    let comparison = c
+        .lines()
+        .find(|line| line.contains("compare") && line.contains("!= -1"))
+        .unwrap_or_else(|| panic!("absence test is not an integer compare against -1:\n{c}"));
+    assert!(
+        !comparison.contains("subscript_string_alias"),
+        "presence comparison consulted the Q32 formatting table: {comparison}"
+    );
+    assert!(
+        c.lines()
+            .any(|line| line.contains("->compare = -1")),
+        "omission did not store the reserved -1 discriminant:\n{c}"
+    );
+}
+
+#[test]
 fn a115_string_literal_union_switch_emits_integer_c_switches() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

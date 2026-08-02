@@ -8,13 +8,13 @@ use swc_ecma_ast as ast;
 
 use crate::diag::RuleCode;
 use crate::hir::{self, BinOp, ExprKind};
-use crate::types::Type;
+use crate::types::{Type, ABSENT_STRING_ALIAS_DISCRIMINANT};
 
 use super::expr::path_key;
 use super::{Checker, FnCtx, Local};
 
-/// Narrowing facts derived from a checked condition: paths known
-/// non-null when the condition is true / false.
+/// Narrowing facts derived from a checked condition: paths known non-null
+/// or known present when the condition is true / false.
 fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
     if let ExprKind::Binary { op, left, right } = &cond.kind {
         match op {
@@ -32,6 +32,31 @@ fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
                             // `p === null` → p is non-null when false.
                             BinOp::Eq => (Vec::new(), vec![key]),
                             // `p !== null` → p is non-null when true.
+                            _ => (vec![key], Vec::new()),
+                        };
+                    }
+                }
+                let (absent_side, other) = if matches!(
+                    (&left.kind, &left.ty),
+                    (ExprKind::Int(value), Type::StringAlias(_))
+                        if *value == ABSENT_STRING_ALIAS_DISCRIMINANT
+                ) {
+                    (Some(()), right)
+                } else if matches!(
+                    (&right.kind, &right.ty),
+                    (ExprKind::Int(value), Type::StringAlias(_))
+                        if *value == ABSENT_STRING_ALIAS_DISCRIMINANT
+                ) {
+                    (Some(()), left)
+                } else {
+                    (None, left)
+                };
+                if absent_side.is_some() && matches!(other.ty, Type::StringAlias(_)) {
+                    if let Some(key) = path_key(other) {
+                        return match op {
+                            // `p === undefined` -> p is present when false.
+                            BinOp::Eq => (Vec::new(), vec![key]),
+                            // `p !== undefined` -> p is present when true.
                             _ => (vec![key], Vec::new()),
                         };
                     }
@@ -1217,6 +1242,55 @@ mod tests {
         let (when_true, when_false) = narrow_paths(&cond_eq);
         assert!(when_true.is_empty());
         assert_eq!(when_false, vec!["p".to_string()]);
+    }
+
+    #[test]
+    fn narrow_paths_reads_absence_comparisons() {
+        let alias = Type::StringAlias(crate::types::StringAliasId(0));
+        let member = || {
+            expr(
+                ExprKind::Field {
+                    obj: Box::new(expr(
+                        ExprKind::Local("sampler".into()),
+                        Type::Class(crate::types::ClassId(0)),
+                    )),
+                    name: "compare".into(),
+                },
+                alias.clone(),
+            )
+        };
+        let absent = || {
+            expr(
+                ExprKind::Int(ABSENT_STRING_ALIAS_DISCRIMINANT),
+                alias.clone(),
+            )
+        };
+
+        let not_equal = expr(
+            ExprKind::Binary {
+                op: BinOp::Ne,
+                left: Box::new(member()),
+                right: Box::new(absent()),
+            },
+            Type::Bool,
+        );
+        assert_eq!(
+            narrow_paths(&not_equal),
+            (vec!["sampler.compare".to_string()], Vec::new())
+        );
+
+        let equal = expr(
+            ExprKind::Binary {
+                op: BinOp::Eq,
+                left: Box::new(absent()),
+                right: Box::new(member()),
+            },
+            Type::Bool,
+        );
+        assert_eq!(
+            narrow_paths(&equal),
+            (Vec::new(), vec!["sampler.compare".to_string()])
+        );
     }
 
     #[test]

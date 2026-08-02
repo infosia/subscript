@@ -198,8 +198,8 @@ pub(crate) struct Frame {
     pub this_ty: Option<Type>,
 }
 
-/// Per-body checking state: scope stack, frames, and the C7 narrowing
-/// set (path keys currently known non-null).
+/// Per-body checking state: scope stack, frames, and the C7/R16 narrowing
+/// set (path keys currently known non-null or present).
 #[derive(Debug)]
 pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
@@ -1716,7 +1716,9 @@ impl<'p> Checker<'p> {
                         && !prop.definite;
                     if is_descriptor {
                         match (prop.definite, prop.is_optional, prop.value.is_some()) {
-                            (true, false, false) | (false, true, true) => {}
+                            (true, false, false)
+                            | (false, true, true)
+                            | (false, true, false) => {}
                             (_, true, false) => {
                                 let pos = self.pos(prop.span);
                                 self.error(
@@ -1770,6 +1772,23 @@ impl<'p> Checker<'p> {
                             Type::Error
                         }
                     };
+                    let is_absence_capable = is_descriptor
+                        && !prop.definite
+                        && prop.is_optional
+                        && prop.value.is_none()
+                        && matches!(ty, Type::StringAlias(_));
+                    if is_descriptor
+                        && !prop.definite
+                        && prop.is_optional
+                        && prop.value.is_none()
+                        && !matches!(ty, Type::StringAlias(_) | Type::Error)
+                    {
+                        self.error(
+                            RuleCode::S012,
+                            "optional descriptor members require a default initializer",
+                            self.pos(prop.span),
+                        );
+                    }
                     let context_affine = Self::is_context_affine_type(&ty);
                     if context_affine {
                         self.error(
@@ -1812,6 +1831,7 @@ impl<'p> Checker<'p> {
                         name: key.sym.to_string(),
                         ty,
                         is_defaulted,
+                        is_absence_capable,
                         init: None,
                         foreign_provenance,
                         pos,

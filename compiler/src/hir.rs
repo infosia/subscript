@@ -159,6 +159,10 @@ pub struct Field {
     /// True when this is a Q33 descriptor field spelled `name?: T = expr`.
     /// For every other field this is false.
     pub is_defaulted: bool,
+    /// True when this is an R16 descriptor field spelled `name?: A`, where
+    /// `A` is a Q32 string-literal union alias. Omission stores the reserved
+    /// absent discriminant instead of evaluating a default.
+    pub is_absence_capable: bool,
     /// Field initializer, when present.
     pub init: Option<Expr>,
     /// C typedef attached to a mirrored callback field, when present.
