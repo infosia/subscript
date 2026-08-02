@@ -4478,3 +4478,45 @@ coverage. If it too runs clean, the fixture axis is exhausted and
 the next request is the downstream's **preprocessed C facade
 declarations** for these structs — the one artifact not yet
 supplied, and the only remaining place the shapes can differ.
+
+### 44.6 Round 3 — the difference is the unmarked reach-through pointer
+
+The downstream supplied its preprocessed C declarations
+(2026-08-03). Its measured layouts match what the fixture already
+exercises — `SGPUColorTargetState` is 24 bytes with the pointer at
++8 after a 4-byte enum and its hole, and `SGPUConstantEntry` is a
+`SGPUStringView` beside a `double`, both shapes the fixture
+reproduces field-for-field. Layout is therefore **not** the
+difference, and the enum/alias sizing question the reviewer raised
+is answered: no.
+
+The difference is a spelling. The downstream states, and its header
+shows, that `_Nullable` appears **only on opaque-handle members**;
+its reach-through struct-pointer members are written **plain**
+(`const SGPUBlendState* blend;`), because Q13 already mirrors a
+struct pointer as `X | null`. Every reach-through pointer member in
+this project's fixture carries `_Nullable`; every *plain* struct
+pointer in the fixture is the data half of a count/pointer pair.
+**A single, unmarked, count-less struct-pointer member has never
+been exercised** — in an array element or anywhere else.
+
+Rule: **the reach-through lowering (§33) keys off the member's
+shape — a count-less pointer to a registered boundary struct — not
+off its `_Nullable` spelling.** Nullability annotation is
+mirror-typing information (Q13), not a lowering trigger; a mirror
+that types a member `X | null` and a lowering that rebuilds it must
+agree by construction, or the boundary accepts and miscompiles
+(§28's rule; the R6 lesson restated for the annotation axis).
+
+Corpus: `a121-interop-unmarked-reach-through` (accept), Red-first —
+the fixture gains an array element type whose reach-through pointer
+member is written plain, matching the downstream header exactly,
+and the observed pre-fix behavior is recorded before any fix. If a
+plain member is genuinely unlowerable, it fails loud at compile
+time (§28) — never at run time.
+
+Exit criteria: (1) the pre-fix observation recorded; (2) `a121`
+byte-identical under both tiers; (3) a bindgen audit that no
+registered struct-pointer member reaches the mirror without a
+lowering, whatever its nullability spelling — the class, not the
+instance; (4) no existing golden moves; full gates green.
