@@ -3256,6 +3256,37 @@ descriptor, `r94` a method in a descriptor class, `r95` `new` on a
 descriptor class (`tsc`-clean; added at landing — literal
 construction is the only construction).
 
+### 25.3a Amendment — literals through `Descriptor | null` (2026-08-02, R17)
+
+Downstream bug report, reproduced at the pin: contextual typing for
+descriptor object literals stopped at `Type::Class` and never
+unwrapped `Nullable`, so a literal whose contextual type is
+`DescriptorClass | null` — a defaulted member
+(`m?: D | null = null`), a required member (`m!: D | null`), a
+parameter, or the same positions under nesting and array
+elements — rejected with a generic S100 while `null` and a typed
+temporary were accepted. The shape is real and generated: §33's
+`[nullable]` struct-pointer members mirror as exactly these
+member types.
+
+Rule: **in a contextual position typed `D | null` where `D` is a
+descriptor class, an object literal takes the descriptor arm and
+`null` keeps its meaning** — at any depth, matching the
+non-nullable behavior of §25 otherwise (defaults, required-member
+enforcement, excess rejection). A literal against
+`PlainClass | null` keeps S005 (nominal rejection), pinned.
+
+Corpus: `a117-descriptor-literal-nullable-member` (accept,
+Red-first — the entry reproduces the rejection at the pre-fix pin
+and lands with the fix): both member kinds, `{ m: {} }`,
+`{ m: null }`, omission taking the `null` default, and the
+array-element nesting from the downstream's controls; observation
+`tsc`-strict-compatible (presence checks in template position for
+the `?`-declared member, full narrowed reads on the
+required-nullable member). `r116-object-literal-nullable-class`
+(reject): `{}` against `PlainClass | null` pins S005 in the
+nullable position (`tsc` status probed and recorded).
+
 ### 25.4 Exit criteria (pre-registered)
 
 1. `a92` runs byte-identical under both tiers; the golden shows a
