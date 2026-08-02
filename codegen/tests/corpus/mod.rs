@@ -72,6 +72,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeProgrammableStage",
         // R10 recursive lowering through struct-pointer members.
         "subProbeFullRenderPipeline",
+        // OBS-3 round 4: two simultaneous reach-through pointer members.
+        "subProbeBreadthRenderPipeline",
         // R11 registered-handle pairs at parameter position.
         "subProbeQueueSubmit",
         // R12 nullable registered handles at parameter position.

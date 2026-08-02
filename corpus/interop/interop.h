@@ -947,6 +947,51 @@ uint64_t subProbeFullRenderPipelineWithUnmarkedBlendCheck(
     const SGPUProbeUnmarkedRenderPipelineDescriptor *descriptor,
     uint32_t selector);
 
+/* ==== OBS-3 two simultaneously-present pointer members (§44.7) =====
+ *
+ * The breadth shape deliberately adds new types rather than modifying any
+ * established fixture. The outer descriptor has two independent count-less
+ * struct-pointer members. Each target combines an embedded aggregate with a
+ * collapsed count/pointer pair, and the two pointers straddle a by-value
+ * aggregate whose two fields model the downstream primitive-state axis. */
+
+typedef struct SGPUProbeBreadthNestedState {
+    uint32_t first;
+    uint32_t second;
+} SGPUProbeBreadthNestedState;
+
+typedef struct SGPUProbeBreadthDepthStencilState {
+    SGPUProbeBreadthNestedState limits;
+    size_t biasesCount;
+    const uint32_t *biases;
+} SGPUProbeBreadthDepthStencilState;
+
+typedef struct SGPUProbeBreadthFragmentState {
+    SGPUProbeBreadthNestedState stage;
+    size_t constantsCount;
+    const uint32_t *constants;
+} SGPUProbeBreadthFragmentState;
+
+typedef struct SGPUProbeBreadthPrimitiveState {
+    uint32_t topology;
+    uint32_t stripIndexFormat;
+} SGPUProbeBreadthPrimitiveState;
+
+typedef struct SGPUProbeBreadthRenderPipelineDescriptor {
+    SGPUStringView label;
+    const SGPUProbeBreadthDepthStencilState * _Nullable depthStencil;
+    SGPUProbeBreadthPrimitiveState primitive;
+    const SGPUProbeBreadthFragmentState * _Nullable fragment;
+} SGPUProbeBreadthRenderPipelineDescriptor;
+
+/* Selector evidence covers both pointer-presence bits, both fields of the
+ * by-value member, and every nested/array field behind each pointer. An
+ * absent depthStencil returns 12000 + selector for selectors 6..10; an
+ * absent fragment returns 13000 + selector for selectors 11..15. */
+uint64_t subProbeBreadthRenderPipelineCheck(
+    const SGPUProbeBreadthRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ========
  *
  * Queue-submit shape: a leading opaque handle followed by the adjacent

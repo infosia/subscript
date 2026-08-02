@@ -399,6 +399,26 @@ fn unmarked_struct_pointer_in_array_element_matches_both_tiers_and_golden() {
 }
 
 #[test]
+fn two_reach_through_pointer_members_match_both_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a122-interop-two-pointer-members";
+    let sources = corpus::entry_sources(&accept, id);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(jit, golden, "{id}: breadth-axis C observations are wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
 fn handle_parameter_pair_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a107-interop-handle-parameter-pair";
@@ -510,11 +530,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // R16 absence-capable descriptor members (a118), and OBS-3 scalar
     // handle fields beside arrays behind nullable members (a119), and
     // nested structs behind array-element nullable pointers (a120), and
-    // unmarked reach-through pointers in array elements (a121).
+    // unmarked reach-through pointers in array elements (a121), and two
+    // simultaneous reach-through pointer members (a122).
     assert_eq!(
         golden_ids.len(),
-        121,
-        "expected exactly 121 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        122,
+        "expected exactly 122 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -538,8 +559,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          a117 R17 nullable-descriptor-literal golden, and the a118 R16 \
          absence-capable descriptor-member golden, the a119 OBS-3 \
          handle-beside-arrays golden, and the a120 OBS-3 nested-behind-element-pointer \
-         golden, and the a121 OBS-3 unmarked-reach-through \
-         golden, found {}",
+         golden, the a121 OBS-3 unmarked-reach-through golden, and the a122 \
+         OBS-3 two-pointer-members golden, found {}",
         golden_ids.len()
     );
 

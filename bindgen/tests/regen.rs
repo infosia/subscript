@@ -161,6 +161,16 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains(
         "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeUnmarkedColorTargetState[]);"
     ));
+    // OBS-3 round 4 (§44.7). Both count-less pointer members remain
+    // independently reachable across the by-value primitive aggregate, and
+    // both pointed-to count/pointer pairs collapse without leaking counts.
+    assert!(m.contains("depthStencil: SGPUProbeBreadthDepthStencilState | null;"));
+    assert!(m.contains("fragment: SGPUProbeBreadthFragmentState | null;"));
+    assert!(m.contains("primitive: SGPUProbeBreadthPrimitiveState;"));
+    assert!(m.contains("biases: u32[];"));
+    assert!(m.contains("constants: u32[];"));
+    assert!(!m.contains("biasesCount"));
+    assert!(!m.contains("constantsCount"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

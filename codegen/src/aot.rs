@@ -23,10 +23,10 @@
 //! `subscript_init` (module-global initializer) and `subscript_export_<name>` for
 //! every exported script function. The C entry creates a Context
 //! through the runtime's host-driver entry points, calls `subscript_init` and
-//! `subscript_export_main`, writes the Context's stdout sink to the process
-//! stdout, and reports a trap on stderr with a non-zero exit status.
-//! `print` still never writes to the process stdout itself: the bytes
-//! compared by the differential gate are the sink's.
+//! `subscript_export_main`, streams each complete printed line to the process
+//! stdout, and reports a trap on stderr with a non-zero exit status. Streaming
+//! is required so output already produced survives an aborting native call;
+//! the run helper still captures and returns the byte-exact stream.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -171,6 +171,15 @@ static void call_script_entry(subscript_rt_context *ctx, subscript_main_entry en
     subscript_rt_ctx_exit_script(ctx);
 }
 
+static void write_stdout_line(void *userdata, const uint8_t *line, uint64_t line_len) {
+    FILE *stream = (FILE *)userdata;
+    if (line_len > 0) {
+        fwrite(line, 1, (size_t)line_len, stream);
+    }
+    fputc('\n', stream);
+    fflush(stream);
+}
+
 int main(void) {
 #if defined(_WIN32)
     /* The sink bytes are compared byte-for-byte against the goldens; the
@@ -183,6 +192,7 @@ int main(void) {
     if (ctx == NULL) {
         return 2;
     }
+    subscript_rt_ctx_set_print_observer(ctx, write_stdout_line, stdout);
     call_script_entry(ctx, subscript_init);
     if (subscript_rt_ctx_trap_kind(ctx) == 0) {
         call_script_entry(ctx, subscript_export_main);
@@ -675,6 +685,18 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
         .map_err(|e| RunError::Internal(internal(format!("write {}: {e}", path.display()))))
 }
 
+/// Replays bytes captured from a linked program only when it died outside
+/// the runtime trap protocol. Successful runs still return their bytes and
+/// trap reports still own their pre-trap stdout as before.
+fn surface_aborted_stdout(bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+    let mut stdout = std::io::stdout().lock();
+    let _ = stdout.write_all(bytes);
+    let _ = stdout.flush();
+}
+
 /// Compiles, links, and runs `files` through the ship tier on the host
 /// target, returning the exact stdout bytes the program produced.
 ///
@@ -736,15 +758,13 @@ pub fn run_aot_with_native_libraries(
         .arg(&staticlib)
         .args(runtime_system_libraries(cc.style()));
     add_executable_output(&mut command, &exe_path, cc.style());
-    let link = command
-        .output()
-        .map_err(|e| {
-            RunError::Internal(internal(format!(
-                "the platform C compiler `{}` could not be run: {e}; \
+    let link = command.output().map_err(|e| {
+        RunError::Internal(internal(format!(
+            "the platform C compiler `{}` could not be run: {e}; \
                  install the host C toolchain or set $CC (compiler.md §11c)",
-                cc.program.to_string_lossy()
-            )))
-        })?;
+            cc.program.to_string_lossy()
+        )))
+    })?;
     if !link.status.success() {
         return Err(RunError::Internal(internal(format!(
             "link failed:\n{}",
@@ -760,11 +780,14 @@ pub fn run_aot_with_native_libraries(
     }
     match parse_trap(&run.stderr, &object.positions, &run.stdout) {
         Some(report) => Err(RunError::Trap(report)),
-        None => Err(RunError::Internal(internal(format!(
-            "linked program exited with {}: {}",
-            run.status,
-            String::from_utf8_lossy(&run.stderr)
-        )))),
+        None => {
+            surface_aborted_stdout(&run.stdout);
+            Err(RunError::Internal(internal(format!(
+                "linked program exited with {}: {}",
+                run.status,
+                String::from_utf8_lossy(&run.stderr)
+            ))))
+        }
     }
 }
 
@@ -837,10 +860,7 @@ pub fn run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`].
-pub fn run_c_aot_with_alloc_failure(
-    files: &[SourceFile],
-    n: u64,
-) -> Result<Vec<u8>, RunError> {
+pub fn run_c_aot_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8>, RunError> {
     run_c_aot_configured(files, Some(n), false, &[])
 }
 
@@ -915,15 +935,13 @@ fn run_c_aot_configured(
         .arg(&staticlib)
         .args(runtime_system_libraries(cc.style()));
     add_executable_output(&mut command, &exe_path, cc.style());
-    let compile = command
-        .output()
-        .map_err(|e| {
-            RunError::Internal(internal(format!(
-                "the platform C compiler `{}` could not be run: {e}; \
+    let compile = command.output().map_err(|e| {
+        RunError::Internal(internal(format!(
+            "the platform C compiler `{}` could not be run: {e}; \
                  install the host C toolchain or set $CC (compiler.md §11c)",
-                cc.program.to_string_lossy()
-            )))
-        })?;
+            cc.program.to_string_lossy()
+        )))
+    })?;
     if !compile.status.success() {
         return Err(RunError::Internal(internal(format!(
             "compiling/linking the emitted C failed:\n{}",
@@ -939,11 +957,14 @@ fn run_c_aot_configured(
     }
     match parse_trap(&run.stderr, &program.positions, &run.stdout) {
         Some(report) => Err(RunError::Trap(report)),
-        None => Err(RunError::Internal(internal(format!(
-            "linked C program exited with {}: {}",
-            run.status,
-            String::from_utf8_lossy(&run.stderr)
-        )))),
+        None => {
+            surface_aborted_stdout(&run.stdout);
+            Err(RunError::Internal(internal(format!(
+                "linked C program exited with {}: {}",
+                run.status,
+                String::from_utf8_lossy(&run.stderr)
+            ))))
+        }
     }
 }
 
@@ -1411,7 +1432,11 @@ int main(void) {
         let file = object::File::parse(bytes).expect("object file must parse");
         assert_eq!(file.format(), format);
         assert_eq!(file.architecture(), arch);
-        let prefix = if format == BinaryFormat::MachO { "_" } else { "" };
+        let prefix = if format == BinaryFormat::MachO {
+            "_"
+        } else {
+            ""
+        };
         for name in ["subscript_export_main", "subscript_init"] {
             let sym = file
                 .symbols()
@@ -1471,7 +1496,10 @@ int main(void) {
 
     #[test]
     fn unknown_triple_is_an_internal_error_not_a_panic() {
-        let err = emit_object(&sources("export function main(): void {}\n"), Some("nonsense"));
+        let err = emit_object(
+            &sources("export function main(): void {}\n"),
+            Some("nonsense"),
+        );
         assert!(matches!(err, Err(RunError::Internal(_))));
     }
 
@@ -1744,8 +1772,7 @@ int main(void) {
              }\n",
         );
         let (dev, dev_positions) =
-            crate::jit::allocation_attribution_after_run(&program)
-                .expect("dev attribution");
+            crate::jit::allocation_attribution_after_run(&program).expect("dev attribution");
 
         let entry = host_entry(
             r#"
@@ -1868,20 +1895,12 @@ int main(void) {
 
         assert_eq!(
             dev,
-            vec![
-                (0, 0, 4),
-                (0xFFFF_FF02, 1, 32),
-                (0xFFFF_FF03, 4, 16),
-            ],
+            vec![(0, 0, 4), (0xFFFF_FF02, 1, 32), (0xFFFF_FF03, 4, 16),],
             "dev attribution triples changed"
         );
         assert_eq!(
             ship,
-            vec![
-                (0, 0, 16),
-                (0xFFFF_FF02, 1, 48),
-                (0xFFFF_FF03, 2, 16),
-            ],
+            vec![(0, 0, 16), (0xFFFF_FF02, 1, 48), (0xFFFF_FF03, 2, 16),],
             "ship attribution triples changed"
         );
         let dev_sites: Vec<(u32, &str, u32)> = dev
@@ -1939,54 +1958,41 @@ int main(void) {
             ),
             (
                 "t28-allocation-failure-array-literal",
-                include_str!(
-                    "../../corpus/trap/t28-allocation-failure-array-literal.ts"
-                ),
+                include_str!("../../corpus/trap/t28-allocation-failure-array-literal.ts"),
                 4,
             ),
             (
                 "t29-allocation-failure-push-grow",
-                include_str!(
-                    "../../corpus/trap/t29-allocation-failure-push-grow.ts"
-                ),
+                include_str!("../../corpus/trap/t29-allocation-failure-push-grow.ts"),
                 4,
             ),
             (
                 "t30-allocation-failure-string-concat",
-                include_str!(
-                    "../../corpus/trap/t30-allocation-failure-string-concat.ts"
-                ),
+                include_str!("../../corpus/trap/t30-allocation-failure-string-concat.ts"),
                 4,
             ),
             (
                 "t31-allocation-failure-template",
-                include_str!(
-                    "../../corpus/trap/t31-allocation-failure-template.ts"
-                ),
+                include_str!("../../corpus/trap/t31-allocation-failure-template.ts"),
                 6,
             ),
             (
                 "t32-allocation-failure-generator-frame",
-                include_str!(
-                    "../../corpus/trap/t32-allocation-failure-generator-frame.ts"
-                ),
+                include_str!("../../corpus/trap/t32-allocation-failure-generator-frame.ts"),
                 3,
             ),
             (
                 "t33-allocation-failure-json-raw-new",
-                include_str!(
-                    "../../corpus/trap/t33-allocation-failure-json-raw-new.ts"
-                ),
+                include_str!("../../corpus/trap/t33-allocation-failure-json-raw-new.ts"),
                 6,
             ),
         ];
 
         for (id, source, expected) in cases {
             let files = vec![SourceFile::new(format!("{id}.ts"), source)];
-            let dev =
-                crate::jit::memory_accounting_after_run(&files)
-                    .expect("dev allocation count")
-                    .0;
+            let dev = crate::jit::memory_accounting_after_run(&files)
+                .expect("dev allocation count")
+                .0;
             let run = run_c_aot_with_entry(&files, &entry);
             assert!(
                 run.status.success(),
@@ -2001,10 +2007,7 @@ int main(void) {
                 .expect("ship allocation count");
             eprintln!("{id}: object allocation requests dev={dev}, ship={ship}");
             assert_eq!(dev, expected, "{id}: dev exact allocation count changed");
-            assert_eq!(
-                ship, expected,
-                "{id}: ship exact allocation count changed"
-            );
+            assert_eq!(ship, expected, "{id}: ship exact allocation count changed");
         }
     }
 

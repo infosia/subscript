@@ -560,6 +560,40 @@ declare class SGPUProbeUnmarkedRenderPipelineDescriptor {
 }
 
 declare function subProbeFullRenderPipelineWithUnmarkedBlendCheck(descriptor: SGPUProbeUnmarkedRenderPipelineDescriptor | null, selector: u32): u64;
+
+declare class SGPUProbeBreadthNestedState {
+  first: u32;
+  second: u32;
+  constructor(first: u32, second: u32);
+}
+
+declare class SGPUProbeBreadthDepthStencilState {
+  limits: SGPUProbeBreadthNestedState;
+  biases: u32[];
+  constructor(limits: SGPUProbeBreadthNestedState, biases: u32[]);
+}
+
+declare class SGPUProbeBreadthFragmentState {
+  stage: SGPUProbeBreadthNestedState;
+  constants: u32[];
+  constructor(stage: SGPUProbeBreadthNestedState, constants: u32[]);
+}
+
+declare class SGPUProbeBreadthPrimitiveState {
+  topology: u32;
+  stripIndexFormat: u32;
+  constructor(topology: u32, stripIndexFormat: u32);
+}
+
+declare class SGPUProbeBreadthRenderPipelineDescriptor {
+  label: string;
+  depthStencil: SGPUProbeBreadthDepthStencilState | null;
+  primitive: SGPUProbeBreadthPrimitiveState;
+  fragment: SGPUProbeBreadthFragmentState | null;
+  constructor(label: string, depthStencil: SGPUProbeBreadthDepthStencilState | null, primitive: SGPUProbeBreadthPrimitiveState, fragment: SGPUProbeBreadthFragmentState | null);
+}
+
+declare function subProbeBreadthRenderPipelineCheck(descriptor: SGPUProbeBreadthRenderPipelineDescriptor | null, selector: u32): u64;
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 

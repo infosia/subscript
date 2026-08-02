@@ -3,6 +3,9 @@
 //! runs the exported `main(): void`, and returns the captured stdout
 //! bytes or a trap report.
 
+use std::cell::Cell;
+use std::ffi::c_void;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use cranelift_jit::{JITBuilder, JITModule};
@@ -11,7 +14,7 @@ use subscript_runtime::{
     ffi, Context, TrapKind, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
 
-use crate::lower::{dev_flags, internal, lower_module_with, Lowered, LowerOptions};
+use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions, Lowered};
 use crate::native::{missing_symbol, register_symbols};
 use crate::NativeLibrary;
 
@@ -100,7 +103,10 @@ impl std::error::Error for RunError {}
 pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     let syms: &[(&str, *const u8)] = &[
         ("subscript_rt_print", ffi::subscript_rt_print as *const u8),
-        ("subscript_rt_collect", ffi::subscript_rt_collect as *const u8),
+        (
+            "subscript_rt_collect",
+            ffi::subscript_rt_collect as *const u8,
+        ),
         ("subscript_rt_alloc", ffi::subscript_rt_alloc as *const u8),
         (
             "subscript_rt_globals_init",
@@ -124,44 +130,131 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ),
         ("subscript_rt_delete", ffi::subscript_rt_delete as *const u8),
         ("subscript_rt_trap", ffi::subscript_rt_trap as *const u8),
-        ("subscript_rt_root_add", ffi::subscript_rt_root_add as *const u8),
-        ("subscript_rt_shadow_push", ffi::subscript_rt_shadow_push as *const u8),
-        ("subscript_rt_shadow_pop", ffi::subscript_rt_shadow_pop as *const u8),
-        ("subscript_rt_str_lit", ffi::subscript_rt_str_lit as *const u8),
+        (
+            "subscript_rt_root_add",
+            ffi::subscript_rt_root_add as *const u8,
+        ),
+        (
+            "subscript_rt_shadow_push",
+            ffi::subscript_rt_shadow_push as *const u8,
+        ),
+        (
+            "subscript_rt_shadow_pop",
+            ffi::subscript_rt_shadow_pop as *const u8,
+        ),
+        (
+            "subscript_rt_str_lit",
+            ffi::subscript_rt_str_lit as *const u8,
+        ),
         (
             "subscript_rt_str_from_view",
             ffi::subscript_rt_str_from_view as *const u8,
         ),
-        ("subscript_rt_str_len", ffi::subscript_rt_str_len as *const u8),
-        ("subscript_rt_str_concat", ffi::subscript_rt_str_concat as *const u8),
-        ("subscript_rt_str_slice", ffi::subscript_rt_str_slice as *const u8),
+        (
+            "subscript_rt_str_len",
+            ffi::subscript_rt_str_len as *const u8,
+        ),
+        (
+            "subscript_rt_str_concat",
+            ffi::subscript_rt_str_concat as *const u8,
+        ),
+        (
+            "subscript_rt_str_slice",
+            ffi::subscript_rt_str_slice as *const u8,
+        ),
         ("subscript_rt_str_eq", ffi::subscript_rt_str_eq as *const u8),
-        ("subscript_rt_fmt_i32", ffi::subscript_rt_fmt_i32 as *const u8),
-        ("subscript_rt_fmt_u32", ffi::subscript_rt_fmt_u32 as *const u8),
-        ("subscript_rt_fmt_i64", ffi::subscript_rt_fmt_i64 as *const u8),
-        ("subscript_rt_fmt_u64", ffi::subscript_rt_fmt_u64 as *const u8),
-        ("subscript_rt_fmt_f32", ffi::subscript_rt_fmt_f32 as *const u8),
-        ("subscript_rt_fmt_f64", ffi::subscript_rt_fmt_f64 as *const u8),
-        ("subscript_rt_fmt_bool", ffi::subscript_rt_fmt_bool as *const u8),
-        ("subscript_rt_json_begin", ffi::subscript_rt_json_begin as *const u8),
+        (
+            "subscript_rt_fmt_i32",
+            ffi::subscript_rt_fmt_i32 as *const u8,
+        ),
+        (
+            "subscript_rt_fmt_u32",
+            ffi::subscript_rt_fmt_u32 as *const u8,
+        ),
+        (
+            "subscript_rt_fmt_i64",
+            ffi::subscript_rt_fmt_i64 as *const u8,
+        ),
+        (
+            "subscript_rt_fmt_u64",
+            ffi::subscript_rt_fmt_u64 as *const u8,
+        ),
+        (
+            "subscript_rt_fmt_f32",
+            ffi::subscript_rt_fmt_f32 as *const u8,
+        ),
+        (
+            "subscript_rt_fmt_f64",
+            ffi::subscript_rt_fmt_f64 as *const u8,
+        ),
+        (
+            "subscript_rt_fmt_bool",
+            ffi::subscript_rt_fmt_bool as *const u8,
+        ),
+        (
+            "subscript_rt_json_begin",
+            ffi::subscript_rt_json_begin as *const u8,
+        ),
         (
             "subscript_rt_json_begin_tracked",
             ffi::subscript_rt_json_begin_tracked as *const u8,
         ),
-        ("subscript_rt_json_finish", ffi::subscript_rt_json_finish as *const u8),
-        ("subscript_rt_json_raw", ffi::subscript_rt_json_raw as *const u8),
-        ("subscript_rt_json_str", ffi::subscript_rt_json_str as *const u8),
-        ("subscript_rt_json_i32", ffi::subscript_rt_json_i32 as *const u8),
-        ("subscript_rt_json_u32", ffi::subscript_rt_json_u32 as *const u8),
-        ("subscript_rt_json_i64", ffi::subscript_rt_json_i64 as *const u8),
-        ("subscript_rt_json_u64", ffi::subscript_rt_json_u64 as *const u8),
-        ("subscript_rt_json_f32", ffi::subscript_rt_json_f32 as *const u8),
-        ("subscript_rt_json_f64", ffi::subscript_rt_json_f64 as *const u8),
-        ("subscript_rt_json_bool", ffi::subscript_rt_json_bool as *const u8),
-        ("subscript_rt_json_date", ffi::subscript_rt_json_date as *const u8),
-        ("subscript_rt_json_null", ffi::subscript_rt_json_null as *const u8),
-        ("subscript_rt_json_visit", ffi::subscript_rt_json_visit as *const u8),
-        ("subscript_rt_json_leave", ffi::subscript_rt_json_leave as *const u8),
+        (
+            "subscript_rt_json_finish",
+            ffi::subscript_rt_json_finish as *const u8,
+        ),
+        (
+            "subscript_rt_json_raw",
+            ffi::subscript_rt_json_raw as *const u8,
+        ),
+        (
+            "subscript_rt_json_str",
+            ffi::subscript_rt_json_str as *const u8,
+        ),
+        (
+            "subscript_rt_json_i32",
+            ffi::subscript_rt_json_i32 as *const u8,
+        ),
+        (
+            "subscript_rt_json_u32",
+            ffi::subscript_rt_json_u32 as *const u8,
+        ),
+        (
+            "subscript_rt_json_i64",
+            ffi::subscript_rt_json_i64 as *const u8,
+        ),
+        (
+            "subscript_rt_json_u64",
+            ffi::subscript_rt_json_u64 as *const u8,
+        ),
+        (
+            "subscript_rt_json_f32",
+            ffi::subscript_rt_json_f32 as *const u8,
+        ),
+        (
+            "subscript_rt_json_f64",
+            ffi::subscript_rt_json_f64 as *const u8,
+        ),
+        (
+            "subscript_rt_json_bool",
+            ffi::subscript_rt_json_bool as *const u8,
+        ),
+        (
+            "subscript_rt_json_date",
+            ffi::subscript_rt_json_date as *const u8,
+        ),
+        (
+            "subscript_rt_json_null",
+            ffi::subscript_rt_json_null as *const u8,
+        ),
+        (
+            "subscript_rt_json_visit",
+            ffi::subscript_rt_json_visit as *const u8,
+        ),
+        (
+            "subscript_rt_json_leave",
+            ffi::subscript_rt_json_leave as *const u8,
+        ),
         (
             "subscript_rt_json_parse_begin",
             ffi::subscript_rt_json_parse_begin as *const u8,
@@ -210,13 +303,34 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_json_parse_object_get",
             ffi::subscript_rt_json_parse_object_get as *const u8,
         ),
-        ("subscript_rt_f16_from_f64", ffi::subscript_rt_f16_from_f64 as *const u8),
-        ("subscript_rt_f16_to_f64", ffi::subscript_rt_f16_to_f64 as *const u8),
-        ("subscript_rt_array_new", ffi::subscript_rt_array_new as *const u8),
-        ("subscript_rt_array_len", ffi::subscript_rt_array_len as *const u8),
-        ("subscript_rt_array_push", ffi::subscript_rt_array_push as *const u8),
-        ("subscript_rt_array_pop", ffi::subscript_rt_array_pop as *const u8),
-        ("subscript_rt_array_ptr", ffi::subscript_rt_array_ptr as *const u8),
+        (
+            "subscript_rt_f16_from_f64",
+            ffi::subscript_rt_f16_from_f64 as *const u8,
+        ),
+        (
+            "subscript_rt_f16_to_f64",
+            ffi::subscript_rt_f16_to_f64 as *const u8,
+        ),
+        (
+            "subscript_rt_array_new",
+            ffi::subscript_rt_array_new as *const u8,
+        ),
+        (
+            "subscript_rt_array_len",
+            ffi::subscript_rt_array_len as *const u8,
+        ),
+        (
+            "subscript_rt_array_push",
+            ffi::subscript_rt_array_push as *const u8,
+        ),
+        (
+            "subscript_rt_array_pop",
+            ffi::subscript_rt_array_pop as *const u8,
+        ),
+        (
+            "subscript_rt_array_ptr",
+            ffi::subscript_rt_array_ptr as *const u8,
+        ),
         (
             "subscript_rt_assoc_iter_begin",
             ffi::subscript_rt_assoc_iter_begin as *const u8,
@@ -249,49 +363,169 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_array_spread_string",
             ffi::subscript_rt_array_spread_string as *const u8,
         ),
-        ("subscript_rt_str_data", ffi::subscript_rt_str_data as *const u8),
-        ("subscript_rt_array_data", ffi::subscript_rt_array_data as *const u8),
-        ("subscript_rt_cb_bind", ffi::subscript_rt_cb_bind as *const u8),
-        ("subscript_rt_cb_trampoline", ffi::subscript_rt_cb_trampoline as *const u8),
+        (
+            "subscript_rt_str_data",
+            ffi::subscript_rt_str_data as *const u8,
+        ),
+        (
+            "subscript_rt_array_data",
+            ffi::subscript_rt_array_data as *const u8,
+        ),
+        (
+            "subscript_rt_cb_bind",
+            ffi::subscript_rt_cb_bind as *const u8,
+        ),
+        (
+            "subscript_rt_cb_trampoline",
+            ffi::subscript_rt_cb_trampoline as *const u8,
+        ),
         // Math intrinsics (stdlib.md §1): the ship tier resolves the
         // same opaque symbols from the runtime static library.
-        ("subscript_rt_math_abs", ffi::subscript_rt_math_abs as *const u8),
-        ("subscript_rt_math_acos", ffi::subscript_rt_math_acos as *const u8),
-        ("subscript_rt_math_acosh", ffi::subscript_rt_math_acosh as *const u8),
-        ("subscript_rt_math_asin", ffi::subscript_rt_math_asin as *const u8),
-        ("subscript_rt_math_asinh", ffi::subscript_rt_math_asinh as *const u8),
-        ("subscript_rt_math_atan", ffi::subscript_rt_math_atan as *const u8),
-        ("subscript_rt_math_atanh", ffi::subscript_rt_math_atanh as *const u8),
-        ("subscript_rt_math_cbrt", ffi::subscript_rt_math_cbrt as *const u8),
-        ("subscript_rt_math_ceil", ffi::subscript_rt_math_ceil as *const u8),
-        ("subscript_rt_math_cos", ffi::subscript_rt_math_cos as *const u8),
-        ("subscript_rt_math_cosh", ffi::subscript_rt_math_cosh as *const u8),
-        ("subscript_rt_math_exp", ffi::subscript_rt_math_exp as *const u8),
-        ("subscript_rt_math_expm1", ffi::subscript_rt_math_expm1 as *const u8),
-        ("subscript_rt_math_floor", ffi::subscript_rt_math_floor as *const u8),
-        ("subscript_rt_math_log", ffi::subscript_rt_math_log as *const u8),
-        ("subscript_rt_math_log1p", ffi::subscript_rt_math_log1p as *const u8),
-        ("subscript_rt_math_log10", ffi::subscript_rt_math_log10 as *const u8),
-        ("subscript_rt_math_log2", ffi::subscript_rt_math_log2 as *const u8),
-        ("subscript_rt_math_round", ffi::subscript_rt_math_round as *const u8),
-        ("subscript_rt_math_sign", ffi::subscript_rt_math_sign as *const u8),
-        ("subscript_rt_math_sin", ffi::subscript_rt_math_sin as *const u8),
-        ("subscript_rt_math_sinh", ffi::subscript_rt_math_sinh as *const u8),
-        ("subscript_rt_math_sqrt", ffi::subscript_rt_math_sqrt as *const u8),
-        ("subscript_rt_math_tan", ffi::subscript_rt_math_tan as *const u8),
-        ("subscript_rt_math_tanh", ffi::subscript_rt_math_tanh as *const u8),
-        ("subscript_rt_math_trunc", ffi::subscript_rt_math_trunc as *const u8),
-        ("subscript_rt_math_atan2", ffi::subscript_rt_math_atan2 as *const u8),
-        ("subscript_rt_math_hypot", ffi::subscript_rt_math_hypot as *const u8),
-        ("subscript_rt_math_pow", ffi::subscript_rt_math_pow as *const u8),
-        ("subscript_rt_math_max", ffi::subscript_rt_math_max as *const u8),
-        ("subscript_rt_math_min", ffi::subscript_rt_math_min as *const u8),
-        ("subscript_rt_math_random", ffi::subscript_rt_math_random as *const u8),
-        ("subscript_rt_math_clz32", ffi::subscript_rt_math_clz32 as *const u8),
-        ("subscript_rt_math_imul", ffi::subscript_rt_math_imul as *const u8),
-        ("subscript_rt_math_fround", ffi::subscript_rt_math_fround as *const u8),
+        (
+            "subscript_rt_math_abs",
+            ffi::subscript_rt_math_abs as *const u8,
+        ),
+        (
+            "subscript_rt_math_acos",
+            ffi::subscript_rt_math_acos as *const u8,
+        ),
+        (
+            "subscript_rt_math_acosh",
+            ffi::subscript_rt_math_acosh as *const u8,
+        ),
+        (
+            "subscript_rt_math_asin",
+            ffi::subscript_rt_math_asin as *const u8,
+        ),
+        (
+            "subscript_rt_math_asinh",
+            ffi::subscript_rt_math_asinh as *const u8,
+        ),
+        (
+            "subscript_rt_math_atan",
+            ffi::subscript_rt_math_atan as *const u8,
+        ),
+        (
+            "subscript_rt_math_atanh",
+            ffi::subscript_rt_math_atanh as *const u8,
+        ),
+        (
+            "subscript_rt_math_cbrt",
+            ffi::subscript_rt_math_cbrt as *const u8,
+        ),
+        (
+            "subscript_rt_math_ceil",
+            ffi::subscript_rt_math_ceil as *const u8,
+        ),
+        (
+            "subscript_rt_math_cos",
+            ffi::subscript_rt_math_cos as *const u8,
+        ),
+        (
+            "subscript_rt_math_cosh",
+            ffi::subscript_rt_math_cosh as *const u8,
+        ),
+        (
+            "subscript_rt_math_exp",
+            ffi::subscript_rt_math_exp as *const u8,
+        ),
+        (
+            "subscript_rt_math_expm1",
+            ffi::subscript_rt_math_expm1 as *const u8,
+        ),
+        (
+            "subscript_rt_math_floor",
+            ffi::subscript_rt_math_floor as *const u8,
+        ),
+        (
+            "subscript_rt_math_log",
+            ffi::subscript_rt_math_log as *const u8,
+        ),
+        (
+            "subscript_rt_math_log1p",
+            ffi::subscript_rt_math_log1p as *const u8,
+        ),
+        (
+            "subscript_rt_math_log10",
+            ffi::subscript_rt_math_log10 as *const u8,
+        ),
+        (
+            "subscript_rt_math_log2",
+            ffi::subscript_rt_math_log2 as *const u8,
+        ),
+        (
+            "subscript_rt_math_round",
+            ffi::subscript_rt_math_round as *const u8,
+        ),
+        (
+            "subscript_rt_math_sign",
+            ffi::subscript_rt_math_sign as *const u8,
+        ),
+        (
+            "subscript_rt_math_sin",
+            ffi::subscript_rt_math_sin as *const u8,
+        ),
+        (
+            "subscript_rt_math_sinh",
+            ffi::subscript_rt_math_sinh as *const u8,
+        ),
+        (
+            "subscript_rt_math_sqrt",
+            ffi::subscript_rt_math_sqrt as *const u8,
+        ),
+        (
+            "subscript_rt_math_tan",
+            ffi::subscript_rt_math_tan as *const u8,
+        ),
+        (
+            "subscript_rt_math_tanh",
+            ffi::subscript_rt_math_tanh as *const u8,
+        ),
+        (
+            "subscript_rt_math_trunc",
+            ffi::subscript_rt_math_trunc as *const u8,
+        ),
+        (
+            "subscript_rt_math_atan2",
+            ffi::subscript_rt_math_atan2 as *const u8,
+        ),
+        (
+            "subscript_rt_math_hypot",
+            ffi::subscript_rt_math_hypot as *const u8,
+        ),
+        (
+            "subscript_rt_math_pow",
+            ffi::subscript_rt_math_pow as *const u8,
+        ),
+        (
+            "subscript_rt_math_max",
+            ffi::subscript_rt_math_max as *const u8,
+        ),
+        (
+            "subscript_rt_math_min",
+            ffi::subscript_rt_math_min as *const u8,
+        ),
+        (
+            "subscript_rt_math_random",
+            ffi::subscript_rt_math_random as *const u8,
+        ),
+        (
+            "subscript_rt_math_clz32",
+            ffi::subscript_rt_math_clz32 as *const u8,
+        ),
+        (
+            "subscript_rt_math_imul",
+            ffi::subscript_rt_math_imul as *const u8,
+        ),
+        (
+            "subscript_rt_math_fround",
+            ffi::subscript_rt_math_fround as *const u8,
+        ),
         // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
-        ("subscript_rt_num_is_nan", ffi::subscript_rt_num_is_nan as *const u8),
+        (
+            "subscript_rt_num_is_nan",
+            ffi::subscript_rt_num_is_nan as *const u8,
+        ),
         (
             "subscript_rt_num_is_finite",
             ffi::subscript_rt_num_is_finite as *const u8,
@@ -336,31 +570,70 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         // ship tier resolves these from the runtime static library.
         // String method intrinsics (stdlib.md §8): one opaque symbol
         // per accepted method, StrFn::ALL order.
-        ("subscript_rt_str_index_of", ffi::subscript_rt_str_index_of as *const u8),
+        (
+            "subscript_rt_str_index_of",
+            ffi::subscript_rt_str_index_of as *const u8,
+        ),
         (
             "subscript_rt_str_last_index_of",
             ffi::subscript_rt_str_last_index_of as *const u8,
         ),
-        ("subscript_rt_str_includes", ffi::subscript_rt_str_includes as *const u8),
+        (
+            "subscript_rt_str_includes",
+            ffi::subscript_rt_str_includes as *const u8,
+        ),
         (
             "subscript_rt_str_starts_with",
             ffi::subscript_rt_str_starts_with as *const u8,
         ),
-        ("subscript_rt_str_ends_with", ffi::subscript_rt_str_ends_with as *const u8),
+        (
+            "subscript_rt_str_ends_with",
+            ffi::subscript_rt_str_ends_with as *const u8,
+        ),
         (
             "subscript_rt_str_char_code_at",
             ffi::subscript_rt_str_char_code_at as *const u8,
         ),
-        ("subscript_rt_str_split", ffi::subscript_rt_str_split as *const u8),
-        ("subscript_rt_str_trim", ffi::subscript_rt_str_trim as *const u8),
-        ("subscript_rt_str_trim_start", ffi::subscript_rt_str_trim_start as *const u8),
-        ("subscript_rt_str_trim_end", ffi::subscript_rt_str_trim_end as *const u8),
-        ("subscript_rt_str_repeat", ffi::subscript_rt_str_repeat as *const u8),
-        ("subscript_rt_str_pad_start", ffi::subscript_rt_str_pad_start as *const u8),
-        ("subscript_rt_str_pad_end", ffi::subscript_rt_str_pad_end as *const u8),
-        ("subscript_rt_str_to_upper", ffi::subscript_rt_str_to_upper as *const u8),
-        ("subscript_rt_str_to_lower", ffi::subscript_rt_str_to_lower as *const u8),
-        ("subscript_rt_str_replace", ffi::subscript_rt_str_replace as *const u8),
+        (
+            "subscript_rt_str_split",
+            ffi::subscript_rt_str_split as *const u8,
+        ),
+        (
+            "subscript_rt_str_trim",
+            ffi::subscript_rt_str_trim as *const u8,
+        ),
+        (
+            "subscript_rt_str_trim_start",
+            ffi::subscript_rt_str_trim_start as *const u8,
+        ),
+        (
+            "subscript_rt_str_trim_end",
+            ffi::subscript_rt_str_trim_end as *const u8,
+        ),
+        (
+            "subscript_rt_str_repeat",
+            ffi::subscript_rt_str_repeat as *const u8,
+        ),
+        (
+            "subscript_rt_str_pad_start",
+            ffi::subscript_rt_str_pad_start as *const u8,
+        ),
+        (
+            "subscript_rt_str_pad_end",
+            ffi::subscript_rt_str_pad_end as *const u8,
+        ),
+        (
+            "subscript_rt_str_to_upper",
+            ffi::subscript_rt_str_to_upper as *const u8,
+        ),
+        (
+            "subscript_rt_str_to_lower",
+            ffi::subscript_rt_str_to_lower as *const u8,
+        ),
+        (
+            "subscript_rt_str_replace",
+            ffi::subscript_rt_str_replace as *const u8,
+        ),
         (
             "subscript_rt_str_replace_all",
             ffi::subscript_rt_str_replace_all as *const u8,
@@ -369,8 +642,14 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_str_substring",
             ffi::subscript_rt_str_substring as *const u8,
         ),
-        ("subscript_rt_str_substr", ffi::subscript_rt_str_substr as *const u8),
-        ("subscript_rt_str_char_at", ffi::subscript_rt_str_char_at as *const u8),
+        (
+            "subscript_rt_str_substr",
+            ffi::subscript_rt_str_substr as *const u8,
+        ),
+        (
+            "subscript_rt_str_char_at",
+            ffi::subscript_rt_str_char_at as *const u8,
+        ),
         (
             "subscript_rt_str_code_point_at",
             ffi::subscript_rt_str_code_point_at as *const u8,
@@ -381,35 +660,86 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ),
         // Array method intrinsics (stdlib.md §9): one opaque symbol
         // per accepted method, ArrFn::ALL order.
-        ("subscript_rt_arr_index_of", ffi::subscript_rt_arr_index_of as *const u8),
+        (
+            "subscript_rt_arr_index_of",
+            ffi::subscript_rt_arr_index_of as *const u8,
+        ),
         (
             "subscript_rt_arr_last_index_of",
             ffi::subscript_rt_arr_last_index_of as *const u8,
         ),
-        ("subscript_rt_arr_includes", ffi::subscript_rt_arr_includes as *const u8),
-        ("subscript_rt_arr_join", ffi::subscript_rt_arr_join as *const u8),
-        ("subscript_rt_arr_slice", ffi::subscript_rt_arr_slice as *const u8),
-        ("subscript_rt_arr_fill", ffi::subscript_rt_arr_fill as *const u8),
-        ("subscript_rt_arr_reverse", ffi::subscript_rt_arr_reverse as *const u8),
-        ("subscript_rt_arr_concat", ffi::subscript_rt_arr_concat as *const u8),
-        ("subscript_rt_arr_for_each", ffi::subscript_rt_arr_for_each as *const u8),
-        ("subscript_rt_arr_map", ffi::subscript_rt_arr_map as *const u8),
-        ("subscript_rt_arr_filter", ffi::subscript_rt_arr_filter as *const u8),
-        ("subscript_rt_arr_reduce", ffi::subscript_rt_arr_reduce as *const u8),
-        ("subscript_rt_arr_some", ffi::subscript_rt_arr_some as *const u8),
-        ("subscript_rt_arr_every", ffi::subscript_rt_arr_every as *const u8),
+        (
+            "subscript_rt_arr_includes",
+            ffi::subscript_rt_arr_includes as *const u8,
+        ),
+        (
+            "subscript_rt_arr_join",
+            ffi::subscript_rt_arr_join as *const u8,
+        ),
+        (
+            "subscript_rt_arr_slice",
+            ffi::subscript_rt_arr_slice as *const u8,
+        ),
+        (
+            "subscript_rt_arr_fill",
+            ffi::subscript_rt_arr_fill as *const u8,
+        ),
+        (
+            "subscript_rt_arr_reverse",
+            ffi::subscript_rt_arr_reverse as *const u8,
+        ),
+        (
+            "subscript_rt_arr_concat",
+            ffi::subscript_rt_arr_concat as *const u8,
+        ),
+        (
+            "subscript_rt_arr_for_each",
+            ffi::subscript_rt_arr_for_each as *const u8,
+        ),
+        (
+            "subscript_rt_arr_map",
+            ffi::subscript_rt_arr_map as *const u8,
+        ),
+        (
+            "subscript_rt_arr_filter",
+            ffi::subscript_rt_arr_filter as *const u8,
+        ),
+        (
+            "subscript_rt_arr_reduce",
+            ffi::subscript_rt_arr_reduce as *const u8,
+        ),
+        (
+            "subscript_rt_arr_some",
+            ffi::subscript_rt_arr_some as *const u8,
+        ),
+        (
+            "subscript_rt_arr_every",
+            ffi::subscript_rt_arr_every as *const u8,
+        ),
         (
             "subscript_rt_arr_find_index",
             ffi::subscript_rt_arr_find_index as *const u8,
         ),
-        ("subscript_rt_arr_sort", ffi::subscript_rt_arr_sort as *const u8),
+        (
+            "subscript_rt_arr_sort",
+            ffi::subscript_rt_arr_sort as *const u8,
+        ),
         (
             "subscript_rt_arr_reduce_right",
             ffi::subscript_rt_arr_reduce_right as *const u8,
         ),
-        ("subscript_rt_arr_splice", ffi::subscript_rt_arr_splice as *const u8),
-        ("subscript_rt_arr_shift", ffi::subscript_rt_arr_shift as *const u8),
-        ("subscript_rt_arr_unshift", ffi::subscript_rt_arr_unshift as *const u8),
+        (
+            "subscript_rt_arr_splice",
+            ffi::subscript_rt_arr_splice as *const u8,
+        ),
+        (
+            "subscript_rt_arr_shift",
+            ffi::subscript_rt_arr_shift as *const u8,
+        ),
+        (
+            "subscript_rt_arr_unshift",
+            ffi::subscript_rt_arr_unshift as *const u8,
+        ),
         (
             "subscript_rt_arr_copy_within",
             ffi::subscript_rt_arr_copy_within as *const u8,
@@ -418,7 +748,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_fixed_arr_for_each",
             ffi::subscript_rt_fixed_arr_for_each as *const u8,
         ),
-        ("subscript_rt_fixed_arr_map", ffi::subscript_rt_fixed_arr_map as *const u8),
+        (
+            "subscript_rt_fixed_arr_map",
+            ffi::subscript_rt_fixed_arr_map as *const u8,
+        ),
         (
             "subscript_rt_fixed_arr_filter",
             ffi::subscript_rt_fixed_arr_filter as *const u8,
@@ -427,7 +760,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_fixed_arr_reduce",
             ffi::subscript_rt_fixed_arr_reduce as *const u8,
         ),
-        ("subscript_rt_fixed_arr_some", ffi::subscript_rt_fixed_arr_some as *const u8),
+        (
+            "subscript_rt_fixed_arr_some",
+            ffi::subscript_rt_fixed_arr_some as *const u8,
+        ),
         (
             "subscript_rt_fixed_arr_every",
             ffi::subscript_rt_fixed_arr_every as *const u8,
@@ -441,14 +777,38 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             ffi::subscript_rt_fixed_arr_reduce_right as *const u8,
         ),
         // Map/Set intrinsics (stdlib.md §10, Q24).
-        ("subscript_rt_map_new", ffi::subscript_rt_map_new as *const u8),
-        ("subscript_rt_map_size", ffi::subscript_rt_map_size as *const u8),
-        ("subscript_rt_map_get", ffi::subscript_rt_map_get as *const u8),
-        ("subscript_rt_map_get_or", ffi::subscript_rt_map_get_or as *const u8),
-        ("subscript_rt_map_set", ffi::subscript_rt_map_set as *const u8),
-        ("subscript_rt_map_has", ffi::subscript_rt_map_has as *const u8),
-        ("subscript_rt_map_delete", ffi::subscript_rt_map_delete as *const u8),
-        ("subscript_rt_map_clear", ffi::subscript_rt_map_clear as *const u8),
+        (
+            "subscript_rt_map_new",
+            ffi::subscript_rt_map_new as *const u8,
+        ),
+        (
+            "subscript_rt_map_size",
+            ffi::subscript_rt_map_size as *const u8,
+        ),
+        (
+            "subscript_rt_map_get",
+            ffi::subscript_rt_map_get as *const u8,
+        ),
+        (
+            "subscript_rt_map_get_or",
+            ffi::subscript_rt_map_get_or as *const u8,
+        ),
+        (
+            "subscript_rt_map_set",
+            ffi::subscript_rt_map_set as *const u8,
+        ),
+        (
+            "subscript_rt_map_has",
+            ffi::subscript_rt_map_has as *const u8,
+        ),
+        (
+            "subscript_rt_map_delete",
+            ffi::subscript_rt_map_delete as *const u8,
+        ),
+        (
+            "subscript_rt_map_clear",
+            ffi::subscript_rt_map_clear as *const u8,
+        ),
         (
             "subscript_rt_map_for_each",
             ffi::subscript_rt_map_for_each as *const u8,
@@ -457,17 +817,38 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_map_group_by",
             ffi::subscript_rt_map_group_by as *const u8,
         ),
-        ("subscript_rt_set_new", ffi::subscript_rt_set_new as *const u8),
-        ("subscript_rt_set_size", ffi::subscript_rt_set_size as *const u8),
-        ("subscript_rt_set_add", ffi::subscript_rt_set_add as *const u8),
-        ("subscript_rt_set_has", ffi::subscript_rt_set_has as *const u8),
-        ("subscript_rt_set_delete", ffi::subscript_rt_set_delete as *const u8),
-        ("subscript_rt_set_clear", ffi::subscript_rt_set_clear as *const u8),
+        (
+            "subscript_rt_set_new",
+            ffi::subscript_rt_set_new as *const u8,
+        ),
+        (
+            "subscript_rt_set_size",
+            ffi::subscript_rt_set_size as *const u8,
+        ),
+        (
+            "subscript_rt_set_add",
+            ffi::subscript_rt_set_add as *const u8,
+        ),
+        (
+            "subscript_rt_set_has",
+            ffi::subscript_rt_set_has as *const u8,
+        ),
+        (
+            "subscript_rt_set_delete",
+            ffi::subscript_rt_set_delete as *const u8,
+        ),
+        (
+            "subscript_rt_set_clear",
+            ffi::subscript_rt_set_clear as *const u8,
+        ),
         (
             "subscript_rt_set_for_each",
             ffi::subscript_rt_set_for_each as *const u8,
         ),
-        ("subscript_rt_set_union", ffi::subscript_rt_set_union as *const u8),
+        (
+            "subscript_rt_set_union",
+            ffi::subscript_rt_set_union as *const u8,
+        ),
         (
             "subscript_rt_set_intersection",
             ffi::subscript_rt_set_intersection as *const u8,
@@ -492,11 +873,26 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_set_is_disjoint_from",
             ffi::subscript_rt_set_is_disjoint_from as *const u8,
         ),
-        ("subscript_rt_date_utc", ffi::subscript_rt_date_utc as *const u8),
-        ("subscript_rt_date_new", ffi::subscript_rt_date_new as *const u8),
-        ("subscript_rt_date_now", ffi::subscript_rt_date_now as *const u8),
-        ("subscript_rt_date_get", ffi::subscript_rt_date_get as *const u8),
-        ("subscript_rt_date_to_iso", ffi::subscript_rt_date_to_iso as *const u8),
+        (
+            "subscript_rt_date_utc",
+            ffi::subscript_rt_date_utc as *const u8,
+        ),
+        (
+            "subscript_rt_date_new",
+            ffi::subscript_rt_date_new as *const u8,
+        ),
+        (
+            "subscript_rt_date_now",
+            ffi::subscript_rt_date_now as *const u8,
+        ),
+        (
+            "subscript_rt_date_get",
+            ffi::subscript_rt_date_get as *const u8,
+        ),
+        (
+            "subscript_rt_date_to_iso",
+            ffi::subscript_rt_date_to_iso as *const u8,
+        ),
         (
             "subscript_rt_worker_spawn",
             ffi::subscript_rt_worker_spawn as *const u8,
@@ -534,11 +930,26 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         builder.symbol(*name, *addr);
     }
     let regex_symbols: &[(&str, *const u8)] = &[
-        ("subscript_rt_regex_new", ffi::subscript_rt_regex_new as *const u8),
-        ("subscript_rt_regex_test", ffi::subscript_rt_regex_test as *const u8),
-        ("subscript_rt_regex_source", ffi::subscript_rt_regex_source as *const u8),
-        ("subscript_rt_regex_flags", ffi::subscript_rt_regex_flags as *const u8),
-        ("subscript_rt_regex_search", ffi::subscript_rt_regex_search as *const u8),
+        (
+            "subscript_rt_regex_new",
+            ffi::subscript_rt_regex_new as *const u8,
+        ),
+        (
+            "subscript_rt_regex_test",
+            ffi::subscript_rt_regex_test as *const u8,
+        ),
+        (
+            "subscript_rt_regex_source",
+            ffi::subscript_rt_regex_source as *const u8,
+        ),
+        (
+            "subscript_rt_regex_flags",
+            ffi::subscript_rt_regex_flags as *const u8,
+        ),
+        (
+            "subscript_rt_regex_search",
+            ffi::subscript_rt_regex_search as *const u8,
+        ),
         (
             "subscript_rt_regex_replace",
             ffi::subscript_rt_regex_replace as *const u8,
@@ -547,7 +958,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_regex_replace_all",
             ffi::subscript_rt_regex_replace_all as *const u8,
         ),
-        ("subscript_rt_regex_split", ffi::subscript_rt_regex_split as *const u8),
+        (
+            "subscript_rt_regex_split",
+            ffi::subscript_rt_regex_split as *const u8,
+        ),
         (
             "subscript_rt_regex_match_start",
             ffi::subscript_rt_regex_match_start as *const u8,
@@ -624,6 +1038,71 @@ struct CompletedRun {
     elapsed: Duration,
 }
 
+thread_local! {
+    /// The active run's captured output. A panic in generated/runtime code can
+    /// abort rather than unwind across the C ABI, so the process-wide panic
+    /// hook uses this pointer to surface bytes that the helper could not
+    /// otherwise return.
+    static ABORTING_STDOUT: Cell<*const Vec<u8>> = const { Cell::new(std::ptr::null()) };
+    static ABORTING_STDOUT_FLUSHED: Cell<bool> = const { Cell::new(false) };
+}
+
+struct AbortingStdoutGuard;
+
+impl AbortingStdoutGuard {
+    fn install(stdout: &Vec<u8>) -> Self {
+        static INSTALL_HOOK: std::sync::Once = std::sync::Once::new();
+        INSTALL_HOOK.call_once(|| {
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                ABORTING_STDOUT.with(|active| {
+                    let stdout = active.get();
+                    if stdout.is_null() {
+                        return;
+                    }
+                    ABORTING_STDOUT_FLUSHED.with(|flushed| {
+                        if flushed.replace(true) {
+                            return;
+                        }
+                        // SAFETY: the guard keeps the boxed Vec alive and at
+                        // a stable address for the whole generated-code call.
+                        let bytes = unsafe { &*stdout };
+                        let mut process_stdout = std::io::stdout().lock();
+                        let _ = process_stdout.write_all(bytes);
+                        let _ = process_stdout.flush();
+                    });
+                });
+                previous(info);
+            }));
+        });
+        ABORTING_STDOUT.with(|active| {
+            debug_assert!(active.get().is_null(), "nested JIT stdout guard");
+            active.set(stdout);
+        });
+        ABORTING_STDOUT_FLUSHED.with(|flushed| flushed.set(false));
+        Self
+    }
+}
+
+impl Drop for AbortingStdoutGuard {
+    fn drop(&mut self) {
+        ABORTING_STDOUT.with(|active| active.set(std::ptr::null()));
+        ABORTING_STDOUT_FLUSHED.with(|flushed| flushed.set(false));
+    }
+}
+
+/// Captures each printed line outside the Context. Keeping the Vec in a
+/// stable box lets the panic hook surface it before a non-unwinding C-ABI
+/// panic aborts the JIT host process.
+unsafe extern "C" fn capture_stdout_line(userdata: *mut c_void, line: *const u8, line_len: u64) {
+    // SAFETY: execute_entry supplies a live Box<Vec<u8>> for the duration of
+    // every generated-code call; the runtime supplies a live line slice.
+    let stdout = unsafe { &mut *userdata.cast::<Vec<u8>>() };
+    let line = unsafe { std::slice::from_raw_parts(line, line_len as usize) };
+    stdout.extend_from_slice(line);
+    stdout.push(b'\n');
+}
+
 /// Runs the module initializer and then the exported `main` on a fresh
 /// Context, returning the stdout bytes of the run and how long the
 /// `main` call itself took.
@@ -642,6 +1121,12 @@ fn execute_entry(
     let main_ptr = module.get_finalized_function(lowered.main);
 
     let mut ctx = Context::new();
+    let mut stdout = Box::new(Vec::new());
+    ctx.set_print_observer(
+        Some(capture_stdout_line),
+        (&mut *stdout as *mut Vec<u8>).cast::<c_void>(),
+    );
+    let aborting_stdout = AbortingStdoutGuard::install(&stdout);
     let diagnostics_set = ctx.set_freed_handle_diagnostics(
         freed_handle_diagnostics,
         0,
@@ -700,7 +1185,9 @@ fn execute_entry(
             .unwrap_or_else(|| Pos::new(String::new(), 0, 0));
         (r.kind, r.message.clone(), pos)
     });
-    let stdout = ctx.take_stdout();
+    ctx.set_print_observer(None, std::ptr::null_mut());
+    drop(aborting_stdout);
+    let stdout = *stdout;
     match trap {
         Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
             rule,
@@ -721,8 +1208,7 @@ fn run_entry(
     lowered: &Lowered,
     fail_alloc_after: Option<u64>,
 ) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(module, lowered, fail_alloc_after, false)
-        .map(|run| (run.stdout, run.elapsed))
+    execute_entry(module, lowered, fail_alloc_after, false).map(|run| (run.stdout, run.elapsed))
 }
 
 fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
@@ -829,10 +1315,7 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_jit`].
-pub fn run_jit_with_alloc_failure(
-    files: &[SourceFile],
-    n: u64,
-) -> Result<Vec<u8>, RunError> {
+pub fn run_jit_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8>, RunError> {
     let (module, lowered) = compile_jit(files, &[])?;
     let outcome = run_entry(&module, &lowered, Some(n)).map(|(out, _)| out);
     // SAFETY: all executions above have returned and no pointer into
@@ -1019,9 +1502,7 @@ pub(crate) fn allocation_attribution_after_run(
         payload_bytes: u64,
     ) {
         // SAFETY: this helper passes a live Vec of this exact type.
-        let triples = unsafe {
-            &mut *userdata.cast::<Vec<(u32, u32, u64)>>()
-        };
+        let triples = unsafe { &mut *userdata.cast::<Vec<(u32, u32, u64)>>() };
         triples.push((class_id, pos_id, payload_bytes));
     }
 
@@ -1141,8 +1622,7 @@ mod tests {
              }\n\
              export function main(): void {}\n",
         );
-        let (module, lowered) =
-            compile_jit(&program, &[]).expect("compile allocation probe");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile allocation probe");
         let init = module.get_finalized_function(lowered.init);
         let populate = lowered
             .entries
@@ -1164,12 +1644,20 @@ mod tests {
             call_entry(init, &mut ctx);
             call_entry(populate, &mut ctx);
         }
-        assert!(!ctx.trapped(), "probe setup trapped: {:?}", ctx.trap_record());
+        assert!(
+            !ctx.trapped(),
+            "probe setup trapped: {:?}",
+            ctx.trap_record()
+        );
         // SAFETY: shared access after the setup entry returned.
         let before = unsafe { ffi::subscript_rt_ctx_live_allocations(p) };
         // SAFETY: finalized allocation-probe entry.
         unsafe { call_entry(iterate, &mut ctx) };
-        assert!(!ctx.trapped(), "fused loop trapped: {:?}", ctx.trap_record());
+        assert!(
+            !ctx.trapped(),
+            "fused loop trapped: {:?}",
+            ctx.trap_record()
+        );
         // SAFETY: shared access after the iteration entry returned.
         let after = unsafe { ffi::subscript_rt_ctx_live_allocations(p) };
         assert_eq!(
@@ -1196,8 +1684,7 @@ mod tests {
                print(\"done\");\n\
              }\n",
         );
-        let (module, lowered) =
-            compile_jit(&program, &[]).expect("compile observer program");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile observer program");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main);
         let mut ctx = Context::new();
@@ -1219,7 +1706,9 @@ mod tests {
         // SAFETY: shared access to the live Context after script return.
         assert_eq!(observed.kind, unsafe { ffi::subscript_rt_ctx_trap_kind(p) });
         // SAFETY: shared access to the live Context after script return.
-        assert_eq!(observed.pos_id, unsafe { ffi::subscript_rt_ctx_trap_pos_id(p) });
+        assert_eq!(observed.pos_id, unsafe {
+            ffi::subscript_rt_ctx_trap_pos_id(p)
+        });
         let mut message_len = 0;
         // SAFETY: shared live Context and writable length.
         let message = unsafe { ffi::subscript_rt_ctx_trap_message(p, &mut message_len) };
@@ -1365,11 +1854,9 @@ mod tests {
                    }}\n\
                  }}\n"
             );
-            let (stdout, accounting) = run_jit_with_memory_accounting(
-                &[SourceFile::new("accounting.ts", source)],
-                true,
-            )
-            .expect("accounted dev-JIT run");
+            let (stdout, accounting) =
+                run_jit_with_memory_accounting(&[SourceFile::new("accounting.ts", source)], true)
+                    .expect("accounted dev-JIT run");
             assert!(stdout.is_empty());
             accounting
         };

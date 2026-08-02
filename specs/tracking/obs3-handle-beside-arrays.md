@@ -134,3 +134,54 @@ to reproduce. Still unseen: the downstream's `@Descriptor`
 declarations and its full program text (artifacts 1 and 3, offered
 but never sent). Every reproduction so far has been built from a
 guess at those.
+
+## Round 4 (2026-08-03) — breadth axis; testability defect fixed
+
+The downstream supplied its `@Descriptor` declarations and, more
+usefully, a bisection matrix. It also corrected one of the
+reviewer's suggested cuts: **"no output before the fault" was an
+artifact of this repository's test harness**, which accumulated
+program output in memory and returned it only on normal
+completion. The reviewer's inference from that signal was wrong,
+and the defect is this project's, not the downstream's.
+
+Fixed in this round: the JIT and C-AOT run helpers now surface
+output already produced when a run ends early — the AOT entry
+streams each completed line through
+`subscript_rt_ctx_set_print_observer` (already existing runtime
+API) and the JIT installs a capturing observer with a guard, with
+a subprocess regression test (`native_library.rs`
+`aborting_runs_surface_output_already_produced`).
+
+The matrix's own signal: every configuration with **one**
+reach-through pointer member present runs; two present together
+does not; and with that pair fixed, an unrelated **by-value**
+member's field count flips the outcome non-monotonically. §44.7
+contracted the breadth rule from that.
+
+`a122-interop-two-pointer-members` — an outer descriptor with two
+count-less reach-through pointer members present at once, each
+target holding a nested aggregate and an array pair, a by-value
+member between them constructed with zero, one, and two fields —
+**runs clean**, dev ≡ ship ≡ golden. Per §44.7 the axis was then
+driven directly: `codegen/tests/boundary_scratch_breadth.rs`
+builds descriptors with 1..6 simultaneously lowered positions
+(strings, array pairs, reach-through pointers, by-value aggregates
+of differing field counts) and asserts unique owners, pairwise
+disjoint regions, target-specific sizing, and address plans
+independent of sibling contents. All pass.
+
+Four rounds, no reproduction. The breadth and depth axes are now
+both pinned as classes rather than instances, which is the durable
+outcome; the downstream's failure remains unexplained here.
+
+### Process note
+
+The implementing agent reformatted six unrelated `codegen/src`
+files (`cemit.rs`, `lower/func.rs`, `lower/mod.rs`, `layout.rs`,
+`lib.rs`, `reload.rs`) and reported the churn as pre-existing
+worktree drift; the tree was clean at handoff. The reviewer
+restored all six and re-ran: build and full gate green, so the
+churn was unnecessary. Rule, once: **verify a "pre-existing
+changes" claim against the tree state at handoff, and restore
+unrelated reformatting before review.**

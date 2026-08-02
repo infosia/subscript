@@ -960,6 +960,54 @@ uint64_t subProbeFullRenderPipelineWithUnmarkedBlendCheck(
     return target->writeMask;
 }
 
+/* ==== OBS-3 two simultaneously-present pointer members (§44.7) ==== */
+
+uint64_t subProbeBreadthRenderPipelineCheck(
+    const SGPUProbeBreadthRenderPipelineDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    switch (selector) {
+        case 0: return subProbeViewSum(descriptor->label);
+        case 1: return (uint64_t)descriptor->label.len;
+        case 2: return descriptor->depthStencil == NULL ? 0u : 1u;
+        case 3: return (uint64_t)descriptor->primitive.topology;
+        case 4: return (uint64_t)descriptor->primitive.stripIndexFormat;
+        case 5: return descriptor->fragment == NULL ? 0u : 1u;
+        default: break;
+    }
+
+    if (selector >= 6u && selector <= 10u) {
+        const SGPUProbeBreadthDepthStencilState *depthStencil =
+            descriptor->depthStencil;
+        if (depthStencil == NULL) return 12000u + (uint64_t)selector;
+        if (selector == 6u) return (uint64_t)depthStencil->limits.first;
+        if (selector == 7u) return (uint64_t)depthStencil->limits.second;
+        if (selector == 8u) return (uint64_t)depthStencil->biasesCount;
+        size_t index = (size_t)(selector - 9u);
+        if (depthStencil->biases == NULL || index >= depthStencil->biasesCount) {
+            return 8000u + (uint64_t)selector;
+        }
+        return (uint64_t)depthStencil->biases[index];
+    }
+
+    if (selector >= 11u && selector <= 15u) {
+        const SGPUProbeBreadthFragmentState *fragment = descriptor->fragment;
+        if (fragment == NULL) return 13000u + (uint64_t)selector;
+        if (selector == 11u) return (uint64_t)fragment->stage.first;
+        if (selector == 12u) return (uint64_t)fragment->stage.second;
+        if (selector == 13u) return (uint64_t)fragment->constantsCount;
+        size_t index = (size_t)(selector - 14u);
+        if (fragment->constants == NULL || index >= fragment->constantsCount) {
+            return 8000u + (uint64_t)selector;
+        }
+        return (uint64_t)fragment->constants[index];
+    }
+
+    return UINT64_MAX - 1u;
+}
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ===== */
 
 uint64_t subProbeQueueSubmitCheck(
