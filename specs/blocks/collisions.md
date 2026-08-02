@@ -133,6 +133,10 @@ inside the rejected general-union space — one primitive, literals
 only, closed, alias-only: an *inline* literal union in any other
 position stays rejected as a general union.
 
+*Revised 2026-08-02 (R14):* a Q32 alias is a legal `switch`
+discriminant with `case "member":` arms — integer dispatch, and
+closed-set exhaustiveness checked (`compiler.md` §41; accept adds
+`a115`, reject adds `r112`–`r114`).
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
 an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries).
