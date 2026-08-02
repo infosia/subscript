@@ -4520,3 +4520,59 @@ byte-identical under both tiers; (3) a bindgen audit that no
 registered struct-pointer member reaches the mirror without a
 lowering, whatever its nullability spelling — the class, not the
 instance; (4) no existing golden moves; full gates green.
+
+### 44.7 Round 4 — two simultaneously-present pointer members
+
+The downstream's bisection (2026-08-03) reframes the search. Its
+matrix, each row a separate run: every configuration with **one**
+nullable struct-pointer member present runs; the pair
+`depthStencil` + `fragment` present **together** aborts, and keeps
+aborting as blend, vertex buffers, and the layout handle are
+removed. A by-value third member does not substitute for the
+second pointer.
+
+Then, with that pair fixed, varying only a semantically unrelated
+**by-value** member flips the outcome non-monotonically: omitted
+aborts, `{}` aborts, `{topology}` runs, `{topology,
+stripIndexFormat}` aborts. Label length does not matter, so it is
+not total bytes. A neighbouring member's *contents* changing the
+outcome is the signature of a **scratch sizing or indexing error**,
+not of an unsupported construct — and it explains why three
+purpose-built fixtures passed: the fault needs a particular scratch
+profile to surface.
+
+Confirmed at the pin: **no fixture struct carries two or more
+count-less reach-through pointer members.** Every §33 shape has
+exactly one; the arc varied the pointer target's depth, never the
+number of simultaneously-present pointers.
+
+Rule: **the scratch construction is correct for any number of
+simultaneously-lowered members.** Each lowered position owns
+storage that no other position can reach, whatever its neighbours'
+kinds, contents, or sizes; scratch identity is never a function of
+a sibling's payload. This is §32's recursion rule extended from
+depth to breadth.
+
+Corpus: `a122-interop-two-pointer-members` (accept), Red-first —
+an outer descriptor with **two** count-less reach-through pointer
+members present at once, each target itself containing a nested
+aggregate and an array pair, with a by-value member between them
+whose contents vary across the entry's constructions (the
+downstream's `primitive` axis: absent, empty-equivalent, one field
+set, two fields set). If the entry does not reproduce, the
+scratch-profile axis is driven directly instead: a unit test over
+descriptors with 1..N simultaneously-lowered members asserting
+every position's storage is disjoint.
+
+Testability defect, fixed in the same round: the JIT and C-AOT run
+helpers buffer program output in memory and return it only on
+success, so an aborting run loses everything it printed. The
+downstream's "no output before the fault" was an artifact of this,
+and it cost this investigation a wrong inference. Output already
+produced must survive an aborting run in both helpers, with a test.
+
+Exit criteria: (1) the pre-fix observation recorded; (2) `a122`
+byte-identical under both tiers, or the disjointness unit test
+standing in its place with the non-reproduction recorded; (3) the
+run helpers surface partial output on abort, unit-tested; (4) no
+existing golden moves; full gates green.
