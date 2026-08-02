@@ -4376,3 +4376,77 @@ clean), `r118-unnarrowed-absence-read` (`tsc` status recorded).
 4. Full gate green; `tsc` gate green with `a118` included; no
    existing golden moves; zero-warning sweep green; generated-docs
    byte-compare gates green.
+
+## 44. OBS-3 — scalar handle fields beside arrays in scratch-lowered structs
+
+Owner decision 2026-08-02 (downstream observation OBS-3, accepted
+as a bug; blocking its P5 slice E4). The downstream reported a
+run-time abort — `misaligned pointer dereference … address … is
+0x1` inside `Context::array_len` — building a render pipeline whose
+nullable `fragment` member is **present**, the pointed-to
+descriptor carrying a handle, a string, and two array fields. It
+type-checks; the failure is at execution, dev tier.
+
+### 44.1 Narrowing established before contracting
+
+The downstream disproved two hypotheses by running them (plain
+in-language descriptors/arrays/nullable members; an empty array
+field crossing the boundary through its shipped surface). The
+reviewer added two more findings at the pin:
+
+1. **Empty arrays are not the trigger.** A probe with the fixture's
+   existing §33 shape — present nullable fragment, `constants` and
+   `targets` both empty — ran clean and produced selector output.
+   `a106` already covers the same shape with non-empty arrays.
+2. **The fixture has no struct combining a scalar opaque-handle
+   field with array pairs**, and none reached through a nullable
+   pointer member. `SubProbeBindGroupEntry` carries handles but no
+   arrays; `SubProbePipelineLayoutDescriptor` carries a handle
+   *array*, not a scalar handle field.
+
+What remains, and what the fix must reproduce first: a
+scratch-lowered struct carrying a **scalar handle field beside
+array-pair fields** (with a string field), reached through a
+present `_Nullable` struct-pointer member — the downstream's
+`GPUFragmentState` (`module` handle, `entryPoint` string,
+`constants`, `targets`).
+
+### 44.2 Rule
+
+The §32 recursive-lowering rule stands and is restated for this
+composition: **a scratch-lowered struct's field offsets are the C
+layout's, whatever mix of handle, string, scalar-pair, and nested
+pointer members it carries, at any depth and behind any nullable
+pointer.** No field kind may shift another's offset; an accepted
+program that crosses the boundary runs. Where a composition cannot
+be lowered it fails loud at compile time (§28's "lowered or loud"),
+never as a run-time dereference of a mis-read field.
+
+### 44.3 Corpus and fixture
+
+The interop fixture gains the missing composition: a struct with a
+string field, a scalar `_Nullable` handle field, and two array
+pairs, reached through a `_Nullable` pointer member of an outer
+descriptor, with selector-based evidence at every level (the §33
+fixture convention). `a119-interop-handle-beside-arrays` (accept)
+drives it: fragment present with the handle non-null and null,
+arrays empty and non-empty, and fragment absent. Staging is
+**Red-first**: the reproduction runs at the current pin and its
+observed failure is recorded before any fix; the entry lands green
+with the fix.
+
+If the composition reproduces no failure, that outcome is reported
+as-is and the exact downstream program is requested rather than
+guessed at — a fixture that does not reproduce is evidence, not a
+fix.
+
+### 44.4 Exit criteria (pre-registered)
+
+1. The pre-fix observation is recorded verbatim (the failure, or
+   the fact that the composition ran clean).
+2. `a119` byte-identical under both tiers, covering handle
+   non-null/null × arrays empty/non-empty × fragment present/absent.
+3. A lowering-level unit test pins the field offsets of the new
+   composition against the C layout (the `offsetof` convention).
+4. No existing golden moves; full gate green; `tsc` gate green;
+   bindgen regeneration byte-compare green.
