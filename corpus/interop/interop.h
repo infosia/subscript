@@ -896,6 +896,57 @@ uint64_t subProbeFullRenderPipelineWithNestedBlendCheck(
     const SGPUProbeNestedRenderPipelineDescriptor *descriptor,
     uint32_t selector);
 
+/* ==== OBS-3 unmarked reach-through pointer (§44.6) ==================
+ *
+ * The downstream spelling differs from the established fixtures above in
+ * exactly one place: the count-less struct pointer inside each target is
+ * plain, with no `_Nullable` annotation. Its element layout is the measured
+ * downstream layout: a four-byte C enum, the alignment hole before a pointer
+ * at +8, and a uint64_t typedef at +16, for 24 bytes total. The path remains
+ * descriptor -> nullable fragment pointer -> two adjacent count/pointer
+ * pairs -> target element -> unmarked blend pointer. */
+
+typedef enum SGPUProbeUnmarkedTextureFormat {
+    SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8 = 101,
+    SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8 = 202
+} SGPUProbeUnmarkedTextureFormat;
+
+typedef uint64_t SGPUProbeUnmarkedColorWriteMask;
+
+typedef struct SGPUProbeUnmarkedBlendState {
+    uint32_t colorOperation;
+    uint32_t alphaOperation;
+} SGPUProbeUnmarkedBlendState;
+
+typedef struct SGPUProbeUnmarkedColorTargetState {
+    SGPUProbeUnmarkedTextureFormat format;
+    const SGPUProbeUnmarkedBlendState *blend;
+    SGPUProbeUnmarkedColorWriteMask writeMask;
+} SGPUProbeUnmarkedColorTargetState;
+
+typedef struct SGPUProbeUnmarkedFragmentState {
+    SubDevice _Nullable module;
+    SGPUStringView entryPoint;
+    size_t constantsCount;
+    const SGPUProbeConstantEntry *constants;
+    size_t targetsCount;
+    const SGPUProbeUnmarkedColorTargetState *targets;
+} SGPUProbeUnmarkedFragmentState;
+
+typedef struct SGPUProbeUnmarkedRenderPipelineDescriptor {
+    SGPUStringView label;
+    const SGPUProbeUnmarkedFragmentState * _Nullable fragment;
+} SGPUProbeUnmarkedRenderPipelineDescriptor;
+
+/* Selector evidence covers fragment presence, both adjacent pairs, both
+ * element kinds in one target array, and every field behind the unmarked
+ * pointer. A null fragment returns 11000 + selector behind the pointer; a
+ * missing pair element returns 8000 + selector; a null blend returns 6000 +
+ * selector for its member selectors. */
+uint64_t subProbeFullRenderPipelineWithUnmarkedBlendCheck(
+    const SGPUProbeUnmarkedRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ========
  *
  * Queue-submit shape: a leading opaque handle followed by the adjacent

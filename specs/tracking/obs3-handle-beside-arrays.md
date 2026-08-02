@@ -94,3 +94,43 @@ one artifact never supplied. Requested next: the **preprocessed C
 facade declarations** for these structs (all preceding fields,
 order, typedefs, nullability spelling, packing/alignment macros),
 since bindgen's lowering is a function of exactly those.
+
+## Round 3 (2026-08-03) — C declarations received; two hypotheses killed
+
+The downstream supplied its preprocessed declarations with measured
+`sizeof`/`offsetof`. Results:
+
+- **Layout is not the difference.** Its `SGPUColorTargetState` (24
+  bytes, 4-byte enum, 4-byte hole, pointer at +8, `uint64_t` alias
+  at +16) and `SGPUConstantEntry` (`SGPUStringView` + `double`) are
+  shapes the fixture already reproduced field-for-field. The
+  reviewer's own enum/alias-sizing hypothesis is answered: no.
+- **The nullability spelling is not a lowering trigger.** The
+  downstream marks `_Nullable` only on opaque handles and writes
+  reach-through struct-pointer members plain; the fixture had only
+  `_Nullable` ones, so §44.6 contracted the shape-keyed rule and a
+  Red-first entry. `a121-interop-unmarked-reach-through` — the
+  downstream's element spelling field-for-field, with an
+  `offsetof` proof pinning 24/0/8/16 — **runs clean**, and
+  inspection confirmed the recursive traversal already keys on
+  count-less registered-boundary-pointer shape;
+  `bindgen/src/emit.rs:182`'s `field.nullable` filter governs only
+  the `_Nullable` validity audit. No lowering change was needed.
+
+Kept from the round: a class-wide bindgen audit (7 positions ×
+plain/`_Nullable`) accepting only recursively lowered positions —
+the unmarked class is now pinned even though it was already
+correct.
+
+Reviewer language-side probes this round, also clean: nested
+descriptor literals with a descriptor-element array read through a
+present nullable member (`targets: [{ format, blend: {…} }]`, the
+call site's exact shape); and `T[] | null` as a member type, which
+the language **rejects** outright (C7), ruling out a null-array
+read as the crash source.
+
+Three fixture rounds and eight construction probes have now failed
+to reproduce. Still unseen: the downstream's `@Descriptor`
+declarations and its full program text (artifacts 1 and 3, offered
+but never sent). Every reproduction so far has been built from a
+guess at those.

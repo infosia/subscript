@@ -152,6 +152,15 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains(
         "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeNestedColorTargetState[]);"
     ));
+    // OBS-3 round 3 (§44.6). A plain, count-less pointer to a registered
+    // boundary struct has the same nullable mirror shape as the annotated
+    // spellings above; the adjacent enum and u64 alias remain exact.
+    assert!(m.contains("format: SGPUProbeUnmarkedTextureFormat;"));
+    assert!(m.contains("blend: SGPUProbeUnmarkedBlendState | null;"));
+    assert!(m.contains("writeMask: SGPUProbeUnmarkedColorWriteMask;"));
+    assert!(m.contains(
+        "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeUnmarkedColorTargetState[]);"
+    ));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

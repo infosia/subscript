@@ -1308,6 +1308,94 @@ fn nullable_struct_pointer_field_is_reported_and_lowered() {
 }
 
 #[test]
+fn every_mirror_accepted_registered_struct_pointer_member_has_a_recursive_lowering_regardless_of_nullability()
+{
+    struct Position {
+        name: &'static str,
+        declaration: &'static str,
+        lowered: bool,
+    }
+
+    let positions = [
+        Position {
+            name: "direct pointer-scratch member",
+            declaration: "typedef struct EngineEnvelope { const EngineRecord *{nullability} record; } EngineEnvelope;\n\
+                          void engineUse(const EngineEnvelope *envelope);",
+            lowered: true,
+        },
+        Position {
+            name: "embedded aggregate member",
+            declaration: "typedef struct EnginePointerElement { const EngineRecord *{nullability} record; } EnginePointerElement;\n\
+                          typedef struct EngineEnvelope { EnginePointerElement element; } EngineEnvelope;\n\
+                          void engineUse(const EngineEnvelope *envelope);",
+            lowered: true,
+        },
+        Position {
+            name: "collapsed-pair element member",
+            declaration: "typedef struct EnginePointerElement { const EngineRecord *{nullability} record; } EnginePointerElement;\n\
+                          typedef struct EngineEnvelope { size_t elementsCount; const EnginePointerElement *elements; } EngineEnvelope;\n\
+                          void engineUse(const EngineEnvelope *envelope);",
+            lowered: true,
+        },
+        Position {
+            name: "by-value parameter member",
+            declaration: "typedef struct EngineEnvelope { const EngineRecord *{nullability} record; } EngineEnvelope;\n\
+                          void engineUse(EngineEnvelope envelope);",
+            lowered: false,
+        },
+        Position {
+            name: "by-value return member",
+            declaration: "typedef struct EngineEnvelope { const EngineRecord *{nullability} record; } EngineEnvelope;\n\
+                          EngineEnvelope engineUse(void);",
+            lowered: false,
+        },
+        Position {
+            name: "pointer return member",
+            declaration: "typedef struct EngineEnvelope { const EngineRecord *{nullability} record; } EngineEnvelope;\n\
+                          const EngineEnvelope *engineUse(void);",
+            lowered: false,
+        },
+        Position {
+            name: "unreachable member",
+            declaration: "typedef struct EngineEnvelope { const EngineRecord *{nullability} record; } EngineEnvelope;\n\
+                          void engineUnrelated(uint32_t value);",
+            lowered: false,
+        },
+    ];
+
+    for (spelling, nullability) in [("plain", ""), ("_Nullable", " _Nullable")] {
+        for position in &positions {
+            let declaration = position
+                .declaration
+                .replace("{nullability}", nullability);
+            let header = format!(
+                "#include <stddef.h>\n#include <stdint.h>\n\
+                 typedef struct EngineText {{ const char *data; size_t len; }} EngineText;\n\
+                 typedef struct EngineRecord {{ EngineText label; uint64_t serial; }} EngineRecord;\n\
+                 {declaration}"
+            );
+            let result = generate_for_header(&header, "audit.h");
+            let accepted = result.is_ok();
+            let detail = result.as_ref().err().map(ToString::to_string);
+            assert_eq!(
+                accepted,
+                position.lowered,
+                "{} / {spelling}: accepted={accepted} but lowered={}: {detail:?}",
+                position.name,
+                position.lowered,
+            );
+            if let Ok(mirror) = result {
+                assert!(
+                    mirror.contains("record: EngineRecord | null;"),
+                    "{} / {spelling}: registered struct-pointer member lost its shape-based lowering:\n{mirror}",
+                    position.name,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn nullable_callback_parameter_fails_loud() {
     let header = "
         typedef struct SGPUBufferImpl *SGPUBuffer;

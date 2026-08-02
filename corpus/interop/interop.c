@@ -901,6 +901,65 @@ uint64_t subProbeFullRenderPipelineWithNestedBlendCheck(
     return (uint64_t)target->writeMask;
 }
 
+/* ==== OBS-3 unmarked reach-through pointer (§44.6) ================= */
+
+uint64_t subProbeFullRenderPipelineWithUnmarkedBlendCheck(
+    const SGPUProbeUnmarkedRenderPipelineDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    if (selector == 0u) return subProbeViewSum(descriptor->label);
+    if (selector == 1u) return (uint64_t)descriptor->label.len;
+    if (selector == 2u) return descriptor->fragment == NULL ? 0u : 1u;
+    if (descriptor->fragment == NULL) return 11000u + (uint64_t)selector;
+
+    const SGPUProbeUnmarkedFragmentState *fragment = descriptor->fragment;
+    switch (selector) {
+        case 3: return fragment->module == NULL ? 0u : 1u;
+        case 4: return subProbeViewSum(fragment->entryPoint);
+        case 5: return (uint64_t)fragment->entryPoint.len;
+        case 6: return (uint64_t)fragment->constantsCount;
+        case 7: return (uint64_t)fragment->targetsCount;
+        default: break;
+    }
+
+    if (selector >= 8u && selector <= 13u) {
+        size_t index = selector >= 11u ? 1u : 0u;
+        if (fragment->constants == NULL || index >= fragment->constantsCount) {
+            return 8000u + (uint64_t)selector;
+        }
+        const SGPUProbeConstantEntry *constant = &fragment->constants[index];
+        uint32_t member = selector - (index == 0u ? 8u : 11u);
+        if (member == 0u) return subProbeViewSum(constant->key);
+        if (member == 1u) return (uint64_t)constant->key.len;
+        return (uint64_t)constant->value;
+    }
+
+    size_t target_index = selector >= 19u ? 1u : 0u;
+    if (selector < 14u || selector > 23u
+        || fragment->targets == NULL
+        || target_index >= fragment->targetsCount) {
+        return 8000u + (uint64_t)selector;
+    }
+    const SGPUProbeUnmarkedColorTargetState *target =
+        &fragment->targets[target_index];
+    uint32_t member = selector - (target_index == 0u ? 14u : 19u);
+    if (member == 0u) return (uint64_t)target->format;
+    if (member == 1u) return target->blend == NULL ? 0u : 1u;
+    if (member == 2u) {
+        return target->blend == NULL
+            ? 6000u + (uint64_t)selector
+            : (uint64_t)target->blend->colorOperation;
+    }
+    if (member == 3u) {
+        return target->blend == NULL
+            ? 6000u + (uint64_t)selector
+            : (uint64_t)target->blend->alphaOperation;
+    }
+    return target->writeMask;
+}
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ===== */
 
 uint64_t subProbeQueueSubmitCheck(

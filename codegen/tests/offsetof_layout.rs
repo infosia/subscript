@@ -396,6 +396,21 @@ class SubWaitList {
   count: u64;
 }
 
+// OBS-3 round 3 (§44.6): the downstream target layout is a four-byte C
+// enum, a hole before the count-less pointer at +8, and a uint64_t alias at
+// +16. This must remain 24 bytes with 8-byte alignment.
+enum SGPUProbeUnmarkedTextureFormat {
+  Rgba8 = 101,
+  Bgra8 = 202,
+}
+
+@CStruct
+class SGPUProbeUnmarkedColorTargetState {
+  format: SGPUProbeUnmarkedTextureFormat;
+  blend: u64;
+  writeMask: u64;
+}
+
 export function main(): void {}
 "#;
 
@@ -457,6 +472,10 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         // P7.2 composed async capstone (§14.4/§14.5).
         ("SubWaitEntry", vec!["future", "completed"]),
         ("SubWaitList", vec!["entries", "count"]),
+        (
+            "SGPUProbeUnmarkedColorTargetState",
+            vec!["format", "blend", "writeMask"],
+        ),
     ]
 }
 
@@ -641,6 +660,20 @@ fn language_layout_matches_c_offsetof_for_every_mirrored_struct() {
 
     // C side: the platform compiler's offsetof/sizeof/_Alignof truth.
     let c = c_truth(&structs);
+
+    let downstream_target = c
+        .get("SGPUProbeUnmarkedColorTargetState")
+        .expect("unmarked target C layout");
+    assert_eq!((downstream_target.size, downstream_target.align), (24, 8));
+    assert_eq!(
+        downstream_target.field_offsets,
+        vec![
+            ("format".to_string(), 0),
+            ("blend".to_string(), 8),
+            ("writeMask".to_string(), 16),
+        ],
+        "the round-3 fixture must retain the downstream's measured layout"
+    );
 
     let mut report = String::from(
         "\nper-struct layout (language vs C), size/align and field offsets:\n",

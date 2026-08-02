@@ -526,6 +526,40 @@ declare class SGPUProbeNestedRenderPipelineDescriptor {
 }
 
 declare function subProbeFullRenderPipelineWithNestedBlendCheck(descriptor: SGPUProbeNestedRenderPipelineDescriptor | null, selector: u32): u64;
+
+declare enum SGPUProbeUnmarkedTextureFormat {
+  SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8 = 101,
+  SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8 = 202,
+}
+
+declare class SGPUProbeUnmarkedBlendState {
+  colorOperation: u32;
+  alphaOperation: u32;
+  constructor(colorOperation: u32, alphaOperation: u32);
+}
+
+declare class SGPUProbeUnmarkedColorTargetState {
+  format: SGPUProbeUnmarkedTextureFormat;
+  blend: SGPUProbeUnmarkedBlendState | null;
+  writeMask: SGPUProbeUnmarkedColorWriteMask;
+  constructor(format: SGPUProbeUnmarkedTextureFormat, blend: SGPUProbeUnmarkedBlendState | null, writeMask: SGPUProbeUnmarkedColorWriteMask);
+}
+
+declare class SGPUProbeUnmarkedFragmentState {
+  module: SubDevice | null;
+  entryPoint: string;
+  constants: SGPUProbeConstantEntry[];
+  targets: SGPUProbeUnmarkedColorTargetState[];
+  constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeUnmarkedColorTargetState[]);
+}
+
+declare class SGPUProbeUnmarkedRenderPipelineDescriptor {
+  label: string;
+  fragment: SGPUProbeUnmarkedFragmentState | null;
+  constructor(label: string, fragment: SGPUProbeUnmarkedFragmentState | null);
+}
+
+declare function subProbeFullRenderPipelineWithUnmarkedBlendCheck(descriptor: SGPUProbeUnmarkedRenderPipelineDescriptor | null, selector: u32): u64;
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 
@@ -544,3 +578,5 @@ declare const SUB_STAGE_NONE = 0;
 declare const SUB_STAGE_VERTEX = 1;
 declare const SUB_STAGE_FRAGMENT = 2;
 declare const SUB_STAGE_COMPUTE = 4;
+
+type SGPUProbeUnmarkedColorWriteMask = u64;
