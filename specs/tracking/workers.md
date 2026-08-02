@@ -75,6 +75,17 @@ global is the LCG seed, so this benchmark has limited sensitivity
 to global-access cost; a global-heavy microcase is worth adding
 only if evidence demands it.
 
+## Round 3 surface probes (run 2026-08-02, before §39)
+
+Stock `tsc` (`node_modules/.bin/tsc --strict --target es2022 --lib
+es2022`, with `prelude/lang.d.ts`) accepts the planned ambient —
+`Inbox<T>`/`Outbox<T>`/`Worker<In, Out>` with private constructors
+(the `JsonResult` precedent) and `static spawn` on its own type
+parameters — exit 0 on both probe programs: the annotated
+echo round-trip, and the inference form (`const w =
+Worker.spawn(entry)` with no type arguments). `lib` is ES2022 only,
+so the DOM `Worker` name is not in scope and the name is free.
+
 ## Round 2 result
 
 (pending)
