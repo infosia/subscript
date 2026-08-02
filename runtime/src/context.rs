@@ -328,6 +328,12 @@ struct BoundaryScratchAllocation {
     layout: Layout,
 }
 
+/// Ship-tier module-global storage owned directly by one Context.
+struct ModuleGlobals {
+    base: *mut u8,
+    layout: Layout,
+}
+
 /// One retained-and-poisoned exact-size allocation, in retirement order.
 struct RetainedAllocation {
     payload: usize,
@@ -413,17 +419,21 @@ pub struct CallbackBinding {
 /// | 0 | trap flag (`u32`) | every emitted trap check |
 /// | 4 | reload epoch (`u32`) | coroutine resume, hot-reload mode |
 /// | 8 | function table (`*const *const u8`) | script calls, hot-reload mode |
-/// | 16 | module-global block (`*mut u8`) | global access, hot-reload mode |
+/// | 16 | module-global block (`*mut u8`) | global access, ship C and hot reload |
 ///
-/// Everything past the prefix is opaque to generated code. The three
-/// hot-reload fields are read only by code lowered in reload mode; the
-/// AOT tier and the plain dev-JIT run never touch them.
+/// Everything past the prefix is opaque to generated code. The function
+/// table and reload epoch are read only by code lowered in reload mode;
+/// ship C and hot-reload code both read the module-global block slot.
 #[repr(C)]
 pub struct Context {
     trap_flag: u32,
     reload_epoch: u32,
     fn_table: *const *const u8,
     globals: *mut u8,
+    // The ship C tier installs one layout-fixed block here. Reload mode
+    // instead points `globals` at storage owned by its ReloadSession and
+    // leaves this empty.
+    module_globals: Option<ModuleGlobals>,
     script_depth: u32,
     // Q34 pending root invocations, in host kick order. Active frames are
     // tracked separately while a callback is on the stack so explicit
@@ -550,6 +560,7 @@ impl Context {
             reload_epoch: 0,
             fn_table: std::ptr::null(),
             globals: std::ptr::null_mut(),
+            module_globals: None,
             script_depth: 0,
             async_roots: VecDeque::new(),
             active_async_frames: Vec::new(),
@@ -680,6 +691,53 @@ impl Context {
     /// collector's registered root ranges point into it.
     pub fn set_globals(&mut self, base: *mut u8) {
         self.globals = base;
+    }
+
+    /// Allocates and installs the ship tier's zeroed module-global block.
+    ///
+    /// Re-running the same image's initializer on one Context reuses and
+    /// zeroes the original block. A different layout on the same Context is
+    /// an internal host/codegen mismatch. This structural allocation is not
+    /// a language object: it does not consume object fault-injection counts
+    /// or participate in collection, and it is freed when the Context drops.
+    pub(crate) fn init_module_globals(&mut self, size: usize, align: usize) -> *mut u8 {
+        let Ok(layout) = Layout::from_size_align(size.max(1), align) else {
+            self.trap(
+                TrapKind::Internal,
+                "module-global block layout is not representable",
+                0,
+            );
+            return std::ptr::null_mut();
+        };
+        if let Some(block) = &self.module_globals {
+            if block.layout != layout {
+                self.trap(
+                    TrapKind::Internal,
+                    "module-global block layout changed for a live Context",
+                    0,
+                );
+                return std::ptr::null_mut();
+            }
+            // SAFETY: `base` owns `layout.size()` writable bytes for the
+            // lifetime of this Context.
+            unsafe { std::ptr::write_bytes(block.base, 0, block.layout.size()) };
+            self.globals = block.base;
+            return block.base;
+        }
+
+        // SAFETY: `layout` is non-empty because `size.max(1)` was used.
+        let base = unsafe { alloc_zeroed(layout) };
+        if base.is_null() {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("module-global block allocation of {size} bytes failed"),
+                0,
+            );
+            return std::ptr::null_mut();
+        }
+        self.globals = base;
+        self.module_globals = Some(ModuleGlobals { base, layout });
+        base
     }
 
     /// The current reload epoch. Coroutine frames record the epoch
@@ -2517,6 +2575,11 @@ impl Context {
 impl Drop for Context {
     fn drop(&mut self) {
         self.boundary_scratch_release(0);
+        if let Some(block) = self.module_globals.take() {
+            // SAFETY: `base`/`layout` came from `alloc_zeroed` in
+            // `init_module_globals` and are freed exactly once, here.
+            unsafe { dealloc(block.base, block.layout) };
+        }
         for a in self.allocations.values() {
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `Context::alloc` and are freed exactly once, here.
@@ -2812,6 +2875,23 @@ mod tests {
         ctx.set_globals(block.as_mut_ptr());
         assert_eq!(ctx.fn_table, table.as_ptr());
         assert_eq!(ctx.globals, block.as_mut_ptr());
+    }
+
+    #[test]
+    fn ship_module_globals_are_context_owned_zeroed_and_reused() {
+        let mut ctx = Context::new_releasing();
+        let first = ctx.init_module_globals(24, 16);
+        assert!(!first.is_null());
+        assert_eq!(first as usize % 16, 0);
+        assert_eq!(ctx.globals, first);
+        // SAFETY: the Context owns 24 writable bytes at `first`.
+        unsafe { std::ptr::write_bytes(first, 0xA5, 24) };
+
+        let second = ctx.init_module_globals(24, 16);
+        assert_eq!(second, first, "same image must reuse its Context block");
+        // SAFETY: the reused block still owns 24 readable bytes.
+        let bytes = unsafe { std::slice::from_raw_parts(second, 24) };
+        assert_eq!(bytes, &[0; 24]);
     }
 
     #[test]

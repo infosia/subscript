@@ -1111,6 +1111,9 @@ mod tests {
             .arg(&entry_path)
             .arg(&staticlib)
             .args(runtime_system_libraries(cc.style()));
+        if !cfg!(any(windows, target_os = "macos")) {
+            command.arg("-pthread");
+        }
         add_executable_output(&mut command, &exe_path, cc.style());
         let compile = command.output().expect("run C compiler");
         assert!(
@@ -1119,6 +1122,252 @@ mod tests {
             String::from_utf8_lossy(&compile.stderr)
         );
         Command::new(&exe_path).output().expect("run test host")
+    }
+
+    const MODULE_STATE_ISOLATION_SOURCE: &str = "let counter: i32 = 0;\n\
+         export function advance(): void {\n\
+         \x20 counter += 1;\n\
+         \x20 print(`${counter}`);\n\
+         }\n\
+         export function main(): void {}\n";
+
+    fn run_dev_module_state_reference() -> Vec<u8> {
+        let program = sources(MODULE_STATE_ISOLATION_SOURCE);
+        let mut session = crate::ReloadSession::new(&program).expect("create dev session");
+        session.call_export("advance").expect("first dev call");
+        session.call_export("advance").expect("second dev call");
+        session.take_output()
+    }
+
+    #[test]
+    fn module_state_is_isolated_between_concurrent_contexts_in_both_tiers() {
+        let reference = run_dev_module_state_reference();
+        assert_eq!(reference, b"1\n2\n", "single-Context reference");
+
+        let threads: Vec<_> = (0..2)
+            .map(|_| std::thread::spawn(run_dev_module_state_reference))
+            .collect();
+        let dev_outputs: Vec<Vec<u8>> = threads
+            .into_iter()
+            .map(|thread| thread.join().expect("join dev Context thread"))
+            .collect();
+        for (index, output) in dev_outputs.iter().enumerate() {
+            assert_eq!(output, &reference, "dev Context {index} output");
+        }
+
+        let program = sources(MODULE_STATE_ISOLATION_SOURCE);
+        let entry = host_entry(
+            r#"
+#include <stdio.h>
+#include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
+extern void subscript_export_advance(subscript_rt_context* ctx);
+
+struct worker_result {
+    uint8_t stdout_bytes[32];
+    uint64_t stdout_len;
+    int error;
+};
+
+static void call_entry(subscript_rt_context* ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    subscript_rt_ctx_exit_script(ctx);
+}
+
+#ifdef _WIN32
+struct worker_args {
+    int id;
+    HANDLE init_done;
+    HANDLE all_initialized;
+    HANDLE turns[4];
+    volatile LONG* ready;
+    struct worker_result* result;
+};
+
+static DWORD WINAPI run_worker(LPVOID raw) {
+    struct worker_args* args = (struct worker_args*)raw;
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
+    if (ctx == NULL) {
+        args->result->error = 1;
+        return 0;
+    }
+    if (args->id == 1) WaitForSingleObject(args->init_done, INFINITE);
+    call_entry(ctx, subscript_init);
+    if (args->id == 0) SetEvent(args->init_done);
+    if (InterlockedIncrement(args->ready) == 2) SetEvent(args->all_initialized);
+    WaitForSingleObject(args->all_initialized, INFINITE);
+
+    for (int round = 0; round < 2; ++round) {
+        const int turn = round * 2 + args->id;
+        WaitForSingleObject(args->turns[turn], INFINITE);
+        call_entry(ctx, subscript_export_advance);
+        if (turn + 1 < 4) SetEvent(args->turns[turn + 1]);
+    }
+
+    args->result->stdout_len = 0;
+    const uint8_t* bytes = subscript_rt_ctx_stdout(ctx, &args->result->stdout_len);
+    if (args->result->stdout_len > sizeof args->result->stdout_bytes) {
+        args->result->error = 2;
+    } else if (args->result->stdout_len > 0) {
+        memcpy(args->result->stdout_bytes, bytes, (size_t)args->result->stdout_len);
+    }
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) args->result->error = 3;
+    subscript_rt_ctx_release(ctx);
+    return 0;
+}
+#else
+struct coordinator {
+    pthread_mutex_t mutex;
+    pthread_cond_t condition;
+    int init_done;
+    int ready;
+    int turn;
+};
+
+struct worker_args {
+    int id;
+    struct coordinator* coordinator;
+    struct worker_result* result;
+};
+
+static void* run_worker(void* raw) {
+    struct worker_args* args = (struct worker_args*)raw;
+    struct coordinator* coordinator = args->coordinator;
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
+    if (ctx == NULL) {
+        args->result->error = 1;
+        return NULL;
+    }
+
+    pthread_mutex_lock(&coordinator->mutex);
+    while (args->id == 1 && !coordinator->init_done) {
+        pthread_cond_wait(&coordinator->condition, &coordinator->mutex);
+    }
+    pthread_mutex_unlock(&coordinator->mutex);
+    call_entry(ctx, subscript_init);
+    pthread_mutex_lock(&coordinator->mutex);
+    if (args->id == 0) coordinator->init_done = 1;
+    coordinator->ready += 1;
+    pthread_cond_broadcast(&coordinator->condition);
+    while (coordinator->ready != 2) {
+        pthread_cond_wait(&coordinator->condition, &coordinator->mutex);
+    }
+    pthread_mutex_unlock(&coordinator->mutex);
+
+    for (int round = 0; round < 2; ++round) {
+        const int expected_turn = round * 2 + args->id;
+        pthread_mutex_lock(&coordinator->mutex);
+        while (coordinator->turn != expected_turn) {
+            pthread_cond_wait(&coordinator->condition, &coordinator->mutex);
+        }
+        pthread_mutex_unlock(&coordinator->mutex);
+        call_entry(ctx, subscript_export_advance);
+        pthread_mutex_lock(&coordinator->mutex);
+        coordinator->turn += 1;
+        pthread_cond_broadcast(&coordinator->condition);
+        pthread_mutex_unlock(&coordinator->mutex);
+    }
+
+    args->result->stdout_len = 0;
+    const uint8_t* bytes = subscript_rt_ctx_stdout(ctx, &args->result->stdout_len);
+    if (args->result->stdout_len > sizeof args->result->stdout_bytes) {
+        args->result->error = 2;
+    } else if (args->result->stdout_len > 0) {
+        memcpy(args->result->stdout_bytes, bytes, (size_t)args->result->stdout_len);
+    }
+    if (subscript_rt_ctx_trap_kind(ctx) != 0) args->result->error = 3;
+    subscript_rt_ctx_release(ctx);
+    return NULL;
+}
+#endif
+
+static int compare_result(
+    const struct worker_result* result,
+    const uint8_t* reference,
+    uint64_t reference_len,
+    int index) {
+    if (result->error != 0 || result->stdout_len != reference_len ||
+        memcmp(result->stdout_bytes, reference, (size_t)reference_len) != 0) {
+        fprintf(stderr, "Context %d stdout: ", index);
+        fwrite(result->stdout_bytes, 1, (size_t)result->stdout_len, stderr);
+        fprintf(stderr, "single-Context reference: ");
+        fwrite(reference, 1, (size_t)reference_len, stderr);
+        return 30 + index;
+    }
+    return 0;
+}
+
+int main(void) {
+    uint8_t reference[32];
+    uint64_t reference_len = 0;
+    subscript_rt_context* reference_ctx = subscript_rt_ctx_new();
+    if (reference_ctx == NULL) return 2;
+    call_entry(reference_ctx, subscript_init);
+    call_entry(reference_ctx, subscript_export_advance);
+    call_entry(reference_ctx, subscript_export_advance);
+    const uint8_t* reference_bytes = subscript_rt_ctx_stdout(reference_ctx, &reference_len);
+    if (reference_len > sizeof reference) return 3;
+    memcpy(reference, reference_bytes, (size_t)reference_len);
+    subscript_rt_ctx_release(reference_ctx);
+
+    struct worker_result results[2] = {0};
+#ifdef _WIN32
+    volatile LONG ready = 0;
+    HANDLE init_done = CreateEvent(NULL, TRUE, FALSE, NULL);
+    HANDLE all_initialized = CreateEvent(NULL, TRUE, FALSE, NULL);
+    HANDLE turns[4];
+    for (int i = 0; i < 4; ++i) turns[i] = CreateEvent(NULL, FALSE, i == 0, NULL);
+    struct worker_args args[2] = {
+        {0, init_done, all_initialized, {turns[0], turns[1], turns[2], turns[3]}, &ready, &results[0]},
+        {1, init_done, all_initialized, {turns[0], turns[1], turns[2], turns[3]}, &ready, &results[1]},
+    };
+    HANDLE threads[2] = {
+        CreateThread(NULL, 0, run_worker, &args[0], 0, NULL),
+        CreateThread(NULL, 0, run_worker, &args[1], 0, NULL),
+    };
+    WaitForMultipleObjects(2, threads, TRUE, INFINITE);
+    for (int i = 0; i < 2; ++i) CloseHandle(threads[i]);
+    CloseHandle(init_done);
+    CloseHandle(all_initialized);
+    for (int i = 0; i < 4; ++i) CloseHandle(turns[i]);
+#else
+    struct coordinator coordinator = {
+        PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0, 0
+    };
+    struct worker_args args[2] = {
+        {0, &coordinator, &results[0]},
+        {1, &coordinator, &results[1]},
+    };
+    pthread_t threads[2];
+    if (pthread_create(&threads[0], NULL, run_worker, &args[0]) != 0) return 4;
+    if (pthread_create(&threads[1], NULL, run_worker, &args[1]) != 0) return 5;
+    pthread_join(threads[0], NULL);
+    pthread_join(threads[1], NULL);
+    pthread_cond_destroy(&coordinator.condition);
+    pthread_mutex_destroy(&coordinator.mutex);
+#endif
+
+    int comparison = compare_result(&results[0], reference, reference_len, 0);
+    if (comparison != 0) return comparison;
+    comparison = compare_result(&results[1], reference, reference_len, 1);
+    if (comparison != 0) return comparison;
+    return 0;
+}
+"#,
+        );
+        let run = run_c_aot_with_entry(&program, &entry);
+        assert!(
+            run.status.success(),
+            "ship concurrent host exited with {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
     }
 
     /// Prefixes a test host body with the generated runtime header, so

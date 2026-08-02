@@ -41,6 +41,40 @@ change is needed for that shape.
   earlier claim that module state was already Context-owned in both
   tiers.
 
-## Round 1 result
+## Round 1 result (2026-08-02, landed)
+
+Landed per §38 in four files: `cemit.rs` (a `SubscriptModuleGlobals`
+typedef, every access through an inline accessor reading the
+Context slot at `Context::globals_offset()`, `static g_*` emission
+removed, emitter no-static test), `context.rs` (Context owns the
+block; re-init zeroes and reuses it; freed with the Context),
+`ffi.rs` (`subscript_rt_globals_init`, an internal generated-code
+ABI kept out of the public host header), `aot.rs` (the two-thread ×
+two-Context harness, ship tier interleaved deterministically by a
+pthread condvar coordinator in the C host).
+
+Red first: at the pre-fix pin the ship harness failed with
+Context 0 printing `1\n3\n` against the single-Context reference
+`1\n2\n` — the shared-static interleave §38 predicted; the dev half
+already passed.
+
+Reviewer verification: gate 48 harnesses, 809 passed, 0 failed,
+exit 0 read directly; `tsc -p tsconfig.json` exit 0; no golden and
+no generated header moved.
+
+Benchmark (§38.2-4), reviewer-run, serialized, `--warmup 8`, all
+three runs passing the §9 noise check: pre-§38 HEAD 1.52× of the
+hand-C baseline (median 6.270 ms); §38 tree 1.48× and 1.56×
+(medians 6.18–6.23 ms). Absolute medians agree within 1.5% —
+**no regression attributable to the indirection** on this workload.
+Two observations recorded, not findings against §38: (1) today's
+machine state measures ~1.5× where the committed §11 record says
+1.05× — an environment-level discrepancy that predates §38 (both
+sides of the A/B show it equally); (2) `a22`'s only mutable module
+global is the LCG seed, so this benchmark has limited sensitivity
+to global-access cost; a global-heavy microcase is worth adding
+only if evidence demands it.
+
+## Round 2 result
 
 (pending)

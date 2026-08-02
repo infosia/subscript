@@ -509,8 +509,33 @@ impl<'m> Emitter<'m> {
         let mut typedefs = String::new();
         self.emit_type_definitions(&mut typedefs)?;
 
-        // Globals.
+        // Module state. The one layout-fixed block is allocated per
+        // Context by subscript_init; only immutable lookup data remains
+        // process-wide.
         let mut globals = String::new();
+        globals.push_str("typedef struct SubscriptModuleGlobals {\n");
+        if self.module.globals.is_empty() {
+            globals.push_str("    unsigned char subscript_empty;\n");
+        } else {
+            for g in &self.module.globals {
+                let _ = writeln!(
+                    globals,
+                    "    {} g_{};",
+                    self.ctype(&g.ty)?,
+                    sanitize(&g.name)
+                );
+            }
+        }
+        globals.push_str("} SubscriptModuleGlobals;\n");
+        let globals_offset = rtc::Context::globals_offset();
+        let _ = writeln!(
+            globals,
+            "static inline SubscriptModuleGlobals* subscript_globals(void* ctx) {{\n\
+             \x20   SubscriptModuleGlobals* globals;\n\
+             \x20   memcpy(&globals, (const unsigned char*)ctx + {globals_offset}u, sizeof globals);\n\
+             \x20   return globals;\n\
+             }}"
+        );
         if !self.module.string_aliases.is_empty() {
             globals.push_str(
                 "typedef struct {\n\
@@ -534,10 +559,6 @@ impl<'m> Emitter<'m> {
                 globals.push_str("};\n");
             }
         }
-        for g in &self.module.globals {
-            let _ = writeln!(globals, "static {} g_{};", self.ctype(&g.ty)?, sanitize(&g.name));
-        }
-
         // Bodies (which append prototypes and helper definitions as they
         // discover lambdas and function-reference wrappers).
         let mut bodies = String::new();
@@ -1281,16 +1302,24 @@ impl<'m> Emitter<'m> {
     fn emit_init(&mut self, out: &mut String) -> Result<(), String> {
         let _ = writeln!(out, "void subscript_init(subscript_rt_context* ctx) {{");
         self.begin_fn(ThisCtx::None, Type::Void);
+        let _ = writeln!(
+            out,
+            "    if (subscript_rt_globals_init(ctx, sizeof(SubscriptModuleGlobals), _Alignof(SubscriptModuleGlobals)) == (void*)0) return;"
+        );
         let globals: Vec<hir::Global> = self.module.globals.to_vec();
         for g in &globals {
             let v = self.eval(&g.init, out, 1)?;
-            let _ = writeln!(out, "    g_{} = {v};", sanitize(&g.name));
+            let slot = self.global_ref(&g.name);
+            let _ = writeln!(out, "    {slot} = {v};");
             // A managed global (or managed-interior aggregate global) is
             // a permanent collection root (M1): `managed_words` words,
             // as in the CLIF path's `root_add`.
             let words = managed_words(&self.layouts, &g.ty)?;
             if words > 0 {
-                let _ = writeln!(out, "    subscript_rt_root_add(ctx, &g_{}, {words}ull);", sanitize(&g.name));
+                let _ = writeln!(
+                    out,
+                    "    subscript_rt_root_add(ctx, &({slot}), {words}ull);"
+                );
             }
         }
         let _ = writeln!(out, "}}\n");
@@ -2161,7 +2190,7 @@ impl<'m> Emitter<'m> {
         use hir::ExprKind as K;
         match &e.kind {
             K::Local(name) => Ok(self.local_ref(name)),
-            K::Global(name) => Ok(format!("g_{}", sanitize(name))),
+            K::Global(name) => Ok(self.global_ref(name)),
             K::This => self.current_this_expr(),
             K::Field { obj, name } => {
                 let (base, arrow) = self.field_base(obj, sites, out, depth)?;
@@ -2318,6 +2347,10 @@ impl<'m> Emitter<'m> {
         sanitize(name)
     }
 
+    fn global_ref(&self, name: &str) -> String {
+        format!("subscript_globals(ctx)->g_{}", sanitize(name))
+    }
+
     // ----- expressions -----
 
     /// Evaluates `e` to a C expression, emitting any preceding
@@ -2350,7 +2383,7 @@ impl<'m> Emitter<'m> {
             K::Null => Ok("((void*)0)".to_string()),
             K::This => self.current_this_expr(),
             K::Local(name) => Ok(self.local_ref(name)),
-            K::Global(name) => Ok(format!("g_{}", sanitize(name))),
+            K::Global(name) => Ok(self.global_ref(name)),
             K::FuncRef(name) => self.func_ref_value(name),
             K::EnumMember { value, .. } => Ok(value.to_string()),
             K::Unary { op, operand } => {
@@ -6909,6 +6942,7 @@ const PREAMBLE: &str = concat!(
 extern void subscript_rt_print(void* ctx, const void* s);
 extern void subscript_rt_collect(void* ctx);
 extern void* subscript_rt_alloc(void* ctx, uint64_t size, uint32_t class_id, uint32_t pos_id);
+extern void* subscript_rt_globals_init(void* ctx, uint64_t size, uint64_t align);
 extern uint64_t subscript_rt_boundary_scratch_mark(void* ctx);
 extern void* subscript_rt_boundary_scratch_alloc(void* ctx, uint64_t size, uint32_t pos_id);
 extern void subscript_rt_boundary_scratch_release(void* ctx, uint64_t mark);
@@ -7320,6 +7354,40 @@ mod tests {
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
         assert!(!c.contains("subscript_rt_ctx_trap_kind(ctx)"));
+    }
+
+    #[test]
+    fn emitted_module_state_is_only_in_the_context_block() {
+        assert_eq!(
+            rtc::Context::globals_offset(),
+            16,
+            "ship C reads the fixed Context globals slot"
+        );
+        let c = emit(
+            "let moduleStateProbe: i32 = 7;\n\
+             export function main(): void {\n\
+             \x20 moduleStateProbe += 1;\n\
+             \x20 print(`${moduleStateProbe}`);\n\
+             }\n",
+        );
+        assert!(c.contains("typedef struct SubscriptModuleGlobals {"));
+        assert!(c.contains("int32_t g_moduleStateProbe;"));
+        assert!(c.contains("subscript_rt_globals_init(ctx, sizeof(SubscriptModuleGlobals)"));
+        assert!(c.contains("subscript_globals(ctx)->g_moduleStateProbe"));
+
+        let static_state: Vec<&str> = c
+            .lines()
+            .filter(|line| {
+                line.trim_start().starts_with("static ")
+                    && line
+                        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                        .any(|token| token == "g_moduleStateProbe")
+            })
+            .collect();
+        assert!(
+            static_state.is_empty(),
+            "language-visible module state was emitted as C static storage: {static_state:?}"
+        );
     }
 
     #[test]

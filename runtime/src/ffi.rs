@@ -98,6 +98,31 @@ pub unsafe extern "C" fn subscript_rt_alloc(
     unsafe { &mut *ctx }.alloc(size as usize, class_id, pos_id)
 }
 
+/// Allocates, zeroes, and installs the ship image's module-global block.
+///
+/// This is an internal generated-code ABI, not a language allocation. The
+/// block is reached through the Context globals slot and freed with the
+/// Context.
+///
+/// # Safety
+///
+/// Shared contract; `align` is the emitted C block type's alignment.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_globals_init(
+    ctx: *mut Context,
+    size: u64,
+    align: u64,
+) -> *mut u8 {
+    let Ok(size) = usize::try_from(size) else {
+        return std::ptr::null_mut();
+    };
+    let Ok(align) = usize::try_from(align) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.init_module_globals(size, align)
+}
+
 /// Begins a nested call-duration scratch scope for recursive boundary
 /// element and struct-pointer lowering (§32/§33).
 ///
