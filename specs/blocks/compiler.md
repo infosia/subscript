@@ -4576,3 +4576,60 @@ byte-identical under both tiers, or the disjointness unit test
 standing in its place with the non-reproduction recorded; (3) the
 run helpers surface partial output on abort, unit-tested; (4) no
 existing golden moves; full gates green.
+
+### 44.8 Round 5 — scale, and the hard-termination output gap
+
+The downstream dropped its failing program and generated API layer
+into the tree (2026-08-03, untracked evidence files) and reported
+three facts obtained with §44.7's output fix.
+
+**Located.** The run now prints three lines and ends at the
+`createRenderPipeline` call — the fault is inside that conversion
+and call, as its matrix said.
+
+**Visible in code.** The generator's both-present arm passes
+**seven** constructor arguments, two of which are separately built
+aggregates; every other arm builds at most one. The descriptor
+lowered by the following foreign call therefore carries, in one
+tree: a string, a nullable handle, a nested state with array pairs
+whose elements carry their own pairs, two by-value states, and two
+reach-through pointer members whose targets themselves hold array
+pairs with pointer-bearing elements. That is far more
+simultaneously-lowered positions than any entry or test here has
+built — §44.7's direct harness stopped at **six**.
+
+**Mode-sensitive.** Hoisting the two aggregates into locals does
+not remove the failure but changes how the run ends; adding more
+locals changes it again. Combined with the earlier
+`primitive`-contents flip, three independent observations now say
+the behavior depends on the scratch profile's size and shape.
+
+Rule (extending §44.7 from a small N to any N): **the scratch
+construction is correct at any number of simultaneously-lowered
+positions and any nesting depth, and no position's storage,
+address, or size depends on how many siblings precede it.** The
+existing 1..6 harness is raised to a scale that covers the
+downstream's tree, and the two axes are exercised together rather
+than separately.
+
+Corpus and tests: `a123-interop-wide-descriptor` (accept),
+Red-first — a single foreign call lowering a descriptor with the
+downstream's profile: string, nullable handle, nested aggregate
+with pointer-bearing array elements, by-value aggregates on both
+sides, and two reach-through pointer members present at once whose
+targets each hold array pairs. The direct harness is raised from
+six positions to at least thirty-two and gains combined
+breadth × depth cases.
+
+**Testability, second defect (downstream Fact 4).** §44.7's fix
+delivers output when a run ends through the non-unwinding panic
+path but not when it ends by a hard signal — including lines
+completed much earlier. Output already produced must survive
+**however** a run ends, on both tiers, with a test per termination
+mode.
+
+Exit criteria: (1) the pre-fix observation recorded; (2) `a123`
+byte-identical under both tiers, or the raised harness standing in
+its place with the non-reproduction recorded; (3) output survives
+each termination mode, unit-tested; (4) no existing golden moves;
+full gates green.
