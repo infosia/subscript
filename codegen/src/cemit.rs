@@ -423,6 +423,9 @@ impl<'m> Emitter<'m> {
             | Type::Array(_)
             | Type::Map(_, _)
             | Type::Set(_)
+            | Type::Worker(..)
+            | Type::Inbox(_)
+            | Type::Outbox(_)
             | Type::Generator(_)
             | Type::Nullable(_)
             | Type::Null => "void*".to_string(),
@@ -473,6 +476,9 @@ impl<'m> Emitter<'m> {
             | Type::Array(_)
             | Type::Map(_, _)
             | Type::Set(_)
+            | Type::Worker(..)
+            | Type::Inbox(_)
+            | Type::Outbox(_)
             | Type::Generator(_)
             | Type::Nullable(_)
             | Type::Null => "ptr".to_string(),
@@ -591,6 +597,10 @@ impl<'m> Emitter<'m> {
                 let proto = self.fn_signature(f)?;
                 let _ = writeln!(self.protos, "{proto};");
             }
+        }
+        let _ = writeln!(self.protos, "void subscript_init(subscript_rt_context* ctx);");
+        for index in 0..self.module.worker_entries.len() {
+            self.emit_worker_entry_adapter(index)?;
         }
 
         // Definitions.
@@ -1289,6 +1299,9 @@ impl<'m> Emitter<'m> {
             | Type::Array(_)
             | Type::Map(_, _)
             | Type::Set(_)
+            | Type::Worker(..)
+            | Type::Inbox(_)
+            | Type::Outbox(_)
             | Type::Generator(_)
             | Type::Nullable(_)
             | Type::Null => "0".to_string(),
@@ -3617,8 +3630,75 @@ impl<'m> Emitter<'m> {
             hir::Callee::Set(f) => {
                 self.eval_set_call(*f, args, ret_ty, pos, out, depth, checked)
             }
+            hir::Callee::Worker(function) => {
+                self.eval_worker_call(*function, args, ret_ty, out, depth, checked)
+            }
             other => Err(format!("callee {other:?} is outside the run set's scope")),
         }
+    }
+
+    /// Emits one Q35 call through the runtime's fixed worker/channel C API.
+    fn eval_worker_call(
+        &mut self,
+        function: hir::WorkerFn,
+        args: &[hir::Expr],
+        ret_ty: &Type,
+        out: &mut String,
+        depth: usize,
+        checked: bool,
+    ) -> Result<String, String> {
+        use hir::WorkerFn as W;
+        let call = match function {
+            W::Spawn(index) => {
+                if !args.is_empty() {
+                    return Err("Worker.spawn retained source arguments".to_string());
+                }
+                let entry = self
+                    .module
+                    .worker_entries
+                    .get(index)
+                    .ok_or_else(|| format!("worker entry index {index} out of range"))?;
+                let input = self.class_name(entry.input)?;
+                let output = self.class_name(entry.output)?;
+                format!(
+                    "subscript_rt_worker_spawn(ctx, subscript_init, subscript_worker_entry{index}, sizeof({input}), sizeof({output}))"
+                )
+            }
+            W::Post
+            | W::Poll
+            | W::Close
+            | W::Join
+            | W::InboxWait
+            | W::InboxPoll
+            | W::OutboxPost => {
+                let expected = if matches!(function, W::Post | W::OutboxPost) {
+                    2
+                } else {
+                    1
+                };
+                if args.len() != expected {
+                    return Err(format!(
+                        "Worker intrinsic {function:?} has {} argument(s), expected {expected}",
+                        args.len()
+                    ));
+                }
+                let operands = self.eval_list(args, out, depth)?;
+                let symbol = match function {
+                    W::Post => "subscript_rt_worker_post",
+                    W::Poll => "subscript_rt_worker_poll",
+                    W::Close => "subscript_rt_worker_close",
+                    W::Join => "subscript_rt_worker_join",
+                    W::InboxWait => "subscript_rt_worker_inbox_wait",
+                    W::InboxPoll => "subscript_rt_worker_inbox_poll",
+                    W::OutboxPost => "subscript_rt_worker_outbox_post",
+                    W::Spawn(_) => unreachable!("spawn handled above"),
+                    _ => return Err(format!("unknown WorkerFn {function:?}")),
+                };
+                format!("{symbol}(ctx, {operands})")
+            }
+            _ => return Err(format!("unknown WorkerFn {function:?}")),
+        };
+        self.eval_call_with_policy(call, ret_ty, checked, out, depth)
     }
 
     /// Materializes one script-call result, checks the Context trap flag,
@@ -4237,6 +4317,41 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(self.protos, "{sig};");
         let _ = writeln!(self.helpers, "{sig} {{ {call}; }}");
         Ok(name)
+    }
+
+    /// Defines the exact runtime worker-entry ABI adapter for one checked
+    /// directly named module function.
+    fn emit_worker_entry_adapter(&mut self, index: usize) -> Result<(), String> {
+        let name = format!("subscript_worker_entry{index}");
+        if !self.wrappers.insert(name.clone()) {
+            return Ok(());
+        }
+        let entry = self
+            .module
+            .worker_entries
+            .get(index)
+            .ok_or_else(|| format!("worker entry index {index} out of range"))?;
+        let target = self.hir_fn(&entry.function)?;
+        if target.is_async
+            || target.is_generator
+            || target.ret != Type::Void
+            || target.params.len() != 2
+        {
+            return Err(format!(
+                "worker entry `{}` lost its checked shape",
+                entry.function
+            ));
+        }
+        let signature = format!(
+            "static void {name}(subscript_rt_context* ctx, subscript_rt_worker_inbox* inbox, subscript_rt_worker_outbox* outbox)"
+        );
+        let target_name = Emitter::fn_c_name(target);
+        let _ = writeln!(self.protos, "{signature};");
+        let _ = writeln!(
+            self.helpers,
+            "{signature} {{ {target_name}(ctx, inbox, outbox); }}"
+        );
+        Ok(())
     }
 
     /// Defines the typed C callback adapter used by `Map.groupBy`.
@@ -6286,6 +6401,11 @@ fn collect_aggr_ty(ty: &Type, set: &mut Vec<Type>) {
             collect_aggr_ty(k, set);
             collect_aggr_ty(v, set);
         }
+        Type::Worker(input, output) => {
+            collect_aggr_ty(input, set);
+            collect_aggr_ty(output, set);
+        }
+        Type::Inbox(message) | Type::Outbox(message) => collect_aggr_ty(message, set),
         Type::Func(ft) => {
             for p in &ft.params {
                 collect_aggr_ty(p, set);

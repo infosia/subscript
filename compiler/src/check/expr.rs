@@ -8,9 +8,9 @@ use swc_ecma_ast as ast;
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
     self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn,
-    NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp,
+    NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
 };
-use crate::types::{FuncType, Type};
+use crate::types::{ClassId, FuncType, Type};
 
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
 
@@ -1497,6 +1497,13 @@ impl<'p> Checker<'p> {
                 }
                 let first = self.check_expr(&elems[0].expr, None, fx);
                 let elem_ty = first.ty.clone();
+                if Self::is_context_affine_type(&elem_ty) {
+                    self.error(
+                        RuleCode::S100,
+                        "Worker, Inbox, and Outbox values may not be array elements",
+                        first.pos.clone(),
+                    );
+                }
                 let mut out = vec![first];
                 for e in &elems[1..] {
                     let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
@@ -1763,6 +1770,13 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         };
+        if Self::is_context_affine_type(&elem_ty) {
+            self.error(
+                RuleCode::S100,
+                "Worker, Inbox, and Outbox values may not be array elements",
+                pos.clone(),
+            );
+        }
         hir::Expr {
             kind: ExprKind::ArraySpreadLit(checked),
             ty: Type::Array(Box::new(elem_ty)),
@@ -2280,6 +2294,237 @@ impl<'p> Checker<'p> {
             .rev()
             .any(|scope| scope.vars.contains_key("RegExp"));
         !shadowed && self.scope_item("RegExp").is_none()
+    }
+
+    /// True when `Worker` resolves to Q35's ambient static namespace rather
+    /// than a local or program declaration.
+    fn worker_is_ambient(&self, fx: &FnCtx) -> bool {
+        let shadowed = fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.vars.contains_key("Worker"));
+        !shadowed && self.scope_item("Worker").is_none()
+    }
+
+    /// Returns the innermost non-transferable field in one Q35 message
+    /// payload. Value classes and FixedArray elements are descended
+    /// recursively; a reference-class field is itself the offending leaf.
+    fn non_transferable_message_field(
+        &self,
+        ty: &Type,
+        path: &str,
+        pos: &Pos,
+        visiting: &mut std::collections::HashSet<ClassId>,
+    ) -> Option<(Pos, String, Type)> {
+        match ty {
+            Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::I32
+            | Type::U32
+            | Type::I64
+            | Type::U64
+            | Type::F16
+            | Type::F32
+            | Type::F64
+            | Type::Bool
+            | Type::Enum(_)
+            | Type::StringAlias(_)
+            | Type::Error => None,
+            Type::FixedArray(element, _) => {
+                self.non_transferable_message_field(element, path, pos, visiting)
+            }
+            Type::Class(id)
+                if self
+                    .classes
+                    .get(id.0)
+                    .is_some_and(|class| class.is_value) =>
+            {
+                if !visiting.insert(*id) {
+                    return None;
+                }
+                let class = &self.classes[id.0];
+                let result = class.fields.iter().find_map(|field| {
+                    let nested = format!("{path}.{}", field.name);
+                    self.non_transferable_message_field(
+                        &field.ty,
+                        &nested,
+                        &field.pos,
+                        visiting,
+                    )
+                });
+                visiting.remove(id);
+                result
+            }
+            other => Some((pos.clone(), path.to_string(), other.clone())),
+        }
+    }
+
+    fn validate_message_class(&mut self, id: ClassId) -> bool {
+        let class = self.classes[id.0].clone();
+        for field in &class.fields {
+            let path = format!("{}.{}", class.name, field.name);
+            if let Some((pos, path, ty)) = self.non_transferable_message_field(
+                &field.ty,
+                &path,
+                &field.pos,
+                &mut std::collections::HashSet::new(),
+            ) {
+                let type_name = self.type_name(&ty);
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "message class `{}` is not transferable: innermost field `{path}` has non-transferable type `{type_name}`",
+                        class.name
+                    ),
+                    pos,
+                );
+                return false;
+            }
+        }
+        true
+    }
+
+    fn check_worker_spawn(
+        &mut self,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        if c.args.len() != 1 || c.args.first().is_some_and(|argument| argument.spread.is_some()) {
+            self.error(
+                RuleCode::S100,
+                format!("`Worker.spawn` expects one directly named entry function, got {} argument(s)", c.args.len()),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        let argument = &c.args[0].expr;
+        let mut entry_expr: &ast::Expr = argument;
+        while let ast::Expr::Paren(paren) = entry_expr {
+            entry_expr = &paren.expr;
+        }
+        let ast::Expr::Ident(ident) = entry_expr else {
+            self.error(
+                RuleCode::S100,
+                "`Worker.spawn` entry must be a directly named module-level function; lambdas and other values are not worker entries",
+                self.pos(argument.span()),
+            );
+            return self.err_expr(pos);
+        };
+        if fx
+            .scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.vars.contains_key(ident.sym.as_ref()))
+        {
+            self.error(
+                RuleCode::S100,
+                "`Worker.spawn` entry must name a module-level function directly, not a local function value",
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        }
+        let Some(ScopeItem::Func(function)) = self.scope_item(ident.sym.as_ref()) else {
+            self.error(
+                RuleCode::S100,
+                "`Worker.spawn` entry must name a non-generic module-level function directly",
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        };
+        let Some(sig) = self.fn_sigs.get(&function).cloned() else {
+            return self.err_expr(pos);
+        };
+        if sig.is_async {
+            self.error(
+                RuleCode::S100,
+                "`Worker.spawn` entry must be synchronous; async worker entries are rejected",
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        }
+        if sig.is_generator
+            || sig.ret != Type::Void
+            || sig.params.len() != 2
+            || sig.params.iter().any(|parameter| parameter.has_default)
+        {
+            self.error(
+                RuleCode::S100,
+                "`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`",
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        }
+        let (input, output) = match (&sig.params[0].ty, &sig.params[1].ty) {
+            (Type::Inbox(input), Type::Outbox(output)) => {
+                ((**input).clone(), (**output).clone())
+            }
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    "`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`",
+                    self.pos(ident.span),
+                );
+                return self.err_expr(pos);
+            }
+        };
+        let (Type::Class(input_id), Type::Class(output_id)) = (&input, &output) else {
+            return self.err_expr(pos);
+        };
+
+        if let Some(type_args) = &c.type_args {
+            if type_args.params.len() != 2 {
+                self.error(
+                    RuleCode::S100,
+                    "`Worker.spawn` takes exactly two explicit type arguments",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let explicit_input = self.resolve_type(&type_args.params[0]);
+            let explicit_output = self.resolve_type(&type_args.params[1]);
+            if explicit_input != input || explicit_output != output {
+                self.error(
+                    RuleCode::S100,
+                    "`Worker.spawn` type arguments must exactly match its entry's Inbox/Outbox message classes",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+        }
+
+        let mut valid = self.validate_message_class(*input_id);
+        if input_id != output_id {
+            valid &= self.validate_message_class(*output_id);
+        }
+        if !valid {
+            return self.err_expr(pos);
+        }
+        let worker_entry = hir::WorkerEntry {
+            function,
+            input: *input_id,
+            output: *output_id,
+        };
+        let entry_index = self
+            .worker_entries
+            .iter()
+            .position(|entry| entry == &worker_entry)
+            .unwrap_or_else(|| {
+                let index = self.worker_entries.len();
+                self.worker_entries.push(worker_entry);
+                index
+            });
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Worker(WorkerFn::Spawn(entry_index)),
+                args: Vec::new(),
+            },
+            ty: Type::Worker(Box::new(input), Box::new(output)),
+            pos,
+        }
     }
 
     fn check_regex_new(&mut self, n: &ast::NewExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
@@ -5123,6 +5368,19 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Worker")
+            && self.worker_is_ambient(fx)
+        {
+            if name == "spawn" {
+                return self.check_worker_spawn(c, fx, pos);
+            }
+            self.error(
+                RuleCode::S100,
+                format!("`Worker` has no static method `{name}`"),
+                prop_pos,
+            );
+            return self.err_expr(pos);
+        }
         // `Context.collect()` / `Context.free(value)` (Q6/Q7): ambient
         // namespace calls lower through the existing ambient-call path.
         if self.is_context_namespace(&m.obj, fx) {
@@ -5201,6 +5459,96 @@ impl<'p> Checker<'p> {
             }
             Type::Set(key) => {
                 self.check_set_method(recv, *key, &name, c, fx, pos, prop_pos)
+            }
+            Type::Worker(input, output) => {
+                let (function, params, ret) = match name.as_str() {
+                    "post" => (
+                        WorkerFn::Post,
+                        vec![ParamSig {
+                            name: "message".to_string(),
+                            ty: (*input).clone(),
+                            has_default: false,
+                        }],
+                        Type::Void,
+                    ),
+                    "poll" => (
+                        WorkerFn::Poll,
+                        Vec::new(),
+                        Type::Nullable(output.clone()),
+                    ),
+                    "close" => (WorkerFn::Close, Vec::new(), Type::Void),
+                    "join" => (WorkerFn::Join, Vec::new(), Type::Void),
+                    _ => {
+                        let type_name = self.type_name(&Type::Worker(input, output));
+                        self.error(
+                            RuleCode::S100,
+                            format!("`{type_name}` has no method `{name}`"),
+                            prop_pos,
+                        );
+                        return self.err_expr(pos);
+                    }
+                };
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, &name));
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Worker(function),
+                        args,
+                    },
+                    ty: ret,
+                    pos,
+                }
+            }
+            Type::Inbox(message) => {
+                let function = match name.as_str() {
+                    "wait" => WorkerFn::InboxWait,
+                    "poll" => WorkerFn::InboxPoll,
+                    _ => {
+                        let type_name = self.type_name(&Type::Inbox(message));
+                        self.error(
+                            RuleCode::S100,
+                            format!("`{type_name}` has no method `{name}`"),
+                            prop_pos,
+                        );
+                        return self.err_expr(pos);
+                    }
+                };
+                let mut args = vec![recv];
+                args.extend(self.check_args(&[], &c.args, fx, &pos, &name));
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Worker(function),
+                        args,
+                    },
+                    ty: Type::Nullable(message),
+                    pos,
+                }
+            }
+            Type::Outbox(message) => {
+                if name != "post" {
+                    let type_name = self.type_name(&Type::Outbox(message));
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{type_name}` has no method `{name}`"),
+                        prop_pos,
+                    );
+                    return self.err_expr(pos);
+                }
+                let params = [ParamSig {
+                    name: "message".to_string(),
+                    ty: (*message).clone(),
+                    has_default: false,
+                }];
+                let mut args = vec![recv];
+                args.extend(self.check_args(&params, &c.args, fx, &pos, &name));
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Worker(WorkerFn::OutboxPost),
+                        args,
+                    },
+                    ty: Type::Void,
+                    pos,
+                }
             }
             Type::Array(elem) => match name.as_str() {
                 "push" => {
@@ -5440,6 +5788,16 @@ impl<'p> Checker<'p> {
             self.error(
                 RuleCode::S013,
                 "Promise objects cannot be constructed; async functions expose no Promise object surface",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        if matches!(name.as_str(), "Worker" | "Inbox" | "Outbox")
+            && self.scope_item(&name).is_none()
+        {
+            self.error(
+                RuleCode::S100,
+                format!("`new {name}` is rejected; Q35 worker handles and endpoints are runtime-created"),
                 pos.clone(),
             );
             return self.err_expr(pos);

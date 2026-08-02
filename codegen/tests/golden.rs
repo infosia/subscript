@@ -424,11 +424,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // struct-pointer-member lowering (a106), and R11 handle parameter
     // pairs (a107), R12 nullable handle parameters (a108), and OBS-1
     // null-only boundary type reachability (a109), and R13 async instance
-    // methods (a110–a111).
+    // methods (a110–a111), and Q35 workers (a112–a113).
     assert_eq!(
         golden_ids.len(),
-        111,
-        "expected exactly 111 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        113,
+        "expected exactly 113 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -445,8 +445,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          aggregate interop, a103–a105 R9 recursive lowering, and a106 R10 \
          struct-pointer-member lowering, and a107 R11 handle parameter-pair \
          interop, a108 R12 nullable handle parameter interop, a109 OBS-1 \
-         null-only boundary type reachability, and a110–a111 R13 async \
-         instance-method goldens, found {}",
+         null-only boundary type reachability, a110–a111 R13 async \
+         instance-method goldens, and a112–a113 Q35 worker goldens, found {}",
         golden_ids.len()
     );
 

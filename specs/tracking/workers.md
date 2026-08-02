@@ -115,6 +115,37 @@ trap-kind-22 propagation on join, two concurrent workers with
 per-worker set assertions only, and parent release with a live
 blocked worker.
 
-## Round 3 result
+## Round 3 result (2026-08-02, landed — arc complete)
 
-(pending)
+Landed per §40 across 24 files: built-in `Worker`/`Inbox`/`Outbox`
+generics monomorphized per message-class pair; entry, transferable,
+affinity (all four escape positions unit-tested), and `new`
+rejections; both tiers lower onto the §39 C API (payload sizes from
+C layout, materialized nullable results); `ReloadSession::reload`
+refuses with `LiveWorkers` while workers are live; prelude gains
+the §16.1 ambient; generated docs regenerated with a Q35 block.
+
+Corpus: `a112`/`a113` byte-identical under both tiers;
+`r106`–`r110` pin code and line. `tsc` findings recorded in the
+headers: r106 **and** r107 are `tsc`-clean strictly-narrower pins
+(stock TS permits a Promise-returning function in a
+void-callback position), r110 is `tsc`-rejected too (TS2673,
+private constructor).
+
+Example `e11-parallel-workers`: four workers, ranges posted first,
+joins after, per-worker counts printed in worker order. The golden
+is externally checkable: 1229/1033/983/958, total 4203 = π(40000),
+matching the known prime-counting values.
+
+Reviewer verification: gate 48 harnesses, 823 passed, 0 failed,
+exit 0 read directly; `tsc` exit 0; golden sweep 113 entries, 0
+skipped; zero-warning sweep green; no existing golden moved.
+**Parallelism verified physically**, not structurally: a scaled
+probe (ranges ×100, π(4 000 000) = 283 146, matches the known
+value) measured user CPU 0.63 s against real 0.22 s — 2.9× wall
+utilization across the four workers under the dev tier via
+`subscript run`.
+
+The arc is complete: §38 `1314d9d`, §39 `afd5b82`, §40 in this
+commit. A no-context review of the cumulative arc diff follows as
+the closing step.

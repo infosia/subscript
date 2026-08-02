@@ -113,6 +113,19 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r104-async-generic-class-method.ts", RuleCode::S100, 8),
     ("r105-floating-async-method-call.ts", RuleCode::S013, 16),
     (
+        "r106-capturing-lambda-worker-entry.ts",
+        RuleCode::S100,
+        15,
+    ),
+    ("r107-async-worker-entry.ts", RuleCode::S100, 20),
+    (
+        "r108-string-field-worker-message.ts",
+        RuleCode::S100,
+        8,
+    ),
+    ("r109-worker-module-global.ts", RuleCode::S100, 18),
+    ("r110-new-worker.ts", RuleCode::S100, 13),
+    (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
         10,
@@ -249,8 +262,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        101,
-        "expected 89 standing reject entries, the seven-entry P23 battery, and five R13 entries"
+        106,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, and five Q35 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

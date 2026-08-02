@@ -103,6 +103,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("subscript_rt_collect", ffi::subscript_rt_collect as *const u8),
         ("subscript_rt_alloc", ffi::subscript_rt_alloc as *const u8),
         (
+            "subscript_rt_globals_init",
+            ffi::subscript_rt_globals_init as *const u8,
+        ),
+        (
             "subscript_rt_boundary_scratch_mark",
             ffi::subscript_rt_boundary_scratch_mark as *const u8,
         ),
@@ -493,6 +497,38 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("subscript_rt_date_now", ffi::subscript_rt_date_now as *const u8),
         ("subscript_rt_date_get", ffi::subscript_rt_date_get as *const u8),
         ("subscript_rt_date_to_iso", ffi::subscript_rt_date_to_iso as *const u8),
+        (
+            "subscript_rt_worker_spawn",
+            ffi::subscript_rt_worker_spawn as *const u8,
+        ),
+        (
+            "subscript_rt_worker_post",
+            ffi::subscript_rt_worker_post as *const u8,
+        ),
+        (
+            "subscript_rt_worker_poll",
+            ffi::subscript_rt_worker_poll as *const u8,
+        ),
+        (
+            "subscript_rt_worker_close",
+            ffi::subscript_rt_worker_close as *const u8,
+        ),
+        (
+            "subscript_rt_worker_join",
+            ffi::subscript_rt_worker_join as *const u8,
+        ),
+        (
+            "subscript_rt_worker_inbox_wait",
+            ffi::subscript_rt_worker_inbox_wait as *const u8,
+        ),
+        (
+            "subscript_rt_worker_inbox_poll",
+            ffi::subscript_rt_worker_inbox_poll as *const u8,
+        ),
+        (
+            "subscript_rt_worker_outbox_post",
+            ffi::subscript_rt_worker_outbox_post as *const u8,
+        ),
     ];
     for (name, addr) in syms {
         builder.symbol(*name, *addr);

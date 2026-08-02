@@ -170,6 +170,7 @@ impl Worker {
         input_payload_size: usize,
         output_payload_size: usize,
         releasing_context: bool,
+        fn_table: usize,
     ) -> std::io::Result<Box<Worker>> {
         let input = Arc::new(Queue::new(input_payload_size));
         let output = Arc::new(Queue::new(output_payload_size));
@@ -182,6 +183,7 @@ impl Worker {
                 thread_input,
                 thread_output,
                 releasing_context,
+                fn_table,
             )
         })?;
         Ok(Box::new(Worker {
@@ -242,6 +244,7 @@ impl WorkerSet {
         input_payload_size: usize,
         output_payload_size: usize,
         releasing_context: bool,
+        fn_table: usize,
     ) -> std::io::Result<*mut Worker> {
         let mut worker = Worker::start(
             init,
@@ -249,6 +252,7 @@ impl WorkerSet {
             input_payload_size,
             output_payload_size,
             releasing_context,
+            fn_table,
         )?;
         let handle = std::ptr::from_mut(worker.as_mut());
         self.workers.push(worker);
@@ -290,6 +294,10 @@ impl WorkerSet {
         }
     }
 
+    pub(crate) fn has_live_workers(&self) -> bool {
+        self.workers.iter().any(|worker| worker.thread.is_some())
+    }
+
     fn find(&self, handle: *mut Worker) -> Option<&Worker> {
         if handle.is_null() {
             return None;
@@ -323,8 +331,10 @@ fn run_worker(
     input: Arc<Queue>,
     output: Arc<Queue>,
     releasing_context: bool,
+    fn_table: usize,
 ) -> WorkerOutcome {
     let mut ctx = Context::new_worker(releasing_context);
+    ctx.set_fn_table(fn_table as *const *const u8);
     let ctx_ptr = std::ptr::from_mut(ctx.as_mut());
     let mut inbox = WorkerInbox { queue: input };
     let mut outbox = WorkerOutbox { queue: output };

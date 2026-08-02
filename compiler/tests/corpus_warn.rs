@@ -146,7 +146,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         "corpus/accept/a19-modules produced warnings: {warnings:?}"
     );
     checked_files += 2;
-    assert_eq!(checked_files, 112, "accept source-file count changed");
+    assert_eq!(checked_files, 114, "accept source-file count changed");
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");
@@ -179,7 +179,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
             "examples/{name} produced warnings: {warnings:?}"
         );
     }
-    assert_eq!(example_entries.len(), 10, "numbered example count changed");
+    assert_eq!(example_entries.len(), 11, "numbered example count changed");
 
     for relative in ["hot-reload/demo.ts", "rust-host/logic.ts"] {
         let path = examples.join(relative);

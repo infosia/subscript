@@ -24,6 +24,9 @@ pub struct Module {
     /// Free functions, including monomorphized generic instances.
     /// Constructors and methods live on their [`ClassDef`].
     pub functions: Vec<Function>,
+    /// Q35 worker-entry adapters required by `Worker.spawn` call sites,
+    /// deduplicated by directly named function and message-class pair.
+    pub worker_entries: Vec<WorkerEntry>,
     /// Foreign (C-ABI) functions declared by an ingested ambient mirror
     /// (`declare function` in a `.d.ts`, P5.2). They carry a signature
     /// but no body; lowering a call to one is P5.2b, not P5.2a.
@@ -34,6 +37,18 @@ pub struct Module {
     /// Checked top-level non-declaration statements, in source order
     /// (the accept corpus has none; kept for completeness).
     pub top_level: Vec<Stmt>,
+}
+
+/// One monomorphized Q35 runtime-to-script worker entry adapter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WorkerEntry {
+    /// Directly named module-level script function.
+    pub function: String,
+    /// Parent-to-worker message class.
+    pub input: ClassId,
+    /// Worker-to-parent message class.
+    pub output: ClassId,
 }
 
 /// Stable index into [`Module::foreign_mirrors`].
@@ -2544,6 +2559,8 @@ pub enum Callee {
     Map(MapFn),
     /// A `Set<K>` operation intrinsic (stdlib.md §10, Q24).
     Set(SetFn),
+    /// A Q35 worker or channel-endpoint intrinsic.
+    Worker(WorkerFn),
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members
@@ -2576,8 +2593,31 @@ impl Callee {
             Callee::Arr(f) => f.can_trap(),
             Callee::Map(f) => f.can_trap(),
             Callee::Set(f) => f.can_trap(),
+            Callee::Worker(_) => true,
         }
     }
+}
+
+/// Q35 worker/channel operations lowered onto the runtime worker C API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WorkerFn {
+    /// `Worker.spawn(entry)`; indexes [`Module::worker_entries`].
+    Spawn(usize),
+    /// Parent-side `Worker.post(message)`.
+    Post,
+    /// Parent-side non-blocking `Worker.poll()`.
+    Poll,
+    /// Parent-side `Worker.close()`.
+    Close,
+    /// Parent-side blocking `Worker.join()`.
+    Join,
+    /// Worker-side blocking `Inbox.wait()`.
+    InboxWait,
+    /// Worker-side non-blocking `Inbox.poll()`.
+    InboxPoll,
+    /// Worker-side `Outbox.post(message)`.
+    OutboxPost,
 }
 
 /// One interpolation segment of a template literal.
@@ -3427,6 +3467,7 @@ mod tests {
             string_aliases: Vec::new(),
             globals: Vec::new(),
             functions: Vec::new(),
+            worker_entries: Vec::new(),
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),

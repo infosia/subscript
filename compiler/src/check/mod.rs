@@ -257,6 +257,7 @@ pub(crate) struct Checker<'p> {
     pub string_aliases: Vec<hir::StringAliasDef>,
     pub fn_sigs: HashMap<String, FnSig>,
     pub functions: Vec<hir::Function>,
+    pub worker_entries: Vec<hir::WorkerEntry>,
     pub global_sigs: HashMap<String, GlobalSig>,
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
@@ -340,6 +341,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         string_aliases: Vec::new(),
         fn_sigs: HashMap::new(),
         functions: Vec::new(),
+        worker_entries: Vec::new(),
         global_sigs: HashMap::new(),
         globals: Vec::new(),
         generic_fns: HashMap::new(),
@@ -430,6 +432,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
             string_aliases: ck.string_aliases,
             globals: ck.globals,
             functions: ck.functions,
+            worker_entries: ck.worker_entries,
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
@@ -448,6 +451,16 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn pos(&self, span: swc_common::Span) -> Pos {
         self.prog.pos(span)
+    }
+
+    /// True for the three Q35 Context-affine runtime handle types, including
+    /// their nullable local form.
+    pub(crate) fn is_context_affine_type(ty: &Type) -> bool {
+        match ty {
+            Type::Worker(..) | Type::Inbox(_) | Type::Outbox(_) => true,
+            Type::Nullable(inner) => Self::is_context_affine_type(inner),
+            _ => false,
+        }
     }
 
     /// Validates record targets in one ambient mirror and assigns its HIR
@@ -1500,6 +1513,13 @@ impl<'p> Checker<'p> {
                                 Type::Error
                             }
                         };
+                        if Self::is_context_affine_type(&ty) {
+                            self.error(
+                                RuleCode::S100,
+                                "Worker, Inbox, and Outbox values may not be module globals",
+                                self.pos(binding.id.span),
+                            );
+                        }
                         self.global_sigs.insert(
                             name,
                             GlobalSig {
@@ -1750,6 +1770,14 @@ impl<'p> Checker<'p> {
                             Type::Error
                         }
                     };
+                    let context_affine = Self::is_context_affine_type(&ty);
+                    if context_affine {
+                        self.error(
+                            RuleCode::S100,
+                            "Worker, Inbox, and Outbox values may not be class fields",
+                            pos.clone(),
+                        );
+                    }
                     let foreign_provenance =
                         if self.in_boundary && matches!(ty, Type::Func(_)) {
                             self.callback_provenance(
@@ -1767,6 +1795,7 @@ impl<'p> Checker<'p> {
                     // `object | null`, and function-pointer fields.
                     if is_value
                         && !self.boundary_classes.contains(&id)
+                        && !context_affine
                         && !self.value_field_ok(&ty)
                     {
                         self.error(
@@ -2408,6 +2437,15 @@ impl<'p> Checker<'p> {
         }
         let (crossed, local) = found?;
         if crossed > 0 {
+            if Self::is_context_affine_type(&local.ty) {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "lambda captures Context-affine `{name}`; Worker, Inbox, and Outbox values may not be captured"
+                    ),
+                    pos.clone(),
+                );
+            }
             if local.mutable {
                 self.error(
                     RuleCode::S009,

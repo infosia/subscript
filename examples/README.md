@@ -50,6 +50,7 @@ or its governing invariant.
 | [`e08-coroutines`](e08-coroutines.ts) | A `function*` stepped once per frame | Suspension is host-stepped; there is no event loop (async is poll-driven, Q34) | C8, Q34 |
 | [`e09-c-structs-and-slices`](e09-c-structs-and-slices.ts) | Binding `engine.h`: struct by value, slice, string view, enum, flags | The language struct is the C struct; no marshaling copy changes its layout | [Invariant 1](../CLAUDE.md#design-invariants-read-second) |
 | [`e10-c-callbacks-and-handles`](e10-c-callbacks-and-handles.ts) | Opaque-handle lifecycle, callback userdata, deferred pump delivery | Userdata lifetime is explicit; callbacks arrive on the calling thread | Q13, [compiler §14.6](../specs/blocks/compiler.md#146-permanent-non-goal--spontaneous-arbitrary-thread-callbacks) |
+| [`e11-parallel-workers`](e11-parallel-workers.ts) | Four workers count primes over disjoint ranges, then main aggregates in worker order; observe parallel execution with `time subscript run examples/e11-parallel-workers.ts`, with the four-worker count visible in the source | Workers use isolated Contexts and copy-only transferable messages, not shared state | Q35 |
 
 ## Run the examples
 

@@ -73,6 +73,14 @@ impl<'p> Checker<'p> {
             ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
             ast::TsType::TsArrayType(arr) => {
                 let elem = self.resolve_type(&arr.elem_type);
+                if Self::is_context_affine_type(&elem) {
+                    self.error(
+                        RuleCode::S100,
+                        "Worker, Inbox, and Outbox values may not be array elements",
+                        self.pos(arr.elem_type.span()),
+                    );
+                    return Type::Error;
+                }
                 Type::Array(Box::new(elem))
             }
             ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u),
@@ -175,6 +183,64 @@ impl<'p> Checker<'p> {
             return alias.clone();
         }
         match name {
+            "Worker" | "Inbox" | "Outbox" if self.scope_item(name).is_none() => {
+                let expected = if name == "Worker" { 2 } else { 1 };
+                let Some(args) = &r.type_params else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("generic reference class `{name}` requires explicit type arguments"),
+                        pos,
+                    );
+                    return Type::Error;
+                };
+                if args.params.len() != expected {
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{name}` takes exactly {expected} type argument(s)"),
+                        pos,
+                    );
+                    return Type::Error;
+                }
+                let mut messages = Vec::with_capacity(expected);
+                for argument in &args.params {
+                    let message = self.resolve_type(argument);
+                    let plain_reference = match message {
+                        Type::Class(id) => self
+                            .classes
+                            .get(id.0)
+                            .is_some_and(|class| {
+                                !class.is_value
+                                    && !class.is_descriptor
+                                    && !class.is_boundary
+                                    && !self.handle_classes.contains(&id)
+                            }),
+                        Type::Error => true,
+                        _ => false,
+                    };
+                    if !plain_reference && !matches!(message, Type::Error) {
+                        let type_name = self.type_name(&message);
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "worker message type `{type_name}` must be a plain reference class"
+                            ),
+                            self.pos(argument.span()),
+                        );
+                        messages.push(Type::Error);
+                    } else {
+                        messages.push(message);
+                    }
+                }
+                return match name {
+                    "Worker" => Type::Worker(
+                        Box::new(messages[0].clone()),
+                        Box::new(messages[1].clone()),
+                    ),
+                    "Inbox" => Type::Inbox(Box::new(messages[0].clone())),
+                    "Outbox" => Type::Outbox(Box::new(messages[0].clone())),
+                    _ => unreachable!("matched worker ambient name"),
+                };
+            }
             "RegExp" if self.scope_item(name).is_none() => {
                 if r.type_params.is_some() {
                     self.error(RuleCode::S100, "`RegExp` is not generic", pos);
@@ -213,6 +279,14 @@ impl<'p> Checker<'p> {
                     return Type::Error;
                 }
                 let elem = self.resolve_type(&args.params[0]);
+                if Self::is_context_affine_type(&elem) {
+                    self.error(
+                        RuleCode::S100,
+                        "Worker, Inbox, and Outbox values may not be array elements",
+                        self.pos(args.params[0].span()),
+                    );
+                    return Type::Error;
+                }
                 let len = match &*args.params[1] {
                     ast::TsType::TsLitType(ast::TsLitType {
                         lit: ast::TsLit::Number(n),
@@ -269,6 +343,14 @@ impl<'p> Checker<'p> {
                 if let Some(args) = &r.type_params {
                     if args.params.len() == 1 {
                         let elem = self.resolve_type(&args.params[0]);
+                        if Self::is_context_affine_type(&elem) {
+                            self.error(
+                                RuleCode::S100,
+                                "Worker, Inbox, and Outbox values may not be array elements",
+                                self.pos(args.params[0].span()),
+                            );
+                            return Type::Error;
+                        }
                         return Type::Array(Box::new(elem));
                     }
                 }

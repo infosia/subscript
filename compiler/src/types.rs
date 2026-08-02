@@ -104,6 +104,15 @@ pub enum Type {
     Map(Box<Type>, Box<Type>),
     /// Monomorphized generic reference class `Set<K>` (Q24).
     Set(Box<Type>),
+    /// Parent-side worker handle, monomorphized by its input/output
+    /// message-class pair (Q35).
+    Worker(Box<Type>, Box<Type>),
+    /// Worker-side receiving endpoint, monomorphized by message class
+    /// (Q35).
+    Inbox(Box<Type>),
+    /// Worker-side sending endpoint, monomorphized by message class
+    /// (Q35).
+    Outbox(Box<Type>),
     /// Non-capturing function type `(params) => ret`.
     Func(Box<FuncType>),
     /// `Ref | null` (C7). The inner type is a reference class, `object`,
@@ -148,6 +157,9 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         | Type::Array(_)
         | Type::Map(..)
         | Type::Set(_)
+        | Type::Worker(..)
+        | Type::Inbox(_)
+        | Type::Outbox(_)
         | Type::Generator(_)
         | Type::Nullable(_)
         | Type::Null => (8, 8),
@@ -206,7 +218,14 @@ impl Type {
     pub fn is_reference_shape(&self) -> bool {
         matches!(
             self,
-            Type::Class(_) | Type::Map(..) | Type::Set(_) | Type::Object | Type::Func(_)
+            Type::Class(_)
+                | Type::Map(..)
+                | Type::Set(_)
+                | Type::Worker(..)
+                | Type::Inbox(_)
+                | Type::Outbox(_)
+                | Type::Object
+                | Type::Func(_)
         )
     }
 }
@@ -261,6 +280,19 @@ pub fn display_type(
         Type::Set(key) => format!(
             "Set<{}>",
             display_type(key, class_name, enum_name, string_alias_name)
+        ),
+        Type::Worker(input, output) => format!(
+            "Worker<{}, {}>",
+            display_type(input, class_name, enum_name, string_alias_name),
+            display_type(output, class_name, enum_name, string_alias_name)
+        ),
+        Type::Inbox(message) => format!(
+            "Inbox<{}>",
+            display_type(message, class_name, enum_name, string_alias_name)
+        ),
+        Type::Outbox(message) => format!(
+            "Outbox<{}>",
+            display_type(message, class_name, enum_name, string_alias_name)
         ),
         Type::Func(f) => {
             let params: Vec<String> = f

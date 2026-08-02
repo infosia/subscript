@@ -648,6 +648,7 @@ impl Context {
             input_payload_size,
             output_payload_size,
             self.ship_arena,
+            self.fn_table as usize,
         ) {
             Ok(worker) => worker,
             Err(error) => {
@@ -734,6 +735,14 @@ impl Context {
                 false
             }
         }
+    }
+
+    /// True while at least one runtime-owned worker thread has not been
+    /// joined. Hot reload uses this to keep old generated code live until no
+    /// worker can execute it.
+    #[must_use]
+    pub fn has_live_workers(&self) -> bool {
+        self.workers.has_live_workers()
     }
 
     /// Enables or disables diagnostics for handles to freed allocations.

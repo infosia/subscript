@@ -403,6 +403,9 @@ impl Layouts {
             | Type::Array(_)
             | Type::Map(..)
             | Type::Set(_)
+            | Type::Worker(..)
+            | Type::Inbox(_)
+            | Type::Outbox(_)
             | Type::Generator(_)
             | Type::Nullable(_)
             | Type::Null => Repr::Scalar(types::I64),

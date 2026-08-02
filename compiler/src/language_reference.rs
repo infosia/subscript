@@ -24,6 +24,8 @@ const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are 
 
 const Q34_ASYNC: &str = "Q34/R13 has exactly three awaitable forms: `await Context.suspend()`, `await` applied directly to a named async-function call, and `await receiver.method(...)` for an async instance method on a plain non-generic reference class. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.";
 
+const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named, module-level synchronous function on an OS thread with a fresh `Context`. Its exact entry shape is `(inbox: Inbox<In>, outbox: Outbox<Out>): void`; entries cannot capture state. Message classes are monomorphized by the `In`/`Out` pair and may contain sized numerics, booleans, enums, string-literal union aliases, value classes, and `FixedArray` values composed recursively from those types. Worker handles and endpoints are context-affine: they cannot be module globals, class fields, array elements, or lambda captures, and they can only be created by `Worker.spawn`. Post all independent work before joining when parallel execution matters; `wait` and `poll` return `null` when their channel is empty or closed, and `close` plus `join` provide explicit shutdown.";
+
 const MODULES: &str = "A program may import named exports from sibling source files with a relative `./name` specifier. The entry file and its imported siblings are checked as one program; exports are the host-visible entry surface.";
 
 const COROUTINES: &str = "A `function*` coroutine yields typed values and is driven explicitly through `Generator<T>.next()` or the accepted `for...of` generator path. Suspension is caller- or host-driven; the language does not schedule coroutine steps implicitly.";
@@ -104,6 +106,19 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r103-async-cstruct-method.ts",
             "corpus/reject/r104-async-generic-class-method.ts",
             "corpus/reject/r105-floating-async-method-call.ts",
+        ],
+    },
+    Feature {
+        title: "Q35 workers",
+        prose: Q35_WORKERS,
+        corpus: &[
+            "corpus/accept/a112-worker-echo.ts",
+            "corpus/accept/a113-worker-parallel.ts",
+            "corpus/reject/r106-capturing-lambda-worker-entry.ts",
+            "corpus/reject/r107-async-worker-entry.ts",
+            "corpus/reject/r108-string-field-worker-message.ts",
+            "corpus/reject/r109-worker-module-global.ts",
+            "corpus/reject/r110-new-worker.ts",
         ],
     },
     Feature {

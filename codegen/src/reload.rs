@@ -265,6 +265,9 @@ pub enum ReloadError {
     /// Script code was on the stack (a swap may only happen between
     /// host calls into script).
     ScriptOnStack,
+    /// At least one worker may still execute code from the current
+    /// generation, so the swap must wait until every worker is joined.
+    LiveWorkers,
     /// A called foreign C symbol was absent from every native library
     /// supplied when the session was created.
     UnresolvedForeignSymbol(String),
@@ -291,6 +294,10 @@ impl std::fmt::Display for ReloadError {
                 f,
                 "reload refused: script code is on the stack; swaps happen \
                  only between host calls into script"
+            ),
+            ReloadError::LiveWorkers => write!(
+                f,
+                "reload refused: the Context has live workers; join them before swapping code"
             ),
             ReloadError::UnresolvedForeignSymbol(name) => write!(
                 f,
@@ -691,6 +698,9 @@ impl ReloadSession {
         if self.ctx.script_depth() != 0 {
             return Err(ReloadError::ScriptOnStack);
         }
+        if self.ctx.has_live_workers() {
+            return Err(ReloadError::LiveWorkers);
+        }
         let hirm = check_program(files).map_err(ReloadError::Rejected)?;
         let decls = declaration_hash(&hirm);
         if decls != self.decls {
@@ -930,6 +940,23 @@ mod tests {
     }
 
     #[test]
+    fn reload_is_refused_while_the_context_has_a_live_worker() {
+        let source = "class Message { value: i32 = 0; }\n\
+                      function blocked(inbox: Inbox<Message>, outbox: Outbox<Message>): void {\n\
+                      \x20 const message: Message | null = inbox.wait();\n\
+                      }\n\
+                      export function main(): void {\n\
+                      \x20 const worker: Worker<Message, Message> = Worker.spawn(blocked);\n\
+                      }\n";
+        let mut session = ReloadSession::new(&src(source)).expect("worker reload session");
+        session.call_main().expect("spawn live worker");
+        assert!(matches!(
+            session.reload(&src(source)),
+            Err(ReloadError::LiveWorkers)
+        ));
+    }
+
+    #[test]
     fn initializer_trap_can_be_captured_without_dropping_the_session() {
         let (mut s, trap) = ReloadSession::new_capturing_initializer_trap(&src(
             "let xs: i32[] = [];\n\
@@ -970,6 +997,7 @@ mod tests {
         };
         assert!(e.to_string().contains("class C"));
         assert!(ReloadError::ScriptOnStack.to_string().contains("stack"));
+        assert!(ReloadError::LiveWorkers.to_string().contains("live workers"));
     }
 
     #[test]

@@ -1824,6 +1824,123 @@ mod tests {
         assert_eq!(err[0].pos.line, 2);
     }
 
+    // ----- Q35 workers -----
+
+    const WORKER_DECLS: &str = "class WorkerMessage { value: i32 = 0; }\nfunction workerEntry(inbox: Inbox<WorkerMessage>, outbox: Outbox<WorkerMessage>): void {\n  const message: WorkerMessage | null = inbox.wait();\n  if (message !== null) { outbox.post(message); }\n}\n";
+
+    #[test]
+    fn q35_spawn_infers_the_monomorphized_pair_and_records_one_adapter() {
+        let source = format!(
+            "{WORKER_DECLS}export function main(): void {{\n  const worker: Worker<WorkerMessage, WorkerMessage> = Worker.spawn(workerEntry);\n  worker.close();\n  worker.join();\n}}\n"
+        );
+        let module = check_one(&source).expect("Q35 worker program checks");
+        assert_eq!(module.worker_entries.len(), 1);
+        assert_eq!(module.worker_entries[0].function, "workerEntry");
+        let hir::Stmt::Let { ty, init, .. } = &module.functions[1].body[0] else {
+            panic!("expected worker local");
+        };
+        assert!(matches!(ty, Type::Worker(_, _)));
+        assert!(matches!(
+            init.kind,
+            hir::ExprKind::Call {
+                callee: hir::Callee::Worker(hir::WorkerFn::Spawn(0)),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn q35_context_affinity_rejects_all_four_escape_positions() {
+        let cases = [
+            (
+                "module global",
+                format!(
+                    "{WORKER_DECLS}const escaped: Worker<WorkerMessage, WorkerMessage> = Worker.spawn(workerEntry);\nexport function main(): void {{}}\n"
+                ),
+            ),
+            (
+                "class field",
+                format!(
+                    "{WORKER_DECLS}class Holder {{ worker: Worker<WorkerMessage, WorkerMessage>; constructor(worker: Worker<WorkerMessage, WorkerMessage>) {{ this.worker = worker; }} }}\nexport function main(): void {{}}\n"
+                ),
+            ),
+            (
+                "array element",
+                format!(
+                    "{WORKER_DECLS}export function main(): void {{\n  const worker: Worker<WorkerMessage, WorkerMessage> = Worker.spawn(workerEntry);\n  const escaped: Worker<WorkerMessage, WorkerMessage>[] = [worker];\n  worker.close(); worker.join();\n}}\n"
+                ),
+            ),
+            (
+                "lambda capture",
+                format!(
+                    "{WORKER_DECLS}export function main(): void {{\n  const worker: Worker<WorkerMessage, WorkerMessage> = Worker.spawn(workerEntry);\n  const escaped: () => void = (): void => {{ worker.close(); }};\n  escaped(); worker.close(); worker.join();\n}}\n"
+                ),
+            ),
+        ];
+        for (position, source) in cases {
+            let diagnostics = match check_one(&source) {
+                Err(diagnostics) => diagnostics,
+                Ok(_) => panic!("{position} escape was accepted"),
+            };
+            assert!(
+                diagnostics.iter().any(|diagnostic| {
+                    diagnostic.code == RuleCode::S100
+                        && (diagnostic.message.contains("Worker")
+                            || diagnostic.message.contains("Context-affine"))
+                }),
+                "{position}: {diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn q35_spawn_rejects_every_non_entry_argument_form() {
+        let arguments = [
+            "(inbox: Inbox<WorkerMessage>, outbox: Outbox<WorkerMessage>): void => {}",
+            "localEntry",
+            "new WorkerMessage()",
+        ];
+        for argument in arguments {
+            let local = if argument == "localEntry" {
+                "  const localEntry: (inbox: Inbox<WorkerMessage>, outbox: Outbox<WorkerMessage>) => void = workerEntry;\n"
+            } else {
+                ""
+            };
+            let source = format!(
+                "{WORKER_DECLS}export function main(): void {{\n{local}  const worker = Worker.spawn({argument});\n}}\n"
+            );
+            let diagnostics = check_one(&source).expect_err("non-entry spawn argument");
+            assert_eq!(diagnostics[0].code, RuleCode::S100, "{argument}");
+            assert!(diagnostics[0].message.contains("Worker.spawn"), "{argument}");
+        }
+    }
+
+    #[test]
+    fn q35_new_rejects_all_runtime_created_handle_types_in_our_checker() {
+        for construction in [
+            "new Worker<WorkerMessage, WorkerMessage>()",
+            "new Inbox<WorkerMessage>()",
+            "new Outbox<WorkerMessage>()",
+        ] {
+            let source = format!(
+                "{WORKER_DECLS}export function main(): void {{\n  const value = {construction};\n}}\n"
+            );
+            let diagnostics = check_one(&source).expect_err("runtime-created handle construction");
+            assert_eq!(diagnostics[0].code, RuleCode::S100, "{construction}");
+            assert!(diagnostics[0].message.contains("runtime-created"));
+        }
+    }
+
+    #[test]
+    fn q35_transferability_diagnostic_names_the_innermost_field() {
+        let source = "class BadMessage { text: string = \"bad\"; }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
+        let diagnostics = check_one(source).expect_err("string message field");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(diagnostics[0].pos.line, 1);
+        assert!(diagnostics[0].message.contains("BadMessage.text"));
+        assert!(diagnostics[0].message.contains("string"));
+    }
+
     #[test]
     fn same_shaped_classes_do_not_substitute() {
         let err = check_one(

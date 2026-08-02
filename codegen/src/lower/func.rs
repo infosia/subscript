@@ -2334,6 +2334,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos, checked),
             hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos, checked),
             hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos, checked),
+            hir::Callee::Worker(f) => self.eval_worker(*f, args, checked),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
@@ -2372,6 +2373,85 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             other => Err(internal(format!("callee {other:?}"))),
         }
+    }
+
+    /// Lowers Q35 worker/channel intrinsics onto the fixed §39 C API.
+    fn eval_worker(
+        &mut self,
+        function: hir::WorkerFn,
+        args: &[hir::Expr],
+        checked: bool,
+    ) -> Result<RV, String> {
+        use hir::WorkerFn as W;
+        if let W::Spawn(index) = function {
+            if !args.is_empty() {
+                return Err(internal("Worker.spawn retained source arguments"));
+            }
+            let entry = self
+                .ml
+                .hir
+                .worker_entries
+                .get(index)
+                .cloned()
+                .ok_or_else(|| internal(format!("worker entry index {index} out of range")))?;
+            let input_size = self.ml.layouts.class(entry.input.0)?.size;
+            let output_size = self.ml.layouts.class(entry.output.0)?.size;
+            let init_id = self.ml.func_id(&FnKey::WorkerInit)?;
+            let init_ref = self.ml.module.declare_func_in_func(init_id, self.b.func);
+            let init = self.b.ins().func_addr(types::I64, init_ref);
+            let entry_id = self.ml.func_id(&FnKey::WorkerEntry(index))?;
+            let entry_ref = self.ml.module.declare_func_in_func(entry_id, self.b.func);
+            let entry = self.b.ins().func_addr(types::I64, entry_ref);
+            let input_size = self.iconst(types::I64, i64::from(input_size));
+            let output_size = self.iconst(types::I64, i64::from(output_size));
+            let result = self
+                .call_rt(
+                    self.ml.rt.worker_spawn,
+                    &[self.ctx_v, init, entry, input_size, output_size],
+                    checked,
+                )?
+                .ok_or_else(|| internal("Worker.spawn result"))?;
+            return Ok(RV::S(result));
+        }
+
+        let expected = match function {
+            W::Post | W::OutboxPost => 2,
+            W::Poll | W::Close | W::Join | W::InboxWait | W::InboxPoll => 1,
+            W::Spawn(_) => unreachable!("spawn returned above"),
+            _ => return Err(internal(format!("unknown WorkerFn {function:?}"))),
+        };
+        if args.len() != expected {
+            return Err(internal(format!(
+                "Worker intrinsic {function:?} has {} argument(s), expected {expected}",
+                args.len()
+            )));
+        }
+        let mut values = Vec::with_capacity(expected + 1);
+        values.push(self.ctx_v);
+        for argument in args {
+            let value = self.eval(argument)?;
+            values.push(self.expect_s(value)?);
+        }
+        let runtime = match function {
+            W::Post => self.ml.rt.worker_post,
+            W::Poll => self.ml.rt.worker_poll,
+            W::Close => self.ml.rt.worker_close,
+            W::Join => self.ml.rt.worker_join,
+            W::InboxWait => self.ml.rt.worker_inbox_wait,
+            W::InboxPoll => self.ml.rt.worker_inbox_poll,
+            W::OutboxPost => self.ml.rt.worker_outbox_post,
+            W::Spawn(_) => unreachable!("spawn returned above"),
+            _ => return Err(internal(format!("unknown WorkerFn {function:?}"))),
+        };
+        let result = self.call_rt(runtime, &values, checked)?;
+        Ok(match function {
+            W::Poll | W::InboxWait | W::InboxPoll => RV::S(
+                result.ok_or_else(|| internal(format!("{function:?} result")))?,
+            ),
+            W::Post | W::Close | W::Join | W::OutboxPost => RV::None,
+            W::Spawn(_) => unreachable!("spawn returned above"),
+            _ => return Err(internal(format!("unknown WorkerFn {function:?}"))),
+        })
     }
 
     /// Lowers a foreign C-ABI call (`Callee::Foreign`, P5.2b) to a direct
@@ -7292,6 +7372,16 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
             genc: None,
             term: false,
         };
+        if body.ml.context_globals && !body.ml.opts.reload {
+            let size = body.iconst(types::I64, i64::from(body.ml.globals_size));
+            let align = body.iconst(types::I64, i64::from(body.ml.globals_align));
+            body.call_rt(
+                body.ml.rt.globals_init,
+                &[body.ctx_v, size, align],
+                false,
+            )?;
+            body.trap_check();
+        }
         let globals: Vec<hir::Global> = body.ml.hir.globals.to_vec();
         for g in &globals {
             let rv = body.eval(&g.init)?;
@@ -7316,6 +7406,97 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
     ml.module
         .define_function(id, &mut cctx)
         .map_err(|e| internal(format!("define init: {e}")))?;
+    ml.module.clear_context(&mut cctx);
+    Ok(())
+}
+
+/// Defines the fresh-Context initializer passed to the Q35 runtime.
+/// Reload sessions supply their parent globals block from the host, while a
+/// worker needs its own runtime-owned block before the shared initializer.
+pub(crate) fn define_worker_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String> {
+    let id = ml.func_id(&FnKey::WorkerInit)?;
+    let sig = ml.make_sig(&[], &Type::Void, false, false)?;
+    let mut cctx = ml.module.make_context();
+    cctx.func.signature = sig;
+    let mut fbx = FunctionBuilderContext::new();
+    {
+        let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+        let entry = b.create_block();
+        b.append_block_params_for_function_params(entry);
+        b.switch_to_block(entry);
+        let ctx = b.block_params(entry)[0];
+        let done = b.create_block();
+        if ml.opts.reload {
+            let size = b.ins().iconst(types::I64, i64::from(ml.globals_size));
+            let align = b.ins().iconst(types::I64, i64::from(ml.globals_align));
+            let init_globals = ml.module.declare_func_in_func(ml.rt.globals_init, b.func);
+            b.ins().call(init_globals, &[ctx, size, align]);
+            let trap = b.ins().load(types::I32, flags(), ctx, 0);
+            let clear = b.ins().icmp_imm(IntCC::Equal, trap, 0);
+            let initialize = b.create_block();
+            b.ins().brif(clear, initialize, &[], done, &[]);
+            b.switch_to_block(initialize);
+        }
+        let init = ml.func_id(&FnKey::Init)?;
+        let init_ref = ml.module.declare_func_in_func(init, b.func);
+        b.ins().call(init_ref, &[ctx]);
+        b.ins().jump(done, &[]);
+        b.switch_to_block(done);
+        b.ins().return_(&[]);
+        b.seal_all_blocks();
+        b.finalize();
+    }
+    ensure_explicit_frame_supported(&cctx.func, "worker initializer adapter")?;
+    ml.module
+        .define_function(id, &mut cctx)
+        .map_err(|error| internal(format!("define worker initializer adapter: {error}")))?;
+    ml.module.clear_context(&mut cctx);
+    Ok(())
+}
+
+/// Defines one exact-C-ABI runtime adapter for a checked Q35 entry.
+pub(crate) fn define_worker_entry<M: Module>(
+    ml: &mut ModLower<M>,
+    index: usize,
+    entry: &hir::WorkerEntry,
+) -> Result<(), String> {
+    let id = ml.func_id(&FnKey::WorkerEntry(index))?;
+    let params = [
+        Type::Inbox(Box::new(Type::Class(entry.input))),
+        Type::Outbox(Box::new(Type::Class(entry.output))),
+    ];
+    let sig = ml.make_sig(&params, &Type::Void, false, false)?;
+    let target = ml.hir_fn(&entry.function)?;
+    if target.is_async
+        || target.is_generator
+        || target.ret != Type::Void
+        || target.params.len() != 2
+    {
+        return Err(internal(format!(
+            "worker entry `{}` lost its checked shape",
+            entry.function
+        )));
+    }
+    let target_id = ml.func_id(&FnKey::Free(entry.function.clone()))?;
+    let mut cctx = ml.module.make_context();
+    cctx.func.signature = sig;
+    let mut fbx = FunctionBuilderContext::new();
+    {
+        let mut b = FunctionBuilder::new(&mut cctx.func, &mut fbx);
+        let block = b.create_block();
+        b.append_block_params_for_function_params(block);
+        b.switch_to_block(block);
+        let values = b.block_params(block).to_vec();
+        let target_ref = ml.module.declare_func_in_func(target_id, b.func);
+        b.ins().call(target_ref, &values);
+        b.ins().return_(&[]);
+        b.seal_all_blocks();
+        b.finalize();
+    }
+    ensure_explicit_frame_supported(&cctx.func, "worker entry adapter")?;
+    ml.module
+        .define_function(id, &mut cctx)
+        .map_err(|error| internal(format!("define worker entry adapter: {error}")))?;
     ml.module.clear_context(&mut cctx);
     Ok(())
 }

@@ -72,6 +72,10 @@ pub(crate) enum FnKey {
     Wrapper(String),
     /// The synthesized global-initializer entry.
     Init,
+    /// Generated initializer adapter used for fresh worker Contexts.
+    WorkerInit,
+    /// Runtime-C-ABI adapter for one monomorphized Q35 worker entry.
+    WorkerEntry(usize),
 }
 
 /// Imported runtime entry points.
@@ -81,6 +85,7 @@ pub(crate) struct RtFns {
     pub print: FuncId,
     pub collect: FuncId,
     pub alloc: FuncId,
+    pub globals_init: FuncId,
     pub boundary_scratch_mark: FuncId,
     pub boundary_scratch_alloc: FuncId,
     pub boundary_scratch_release: FuncId,
@@ -163,6 +168,14 @@ pub(crate) struct RtFns {
     /// `subscript_rt_set_*` imports (stdlib.md §10), indexed by
     /// [`hir::SetFn::ALL`] discriminant order.
     pub set_ops: [FuncId; hir::SetFn::ALL.len()],
+    pub worker_spawn: FuncId,
+    pub worker_post: FuncId,
+    pub worker_poll: FuncId,
+    pub worker_close: FuncId,
+    pub worker_join: FuncId,
+    pub worker_inbox_wait: FuncId,
+    pub worker_inbox_poll: FuncId,
+    pub worker_outbox_post: FuncId,
 }
 
 /// Parameters of the shared lowering.
@@ -216,11 +229,10 @@ pub(crate) struct Lowered {
     /// function of the *declarations* alone, so it is identical across
     /// recompiles that a hot reload accepts.
     pub slots: Vec<Option<FuncId>>,
-    /// Size in bytes of the module-global block
-    /// ([`LowerOptions::reload`] only; 0 otherwise).
+    /// Size in bytes of the Context-owned module-global block (reload and
+    /// Q35 worker-bearing modules; 0 for ordinary non-reload JIT modules).
     pub globals_size: u32,
-    /// Alignment of the module-global block
-    /// ([`LowerOptions::reload`] only; 1 otherwise).
+    /// Alignment of the Context-owned module-global block.
     pub globals_align: u32,
     /// Foreign C symbols imported by lowered call sites, in first-use
     /// order. This is the complete set because the sole
@@ -234,8 +246,8 @@ pub(crate) struct Lowered {
 pub(crate) enum GlobalSlot {
     /// Writable module data (default lowering).
     Data(DataId),
-    /// Byte offset into the host-owned block the Context points at
-    /// ([`LowerOptions::reload`]).
+    /// Byte offset into the module-global block the Context points at
+    /// (hot reload and Q35 worker-bearing modules).
     Offset(u32),
 }
 
@@ -262,6 +274,12 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub lambda_count: u32,
     pub str_count: u32,
     pub call_conv: CallConv,
+    /// Whether this lowering reaches module globals through the Context.
+    pub context_globals: bool,
+    /// Layout passed to the runtime when a fresh non-host-owned block is
+    /// required (ordinary worker Contexts and non-reload parents).
+    pub globals_size: u32,
+    pub globals_align: u32,
 }
 
 /// Internal-error constructor (an invariant the checker should have
@@ -852,6 +870,7 @@ fn declare_rt<M: Module>(
         print: mk("subscript_rt_print", &[I64, I64], None)?,
         collect: mk("subscript_rt_collect", &[I64], None)?,
         alloc: mk("subscript_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
+        globals_init: mk("subscript_rt_globals_init", &[I64, I64, I64], Some(I64))?,
         boundary_scratch_mark: mk(
             "subscript_rt_boundary_scratch_mark",
             &[I64],
@@ -962,6 +981,30 @@ fn declare_rt<M: Module>(
         fixed_arr_ops,
         map_ops,
         set_ops,
+        worker_spawn: mk(
+            "subscript_rt_worker_spawn",
+            &[I64, I64, I64, I64, I64],
+            Some(I64),
+        )?,
+        worker_post: mk("subscript_rt_worker_post", &[I64, I64, I64], Some(I32))?,
+        worker_poll: mk("subscript_rt_worker_poll", &[I64, I64], Some(I64))?,
+        worker_close: mk("subscript_rt_worker_close", &[I64, I64], None)?,
+        worker_join: mk("subscript_rt_worker_join", &[I64, I64], Some(I32))?,
+        worker_inbox_wait: mk(
+            "subscript_rt_worker_inbox_wait",
+            &[I64, I64],
+            Some(I64),
+        )?,
+        worker_inbox_poll: mk(
+            "subscript_rt_worker_inbox_poll",
+            &[I64, I64],
+            Some(I64),
+        )?,
+        worker_outbox_post: mk(
+            "subscript_rt_worker_outbox_post",
+            &[I64, I64, I64],
+            Some(I32),
+        )?,
     })
 }
 
@@ -1033,6 +1076,7 @@ pub(crate) fn lower_module_with<M: Module>(
     let call_conv = module.isa().default_call_conv();
     let rt = declare_rt(module, call_conv)?;
     let layouts = Layouts::build(hirm)?;
+    let context_globals = opts.reload || !hirm.worker_entries.is_empty();
 
     let mut ml = ModLower {
         module,
@@ -1053,6 +1097,9 @@ pub(crate) fn lower_module_with<M: Module>(
         lambda_count: 0,
         str_count: 0,
         call_conv,
+        context_globals,
+        globals_size: 0,
+        globals_align: 1,
     };
 
     for (i, f) in hirm.functions.iter().enumerate() {
@@ -1070,12 +1117,12 @@ pub(crate) fn lower_module_with<M: Module>(
     for (gi, g) in hirm.globals.iter().enumerate() {
         let (size, align) = ml.layouts.size_align(&g.ty)?;
         let (size, align) = (size.max(1), align.max(1));
-        let slot = if opts.reload {
+        let slot = if context_globals {
             globals_align = globals_align.max(align);
-            globals_size = round_up_layout(globals_size, align, "reload globals layout")?;
+            globals_size = round_up_layout(globals_size, align, "Context globals layout")?;
             let at = globals_size;
             globals_size =
-                checked_layout_add(globals_size, size, "reload globals layout")?;
+                checked_layout_add(globals_size, size, "Context globals layout")?;
             GlobalSlot::Offset(at)
         } else {
             let name = format!("subscript_g{gi}");
@@ -1096,8 +1143,10 @@ pub(crate) fn lower_module_with<M: Module>(
     globals_size = round_up_layout(
         globals_size,
         globals_align,
-        "final reload globals layout",
+        "final Context globals layout",
     )?;
+    ml.globals_size = globals_size;
+    ml.globals_align = globals_align;
 
     // Declare every script function up front so bodies can call in any
     // order. Symbol names are index-based (stable and linker-clean for
@@ -1196,6 +1245,30 @@ pub(crate) fn lower_module_with<M: Module>(
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
         decl(&mut ml, FnKey::Init, "subscript_init".to_string(), &sig, true)?;
     }
+    if !hirm.worker_entries.is_empty() {
+        let sig = ml.make_sig(&[], &Type::Void, false, false)?;
+        decl(
+            &mut ml,
+            FnKey::WorkerInit,
+            "subscript_worker_init".to_string(),
+            &sig,
+            false,
+        )?;
+        for (index, entry) in hirm.worker_entries.iter().enumerate() {
+            let params = [
+                Type::Inbox(Box::new(Type::Class(entry.input))),
+                Type::Outbox(Box::new(Type::Class(entry.output))),
+            ];
+            let sig = ml.make_sig(&params, &Type::Void, false, false)?;
+            decl(
+                &mut ml,
+                FnKey::WorkerEntry(index),
+                format!("subscript_worker_entry{index}"),
+                &sig,
+                false,
+            )?;
+        }
+    }
     {
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
         decl(
@@ -1233,6 +1306,12 @@ pub(crate) fn lower_module_with<M: Module>(
         }
     }
     func::define_init(&mut ml)?;
+    if !hirm.worker_entries.is_empty() {
+        func::define_worker_init(&mut ml)?;
+        for (index, entry) in hirm.worker_entries.iter().enumerate() {
+            func::define_worker_entry(&mut ml, index, entry)?;
+        }
+    }
     func::define_async_runner(&mut ml)?;
 
     let main = ml

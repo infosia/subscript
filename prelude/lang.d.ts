@@ -82,4 +82,24 @@ declare interface RegExp {
   matchEnd(group: i32): i32;
 }
 
+declare class Inbox<T extends object> {
+  private constructor();
+  wait(): T | null;   // blocks; null = closed and drained
+  poll(): T | null;   // never blocks
+}
+declare class Outbox<T extends object> {
+  private constructor();
+  post(message: T): void;
+}
+declare class Worker<In extends object, Out extends object> {
+  private constructor();
+  static spawn<In extends object, Out extends object>(
+    entry: (inbox: Inbox<In>, outbox: Outbox<Out>) => void,
+  ): Worker<In, Out>;
+  post(message: In): void;
+  poll(): Out | null;  // never blocks; null = nothing available
+  close(): void;       // worker-side wait() then observes end-of-input
+  join(): void;        // traps (kind 22) if the worker Context trapped
+}
+
 // N is deliberately unused structurally so plain array literals remain assignable.
