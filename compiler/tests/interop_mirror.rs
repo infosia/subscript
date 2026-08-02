@@ -115,6 +115,9 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // OBS-3 (§44): a nullable scalar handle beside two pairs in a
             // scratch-lowered fragment behind a nullable pointer member.
             "subProbeFullRenderPipelineWithHandleCheck",
+            // OBS-3 round 2 (§44.5): nested component aggregates behind a
+            // nullable pointer in a target-array element.
+            "subProbeFullRenderPipelineWithNestedBlendCheck",
             // R11 (§34): registered-handle pair at parameter position.
             "subProbeQueueSubmitCheck",
             // R12 (§35): nullable registered handle at parameter position.

@@ -843,6 +843,64 @@ uint64_t subProbeFullRenderPipelineWithHandleCheck(
     return (uint64_t)target->writeMask;
 }
 
+/* ==== OBS-3 nested structs behind an element pointer (§44.5) ======== */
+
+uint64_t subProbeFullRenderPipelineWithNestedBlendCheck(
+    const SGPUProbeNestedRenderPipelineDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) {
+        return UINT64_MAX;
+    }
+    if (selector == 0u) return subProbeViewSum(descriptor->label);
+    if (selector == 1u) return (uint64_t)descriptor->label.len;
+    if (selector == 2u) return descriptor->fragment == NULL ? 0u : 1u;
+    if (descriptor->fragment == NULL) return 10000u + (uint64_t)selector;
+
+    const SGPUProbeNestedFragmentState *fragment = descriptor->fragment;
+    switch (selector) {
+        case 3: return fragment->module == NULL ? 0u : 1u;
+        case 4: return subProbeViewSum(fragment->entryPoint);
+        case 5: return (uint64_t)fragment->entryPoint.len;
+        case 6: return (uint64_t)fragment->constantsCount;
+        case 7: return (uint64_t)fragment->targetsCount;
+        default: break;
+    }
+
+    if (selector >= 8u && selector <= 13u) {
+        size_t index = selector >= 11u ? 1u : 0u;
+        if (fragment->constants == NULL || index >= fragment->constantsCount) {
+            return 8000u + (uint64_t)selector;
+        }
+        const SGPUProbeConstantEntry *constant = &fragment->constants[index];
+        uint32_t member = selector - (index == 0u ? 8u : 11u);
+        if (member == 0u) return subProbeViewSum(constant->key);
+        if (member == 1u) return (uint64_t)constant->key.len;
+        return (uint64_t)constant->value;
+    }
+
+    size_t target_index = selector >= 23u ? 1u : 0u;
+    if (selector < 14u || selector > 31u
+        || fragment->targets == NULL
+        || target_index >= fragment->targetsCount) {
+        return 8000u + (uint64_t)selector;
+    }
+    const SGPUProbeNestedColorTargetState *target =
+        &fragment->targets[target_index];
+    uint32_t member = selector - (target_index == 0u ? 14u : 23u);
+    if (member == 0u) return (uint64_t)target->format;
+    if (member == 1u) return target->blend == NULL ? 0u : 1u;
+    if (member >= 2u && member <= 7u) {
+        if (target->blend == NULL) return 6000u + (uint64_t)selector;
+        const SGPUProbeNestedBlendComponent *component =
+            member <= 4u ? &target->blend->color : &target->blend->alpha;
+        uint32_t component_member = member <= 4u ? member - 2u : member - 5u;
+        if (component_member == 0u) return (uint64_t)component->operation;
+        if (component_member == 1u) return (uint64_t)component->srcFactor;
+        return (uint64_t)component->dstFactor;
+    }
+    return (uint64_t)target->writeMask;
+}
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ===== */
 
 uint64_t subProbeQueueSubmitCheck(

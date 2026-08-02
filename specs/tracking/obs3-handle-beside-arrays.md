@@ -54,3 +54,43 @@ The exact failing program (their `@Descriptor` declarations, the
 call site, and the generated conversion function), plus the abort's
 full backtrace. Contracted position: a fixture that does not
 reproduce is evidence, not a fix.
+
+## Round 2 (2026-08-03) — artifacts received; still not reproduced
+
+The downstream supplied its mirror, its generated conversion
+functions, and the call site, and corrected one fact: **both tiers
+fail** — dev-JIT aborts in `Context::array_len`
+(`runtime/src/ffi.rs` `subscript_rt_array_len`), ship-C-AOT takes
+SIGSEGV — with no program output before either. A failure common to
+both lowerings is the class the differential gate cannot see (the
+R6 lesson), so the gate's silence is expected, not reassuring.
+
+Reviewer reproductions this round, all against the existing §33
+fixture, all **clean** under the capture harness:
+
+1. helper-function-returned struct temporaries passed directly as
+   constructor arguments (their `toSGPUBlendState(...)` shape);
+2. `push`-built element arrays from a `while` loop (their
+   `toSGPUColorTargetStateArray`);
+3. string-bearing elements built through a helper;
+4. one array holding a null-pointer element and a non-null-pointer
+   element together;
+5. a `@Descriptor` defaulted array member taking its default (their
+   call site omits `constants`);
+6. the maximal combination of the above.
+
+Implementer round (§44.5): the fixture gained the last structural
+axis — array element → `_Nullable` pointer → struct → **nested
+struct** members (their `SGPUBlendState{color, alpha}`, where the
+fixture's counterpart held two scalars). `a120-interop-nested-behind-element-pointer`
+covers present/absent, empty/non-empty, and null/non-null pointer
+elements in one array: 47 lines of selector evidence, exit 0, dev
+≡ ship ≡ golden. **Also clean.**
+
+The fixture axis is now exhausted: every shape derivable from the
+downstream's mirror and conversion code has been built and run. The
+remaining difference must be in the C declarations themselves — the
+one artifact never supplied. Requested next: the **preprocessed C
+facade declarations** for these structs (all preceding fields,
+order, typedefs, nullability spelling, packing/alignment macros),
+since bindgen's lowering is a function of exactly those.

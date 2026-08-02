@@ -490,6 +490,42 @@ declare class SGPUProbeHandleRenderPipelineDescriptor {
 }
 
 declare function subProbeFullRenderPipelineWithHandleCheck(descriptor: SGPUProbeHandleRenderPipelineDescriptor | null, selector: u32): u64;
+
+declare class SGPUProbeNestedBlendComponent {
+  operation: u32;
+  srcFactor: u32;
+  dstFactor: u32;
+  constructor(operation: u32, srcFactor: u32, dstFactor: u32);
+}
+
+declare class SGPUProbeNestedBlendState {
+  color: SGPUProbeNestedBlendComponent;
+  alpha: SGPUProbeNestedBlendComponent;
+  constructor(color: SGPUProbeNestedBlendComponent, alpha: SGPUProbeNestedBlendComponent);
+}
+
+declare class SGPUProbeNestedColorTargetState {
+  format: u32;
+  blend: SGPUProbeNestedBlendState | null;
+  writeMask: u32;
+  constructor(format: u32, blend: SGPUProbeNestedBlendState | null, writeMask: u32);
+}
+
+declare class SGPUProbeNestedFragmentState {
+  module: SubDevice | null;
+  entryPoint: string;
+  constants: SGPUProbeConstantEntry[];
+  targets: SGPUProbeNestedColorTargetState[];
+  constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeNestedColorTargetState[]);
+}
+
+declare class SGPUProbeNestedRenderPipelineDescriptor {
+  label: string;
+  fragment: SGPUProbeNestedFragmentState | null;
+  constructor(label: string, fragment: SGPUProbeNestedFragmentState | null);
+}
+
+declare function subProbeFullRenderPipelineWithNestedBlendCheck(descriptor: SGPUProbeNestedRenderPipelineDescriptor | null, selector: u32): u64;
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 

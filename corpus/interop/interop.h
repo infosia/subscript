@@ -850,6 +850,52 @@ uint64_t subProbeFullRenderPipelineWithHandleCheck(
     const SGPUProbeHandleRenderPipelineDescriptor *descriptor,
     uint32_t selector);
 
+/* ==== OBS-3 nested structs behind an element pointer (§44.5) =========
+ *
+ * The final downstream composition is kept separate from both established
+ * fixtures above: descriptor -> nullable fragment pointer -> scalar nullable
+ * opaque handle + string + pairs -> target element -> nullable blend pointer
+ * -> blend aggregate -> two embedded component aggregates. */
+
+typedef struct SGPUProbeNestedBlendComponent {
+    uint32_t operation;
+    uint32_t srcFactor;
+    uint32_t dstFactor;
+} SGPUProbeNestedBlendComponent;
+
+typedef struct SGPUProbeNestedBlendState {
+    SGPUProbeNestedBlendComponent color;
+    SGPUProbeNestedBlendComponent alpha;
+} SGPUProbeNestedBlendState;
+
+typedef struct SGPUProbeNestedColorTargetState {
+    uint32_t format;
+    const SGPUProbeNestedBlendState * _Nullable blend;
+    uint32_t writeMask;
+} SGPUProbeNestedColorTargetState;
+
+typedef struct SGPUProbeNestedFragmentState {
+    SubDevice _Nullable module;
+    SGPUStringView entryPoint;
+    size_t constantsCount;
+    const SGPUProbeConstantEntry *constants;
+    size_t targetsCount;
+    const SGPUProbeNestedColorTargetState *targets;
+} SGPUProbeNestedFragmentState;
+
+typedef struct SGPUProbeNestedRenderPipelineDescriptor {
+    SGPUStringView label;
+    const SGPUProbeNestedFragmentState * _Nullable fragment;
+} SGPUProbeNestedRenderPipelineDescriptor;
+
+/* Selector-based evidence covers every aggregate and field in the chain.
+ * A null fragment returns 10000 + selector behind the pointer; a missing
+ * target returns 8000 + selector; a null blend returns 6000 + selector for
+ * each nested component-field selector. */
+uint64_t subProbeFullRenderPipelineWithNestedBlendCheck(
+    const SGPUProbeNestedRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ========
  *
  * Queue-submit shape: a leading opaque handle followed by the adjacent

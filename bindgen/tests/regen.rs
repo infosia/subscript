@@ -144,6 +144,14 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains(
         "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeColorTargetState[]);"
     ));
+    // OBS-3 round 2 (§44.5). The target element's nullable pointer reaches
+    // a blend aggregate whose color and alpha fields are embedded structs.
+    assert!(m.contains("blend: SGPUProbeNestedBlendState | null;"));
+    assert!(m.contains("color: SGPUProbeNestedBlendComponent;"));
+    assert!(m.contains("alpha: SGPUProbeNestedBlendComponent;"));
+    assert!(m.contains(
+        "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeNestedColorTargetState[]);"
+    ));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(
