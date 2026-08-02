@@ -67,6 +67,7 @@ extern "C" {
     fn subProbeRenderPipelineCheck();
     fn subProbeProgrammableStageCheck();
     fn subProbeFullRenderPipelineCheck();
+    fn subProbeFullRenderPipelineWithHandleCheck();
     fn subProbeQueueSubmitCheck();
     fn subProbeSetBindGroupCheck();
 }
@@ -241,6 +242,10 @@ fn interop_library() -> NativeLibrary {
         (
             "subProbeFullRenderPipelineCheck".to_string(),
             subProbeFullRenderPipelineCheck as *const u8,
+        ),
+        (
+            "subProbeFullRenderPipelineWithHandleCheck".to_string(),
+            subProbeFullRenderPipelineWithHandleCheck as *const u8,
         ),
         (
             "subProbeQueueSubmitCheck".to_string(),

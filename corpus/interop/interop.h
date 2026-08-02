@@ -822,6 +822,34 @@ uint64_t subProbeFullRenderPipelineCheck(
     const SGPUProbeFullRenderPipelineDescriptor *descriptor,
     uint32_t selector);
 
+/* ==== OBS-3 handle beside arrays through a nullable member (§44) =====
+ *
+ * This is the missing downstream composition kept separate from the R10
+ * fixture above so its established shape and golden remain unchanged:
+ * descriptor -> nullable fragment pointer -> scalar nullable opaque handle
+ * + entry-point string + two collapsed array pairs. */
+
+typedef struct SGPUProbeHandleFragmentState {
+    SubDevice _Nullable module;
+    SGPUStringView entryPoint;
+    size_t constantsCount;
+    const SGPUProbeConstantEntry *constants;
+    size_t targetsCount;
+    const SGPUProbeColorTargetState *targets;
+} SGPUProbeHandleFragmentState;
+
+typedef struct SGPUProbeHandleRenderPipelineDescriptor {
+    SGPUStringView label;
+    const SGPUProbeHandleFragmentState * _Nullable fragment;
+} SGPUProbeHandleRenderPipelineDescriptor;
+
+/* Selector-based evidence covers the outer descriptor, fragment presence,
+ * handle presence, string view, both pairs, and the nested target/blend
+ * pointers. A null fragment returns 9000 + selector behind the pointer. */
+uint64_t subProbeFullRenderPipelineWithHandleCheck(
+    const SGPUProbeHandleRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ========
  *
  * Queue-submit shape: a leading opaque handle followed by the adjacent

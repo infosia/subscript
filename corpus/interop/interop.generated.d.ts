@@ -474,6 +474,22 @@ declare class SGPUProbeFullRenderPipelineDescriptor {
 }
 
 declare function subProbeFullRenderPipelineCheck(descriptor: SGPUProbeFullRenderPipelineDescriptor | null, selector: u32): u64;
+
+declare class SGPUProbeHandleFragmentState {
+  module: SubDevice | null;
+  entryPoint: string;
+  constants: SGPUProbeConstantEntry[];
+  targets: SGPUProbeColorTargetState[];
+  constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeColorTargetState[]);
+}
+
+declare class SGPUProbeHandleRenderPipelineDescriptor {
+  label: string;
+  fragment: SGPUProbeHandleFragmentState | null;
+  constructor(label: string, fragment: SGPUProbeHandleFragmentState | null);
+}
+
+declare function subProbeFullRenderPipelineWithHandleCheck(descriptor: SGPUProbeHandleRenderPipelineDescriptor | null, selector: u32): u64;
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 

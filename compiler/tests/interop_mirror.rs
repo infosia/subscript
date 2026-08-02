@@ -112,6 +112,9 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // R10 (§33): nullable struct-pointer members at fragment and
             // blend depth.
             "subProbeFullRenderPipelineCheck",
+            // OBS-3 (§44): a nullable scalar handle beside two pairs in a
+            // scratch-lowered fragment behind a nullable pointer member.
+            "subProbeFullRenderPipelineWithHandleCheck",
             // R11 (§34): registered-handle pair at parameter position.
             "subProbeQueueSubmitCheck",
             // R12 (§35): nullable registered handle at parameter position.

@@ -137,6 +137,13 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("constants: SGPUProbeConstantEntry[];"));
     assert!(m.contains("targets: SGPUProbeColorTargetState[];"));
     assert!(m.contains("blend: SGPUProbeBlendState | null;"));
+    // OBS-3 (§44). The scalar nullable handle remains a distinct field
+    // beside both collapsed pairs in the pointer-reachable fragment.
+    assert!(m.contains("fragment: SGPUProbeHandleFragmentState | null;"));
+    assert!(m.contains("module: SubDevice | null;"));
+    assert!(m.contains(
+        "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeColorTargetState[]);"
+    ));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(
