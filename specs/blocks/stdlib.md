@@ -1797,3 +1797,66 @@ left unguarded.)* The same applies to §15.1's overhead table and
 either reproducible from the repository or marked as a one-off
 measurement with the date it was taken. Both forms are acceptable; an
 unreproducible figure presented as a standing fact is not.
+
+## 16. Workers (Q35)
+
+Owner decision 2026-08-02: Workers are standard library. The model,
+runtime layer, and register entry: `compiler.md` §38–§40,
+`collisions.md` Q35. This section is the script-facing surface; the
+whole ambient was verified `tsc`-clean before contracting
+(`specs/tracking/workers.md`, round-3 probes).
+
+### 16.1 Surface
+
+```ts
+declare class Inbox<T extends object> {
+  private constructor();
+  wait(): T | null;   // blocks; null = closed and drained
+  poll(): T | null;   // never blocks
+}
+declare class Outbox<T extends object> {
+  private constructor();
+  post(message: T): void;
+}
+declare class Worker<In extends object, Out extends object> {
+  private constructor();
+  static spawn<In extends object, Out extends object>(
+    entry: (inbox: Inbox<In>, outbox: Outbox<Out>) => void,
+  ): Worker<In, Out>;
+  post(message: In): void;
+  poll(): Out | null;  // never blocks; null = nothing available
+  close(): void;       // worker-side wait() then observes end-of-input
+  join(): void;        // traps (kind 22) if the worker Context trapped
+}
+```
+
+`Worker.spawn` runs `entry` on a runtime-owned thread with a fresh
+Context of the same program image (§38 isolation). The spawning
+side never blocks: `post` enqueues, `poll` returns `null` when
+nothing is available, and the blocking receive (`Inbox.wait`)
+exists only on the worker side, on the worker's own thread. `close`
+then `join` is the orderly shutdown; releasing a Context closes,
+joins, and frees its live workers. Workers may spawn workers.
+
+### 16.2 Messages
+
+A message type is a plain reference class whose fields are all
+**transferable**: sized numerics, `boolean`, enums, string-literal
+union aliases, value classes, and `FixedArray` of transferable
+element types. No reference, string, growable-array, function, or
+nullable fields (v1 — widen only with evidence). Delivery copies
+the payload bytes (invariant 1 makes the copy tier-portable) and
+materializes a fresh Context-owned instance on the receiving side;
+the sender's object is unaffected, and mutations after `post` are
+not visible to the receiver.
+
+### 16.3 Entry and affinity rules
+
+The `spawn` argument is a directly named module-level function of
+the exact entry shape — synchronous, non-capturing, `void` return.
+`Worker`, `Inbox`, and `Outbox` values are Context-affine: legal as
+locals and call arguments, never as module globals, class fields,
+array elements, or lambda captures. `new` on any of the three is
+rejected (the ambient's private constructors already make it
+`tsc`-illegal; the checker rejects independently). Corpus pins and
+diagnostics: `compiler.md` §40.

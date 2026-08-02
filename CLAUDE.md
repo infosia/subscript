@@ -76,8 +76,12 @@ commit.
   filesystem paths is unaffected.
 - **Being a standalone program runtime.** subscript is embedded by
   construction: the host owns the main loop and calls exported functions,
-  and platform capabilities (files, sockets, devices, threads) are the
-  host's to expose through its C ABI, not the language's to provide. The
+  and platform capabilities (files, sockets, devices) are the
+  host's to expose through its C ABI, not the language's to provide.
+  *(Threads were removed from this list — Owner, 2026-08-02: the
+  standard library provides Workers (Q35), runtime-owned threads with
+  per-Context isolation and copy-only messaging; the host still owns
+  its main loop.)* The
   standard library grows in computation (`specs/blocks/stdlib.md`); reach
   into the outside world does not. This is a division of responsibility,
   not a capability ceiling — and not a statement about how broad the

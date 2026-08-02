@@ -1049,6 +1049,39 @@ non-generic reference classes join the surface —
   (`.then` call), `r98` (`Promise.all`), `r99` (`await` outside
   `async`), `r100` (floating async call; `tsc`-clean).
 
+- **Q35 (Workers — standard-library threads)** — *(Owner,
+  2026-08-02. Two rulings recorded the same day: the "stdlib grows
+  in computation only" line is a revisable convention, not a
+  principle; and Workers land as standard library, not as a host
+  pattern. CLAUDE.md's platform-capability list drops "threads"
+  with a dated note.)*
+
+  - **Model.** A worker is a runtime-owned OS thread running a
+    dedicated Context of the same program image; module state is
+    per-Context in both tiers (`compiler.md` §38, landed first as
+    the isolation prerequisite). Messages are byte copies of
+    transferable reference-class payloads, materialized as fresh
+    receiver-Context instances; nothing is shared, nothing blocks
+    on the spawning side, and the blocking receive exists only on
+    the worker's own thread. Surface: `stdlib.md` §16; runtime
+    layer: `compiler.md` §39; checker/lowering: §40.
+  - **Not carried from TS Workers**, each a consequence of a
+    standing invariant, not a gap: `new Worker(url)` dynamic
+    loading (AOT — the entry is a named module function),
+    `onmessage` push delivery (§14.6 — each worker pumps its own
+    Context; receive is `wait`/`poll`), `SharedArrayBuffer`-style
+    shared mutable state (copy-only messaging is the contracted
+    surface; the C ABI physically permits sharing and
+    synchronization is then the host's responsibility — scripts
+    are trusted), and structured clone of arbitrary graphs
+    (transferable fields only, stdlib §16.2).
+  - **Failure.** A worker trap surfaces at the parent's `join` as
+    trap kind 22 — loud at the join point, never silent (C6
+    precedent).
+
+  Contract: `compiler.md` §38–§40, `stdlib.md` §16. Accept:
+  `a112`–`a113`, example `e11`. Reject: `r106`–`r110`.
+
 ## 3. Open items carried forward
 
 - Value-class fields of reference/string/nullable types (C2): undecided
