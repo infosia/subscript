@@ -1642,6 +1642,11 @@ fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
 /// lowering, executes the exported `main(): void` under the dev JIT,
 /// and returns the exact stdout bytes the run produced.
 ///
+/// On Unix, the program runs in a forked child so that output survives a run
+/// that does not complete normally. Consequently, side effects that a native
+/// library performs on host memory during the run are not observable in the
+/// caller's process. On non-Unix platforms, the program runs in-process.
+///
 /// # Errors
 ///
 /// [`RunError::Rejected`] when the checker rejects the program,
@@ -1683,6 +1688,11 @@ pub fn run_jit_with_memory_accounting(
 /// Checks, lowers, and runs `files` through the dev JIT with the
 /// caller-supplied native libraries available for foreign calls.
 ///
+/// On Unix, the program runs in a forked child so that output survives a run
+/// that does not complete normally. Consequently, side effects that a native
+/// library performs on host memory during the run are not observable in the
+/// caller's process. On non-Unix platforms, the program runs in-process.
+///
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_jit`], including
@@ -1707,6 +1717,11 @@ pub fn run_jit_with_native_libraries(
 /// matching [`run_jit_with_memory_accounting`] when its diagnostics argument
 /// is true.
 ///
+/// On Unix, the program runs in a forked child so that output survives a run
+/// that does not complete normally. Consequently, side effects that a native
+/// library performs on host memory during the run are not observable in the
+/// caller's process. On non-Unix platforms, the program runs in-process.
+///
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_jit_with_native_libraries`].
@@ -1727,6 +1742,11 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
 ///
 /// The injected fault is armed before `subscript_init`, so module-initializer
 /// allocations are part of the count.
+///
+/// On Unix, the program runs in a forked child so that output survives a run
+/// that does not complete normally. Consequently, side effects that a native
+/// library performs on host memory during the run are not observable in the
+/// caller's process. On non-Unix platforms, the program runs in-process.
 ///
 /// # Errors
 ///
