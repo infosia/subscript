@@ -4633,3 +4633,55 @@ byte-identical under both tiers, or the raised harness standing in
 its place with the non-reproduction recorded; (3) output survives
 each termination mode, unit-tested; (4) no existing golden moves;
 full gates green.
+
+### 44.9 Round 6 — module size decides observability
+
+The downstream demonstrated the axis rather than suspecting it
+(2026-08-03). Taking a variant that runs cleanly and appending N
+functions of the form `function padN(v: u32): u32 { return v + N; }`
+to the module — called by nothing, touching nothing — flips the
+outcome, non-monotonically: baseline runs, +20 runs, +40 ends
+early, +60 ends early, +80 runs, +100 ends early. This is the third
+independent non-semantic knob, alongside the `primitive`-contents
+flip and the termination mode moving between panic and hard signal
+when arguments were merely hoisted into locals.
+
+Conclusion adopted: **module size and layout decide whether the
+fault is observable.** Five faithful small fixtures passed for this
+reason, and no further small fixture will settle anything.
+
+Rule: **a program's boundary lowering does not depend on the
+module's unrelated content.** Adding declarations that nothing
+calls cannot change the behavior of an unrelated foreign call, at
+any module size.
+
+Two lines of work, both required:
+
+1. **Run the downstream's program here.** It dropped four files as
+   untracked evidence — the failing program, its generated API
+   layer, the facade header, and the generated mirror. A stub `.c`
+   satisfying the header suffices, because a lowering fault does
+   not depend on what the C functions do. This replaces
+   reconstruction with execution.
+2. **A self-contained entry for the class**: a program exercising
+   a descriptor with two simultaneously-present reach-through
+   pointer members, swept over a padded module of uncalled dummy
+   functions (N = 20…120, step 20). The corpus entry pins the
+   outcome as invariant across N; the sweep itself belongs in a
+   test harness rather than in one golden.
+
+**Output retention, scope defect (downstream round-6 datum).**
+§44.8's retention is gated on an environment variable naming a
+parent-owned file, so an embedder calling the run helpers directly
+— which is how the downstream drives its runs — still loses
+everything on a hard signal. Retention must be the default
+behavior of the run helpers, without opt-in, and must be reported
+as part of the run's error value rather than left for the caller
+to discover.
+
+Exit criteria: (1) the downstream program built and run here, with
+its observed outcome recorded verbatim whether or not it
+reproduces; (2) the padding sweep run and its results recorded;
+(3) if a defect is found, fixed with the class pinned; (4) run
+helpers retain output on hard termination with no opt-in,
+unit-tested; (5) no existing golden moves; full gates green.
