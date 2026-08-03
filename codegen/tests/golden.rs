@@ -439,6 +439,26 @@ fn wide_descriptor_breadth_and_depth_match_both_tiers_and_golden() {
 }
 
 #[test]
+fn contextual_conditionals_match_both_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a124-contextual-conditional";
+    let sources = corpus::entry_sources(&accept, id);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(jit, golden, "{id}: contextual conditional observations are wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
 fn handle_parameter_pair_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a107-interop-handle-parameter-pair";
@@ -552,11 +572,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // nested structs behind array-element nullable pointers (a120), and
     // unmarked reach-through pointers in array elements (a121), two
     // simultaneous reach-through pointer members (a122), and the wide
-    // breadth-and-depth composition (a123).
+    // breadth-and-depth composition (a123), and R18 contextual conditional
+    // typing (a124).
     assert_eq!(
         golden_ids.len(),
-        123,
-        "expected exactly 123 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        124,
+        "expected exactly 124 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -582,7 +603,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          handle-beside-arrays golden, and the a120 OBS-3 nested-behind-element-pointer \
          golden, the a121 OBS-3 unmarked-reach-through golden, the a122 \
          OBS-3 two-pointer-members golden, and the a123 OBS-3 wide-descriptor \
-         golden, found {}",
+         golden, and the a124 R18 contextual-conditional golden, found {}",
         golden_ids.len()
     );
 

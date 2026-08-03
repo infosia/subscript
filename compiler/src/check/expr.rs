@@ -1416,15 +1416,37 @@ impl<'p> Checker<'p> {
         }
         let then = self.check_expr(&c.cons, ctx, fx);
         let els = self.check_expr(&c.alt, ctx, fx);
-        let then_ty = then.ty.clone();
-        self.require_assignable(&els.ty.clone(), &then_ty, els.pos.clone(), "the else branch");
+        let ty = if let Some(context) = ctx {
+            self.require_assignable(
+                &then.ty.clone(),
+                context,
+                then.pos.clone(),
+                "the then branch",
+            );
+            self.require_assignable(
+                &els.ty.clone(),
+                context,
+                els.pos.clone(),
+                "the else branch",
+            );
+            context.clone()
+        } else {
+            let then_ty = then.ty.clone();
+            self.require_assignable(
+                &els.ty.clone(),
+                &then_ty,
+                els.pos.clone(),
+                "the else branch",
+            );
+            then_ty
+        };
         hir::Expr {
             kind: ExprKind::Cond {
                 cond: Box::new(cond),
                 then: Box::new(then),
                 els: Box::new(els),
             },
-            ty: then_ty,
+            ty,
             pos,
         }
     }

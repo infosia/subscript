@@ -695,6 +695,120 @@ mod tests {
     }
 
     #[test]
+    fn contextual_conditional_uses_nullable_type_in_both_branch_orders() {
+        let module = check_one(
+            "class C { value: i32; constructor(value: i32) { this.value = value; } }\n\
+             export function main(): void {\n\
+               const valueFirst: C | null = true ? new C(1) : null;\n\
+               const nullFirst: C | null = false ? null : new C(2);\n\
+               print(`${valueFirst !== null}:${nullFirst !== null}`);\n\
+             }\n",
+        )
+        .expect("a nullable context types either conditional branch order");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        for statement in &main.body[..2] {
+            let hir::Stmt::Let { init, .. } = statement else {
+                panic!("conditional binding");
+            };
+            assert!(matches!(init.kind, hir::ExprKind::Cond { .. }));
+            assert!(matches!(init.ty, Type::Nullable(_)));
+        }
+    }
+
+    #[test]
+    fn nested_conditionals_inherit_the_outer_context() {
+        let module = check_one(
+            "class C { value: i32; constructor(value: i32) { this.value = value; } }\n\
+             export function main(): void {\n\
+               const value: C | null = true ? (false ? new C(1) : null) : null;\n\
+               print(`${value !== null}`);\n\
+             }\n",
+        )
+        .expect("nested conditionals inherit the nullable context");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Let { init, .. } = &main.body[0] else {
+            panic!("conditional binding");
+        };
+        let hir::ExprKind::Cond { then, .. } = &init.kind else {
+            panic!("outer conditional");
+        };
+        assert!(matches!(init.ty, Type::Nullable(_)));
+        assert!(matches!(then.kind, hir::ExprKind::Cond { .. }));
+        assert_eq!(then.ty, init.ty);
+    }
+
+    #[test]
+    fn conditional_without_context_keeps_else_to_then_rule() {
+        let diagnostics = check_one(
+            "class C { value: i32; constructor(value: i32) { this.value = value; } }\n\
+             export function main(): void {\n\
+               const value = true ? new C(1) : null;\n\
+               print(`${value !== null}`);\n\
+             }\n",
+        )
+        .expect_err("an uncontextualized conditional keeps the directional branch rule");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(diagnostics[0].pos.line, 3);
+        assert!(diagnostics[0]
+            .message
+            .contains("the else branch expects `C`, got `null`"));
+    }
+
+    #[test]
+    fn contextual_conditional_accepts_nominally_distinct_reference_arms() {
+        let module = check_program(&[
+            SourceFile::ambient(
+                "boundary.d.ts",
+                "// @subscript-c-header include=\"boundary.h\"\n\
+                 declare function take(value: object | null): void;\n",
+            ),
+            SourceFile::new(
+                "test.ts",
+                "class A { value: i32; constructor() { this.value = 1; } }\n\
+                 class B { value: i32; constructor() { this.value = 2; } }\n\
+                 export function main(): void {\n\
+                   take(true ? new A() : new B());\n\
+                 }\n",
+            ),
+        ])
+        .expect("both nominal arms are assignable to the boundary object context");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let hir::Stmt::Expr(call) = &main.body[0] else {
+            panic!("call statement");
+        };
+        let hir::ExprKind::Call { args, .. } = &call.kind else {
+            panic!("foreign call");
+        };
+        assert!(matches!(&args[0].ty, Type::Nullable(inner) if **inner == Type::Object));
+    }
+
+    #[test]
+    fn contextual_conditional_does_not_admit_script_value_class_union() {
+        let diagnostics = check_one(
+            "@CStruct\n\
+             class V { value: i32; constructor(value: i32) { this.value = value; } }\n\
+             export function main(): void {\n\
+               const value: V | null = true ? new V(1) : null;\n\
+             }\n",
+        )
+        .expect_err("C7 keeps nullable value classes out of script declarations");
+        assert_eq!(diagnostics[0].code, RuleCode::S011);
+        assert_eq!(diagnostics[0].pos.line, 4);
+    }
+
+    #[test]
     fn descriptor_missing_and_excess_members_are_rejected() {
         let missing = check_one(
             "@Descriptor\n\

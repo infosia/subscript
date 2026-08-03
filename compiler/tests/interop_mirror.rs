@@ -292,10 +292,12 @@ fn general_union_in_program_is_still_s011() {
 fn value_class_with_null_in_ordinary_code_is_rejected() {
     // The `Struct | null` boundary form is legal in the mirror but not in
     // ordinary program declarations (C7 unchanged for non-boundary code).
-    let code = first_code(
+    let diagnostics = check_with_mirror(
         "export function main(): void {\n  let c: SubChainHeader | null = null;\n  print(`${c === null}`);\n}\n",
-    );
-    assert_eq!(code, RuleCode::S011);
+    )
+    .expect_err("ordinary value-class union must be rejected");
+    assert_eq!(diagnostics[0].code, RuleCode::S011);
+    assert_eq!(diagnostics[0].pos.line, 2);
 }
 
 #[test]

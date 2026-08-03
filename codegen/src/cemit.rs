@@ -3463,12 +3463,42 @@ impl<'m> Emitter<'m> {
         let cty = self.ctype(ty)?;
         let res = self.fresh_tmp();
         let _ = writeln!(out, "{ind}{cty} {res};");
+        // A contextual `Struct | null` conditional has pointer
+        // representation even when one arm is the by-value struct. Keep
+        // that arm in storage outside the branch block so the pointer
+        // remains live for the surrounding boundary construction/call.
+        let boundary_storage = if let Some(cid) = self.boundary_struct_ptr_id(ty)? {
+            let storage = self.fresh_tmp();
+            let storage_type = self.class_name(cid)?;
+            let _ = writeln!(out, "{ind}{storage_type} {storage};");
+            Some((cid, storage))
+        } else {
+            None
+        };
         let _ = writeln!(out, "{ind}if ({c}) {{");
         let tv = self.eval(then, out, depth + 1)?;
-        let _ = writeln!(out, "{}{res} = {tv};", indent(depth + 1));
+        if let Some((cid, storage)) = &boundary_storage {
+            if then.ty == Type::Class(*cid) {
+                let _ = writeln!(out, "{}{storage} = {tv};", indent(depth + 1));
+                let _ = writeln!(out, "{}{res} = &{storage};", indent(depth + 1));
+            } else {
+                let _ = writeln!(out, "{}{res} = {tv};", indent(depth + 1));
+            }
+        } else {
+            let _ = writeln!(out, "{}{res} = {tv};", indent(depth + 1));
+        }
         let _ = writeln!(out, "{ind}}} else {{");
         let ev = self.eval(els, out, depth + 1)?;
-        let _ = writeln!(out, "{}{res} = {ev};", indent(depth + 1));
+        if let Some((cid, storage)) = &boundary_storage {
+            if els.ty == Type::Class(*cid) {
+                let _ = writeln!(out, "{}{storage} = {ev};", indent(depth + 1));
+                let _ = writeln!(out, "{}{res} = &{storage};", indent(depth + 1));
+            } else {
+                let _ = writeln!(out, "{}{res} = {ev};", indent(depth + 1));
+            }
+        } else {
+            let _ = writeln!(out, "{}{res} = {ev};", indent(depth + 1));
+        }
         let _ = writeln!(out, "{ind}}}");
         Ok(res)
     }

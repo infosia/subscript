@@ -117,7 +117,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        122,
+        123,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -147,7 +147,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          handle-beside-arrays entry, and the a120 OBS-3 \
          nested-behind-element-pointer entry, and the a121 OBS-3 \
          unmarked-reach-through entry, the a122 OBS-3 two-pointer-members \
-         entry, and the a123 OBS-3 wide-descriptor entry"
+         entry, the a123 OBS-3 wide-descriptor entry, and the a124 R18 \
+         contextual-conditional entry"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

@@ -1,0 +1,12 @@
+reference-then-value=value:11
+reference-then-null=null
+null-then-null=null
+null-then-value=value:22
+2
+0
+0
+2
+aggregate-then-value=1:31:47
+aggregate-then-null=0:6015:6016
+null-then-null=0:6015:6016
+null-then-value=1:31:47
