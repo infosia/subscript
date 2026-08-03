@@ -159,6 +159,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         18,
     ),
     (
+        "r120-narrowing-escapes-conditional.ts",
+        RuleCode::S005,
+        22,
+    ),
+    (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
         10,
@@ -295,8 +300,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        115,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, and one R18 entry"
+        116,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, and one R19 entry"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

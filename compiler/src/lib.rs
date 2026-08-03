@@ -809,6 +809,99 @@ mod tests {
     }
 
     #[test]
+    fn conditional_arms_narrow_in_both_condition_orders() {
+        check_one(
+            "class C { x: u32; constructor(x: u32) { this.x = x; } }\n\
+             function use(value: C): u32 { return value.x; }\n\
+             function nonNullFirst(value: C | null): u32 {\n\
+               return value !== null ? use(value) : 0;\n\
+             }\n\
+             function nullFirst(value: C | null): u32 {\n\
+               return value === null ? 0 : use(value);\n\
+             }\n\
+             export function main(): void {\n\
+               print(`${nonNullFirst(new C(1))}:${nullFirst(new C(2))}`);\n\
+             }\n",
+        )
+        .expect("either null-comparison order narrows the matching conditional arm");
+    }
+
+    #[test]
+    fn nested_conditional_arms_keep_outer_narrowing() {
+        check_one(
+            "class C { x: u32; constructor(x: u32) { this.x = x; } }\n\
+             function use(value: C): u32 { return value.x; }\n\
+             function nested(value: C | null, flag: boolean): u32 {\n\
+               return value !== null\n\
+                 ? (flag ? use(value) : use(value))\n\
+                 : 0;\n\
+             }\n\
+             export function main(): void { print(`${nested(new C(3), true)}`); }\n",
+        )
+        .expect("nested conditional arms retain the facts established by outer conditions");
+    }
+
+    #[test]
+    fn conditional_and_if_narrowing_compose_in_either_nesting_order() {
+        check_one(
+            "class C { x: u32; constructor(x: u32) { this.x = x; } }\n\
+             function use(value: C): u32 { return value.x; }\n\
+             function conditionalInsideIf(value: C | null, flag: boolean): u32 {\n\
+               if (value !== null) {\n\
+                 return flag ? use(value) : use(value);\n\
+               }\n\
+               return 0;\n\
+             }\n\
+             function ifInsideConditional(value: C | null, flag: boolean): u32 {\n\
+               return flag\n\
+                 ? ((item: C | null): u32 => {\n\
+                     if (item !== null) { return use(item); }\n\
+                     return 0;\n\
+                   })(value)\n\
+                 : 0;\n\
+             }\n\
+             export function main(): void {\n\
+               print(`${conditionalInsideIf(new C(4), true)}:${ifInsideConditional(new C(5), true)}`);\n\
+             }\n",
+        )
+        .expect("conditional expressions and if statements compose in either nesting order");
+    }
+
+    #[test]
+    fn assignment_inside_conditional_arm_invalidates_narrowing() {
+        let diagnostics = check_one(
+            "class C { x: u32; constructor(x: u32) { this.x = x; } }\n\
+             function pair(reset: C | null, value: C): u32 { return value.x; }\n\
+             function invalidated(value: C | null): u32 {\n\
+               return value !== null ? pair(value = null, value) : 0;\n\
+             }\n\
+             export function main(): void { print(`${invalidated(new C(6))}`); }\n",
+        )
+        .expect_err("an earlier assignment in an arm kills its condition-derived fact");
+        assert_eq!(diagnostics[0].code, RuleCode::S005);
+        assert_eq!(diagnostics[0].pos.line, 4);
+        assert!(diagnostics[0]
+            .message
+            .contains("the argument expects `C`, got `C | null`"));
+    }
+
+    #[test]
+    fn conditional_arm_narrowing_does_not_escape_the_expression() {
+        let diagnostics = check_one(
+            "class C { x: u32; constructor(x: u32) { this.x = x; } }\n\
+             function use(value: C): u32 { return value.x; }\n\
+             function escaped(value: C | null): u32 {\n\
+               const observed: u32 = value !== null ? use(value) : 0;\n\
+               return use(value);\n\
+             }\n\
+             export function main(): void { print(`${escaped(new C(7))}`); }\n",
+        )
+        .expect_err("a fact established for one conditional arm must not escape");
+        assert_eq!(diagnostics[0].code, RuleCode::S005);
+        assert_eq!(diagnostics[0].pos.line, 5);
+    }
+
+    #[test]
     fn descriptor_missing_and_excess_members_are_rejected() {
         let missing = check_one(
             "@Descriptor\n\

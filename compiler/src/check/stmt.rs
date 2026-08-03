@@ -15,7 +15,7 @@ use super::{Checker, FnCtx, Local};
 
 /// Narrowing facts derived from a checked condition: paths known non-null
 /// or known present when the condition is true / false.
-fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
+pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
     if let ExprKind::Binary { op, left, right } = &cond.kind {
         match op {
             BinOp::Eq | BinOp::Ne => {

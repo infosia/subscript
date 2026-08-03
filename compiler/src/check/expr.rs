@@ -14,6 +14,7 @@ use crate::types::{
     ClassId, FuncType, Type, ABSENT_STRING_ALIAS_DISCRIMINANT,
 };
 
+use super::stmt::narrow_paths;
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
 
 /// Dotted path key for narrowing (`node`, `node.next`, `this.x`).
@@ -1414,8 +1415,27 @@ impl<'p> Checker<'p> {
                 cond.pos.clone(),
             );
         }
+        let (then_extra, else_extra) = narrow_paths(&cond);
+        let mut base = fx.narrowed.clone();
+
+        fx.narrowed = base
+            .iter()
+            .cloned()
+            .chain(then_extra.clone())
+            .collect();
         let then = self.check_expr(&c.cons, ctx, fx);
+        // Keep kills: facts removed inside the arm stay removed.
+        base.retain(|key| fx.narrowed.contains(key) || then_extra.contains(key));
+
+        fx.narrowed = base
+            .iter()
+            .cloned()
+            .chain(else_extra.clone())
+            .collect();
         let els = self.check_expr(&c.alt, ctx, fx);
+        base.retain(|key| fx.narrowed.contains(key) || else_extra.contains(key));
+        fx.narrowed = base;
+
         let ty = if let Some(context) = ctx {
             self.require_assignable(
                 &then.ty.clone(),
