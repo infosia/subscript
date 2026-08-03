@@ -992,6 +992,81 @@ uint64_t subProbeBreadthRenderPipelineCheck(
     const SGPUProbeBreadthRenderPipelineDescriptor *descriptor,
     uint32_t selector);
 
+/* ==== OBS-3 wide render-pipeline descriptor (§44.8) =================
+ *
+ * This fixture composes the downstream profile in one descriptor without
+ * changing any established type above. The top level carries a string, a
+ * nullable handle, a nested by-value vertex state whose array elements own
+ * array pairs, two further by-value states, and two simultaneously-present
+ * count-less struct pointers. Both pointer targets hold array pairs whose
+ * elements contain another count-less pointer to a pair-bearing payload. */
+
+typedef struct SGPUProbeWidePairEntry {
+    SGPUStringView key;
+    size_t valuesCount;
+    const uint32_t *values;
+} SGPUProbeWidePairEntry;
+
+typedef struct SGPUProbeWideVertexState {
+    SGPUStringView entryPoint;
+    size_t buffersCount;
+    const SGPUProbeWidePairEntry *buffers;
+} SGPUProbeWideVertexState;
+
+typedef struct SGPUProbeWidePrimitiveState {
+    uint32_t topology;
+    uint32_t stripIndexFormat;
+} SGPUProbeWidePrimitiveState;
+
+typedef struct SGPUProbeWideMultisampleState {
+    uint32_t count;
+    uint32_t mask;
+    uint32_t alphaToCoverage;
+} SGPUProbeWideMultisampleState;
+
+typedef struct SGPUProbeWidePayload {
+    SGPUStringView label;
+    size_t valuesCount;
+    const uint32_t *values;
+} SGPUProbeWidePayload;
+
+typedef struct SGPUProbeWidePointerElement {
+    uint32_t kind;
+    const SGPUProbeWidePayload *payload;
+} SGPUProbeWidePointerElement;
+
+typedef struct SGPUProbeWideDepthStencilState {
+    size_t constantsCount;
+    const SGPUProbeWidePairEntry *constants;
+    size_t elementsCount;
+    const SGPUProbeWidePointerElement *elements;
+} SGPUProbeWideDepthStencilState;
+
+typedef struct SGPUProbeWideFragmentState {
+    SubDevice _Nullable module;
+    SGPUStringView entryPoint;
+    size_t constantsCount;
+    const SGPUProbeWidePairEntry *constants;
+    size_t elementsCount;
+    const SGPUProbeWidePointerElement *elements;
+} SGPUProbeWideFragmentState;
+
+typedef struct SGPUProbeWideRenderPipelineDescriptor {
+    SGPUStringView label;
+    SubDevice _Nullable layout;
+    SGPUProbeWideVertexState vertex;
+    SGPUProbeWidePrimitiveState primitive;
+    const SGPUProbeWideDepthStencilState *depthStencil;
+    SGPUProbeWideMultisampleState multisample;
+    const SGPUProbeWideFragmentState *fragment;
+} SGPUProbeWideRenderPipelineDescriptor;
+
+/* Selectors 0..77 provide deterministic evidence for every outer field,
+ * every pair, both elements of each pair, and every pointer-reachable level. */
+uint64_t subProbeWideRenderPipelineCheck(
+    const SGPUProbeWideRenderPipelineDescriptor *descriptor,
+    uint32_t selector);
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ========
  *
  * Queue-submit shape: a leading opaque handle followed by the adjacent

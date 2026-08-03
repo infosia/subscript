@@ -175,6 +175,40 @@ Four rounds, no reproduction. The breadth and depth axes are now
 both pinned as classes rather than instances, which is the durable
 outcome; the downstream's failure remains unexplained here.
 
+## Round 5 (2026-08-03) — real artifacts read; scale raised; output gap closed
+
+The downstream dropped its failing program and generated API layer
+into `corpus/interop/` as untracked evidence (`obs3-*.ts.txt`,
+referenced by nothing). Reading them replaced four rounds of
+inference with fact: `toSGPURenderPipelineDescriptor` branches four
+ways on `depthStencil` × `fragment`, and only the both-present arm
+passes seven constructor arguments with two separately built
+aggregates among them. With §44.7's output fix the run now prints
+three lines and ends at the `createRenderPipeline` call.
+
+`a123-interop-wide-descriptor` reproduces that profile in one
+foreign call — string, nullable handle, nested aggregate whose
+array elements carry their own pairs, by-value aggregates on both
+sides, two simultaneously-present reach-through pointer members
+whose targets hold array pairs. **Clean**, dev ≡ ship ≡ golden.
+
+The direct harness went from 6 to **32** simultaneously-lowered
+positions with breadth × depth combined — 528 targets plus 528
+nested leaves, **1 056 scratch owners** — asserting unique
+ownership, pairwise-disjoint regions, per-type sizing, and address
+plans independent of sibling payloads. All pass.
+
+Second testability defect (downstream Fact 4) fixed: §44.7's fix
+delivered output on the non-unwinding panic path but not on a hard
+signal, where the JIT's in-memory buffer and the panic hook are
+both lost. The JIT observer now flushes each completed line
+through a parent-owned file; the C-AOT path already flushed and
+did not discard on abnormal exit, and both are now pinned by
+per-termination-mode tests.
+
+Five rounds, no reproduction. Depth, breadth, scale, and the
+combination are pinned as classes.
+
 ### Process note
 
 The implementing agent reformatted six unrelated `codegen/src`

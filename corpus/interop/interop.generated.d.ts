@@ -594,6 +594,70 @@ declare class SGPUProbeBreadthRenderPipelineDescriptor {
 }
 
 declare function subProbeBreadthRenderPipelineCheck(descriptor: SGPUProbeBreadthRenderPipelineDescriptor | null, selector: u32): u64;
+
+declare class SGPUProbeWidePairEntry {
+  key: string;
+  values: u32[];
+  constructor(key: string, values: u32[]);
+}
+
+declare class SGPUProbeWideVertexState {
+  entryPoint: string;
+  buffers: SGPUProbeWidePairEntry[];
+  constructor(entryPoint: string, buffers: SGPUProbeWidePairEntry[]);
+}
+
+declare class SGPUProbeWidePrimitiveState {
+  topology: u32;
+  stripIndexFormat: u32;
+  constructor(topology: u32, stripIndexFormat: u32);
+}
+
+declare class SGPUProbeWideMultisampleState {
+  count: u32;
+  mask: u32;
+  alphaToCoverage: u32;
+  constructor(count: u32, mask: u32, alphaToCoverage: u32);
+}
+
+declare class SGPUProbeWidePayload {
+  label: string;
+  values: u32[];
+  constructor(label: string, values: u32[]);
+}
+
+declare class SGPUProbeWidePointerElement {
+  kind: u32;
+  payload: SGPUProbeWidePayload | null;
+  constructor(kind: u32, payload: SGPUProbeWidePayload | null);
+}
+
+declare class SGPUProbeWideDepthStencilState {
+  constants: SGPUProbeWidePairEntry[];
+  elements: SGPUProbeWidePointerElement[];
+  constructor(constants: SGPUProbeWidePairEntry[], elements: SGPUProbeWidePointerElement[]);
+}
+
+declare class SGPUProbeWideFragmentState {
+  module: SubDevice | null;
+  entryPoint: string;
+  constants: SGPUProbeWidePairEntry[];
+  elements: SGPUProbeWidePointerElement[];
+  constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeWidePairEntry[], elements: SGPUProbeWidePointerElement[]);
+}
+
+declare class SGPUProbeWideRenderPipelineDescriptor {
+  label: string;
+  layout: SubDevice | null;
+  vertex: SGPUProbeWideVertexState;
+  primitive: SGPUProbeWidePrimitiveState;
+  depthStencil: SGPUProbeWideDepthStencilState | null;
+  multisample: SGPUProbeWideMultisampleState;
+  fragment: SGPUProbeWideFragmentState | null;
+  constructor(label: string, layout: SubDevice | null, vertex: SGPUProbeWideVertexState, primitive: SGPUProbeWidePrimitiveState, depthStencil: SGPUProbeWideDepthStencilState | null, multisample: SGPUProbeWideMultisampleState, fragment: SGPUProbeWideFragmentState | null);
+}
+
+declare function subProbeWideRenderPipelineCheck(descriptor: SGPUProbeWideRenderPipelineDescriptor | null, selector: u32): u64;
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 

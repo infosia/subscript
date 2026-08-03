@@ -1008,6 +1008,121 @@ uint64_t subProbeBreadthRenderPipelineCheck(
     return UINT64_MAX - 1u;
 }
 
+/* ==== OBS-3 wide render-pipeline descriptor (§44.8) ================ */
+
+static uint64_t subProbeWidePairEntryCheck(
+    const SGPUProbeWidePairEntry *entries,
+    size_t count,
+    uint32_t slot) {
+    size_t index = (size_t)(slot / 5u);
+    uint32_t member = slot % 5u;
+    if (entries == NULL || index >= count) return UINT64_MAX - 2u;
+    const SGPUProbeWidePairEntry *entry = &entries[index];
+    if (member == 0u) return subProbeViewSum(entry->key);
+    if (member == 1u) return (uint64_t)entry->key.len;
+    if (member == 2u) return (uint64_t)entry->valuesCount;
+    size_t value_index = (size_t)(member - 3u);
+    if (entry->values == NULL || value_index >= entry->valuesCount) {
+        return UINT64_MAX - 3u;
+    }
+    return (uint64_t)entry->values[value_index];
+}
+
+static uint64_t subProbeWidePointerElementCheck(
+    const SGPUProbeWidePointerElement *elements,
+    size_t count,
+    uint32_t slot) {
+    size_t index = (size_t)(slot / 7u);
+    uint32_t member = slot % 7u;
+    if (elements == NULL || index >= count) return UINT64_MAX - 2u;
+    const SGPUProbeWidePointerElement *element = &elements[index];
+    if (member == 0u) return (uint64_t)element->kind;
+    if (member == 1u) return element->payload == NULL ? 0u : 1u;
+    if (element->payload == NULL) return UINT64_MAX - 3u;
+    if (member == 2u) return subProbeViewSum(element->payload->label);
+    if (member == 3u) return (uint64_t)element->payload->label.len;
+    if (member == 4u) return (uint64_t)element->payload->valuesCount;
+    size_t value_index = (size_t)(member - 5u);
+    if (element->payload->values == NULL
+        || value_index >= element->payload->valuesCount) {
+        return UINT64_MAX - 4u;
+    }
+    return (uint64_t)element->payload->values[value_index];
+}
+
+uint64_t subProbeWideRenderPipelineCheck(
+    const SGPUProbeWideRenderPipelineDescriptor *descriptor,
+    uint32_t selector) {
+    if (descriptor == NULL) return UINT64_MAX;
+    switch (selector) {
+        case 0: return subProbeViewSum(descriptor->label);
+        case 1: return (uint64_t)descriptor->label.len;
+        case 2: return descriptor->layout == NULL ? 0u : 1u;
+        case 3: return subProbeViewSum(descriptor->vertex.entryPoint);
+        case 4: return (uint64_t)descriptor->vertex.entryPoint.len;
+        case 5: return (uint64_t)descriptor->vertex.buffersCount;
+        case 16: return (uint64_t)descriptor->primitive.topology;
+        case 17: return (uint64_t)descriptor->primitive.stripIndexFormat;
+        case 18: return descriptor->depthStencil == NULL ? 0u : 1u;
+        case 45: return (uint64_t)descriptor->multisample.count;
+        case 46: return (uint64_t)descriptor->multisample.mask;
+        case 47: return (uint64_t)descriptor->multisample.alphaToCoverage;
+        case 48: return descriptor->fragment == NULL ? 0u : 1u;
+        default: break;
+    }
+
+    if (selector >= 6u && selector <= 15u) {
+        return subProbeWidePairEntryCheck(
+            descriptor->vertex.buffers,
+            descriptor->vertex.buffersCount,
+            selector - 6u);
+    }
+
+    if (descriptor->depthStencil == NULL && selector >= 19u && selector <= 44u) {
+        return 12000u + (uint64_t)selector;
+    }
+    if (selector == 19u) {
+        return (uint64_t)descriptor->depthStencil->constantsCount;
+    }
+    if (selector == 20u) {
+        return (uint64_t)descriptor->depthStencil->elementsCount;
+    }
+    if (selector >= 21u && selector <= 30u) {
+        return subProbeWidePairEntryCheck(
+            descriptor->depthStencil->constants,
+            descriptor->depthStencil->constantsCount,
+            selector - 21u);
+    }
+    if (selector >= 31u && selector <= 44u) {
+        return subProbeWidePointerElementCheck(
+            descriptor->depthStencil->elements,
+            descriptor->depthStencil->elementsCount,
+            selector - 31u);
+    }
+
+    if (descriptor->fragment == NULL && selector >= 49u && selector <= 77u) {
+        return 13000u + (uint64_t)selector;
+    }
+    if (selector == 49u) return descriptor->fragment->module == NULL ? 0u : 1u;
+    if (selector == 50u) return subProbeViewSum(descriptor->fragment->entryPoint);
+    if (selector == 51u) return (uint64_t)descriptor->fragment->entryPoint.len;
+    if (selector == 52u) return (uint64_t)descriptor->fragment->constantsCount;
+    if (selector == 53u) return (uint64_t)descriptor->fragment->elementsCount;
+    if (selector >= 54u && selector <= 63u) {
+        return subProbeWidePairEntryCheck(
+            descriptor->fragment->constants,
+            descriptor->fragment->constantsCount,
+            selector - 54u);
+    }
+    if (selector >= 64u && selector <= 77u) {
+        return subProbeWidePointerElementCheck(
+            descriptor->fragment->elements,
+            descriptor->fragment->elementsCount,
+            selector - 64u);
+    }
+    return UINT64_MAX - 1u;
+}
+
 /* ==== R11 handle pairs at parameter position (compiler.md §34) ===== */
 
 uint64_t subProbeQueueSubmitCheck(

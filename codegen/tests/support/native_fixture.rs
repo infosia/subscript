@@ -67,6 +67,7 @@ extern "C" {
     fn subProbeFullRenderPipelineWithNestedBlendCheck();
     fn subProbeFullRenderPipelineWithUnmarkedBlendCheck();
     fn subProbeBreadthRenderPipelineCheck();
+    fn subProbeWideRenderPipelineCheck();
     fn subProbeQueueSubmitCheck();
     fn subProbeSetBindGroupCheck();
 }
@@ -170,6 +171,10 @@ pub fn library() -> NativeLibrary {
         (
             "subProbeBreadthRenderPipelineCheck".to_string(),
             subProbeBreadthRenderPipelineCheck as *const u8,
+        ),
+        (
+            "subProbeWideRenderPipelineCheck".to_string(),
+            subProbeWideRenderPipelineCheck as *const u8,
         ),
         (
             "subProbeQueueSubmitCheck".to_string(),

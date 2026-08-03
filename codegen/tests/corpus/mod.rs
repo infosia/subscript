@@ -74,6 +74,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeFullRenderPipeline",
         // OBS-3 round 4: two simultaneous reach-through pointer members.
         "subProbeBreadthRenderPipeline",
+        // OBS-3 round 5: wide descriptor breadth and depth combined.
+        "subProbeWideRenderPipeline",
         // R11 registered-handle pairs at parameter position.
         "subProbeQueueSubmit",
         // R12 nullable registered handles at parameter position.

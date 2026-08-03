@@ -171,6 +171,20 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("constants: u32[];"));
     assert!(!m.contains("biasesCount"));
     assert!(!m.contains("constantsCount"));
+    // OBS-3 round 5 (§44.8). The wide descriptor keeps both count-less
+    // pointers independently reachable while every nested pair collapses,
+    // including pairs in array elements and behind element pointers.
+    assert!(m.contains("vertex: SGPUProbeWideVertexState;"));
+    assert!(m.contains("buffers: SGPUProbeWidePairEntry[];"));
+    assert!(m.contains("depthStencil: SGPUProbeWideDepthStencilState | null;"));
+    assert!(m.contains("fragment: SGPUProbeWideFragmentState | null;"));
+    assert!(m.contains("payload: SGPUProbeWidePayload | null;"));
+    assert!(m.contains("constants: SGPUProbeWidePairEntry[];"));
+    assert!(m.contains("elements: SGPUProbeWidePointerElement[];"));
+    assert!(m.contains("values: u32[];"));
+    assert!(!m.contains("buffersCount"));
+    assert!(!m.contains("elementsCount"));
+    assert!(!m.contains("valuesCount"));
     // Async op returning a future by value while taking the two-userdata
     // callback-info.
     assert!(m.contains(

@@ -1,10 +1,12 @@
 //! The dev-tier JIT driver: instantiates the tier-neutral lowering
 //! with `cranelift-jit`, resolves the runtime's `extern "C"` symbols,
-//! runs the exported `main(): void`, and returns the captured stdout
-//! bytes or a trap report.
+//! runs the exported `main(): void`, and returns captured stdout bytes or a
+//! trap report. A parent harness may also provide a write-through file that
+//! retains completed lines after hard termination.
 
 use std::cell::Cell;
 use std::ffi::c_void;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::time::{Duration, Instant};
 
@@ -17,6 +19,11 @@ use subscript_runtime::{
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions, Lowered};
 use crate::native::{missing_symbol, register_symbols};
 use crate::NativeLibrary;
+
+/// Environment variable naming an existing parent-owned file. JIT run
+/// helpers append and flush every completed output line before execution
+/// continues.
+pub const JIT_OUTPUT_FILE_ENV: &str = "SUBSCRIPT_CODEGEN_JIT_OUTPUT_FILE";
 
 /// A runtime fault that stopped the script (collisions.md C6). The
 /// host process survives; this is the report the Context recorded.
@@ -1038,6 +1045,11 @@ struct CompletedRun {
     elapsed: Duration,
 }
 
+struct CapturedStdout {
+    bytes: Vec<u8>,
+    write_through: Option<File>,
+}
+
 thread_local! {
     /// The active run's captured output. A panic in generated/runtime code can
     /// abort rather than unwind across the C ABI, so the process-wide panic
@@ -1091,16 +1103,22 @@ impl Drop for AbortingStdoutGuard {
     }
 }
 
-/// Captures each printed line outside the Context. Keeping the Vec in a
-/// stable box lets the panic hook surface it before a non-unwinding C-ABI
-/// panic aborts the JIT host process.
+/// Captures each printed line outside the Context and, when configured,
+/// flushes it to a parent-owned file before returning. The file survives a
+/// later hard termination that cannot run Rust destructors or a panic hook.
 unsafe extern "C" fn capture_stdout_line(userdata: *mut c_void, line: *const u8, line_len: u64) {
-    // SAFETY: execute_entry supplies a live Box<Vec<u8>> for the duration of
-    // every generated-code call; the runtime supplies a live line slice.
-    let stdout = unsafe { &mut *userdata.cast::<Vec<u8>>() };
+    // SAFETY: execute_entry supplies a live Box<CapturedStdout> for the
+    // duration of every generated-code call; the runtime supplies a live line
+    // slice.
+    let stdout = unsafe { &mut *userdata.cast::<CapturedStdout>() };
     let line = unsafe { std::slice::from_raw_parts(line, line_len as usize) };
-    stdout.extend_from_slice(line);
-    stdout.push(b'\n');
+    stdout.bytes.extend_from_slice(line);
+    stdout.bytes.push(b'\n');
+    if let Some(file) = &mut stdout.write_through {
+        let _ = file.write_all(line);
+        let _ = file.write_all(b"\n");
+        let _ = file.flush();
+    }
 }
 
 /// Runs the module initializer and then the exported `main` on a fresh
@@ -1120,13 +1138,25 @@ fn execute_entry(
     let init_ptr = module.get_finalized_function(lowered.init);
     let main_ptr = module.get_finalized_function(lowered.main);
 
+    let write_through = match std::env::var_os(JIT_OUTPUT_FILE_ENV) {
+        Some(path) => Some(OpenOptions::new().append(true).open(&path).map_err(|error| {
+            RunError::Internal(internal(format!(
+                "open JIT output file {}: {error}",
+                std::path::Path::new(&path).display()
+            )))
+        })?),
+        None => None,
+    };
     let mut ctx = Context::new();
-    let mut stdout = Box::new(Vec::new());
+    let mut stdout = Box::new(CapturedStdout {
+        bytes: Vec::new(),
+        write_through,
+    });
     ctx.set_print_observer(
         Some(capture_stdout_line),
-        (&mut *stdout as *mut Vec<u8>).cast::<c_void>(),
+        (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
     );
-    let aborting_stdout = AbortingStdoutGuard::install(&stdout);
+    let aborting_stdout = AbortingStdoutGuard::install(&stdout.bytes);
     let diagnostics_set = ctx.set_freed_handle_diagnostics(
         freed_handle_diagnostics,
         0,
@@ -1187,7 +1217,7 @@ fn execute_entry(
     });
     ctx.set_print_observer(None, std::ptr::null_mut());
     drop(aborting_stdout);
-    let stdout = *stdout;
+    let stdout = stdout.bytes;
     match trap {
         Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
             rule,
@@ -1208,7 +1238,8 @@ fn run_entry(
     lowered: &Lowered,
     fail_alloc_after: Option<u64>,
 ) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(module, lowered, fail_alloc_after, false).map(|run| (run.stdout, run.elapsed))
+    execute_entry(module, lowered, fail_alloc_after, false)
+        .map(|run| (run.stdout, run.elapsed))
 }
 
 fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {

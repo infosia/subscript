@@ -124,6 +124,8 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // OBS-3 round 4 (§44.7): two count-less reach-through pointers
             // separated by a by-value aggregate.
             "subProbeBreadthRenderPipelineCheck",
+            // OBS-3 round 5 (§44.8): the downstream-wide descriptor profile.
+            "subProbeWideRenderPipelineCheck",
             // R11 (§34): registered-handle pair at parameter position.
             "subProbeQueueSubmitCheck",
             // R12 (§35): nullable registered handle at parameter position.
