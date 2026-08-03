@@ -1011,9 +1011,17 @@ because x86-64 hosts split by OS: `x86_64-pc-windows-msvc` is Win64,
 
 Implemented and verified:
 
-- **AAPCS64 (arm64)**: a ≤16-byte struct is packed into registers (its
-  components as arguments); a larger one is passed by reference to a caller
-  copy (AAPCS64 B.4).
+- **AAPCS64 (arm64)**: an HFA/HVA is passed component-wise in float
+  registers; any other composite of at most 16 bytes is passed in
+  consecutive general registers as **eightbyte images** — the struct's
+  bytes at their C offsets, one register per eightbyte — and a larger one
+  is passed by reference to a caller copy (AAPCS64 B.4). *(Corrected
+  2026-08-03 by §47, OBS-4: this rule read "its components as arguments",
+  which is a different and wrong marshaling — it silently delivered wrong
+  values for any by-value struct with two or more sub-eightbyte integer
+  fields, since the callee reads a whole eightbyte where the caller had
+  written one field. `{i64,i64}` and HFAs were unaffected, which is why
+  it survived.)*
 - **Win64 (`x86_64-pc-windows-msvc`)**: a struct whose total size is
   exactly 1, 2, 4, or 8 bytes is passed **by value in one integer
   register** — the whole struct as a single packed integer of that width,

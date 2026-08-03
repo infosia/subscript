@@ -223,6 +223,82 @@ fn is_pure_hfa_leaves(leaves: &[types::Type]) -> bool {
     leaves.iter().all(|t| *t == types::F32) || leaves.iter().all(|t| *t == types::F64)
 }
 
+/// The target ABI whose by-value aggregate argument rule is being planned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AggregateArgAbi {
+    Aapcs64,
+    Win64,
+}
+
+/// One AAPCS64 general-register image. `offset` is the image's byte offset
+/// in the C struct; `components` records which C-layout fields are packed
+/// into it. The emitted value is always one `i64` loaded from a zeroed
+/// caller slot after those components have been stored at their C offsets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EightbyteImage {
+    offset: u32,
+    components: Vec<(u32, types::Type)>,
+}
+
+/// Register-image plan for one by-value boundary aggregate argument.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AggregateArgPlan {
+    /// AAPCS64 HFA: fields remain component-wise float-register arguments.
+    Hfa(Vec<(u32, types::Type)>),
+    /// AAPCS64 non-HFA composite of at most 16 bytes: one or two integer
+    /// register images, with every field packed at its C offset.
+    Eightbytes(Vec<EightbyteImage>),
+    /// Win64 1/2/4/8-byte struct: the complete packed integer image.
+    PackedInteger(types::Type),
+    /// Caller copy whose address is the ABI argument.
+    Indirect,
+}
+
+/// Computes the target ABI's register-image plan from C-layout components.
+/// This is deliberately separate from SSA materialization so unit tests pin
+/// the ABI class (packing, HFA, and indirect thresholds), not only corpus
+/// instances that happen to cross a foreign boundary.
+fn plan_aggregate_arg(
+    abi: AggregateArgAbi,
+    components: &[(u32, types::Type)],
+    total: u32,
+) -> AggregateArgPlan {
+    match abi {
+        AggregateArgAbi::Aapcs64 => {
+            let leaves = components.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
+            if is_pure_hfa_leaves(&leaves) {
+                return AggregateArgPlan::Hfa(components.to_vec());
+            }
+            if total <= 16 {
+                let count = total.div_ceil(8);
+                let images = (0..count)
+                    .map(|index| {
+                        let offset = index * 8;
+                        let components = components
+                            .iter()
+                            .copied()
+                            .filter(|(component_offset, _)| {
+                                *component_offset >= offset && *component_offset < offset + 8
+                            })
+                            .collect();
+                        EightbyteImage { offset, components }
+                    })
+                    .collect();
+                AggregateArgPlan::Eightbytes(images)
+            } else {
+                AggregateArgPlan::Indirect
+            }
+        }
+        AggregateArgAbi::Win64 => match total {
+            1 => AggregateArgPlan::PackedInteger(types::I8),
+            2 => AggregateArgPlan::PackedInteger(types::I16),
+            4 => AggregateArgPlan::PackedInteger(types::I32),
+            8 => AggregateArgPlan::PackedInteger(types::I64),
+            _ => AggregateArgPlan::Indirect,
+        },
+    }
+}
+
 /// True for a callback-info userdata slot — the boundary `object | null`
 /// form (`Type::Nullable(Object)`) or a bare `object` (§14.4). A callback
 /// field is followed by one such slot (single-userdata info) or two
@@ -3697,12 +3773,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// function-pointer field → the generic trampoline plus a binding
     /// built from the following `userdata` slot — the callback-info idiom),
     /// then passes them the way the platform C ABI passes the struct.
-    /// AAPCS64: a composite of ≤ 16 bytes goes in registers (the components
-    /// as arguments); a larger one is passed by reference (built into a
-    /// stack slot, its address passed — AAPCS64 B.4). Win64: a 1/2/4/8-byte
-    /// aggregate goes in one integer register as its raw bytes; any other
-    /// size is passed by reference. Both match how the C compiler passes it
-    /// on the ship tier.
+    /// AAPCS64: an HFA goes component-wise in float registers; any other
+    /// composite of at most 16 bytes goes in one or two general-register
+    /// eightbyte images, with fields packed at their C offsets; a larger one
+    /// is passed by reference to a caller copy (AAPCS64 B.4). Win64: a
+    /// 1/2/4/8-byte aggregate goes in one integer register as its raw bytes;
+    /// any other size is passed by reference. Both match how the C compiler
+    /// passes it on the ship tier.
     fn marshal_boundary_struct(
         &mut self,
         cid: usize,
@@ -3874,16 +3951,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// target C ABI passes it (`specs/blocks/compiler.md` §12.3a). `comps`
     /// are its C-layout components — `(byte offset, CLIF type, value)`.
     ///
-    /// - **AAPCS64**: ≤ 16 bytes → its components in registers (as
-    ///   arguments); larger → by reference to a caller copy (B.4).
+    /// - **AAPCS64**: HFA → component-wise float registers; other
+    ///   composites ≤ 16 bytes → consecutive general-register eightbyte
+    ///   images; larger → by reference to a caller copy (B.4).
     /// - **Win64**: exactly 1/2/4/8 bytes → one integer register holding
     ///   the struct's raw bytes as a same-width integer (no HFA, no
     ///   multi-register packing); every other size → by reference.
     ///
-    /// The non-Win64 branch reproduces the AAPCS64 rule, which is also the
-    /// pre-existing behavior for `(ptr,len)` pairs on every non-Win64 host —
-    /// a 16-byte by-value aggregate that occupies two registers on
-    /// AAPCS64/SysV; only Win64 diverges (by reference at 16 bytes).
+    /// SysV never reaches this helper: the target gate above rejects it
+    /// loudly before a signature can be built.
     fn push_aggregate_abi(
         &mut self,
         sig: &mut Signature,
@@ -3892,15 +3968,40 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         total: u32,
         align: u32,
     ) {
-        if self.is_win64() {
-            let int_ty = match total {
-                1 => Some(types::I8),
-                2 => Some(types::I16),
-                4 => Some(types::I32),
-                8 => Some(types::I64),
-                _ => None,
-            };
-            if let Some(width) = int_ty {
+        let abi = if self.is_win64() {
+            AggregateArgAbi::Win64
+        } else {
+            AggregateArgAbi::Aapcs64
+        };
+        let component_layout = comps
+            .iter()
+            .map(|(offset, ty, _)| (*offset, *ty))
+            .collect::<Vec<_>>();
+        match plan_aggregate_arg(abi, &component_layout, total) {
+            AggregateArgPlan::Hfa(components) => {
+                for ((planned_offset, planned_ty), (offset, ty, value)) in
+                    components.iter().zip(comps)
+                {
+                    debug_assert_eq!((*planned_offset, *planned_ty), (*offset, *ty));
+                    self.push_abi(sig, argv, *ty, *value);
+                }
+            }
+            AggregateArgPlan::Eightbytes(images) => {
+                let image_size = images.len() as u32 * 8;
+                let slot = self.temp_slot(image_size, align.max(8));
+                self.zero_bytes(slot, image_size, align.max(8));
+                for (offset, _, value) in comps {
+                    self.b.ins().store(flags(), *value, slot, *offset as i32);
+                }
+                for image in images {
+                    let word = self
+                        .b
+                        .ins()
+                        .load(types::I64, flags(), slot, image.offset as i32);
+                    self.push_abi(sig, argv, types::I64, word);
+                }
+            }
+            AggregateArgPlan::PackedInteger(width) => {
                 // Store the components at their offsets, then load the whole
                 // slot back as one integer: the stored bytes are the Win64
                 // register image for any field mix (including float fields).
@@ -3910,7 +4011,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 let word = self.b.ins().load(width, flags(), slot, 0);
                 self.push_abi(sig, argv, width, word);
-            } else {
+            }
+            AggregateArgPlan::Indirect => {
                 // By reference: caller copy, its address passed.
                 let slot = self.temp_slot(total, align);
                 for (off, _, v) in comps {
@@ -3918,18 +4020,6 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 self.push_abi(sig, argv, types::I64, slot);
             }
-        } else if total <= 16 {
-            // AAPCS64 small composite: passed in registers as its components.
-            for (_, clif, v) in comps {
-                self.push_abi(sig, argv, *clif, *v);
-            }
-        } else {
-            // AAPCS64 large composite: passed by reference to a caller copy.
-            let slot = self.temp_slot(total, align);
-            for (off, _, v) in comps {
-                self.b.ins().store(flags(), *v, slot, *off as i32);
-            }
-            self.push_abi(sig, argv, types::I64, slot);
         }
     }
 
@@ -7673,7 +7763,8 @@ pub(crate) fn define_worker_entry<M: Module>(
 #[cfg(test)]
 mod hfa_tests {
     use super::{
-        ensure_explicit_frame_supported, is_pure_hfa_leaves,
+        ensure_explicit_frame_supported, is_pure_hfa_leaves, plan_aggregate_arg,
+        AggregateArgAbi, AggregateArgPlan, EightbyteImage,
     };
     use cranelift_codegen::ir::{
         types, Function, StackSlotData, StackSlotKind,
@@ -7734,5 +7825,169 @@ mod hfa_tests {
             types::F32,
             types::F32
         ])); // 5 floats — not an HFA (>4 members)
+    }
+
+    fn image(offset: u32, components: &[(u32, types::Type)]) -> EightbyteImage {
+        EightbyteImage {
+            offset,
+            components: components.to_vec(),
+        }
+    }
+
+    #[test]
+    fn aapcs64_argument_plans_pack_c_layout_eightbytes_and_preserve_hfas() {
+        use AggregateArgPlan::{Eightbytes, Hfa, Indirect};
+
+        let cases = [
+            (
+                "{i32}",
+                vec![(0, types::I32)],
+                4,
+                Eightbytes(vec![image(0, &[(0, types::I32)])]),
+            ),
+            (
+                "{i32,i32}",
+                vec![(0, types::I32), (4, types::I32)],
+                8,
+                Eightbytes(vec![image(
+                    0,
+                    &[(0, types::I32), (4, types::I32)],
+                )]),
+            ),
+            (
+                "{i32,i32,i32}",
+                vec![(0, types::I32), (4, types::I32), (8, types::I32)],
+                12,
+                Eightbytes(vec![
+                    image(0, &[(0, types::I32), (4, types::I32)]),
+                    image(8, &[(8, types::I32)]),
+                ]),
+            ),
+            (
+                "{i16,i16,i32}",
+                vec![(0, types::I16), (2, types::I16), (4, types::I32)],
+                8,
+                Eightbytes(vec![image(
+                    0,
+                    &[(0, types::I16), (2, types::I16), (4, types::I32)],
+                )]),
+            ),
+            (
+                "{u8,u8,u8,u8}",
+                vec![
+                    (0, types::I8),
+                    (1, types::I8),
+                    (2, types::I8),
+                    (3, types::I8),
+                ],
+                4,
+                Eightbytes(vec![image(
+                    0,
+                    &[
+                        (0, types::I8),
+                        (1, types::I8),
+                        (2, types::I8),
+                        (3, types::I8),
+                    ],
+                )]),
+            ),
+            (
+                "{i64,i64}",
+                vec![(0, types::I64), (8, types::I64)],
+                16,
+                Eightbytes(vec![
+                    image(0, &[(0, types::I64)]),
+                    image(8, &[(8, types::I64)]),
+                ]),
+            ),
+            (
+                "HFA {f32,f32}",
+                vec![(0, types::F32), (4, types::F32)],
+                8,
+                Hfa(vec![(0, types::F32), (4, types::F32)]),
+            ),
+            (
+                "HFA {f32,f32,f32,f32}",
+                vec![
+                    (0, types::F32),
+                    (4, types::F32),
+                    (8, types::F32),
+                    (12, types::F32),
+                ],
+                16,
+                Hfa(vec![
+                    (0, types::F32),
+                    (4, types::F32),
+                    (8, types::F32),
+                    (12, types::F32),
+                ]),
+            ),
+            (
+                "mixed {i32,f32}",
+                vec![(0, types::I32), (4, types::F32)],
+                8,
+                Eightbytes(vec![image(
+                    0,
+                    &[(0, types::I32), (4, types::F32)],
+                )]),
+            ),
+            (
+                "padded {i32,i64}",
+                vec![(0, types::I32), (8, types::I64)],
+                16,
+                Eightbytes(vec![
+                    image(0, &[(0, types::I32)]),
+                    image(8, &[(8, types::I64)]),
+                ]),
+            ),
+            (
+                ">16 {i64,i64,i64}",
+                vec![(0, types::I64), (8, types::I64), (16, types::I64)],
+                24,
+                Indirect,
+            ),
+        ];
+
+        for (shape, components, total, expected) in cases {
+            assert_eq!(
+                plan_aggregate_arg(AggregateArgAbi::Aapcs64, &components, total),
+                expected,
+                "wrong AAPCS64 argument plan for {shape}"
+            );
+        }
+    }
+
+    #[test]
+    fn win64_argument_plan_keeps_packed_integer_and_indirect_rule() {
+        use AggregateArgPlan::{Indirect, PackedInteger};
+
+        for (total, width) in [
+            (1, types::I8),
+            (2, types::I16),
+            (4, types::I32),
+            (8, types::I64),
+        ] {
+            assert_eq!(
+                plan_aggregate_arg(AggregateArgAbi::Win64, &[(0, width)], total),
+                PackedInteger(width)
+            );
+        }
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::Win64,
+                &[(0, types::F32), (4, types::F32)],
+                8
+            ),
+            PackedInteger(types::I64),
+            "Win64 has no HFA argument special case"
+        );
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::Win64,
+                &[(0, types::I64), (8, types::I64)],
+                16
+            ),
+            Indirect
+        );
     }
 }

@@ -70,6 +70,17 @@ extern "C" {
     fn subProbeWideRenderPipelineCheck();
     fn subProbeQueueSubmitCheck();
     fn subProbeSetBindGroupCheck();
+    fn subByValueI32OneReport();
+    fn subByValueI32PairReport();
+    fn subByValueI32TripleReport();
+    fn subByValueI16I16I32Report();
+    fn subByValueU8FourReport();
+    fn subByValueI64PairReport();
+    fn subByValueF32Hfa2Report();
+    fn subByValueF32Hfa4Report();
+    fn subByValueI32F32Report();
+    fn subByValueI32I64Report();
+    fn subByValueI64TripleReport();
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -184,6 +195,17 @@ pub fn library() -> NativeLibrary {
             "subProbeSetBindGroupCheck".to_string(),
             subProbeSetBindGroupCheck as *const u8,
         ),
+        ("subByValueI32OneReport".to_string(), subByValueI32OneReport as *const u8),
+        ("subByValueI32PairReport".to_string(), subByValueI32PairReport as *const u8),
+        ("subByValueI32TripleReport".to_string(), subByValueI32TripleReport as *const u8),
+        ("subByValueI16I16I32Report".to_string(), subByValueI16I16I32Report as *const u8),
+        ("subByValueU8FourReport".to_string(), subByValueU8FourReport as *const u8),
+        ("subByValueI64PairReport".to_string(), subByValueI64PairReport as *const u8),
+        ("subByValueF32Hfa2Report".to_string(), subByValueF32Hfa2Report as *const u8),
+        ("subByValueF32Hfa4Report".to_string(), subByValueF32Hfa4Report as *const u8),
+        ("subByValueI32F32Report".to_string(), subByValueI32F32Report as *const u8),
+        ("subByValueI32I64Report".to_string(), subByValueI32I64Report as *const u8),
+        ("subByValueI64TripleReport".to_string(), subByValueI64TripleReport as *const u8),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime
     // functions into the test process, and every address corresponds to the

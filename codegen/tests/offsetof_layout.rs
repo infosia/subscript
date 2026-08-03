@@ -379,6 +379,81 @@ class SubQueryStatus {
   completed: i32;
 }
 
+// ---- OBS-4 by-value argument packing (compiler.md §47) --------------
+// These are the exact C layouts whose bytes are grouped into AAPCS64
+// eightbyte register images (or kept as HFA float components / indirect).
+@CStruct
+class SubByValueI32One {
+  a: i32;
+}
+
+@CStruct
+class SubByValueI32Pair {
+  x: i32;
+  y: i32;
+}
+
+@CStruct
+class SubByValueI32Triple {
+  a: i32;
+  b: i32;
+  c: i32;
+}
+
+@CStruct
+class SubByValueI16I16I32 {
+  a: i16;
+  b: i16;
+  c: i32;
+}
+
+@CStruct
+class SubByValueU8Four {
+  a: u8;
+  b: u8;
+  c: u8;
+  d: u8;
+}
+
+@CStruct
+class SubByValueI64Pair {
+  a: i64;
+  b: i64;
+}
+
+@CStruct
+class SubByValueF32Hfa2 {
+  a: f32;
+  b: f32;
+}
+
+@CStruct
+class SubByValueF32Hfa4 {
+  a: f32;
+  b: f32;
+  c: f32;
+  d: f32;
+}
+
+@CStruct
+class SubByValueI32F32 {
+  a: i32;
+  b: f32;
+}
+
+@CStruct
+class SubByValueI32I64 {
+  a: i32;
+  b: i64;
+}
+
+@CStruct
+class SubByValueI64Triple {
+  a: i64;
+  b: i64;
+  c: i64;
+}
+
 // ---- P7.2 composed async capstone (compiler.md §14.4/§14.5) ----------
 // SubWaitEntry: the per-future status the out-array fills (nested SubFuture
 // then a callee-written i32). SubWaitList: the mutable (pointer, count)
@@ -469,6 +544,18 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubFuture", vec!["id"]),
         ("SubStats", vec!["submitted", "completed", "pending"]),
         ("SubQueryStatus", vec!["future", "completed"]),
+        // OBS-4 by-value argument packing (§47).
+        ("SubByValueI32One", vec!["a"]),
+        ("SubByValueI32Pair", vec!["x", "y"]),
+        ("SubByValueI32Triple", vec!["a", "b", "c"]),
+        ("SubByValueI16I16I32", vec!["a", "b", "c"]),
+        ("SubByValueU8Four", vec!["a", "b", "c", "d"]),
+        ("SubByValueI64Pair", vec!["a", "b"]),
+        ("SubByValueF32Hfa2", vec!["a", "b"]),
+        ("SubByValueF32Hfa4", vec!["a", "b", "c", "d"]),
+        ("SubByValueI32F32", vec!["a", "b"]),
+        ("SubByValueI32I64", vec!["a", "b"]),
+        ("SubByValueI64Triple", vec!["a", "b", "c"]),
         // P7.2 composed async capstone (§14.4/§14.5).
         ("SubWaitEntry", vec!["future", "completed"]),
         ("SubWaitList", vec!["entries", "count"]),

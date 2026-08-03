@@ -130,6 +130,18 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subProbeQueueSubmitCheck",
             // R12 (§35): nullable registered handle at parameter position.
             "subProbeSetBindGroupCheck",
+            // OBS-4 (§47): by-value register-image argument shapes.
+            "subByValueI32OneReport",
+            "subByValueI32PairReport",
+            "subByValueI32TripleReport",
+            "subByValueI16I16I32Report",
+            "subByValueU8FourReport",
+            "subByValueI64PairReport",
+            "subByValueF32Hfa2Report",
+            "subByValueF32Hfa4Report",
+            "subByValueI32F32Report",
+            "subByValueI32I64Report",
+            "subByValueI64TripleReport",
         ]
     );
 

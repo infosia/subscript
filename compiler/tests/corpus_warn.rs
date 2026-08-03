@@ -70,6 +70,7 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
         "subFutureMake",
         "subStatsMake",
         "SubQueryStatus",
+        "subByValue",
     ];
     let mut files = Vec::new();
     if INTEROP_TOKENS.iter().any(|token| source.contains(token)) {
@@ -148,7 +149,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         "corpus/accept/a19-modules produced warnings: {warnings:?}"
     );
     checked_files += 2;
-    assert_eq!(checked_files, 126, "accept source-file count changed");
+    assert_eq!(checked_files, 127, "accept source-file count changed");
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");

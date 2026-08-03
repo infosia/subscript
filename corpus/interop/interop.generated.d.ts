@@ -661,6 +661,90 @@ declare function subProbeWideRenderPipelineCheck(descriptor: SGPUProbeWideRender
 declare function subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;
 declare function subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;
 
+declare class SubByValueI32One {
+  a: i32;
+  constructor(a: i32);
+}
+
+declare class SubByValueI32Pair {
+  x: i32;
+  y: i32;
+  constructor(x: i32, y: i32);
+}
+
+declare class SubByValueI32Triple {
+  a: i32;
+  b: i32;
+  c: i32;
+  constructor(a: i32, b: i32, c: i32);
+}
+
+declare class SubByValueI16I16I32 {
+  a: i16;
+  b: i16;
+  c: i32;
+  constructor(a: i16, b: i16, c: i32);
+}
+
+declare class SubByValueU8Four {
+  a: u8;
+  b: u8;
+  c: u8;
+  d: u8;
+  constructor(a: u8, b: u8, c: u8, d: u8);
+}
+
+declare class SubByValueI64Pair {
+  a: i64;
+  b: i64;
+  constructor(a: i64, b: i64);
+}
+
+declare class SubByValueF32Hfa2 {
+  a: f32;
+  b: f32;
+  constructor(a: f32, b: f32);
+}
+
+declare class SubByValueF32Hfa4 {
+  a: f32;
+  b: f32;
+  c: f32;
+  d: f32;
+  constructor(a: f32, b: f32, c: f32, d: f32);
+}
+
+declare class SubByValueI32F32 {
+  a: i32;
+  b: f32;
+  constructor(a: i32, b: f32);
+}
+
+declare class SubByValueI32I64 {
+  a: i32;
+  b: i64;
+  constructor(a: i32, b: i64);
+}
+
+declare class SubByValueI64Triple {
+  a: i64;
+  b: i64;
+  c: i64;
+  constructor(a: i64, b: i64, c: i64);
+}
+
+declare function subByValueI32OneReport(report: SubByValueI32One | null, value: SubByValueI32One): void;
+declare function subByValueI32PairReport(report: SubByValueI32Pair | null, value: SubByValueI32Pair): void;
+declare function subByValueI32TripleReport(report: SubByValueI32Triple | null, value: SubByValueI32Triple): void;
+declare function subByValueI16I16I32Report(report: SubByValueI16I16I32 | null, value: SubByValueI16I16I32): void;
+declare function subByValueU8FourReport(report: SubByValueU8Four | null, value: SubByValueU8Four): void;
+declare function subByValueI64PairReport(report: SubByValueI64Pair | null, value: SubByValueI64Pair): void;
+declare function subByValueF32Hfa2Report(report: SubByValueF32Hfa2 | null, value: SubByValueF32Hfa2): void;
+declare function subByValueF32Hfa4Report(report: SubByValueF32Hfa4 | null, value: SubByValueF32Hfa4): void;
+declare function subByValueI32F32Report(report: SubByValueI32F32 | null, value: SubByValueI32F32): void;
+declare function subByValueI32I64Report(report: SubByValueI32I64 | null, value: SubByValueI32I64): void;
+declare function subByValueI64TripleReport(report: SubByValueI64Triple | null, value: SubByValueI64Triple): void;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

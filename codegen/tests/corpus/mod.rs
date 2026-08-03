@@ -80,6 +80,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeQueueSubmit",
         // R12 nullable registered handles at parameter position.
         "subProbeSetBindGroup",
+        // OBS-4 by-value register-image packing (compiler.md §47).
+        "subByValue",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

@@ -1092,4 +1092,108 @@ uint32_t subProbeSetBindGroupCheck(
     SubDevice encoder,
     SubDevice _Nullable group);
 
+/* ==== OBS-4 by-value register-image packing (compiler.md §47) ========
+ *
+ * These records isolate the AAPCS64 argument classes: small non-HFA
+ * composites whose fields must be packed at their C offsets into one or
+ * two general-register eightbytes, homogeneous float aggregates that stay
+ * component-wise in float registers, and a composite larger than 16 bytes
+ * that is passed by reference to a caller copy. Each callee copies every
+ * field it received into the caller-provided report record. */
+
+typedef struct SubByValueI32One {
+    int32_t a;
+} SubByValueI32One;
+
+typedef struct SubByValueI32Pair {
+    int32_t x;
+    int32_t y;
+} SubByValueI32Pair;
+
+typedef struct SubByValueI32Triple {
+    int32_t a;
+    int32_t b;
+    int32_t c;
+} SubByValueI32Triple;
+
+typedef struct SubByValueI16I16I32 {
+    int16_t a;
+    int16_t b;
+    int32_t c;
+} SubByValueI16I16I32;
+
+typedef struct SubByValueU8Four {
+    uint8_t a;
+    uint8_t b;
+    uint8_t c;
+    uint8_t d;
+} SubByValueU8Four;
+
+typedef struct SubByValueI64Pair {
+    int64_t a;
+    int64_t b;
+} SubByValueI64Pair;
+
+typedef struct SubByValueF32Hfa2 {
+    float a;
+    float b;
+} SubByValueF32Hfa2;
+
+typedef struct SubByValueF32Hfa4 {
+    float a;
+    float b;
+    float c;
+    float d;
+} SubByValueF32Hfa4;
+
+typedef struct SubByValueI32F32 {
+    int32_t a;
+    float b;
+} SubByValueI32F32;
+
+typedef struct SubByValueI32I64 {
+    int32_t a;
+    int64_t b;
+} SubByValueI32I64;
+
+typedef struct SubByValueI64Triple {
+    int64_t a;
+    int64_t b;
+    int64_t c;
+} SubByValueI64Triple;
+
+void subByValueI32OneReport(
+    SubByValueI32One *report,
+    SubByValueI32One value);
+void subByValueI32PairReport(
+    SubByValueI32Pair *report,
+    SubByValueI32Pair value);
+void subByValueI32TripleReport(
+    SubByValueI32Triple *report,
+    SubByValueI32Triple value);
+void subByValueI16I16I32Report(
+    SubByValueI16I16I32 *report,
+    SubByValueI16I16I32 value);
+void subByValueU8FourReport(
+    SubByValueU8Four *report,
+    SubByValueU8Four value);
+void subByValueI64PairReport(
+    SubByValueI64Pair *report,
+    SubByValueI64Pair value);
+void subByValueF32Hfa2Report(
+    SubByValueF32Hfa2 *report,
+    SubByValueF32Hfa2 value);
+void subByValueF32Hfa4Report(
+    SubByValueF32Hfa4 *report,
+    SubByValueF32Hfa4 value);
+void subByValueI32F32Report(
+    SubByValueI32F32 *report,
+    SubByValueI32F32 value);
+void subByValueI32I64Report(
+    SubByValueI32I64 *report,
+    SubByValueI32I64 value);
+void subByValueI64TripleReport(
+    SubByValueI64Triple *report,
+    SubByValueI64Triple value);
+
 #endif /* SUBSCRIPT_INTEROP_H */

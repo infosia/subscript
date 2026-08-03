@@ -1158,3 +1158,99 @@ uint32_t subProbeSetBindGroupCheck(
     }
     return group == encoder ? 1u : 2u;
 }
+
+/* ==== OBS-4 by-value register-image packing (compiler.md §47) ===== */
+
+void subByValueI32OneReport(
+    SubByValueI32One *report,
+    SubByValueI32One value) {
+    if (report == NULL) return;
+    report->a = value.a;
+}
+
+void subByValueI32PairReport(
+    SubByValueI32Pair *report,
+    SubByValueI32Pair value) {
+    if (report == NULL) return;
+    report->x = value.x;
+    report->y = value.y;
+}
+
+void subByValueI32TripleReport(
+    SubByValueI32Triple *report,
+    SubByValueI32Triple value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+    report->c = value.c;
+}
+
+void subByValueI16I16I32Report(
+    SubByValueI16I16I32 *report,
+    SubByValueI16I16I32 value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+    report->c = value.c;
+}
+
+void subByValueU8FourReport(
+    SubByValueU8Four *report,
+    SubByValueU8Four value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+    report->c = value.c;
+    report->d = value.d;
+}
+
+void subByValueI64PairReport(
+    SubByValueI64Pair *report,
+    SubByValueI64Pair value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+}
+
+void subByValueF32Hfa2Report(
+    SubByValueF32Hfa2 *report,
+    SubByValueF32Hfa2 value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+}
+
+void subByValueF32Hfa4Report(
+    SubByValueF32Hfa4 *report,
+    SubByValueF32Hfa4 value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+    report->c = value.c;
+    report->d = value.d;
+}
+
+void subByValueI32F32Report(
+    SubByValueI32F32 *report,
+    SubByValueI32F32 value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+}
+
+void subByValueI32I64Report(
+    SubByValueI32I64 *report,
+    SubByValueI32I64 value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+}
+
+void subByValueI64TripleReport(
+    SubByValueI64Triple *report,
+    SubByValueI64Triple value) {
+    if (report == NULL) return;
+    report->a = value.a;
+    report->b = value.b;
+    report->c = value.c;
+}
