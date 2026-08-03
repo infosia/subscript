@@ -7,13 +7,13 @@
 //! instantiates it with `JITModule`, and the ship-tier AOT driver
 //! instantiates the same lowering with `ObjectModule`.
 //!
-//! Three entry points, all returning the exact stdout bytes of a run or a
-//! [`TrapReport`]. Both AOT helpers stream completed lines, and JIT callers
-//! can configure a parent-owned write-through file for hard-termination
-//! recovery:
+//! Three entry points, all returning the exact stdout bytes of a run, a
+//! [`TrapReport`], or an [`AbnormalTermination`] that retains stdout produced
+//! before a hard termination. Run helpers retain those bytes by default; the
+//! JIT output-file environment variable is only an optional override.
 //!
 //! - [`run_jit`] — dev tier: check, lower, execute the exported
-//!   `main(): void` in process.
+//!   `main(): void` in an isolated child on Unix hosts.
 //! - [`run_jit_with_memory_accounting`] — the same dev-tier run with
 //!   post-run Context memory figures for host-side measurement.
 //! - [`run_aot`] — ship tier: check, lower, emit an object, link it
@@ -56,7 +56,7 @@ pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
     run_jit_with_freed_handle_diagnostics_and_native_libraries,
     run_jit_with_memory_accounting, run_jit_with_native_libraries, BenchSamples,
-    JitMemoryAccounting, RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
+    AbnormalTermination, JitMemoryAccounting, RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use native::NativeLibrary;

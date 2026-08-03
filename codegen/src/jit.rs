@@ -1,13 +1,16 @@
 //! The dev-tier JIT driver: instantiates the tier-neutral lowering
 //! with `cranelift-jit`, resolves the runtime's `extern "C"` symbols,
 //! runs the exported `main(): void`, and returns captured stdout bytes or a
-//! trap report. A parent harness may also provide a write-through file that
-//! retains completed lines after hard termination.
+//! trap report. Run helpers retain completed lines in a helper-owned file so
+//! an abnormal child termination can return those bytes to the caller.
 
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use cranelift_jit::{JITBuilder, JITModule};
@@ -20,10 +23,23 @@ use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions, Lowered
 use crate::native::{missing_symbol, register_symbols};
 use crate::NativeLibrary;
 
-/// Environment variable naming an existing parent-owned file. JIT run
-/// helpers append and flush every completed output line before execution
+/// Optional environment-variable override naming an existing parent-owned
+/// output file. JIT run helpers otherwise create and own a temporary file;
+/// either way, every completed line is appended and flushed before execution
 /// continues.
 pub const JIT_OUTPUT_FILE_ENV: &str = "SUBSCRIPT_CODEGEN_JIT_OUTPUT_FILE";
+
+/// A run ended outside the runtime trap protocol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AbnormalTermination {
+    /// Platform description of the exit status or signal.
+    pub status: String,
+    /// Exact stdout bytes produced before termination.
+    pub stdout: Vec<u8>,
+    /// Exact stderr bytes captured before termination.
+    pub stderr: Vec<u8>,
+}
 
 /// A runtime fault that stopped the script (collisions.md C6). The
 /// host process survives; this is the report the Context recorded.
@@ -76,6 +92,9 @@ pub enum RunError {
     /// A called foreign C symbol was absent from every caller-supplied
     /// native library.
     UnresolvedForeignSymbol(String),
+    /// Generated or foreign code ended by a signal or another abnormal
+    /// process termination outside the runtime trap protocol.
+    AbnormalTermination(AbnormalTermination),
     /// An internal lowering/backend failure (a bug, not a user error).
     Internal(String),
 }
@@ -95,6 +114,13 @@ impl std::fmt::Display for RunError {
                 f,
                 "unresolved foreign symbol `{name}`: no supplied native library registers it"
             ),
+            RunError::AbnormalTermination(termination) => {
+                write!(f, "program terminated abnormally ({})", termination.status)?;
+                if !termination.stderr.is_empty() {
+                    write!(f, ": {}", String::from_utf8_lossy(&termination.stderr))?;
+                }
+                Ok(())
+            }
             RunError::Internal(m) => write!(f, "{m}"),
         }
     }
@@ -1050,6 +1076,145 @@ struct CapturedStdout {
     write_through: Option<File>,
 }
 
+struct TemporaryFile {
+    path: Option<PathBuf>,
+    file: Option<File>,
+}
+
+impl TemporaryFile {
+    fn new(tag: &str) -> Result<Self, RunError> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        for _ in 0..100 {
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "subscript-jit-{}-{tag}-{n}",
+                std::process::id()
+            ));
+            match OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(file) => {
+                    return Ok(Self {
+                        path: Some(path),
+                        file: Some(file),
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(RunError::Internal(internal(format!(
+                        "create JIT temporary file {}: {error}",
+                        path.display()
+                    ))));
+                }
+            }
+        }
+        Err(RunError::Internal(internal(
+            "could not allocate a unique JIT temporary file",
+        )))
+    }
+
+    fn bytes(&mut self) -> Result<Vec<u8>, RunError> {
+        let file = self.file.as_mut().expect("live temporary file");
+        file.seek(SeekFrom::Start(0)).map_err(|error| {
+            RunError::Internal(internal(format!("seek JIT temporary file: {error}")))
+        })?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(|error| {
+            RunError::Internal(internal(format!("read JIT temporary file: {error}")))
+        })?;
+        Ok(bytes)
+    }
+
+    fn take_parts(mut self) -> (PathBuf, File) {
+        (
+            self.path.take().expect("live temporary path"),
+            self.file.take().expect("live temporary file"),
+        )
+    }
+}
+
+impl Drop for TemporaryFile {
+    fn drop(&mut self) {
+        if let Some(path) = &self.path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+struct RetainedOutput {
+    file: File,
+    start: u64,
+    owned_path: Option<PathBuf>,
+}
+
+impl RetainedOutput {
+    fn new() -> Result<Self, RunError> {
+        if let Some(path) = std::env::var_os(JIT_OUTPUT_FILE_ENV) {
+            let path = Path::new(&path);
+            let file = OpenOptions::new()
+                .read(true)
+                .append(true)
+                .open(path)
+                .map_err(|error| {
+                    RunError::Internal(internal(format!(
+                        "open JIT output file {}: {error}",
+                        path.display()
+                    )))
+                })?;
+            let start = file
+                .metadata()
+                .map_err(|error| {
+                    RunError::Internal(internal(format!(
+                        "inspect JIT output file {}: {error}",
+                        path.display()
+                    )))
+                })?
+                .len();
+            return Ok(Self {
+                file,
+                start,
+                owned_path: None,
+            });
+        }
+
+        let (path, file) = TemporaryFile::new("output")?.take_parts();
+        Ok(Self {
+            file,
+            start: 0,
+            owned_path: Some(path),
+        })
+    }
+
+    fn writer(&self) -> Result<File, RunError> {
+        self.file.try_clone().map_err(|error| {
+            RunError::Internal(internal(format!("clone JIT output file: {error}")))
+        })
+    }
+
+    fn bytes(&mut self) -> Result<Vec<u8>, RunError> {
+        self.file.seek(SeekFrom::Start(self.start)).map_err(|error| {
+            RunError::Internal(internal(format!("seek JIT output file: {error}")))
+        })?;
+        let mut bytes = Vec::new();
+        self.file.read_to_end(&mut bytes).map_err(|error| {
+            RunError::Internal(internal(format!("read JIT output file: {error}")))
+        })?;
+        Ok(bytes)
+    }
+}
+
+impl Drop for RetainedOutput {
+    fn drop(&mut self) {
+        if let Some(path) = &self.owned_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 thread_local! {
     /// The active run's captured output. A panic in generated/runtime code can
     /// abort rather than unwind across the C ABI, so the process-wide panic
@@ -1134,19 +1299,12 @@ fn execute_entry(
     lowered: &Lowered,
     fail_alloc_after: Option<u64>,
     freed_handle_diagnostics: bool,
+    write_through: Option<File>,
 ) -> Result<CompletedRun, RunError> {
     let init_ptr = module.get_finalized_function(lowered.init);
     let main_ptr = module.get_finalized_function(lowered.main);
 
-    let write_through = match std::env::var_os(JIT_OUTPUT_FILE_ENV) {
-        Some(path) => Some(OpenOptions::new().append(true).open(&path).map_err(|error| {
-            RunError::Internal(internal(format!(
-                "open JIT output file {}: {error}",
-                std::path::Path::new(&path).display()
-            )))
-        })?),
-        None => None,
-    };
+    let needs_panic_stdout_fallback = write_through.is_none();
     let mut ctx = Context::new();
     let mut stdout = Box::new(CapturedStdout {
         bytes: Vec::new(),
@@ -1156,7 +1314,8 @@ fn execute_entry(
         Some(capture_stdout_line),
         (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
     );
-    let aborting_stdout = AbortingStdoutGuard::install(&stdout.bytes);
+    let aborting_stdout = needs_panic_stdout_fallback
+        .then(|| AbortingStdoutGuard::install(&stdout.bytes));
     let diagnostics_set = ctx.set_freed_handle_diagnostics(
         freed_handle_diagnostics,
         0,
@@ -1233,12 +1392,237 @@ fn execute_entry(
     }
 }
 
+#[cfg(unix)]
+fn write_protocol_bytes(file: &mut File, bytes: &[u8]) -> std::io::Result<()> {
+    file.write_all(&(bytes.len() as u64).to_le_bytes())?;
+    file.write_all(bytes)
+}
+
+#[cfg(unix)]
+fn write_child_protocol(
+    protocol: &mut File,
+    outcome: &Result<CompletedRun, RunError>,
+) -> std::io::Result<()> {
+    match outcome {
+        Ok(_) => protocol.write_all(&[0])?,
+        Err(RunError::Trap(report)) => {
+            protocol.write_all(&[1])?;
+            protocol.write_all(&(report.rule as u32).to_le_bytes())?;
+            protocol.write_all(&report.pos.line.to_le_bytes())?;
+            protocol.write_all(&report.pos.col.to_le_bytes())?;
+            write_protocol_bytes(protocol, report.pos.file.as_bytes())?;
+            write_protocol_bytes(protocol, report.message.as_bytes())?;
+        }
+        Err(error) => {
+            protocol.write_all(&[2])?;
+            write_protocol_bytes(protocol, error.to_string().as_bytes())?;
+        }
+    }
+    protocol.flush()
+}
+
+#[cfg(unix)]
+struct ProtocolReader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+#[cfg(unix)]
+impl<'a> ProtocolReader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn take(&mut self, len: usize) -> Result<&'a [u8], RunError> {
+        let end = self.offset.checked_add(len).ok_or_else(|| {
+            RunError::Internal(internal("overflow reading JIT child protocol"))
+        })?;
+        let bytes = self.bytes.get(self.offset..end).ok_or_else(|| {
+            RunError::Internal(internal("truncated JIT child protocol"))
+        })?;
+        self.offset = end;
+        Ok(bytes)
+    }
+
+    fn u8(&mut self) -> Result<u8, RunError> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn u32(&mut self) -> Result<u32, RunError> {
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("four protocol bytes"),
+        ))
+    }
+
+    fn bytes(&mut self) -> Result<&'a [u8], RunError> {
+        let len = u64::from_le_bytes(
+            self.take(8)?.try_into().expect("eight protocol bytes"),
+        );
+        let len = usize::try_from(len).map_err(|_| {
+            RunError::Internal(internal("oversized field in JIT child protocol"))
+        })?;
+        self.take(len)
+    }
+
+    fn string(&mut self) -> Result<String, RunError> {
+        String::from_utf8(self.bytes()?.to_vec()).map_err(|error| {
+            RunError::Internal(internal(format!("invalid UTF-8 in JIT child protocol: {error}")))
+        })
+    }
+}
+
+#[cfg(unix)]
+fn parse_child_protocol(bytes: &[u8], stdout: Vec<u8>) -> Result<Vec<u8>, RunError> {
+    let mut protocol = ProtocolReader::new(bytes);
+    match protocol.u8()? {
+        0 => Ok(stdout),
+        1 => {
+            let rule_number = protocol.u32()?;
+            let rule = TrapKind::from_u32(rule_number).ok_or_else(|| {
+                RunError::Internal(internal(format!(
+                    "unknown trap kind {rule_number} in JIT child protocol"
+                )))
+            })?;
+            let line = protocol.u32()?;
+            let col = protocol.u32()?;
+            let file = protocol.string()?;
+            let message = protocol.string()?;
+            Err(RunError::Trap(TrapReport {
+                rule,
+                message,
+                pos: Pos::new(file, line, col),
+                stdout,
+            }))
+        }
+        2 => Err(RunError::Internal(protocol.string()?)),
+        tag => Err(RunError::Internal(internal(format!(
+            "unknown JIT child protocol tag {tag}"
+        )))),
+    }
+}
+
+#[cfg(unix)]
+fn execute_entry_retained(
+    module: &JITModule,
+    lowered: &Lowered,
+    fail_alloc_after: Option<u64>,
+    freed_handle_diagnostics: bool,
+) -> Result<Vec<u8>, RunError> {
+    let mut output = RetainedOutput::new()?;
+    let writer = output.writer()?;
+    let mut protocol = TemporaryFile::new("protocol")?;
+    let mut stderr = TemporaryFile::new("stderr")?;
+
+    // SAFETY: the child inherits finalized JIT code, the Context runtime, and
+    // caller-supplied native symbol addresses. It reports through files and
+    // calls `_exit`, while the parent alone frees the module after `waitpid`.
+    let child = unsafe { libc::fork() };
+    if child < 0 {
+        return Err(RunError::Internal(internal(format!(
+            "fork JIT runner: {}",
+            std::io::Error::last_os_error()
+        ))));
+    }
+    if child == 0 {
+        let stderr_fd = stderr
+            .file
+            .as_ref()
+            .expect("live JIT child stderr")
+            .as_raw_fd();
+        // SAFETY: both descriptors are live in the forked child. Redirecting
+        // stderr keeps panic and signal diagnostics with the returned error.
+        if unsafe { libc::dup2(stderr_fd, libc::STDERR_FILENO) } < 0 {
+            // SAFETY: this is the forked child and redirection failed before
+            // generated code ran.
+            unsafe { libc::_exit(122) };
+        }
+        let outcome = execute_entry(
+            module,
+            lowered,
+            fail_alloc_after,
+            freed_handle_diagnostics,
+            Some(writer),
+        );
+        let written = write_child_protocol(
+            protocol.file.as_mut().expect("live JIT child protocol"),
+            &outcome,
+        )
+        .is_ok();
+        // SAFETY: this is the forked child. `_exit` avoids running inherited
+        // parent destructors or freeing the parent's JIT mappings.
+        unsafe { libc::_exit(if written { 0 } else { 121 }) };
+    }
+    drop(writer);
+
+    let mut status = 0;
+    loop {
+        // SAFETY: `child` is the positive PID returned by `fork`; `status` is
+        // live writable storage and this parent waits for that child only.
+        let waited = unsafe { libc::waitpid(child, &mut status, 0) };
+        if waited == child {
+            break;
+        }
+        if waited < 0
+            && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
+        {
+            continue;
+        }
+        return Err(RunError::Internal(internal(format!(
+            "wait for JIT child: {}",
+            std::io::Error::last_os_error()
+        ))));
+    }
+
+    let stdout = output.bytes()?;
+    let stderr = stderr.bytes()?;
+    if libc::WIFSIGNALED(status) {
+        return Err(RunError::AbnormalTermination(AbnormalTermination {
+            status: format!("dev-JIT child signal {}", libc::WTERMSIG(status)),
+            stdout,
+            stderr,
+        }));
+    }
+    if !libc::WIFEXITED(status) || libc::WEXITSTATUS(status) != 0 {
+        let status = if libc::WIFEXITED(status) {
+            format!("dev-JIT child exit {}", libc::WEXITSTATUS(status))
+        } else {
+            "dev-JIT child unknown status".to_string()
+        };
+        return Err(RunError::AbnormalTermination(AbnormalTermination {
+            status,
+            stdout,
+            stderr,
+        }));
+    }
+    let protocol = protocol.bytes()?;
+    parse_child_protocol(&protocol, stdout)
+}
+
+#[cfg(not(unix))]
+fn execute_entry_retained(
+    module: &JITModule,
+    lowered: &Lowered,
+    fail_alloc_after: Option<u64>,
+    freed_handle_diagnostics: bool,
+) -> Result<Vec<u8>, RunError> {
+    let output = RetainedOutput::new()?;
+    let writer = output.writer()?;
+    execute_entry(
+        module,
+        lowered,
+        fail_alloc_after,
+        freed_handle_diagnostics,
+        Some(writer),
+    )
+    .map(|run| run.stdout)
+}
+
 fn run_entry(
     module: &JITModule,
     lowered: &Lowered,
     fail_alloc_after: Option<u64>,
 ) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(module, lowered, fail_alloc_after, false)
+    execute_entry(module, lowered, fail_alloc_after, false, None)
         .map(|run| (run.stdout, run.elapsed))
 }
 
@@ -1264,8 +1648,9 @@ fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
 /// [`RunError::Trap`] when the run trapped (rule + message + TS
 /// position + pre-trap stdout),
 /// [`RunError::UnresolvedForeignSymbol`] when the program calls a symbol
-/// but no native library was supplied, and [`RunError::Internal`] on
-/// backend failures.
+/// but no native library was supplied, [`RunError::AbnormalTermination`]
+/// when generated or foreign code ends outside the trap protocol, and
+/// [`RunError::Internal`] on backend failures.
 pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     run_jit_with_native_libraries(files, &[])
 }
@@ -1287,7 +1672,7 @@ pub fn run_jit_with_memory_accounting(
     freed_handle_diagnostics: bool,
 ) -> Result<(Vec<u8>, JitMemoryAccounting), RunError> {
     let (module, lowered) = compile_jit(files, &[])?;
-    let outcome = execute_entry(&module, &lowered, None, freed_handle_diagnostics)
+    let outcome = execute_entry(&module, &lowered, None, freed_handle_diagnostics, None)
         .map(|run| (run.stdout, memory_accounting(&run.ctx)));
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
@@ -1308,7 +1693,7 @@ pub fn run_jit_with_native_libraries(
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
     let (module, lowered) = compile_jit(files, libraries)?;
-    let outcome = run_entry(&module, &lowered, None).map(|(out, _)| out);
+    let outcome = execute_entry_retained(&module, &lowered, None, false);
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
     unsafe { module.free_memory() };
@@ -1330,7 +1715,7 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
     let (module, lowered) = compile_jit(files, libraries)?;
-    let outcome = execute_entry(&module, &lowered, None, true).map(|run| run.stdout);
+    let outcome = execute_entry_retained(&module, &lowered, None, true);
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
     unsafe { module.free_memory() };
@@ -1348,7 +1733,7 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
 /// Returns the same [`RunError`] variants as [`run_jit`].
 pub fn run_jit_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8>, RunError> {
     let (module, lowered) = compile_jit(files, &[])?;
-    let outcome = run_entry(&module, &lowered, Some(n)).map(|(out, _)| out);
+    let outcome = execute_entry_retained(&module, &lowered, Some(n), false);
     // SAFETY: all executions above have returned and no pointer into
     // the JIT-allocated code/data survives (the Context held none).
     unsafe { module.free_memory() };
@@ -1501,7 +1886,7 @@ pub(crate) fn memory_accounting_after_run(
     files: &[SourceFile],
 ) -> Result<(u64, u64, u64), RunError> {
     let (module, lowered) = compile_jit(files, &[])?;
-    let result = execute_entry(&module, &lowered, None, false).map(|run| {
+    let result = execute_entry(&module, &lowered, None, false, None).map(|run| {
         let p: *const Context = &*run.ctx;
         let accounting = memory_accounting(&run.ctx);
         // SAFETY: shared host accessors over a live Context after every

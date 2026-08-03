@@ -981,6 +981,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
+ "libc",
  "object 0.36.7",
  "subscript-compiler",
  "subscript-interop-fixture",

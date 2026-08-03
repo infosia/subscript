@@ -41,7 +41,7 @@ use subscript_compiler::{check_program, Pos, SourceFile};
 use subscript_runtime::TrapKind;
 use target_lexicon::Triple;
 
-use crate::jit::{RunError, TrapReport};
+use crate::jit::{AbnormalTermination, RunError, TrapReport};
 use crate::lower::{aot_flags, internal, lower_module_with, LowerOptions};
 use crate::native::missing_symbol;
 use crate::NativeLibrary;
@@ -685,18 +685,6 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
         .map_err(|e| RunError::Internal(internal(format!("write {}: {e}", path.display()))))
 }
 
-/// Replays bytes captured from a linked program only when it died outside
-/// the runtime trap protocol. Successful runs still return their bytes and
-/// trap reports still own their pre-trap stdout as before.
-fn surface_aborted_stdout(bytes: &[u8]) {
-    if bytes.is_empty() {
-        return;
-    }
-    let mut stdout = std::io::stdout().lock();
-    let _ = stdout.write_all(bytes);
-    let _ = stdout.flush();
-}
-
 /// Compiles, links, and runs `files` through the ship tier on the host
 /// target, returning the exact stdout bytes the program produced.
 ///
@@ -712,8 +700,10 @@ fn surface_aborted_stdout(bytes: &[u8]) {
 /// [`RunError::Trap`] when the linked program trapped (the trap is
 /// reported by the entry program and mapped back through the position
 /// table), [`RunError::UnresolvedForeignSymbol`] when the program calls a
-/// symbol but no native library was supplied, and [`RunError::Internal`]
-/// on emission, toolchain, link, or execution failures.
+/// symbol but no native library was supplied,
+/// [`RunError::AbnormalTermination`] when the linked program ends outside
+/// the trap protocol, and [`RunError::Internal`] on emission, toolchain,
+/// link, or execution failures.
 pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     run_aot_with_native_libraries(files, &[])
 }
@@ -780,14 +770,11 @@ pub fn run_aot_with_native_libraries(
     }
     match parse_trap(&run.stderr, &object.positions, &run.stdout) {
         Some(report) => Err(RunError::Trap(report)),
-        None => {
-            surface_aborted_stdout(&run.stdout);
-            Err(RunError::Internal(internal(format!(
-                "linked program exited with {}: {}",
-                run.status,
-                String::from_utf8_lossy(&run.stderr)
-            ))))
-        }
+        None => Err(RunError::AbnormalTermination(AbnormalTermination {
+            status: format!("linked program exited with {}", run.status),
+            stdout: run.stdout,
+            stderr: run.stderr,
+        })),
     }
 }
 
@@ -810,8 +797,10 @@ pub fn run_aot_with_native_libraries(
 /// [`RunError::Trap`] when the linked program trapped (mapped back
 /// through the emitted position table, with pre-trap stdout),
 /// [`RunError::UnresolvedForeignSymbol`] when the program calls a symbol
-/// but no native library was supplied, and [`RunError::Internal`] on
-/// emission, toolchain, compile, link, or execution failures.
+/// but no native library was supplied, [`RunError::AbnormalTermination`]
+/// when the linked program ends outside the trap protocol, and
+/// [`RunError::Internal`] on emission, toolchain, compile, link, or
+/// execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
     run_c_aot_configured(files, None, false, &[])
 }
@@ -957,14 +946,11 @@ fn run_c_aot_configured(
     }
     match parse_trap(&run.stderr, &program.positions, &run.stdout) {
         Some(report) => Err(RunError::Trap(report)),
-        None => {
-            surface_aborted_stdout(&run.stdout);
-            Err(RunError::Internal(internal(format!(
-                "linked C program exited with {}: {}",
-                run.status,
-                String::from_utf8_lossy(&run.stderr)
-            ))))
-        }
+        None => Err(RunError::AbnormalTermination(AbnormalTermination {
+            status: format!("linked C program exited with {}", run.status),
+            stdout: run.stdout,
+            stderr: run.stderr,
+        })),
     }
 }
 

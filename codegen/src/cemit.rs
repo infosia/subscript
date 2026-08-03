@@ -1512,6 +1512,30 @@ impl<'m> Emitter<'m> {
                 // return, and the shadow array's memory outlives the pop
                 // (it is unregistered, not freed), so reading it is safe.
                 let text = self.eval(v, out, depth)?;
+                if let Type::Class(cid) = self.current_ret.clone() {
+                    if self.is_value_class(cid)?
+                        && self.boundary_struct_contains_pointer_member(
+                            cid,
+                            &mut HashSet::new(),
+                        )?
+                    {
+                        let ctype = self.class_name(cid)?;
+                        let stable = self.fresh_tmp();
+                        let _ = writeln!(out, "{ind}{ctype} {stable} = {text};");
+                        self.emit_stabilize_boundary_return_value(
+                            cid,
+                            &format!("&{stable}"),
+                            &v.pos,
+                            out,
+                            depth,
+                            &mut HashSet::new(),
+                        )?;
+                        self.emit_assoc_iter_ends(out, depth);
+                        self.emit_shadow_pop(out, depth);
+                        let _ = writeln!(out, "{ind}return {stable};");
+                        return Ok(());
+                    }
+                }
                 self.emit_assoc_iter_ends(out, depth);
                 self.emit_shadow_pop(out, depth);
                 let _ = writeln!(out, "{ind}return {text};");
@@ -4443,6 +4467,112 @@ impl<'m> Emitter<'m> {
             return Ok(None);
         };
         Ok(self.is_value_class(*id)?.then_some(*id))
+    }
+
+    /// Rehomes borrowed pointers reachable from a returned boundary value
+    /// before its function frame dies. These language-layout copies live in
+    /// the active foreign-call scratch scope, or until Context teardown when
+    /// the boundary value is returned outside such a scope.
+    fn emit_stabilize_boundary_return_value(
+        &mut self,
+        cid: ClassId,
+        address: &str,
+        pos: &Pos,
+        out: &mut String,
+        depth: usize,
+        visiting: &mut HashSet<ClassId>,
+    ) -> Result<(), String> {
+        if !visiting.insert(cid) {
+            return Ok(());
+        }
+        let class = self.class(cid)?.clone();
+        let ind = indent(depth);
+        for field in &class.fields {
+            let name = sanitize(&field.name);
+            if let Some(target_cid) = self.boundary_struct_ptr_id(&field.ty)? {
+                let target_type = self.class_name(target_cid)?;
+                let cast = self
+                    .boundary_ptr_cast(&field.ty)?
+                    .ok_or_else(|| "boundary return pointer lacks a header cast".to_string())?;
+                let stable = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}if (({address})->{name} != NULL) {{");
+                let pos_id = self.pos_id(pos);
+                let _ = writeln!(
+                    out,
+                    "{}{target_type}* {stable} = ({target_type}*)subscript_rt_boundary_scratch_alloc(ctx, (uint64_t)sizeof({target_type}), {pos_id}u);",
+                    indent(depth + 1),
+                );
+                self.emit_trap_check(out, depth + 1)?;
+                let _ = writeln!(
+                    out,
+                    "{}memcpy({stable}, ({address})->{name}, sizeof *{stable});",
+                    indent(depth + 1),
+                );
+                let _ = writeln!(
+                    out,
+                    "{}({address})->{name} = ({cast}){stable};",
+                    indent(depth + 1),
+                );
+                self.emit_stabilize_boundary_return_value(
+                    target_cid,
+                    &stable,
+                    pos,
+                    out,
+                    depth + 1,
+                    visiting,
+                )?;
+                let _ = writeln!(out, "{ind}}}");
+                continue;
+            }
+            if let Type::Class(inner) = &field.ty {
+                if self.is_value_class(*inner)? {
+                    self.emit_stabilize_boundary_return_value(
+                        *inner,
+                        &format!("&({address})->{name}"),
+                        pos,
+                        out,
+                        depth,
+                        visiting,
+                    )?;
+                    continue;
+                }
+            }
+            if let Type::Array(element) = &field.ty {
+                let Type::Class(element_cid) = &**element else {
+                    continue;
+                };
+                if !self.is_value_class(*element_cid)? {
+                    continue;
+                }
+                let element_type = self.class_name(*element_cid)?;
+                let count = self.fresh_tmp();
+                let data = self.fresh_tmp();
+                let index = self.fresh_tmp();
+                let _ = writeln!(
+                    out,
+                    "{ind}int32_t {count} = subscript_rt_array_len(ctx, ({address})->{name});"
+                );
+                let _ = writeln!(
+                    out,
+                    "{ind}{element_type}* {data} = ({element_type}*)subscript_rt_array_data(ctx, ({address})->{name});"
+                );
+                let _ = writeln!(
+                    out,
+                    "{ind}for (int32_t {index} = 0; {index} < {count}; {index}++) {{"
+                );
+                self.emit_stabilize_boundary_return_value(
+                    *element_cid,
+                    &format!("&{data}[{index}]"),
+                    pos,
+                    out,
+                    depth + 1,
+                    visiting,
+                )?;
+                let _ = writeln!(out, "{ind}}}");
+            }
+        }
+        visiting.remove(&cid);
+        Ok(())
     }
 
     fn boundary_struct_needs_scratch(&self, cid: ClassId) -> Result<bool, String> {

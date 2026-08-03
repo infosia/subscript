@@ -209,6 +209,57 @@ per-termination-mode tests.
 Five rounds, no reproduction. Depth, breadth, scale, and the
 combination are pinned as classes.
 
+## Round 6 (2026-08-03) — REPRODUCED AND FIXED
+
+The downstream demonstrated the axis it had suspected: appending N
+functions that nothing calls (`function padN(v: u32): u32`) to a
+passing program changes the outcome non-monotonically (0 ok, 20 ok,
+40 differs, 60 differs, 80 ok, 100 differs). §44.9 stated the rule
+that violates and required running the downstream's own program
+here, which its four dropped files finally made possible.
+
+**Reproduced.** Built with a stub `.c` satisfying the facade
+header, its program ends abnormally on both tiers at the same
+logical call — dev-JIT signal 6 with
+`misaligned pointer dereference … is 0x1` at `context.rs:2591`,
+ship-C-AOT signal 11 — after printing the same three lines.
+
+**Cause.** A helper that *returns* a boundary descriptor by value
+left its reach-through pointer members pointing at nested aggregate
+temporaries in the helper's own frame, which expired at the return.
+The later foreign call dereferenced them. Unrelated module content
+changed stack and code layout, so the stale contents — and hence
+whether the run survived — moved non-monotonically. Both lowerers
+had the same lifetime error, which is why the differential gate saw
+nothing (the R6 lesson again).
+
+**Why five faithful fixtures passed.** Every corpus entry built its
+descriptor in the calling function. The downstream's generator
+builds it in `toSGPURenderPipelineDescriptor` and *returns* it —
+the one construction shape the corpus never had.
+
+**Fix.** Both tiers now recursively copy pointers reachable from a
+returned boundary value into Context-owned boundary scratch before
+the callee returns, rewriting the members to that storage, with
+cycle protection. Released by the active foreign-call mark, or at
+Context teardown for a value returned outside one — the minimum
+lifetime the escaped pointers require. After the fix the
+downstream's program completes with five lines, dev ≡ ship.
+
+**Pinned as a class.** `codegen/tests/boundary_module_invariance.rs`
+runs a two-simultaneous-pointer descriptor with N = 20…120 uncalled
+padding functions and asserts identical output at every N on both
+tiers. Reviewer-verified Red→Green: with the two lowering hunks
+stashed the test fails; with them it passes.
+
+**Output capture** now retains without opt-in: the JIT helper runs
+the program in a child on Unix (with a `cfg(not(unix))` path) and
+returns status, retained stdout, and stderr through
+`RunError::AbnormalTermination`, so an embedder calling the run
+helpers directly — the downstream's usage — gets the output back.
+Open follow-up: the public helper's docs do not yet state the
+child-process semantics on Unix.
+
 ### Process note
 
 The implementing agent reformatted six unrelated `codegen/src`

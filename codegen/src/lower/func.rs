@@ -2789,6 +2789,150 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.is_value_class_ty(inner).then_some(id.0)
     }
 
+    /// Moves every borrowed pointer reachable from a returned boundary value
+    /// into Context-owned boundary scratch before the callee's frame dies.
+    /// The active foreign-call mark releases these copies after the call; a
+    /// boundary value returned outside a foreign call keeps them until Context
+    /// teardown, which is the minimum lifetime its escaped pointers require.
+    fn stabilize_boundary_return_value(
+        &mut self,
+        cid: usize,
+        source: Value,
+        pos: &Pos,
+    ) -> Result<(), String> {
+        self.stabilize_boundary_return_value_inner(cid, source, pos, &mut HashSet::new())
+    }
+
+    fn stabilize_boundary_return_value_inner(
+        &mut self,
+        cid: usize,
+        source: Value,
+        pos: &Pos,
+        visiting: &mut HashSet<usize>,
+    ) -> Result<(), String> {
+        if !visiting.insert(cid) {
+            return Ok(());
+        }
+        let class = self
+            .ml
+            .hir
+            .classes
+            .get(cid)
+            .cloned()
+            .ok_or_else(|| internal("boundary return class id out of range"))?;
+        let layout = self.ml.layouts.class(cid)?.clone();
+        for (index, field) in class.fields.iter().enumerate() {
+            let offset = *layout
+                .field_offsets
+                .get(index)
+                .ok_or_else(|| internal("boundary return field offset"))?
+                as i32;
+            if let Some(target_cid) = self.boundary_struct_ptr_id(&field.ty) {
+                let pointer = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), source, offset);
+                let non_null = self.b.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
+                let copy = self.b.create_block();
+                let ready = self.b.create_block();
+                self.b.ins().brif(non_null, copy, &[], ready, &[]);
+                self.b.switch_to_block(copy);
+
+                let target_layout = self.ml.layouts.class(target_cid)?.clone();
+                let bytes = self.iconst(types::I64, i64::from(target_layout.size));
+                let source_pos_id = self.pos_id(pos);
+                let pos_id = self.iconst(types::I32, source_pos_id);
+                let stable = self
+                    .call_rt(
+                        self.ml.rt.boundary_scratch_alloc,
+                        &[self.ctx_v, bytes, pos_id],
+                        false,
+                    )?
+                    .ok_or_else(|| internal("boundary return scratch allocation result"))?;
+                self.trap_check();
+                self.copy_bytes(
+                    stable,
+                    pointer,
+                    target_layout.size,
+                    target_layout.align,
+                );
+                self.stabilize_boundary_return_value_inner(
+                    target_cid,
+                    stable,
+                    pos,
+                    visiting,
+                )?;
+                self.b.ins().store(flags(), stable, source, offset);
+                self.b.ins().jump(ready, &[]);
+                self.b.seal_block(copy);
+                self.b.switch_to_block(ready);
+                self.b.seal_block(ready);
+                continue;
+            }
+            if let Type::Class(inner) = &field.ty {
+                if self.is_value_class_ty(&field.ty) {
+                    let nested = self.addr_off(source, i64::from(offset));
+                    self.stabilize_boundary_return_value_inner(
+                        inner.0,
+                        nested,
+                        pos,
+                        visiting,
+                    )?;
+                    continue;
+                }
+            }
+            if let Type::Array(element) = &field.ty {
+                let Type::Class(element_cid) = &**element else {
+                    continue;
+                };
+                if !self.is_value_class_ty(element) {
+                    continue;
+                }
+                let handle = self
+                    .b
+                    .ins()
+                    .load(types::I64, flags(), source, offset);
+                let len = self
+                    .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("boundary return array length"))?;
+                let data = self
+                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("boundary return array data"))?;
+                let stride = self.ml.layouts.stride(element)?;
+                let loop_block = self.b.create_block();
+                let body_block = self.b.create_block();
+                let done_block = self.b.create_block();
+                self.b.append_block_param(loop_block, types::I32);
+                let zero = self.iconst(types::I32, 0);
+                self.b.ins().jump(loop_block, &[BlockArg::Value(zero)]);
+                self.b.switch_to_block(loop_block);
+                let item = self.b.block_params(loop_block)[0];
+                let more = self.b.ins().icmp(IntCC::SignedLessThan, item, len);
+                self.b.ins().brif(more, body_block, &[], done_block, &[]);
+                self.b.switch_to_block(body_block);
+                let item64 = self.b.ins().uextend(types::I64, item);
+                let byte_offset = self.b.ins().imul_imm(item64, i64::from(stride));
+                let element_address = self.b.ins().iadd(data, byte_offset);
+                self.stabilize_boundary_return_value_inner(
+                    element_cid.0,
+                    element_address,
+                    pos,
+                    visiting,
+                )?;
+                let next = self.b.ins().iadd_imm(item, 1);
+                self.b
+                    .ins()
+                    .jump(loop_block, &[BlockArg::Value(next)]);
+                self.b.seal_block(body_block);
+                self.b.seal_block(loop_block);
+                self.b.switch_to_block(done_block);
+                self.b.seal_block(done_block);
+            }
+        }
+        visiting.remove(&cid);
+        Ok(())
+    }
+
     fn boundary_struct_needs_scratch(&self, cid: usize) -> Result<bool, String> {
         self.boundary_struct_needs_scratch_inner(cid, &mut HashSet::new())
     }
@@ -5675,7 +5819,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.eval(e)?;
                 Ok(())
             }
-            hir::Stmt::Return { value, .. } => {
+            hir::Stmt::Return { value, pos } => {
                 // §10.2 NRVO: an aggregate return builds directly into
                 // the caller-provided `sret`, so `return new M(...)` or
                 // `return f(...)` produces the result in the caller's
@@ -5688,6 +5832,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     {
                         let sret = self.sret_v.ok_or_else(|| internal("missing sret"))?;
                         self.eval_agg_into(v, sret, &ret_ty)?;
+                        if let Type::Class(cid) = ret_ty {
+                            if self.is_value_class_ty(&Type::Class(cid))
+                                && self.boundary_struct_contains_pointer_member(
+                                    cid.0,
+                                    &mut HashSet::new(),
+                                )?
+                            {
+                                self.stabilize_boundary_return_value(cid.0, sret, pos)?;
+                            }
+                        }
                         self.end_assoc_iters()?;
                         self.emit_shadow_pop()?;
                         self.b.ins().return_(&[]);
