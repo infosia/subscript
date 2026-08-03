@@ -12,9 +12,13 @@ fn main() {
     let directory = manifest.join("../../../corpus/interop");
     let source = directory.join("interop.c");
     let header = directory.join("interop.h");
+    let external_source = directory.join("external-device.c");
+    let external_header = directory.join("external-device.h");
 
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", header.display());
+    println!("cargo:rerun-if-changed={}", external_source.display());
+    println!("cargo:rerun-if-changed={}", external_header.display());
 
     // interop.c uses _Float16, which MSVC cl cannot compile; the fixture is
     // never linked on this target (its dependency edges are gated off
@@ -27,6 +31,7 @@ fn main() {
 
     cc::Build::new()
         .file(&source)
+        .file(&external_source)
         .include(&directory)
         .std("c11")
         .opt_level(2)

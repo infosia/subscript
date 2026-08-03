@@ -1,6 +1,6 @@
 //! Fixed-shape C provenance directives carried by generated ambient mirrors.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
 
@@ -40,6 +40,7 @@ pub(crate) struct Mirror {
 /// Parses every `@subscript-c-*` record in one mirror.
 pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
     let mut mirror = Mirror::default();
+    let mut externals = HashSet::new();
     for (index, line) in source.lines().enumerate() {
         let trimmed = line.trim();
         let Some(body) = trimmed.strip_prefix("// @subscript-c-") else {
@@ -202,6 +203,19 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     },
                 );
             }
+            Parsed::External(type_name) => {
+                if type_name.is_empty() {
+                    return Err(malformed(
+                        name,
+                        line_number,
+                        trimmed,
+                        "external type must be non-empty",
+                    ));
+                }
+                if !externals.insert(type_name) {
+                    return Err(duplicate(name, line_number, trimmed, "external type"));
+                }
+            }
         }
     }
     Ok(mirror)
@@ -254,6 +268,7 @@ enum Parsed {
         element_const: bool,
     },
     Callback(String),
+    External(String),
 }
 
 fn parse_line(body: &str) -> Result<Parsed, String> {
@@ -280,6 +295,7 @@ fn parse_line(body: &str) -> Result<Parsed, String> {
             element_const: cursor.boolean("const")?,
         },
         "callback" => Parsed::Callback(cursor.string("typedef")?),
+        "external" => Parsed::External(cursor.string("type")?),
         other => return Err(format!("unknown record kind `{other}`")),
     };
     cursor.finish()?;

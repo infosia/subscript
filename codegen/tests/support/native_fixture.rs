@@ -81,6 +81,8 @@ extern "C" {
     fn subByValueI32F32Report();
     fn subByValueI32I64Report();
     fn subByValueI64TripleReport();
+    fn subExternalDeviceIdentity();
+    fn subExternalDeviceTag();
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -206,6 +208,14 @@ pub fn library() -> NativeLibrary {
         ("subByValueI32F32Report".to_string(), subByValueI32F32Report as *const u8),
         ("subByValueI32I64Report".to_string(), subByValueI32I64Report as *const u8),
         ("subByValueI64TripleReport".to_string(), subByValueI64TripleReport as *const u8),
+        (
+            "subExternalDeviceIdentity".to_string(),
+            subExternalDeviceIdentity as *const u8,
+        ),
+        (
+            "subExternalDeviceTag".to_string(),
+            subExternalDeviceTag as *const u8,
+        ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime
     // functions into the test process, and every address corresponds to the
@@ -213,7 +223,10 @@ pub fn library() -> NativeLibrary {
     unsafe {
         NativeLibrary::new(
             vec![directory.clone()],
-            vec![directory.join("interop.c")],
+            vec![
+                directory.join("interop.c"),
+                directory.join("external-device.c"),
+            ],
             symbols,
         )
     }

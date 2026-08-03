@@ -43,6 +43,13 @@ fn interop_mirror() -> SourceFile {
     SourceFile::ambient("interop.generated.d.ts", source)
 }
 
+fn external_device_mirror() -> SourceFile {
+    let path = corpus_dir().join("interop/external-device.generated.d.ts");
+    let source = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    SourceFile::ambient("external-device.generated.d.ts", source)
+}
+
 fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     let source =
         fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
@@ -73,8 +80,12 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
         "subByValue",
     ];
     let mut files = Vec::new();
-    if INTEROP_TOKENS.iter().any(|token| source.contains(token)) {
+    let uses_external = source.contains("subExternalDevice");
+    if uses_external || INTEROP_TOKENS.iter().any(|token| source.contains(token)) {
         files.push(interop_mirror());
+    }
+    if uses_external {
+        files.push(external_device_mirror());
     }
     files.push(SourceFile::new(name, source));
     files
@@ -149,7 +160,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         "corpus/accept/a19-modules produced warnings: {warnings:?}"
     );
     checked_files += 2;
-    assert_eq!(checked_files, 127, "accept source-file count changed");
+    assert_eq!(checked_files, 128, "accept source-file count changed");
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");

@@ -17,6 +17,12 @@ fn mirror() -> SourceFile {
     SourceFile::ambient("interop.generated.d.ts", text)
 }
 
+fn external_mirror() -> SourceFile {
+    let text = fs::read_to_string(interop_dir().join("external-device.generated.d.ts"))
+        .expect("read generated external mirror");
+    SourceFile::ambient("external-device.generated.d.ts", text)
+}
+
 /// Checks the mirror plus a program snippet.
 fn check_with_mirror(program: &str) -> Result<hir::Module, Vec<Diagnostic>> {
     check_program(&[mirror(), SourceFile::new("prog.ts", program)])
@@ -29,6 +35,38 @@ fn check_with_two_mirrors(extra: &str, program: &str) -> Result<hir::Module, Vec
         SourceFile::ambient("extra.d.ts", extra),
         SourceFile::new("prog.ts", program),
     ])
+}
+
+#[test]
+fn external_type_resolves_from_the_other_ambient_mirror() {
+    check_program(&[
+        mirror(),
+        external_mirror(),
+        SourceFile::new(
+            "prog.ts",
+            "export function main(): void {\n\
+               const device: SubDevice = subDeviceCreate(null);\n\
+               const same: SubDevice = subExternalDeviceIdentity(device);\n\
+               print(`${subExternalDeviceTag(same, 48)}`);\n\
+               subDeviceRelease(same);\n\
+             }\n",
+        ),
+    ])
+    .expect("the owner mirror supplies the external type to the whole program");
+}
+
+#[test]
+fn missing_owner_mirror_reports_the_existing_unknown_type_error() {
+    let diagnostics = check_program(&[
+        external_mirror(),
+        SourceFile::new("prog.ts", "export function main(): void {}\n"),
+    ])
+    .expect_err("the external mirror alone must not synthesize its missing type");
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == RuleCode::S100
+            && diagnostic.message == "unknown type name `SubDevice`"
+    }));
 }
 
 #[test]

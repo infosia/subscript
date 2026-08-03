@@ -8,6 +8,9 @@
 //!
 //! - opaque handle typedef (`typedef struct X_T *X`) → branded empty
 //!   `interface X`;
+//! - `/* @subscript-external X */` → retain `X` at every use site and
+//!   emit no declaration for it; directives are collected across the whole
+//!   header and may follow the first use (§48);
 //! - struct-pointer / nullable-struct-pointer field → `X | null`;
 //! - `(pointer, count)` array-pair descriptor struct → `T[]` at use
 //!   sites (no named type emitted);
@@ -54,6 +57,7 @@
 //!
 //! ```text
 //! // @subscript-c-header include="engine.h"
+//! // @subscript-c-external type="EngineDevice"
 //! // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
 //! // @subscript-c-scalar-pair function="engineFillBytes" parameter="engineData" element="uint8_t" const=false
 //! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
@@ -99,8 +103,9 @@ pub use cparse::{CField, Decl, ParseError};
 /// header fails to parse, when it uses a construct the frontend does not
 /// model, when an absorbed descriptor/string-view appears in return
 /// position, when a callback appears in an unsupported boundary position,
-/// or when a callback typedef reachable from the boundary differs from the
-/// supported `(string view, void*, void*) -> void` shape.
+/// when an external-type directive is unused or conflicts with a local type
+/// definition, or when a callback typedef reachable from the boundary
+/// differs from the supported `(string view, void*, void*) -> void` shape.
 pub fn generate(header: &str) -> Result<String, ParseError> {
     generate_for_header(header, "header.h")
 }

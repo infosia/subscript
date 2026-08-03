@@ -31,6 +31,17 @@ fn interop_mirror() -> SourceFile {
     SourceFile::ambient("interop.generated.d.ts", text)
 }
 
+/// The second generated mirror. It references `SubDevice` from
+/// [`interop_mirror`] through `@subscript-external` and intentionally
+/// declares no local copy of that handle.
+fn external_device_mirror() -> SourceFile {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../corpus/interop/external-device.generated.d.ts");
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    SourceFile::ambient("external-device.generated.d.ts", text)
+}
+
 /// True when any of `sources` names a foreign function, boundary struct,
 /// or flag member of the synthetic interop header. A false negative is not
 /// silent: the entry then fails to check with an unresolved `Sub…`
@@ -38,6 +49,12 @@ fn interop_mirror() -> SourceFile {
 /// positive would only add unused ambient declarations.
 fn uses_interop_mirror(sources: &[SourceFile]) -> bool {
     sources.iter().any(|s| references_interop(&s.source))
+}
+
+fn uses_external_device_mirror(sources: &[SourceFile]) -> bool {
+    sources
+        .iter()
+        .any(|source| source.source.contains("subExternalDevice"))
 }
 
 /// Interop-mirror name fragments: the P5 device/slice APIs plus the P6.2
@@ -155,11 +172,16 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         vec![SourceFile::new(format!("{id}.ts"), text)]
     };
-    // Interop entries (a25+) resolve the synthetic-header mirror as an
-    // ambient surface; it is prepended so it is ingested before the
-    // program module (the ambient source is not a checked module and
-    // carries no entry point).
-    if uses_interop_mirror(&sources) {
+    // Interop entries (a25+) resolve the synthetic-header mirrors as an
+    // ambient surface. Insert the external mirror first, then its owner at
+    // index zero, so both language ingestion and emitted C includes see
+    // interop.h before external-device.h.
+    let uses_external = uses_external_device_mirror(&sources);
+    let uses_interop = uses_interop_mirror(&sources) || uses_external;
+    if uses_external {
+        sources.insert(0, external_device_mirror());
+    }
+    if uses_interop {
         sources.insert(0, interop_mirror());
     }
     sources

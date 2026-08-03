@@ -219,9 +219,10 @@ fn bind_unmappable_construct_is_a_program_error_without_an_output_file() -> Resu
         String::from_utf8_lossy(&result.stderr),
         concat!(
             "subscript: bindgen: unmapped C type `long` at a boundary use site: ",
-            "it is neither a mapped scalar/builtin nor a registered named type ",
-            "(struct/enum/handle/alias/array-pair/string-view). Refusing to emit ",
-            "an invalid mirror; add a mapping or a typedef for this type.\n",
+            "it is neither a mapped scalar/builtin nor a named type declared by ",
+            "this header. If another ambient mirror declares it, add ",
+            "`/* @subscript-external long */` to this header; refusing to emit ",
+            "an unresolved name otherwise.\n",
         )
     );
     assert!(

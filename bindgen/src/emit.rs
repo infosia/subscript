@@ -21,6 +21,9 @@ enum Kind {
     /// A scalar `typedef` alias (flag typedef, §13.2): use sites spell the
     /// alias name; the alias itself is emitted as a `type X = <scalar>`.
     Alias,
+    /// A type supplied by another ambient mirror (§48). Use sites retain
+    /// the C spelling and this mirror emits no declaration for it.
+    External,
 }
 
 fn header(include_spelling: &str) -> String {
@@ -237,7 +240,7 @@ fn validate_nullable_positions(
 fn is_direct_registered_handle(field: &CField, registry: &HashMap<String, Kind>) -> bool {
     !field.pointer
         && field.array_len.is_none()
-        && matches!(registry.get(&field.base), Some(Kind::Handle))
+        && matches!(registry.get(&field.base), Some(Kind::Handle | Kind::External))
 }
 
 /// Rejects C positions that the mirror vocabulary or either lowering
@@ -335,6 +338,7 @@ fn validate_boundary_positions(
                     Kind::Enum
                     | Kind::Handle
                     | Kind::Alias
+                    | Kind::External
                     | Kind::StringView,
                 )
                 | None => {}
@@ -496,7 +500,8 @@ fn validate_boundary_positions(
                             Kind::Enum
                             | Kind::Handle
                             | Kind::Boundary
-                            | Kind::Alias,
+                            | Kind::Alias
+                            | Kind::External,
                         )
                         | None => {}
                     }
@@ -746,7 +751,7 @@ fn validate_lowerable_boundary_aggregate(
                 &field.base,
                 visiting,
             )?,
-            Some(Kind::Enum | Kind::Handle | Kind::Alias) | None => {}
+            Some(Kind::Enum | Kind::Handle | Kind::Alias | Kind::External) | None => {}
         }
     }
     visiting.remove(aggregate);
@@ -993,10 +998,11 @@ fn emit_provenance(
     reachable_callbacks: &HashSet<String>,
     include_spelling: &str,
 ) -> Result<Option<String>, ParseError> {
-    if !parsed
-        .decls
-        .iter()
-        .any(|decl| matches!(decl, Decl::Func { .. }))
+    if parsed.externals.is_empty()
+        && !parsed
+            .decls
+            .iter()
+            .any(|decl| matches!(decl, Decl::Func { .. }))
     {
         return Ok(None);
     }
@@ -1005,6 +1011,12 @@ fn emit_provenance(
         "// @subscript-c-header include={}",
         quoted(include_spelling)
     )];
+    for external in &parsed.externals {
+        records.push(format!(
+            "// @subscript-c-external type={}",
+            quoted(external)
+        ));
+    }
     for decl in &parsed.decls {
         match decl {
             Decl::FnPtr { name, .. } if reachable_callbacks.contains(name) => {
@@ -1072,8 +1084,15 @@ fn emit_parameter_provenance(
                     quoted(&param.base),
                 ));
             }
-            Some(Kind::Enum | Kind::Handle | Kind::FnPtr | Kind::Boundary | Kind::Alias) | None => {
-            }
+            Some(
+                Kind::Enum
+                | Kind::Handle
+                | Kind::FnPtr
+                | Kind::Boundary
+                | Kind::Alias
+                | Kind::External,
+            )
+            | None => {}
         }
     }
     Ok(())
@@ -1217,6 +1236,9 @@ fn classify(parsed: &Parsed) -> HashMap<String, Kind> {
         if alias_scalar(alias).is_some() {
             reg.insert(alias.name.clone(), Kind::Alias);
         }
+    }
+    for external in &parsed.externals {
+        reg.insert(external.clone(), Kind::External);
     }
     reg
 }
@@ -1365,7 +1387,7 @@ fn embedded_array_pairs(
         } else {
             match reg.get(&ptr.base) {
                 Some(Kind::Enum | Kind::Boundary) => ptr.base.clone(),
-                Some(Kind::Handle) if ptr.is_const => ptr.base.clone(),
+                Some(Kind::Handle | Kind::External) if ptr.is_const => ptr.base.clone(),
                 _ => {
                     return Err(ParseError(format!(
                         "struct `{owner}` fields `{}` and `{}` form an adjacent count/pointer \
@@ -1458,11 +1480,13 @@ fn parameter_array_pairs(
         }
         let elem = if let Some(scalar) = lang_scalar(&ptr.base) {
             scalar.to_string()
-        } else if matches!(reg.get(&ptr.base), Some(Kind::Handle)) && ptr.is_const {
+        } else if matches!(reg.get(&ptr.base), Some(Kind::Handle | Kind::External))
+            && ptr.is_const
+        {
             ptr.base.clone()
         } else {
             let supported = match reg.get(&ptr.base) {
-                Some(Kind::Handle) => {
+                Some(Kind::Handle | Kind::External) => {
                     "registered opaque handles are input-only and require `const H*`"
                 }
                 Some(Kind::Enum | Kind::Boundary) => {
@@ -1584,7 +1608,7 @@ fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError
     if f.nullable
         && !f.pointer
         && f.array_len.is_none()
-        && matches!(reg.get(&f.base), Some(Kind::Handle))
+        && matches!(reg.get(&f.base), Some(Kind::Handle | Kind::External))
     {
         return Ok(format!("{} | null", f.base));
     }
@@ -1647,9 +1671,9 @@ fn unmapped(base: &str) -> ParseError {
     }
     ParseError(format!(
         "unmapped C type `{base}` at a boundary use site: it is neither a mapped \
-         scalar/builtin nor a registered named type (struct/enum/handle/alias/\
-         array-pair/string-view). Refusing to emit an invalid mirror; add a \
-         mapping or a typedef for this type."
+         scalar/builtin nor a named type declared by this header. If another \
+         ambient mirror declares it, add `/* @subscript-external {base} */` to \
+         this header; refusing to emit an unresolved name otherwise."
     ))
 }
 

@@ -45,6 +45,14 @@ use crate::cparse::{CField, Decl, ParseError};
 pub struct Parsed {
     /// Boundary declarations in source order (the emitter's input).
     pub decls: Vec<Decl>,
+    /// Type names supplied by `@subscript-external` header comments, in
+    /// directive order. They remain references in the mirror and never
+    /// produce declarations there (compiler.md §48).
+    pub externals: Vec<String>,
+    /// Named struct/union/enum tags defined in the main file. The emitter
+    /// does not consume bare tag declarations, but external-type validation
+    /// uses this list to reject a name owned by the same header.
+    pub local_type_definitions: Vec<String>,
     /// `#define` macros defined in the main file, in source order.
     pub macros: Vec<Macro>,
     /// File-scope constants (`static const …`, `const …`) with an integer
@@ -112,10 +120,192 @@ pub struct Alias {
 /// the frontend does not model.
 pub fn parse(source: &str) -> Result<Parsed, ParseError> {
     ensure_libclang()?;
+    let externals = external_directives(source)?;
     // SAFETY: libclang is loaded (checked above). Every raw handle created
     // below is disposed before this function returns, and no borrowed
     // pointer outlives the object it points into.
-    unsafe { parse_inner(source) }
+    unsafe {
+        if externals.is_empty() {
+            return parse_inner(source);
+        }
+
+        // A header may rely on another header to supply an external typedef,
+        // so first retain the real parse whenever it is already complete.
+        // Otherwise a private preamble gives libclang enough shape to retain
+        // the external spelling at each use site. The synthetic declarations
+        // are removed below and therefore can never reach mirror emission.
+        let (mut parsed, injected) = match parse_inner(source) {
+            Ok(parsed) => (parsed, false),
+            Err(_) => (parse_inner(&source_with_external_preamble(source, &externals))?, true),
+        };
+
+        if injected {
+            parsed.decls.retain(|decl| {
+                decl_type_name(decl).is_none_or(|name| !externals.iter().any(|ext| ext == name))
+            });
+            parsed
+                .aliases
+                .retain(|alias| !externals.iter().any(|ext| ext == &alias.name));
+            parsed
+                .docs
+                .retain(|(name, _)| !externals.iter().any(|ext| ext == name));
+        }
+        if let Some(name) = externals.iter().find(|name| {
+            parsed
+                .decls
+                .iter()
+                .any(|decl| decl_type_name(decl) == Some(name.as_str()))
+                || parsed.aliases.iter().any(|alias| &alias.name == *name)
+                || parsed
+                    .local_type_definitions
+                    .iter()
+                    .any(|defined| defined == *name)
+        }) {
+            return Err(ParseError(format!(
+                "external type `{name}` is also defined in this header; a type cannot be both external and local"
+            )));
+        }
+
+        if let Some(name) = externals
+            .iter()
+            .find(|name| !external_is_used(&parsed, name))
+        {
+            return Err(ParseError(format!(
+                "external type `{name}` is not used by any declaration in this header"
+            )));
+        }
+        parsed.externals = externals;
+        Ok(parsed)
+    }
+}
+
+/// Extracts fixed-shape external-type directives from C line and block
+/// comments. The scan covers the whole source before parsing, so a directive
+/// may follow its first use. Comment-looking text inside string and character
+/// literals is ignored.
+fn external_directives(source: &str) -> Result<Vec<String>, ParseError> {
+    let bytes = source.as_bytes();
+    let mut comments = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index = (index + 2).min(bytes.len());
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                let start = index + 2;
+                index = start;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+                comments.push(&source[start..index]);
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                let start = index + 2;
+                index = start;
+                while index + 1 < bytes.len()
+                    && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                if index + 1 < bytes.len() {
+                    comments.push(&source[start..index]);
+                    index += 2;
+                } else {
+                    comments.push(&source[start..]);
+                    index = bytes.len();
+                }
+            }
+            _ => index += 1,
+        }
+    }
+
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for comment in comments {
+        for line in comment.lines() {
+            let line = line.trim();
+            let line = line
+                .strip_prefix('*')
+                .map(str::trim_start)
+                .unwrap_or(line);
+            let Some(rest) = line.strip_prefix("@subscript-external") else {
+                continue;
+            };
+            if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+                continue;
+            }
+            let mut fields = rest.split_whitespace();
+            let Some(name) = fields.next() else {
+                return Err(ParseError(
+                    "`@subscript-external` requires one C type name".to_string(),
+                ));
+            };
+            if fields.next().is_some() || !is_c_identifier(name) {
+                return Err(ParseError(format!(
+                    "`@subscript-external` requires exactly one C identifier, found `{}`",
+                    rest.trim()
+                )));
+            }
+            if !seen.insert(name.to_string()) {
+                return Err(ParseError(format!(
+                    "duplicate `@subscript-external` directive for `{name}`"
+                )));
+            }
+            names.push(name.to_string());
+        }
+    }
+    Ok(names)
+}
+
+fn is_c_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn source_with_external_preamble(source: &str, externals: &[String]) -> String {
+    let mut augmented = String::new();
+    for name in externals {
+        augmented.push_str(&format!(
+            "typedef struct __subscript_external_{name}_T *{name};\n"
+        ));
+    }
+    augmented.push_str(source);
+    augmented
+}
+
+fn decl_type_name(decl: &Decl) -> Option<&str> {
+    match decl {
+        Decl::Enum { name, .. }
+        | Decl::Struct { name, .. }
+        | Decl::Handle { name }
+        | Decl::FnPtr { name, .. } => Some(name),
+        Decl::Func { .. } => None,
+    }
+}
+
+fn external_is_used(parsed: &Parsed, external: &str) -> bool {
+    parsed.decls.iter().any(|decl| match decl {
+        Decl::Struct { fields, .. } => fields.iter().any(|field| field.base == external),
+        Decl::FnPtr { ret, params, .. } | Decl::Func { ret, params, .. } => {
+            ret.base == external || params.iter().any(|param| param.base == external)
+        }
+        Decl::Enum { .. } | Decl::Handle { .. } => false,
+    })
 }
 
 /// Loads libclang on the current thread if it is not already loaded.
@@ -250,10 +440,18 @@ unsafe fn visit_top_level(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), P
                 function_like: clang_Cursor_isMacroFunctionLike(cursor) != 0,
             });
         }
+        CXCursor_StructDecl | CXCursor_UnionDecl | CXCursor_EnumDecl
+            if clang_isCursorDefinition(cursor) != 0 =>
+        {
+            let name = cursor_spelling(cursor);
+            if !name.is_empty() {
+                parsed.local_type_definitions.push(name);
+            }
+        }
         // Bare struct/enum/union definitions are reached through their
-        // typedef; skip the standalone cursor to avoid a duplicate. Other
-        // cursor kinds (macro expansions, `#include` markers, attributes)
-        // carry no boundary declaration.
+        // typedef; record ownership above but emit only the typedef cursor
+        // to avoid a duplicate. Other cursor kinds (macro expansions,
+        // `#include` markers, attributes) carry no boundary declaration.
         _ => {}
     }
     Ok(())

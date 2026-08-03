@@ -15,6 +15,11 @@ fn header() -> String {
     fs::read_to_string(repo().join("corpus/interop/interop.h")).expect("read interop.h")
 }
 
+fn external_header() -> String {
+    fs::read_to_string(repo().join("corpus/interop/external-device.h"))
+        .expect("read external-device.h")
+}
+
 #[test]
 fn committed_mirror_is_byte_identical_to_regeneration() {
     let generated =
@@ -26,6 +31,23 @@ fn committed_mirror_is_byte_identical_to_regeneration() {
         "the committed mirror drifted from the generator output; regenerate with \
          `subscript bind --header corpus/interop/interop.h \
          -o corpus/interop/interop.generated.d.ts` (never hand-edit the generated file)"
+    );
+}
+
+#[test]
+fn external_mirror_is_byte_identical_to_regeneration() {
+    let generated =
+        subscript_bindgen::generate_for_header(&external_header(), "external-device.h")
+            .expect("generate external mirror");
+    let committed = fs::read_to_string(
+        repo().join("corpus/interop/external-device.generated.d.ts"),
+    )
+    .expect("read committed external mirror");
+    assert_eq!(
+        generated, committed,
+        "the committed external mirror drifted from the generator output; regenerate with \
+         `subscript bind --header corpus/interop/external-device.h \
+         -o corpus/interop/external-device.generated.d.ts` (never hand-edit the generated file)"
     );
 }
 

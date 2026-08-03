@@ -614,11 +614,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // simultaneous reach-through pointer members (a122), and the wide
     // breadth-and-depth composition (a123), and R18 contextual conditional
     // typing (a124), R19 conditional-arm narrowing (a125), and OBS-4
-    // by-value register-image packing (a126).
+    // by-value register-image packing (a126), and R20 external types shared
+    // across two generated mirrors (a127).
     assert_eq!(
         golden_ids.len(),
-        126,
-        "expected exactly 126 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        127,
+        "expected exactly 127 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -646,7 +647,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          OBS-3 two-pointer-members golden, and the a123 OBS-3 wide-descriptor \
          golden, the a124 R18 contextual-conditional golden, and the a125 \
          R19 conditional-arm-narrowing golden, and the a126 OBS-4 by-value \
-         register-image packing golden, found {}",
+         register-image packing golden, and the a127 R20 external-type \
+         two-mirror golden, found {}",
         golden_ids.len()
     );
 
