@@ -7,7 +7,9 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::io::{Read, Seek, SeekFrom};
+use std::io::Write;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
@@ -1117,6 +1119,7 @@ impl TemporaryFile {
         )))
     }
 
+    #[cfg(unix)]
     fn bytes(&mut self) -> Result<Vec<u8>, RunError> {
         let file = self.file.as_mut().expect("live temporary file");
         file.seek(SeekFrom::Start(0)).map_err(|error| {
@@ -1147,6 +1150,7 @@ impl Drop for TemporaryFile {
 
 struct RetainedOutput {
     file: File,
+    #[cfg(unix)]
     start: u64,
     owned_path: Option<PathBuf>,
 }
@@ -1165,6 +1169,7 @@ impl RetainedOutput {
                         path.display()
                     )))
                 })?;
+            #[cfg(unix)]
             let start = file
                 .metadata()
                 .map_err(|error| {
@@ -1176,6 +1181,7 @@ impl RetainedOutput {
                 .len();
             return Ok(Self {
                 file,
+                #[cfg(unix)]
                 start,
                 owned_path: None,
             });
@@ -1184,6 +1190,7 @@ impl RetainedOutput {
         let (path, file) = TemporaryFile::new("output")?.take_parts();
         Ok(Self {
             file,
+            #[cfg(unix)]
             start: 0,
             owned_path: Some(path),
         })
@@ -1195,6 +1202,7 @@ impl RetainedOutput {
         })
     }
 
+    #[cfg(unix)]
     fn bytes(&mut self) -> Result<Vec<u8>, RunError> {
         self.file.seek(SeekFrom::Start(self.start)).map_err(|error| {
             RunError::Internal(internal(format!("seek JIT output file: {error}")))

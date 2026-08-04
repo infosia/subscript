@@ -5,14 +5,29 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use subscript_codegen::{
-    run_c_aot, run_c_aot_with_native_libraries, run_jit, run_jit_with_native_libraries,
-    NativeLibrary, RunError, JIT_OUTPUT_FILE_ENV,
+    run_c_aot, run_c_aot_with_native_libraries, run_jit, NativeLibrary, RunError,
+    JIT_OUTPUT_FILE_ENV,
 };
 use subscript_compiler::SourceFile;
 
 const ABORT_CHILD_MODE: &str = "SUBSCRIPT_CODEGEN_ABORT_OUTPUT_CHILD_MODE";
 const ABORT_FIXTURE_DIR: &str = "SUBSCRIPT_CODEGEN_ABORT_OUTPUT_FIXTURE_DIR";
 const BEFORE_ABORT: &str = "before-native-abort\nstill-before-native-abort\n";
+const DEV_RETENTION_SKIP: &str =
+    "dev-JIT retention skipped: this platform does not isolate the run (compiler.md §44.10)";
+
+type IsolatedDevRun =
+    fn(&[SourceFile], &[NativeLibrary]) -> Result<Vec<u8>, RunError>;
+
+#[cfg(unix)]
+fn isolated_dev_run() -> Option<IsolatedDevRun> {
+    Some(subscript_codegen::run_jit_with_native_libraries)
+}
+
+#[cfg(not(unix))]
+fn isolated_dev_run() -> Option<IsolatedDevRun> {
+    None
+}
 
 unsafe extern "C" fn panic_across_jit_boundary() {
     panic!("forced panic-abort after output");
@@ -112,10 +127,14 @@ fn jit_output_file_override_child() {
     let Ok(mode) = std::env::var(ABORT_CHILD_MODE) else {
         return;
     };
+    let Some(run_dev) = isolated_dev_run() else {
+        println!("{DEV_RETENTION_SKIP}");
+        return;
+    };
     let fixture = PathBuf::from(std::env::var_os(ABORT_FIXTURE_DIR).expect("fixture directory"));
     let (files, library) = aborting_program(&fixture, &mode);
     assert_abnormal_output(
-        run_jit_with_native_libraries(&files, &[library]),
+        run_dev(&files, &[library]),
         "dev-JIT output-file override",
     );
 }
@@ -161,10 +180,14 @@ fn assert_abnormal_output(result: Result<Vec<u8>, RunError>, label: &str) {
 
 #[test]
 fn non_unwinding_panic_surfaces_output_already_produced() {
+    let Some(run_dev) = isolated_dev_run() else {
+        println!("{DEV_RETENTION_SKIP}");
+        return;
+    };
     let fixture = abort_fixture("panic");
     let (files, library) = aborting_program(&fixture, "panic");
     assert_abnormal_output(
-        run_jit_with_native_libraries(&files, &[library]),
+        run_dev(&files, &[library]),
         "dev-JIT panic",
     );
     std::fs::remove_dir_all(&fixture).expect("remove abort fixture directory");
@@ -172,6 +195,10 @@ fn non_unwinding_panic_surfaces_output_already_produced() {
 
 #[test]
 fn jit_output_file_override_still_retains_child_process_output() {
+    let Some(_run_dev) = isolated_dev_run() else {
+        println!("{DEV_RETENTION_SKIP}");
+        return;
+    };
     let fixture = abort_fixture("env-signal");
     let output_file = fixture.join("jit-signal.out");
     std::fs::File::create(&output_file).expect("create parent-owned JIT output file");
@@ -199,11 +226,15 @@ fn jit_output_file_override_still_retains_child_process_output() {
 #[test]
 fn no_opt_in_hard_signal_returns_retained_output_on_both_tiers() {
     let fixture = abort_fixture("signal");
-    let (jit_files, jit_library) = aborting_program(&fixture, "signal");
-    assert_abnormal_output(
-        run_jit_with_native_libraries(&jit_files, &[jit_library]),
-        "dev-JIT hard signal",
-    );
+    if let Some(run_dev) = isolated_dev_run() {
+        let (jit_files, jit_library) = aborting_program(&fixture, "signal");
+        assert_abnormal_output(
+            run_dev(&jit_files, &[jit_library]),
+            "dev-JIT hard signal",
+        );
+    } else {
+        println!("{DEV_RETENTION_SKIP}");
+    }
     let (ship_files, ship_library) = aborting_program(&fixture, "signal");
     assert_abnormal_output(
         run_c_aot_with_native_libraries(&ship_files, &[ship_library]),

@@ -67,6 +67,8 @@ fn run_dev_corpus_entry(
     sources: &[subscript_compiler::SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
+    #[cfg(all(windows, target_env = "msvc"))]
+    let _ = id;
     #[cfg(not(all(windows, target_env = "msvc")))]
     if id == HOST_OWNED_STATE_ID {
         let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
