@@ -136,6 +136,13 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains(
         "subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;"
     ));
+    // R21 (§49). The host-owned fixture is an opaque handle with explicit
+    // lifecycle functions and a non-owning accessor used by script code.
+    assert!(m.contains("interface SubHostOwnedState {"));
+    assert!(!m.contains("subHostOwnedStateCreate"));
+    assert!(!m.contains("subHostOwnedStateDestroy"));
+    assert!(m.contains("subHostOwnedStateBorrow(): SubHostOwnedState;"));
+    assert!(m.contains("subHostOwnedStateAdvance(state: SubHostOwnedState): i32;"));
     // R7 (§30). A direct string field can share its pointer scratch with a
     // recursively plain embedded aggregate and a collapsed enum-element
     // count-first pair. The count and nullable-pointer evidence shape must

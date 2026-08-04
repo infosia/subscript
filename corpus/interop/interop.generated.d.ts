@@ -745,6 +745,13 @@ declare function subByValueI32F32Report(report: SubByValueI32F32 | null, value: 
 declare function subByValueI32I64Report(report: SubByValueI32I64 | null, value: SubByValueI32I64): void;
 declare function subByValueI64TripleReport(report: SubByValueI64Triple | null, value: SubByValueI64Triple): void;
 
+interface SubHostOwnedState {
+  readonly __sub_handle_SubHostOwnedState: never;
+}
+
+declare function subHostOwnedStateBorrow(): SubHostOwnedState;
+declare function subHostOwnedStateAdvance(state: SubHostOwnedState): i32;
+
 type SubFloat16 = f16;
 
 type SubAccess = u64;

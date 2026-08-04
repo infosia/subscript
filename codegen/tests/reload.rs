@@ -441,6 +441,12 @@ fn reload_mode_reproduces_every_committed_golden() {
                 continue;
             }
         };
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        let host_owned_state = id == "a128-host-owned-state";
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        if host_owned_state {
+            native_fixture::host_owned_state_pre_entry();
+        }
         let run = session.call_main().and_then(|()| {
             for function in &module.functions {
                 if function.exported && function.is_async && function.name != "main" {
@@ -452,6 +458,10 @@ fn reload_mode_reproduces_every_committed_golden() {
             }
             Ok(())
         });
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        if host_owned_state {
+            native_fixture::host_owned_state_post_run();
+        }
         match run {
             Ok(()) => {
                 let bytes = session.take_output();

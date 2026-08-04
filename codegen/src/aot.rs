@@ -802,7 +802,7 @@ pub fn run_aot_with_native_libraries(
 /// [`RunError::Internal`] on emission, toolchain, compile, link, or
 /// execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, false, &[])
+    run_c_aot_configured(files, None, false, &[], None, None)
 }
 
 /// Compiles, links, and runs `files` through the emitted-C ship tier with
@@ -817,7 +817,42 @@ pub fn run_c_aot_with_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, false, libraries)
+    run_c_aot_configured(files, None, false, libraries, None, None)
+}
+
+/// Compiles, links, and runs `files` through the emitted-C ship tier with
+/// caller-supplied native libraries and optional host lifecycle hooks.
+///
+/// `pre_entry_hook`, when present, names a C function called after
+/// `subscript_init` and before the exported script entry. `post_run_hook`,
+/// when present, names a C function called after the async pump and before
+/// the Context is released. Each hook has the C signature
+/// `void hook(subscript_rt_context *)`; hook names must be C identifiers.
+/// Neither hook is entered as script code. Both calls are unconditional:
+/// the pre-entry hook runs even when initialization has trapped, and the
+/// post-run hook runs regardless of the Context's trap state.
+/// The generated entry declares and calls only the hooks supplied here, so
+/// no weak-symbol or link-time discovery mechanism is involved.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as
+/// [`run_c_aot_with_native_libraries`]. [`RunError::Internal`] is returned
+/// when a supplied hook name is not a C identifier.
+pub fn run_c_aot_with_native_libraries_and_host_hooks(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+    pre_entry_hook: Option<&str>,
+    post_run_hook: Option<&str>,
+) -> Result<Vec<u8>, RunError> {
+    run_c_aot_configured(
+        files,
+        None,
+        false,
+        libraries,
+        pre_entry_hook,
+        post_run_hook,
+    )
 }
 
 /// Runs the emitted-C ship tier with freed-handle diagnostics enabled and
@@ -835,7 +870,7 @@ pub fn run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, true, libraries)
+    run_c_aot_configured(files, None, true, libraries, None, None)
 }
 
 /// Runs the emitted-C ship tier while refusing the `n`-th object-level
@@ -850,7 +885,77 @@ pub fn run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`].
 pub fn run_c_aot_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, Some(n), false, &[])
+    run_c_aot_configured(files, Some(n), false, &[], None, None)
+}
+
+fn validate_host_hook_name(name: &str) -> Result<(), RunError> {
+    let mut bytes = name.bytes();
+    let valid_start = bytes
+        .next()
+        .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphabetic());
+    if !valid_start || !bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric()) {
+        return Err(RunError::Internal(internal(format!(
+            "host hook name `{name}` is not a C identifier"
+        ))));
+    }
+    Ok(())
+}
+
+fn aot_entry_with_host_hooks(
+    pre_entry_hook: Option<&str>,
+    post_run_hook: Option<&str>,
+) -> Result<String, RunError> {
+    for hook in [pre_entry_hook, post_run_hook].into_iter().flatten() {
+        validate_host_hook_name(hook)?;
+    }
+    if pre_entry_hook.is_none() && post_run_hook.is_none() {
+        return Ok(AOT_ENTRY_C.to_string());
+    }
+
+    const DECLARATION_ANCHOR: &str =
+        "extern void subscript_kick_async_exports(subscript_rt_context *ctx);";
+    const PRE_ENTRY_ANCHOR: &str = "    call_script_entry(ctx, subscript_init);";
+    const POST_RUN_ANCHOR: &str = "    uint64_t len = 0;";
+    for anchor in [DECLARATION_ANCHOR, PRE_ENTRY_ANCHOR, POST_RUN_ANCHOR] {
+        if !AOT_ENTRY_C.contains(anchor) {
+            return Err(RunError::Internal(internal(
+                "AOT entry host-hook anchor moved",
+            )));
+        }
+    }
+
+    let mut declarations = String::new();
+    if let Some(hook) = pre_entry_hook {
+        declarations.push_str(&format!(
+            "\nextern void {hook}(subscript_rt_context *ctx);"
+        ));
+    }
+    if let Some(hook) = post_run_hook.filter(|hook| Some(*hook) != pre_entry_hook) {
+        declarations.push_str(&format!(
+            "\nextern void {hook}(subscript_rt_context *ctx);"
+        ));
+    }
+
+    let mut entry = AOT_ENTRY_C.replacen(
+        DECLARATION_ANCHOR,
+        &format!("{DECLARATION_ANCHOR}{declarations}"),
+        1,
+    );
+    if let Some(hook) = pre_entry_hook {
+        entry = entry.replacen(
+            PRE_ENTRY_ANCHOR,
+            &format!("{PRE_ENTRY_ANCHOR}\n    {hook}(ctx);"),
+            1,
+        );
+    }
+    if let Some(hook) = post_run_hook {
+        entry = entry.replacen(
+            POST_RUN_ANCHOR,
+            &format!("    {hook}(ctx);\n{POST_RUN_ANCHOR}"),
+            1,
+        );
+    }
+    Ok(entry)
 }
 
 fn run_c_aot_configured(
@@ -858,6 +963,8 @@ fn run_c_aot_configured(
     fail_alloc_after: Option<u64>,
     freed_handle_diagnostics: bool,
     libraries: &[NativeLibrary],
+    pre_entry_hook: Option<&str>,
+    post_run_hook: Option<&str>,
 ) -> Result<Vec<u8>, RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
     let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
@@ -872,7 +979,8 @@ fn run_c_aot_configured(
         .join(format!("program{}", std::env::consts::EXE_SUFFIX));
     write_file(&src_path, program.source.as_bytes())?;
     let anchor = "    call_script_entry(ctx, subscript_init);";
-    if !AOT_ENTRY_C.contains(anchor) {
+    let mut entry = aot_entry_with_host_hooks(pre_entry_hook, post_run_hook)?;
+    if !entry.contains(anchor) {
         return Err(RunError::Internal(internal(
             "AOT entry Context-configuration anchor moved",
         )));
@@ -893,8 +1001,10 @@ fn run_c_aot_configured(
             "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n"
         ));
     }
-    setup.push_str(anchor);
-    let entry = AOT_ENTRY_C.replace(anchor, &setup);
+    if !setup.is_empty() {
+        setup.push_str(anchor);
+        entry = entry.replacen(anchor, &setup, 1);
+    }
     write_file(&entry_path, entry.as_bytes())?;
 
     let cc = host_c_compiler()?;
@@ -983,6 +1093,64 @@ mod tests {
 
     fn sources(src: &str) -> Vec<SourceFile> {
         vec![SourceFile::new("test.ts", src)]
+    }
+
+    #[test]
+    fn aot_entry_without_host_hooks_is_byte_identical_to_the_standing_entry() {
+        let generated = aot_entry_with_host_hooks(None, None).expect("generate entry");
+        assert_eq!(generated.as_bytes(), AOT_ENTRY_C.as_bytes());
+    }
+
+    #[test]
+    fn aot_entry_host_hooks_are_optional_and_independent() {
+        const PRE: &str = "fixture_pre_entry";
+        const POST: &str = "fixture_post_run";
+        for (pre, post) in [
+            (None, None),
+            (Some(PRE), None),
+            (None, Some(POST)),
+            (Some(PRE), Some(POST)),
+        ] {
+            let entry = aot_entry_with_host_hooks(pre, post).expect("generate entry");
+            assert_eq!(entry.contains(&format!("extern void {PRE}(")), pre.is_some());
+            assert_eq!(entry.contains(&format!("    {PRE}(ctx);")), pre.is_some());
+            assert_eq!(
+                entry.contains(&format!("extern void {POST}(")),
+                post.is_some()
+            );
+            assert_eq!(
+                entry.contains(&format!("    {POST}(ctx);")),
+                post.is_some()
+            );
+        }
+
+        let entry = aot_entry_with_host_hooks(Some(PRE), Some(POST)).expect("generate entry");
+        let init = entry
+            .find("    call_script_entry(ctx, subscript_init);")
+            .expect("initializer call");
+        let pre = entry.find("    fixture_pre_entry(ctx);").expect("pre hook");
+        let main_guard = entry
+            .find("    if (subscript_rt_ctx_trap_kind(ctx) == 0) {")
+            .expect("main trap guard");
+        assert!(init < pre && pre < main_guard);
+
+        let pump = entry
+            .find("    while (subscript_rt_ctx_trap_kind(ctx) == 0 &&")
+            .expect("async pump");
+        let post = entry.find("    fixture_post_run(ctx);").expect("post hook");
+        let output = entry.find("    uint64_t len = 0;").expect("output capture");
+        let release = entry
+            .find("    subscript_rt_ctx_release(ctx);")
+            .expect("Context release");
+        assert!(pump < post && post < output && output < release);
+    }
+
+    #[test]
+    fn aot_entry_rejects_non_identifier_host_hook_names() {
+        assert!(matches!(
+            aot_entry_with_host_hooks(Some("bad-hook"), None),
+            Err(RunError::Internal(message)) if message.contains("not a C identifier")
+        ));
     }
 
     #[test]

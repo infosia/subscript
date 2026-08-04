@@ -81,8 +81,34 @@ extern "C" {
     fn subByValueI32F32Report();
     fn subByValueI32I64Report();
     fn subByValueI64TripleReport();
+    fn subHostOwnedStateCreate();
+    fn subHostOwnedStateDestroy();
+    fn subHostOwnedStateBorrow();
+    fn subHostOwnedStateAdvance();
+    fn subHostOwnedStatePreEntry(ctx: *mut std::ffi::c_void);
+    fn subHostOwnedStatePostRun(ctx: *mut std::ffi::c_void);
     fn subExternalDeviceIdentity();
     fn subExternalDeviceTag();
+}
+
+/// Runs the fixture's ship-tier pre-entry hook for a dev-tier session.
+// This shared support module is also compiled into test targets that use
+// only `library`, so the lifecycle helpers are intentionally unused there.
+#[allow(dead_code)]
+pub fn host_owned_state_pre_entry() {
+    // SAFETY: the fixture hook ignores the Context argument and creates its
+    // own state. The linked function has the declared C signature.
+    unsafe { subHostOwnedStatePreEntry(std::ptr::null_mut()) };
+}
+
+/// Runs the fixture's ship-tier post-run hook for a dev-tier session.
+// This shared support module is also compiled into test targets that use
+// only `library`, so the lifecycle helpers are intentionally unused there.
+#[allow(dead_code)]
+pub fn host_owned_state_post_run() {
+    // SAFETY: paired with `host_owned_state_pre_entry`; the fixture hook
+    // ignores the Context argument, destroys its state, and clears its slot.
+    unsafe { subHostOwnedStatePostRun(std::ptr::null_mut()) };
 }
 
 /// Returns the native-library inputs for the committed interop fixture.
@@ -208,6 +234,12 @@ pub fn library() -> NativeLibrary {
         ("subByValueI32F32Report".to_string(), subByValueI32F32Report as *const u8),
         ("subByValueI32I64Report".to_string(), subByValueI32I64Report as *const u8),
         ("subByValueI64TripleReport".to_string(), subByValueI64TripleReport as *const u8),
+        ("subHostOwnedStateCreate".to_string(), subHostOwnedStateCreate as *const u8),
+        ("subHostOwnedStateDestroy".to_string(), subHostOwnedStateDestroy as *const u8),
+        ("subHostOwnedStateBorrow".to_string(), subHostOwnedStateBorrow as *const u8),
+        ("subHostOwnedStateAdvance".to_string(), subHostOwnedStateAdvance as *const u8),
+        ("subHostOwnedStatePreEntry".to_string(), subHostOwnedStatePreEntry as *const u8),
+        ("subHostOwnedStatePostRun".to_string(), subHostOwnedStatePostRun as *const u8),
         (
             "subExternalDeviceIdentity".to_string(),
             subExternalDeviceIdentity as *const u8,

@@ -180,6 +180,10 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subByValueI32F32Report",
             "subByValueI32I64Report",
             "subByValueI64TripleReport",
+            // R21 (§49): the script-visible borrow-only surface. The
+            // create/destroy pair is host-only and absent from the mirror.
+            "subHostOwnedStateBorrow",
+            "subHostOwnedStateAdvance",
         ]
     );
 
@@ -226,6 +230,21 @@ fn using_program_type_checks_against_the_generated_mirror() {
         matches!(create.params[0].ty, Type::Nullable(_)),
         "chain param is `SubChainHeader | null`"
     );
+
+    let borrow_host_state = module
+        .foreign_fns
+        .iter()
+        .find(|function| function.name == "subHostOwnedStateBorrow")
+        .expect("R21 borrow-only host-state accessor");
+    assert!(matches!(borrow_host_state.ret, Type::Class(_)));
+    assert!(borrow_host_state.params.is_empty());
+    let advance_host_state = module
+        .foreign_fns
+        .iter()
+        .find(|function| function.name == "subHostOwnedStateAdvance")
+        .expect("R21 borrowed host-state counter access");
+    assert!(matches!(advance_host_state.params[0].ty, Type::Class(_)));
+    assert_eq!(advance_host_state.ret, Type::I32);
 
     // subDeviceSetLabel takes a mapped `string` (string-view boundary
     // form), and subDeviceSubmit a mapped `u32[]` (array-pair descriptor).

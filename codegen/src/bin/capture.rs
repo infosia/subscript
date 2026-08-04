@@ -18,7 +18,9 @@ use std::process::ExitCode;
 
 use subscript_codegen::run_jit;
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
-use subscript_codegen::{run_jit_with_native_libraries, NativeLibrary};
+use subscript_codegen::{
+    run_jit_with_native_libraries, NativeLibrary, ReloadSession, RunError,
+};
 use subscript_compiler::SourceFile;
 
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
@@ -85,6 +87,12 @@ extern "C" {
     fn subByValueI32F32Report();
     fn subByValueI32I64Report();
     fn subByValueI64TripleReport();
+    fn subHostOwnedStateCreate();
+    fn subHostOwnedStateDestroy();
+    fn subHostOwnedStateBorrow();
+    fn subHostOwnedStateAdvance();
+    fn subHostOwnedStatePreEntry(ctx: *mut std::ffi::c_void);
+    fn subHostOwnedStatePostRun(ctx: *mut std::ffi::c_void);
 }
 
 fn references_interop(source: &str) -> bool {
@@ -116,6 +124,7 @@ fn references_interop(source: &str) -> bool {
         "subProbeQueueSubmit",
         "subProbeSetBindGroup",
         "subByValue",
+        "subHostOwnedState",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -300,6 +309,12 @@ fn interop_library() -> NativeLibrary {
         ("subByValueI32F32Report".to_string(), subByValueI32F32Report as *const u8),
         ("subByValueI32I64Report".to_string(), subByValueI32I64Report as *const u8),
         ("subByValueI64TripleReport".to_string(), subByValueI64TripleReport as *const u8),
+        ("subHostOwnedStateCreate".to_string(), subHostOwnedStateCreate as *const u8),
+        ("subHostOwnedStateDestroy".to_string(), subHostOwnedStateDestroy as *const u8),
+        ("subHostOwnedStateBorrow".to_string(), subHostOwnedStateBorrow as *const u8),
+        ("subHostOwnedStateAdvance".to_string(), subHostOwnedStateAdvance as *const u8),
+        ("subHostOwnedStatePreEntry".to_string(), subHostOwnedStatePreEntry as *const u8),
+        ("subHostOwnedStatePostRun".to_string(), subHostOwnedStatePostRun as *const u8),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime
     // function above into this capture process, with signatures matching the
@@ -311,6 +326,29 @@ fn interop_library() -> NativeLibrary {
             symbols,
         )
     }
+}
+
+#[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
+fn capture_host_owned_state(
+    sources: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
+    // SAFETY: these are the fixture's paired host hooks. They ignore the
+    // Context argument and keep their allocation live between the calls.
+    unsafe { subHostOwnedStatePreEntry(std::ptr::null_mut()) };
+    let run = (|| {
+        session.call_main()?;
+        session.call_export("secondEntry")?;
+        while session.async_pending() != 0 {
+            session.async_step()?;
+        }
+        Ok(session.take_output())
+    })();
+    // SAFETY: paired with the pre-entry call above and run after all script
+    // entries and async steps have returned.
+    unsafe { subHostOwnedStatePostRun(std::ptr::null_mut()) };
+    run
 }
 
 fn main() -> ExitCode {
@@ -375,7 +413,12 @@ fn main() -> ExitCode {
     let result = if interop {
         #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
         {
-            run_jit_with_native_libraries(&sources, &[interop_library()])
+            let libraries = [interop_library()];
+            if id == "a128-host-owned-state" {
+                capture_host_owned_state(&sources, &libraries)
+            } else {
+                run_jit_with_native_libraries(&sources, &libraries)
+            }
         }
         #[cfg(not(all(feature = "capture-interop", not(all(windows, target_env = "msvc")))))]
         {

@@ -1196,4 +1196,20 @@ void subByValueI64TripleReport(
     SubByValueI64Triple *report,
     SubByValueI64Triple value);
 
+/* ==== R21 host-owned state (compiler.md §49) ========================
+ *
+ * The host creates and destroys this opaque object. Script code can only
+ * borrow the current object and advance its deterministic counter; it has
+ * no ownership-transfer operation. The AOT fixture's pre-entry/post-run
+ * adapters call the explicit create/destroy pair around the script run. */
+
+typedef struct SubHostOwnedState_T *SubHostOwnedState;
+
+#if defined(SUBSCRIPT_INTEROP_HOST)
+SubHostOwnedState subHostOwnedStateCreate(void);
+void subHostOwnedStateDestroy(SubHostOwnedState state);
+#endif
+SubHostOwnedState subHostOwnedStateBorrow(void);
+int32_t subHostOwnedStateAdvance(SubHostOwnedState state);
+
 #endif /* SUBSCRIPT_INTEROP_H */

@@ -32,10 +32,16 @@
  * is single-threaded and deterministic.
  */
 
+#define SUBSCRIPT_INTEROP_HOST 1
 #include "interop.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+/* The generated AOT entry declares these fixture adapters with the same
+ * incomplete runtime Context type. The adapters are host code and do not
+ * enter or exit script mode. */
+typedef struct subscript_rt_context subscript_rt_context;
 
 /* Concrete layout behind the opaque SubDevice handle. Callers never see
  * it; they hold the pointer only. */
@@ -63,6 +69,49 @@ struct SubDevice_T {
 /* Deterministic scratch used to synthesize a callback message of a given
  * length. Single-threaded; refilled on each use. */
 static char subscript_msgbuf[256];
+
+/* R21 host-owned state. The script receives only a borrowed opaque handle;
+ * the host adapters below retain the owning pointer for the whole run. */
+struct SubHostOwnedState_T {
+    int32_t counter;
+};
+
+static SubHostOwnedState subscript_host_owned_state;
+
+SubHostOwnedState subHostOwnedStateCreate(void) {
+    SubHostOwnedState state =
+        (SubHostOwnedState)calloc(1, sizeof(struct SubHostOwnedState_T));
+    if (state != NULL) {
+        state->counter = 40;
+    }
+    return state;
+}
+
+void subHostOwnedStateDestroy(SubHostOwnedState state) {
+    free(state);
+}
+
+SubHostOwnedState subHostOwnedStateBorrow(void) {
+    return subscript_host_owned_state;
+}
+
+int32_t subHostOwnedStateAdvance(SubHostOwnedState state) {
+    if (state == NULL) {
+        return -1;
+    }
+    return state->counter++;
+}
+
+void subHostOwnedStatePreEntry(subscript_rt_context *ctx) {
+    (void)ctx;
+    subscript_host_owned_state = subHostOwnedStateCreate();
+}
+
+void subHostOwnedStatePostRun(subscript_rt_context *ctx) {
+    (void)ctx;
+    subHostOwnedStateDestroy(subscript_host_owned_state);
+    subscript_host_owned_state = NULL;
+}
 
 int32_t subDevicePoll(int32_t attempt) {
     return attempt >= 2 ? 1 : 0;

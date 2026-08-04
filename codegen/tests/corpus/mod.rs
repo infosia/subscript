@@ -99,6 +99,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeSetBindGroup",
         // OBS-4 by-value register-image packing (compiler.md §47).
         "subByValue",
+        // R21 host-owned state (compiler.md §49).
+        "subHostOwnedState",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }
