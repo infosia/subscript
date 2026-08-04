@@ -124,6 +124,37 @@ states what was wrong, the evidence, and the corrected claim.
 system.** Claims taken from documentation alone are marked *(docs)* where
 they appear.
 
+### Simplified Technical English
+
+*(Owner, 2026-08-04.)* Write all English here in ASD-STE100 Simplified
+Technical English (<https://www.asd-ste100.org/>), pragmatic mode: apply
+the structural rules and keep the domain vocabulary. The rule set this
+project follows is the `simple-english` agent skill
+(<https://github.com/AminBlg/SimpleEnglish>).
+
+The rules that matter most here:
+
+- Maximum 20 words in an instruction. Maximum 25 in a description.
+- One word, one meaning, for the whole document. Select one verb for the
+  check/verify/confirm concept, then use no other word for it.
+- Simple tenses only. Do not write "has been" or "is being".
+- Do not use an `-ing` form as a verb.
+- Use the active voice.
+- `can`, `will`, and `must` are approved. `should`, `would`, `may`,
+  `might`, and `could` are not. A requirement is `must`. Write a
+  suggestion as a fact, or delete it.
+- Put the condition before the command: "If the build fails, read the
+  log."
+- Write one instruction per sentence.
+- Keep the articles and keep "that". STE is short, not terse.
+- For a risk, give the command first and the consequence second.
+
+Never rewrite code, identifiers, commands, or quoted error text.
+
+This standard is for English. Japanese chat replies follow the same
+intent — short sentences, one term for one concept, no hedging — but the
+numbered rules do not apply to them.
+
 ## Core principles
 
 1. **Every public API has a direct unit test**, shipped in the same commit.
