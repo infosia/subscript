@@ -4694,6 +4694,48 @@ reproduces; (2) the padding sweep run and its results recorded;
 helpers retain output on hard termination with no opt-in,
 unit-tested; (5) no existing golden moves; full gates green.
 
+### 44.10 Retention needs address-space isolation (2026-08-05)
+
+§44.8 criterion (3) and §44.9 criterion (4) require output retention on
+both tiers. Neither states a platform limit. One limit exists.
+
+**The ship tier retains output on every platform.** `run_c_aot*` builds
+an executable and runs it as a child process. The parent reads that
+child's output after any termination. No host address crosses the
+process boundary, because the child links the native library's C
+sources.
+
+**The dev tier retains output only where `fork` exists.** The dev tier
+runs JIT code that calls caller-supplied native symbols. `NativeLibrary`
+holds each symbol as an address in the caller's process
+(`codegen/src/native.rs`). A fresh process cannot resolve such an
+address. Only a child that inherits the address space can. `fork` gives
+that inheritance, and Windows has no equivalent. On a non-Unix host the
+dev tier therefore runs the program in the caller's process. A program
+that ends its own process ends the caller. No output survives, and
+`RunError::AbnormalTermination` is unreachable there.
+
+This limit is structural. While a native symbol is an address in the
+caller's process, no later work removes the limit.
+
+Both criteria now read: **output survives each termination mode on each
+tier that isolates the run.**
+
+**Consequence for tests.** A test that asserts dev-tier retention must
+obtain its run through one shared helper. That helper's return type must
+express "this configuration does not isolate the dev run". A call site
+that ignores that case must not compile. The rule and its reason are
+§11c.3's: a copied guard is a forgotten guard. Measured on
+`x86_64-pc-windows-msvc` 2026-08-05, `cargo test -p subscript-codegen
+--test native_library` killed its own harness with
+`STATUS_STACK_BUFFER_OVERRUN` (exit `0xc0000409`); two tests ended the
+harness process and one failed by assertion.
+
+A test that covers both tiers must keep its ship-tier assertion on every
+platform. The exclusion applies to the dev-tier part alone. On a Unix
+host the helper supplies the run for every test, and the tests compare
+exactly what they compare today.
+
 ## 45. R18 — contextual typing for conditional expressions
 
 Owner decision 2026-08-03 (downstream request R18, non-blocking).
