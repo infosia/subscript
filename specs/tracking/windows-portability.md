@@ -563,3 +563,114 @@ assertion held, so every entry is still compared on the reference
 configuration, and no rustc warning appeared in the run. §11c.3's
 owed re-run is closed.
 
+## Dev-tier output retention ends the harness on Windows, 2026-08-05
+
+### Finding
+
+`cargo test --workspace` on `x86_64-pc-windows-msvc` stops at one
+harness. Measured at `aa572da`:
+
+    $ cargo test --workspace
+    error: test failed, to rerun pass `-p subscript-codegen --test native_library`
+    process didn't exit successfully: native_library-373b4501b45c1970.exe
+      (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+
+Every other harness is green. Measured with `--no-fail-fast`: 48
+harnesses, one target failed, all others `0 failed`. The `tsc` gate
+exits 0. The golden sweep prints `compared 84 entries, skipped 44
+entries` (84 + 44 = 128, the committed golden count), so §11c.3's
+structural exclusion still holds across the 42 commits since `0becd2b`.
+
+Each test of the six, run alone:
+
+| Test | Result on windows-msvc |
+|---|---|
+| `empty_library_set_runs_programs_without_foreign_calls` | ok |
+| `unregistered_foreign_symbol_is_named_before_platform_lookup` | ok |
+| `non_unwinding_panic_surfaces_output_already_produced` | ends the harness process |
+| `jit_output_file_override_still_retains_child_process_output` | fails at line 185 |
+| `no_opt_in_hard_signal_returns_retained_output_on_both_tiers` | ends the harness process |
+
+### Cause
+
+The three tests run a program whose native library ends the process, and
+they assert `RunError::AbnormalTermination`. `execute_entry_retained`
+runs that program in a forked child on Unix and **in the caller's
+process** on every other platform (`codegen/src/jit.rs`, two `#[cfg]`
+arms). On Windows the program therefore ends the test harness.
+
+The limit is not a shortcut. `NativeLibrary` holds each symbol as an
+address in the caller's process, so only a child that inherits the
+address space can resolve it. `fork` gives that inheritance and Windows
+has no equivalent. Written once as a contract in `compiler.md` §44.10.
+
+The reference platform is Unix, so the reference platform never saw it.
+This is the second instance of that class after §11c.3, and it entered
+with the same OBS-3 rounds: `c9e49e7` added the panic test, `fab7fdd`
+added the other two. Both are inside the 42 commits after `0becd2b`,
+the last point where this host measured the workspace green.
+
+### Task plan (handoff — coding agent)
+
+Three files. No spec edits, no scope changes, no commits.
+
+1. `codegen/tests/native_library.rs` — one shared helper whose return
+   type carries "the dev tier does not isolate a run here", per
+   §44.10. Each of the three tests takes its dev run from that helper
+   and returns early when the helper reports no isolation. A call site
+   that ignores the case must not compile. Keep the ship-tier
+   assertion of `no_opt_in_hard_signal_returns_retained_output_on_both_tiers`
+   on every platform — exclude the dev-tier half alone.
+2. `codegen/src/jit.rs` — `TemporaryFile::bytes`, `RetainedOutput::bytes`
+   and `RetainedOutput::start` are dead on non-Unix and warn there.
+   Gate them to the configuration that uses them.
+3. `codegen/tests/golden.rs` — `run_dev_corpus_entry`'s `id` parameter
+   is unused on windows-msvc and warns there.
+
+Constraints: do not run `rustfmt` over a whole file (this host's
+rustfmt disagrees with the committed formatting in ~873 places). Do not
+weaken any assertion that holds today on Unix.
+
+### Result (2026-08-05)
+
+Landed as specified: three files, 51 insertions / 10 deletions. The
+helper is `fn isolated_dev_run() -> Option<IsolatedDevRun>`, where
+`IsolatedDevRun` is the dev run helper's function type. The Unix arm
+returns `Some(run_jit_with_native_libraries)`; the non-Unix arm returns
+`None`. A call site that ignores the `None` case does not compile,
+because `Option<fn(..)>` is not callable.
+
+Measured on `x86_64-pc-windows-msvc` by the orchestrator, not taken
+from the implementer's report:
+
+    $ cargo build --workspace
+    0 warnings                                   (was 4)
+    $ cargo test -p subscript-codegen --test native_library -- --nocapture
+    test result: ok. 6 passed; 0 failed          (was a killed harness)
+    3 dev-JIT skip lines, each citing compiler.md §44.10
+    $ cargo test --workspace --no-fail-fast
+    52 harnesses, every one ok, ~872 passed, 0 failed, 1 ignored
+
+No golden, corpus, or `.ts` file changed, so the `tsc` gate measured at
+`aa572da` (exit 0) still holds.
+
+The ship-tier assertion of
+`no_opt_in_hard_signal_returns_retained_output_on_both_tiers` runs on
+Windows, as §44.10 requires. Evidence: the C-AOT half is unconditional
+code after the `if let`, `assert_abnormal_output` panics on an `Ok`
+result, and the test takes 0.29 s against 0.00 s for a test that
+reaches no C toolchain.
+
+One deliberate deviation, accepted:
+`jit_output_file_override_still_retains_child_process_output` binds the
+runner to `_run_dev` and does not call it, because that test spawns a
+child process which performs the dev run. It still routes through the
+one helper, so the exclusion cannot drift from the other two.
+
+`rustfmt --check` is not evidence here. It follows a test root's `mod`
+tree, so a single file cannot be compared against an isolated baseline,
+and this host's rustfmt already disagrees with committed formatting in
+`golden.rs` at lines the §49 commit wrote. The new code matches the
+committed wrapping style of the code beside it.
+
+
