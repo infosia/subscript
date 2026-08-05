@@ -581,10 +581,10 @@ fn add_address_sanitizer_flags(command: &mut Command, style: CCompilerStyle) {
 /// message, with both streams and a label for each.
 ///
 /// MSVC `cl` and `link.exe` write their diagnostics to stdout. Unix
-/// compilers write them to stderr. A report that reads one stream is
+/// compilers write them to stderr. A report of one stream only is
 /// therefore empty on one host family, and the failure arrives with no
 /// cause (compiler.md §11c.4). An empty stream is normal, so this
-/// function drops it and keeps the label of the stream that spoke.
+/// function drops it and keeps the label of the stream that has content.
 #[must_use]
 pub fn tool_output_report(output: &std::process::Output) -> String {
     let mut report = String::new();

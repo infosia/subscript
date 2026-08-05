@@ -18,7 +18,8 @@ use std::thread;
 
 use subscript_bindgen::generate_for_header;
 use subscript_codegen::{
-    run_c_aot_with_native_libraries, run_jit_with_native_libraries, NativeLibrary,
+    run_c_aot_with_native_libraries, run_jit_with_native_libraries, tool_output_report,
+    NativeLibrary,
 };
 // Used only by the interop-only two-header emission test, which is excluded
 // on windows-msvc; split out so the import is not unused there.
@@ -408,7 +409,7 @@ fn assert_host_program_matches_golden(directory: &str, label: &str) {
         output.status.success(),
         "{label} build/run failed with {}:\n{}",
         output.status,
-        String::from_utf8_lossy(&output.stderr)
+        tool_output_report(&output)
     );
     assert_eq!(
         output.stdout,

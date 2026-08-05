@@ -57,7 +57,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
-use subscript_codegen::{emit_c, emit_object, jit_bench, runtime_staticlib_path};
+use subscript_codegen::{
+    emit_c, emit_object, jit_bench, runtime_staticlib_path, tool_output_report,
+};
 use subscript_compiler::{check_program, SourceFile};
 
 /// The corpus entry under measurement (`specs/blocks/corpus.md` §4).
@@ -640,7 +642,7 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
     if !build.status.success() {
         return Err(format!(
             "compiling the C baseline failed:\n{}",
-            String::from_utf8_lossy(&build.stderr)
+            tool_output_report(&build)
         ));
     }
 
@@ -714,7 +716,7 @@ fn measure_emitted_c(
     if !build.status.success() {
         return Err(format!(
             "compiling the emitted C failed:\n{}",
-            String::from_utf8_lossy(&build.stderr)
+            tool_output_report(&build)
         ));
     }
 
@@ -761,7 +763,7 @@ fn measure_aot(
     if !link.status.success() {
         return Err(format!(
             "linking the AOT build failed:\n{}",
-            String::from_utf8_lossy(&link.stderr)
+            tool_output_report(&link)
         ));
     }
 

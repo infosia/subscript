@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use subscript_codegen::{emit_c, runtime_staticlib_path, AOT_ENTRY_C};
+use subscript_codegen::{emit_c, runtime_staticlib_path, tool_output_report, AOT_ENTRY_C};
 use subscript_compiler::{check_program, SourceFile};
 
 const BASELINE_SOURCE: &str = include_str!("../../regex-size/baseline.ts");
@@ -192,7 +192,7 @@ fn link_subject(
     if !link.status.success() {
         return Err(format!(
             "link {id} failed:\n{}",
-            String::from_utf8_lossy(&link.stderr)
+            tool_output_report(&link)
         ));
     }
     let strip = Command::new("strip")

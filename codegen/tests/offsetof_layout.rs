@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
 
-use subscript_codegen::value_class_layouts;
+use subscript_codegen::{tool_output_report, value_class_layouts};
 use subscript_compiler::{check_program, SourceFile};
 
 /// The language-side value-class mirror of every mirrorable struct in
@@ -695,7 +695,7 @@ fn c_truth(structs: &[(&'static str, Vec<&'static str>)]) -> BTreeMap<String, CL
     assert!(
         compile.status.success(),
         "compiling the C offsetof probe failed:\n{}",
-        String::from_utf8_lossy(&compile.stderr)
+        tool_output_report(&compile)
     );
 
     let run = Command::new(&exe)

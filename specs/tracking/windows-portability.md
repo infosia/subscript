@@ -693,7 +693,42 @@ Fix: `tool_output_report` in `codegen/src/aot.rs` renders both streams
 with a label for each, drops an empty stream, and names a silent
 command. The three ship-tier call sites use it — the Cranelift-AOT link,
 the C-AOT compile, and the test-host build — plus the same assertion in
-`codegen/tests/cemit.rs`. Contract: `specs/blocks/compiler.md` §11c
-constraint 4.
+`codegen/tests/cemit.rs` and the ship compile in the cross-language
+benchmark. Contract: `specs/blocks/compiler.md` §11c constraint 4.
+
+### Review of commit 506d1d9 (2026-08-05) — the fix stopped short
+
+Constraint 4 read "Every ship-tier compile, link, and test-host call
+site uses it". Six call sites of the same class still read stderr alone:
+
+| File | Call |
+| --- | --- |
+| `benchmarks/src/bin/cross-language.rs:567` | the C baseline compile |
+| `benchmarks/src/bin/perf-gate.rs:642` | the C baseline compile |
+| `benchmarks/src/bin/perf-gate.rs:716` | the emitted C compile |
+| `benchmarks/src/bin/perf-gate.rs:763` | the AOT link |
+| `benchmarks/src/bin/regex-size-gate.rs:194` | the link |
+| `codegen/tests/offsetof_layout.rs:697` | the C `offsetof` probe compile |
+
+`perf-gate` and `cross-language` measure the P4 ship-tier ratio, so a
+Windows failure there reported no cause. The `cross-language` file
+carried both forms: the ship compile used the helper and the baseline
+compile beside it did not.
+
+Fix: the six call sites use `tool_output_report`. The examples host gate
+(`examples/tests/gate.rs:409`) uses it too — the script it runs builds a
+host program with the platform compiler.
+
+Two reports stay on stderr alone, and this is correct: the runtime
+static library build in `codegen/src/aot.rs:352` and the same build in
+`cli/src/runtime_paths.rs:142` run cargo, and cargo writes its
+diagnostics to stderr on every platform. `cli/src/lib.rs:513` already
+writes both streams to its own stderr, then returns the exit status.
+Reports of a program run are out of scope. They report the run.
+
+Measured after the fix on `x86_64-pc-windows-msvc`: `cargo build
+--workspace --tests --benches` gives 0 warnings, and `cargo test
+--workspace --no-fail-fast` gives 51 harnesses, 875 passed, 0 failed,
+1 ignored.
 
 

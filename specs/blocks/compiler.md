@@ -955,7 +955,7 @@ Four constraints the `cl` path adds, all measured:
 
 4. **A toolchain failure report must carry both streams.** `cl` and
    `link.exe` write their diagnostics to stdout. Unix compilers write
-   them to stderr. A report that reads one stream is empty on one host
+   them to stderr. A report of one stream only is empty on one host
    family, so the caller sees the failure and no cause. Measured
    2026-08-05 on windows-msvc: `run_c_aot_with_native_libraries` failed
    for every program of a host facade that binds a C header, and printed
@@ -963,8 +963,18 @@ Four constraints the `cl` path adds, all measured:
    real cause was 60 `cl` errors on stdout, and a wrapper compiler was
    needed to read them. `tool_output_report` now renders both streams
    with a label for each, drops an empty stream, and names a silent
-   command. Every ship-tier compile, link, and test-host call site uses
-   it.
+   command.
+
+   Every call site that runs a C compiler or a linker reports both
+   streams. Twelve call sites use `tool_output_report`: the Cranelift-AOT
+   link, the C-AOT compile, the `aot` and `cemit` test hosts, the
+   `offsetof` probe, the examples host gate, and the perf, size, and
+   cross-language benchmarks. The CLI writes both streams to its own
+   stderr, then returns the exit status. Two exceptions stay on stderr
+   alone, because cargo writes its diagnostics to stderr on every
+   platform: the runtime static library build in `codegen`, and the same
+   build in the CLI. A report of a program run is not in scope here. It
+   reports the run, not the toolchain.
 
 ## 12. P5 C-header binding vertical slice
 

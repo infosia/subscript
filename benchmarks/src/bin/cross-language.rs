@@ -564,8 +564,8 @@ fn measure_c(
         Ok(o) if o.status.success() => {}
         Ok(o) => {
             return Outcome::Error(format!(
-                "compile failed: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
+                "compile failed:\n{}",
+                tool_output_report(&o)
             ))
         }
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
