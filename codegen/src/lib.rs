@@ -47,8 +47,8 @@ pub use aot::{
     run_c_aot_with_alloc_failure,
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
     run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
-    runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, AotObject,
-    CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
+    runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
+    AotObject, CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
     WINDOWS_SYSTEM_LIBRARIES,
 };
 pub use cemit::{emit_c, emit_c_without_main, CProgram};

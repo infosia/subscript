@@ -1682,7 +1682,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     // runs. The harness's own entry is untouched.
     use std::path::PathBuf;
     use std::process::Command;
-    use subscript_codegen::{emit_c, runtime_staticlib_path, AOT_ENTRY_C};
+    use subscript_codegen::{emit_c, runtime_staticlib_path, tool_output_report, AOT_ENTRY_C};
     use subscript_compiler::check_program;
 
     const PINNED_MS: i64 = 1_592_224_496_789;
@@ -1787,7 +1787,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     assert!(
         compile.status.success(),
         "compiling/linking the emitted C failed:\n{}",
-        String::from_utf8_lossy(&compile.stderr)
+        tool_output_report(&compile)
     );
 
     let run = Command::new(&exe_path).output().expect("run linked program");

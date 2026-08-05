@@ -35,7 +35,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 use subscript_codegen::{
-    emit_c, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path,
+    emit_c, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path, tool_output_report,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -630,8 +630,8 @@ fn measure_ship(
         Ok(o) if o.status.success() => {}
         Ok(o) => {
             return Outcome::Error(format!(
-                "compile/link failed: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
+                "compile/link failed:\n{}",
+                tool_output_report(&o)
             ))
         }
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),

@@ -673,4 +673,27 @@ and this host's rustfmt already disagrees with committed formatting in
 `golden.rs` at lines the §49 commit wrote. The new code matches the
 committed wrapping style of the code beside it.
 
+## Finding (2026-08-05) — a ship-tier failure reported no cause on MSVC
+
+`run_c_aot_with_native_libraries` reported a compile or link failure
+with `compile.stderr` alone. `cl` and `link.exe` write their
+diagnostics to stdout, so the message ended at the colon:
+
+```
+internal lowering error: compiling/linking the emitted C failed:
+```
+
+Measured on `x86_64-pc-windows-msvc`: every ship-tier run of a host
+facade that binds a C header failed, and each report ended at the
+colon. A wrapper compiler set through `$CC` captured the real output —
+60 `cl` syntax errors from one header. Without the wrapper the Windows
+gate reports a failure and no cause.
+
+Fix: `tool_output_report` in `codegen/src/aot.rs` renders both streams
+with a label for each, drops an empty stream, and names a silent
+command. The three ship-tier call sites use it — the Cranelift-AOT link,
+the C-AOT compile, and the test-host build — plus the same assertion in
+`codegen/tests/cemit.rs`. Contract: `specs/blocks/compiler.md` §11c
+constraint 4.
+
 

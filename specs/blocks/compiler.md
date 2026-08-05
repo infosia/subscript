@@ -910,7 +910,7 @@ is byte-identical to the goldens, the wrapping and `as`-conversion cases
 (e01) included; `engine.c` compiles under `cl` (C4819 only, silenced by
 `/utf-8`).
 
-Three constraints the `cl` path adds, all measured:
+Four constraints the `cl` path adds, all measured:
 
 1. **The emitter must not output an empty struct.** MSVC C mode rejects a
    zero-member struct (`error C2016`); clang accepts it. The opaque-handle
@@ -952,6 +952,19 @@ Three constraints the `cl` path adds, all measured:
    references it, and the standing gate (§2, §11) compares the full run
    set. On windows-msvc an excluded entry is compiled and run by neither
    tier, and the run set the test reports counts only what it compared.
+
+4. **A toolchain failure report must carry both streams.** `cl` and
+   `link.exe` write their diagnostics to stdout. Unix compilers write
+   them to stderr. A report that reads one stream is empty on one host
+   family, so the caller sees the failure and no cause. Measured
+   2026-08-05 on windows-msvc: `run_c_aot_with_native_libraries` failed
+   for every program of a host facade that binds a C header, and printed
+   `compiling/linking the emitted C failed:` with nothing after it. The
+   real cause was 60 `cl` errors on stdout, and a wrapper compiler was
+   needed to read them. `tool_output_report` now renders both streams
+   with a label for each, drops an empty stream, and names a silent
+   command. Every ship-tier compile, link, and test-host call site uses
+   it.
 
 ## 12. P5 C-header binding vertical slice
 

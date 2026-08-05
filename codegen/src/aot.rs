@@ -577,6 +577,36 @@ fn add_address_sanitizer_flags(command: &mut Command, style: CCompilerStyle) {
     }
 }
 
+/// Renders the output of a failed toolchain command for an error
+/// message, with both streams and a label for each.
+///
+/// MSVC `cl` and `link.exe` write their diagnostics to stdout. Unix
+/// compilers write them to stderr. A report that reads one stream is
+/// therefore empty on one host family, and the failure arrives with no
+/// cause (compiler.md §11c.4). An empty stream is normal, so this
+/// function drops it and keeps the label of the stream that spoke.
+#[must_use]
+pub fn tool_output_report(output: &std::process::Output) -> String {
+    let mut report = String::new();
+    for (label, bytes) in [("stdout", &output.stdout), ("stderr", &output.stderr)] {
+        let stream = String::from_utf8_lossy(bytes);
+        if stream.trim().is_empty() {
+            continue;
+        }
+        report.push_str("--- ");
+        report.push_str(label);
+        report.push_str(" ---\n");
+        report.push_str(&stream);
+        if !stream.ends_with('\n') {
+            report.push('\n');
+        }
+    }
+    if report.is_empty() {
+        report.push_str("(the command printed nothing)\n");
+    }
+    report
+}
+
 /// Adds the executable-output arguments for the resolved driver: MSVC's
 /// `/Fe:` naming plus the `-link` linker-arguments marker, or the
 /// GNU-style `-o` form.
@@ -758,7 +788,7 @@ pub fn run_aot_with_native_libraries(
     if !link.status.success() {
         return Err(RunError::Internal(internal(format!(
             "link failed:\n{}",
-            String::from_utf8_lossy(&link.stderr)
+            tool_output_report(&link)
         ))));
     }
 
@@ -1044,7 +1074,7 @@ fn run_c_aot_configured(
     if !compile.status.success() {
         return Err(RunError::Internal(internal(format!(
             "compiling/linking the emitted C failed:\n{}",
-            String::from_utf8_lossy(&compile.stderr)
+            tool_output_report(&compile)
         ))));
     }
 
@@ -1151,6 +1181,50 @@ mod tests {
             aot_entry_with_host_hooks(Some("bad-hook"), None),
             Err(RunError::Internal(message)) if message.contains("not a C identifier")
         ));
+    }
+
+    /// Builds an `Output` with the two streams. [`tool_output_report`]
+    /// reads no status, so the default status is enough.
+    fn tool_output(stdout: &str, stderr: &str) -> std::process::Output {
+        std::process::Output {
+            status: std::process::ExitStatus::default(),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[test]
+    fn tool_output_report_keeps_the_stream_that_spoke() {
+        // MSVC `cl` reports on stdout; a stderr-only report loses this.
+        let msvc = tool_output("host.h(12): error C2146: syntax error\n", "");
+        assert_eq!(
+            tool_output_report(&msvc),
+            "--- stdout ---\nhost.h(12): error C2146: syntax error\n"
+        );
+
+        let unix = tool_output("", "host.h:12:5: error: expected ';'\n");
+        assert_eq!(
+            tool_output_report(&unix),
+            "--- stderr ---\nhost.h:12:5: error: expected ';'\n"
+        );
+    }
+
+    #[test]
+    fn tool_output_report_labels_both_streams_and_ends_every_line() {
+        let both = tool_output("out line", "err line");
+        assert_eq!(
+            tool_output_report(&both),
+            "--- stdout ---\nout line\n--- stderr ---\nerr line\n"
+        );
+    }
+
+    #[test]
+    fn tool_output_report_names_a_silent_command() {
+        let silent = tool_output("", "   \n");
+        assert_eq!(
+            tool_output_report(&silent),
+            "(the command printed nothing)\n"
+        );
     }
 
     #[test]
@@ -1294,7 +1368,7 @@ mod tests {
         assert!(
             compile.status.success(),
             "compiling/linking test host failed:\n{}",
-            String::from_utf8_lossy(&compile.stderr)
+            tool_output_report(&compile)
         );
         Command::new(&exe_path).output().expect("run test host")
     }
