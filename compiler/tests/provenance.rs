@@ -73,6 +73,53 @@ fn duplicate_records_for_one_parameter_are_rejected() {
 }
 
 #[test]
+fn cenum_record_is_retained_while_the_ambient_alias_resolves_normally() {
+    check_program(&[
+        SourceFile::ambient(
+            "aliases.d.ts",
+            "type EngineMode = CEnum<{ \"off\": 16; \"on\": 23; }>;\n",
+        ),
+        SourceFile::ambient(
+            "engine.generated.d.ts",
+            "// @subscript-c-header include=\"engine.h\"\n\
+             // @subscript-c-cenum typedef=\"EngineModeC\" alias=\"EngineMode\"\n\
+             declare function engineMode(value: EngineMode): EngineMode;\n",
+        ),
+    ])
+    .expect("a well-formed cenum provenance record is retained");
+}
+
+#[test]
+fn duplicate_cenum_record_for_one_typedef_is_rejected() {
+    let diagnostics = reject(
+        "duplicate-cenum.d.ts",
+        "// @subscript-c-header include=\"engine.h\"\n\
+         // @subscript-c-cenum typedef=\"EngineModeC\" alias=\"EngineMode\"\n\
+         // @subscript-c-cenum typedef=\"EngineModeC\" alias=\"EngineOtherMode\"\n\
+         declare function engineRun(): void;\n",
+    );
+    assert_named(&diagnostics, "duplicate-cenum.d.ts", "duplicate provenance");
+    assert_named(&diagnostics, "duplicate-cenum.d.ts", "EngineOtherMode");
+}
+
+#[test]
+fn cenum_record_fields_must_be_non_empty() {
+    for (name, record) in [
+        (
+            "empty-cenum-typedef.d.ts",
+            "// @subscript-c-cenum typedef=\"\" alias=\"EngineMode\"\n",
+        ),
+        (
+            "empty-cenum-alias.d.ts",
+            "// @subscript-c-cenum typedef=\"EngineModeC\" alias=\"\"\n",
+        ),
+    ] {
+        let diagnostics = reject(name, record);
+        assert_named(&diagnostics, name, "cenum typedef and alias fields must be non-empty");
+    }
+}
+
+#[test]
 fn well_formed_records_are_attached_to_the_typed_hir_surface() {
     let mirror = "\
 // @subscript-c-header include=\"engine.h\"

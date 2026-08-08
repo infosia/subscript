@@ -20,6 +20,11 @@ fn external_header() -> String {
         .expect("read external-device.h")
 }
 
+fn wire_enum_header() -> String {
+    fs::read_to_string(repo().join("corpus/interop/wire-enum.h"))
+        .expect("read wire-enum.h")
+}
+
 #[test]
 fn committed_mirror_is_byte_identical_to_regeneration() {
     let generated =
@@ -48,6 +53,23 @@ fn external_mirror_is_byte_identical_to_regeneration() {
         "the committed external mirror drifted from the generator output; regenerate with \
          `subscript bind --header corpus/interop/external-device.h \
          -o corpus/interop/external-device.generated.d.ts` (never hand-edit the generated file)"
+    );
+}
+
+#[test]
+fn wire_enum_mirror_is_byte_identical_to_regeneration() {
+    let generated =
+        subscript_bindgen::generate_for_header(&wire_enum_header(), "wire-enum.h")
+            .expect("generate wire-enum mirror");
+    let committed = fs::read_to_string(
+        repo().join("corpus/interop/wire-enum.generated.d.ts"),
+    )
+    .expect("read committed wire-enum mirror");
+    assert_eq!(
+        generated, committed,
+        "the committed wire-enum mirror drifted from the generator output; regenerate with \
+         `subscript bind corpus/interop/wire-enum.h \
+         -o corpus/interop/wire-enum.generated.d.ts` (never hand-edit the generated file)"
     );
 }
 

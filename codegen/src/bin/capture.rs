@@ -96,6 +96,8 @@ extern "C" {
     fn subWireModeNext();
     fn subWireModeEcho();
     fn subWireModeUnknown();
+    fn subBindToneNext();
+    fn subBindToneEcho();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -129,6 +131,7 @@ fn references_interop(source: &str) -> bool {
         "subByValue",
         "subHostOwnedState",
         "subWireMode",
+        "subBindTone",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -325,6 +328,8 @@ fn interop_library() -> NativeLibrary {
             "subWireModeUnknown".to_string(),
             subWireModeUnknown as *const u8,
         ),
+        ("subBindToneNext".to_string(), subBindToneNext as *const u8),
+        ("subBindToneEcho".to_string(), subBindToneEcho as *const u8),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime
     // function above into this capture process, with signatures matching the
@@ -406,7 +411,9 @@ fn main() -> ExitCode {
     };
 
     let wire_enum = sources.iter().any(|source| {
-        source.source.contains("subWireMode") || source.source.contains("SubWireMode")
+        ["subWireMode", "SubWireMode", "subBindTone", "SubBindTone"]
+            .iter()
+            .any(|token| source.source.contains(token))
     });
     let interop = sources
         .iter()
@@ -423,7 +430,7 @@ fn main() -> ExitCode {
         sources.insert(0, SourceFile::ambient("interop.generated.d.ts", text));
     }
     if wire_enum {
-        let mirror = accept.join("../interop/wire-enum.d.ts");
+        let mirror = accept.join("../interop/wire-enum.generated.d.ts");
         let text = match fs::read_to_string(&mirror) {
             Ok(text) => text,
             Err(e) => {
@@ -431,7 +438,17 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         };
-        sources.insert(0, SourceFile::ambient("wire-enum.d.ts", text));
+        sources.insert(0, SourceFile::ambient("wire-enum.generated.d.ts", text));
+
+        let aliases = accept.join("../interop/wire-enum-aliases.d.ts");
+        let text = match fs::read_to_string(&aliases) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("capture: read {}: {e}", aliases.display());
+                return ExitCode::from(2);
+            }
+        };
+        sources.insert(0, SourceFile::ambient("wire-enum-aliases.d.ts", text));
     }
 
     let result = if interop {

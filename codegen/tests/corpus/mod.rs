@@ -42,13 +42,22 @@ fn external_device_mirror() -> SourceFile {
     SourceFile::ambient("external-device.generated.d.ts", text)
 }
 
-/// The hand-authored R23 mirror for the synthetic wire-enum fixture.
+/// The bind-generated R24 mirror for the synthetic wire-enum fixture.
 fn wire_enum_mirror() -> SourceFile {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../corpus/interop/wire-enum.d.ts");
+        .join("../corpus/interop/wire-enum.generated.d.ts");
     let text =
         fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    SourceFile::ambient("wire-enum.d.ts", text)
+    SourceFile::ambient("wire-enum.generated.d.ts", text)
+}
+
+/// Hand-authored ambient wire tables referenced by [`wire_enum_mirror`].
+fn wire_enum_aliases() -> SourceFile {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../corpus/interop/wire-enum-aliases.d.ts");
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    SourceFile::ambient("wire-enum-aliases.d.ts", text)
 }
 
 /// True when any of `sources` names a foreign function, boundary struct,
@@ -110,8 +119,9 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subByValue",
         // R21 host-owned state (compiler.md §49).
         "subHostOwnedState",
-        // R23 wire-mapped literal-union boundary crossings.
+        // R23/R24 wire-mapped literal-union boundary crossings.
         "subWireMode",
+        "subBindTone",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }
@@ -192,7 +202,11 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     let uses_external = uses_external_device_mirror(&sources);
     let uses_wire_enum = sources
         .iter()
-        .any(|source| source.source.contains("subWireMode") || source.source.contains("SubWireMode"));
+        .any(|source| {
+            ["subWireMode", "SubWireMode", "subBindTone", "SubBindTone"]
+                .iter()
+                .any(|token| source.source.contains(token))
+        });
     let uses_interop = uses_interop_mirror(&sources) || uses_external;
     if uses_external {
         sources.insert(0, external_device_mirror());
@@ -202,6 +216,7 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     }
     if uses_wire_enum {
         sources.insert(0, wire_enum_mirror());
+        sources.insert(0, wire_enum_aliases());
     }
     sources
 }

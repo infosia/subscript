@@ -51,10 +51,17 @@ fn external_device_mirror() -> SourceFile {
 }
 
 fn wire_enum_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/wire-enum.d.ts");
+    let path = corpus_dir().join("interop/wire-enum.generated.d.ts");
     let source = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SourceFile::ambient("wire-enum.d.ts", source)
+    SourceFile::ambient("wire-enum.generated.d.ts", source)
+}
+
+fn wire_enum_aliases() -> SourceFile {
+    let path = corpus_dir().join("interop/wire-enum-aliases.d.ts");
+    let source = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    SourceFile::ambient("wire-enum-aliases.d.ts", source)
 }
 
 fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
@@ -87,10 +94,11 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
         "subByValue",
         "subHostOwnedState",
         "subWireMode",
+        "subBindTone",
     ];
     let mut files = Vec::new();
     let uses_external = source.contains("subExternalDevice");
-    let uses_wire_enum = source.contains("subWireMode");
+    let uses_wire_enum = source.contains("subWireMode") || source.contains("subBindTone");
     if uses_external || INTEROP_TOKENS.iter().any(|token| source.contains(token)) {
         files.push(interop_mirror());
     }
@@ -99,6 +107,7 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     }
     if uses_wire_enum {
         files.push(wire_enum_mirror());
+        files.push(wire_enum_aliases());
     }
     files.push(SourceFile::new(name, source));
     files
@@ -173,7 +182,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         "corpus/accept/a19-modules produced warnings: {warnings:?}"
     );
     checked_files += 2;
-    assert_eq!(checked_files, 130, "accept source-file count changed");
+    assert_eq!(checked_files, 131, "accept source-file count changed");
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");

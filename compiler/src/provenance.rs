@@ -35,6 +35,11 @@ pub(crate) struct Mirror {
     pub header: Option<Record<String>>,
     pub parameters: HashMap<(String, String), Record<Parameter>>,
     pub callbacks: HashMap<String, Record<String>>,
+    /// C typedef spelling → ambient CEnum alias name. The checker does not
+    /// resolve this mapping itself; retaining it makes the generated mirror's
+    /// provenance complete while ordinary ambient type resolution verifies
+    /// the referenced alias (compiler.md §51).
+    pub cenums: HashMap<String, Record<String>>,
 }
 
 /// Parses every `@subscript-c-*` record in one mirror.
@@ -216,6 +221,30 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     return Err(duplicate(name, line_number, trimmed, "external type"));
                 }
             }
+            Parsed::CEnum {
+                typedef_name,
+                alias,
+            } => {
+                if typedef_name.is_empty() || alias.is_empty() {
+                    return Err(malformed(
+                        name,
+                        line_number,
+                        trimmed,
+                        "cenum typedef and alias fields must be non-empty",
+                    ));
+                }
+                if mirror.cenums.contains_key(&typedef_name) {
+                    return Err(duplicate(name, line_number, trimmed, "cenum typedef"));
+                }
+                mirror.cenums.insert(
+                    typedef_name,
+                    Record {
+                        value: alias,
+                        line: line_number,
+                        raw: trimmed.to_string(),
+                    },
+                );
+            }
         }
     }
     Ok(mirror)
@@ -269,6 +298,10 @@ enum Parsed {
     },
     Callback(String),
     External(String),
+    CEnum {
+        typedef_name: String,
+        alias: String,
+    },
 }
 
 fn parse_line(body: &str) -> Result<Parsed, String> {
@@ -296,6 +329,10 @@ fn parse_line(body: &str) -> Result<Parsed, String> {
         },
         "callback" => Parsed::Callback(cursor.string("typedef")?),
         "external" => Parsed::External(cursor.string("type")?),
+        "cenum" => Parsed::CEnum {
+            typedef_name: cursor.string("typedef")?,
+            alias: cursor.string("alias")?,
+        },
         other => return Err(format!("unknown record kind `{other}`")),
     };
     cursor.finish()?;

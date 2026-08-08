@@ -49,6 +49,11 @@ pub struct Parsed {
     /// directive order. They remain references in the mirror and never
     /// produce declarations there (compiler.md §48).
     pub externals: Vec<String>,
+    /// C typedef-to-ambient-alias mappings supplied by
+    /// `@subscript-cenum <typedef> <alias>` header comments, in directive
+    /// order. The emitter references the alias and declares neither it nor
+    /// an annotated enum typedef (compiler.md §51).
+    pub cenums: Vec<CEnumMapping>,
     /// Named struct/union/enum tags defined in the main file. The emitter
     /// does not consume bare tag declarations, but external-type validation
     /// uses this list to reject a name owned by the same header.
@@ -107,6 +112,16 @@ pub struct Alias {
     pub chain: Vec<String>,
 }
 
+/// One validated `@subscript-cenum` mapping.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CEnumMapping {
+    /// Typedef spelling declared and used by the C header.
+    pub typedef_name: String,
+    /// Ambient wire-mapped alias referenced by the generated mirror.
+    pub alias: String,
+}
+
 /// Parses `source` as a C header via libclang.
 ///
 /// The `source` is presented to libclang as an in-memory (unsaved) file,
@@ -121,22 +136,23 @@ pub struct Alias {
 pub fn parse(source: &str) -> Result<Parsed, ParseError> {
     ensure_libclang()?;
     let externals = external_directives(source)?;
+    let cenums = cenum_directives(source)?;
     // SAFETY: libclang is loaded (checked above). Every raw handle created
     // below is disposed before this function returns, and no borrowed
     // pointer outlives the object it points into.
     unsafe {
-        if externals.is_empty() {
-            return parse_inner(source);
-        }
-
         // A header may rely on another header to supply an external typedef,
         // so first retain the real parse whenever it is already complete.
         // Otherwise a private preamble gives libclang enough shape to retain
         // the external spelling at each use site. The synthetic declarations
         // are removed below and therefore can never reach mirror emission.
-        let (mut parsed, injected) = match parse_inner(source) {
-            Ok(parsed) => (parsed, false),
-            Err(_) => (parse_inner(&source_with_external_preamble(source, &externals))?, true),
+        let (mut parsed, injected) = if externals.is_empty() {
+            (parse_inner(source)?, false)
+        } else {
+            match parse_inner(source) {
+                Ok(parsed) => (parsed, false),
+                Err(_) => (parse_inner(&source_with_external_preamble(source, &externals))?, true),
+            }
         };
 
         if injected {
@@ -150,31 +166,35 @@ pub fn parse(source: &str) -> Result<Parsed, ParseError> {
                 .docs
                 .retain(|(name, _)| !externals.iter().any(|ext| ext == name));
         }
-        if let Some(name) = externals.iter().find(|name| {
-            parsed
-                .decls
-                .iter()
-                .any(|decl| decl_type_name(decl) == Some(name.as_str()))
-                || parsed.aliases.iter().any(|alias| &alias.name == *name)
-                || parsed
-                    .local_type_definitions
+        if !externals.is_empty() {
+            if let Some(name) = externals.iter().find(|name| {
+                parsed
+                    .decls
                     .iter()
-                    .any(|defined| defined == *name)
-        }) {
-            return Err(ParseError(format!(
-                "external type `{name}` is also defined in this header; a type cannot be both external and local"
-            )));
-        }
+                    .any(|decl| decl_type_name(decl) == Some(name.as_str()))
+                    || parsed.aliases.iter().any(|alias| &alias.name == *name)
+                    || parsed
+                        .local_type_definitions
+                        .iter()
+                        .any(|defined| defined == *name)
+            }) {
+                return Err(ParseError(format!(
+                    "external type `{name}` is also defined in this header; a type cannot be both external and local"
+                )));
+            }
 
-        if let Some(name) = externals
-            .iter()
-            .find(|name| !external_is_used(&parsed, name))
-        {
-            return Err(ParseError(format!(
-                "external type `{name}` is not used by any declaration in this header"
-            )));
+            if let Some(name) = externals
+                .iter()
+                .find(|name| !external_is_used(&parsed, name))
+            {
+                return Err(ParseError(format!(
+                    "external type `{name}` is not used by any declaration in this header"
+                )));
+            }
         }
+        validate_cenum_mappings(&parsed, &cenums, &externals)?;
         parsed.externals = externals;
+        parsed.cenums = cenums;
         Ok(parsed)
     }
 }
@@ -184,6 +204,91 @@ pub fn parse(source: &str) -> Result<Parsed, ParseError> {
 /// may follow its first use. Comment-looking text inside string and character
 /// literals is ignored.
 fn external_directives(source: &str) -> Result<Vec<String>, ParseError> {
+    let comments = comment_bodies(source);
+
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for comment in comments {
+        for line in directive_lines(comment) {
+            let Some(rest) = line.strip_prefix("@subscript-external") else {
+                continue;
+            };
+            if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+                continue;
+            }
+            let mut fields = rest.split_whitespace();
+            let Some(name) = fields.next() else {
+                return Err(ParseError(
+                    "`@subscript-external` requires one C type name".to_string(),
+                ));
+            };
+            if fields.next().is_some() || !is_c_identifier(name) {
+                return Err(ParseError(format!(
+                    "`@subscript-external` requires exactly one C identifier, found `{}`",
+                    rest.trim()
+                )));
+            }
+            if !seen.insert(name.to_string()) {
+                return Err(ParseError(format!(
+                    "duplicate `@subscript-external` directive for `{name}`"
+                )));
+            }
+            names.push(name.to_string());
+        }
+    }
+    Ok(names)
+}
+
+/// Extracts fixed-shape CEnum typedef mappings from the same standalone
+/// comment positions as [`external_directives`].
+fn cenum_directives(source: &str) -> Result<Vec<CEnumMapping>, ParseError> {
+    let mut mappings = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for comment in comment_bodies(source) {
+        for line in directive_lines(comment) {
+            let Some(rest) = line.strip_prefix("@subscript-cenum") else {
+                continue;
+            };
+            if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+                continue;
+            }
+            let mut fields = rest.split_whitespace();
+            let Some(typedef_name) = fields.next() else {
+                return Err(ParseError(
+                    "`@subscript-cenum` requires a C typedef name and an alias name".to_string(),
+                ));
+            };
+            let Some(alias) = fields.next() else {
+                return Err(ParseError(
+                    "`@subscript-cenum` requires a C typedef name and an alias name".to_string(),
+                ));
+            };
+            if fields.next().is_some()
+                || !is_c_identifier(typedef_name)
+                || !is_c_identifier(alias)
+            {
+                return Err(ParseError(format!(
+                    "`@subscript-cenum` requires exactly two identifiers, found `{}`",
+                    rest.trim()
+                )));
+            }
+            if !seen.insert(typedef_name.to_string()) {
+                return Err(ParseError(format!(
+                    "duplicate `@subscript-cenum` directive for typedef `{typedef_name}`"
+                )));
+            }
+            mappings.push(CEnumMapping {
+                typedef_name: typedef_name.to_string(),
+                alias: alias.to_string(),
+            });
+        }
+    }
+    Ok(mappings)
+}
+
+/// Returns every C line/block comment body while ignoring comment-looking
+/// bytes inside string and character literals.
+fn comment_bodies(source: &str) -> Vec<&str> {
     let bytes = source.as_bytes();
     let mut comments = Vec::new();
     let mut index = 0;
@@ -231,42 +336,16 @@ fn external_directives(source: &str) -> Result<Vec<String>, ParseError> {
         }
     }
 
-    let mut names = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for comment in comments {
-        for line in comment.lines() {
-            let line = line.trim();
-            let line = line
-                .strip_prefix('*')
-                .map(str::trim_start)
-                .unwrap_or(line);
-            let Some(rest) = line.strip_prefix("@subscript-external") else {
-                continue;
-            };
-            if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
-                continue;
-            }
-            let mut fields = rest.split_whitespace();
-            let Some(name) = fields.next() else {
-                return Err(ParseError(
-                    "`@subscript-external` requires one C type name".to_string(),
-                ));
-            };
-            if fields.next().is_some() || !is_c_identifier(name) {
-                return Err(ParseError(format!(
-                    "`@subscript-external` requires exactly one C identifier, found `{}`",
-                    rest.trim()
-                )));
-            }
-            if !seen.insert(name.to_string()) {
-                return Err(ParseError(format!(
-                    "duplicate `@subscript-external` directive for `{name}`"
-                )));
-            }
-            names.push(name.to_string());
-        }
-    }
-    Ok(names)
+    comments
+}
+
+fn directive_lines(comment: &str) -> impl Iterator<Item = &str> {
+    comment.lines().map(|line| {
+        let line = line.trim();
+        line.strip_prefix('*')
+            .map(str::trim_start)
+            .unwrap_or(line)
+    })
 }
 
 fn is_c_identifier(name: &str) -> bool {
@@ -306,6 +385,253 @@ fn external_is_used(parsed: &Parsed, external: &str) -> bool {
         }
         Decl::Enum { .. } | Decl::Handle { .. } => false,
     })
+}
+
+/// Validates all R24 restrictions before the emitter can erase the C typedef
+/// declaration or substitute its ambient alias.
+fn validate_cenum_mappings(
+    parsed: &Parsed,
+    mappings: &[CEnumMapping],
+    externals: &[String],
+) -> Result<(), ParseError> {
+    for mapping in mappings {
+        let typedef_name = mapping.typedef_name.as_str();
+        let enum_typedef = parsed.decls.iter().any(
+            |decl| matches!(decl, Decl::Enum { name, .. } if name == typedef_name),
+        );
+        let scalar_alias = parsed.aliases.iter().find(|alias| alias.name == typedef_name);
+        let other_typedef = parsed.decls.iter().find(|decl| {
+            decl_type_name(decl) == Some(typedef_name)
+                && !matches!(decl, Decl::Enum { .. })
+        });
+
+        if !enum_typedef && scalar_alias.is_none() && other_typedef.is_none() {
+            return Err(ParseError(format!(
+                "`@subscript-cenum` names typedef `{typedef_name}`, but no such typedef is declared in this header"
+            )));
+        }
+        if !enum_typedef {
+            let base = scalar_alias
+                .map(|alias| alias.underlying.as_str())
+                .or_else(|| other_typedef.map(typedef_decl_kind))
+                .unwrap_or("<unknown>");
+            if scalar_alias.is_none_or(|alias| alias.underlying != "int32_t") {
+                return Err(ParseError(format!(
+                    "`@subscript-cenum` typedef `{typedef_name}` has base `{base}`; expected exactly `int32_t` or an enum typedef"
+                )));
+            }
+        }
+
+        if let Some(site) = cenum_alias_collision_site(parsed, externals, &mapping.alias) {
+            return Err(ParseError(format!(
+                "`@subscript-cenum` alias `{}` for typedef `{typedef_name}` collides with {site}",
+                mapping.alias
+            )));
+        }
+
+        if let Some(site) = cenum_other_use_site(parsed, typedef_name) {
+            return Err(ParseError(format!(
+                "`@subscript-cenum` typedef `{typedef_name}` is used at {site}; only direct bound-function parameter and return positions are supported"
+            )));
+        }
+
+        let direct_uses = parsed
+            .decls
+            .iter()
+            .filter_map(|decl| match decl {
+                Decl::Func { ret, params, .. } => Some(
+                    usize::from(cenum_direct_field(ret, typedef_name))
+                        + params
+                            .iter()
+                            .filter(|param| cenum_direct_field(param, typedef_name))
+                            .count(),
+                ),
+                _ => None,
+            })
+            .sum::<usize>();
+        if direct_uses == 0 {
+            return Err(ParseError(format!(
+                "`@subscript-cenum` typedef `{typedef_name}` has zero uses in direct bound-function parameter or return positions"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn typedef_decl_kind(decl: &Decl) -> &'static str {
+    match decl {
+        Decl::Struct { .. } => "record",
+        Decl::Handle { .. } => "pointer",
+        Decl::FnPtr { .. } => "function pointer",
+        Decl::Enum { .. } => "enum",
+        Decl::Func { .. } => "<not a typedef>",
+    }
+}
+
+fn cenum_direct_field(field: &CField, typedef_name: &str) -> bool {
+    field.base == typedef_name && !field.pointer && field.array_len.is_none()
+}
+
+/// Returns the first forbidden use site of an annotated typedef. The source
+/// model preserves the C owner and member/parameter names, so every error
+/// points at the declaration that must be changed.
+fn cenum_other_use_site(parsed: &Parsed, typedef_name: &str) -> Option<String> {
+    for decl in &parsed.decls {
+        match decl {
+            Decl::Struct { name, fields } => {
+                if let Some(field) = fields.iter().find(|field| field.base == typedef_name) {
+                    let shape = if field.array_len.is_some() {
+                        " array element"
+                    } else if field.pointer {
+                        " pointer target"
+                    } else {
+                        ""
+                    };
+                    return Some(format!(
+                        "struct `{name}` member `{}`{shape}",
+                        field.name
+                    ));
+                }
+            }
+            Decl::FnPtr { name, ret, params } => {
+                if ret.base == typedef_name {
+                    return Some(format!("callback typedef `{name}` return position"));
+                }
+                if let Some(param) = params.iter().find(|param| param.base == typedef_name) {
+                    return Some(format!(
+                        "callback typedef `{name}` parameter `{}`",
+                        param.name
+                    ));
+                }
+            }
+            Decl::Func { name, ret, params } => {
+                if ret.base == typedef_name && !cenum_direct_field(ret, typedef_name) {
+                    let shape = if ret.array_len.is_some() {
+                        "array element"
+                    } else {
+                        "pointer target"
+                    };
+                    return Some(format!("foreign function `{name}` return {shape}"));
+                }
+                if let Some(param) = params.iter().find(|param| {
+                    param.base == typedef_name && !cenum_direct_field(param, typedef_name)
+                }) {
+                    let shape = if param.array_len.is_some() {
+                        "array element"
+                    } else {
+                        "pointer target"
+                    };
+                    return Some(format!(
+                        "foreign function `{name}` parameter `{}` {shape}",
+                        param.name
+                    ));
+                }
+            }
+            Decl::Enum { .. } | Decl::Handle { .. } => {}
+        }
+    }
+
+    for alias in &parsed.aliases {
+        if alias.name != typedef_name
+            && (spelling_mentions_identifier(&alias.underlying, typedef_name)
+                || alias
+                    .chain
+                    .iter()
+                    .any(|base| spelling_mentions_identifier(base, typedef_name)))
+        {
+            return Some(format!("typedef `{}` base", alias.name));
+        }
+    }
+    if let Some(constant) = parsed
+        .constants
+        .iter()
+        .find(|constant| constant.type_base == typedef_name)
+    {
+        return Some(format!("file-scope constant `{}`", constant.name));
+    }
+    None
+}
+
+fn spelling_mentions_identifier(spelling: &str, identifier: &str) -> bool {
+    spelling
+        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+        .any(|token| token == identifier)
+}
+
+/// Names the first declaration/reference whose spelling would collide with
+/// the ambient alias used by the mirror.
+fn cenum_alias_collision_site(
+    parsed: &Parsed,
+    externals: &[String],
+    alias: &str,
+) -> Option<String> {
+    for decl in &parsed.decls {
+        match decl {
+            Decl::Enum { name, members } => {
+                if name == alias {
+                    return Some(format!("header typedef `{name}`"));
+                }
+                if let Some((member, _)) = members.iter().find(|(member, _)| member == alias) {
+                    return Some(format!("header enum member `{member}`"));
+                }
+            }
+            Decl::Struct { name, fields } => {
+                if name == alias {
+                    return Some(format!("header typedef `{name}`"));
+                }
+                if let Some(field) = fields.iter().find(|field| field.name == alias) {
+                    return Some(format!("header struct member `{}.{}`", name, field.name));
+                }
+                if alias == "constructor" {
+                    return Some(format!("bind-emitted constructor for struct `{name}`"));
+                }
+            }
+            Decl::Handle { name } => {
+                if name == alias {
+                    return Some(format!("header typedef `{name}`"));
+                }
+                if alias == format!("__sub_handle_{name}") {
+                    return Some(format!("bind-emitted brand for handle `{name}`"));
+                }
+            }
+            Decl::FnPtr { name, params, .. } => {
+                if name == alias {
+                    return Some(format!("header typedef `{name}`"));
+                }
+                if let Some(param) = params.iter().find(|param| param.name == alias) {
+                    return Some(format!("header callback parameter `{}.{}`", name, param.name));
+                }
+            }
+            Decl::Func { name, params, .. } => {
+                if name == alias {
+                    return Some(format!("header function `{name}`"));
+                }
+                if let Some(param) = params.iter().find(|param| param.name == alias) {
+                    return Some(format!("header function parameter `{}.{}`", name, param.name));
+                }
+            }
+        }
+    }
+    if let Some(declared) = parsed.aliases.iter().find(|declared| declared.name == alias) {
+        return Some(format!("header typedef `{}`", declared.name));
+    }
+    if let Some(constant) = parsed.constants.iter().find(|constant| constant.name == alias) {
+        return Some(format!("header constant `{}`", constant.name));
+    }
+    if let Some(mac) = parsed.macros.iter().find(|mac| mac.name == alias) {
+        return Some(format!("header macro `{}`", mac.name));
+    }
+    if let Some(tag) = parsed
+        .local_type_definitions
+        .iter()
+        .find(|name| name.as_str() == alias)
+    {
+        return Some(format!("header type tag `{tag}`"));
+    }
+    if externals.iter().any(|external| external == alias) {
+        return Some(format!("bind-emitted external type reference `{alias}`"));
+    }
+    None
 }
 
 /// Loads libclang on the current thread if it is not already loaded.

@@ -70,6 +70,25 @@ fn missing_owner_mirror_reports_the_existing_unknown_type_error() {
 }
 
 #[test]
+fn missing_cenum_alias_ambient_reports_the_existing_unknown_type_error() {
+    let diagnostics = check_program(&[
+        SourceFile::ambient(
+            "mode.generated.d.ts",
+            "// @subscript-c-header include=\"mode.h\"\n\
+             // @subscript-c-cenum typedef=\"EngineModeC\" alias=\"EngineMode\"\n\
+             declare function engineModeEcho(value: EngineMode): EngineMode;\n",
+        ),
+        SourceFile::new("prog.ts", "export function main(): void {}\n"),
+    ])
+    .expect_err("a generated CEnum reference must not synthesize its ambient alias");
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == RuleCode::S100
+            && diagnostic.message == "unknown type name `EngineMode`"
+    }));
+}
+
+#[test]
 fn using_program_type_checks_against_the_generated_mirror() {
     let program = fs::read_to_string(interop_dir().join("use-interop.ts")).expect("read use");
     let module = check_program(&[mirror(), SourceFile::new("use-interop.ts", program)])

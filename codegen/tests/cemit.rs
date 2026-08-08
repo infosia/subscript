@@ -596,7 +596,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         // there (compiler.md §11c). Every non-interop trap still runs.
         #[cfg(all(windows, target_env = "msvc"))]
         if files.iter().any(|source| {
-            source.source.contains("subDevice") || source.source.contains("subWireMode")
+            source.source.contains("subDevice")
+                || source.source.contains("subWireMode")
+                || source.source.contains("subBindTone")
         }) {
             continue;
         }

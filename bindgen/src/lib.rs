@@ -11,6 +11,10 @@
 //! - `/* @subscript-external X */` → retain `X` at every use site and
 //!   emit no declaration for it; directives are collected across the whole
 //!   header and may follow the first use (§48);
+//! - `/* @subscript-cenum C Alias */` → replace direct foreign-function
+//!   parameter/return uses of the declared `int32_t` or enum typedef `C`
+//!   with the ambient wire-mapped alias `Alias`, declaring neither alias nor
+//!   an annotated enum (§51);
 //! - struct-pointer / nullable-struct-pointer field → `X | null`;
 //! - `(pointer, count)` array-pair descriptor struct → `T[]` at use
 //!   sites (no named type emitted);
@@ -58,6 +62,7 @@
 //! ```text
 //! // @subscript-c-header include="engine.h"
 //! // @subscript-c-external type="EngineDevice"
+//! // @subscript-c-cenum typedef="EngineFrameFormat" alias="GPUTextureFormat"
 //! // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
 //! // @subscript-c-scalar-pair function="engineFillBytes" parameter="engineData" element="uint8_t" const=false
 //! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
@@ -88,7 +93,7 @@ mod clangfe;
 mod cparse;
 mod emit;
 
-pub use clangfe::{parse, Alias, Constant, Macro, Parsed};
+pub use clangfe::{parse, Alias, CEnumMapping, Constant, Macro, Parsed};
 pub use cparse::{CField, Decl, ParseError};
 
 /// Generates the ambient `.d.ts` mirror text for a C interop header.
@@ -104,7 +109,8 @@ pub use cparse::{CField, Decl, ParseError};
 /// model, when an absorbed descriptor/string-view appears in return
 /// position, when a callback appears in an unsupported boundary position,
 /// when an external-type directive is unused or conflicts with a local type
-/// definition, or when a callback typedef reachable from the boundary
+/// definition, when a CEnum directive violates its typedef/base/use/collision
+/// restrictions, or when a callback typedef reachable from the boundary
 /// differs from the supported `(string view, void*, void*) -> void` shape.
 pub fn generate(header: &str) -> Result<String, ParseError> {
     generate_for_header(header, "header.h")

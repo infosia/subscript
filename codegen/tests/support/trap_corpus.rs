@@ -72,10 +72,17 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
         let mirror = trap
             .parent()
             .expect("corpus/trap has a corpus parent")
-            .join("interop/wire-enum.d.ts");
+            .join("interop/wire-enum.generated.d.ts");
         let text = fs::read_to_string(&mirror)
             .unwrap_or_else(|e| panic!("read trap ambient mirror {}: {e}", mirror.display()));
-        sources.insert(0, SourceFile::ambient("wire-enum.d.ts", text));
+        sources.insert(0, SourceFile::ambient("wire-enum.generated.d.ts", text));
+        let aliases = trap
+            .parent()
+            .expect("corpus/trap has a corpus parent")
+            .join("interop/wire-enum-aliases.d.ts");
+        let text = fs::read_to_string(&aliases)
+            .unwrap_or_else(|e| panic!("read trap ambient aliases {}: {e}", aliases.display()));
+        sources.insert(0, SourceFile::ambient("wire-enum-aliases.d.ts", text));
     }
     sources
 }

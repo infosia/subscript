@@ -1,6 +1,6 @@
 //! Q13 boundary mapping and `.d.ts` emission
 //! (`specs/blocks/collisions.md` §2, `specs/blocks/compiler.md` §12.2,
-//! §13.2).
+//! §13.2, §51).
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,6 +24,9 @@ enum Kind {
     /// A type supplied by another ambient mirror (§48). Use sites retain
     /// the C spelling and this mirror emits no declaration for it.
     External,
+    /// A C typedef mapped to an ambient wire-mapped alias (§51). Direct
+    /// function uses emit the alias spelling; neither side is declared here.
+    CEnum(String),
 }
 
 fn header(include_spelling: &str) -> String {
@@ -84,6 +87,13 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
     for decl in &parsed.decls {
         match decl {
             Decl::Enum { name, members } => {
+                if parsed
+                    .cenums
+                    .iter()
+                    .any(|mapping| mapping.typedef_name == *name)
+                {
+                    continue;
+                }
                 flush(&mut pending_fns, &mut blocks);
                 blocks.push(emit_enum(name, members));
             }
@@ -123,6 +133,13 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
     // hoists type aliases, so a foreign signature using the alias may
     // precede it here.
     for alias in &parsed.aliases {
+        if parsed
+            .cenums
+            .iter()
+            .any(|mapping| mapping.typedef_name == alias.name)
+        {
+            continue;
+        }
         let Some(scalar) = flag_alias_scalar(alias) else {
             continue;
         };
@@ -339,6 +356,7 @@ fn validate_boundary_positions(
                     | Kind::Handle
                     | Kind::Alias
                     | Kind::External
+                    | Kind::CEnum(_)
                     | Kind::StringView,
                 )
                 | None => {}
@@ -501,7 +519,8 @@ fn validate_boundary_positions(
                             | Kind::Handle
                             | Kind::Boundary
                             | Kind::Alias
-                            | Kind::External,
+                            | Kind::External
+                            | Kind::CEnum(_),
                         )
                         | None => {}
                     }
@@ -751,7 +770,14 @@ fn validate_lowerable_boundary_aggregate(
                 &field.base,
                 visiting,
             )?,
-            Some(Kind::Enum | Kind::Handle | Kind::Alias | Kind::External) | None => {}
+            Some(
+                Kind::Enum
+                | Kind::Handle
+                | Kind::Alias
+                | Kind::External
+                | Kind::CEnum(_),
+            )
+            | None => {}
         }
     }
     visiting.remove(aggregate);
@@ -999,6 +1025,7 @@ fn emit_provenance(
     include_spelling: &str,
 ) -> Result<Option<String>, ParseError> {
     if parsed.externals.is_empty()
+        && parsed.cenums.is_empty()
         && !parsed
             .decls
             .iter()
@@ -1015,6 +1042,13 @@ fn emit_provenance(
         records.push(format!(
             "// @subscript-c-external type={}",
             quoted(external)
+        ));
+    }
+    for mapping in &parsed.cenums {
+        records.push(format!(
+            "// @subscript-c-cenum typedef={} alias={}",
+            quoted(&mapping.typedef_name),
+            quoted(&mapping.alias)
         ));
     }
     for decl in &parsed.decls {
@@ -1090,7 +1124,8 @@ fn emit_parameter_provenance(
                 | Kind::FnPtr
                 | Kind::Boundary
                 | Kind::Alias
-                | Kind::External,
+                | Kind::External
+                | Kind::CEnum(_),
             )
             | None => {}
         }
@@ -1214,7 +1249,15 @@ fn classify(parsed: &Parsed) -> HashMap<String, Kind> {
     for decl in &parsed.decls {
         match decl {
             Decl::Enum { name, .. } => {
-                reg.insert(name.clone(), Kind::Enum);
+                if let Some(mapping) = parsed
+                    .cenums
+                    .iter()
+                    .find(|mapping| mapping.typedef_name == *name)
+                {
+                    reg.insert(name.clone(), Kind::CEnum(mapping.alias.clone()));
+                } else {
+                    reg.insert(name.clone(), Kind::Enum);
+                }
             }
             Decl::Handle { name } => {
                 reg.insert(name.clone(), Kind::Handle);
@@ -1233,7 +1276,13 @@ fn classify(parsed: &Parsed) -> HashMap<String, Kind> {
     // bottoms out in a mapped integer are registered; others are left
     // unmapped so a use site fails loud (§14.1).
     for alias in &parsed.aliases {
-        if alias_scalar(alias).is_some() {
+        if let Some(mapping) = parsed
+            .cenums
+            .iter()
+            .find(|mapping| mapping.typedef_name == alias.name)
+        {
+            reg.insert(alias.name.clone(), Kind::CEnum(mapping.alias.clone()));
+        } else if alias_scalar(alias).is_some() {
             reg.insert(alias.name.clone(), Kind::Alias);
         }
     }
@@ -1639,6 +1688,7 @@ fn map_named(base: &str, reg: &HashMap<String, Kind>) -> Result<String, ParseErr
     match reg.get(base) {
         Some(Kind::ArrayPair(elem)) => Ok(format!("{elem}[]")),
         Some(Kind::StringView) => Ok("string".to_string()),
+        Some(Kind::CEnum(alias)) => Ok(alias.clone()),
         // Enum, FnPtr, Handle, Boundary, Alias all use their declared name.
         Some(_) => Ok(base.to_string()),
         None => Err(unmapped(base)),
