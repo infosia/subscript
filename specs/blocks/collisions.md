@@ -960,6 +960,12 @@ non-generic reference classes join the surface —
     return positions (`compiler.md` §50). The checker owns the
     conversion at the crossing; an unknown wire value traps there.
     A plain alias stays barred from boundary signatures.*
+    *Revised 2026-08-09 (§52): a wire-mapped alias is also legal as
+    a boundary-struct member, as a boundary array-pair element, and
+    as a mirror-class constructor parameter; its discriminant is the
+    wire value itself (`compiler.md` §52). A read of an alias member
+    from a boundary struct validates membership and traps on an
+    unknown value.*
 
   Contract and exit criteria: `compiler.md` §24. Accept: `a91`.
   Reject: `r87` (non-member literal), `r88` (inline literal union;
