@@ -30,6 +30,13 @@ fn external_device_mirror() -> SourceFile {
     SourceFile::ambient("external-device.generated.d.ts", source)
 }
 
+fn wire_enum_mirror() -> SourceFile {
+    let path = corpus_dir().join("interop/wire-enum.d.ts");
+    let source = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+    SourceFile::ambient("wire-enum.d.ts", source)
+}
+
 fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     let mut sources: Vec<SourceFile> = files
         .iter()
@@ -71,10 +78,14 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
         "SubQueryStatus",
         "subByValue",
         "subHostOwnedState",
+        "subWireMode",
     ];
     let uses_external = sources
         .iter()
         .any(|source| source.source.contains("subExternalDevice"));
+    let uses_wire_enum = sources
+        .iter()
+        .any(|source| source.source.contains("subWireMode"));
     let uses_interop = uses_external
         || sources
         .iter()
@@ -84,6 +95,9 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     }
     if uses_interop {
         sources.insert(0, interop_mirror());
+    }
+    if uses_wire_enum {
+        sources.insert(0, wire_enum_mirror());
     }
     match check_program(&sources) {
         Ok(module) => module,
@@ -133,7 +147,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        127,
+        128,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -167,7 +181,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          contextual-conditional entry, and the a125 R19 conditional-arm \
          narrowing entry, and the a126 OBS-4 by-value register-image \
          packing entry, the a127 R20 external-type two-mirror entry, and the \
-         a128 R21 host-owned-state entry"
+         a128 R21 host-owned-state entry, and the a129 R23 wire-enum entry"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

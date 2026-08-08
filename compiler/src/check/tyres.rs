@@ -507,14 +507,22 @@ impl<'p> Checker<'p> {
             Some(ScopeItem::Enum(id)) => Type::Enum(id),
             Some(ScopeItem::StringAlias(id)) => {
                 if self.in_boundary {
-                    self.error(
-                        RuleCode::S100,
-                        format!(
-                            "string-literal union alias `{name}` cannot appear in a boundary signature"
-                        ),
-                        pos,
-                    );
-                    Type::Error
+                    let wire_mapped = self
+                        .string_aliases
+                        .get(id.0)
+                        .is_some_and(|alias| alias.wire_values.is_some());
+                    if wire_mapped && self.allow_wire_alias_boundary {
+                        Type::StringAlias(id)
+                    } else {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "string-literal union alias `{name}` cannot appear in a boundary signature"
+                            ),
+                            pos,
+                        );
+                        Type::Error
+                    }
                 } else if r.type_params.is_some() {
                     self.error(
                         RuleCode::S100,

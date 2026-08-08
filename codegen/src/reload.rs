@@ -226,9 +226,16 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
         );
     }
     for alias in &m.string_aliases {
+        let wires = alias.wire_values.as_ref().map_or_else(String::new, |values| {
+            values
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        });
         push(
             format!("string alias {}", alias.name),
-            &format!("{}|{}", alias.name, alias.members.join(";")),
+            &format!("{}|{}|{wires}", alias.name, alias.members.join(";")),
         );
     }
     for g in &m.globals {

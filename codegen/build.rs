@@ -18,11 +18,16 @@ fn main() {
     let directory = manifest.join("../corpus/interop");
     let source = directory.join("interop.c");
     let header = directory.join("interop.h");
+    let wire_source = directory.join("wire-enum.c");
+    let wire_header = directory.join("wire-enum.h");
 
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", header.display());
+    println!("cargo:rerun-if-changed={}", wire_source.display());
+    println!("cargo:rerun-if-changed={}", wire_header.display());
     cc::Build::new()
         .file(source)
+        .file(wire_source)
         .include(directory)
         .std("c11")
         .opt_level(2)

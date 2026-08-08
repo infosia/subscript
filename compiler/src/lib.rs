@@ -383,6 +383,86 @@ mod tests {
     }
 
     #[test]
+    fn wire_mapped_alias_is_accepted_at_foreign_parameter_and_return_positions() {
+        let module = check_program(&[
+            SourceFile::ambient(
+                "wire.d.ts",
+                "// @subscript-c-header include=\"wire.h\"\n\
+                 type WireMode = CEnum<{ \"m0\": 0x10; \"m1\": 23; \"m2\": -7 }>;\n\
+                 declare function takeWire(value: WireMode): i32;\n\
+                 declare function returnWire(): WireMode;\n",
+            ),
+            SourceFile::new(
+                "test.ts",
+                "export function main(): void {\n\
+                   const value: WireMode = returnWire();\n\
+                   print(`${takeWire(value)}:${value}`);\n\
+                 }\n",
+            ),
+        ])
+        .expect("R23 aliases are direct foreign boundary scalars");
+        assert_eq!(module.string_aliases[0].members, ["m0", "m1", "m2"]);
+        assert_eq!(
+            module.string_aliases[0].wire_values.as_deref(),
+            Some(&[16, 23, -7][..])
+        );
+        assert!(matches!(
+            module.foreign_fns[0].params[0].ty,
+            Type::StringAlias(StringAliasId(0))
+        ));
+        assert!(matches!(
+            module.foreign_fns[1].ret,
+            Type::StringAlias(StringAliasId(0))
+        ));
+    }
+
+    #[test]
+    fn plain_string_alias_stays_rejected_at_foreign_parameter_and_return_positions() {
+        let diagnostics = check_program(&[
+            SourceFile::ambient(
+                "plain.d.ts",
+                "// @subscript-c-header include=\"plain.h\"\n\
+                 type PlainMode = \"m0\" | \"m1\";\n\
+                 declare function takePlain(value: PlainMode): PlainMode;\n",
+            ),
+            SourceFile::new("test.ts", "export function main(): void {}\n"),
+        ])
+        .expect_err("plain Q32 aliases remain barred from foreign signatures");
+        assert!(diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("cannot appear in a boundary signature")));
+    }
+
+    #[test]
+    fn wire_mapped_alias_rejects_fractional_duplicate_out_of_range_and_empty_mappings() {
+        for (source, message) in [
+            (
+                "type Bad = CEnum<{ \"m0\": 1.5 }>;\n",
+                "must be an integer literal",
+            ),
+            (
+                "type Bad = CEnum<{ \"m0\": 7; \"m1\": 7 }>;\n",
+                "duplicate CEnum wire value 7",
+            ),
+            (
+                "type Bad = CEnum<{ \"m0\": 2147483648 }>;\n",
+                "outside the i32 range",
+            ),
+            (
+                "type Bad = CEnum<{}>;\n",
+                "must have at least one member",
+            ),
+        ] {
+            let diagnostics = check_one(source).expect_err("invalid CEnum mapping must fail");
+            assert!(
+                diagnostics[0].message.contains(message),
+                "{}",
+                diagnostics[0].message
+            );
+        }
+    }
+
+    #[test]
     fn exhaustive_string_literal_union_switch_is_accepted() {
         let module = check_one(
             "type Format = \"a\" | \"b\" | \"c\";\n\

@@ -64,6 +64,7 @@ enum TrapOperand {
     Pending,
     Value(Value),
     Condition(Value),
+    WireValue { wire: Value, valid: Value },
 }
 
 /// How a by-value boundary struct returned from a foreign call reaches its
@@ -877,6 +878,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ) -> Result<(), String> {
         let value = |operand: TrapOperand, what: &str| match operand {
             TrapOperand::Value(value) | TrapOperand::Condition(value) => Ok(value),
+            TrapOperand::WireValue { .. } => Err(internal(format!("{what} trap operand"))),
             TrapOperand::Pending => Err(internal(format!("{what} trap operand"))),
         };
         match site {
@@ -910,6 +912,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     }
                     TrapOperand::Value(condition) | TrapOperand::Condition(condition) => {
                         self.guard(condition, TrapKind::IndexOutOfBounds, pos)
+                    }
+                    TrapOperand::WireValue { .. } => {
+                        Err(internal("index trap received a wire-enum operand"))
                     }
                 }
             }
@@ -949,11 +954,47 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     TrapOperand::Value(pointer) | TrapOperand::Condition(pointer) => {
                         self.live_check(pointer, pos)
                     }
+                    TrapOperand::WireValue { .. } => {
+                        Err(internal("lifetime trap received a wire-enum operand"))
+                    }
                 }
             }
             hir::TrapSite::DevReloadOnlyStaleCoroutine { pos } => {
                 let frame = value(operand, "stale coroutine")?;
                 self.reload_epoch_check(frame, pos)
+            }
+            hir::TrapSite::WireEnumValue { alias, pos } => {
+                let TrapOperand::WireValue { wire, valid } = operand else {
+                    return Err(internal("wire-enum site has no wire value"));
+                };
+                let definition = self
+                    .ml
+                    .hir
+                    .string_aliases
+                    .get(alias.0)
+                    .ok_or_else(|| internal("wire-enum alias id is out of range"))?;
+                let name = definition.name.clone();
+                let name_len = i64::try_from(name.len())
+                    .map_err(|_| internal("wire-enum alias name length does not fit i64"))?;
+                let name_data = self.ml.literal_data(name.as_bytes())?;
+                let global = self.ml.module.declare_data_in_func(name_data, self.b.func);
+                let name_pointer = self.b.ins().symbol_value(types::I64, global);
+                let name_len = self.iconst(types::I64, name_len);
+                let pos_id = self.pos_id(pos);
+                let pos_value = self.iconst(types::I32, pos_id);
+                let cont = self.b.create_block();
+                let bad = self.b.create_block();
+                self.b.ins().brif(valid, cont, &[], bad, &[]);
+                self.b.switch_to_block(bad);
+                self.call_rt(
+                    self.ml.rt.trap_wire_enum,
+                    &[self.ctx_v, name_pointer, name_len, wire, pos_value],
+                    false,
+                )?;
+                let unwind = self.unwind_block();
+                self.b.ins().jump(unwind, &[]);
+                self.b.switch_to_block(cont);
+                Ok(())
             }
         }
     }
@@ -2452,7 +2493,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.eval_method(recv, name, args, ret_ty, pos, sites, dest, checked)
             }
             hir::Callee::Foreign(name) => {
-                self.eval_foreign_call(name, args, pos, checked)
+                self.eval_foreign_call(name, args, pos, sites, checked)
             }
             other => Err(internal(format!("callee {other:?}"))),
         }
@@ -2547,6 +2588,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         name: &str,
         args: &[hir::Expr],
         pos: &Pos,
+        sites: &mut TrapSiteConsumer<'_>,
         checked: bool,
     ) -> Result<RV, String> {
         let ff = self.ml.foreign_fn(name)?;
@@ -2635,7 +2677,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.write_back_string_field_boundary_ptr(writeback, pos)?;
         }
         Ok(match ret_repr {
-            Repr::Scalar(_) => RV::S(*res.first().ok_or_else(|| internal("foreign result"))?),
+            Repr::Scalar(_) => {
+                let result = *res.first().ok_or_else(|| internal("foreign result"))?;
+                if let Type::StringAlias(alias) = ret {
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::WireEnumValue { alias: site_alias, .. } if *site_alias == alias),
+                        internal("wire-enum foreign return has no HIR trap site"),
+                    )?;
+                    RV::S(self.unmarshal_wire_alias(alias, result, site)?)
+                } else {
+                    RV::S(result)
+                }
+            }
             Repr::Agg { .. } => {
                 // Reconstruct the returned by-value struct into a language
                 // slot (§14.2): sret already wrote it; a register return is
@@ -2645,6 +2698,39 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             _ => RV::None,
         })
+    }
+
+    /// Converts one foreign `i32` wire result to its language discriminant.
+    fn unmarshal_wire_alias(
+        &mut self,
+        alias: subscript_compiler::StringAliasId,
+        wire: Value,
+        site: &hir::TrapSite,
+    ) -> Result<Value, String> {
+        let values = self
+            .ml
+            .hir
+            .string_aliases
+            .get(alias.0)
+            .and_then(|definition| definition.wire_values.clone())
+            .ok_or_else(|| internal("foreign string alias return has no wire mapping"))?;
+        let mut discriminant = self.iconst(types::I32, -1);
+        for (index, value) in values.into_iter().enumerate() {
+            let matches = self
+                .b
+                .ins()
+                .icmp_imm(IntCC::Equal, wire, i64::from(value));
+            let index = i64::try_from(index)
+                .map_err(|_| internal("wire-enum discriminant does not fit i64"))?;
+            let member = self.iconst(types::I32, index);
+            discriminant = self.b.ins().select(matches, member, discriminant);
+        }
+        let valid = self
+            .b
+            .ins()
+            .icmp_imm(IntCC::NotEqual, discriminant, -1);
+        self.emit_trap_site(site, TrapOperand::WireValue { wire, valid })?;
+        Ok(discriminant)
     }
 
     /// Plans the C-ABI return of a by-value boundary struct (§14.2),
@@ -3215,6 +3301,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ) -> Result<(), String> {
         let ty = &parameter.ty;
         match ty {
+            Type::StringAlias(alias) => {
+                let discriminant = self.expect_s(rv)?;
+                let table = self.ml.wire_alias_table_data(*alias)?;
+                let global = self.ml.module.declare_data_in_func(table, self.b.func);
+                let base = self.b.ins().symbol_value(types::I64, global);
+                let index = self.b.ins().uextend(types::I64, discriminant);
+                let offset = self.b.ins().ishl_imm(index, 2);
+                let entry = self.b.ins().iadd(base, offset);
+                let wire = self.b.ins().load(types::I32, flags(), entry, 0);
+                self.push_abi(sig, argv, types::I32, wire);
+                Ok(())
+            }
             Type::Str => {
                 // A length-carrying string view is the C aggregate
                 // `{ const char *data; size_t len; }` (16 bytes, align 8),

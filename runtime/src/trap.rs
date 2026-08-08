@@ -79,6 +79,9 @@ pub enum TrapKind {
     WorkerTrapped = 22,
     /// Execution reached an `unreachable()` call statement.
     UnreachableReached = 23,
+    /// A foreign function returned an integer not present in the R23
+    /// `CEnum` alias's wire mapping.
+    WireEnumUnknownValue = 24,
 }
 
 impl TrapKind {
@@ -109,6 +112,7 @@ impl TrapKind {
             21 => TrapKind::CallbackUserdataFreed,
             22 => TrapKind::WorkerTrapped,
             23 => TrapKind::UnreachableReached,
+            24 => TrapKind::WireEnumUnknownValue,
             _ => return None,
         })
     }
@@ -140,6 +144,7 @@ impl TrapKind {
             TrapKind::CallbackUserdataFreed => "callback-userdata-freed",
             TrapKind::WorkerTrapped => "worker-trapped",
             TrapKind::UnreachableReached => "unreachable-reached",
+            TrapKind::WireEnumUnknownValue => "wire-enum-unknown-value",
         }
     }
 }
@@ -181,7 +186,7 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=23u32 {
+        for v in 1..=24u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }

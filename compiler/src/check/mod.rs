@@ -77,6 +77,27 @@ fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
         .collect()
 }
 
+/// Returns the object-literal mapping from the one R23 alias form.
+fn wire_alias_literal(ty: &ast::TsType) -> Option<&ast::TsTypeLit> {
+    let ast::TsType::TsTypeRef(reference) = ty else {
+        return None;
+    };
+    let ast::TsEntityName::Ident(name) = &reference.type_name else {
+        return None;
+    };
+    if name.sym.as_ref() != "CEnum" {
+        return None;
+    }
+    let arguments = reference.type_params.as_ref()?;
+    if arguments.params.len() != 1 {
+        return None;
+    }
+    let ast::TsType::TsTypeLit(literal) = &*arguments.params[0] else {
+        return None;
+    };
+    Some(literal)
+}
+
 /// The integer value of a non-negative numeric-literal expression (a flag
 /// member initializer, §13.2), or `None` for any other expression.
 fn int_literal_value(e: &ast::Expr) -> Option<i64> {
@@ -293,6 +314,9 @@ pub(crate) struct Checker<'p> {
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).
     pub in_boundary: bool,
+    /// True only while resolving a direct foreign-function signature.
+    /// R23 wire aliases are admitted there, but not in boundary structs.
+    pub allow_wire_alias_boundary: bool,
     /// True while resolving a `Map`/`Set` key argument. It lets the
     /// resolver preserve otherwise-banned key shapes (`object`,
     /// `T | null`) long enough to emit the Q24-specific S014 diagnostic
@@ -361,6 +385,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
         in_boundary: false,
+        allow_wire_alias_boundary: false,
         in_assoc_key: false,
         in_json_argument: false,
         in_for_of_subject: false,
@@ -1101,6 +1126,10 @@ impl<'p> Checker<'p> {
             );
             return;
         }
+        if let Some(mapping) = wire_alias_literal(&alias.type_ann) {
+            self.collect_wire_string_alias(file, alias, mapping, exported);
+            return;
+        }
         let Some(members) = string_alias_members(&alias.type_ann) else {
             self.error(
                 RuleCode::S100,
@@ -1130,6 +1159,137 @@ impl<'p> Checker<'p> {
         self.string_aliases.push(hir::StringAliasDef {
             name: name.clone(),
             members,
+            wire_values: None,
+            pos: pos.clone(),
+        });
+        self.register_scope_item(file, &name, ScopeItem::StringAlias(id), pos);
+        if exported {
+            self.exports[file].insert(name);
+        }
+    }
+
+    /// Collects and validates one R23 `CEnum<{ key: wire }>` alias.
+    fn collect_wire_string_alias(
+        &mut self,
+        file: usize,
+        alias: &ast::TsTypeAliasDecl,
+        mapping: &ast::TsTypeLit,
+        exported: bool,
+    ) {
+        let name = alias.id.sym.to_string();
+        let pos = self.pos(alias.id.span);
+        if mapping.members.is_empty() {
+            self.error(
+                RuleCode::S100,
+                "wire-mapped string-literal union must have at least one member",
+                self.pos(mapping.span),
+            );
+            return;
+        }
+        if mapping.members.len() > i32::MAX as usize {
+            self.error(
+                RuleCode::S100,
+                "wire-mapped string-literal union has more members than fit its i32 discriminant",
+                self.pos(mapping.span),
+            );
+            return;
+        }
+
+        let mut members = Vec::with_capacity(mapping.members.len());
+        let mut wire_values = Vec::with_capacity(mapping.members.len());
+        let mut seen_members = HashSet::new();
+        let mut seen_wires: HashMap<i32, String> = HashMap::new();
+        for element in &mapping.members {
+            let ast::TsTypeElement::TsPropertySignature(property) = element else {
+                self.error(
+                    RuleCode::S100,
+                    "CEnum mappings contain only named properties with integer-literal values",
+                    self.pos(element.span()),
+                );
+                return;
+            };
+            let member = match &*property.key {
+                ast::Expr::Lit(ast::Lit::Str(value)) => value.value.to_string(),
+                ast::Expr::Ident(value) if !property.computed => value.sym.to_string(),
+                _ => {
+                    self.error(
+                        RuleCode::S100,
+                        "CEnum member keys must be string literals or identifiers",
+                        self.pos(property.key.span()),
+                    );
+                    return;
+                }
+            };
+            if !seen_members.insert(member.clone()) {
+                self.error(
+                    RuleCode::S100,
+                    format!("duplicate string-literal union member `{member}`"),
+                    self.pos(property.key.span()),
+                );
+                return;
+            }
+            let Some(annotation) = &property.type_ann else {
+                self.error(
+                    RuleCode::S100,
+                    format!("wire value for CEnum member `{member}` must be an integer literal"),
+                    self.pos(property.span),
+                );
+                return;
+            };
+            let ast::TsType::TsLitType(ast::TsLitType {
+                lit: ast::TsLit::Number(number),
+                ..
+            }) = &*annotation.type_ann
+            else {
+                self.error(
+                    RuleCode::S100,
+                    format!("wire value for CEnum member `{member}` must be an integer literal"),
+                    self.pos(annotation.type_ann.span()),
+                );
+                return;
+            };
+            if !number.value.is_finite() || number.value.fract() != 0.0 {
+                self.error(
+                    RuleCode::S100,
+                    format!("wire value for CEnum member `{member}` must be an integer literal"),
+                    self.pos(number.span),
+                );
+                return;
+            }
+            if number.value < f64::from(i32::MIN) || number.value > f64::from(i32::MAX) {
+                let spelling = number
+                    .raw
+                    .as_ref()
+                    .map_or_else(|| number.value.to_string(), ToString::to_string);
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "wire value {spelling} for CEnum member `{member}` is outside the i32 range"
+                    ),
+                    self.pos(number.span),
+                );
+                return;
+            }
+            let wire = number.value as i32;
+            if let Some(first) = seen_wires.insert(wire, member.clone()) {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "duplicate CEnum wire value {wire} for members `{first}` and `{member}`"
+                    ),
+                    self.pos(number.span),
+                );
+                return;
+            }
+            members.push(member);
+            wire_values.push(wire);
+        }
+
+        let id = StringAliasId(self.string_aliases.len());
+        self.string_aliases.push(hir::StringAliasDef {
+            name: name.clone(),
+            members,
+            wire_values: Some(wire_values),
             pos: pos.clone(),
         });
         self.register_scope_item(file, &name, ScopeItem::StringAlias(id), pos);
@@ -1162,7 +1322,9 @@ impl<'p> Checker<'p> {
                 self.collect_boundary_struct(file, c)
             }
             ast::Decl::TsTypeAlias(t) => {
-                if string_alias_members(&t.type_ann).is_some() {
+                if string_alias_members(&t.type_ann).is_some()
+                    || wire_alias_literal(&t.type_ann).is_some()
+                {
                     self.collect_string_alias(file, t, false);
                 } else {
                     // Reserve the name; the aliased type is resolved in pass B.
@@ -1242,7 +1404,9 @@ impl<'p> Checker<'p> {
                 _ => continue,
             };
             if let ast::Decl::TsTypeAlias(t) = decl {
-                if string_alias_members(&t.type_ann).is_some() {
+                if string_alias_members(&t.type_ann).is_some()
+                    || wire_alias_literal(&t.type_ann).is_some()
+                {
                     continue;
                 }
                 let ty = self.resolve_type(&t.type_ann);
@@ -1266,7 +1430,32 @@ impl<'p> Checker<'p> {
                 ast::Decl::Fn(f) => {
                     let name = f.ident.sym.to_string();
                     let pos = self.pos(f.ident.span);
+                    self.allow_wire_alias_boundary = true;
                     let sig = self.resolve_fn_sig(&f.function, pos.clone());
+                    self.allow_wire_alias_boundary = false;
+                    for parameter in &sig.params {
+                        if Self::contains_string_alias(&parameter.ty)
+                            && !matches!(parameter.ty, Type::StringAlias(_))
+                        {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "wire-mapped aliases are supported only as direct foreign-function parameters; `{}` nests one inside another boundary type",
+                                    parameter.name
+                                ),
+                                pos.clone(),
+                            );
+                        }
+                    }
+                    if Self::contains_string_alias(&sig.ret)
+                        && !matches!(sig.ret, Type::StringAlias(_))
+                    {
+                        self.error(
+                            RuleCode::S100,
+                            "wire-mapped aliases are supported only as direct foreign-function returns",
+                            pos.clone(),
+                        );
+                    }
                     let mut params = Vec::with_capacity(sig.params.len());
                     for (index, parameter) in sig.params.iter().enumerate() {
                         let ast_parameter = f.function.params.get(index);

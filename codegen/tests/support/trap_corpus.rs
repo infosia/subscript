@@ -68,6 +68,15 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
             .unwrap_or_else(|e| panic!("read trap ambient mirror {}: {e}", mirror.display()));
         sources.insert(0, SourceFile::ambient("interop.generated.d.ts", text));
     }
+    if sources[0].source.contains("SubWireMode") {
+        let mirror = trap
+            .parent()
+            .expect("corpus/trap has a corpus parent")
+            .join("interop/wire-enum.d.ts");
+        let text = fs::read_to_string(&mirror)
+            .unwrap_or_else(|e| panic!("read trap ambient mirror {}: {e}", mirror.display()));
+        sources.insert(0, SourceFile::ambient("wire-enum.d.ts", text));
+    }
     sources
 }
 

@@ -110,6 +110,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         | "t45-regex-sticky-last-index" => (TrapKind::Regex, 8),
         "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31),
         "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10),
+        "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -566,13 +567,14 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 47;
+    let expected_count = 48;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
          coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, t46 \
-         callback-userdata coverage, and t47 unreachable coverage), found {}",
+         callback-userdata coverage, t47 unreachable coverage, and t48 wire-enum crossing \
+         coverage), found {}",
         ids.len()
     );
 
@@ -593,7 +595,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         // narrowing probes (t20/t21) that make real foreign calls cannot run
         // there (compiler.md §11c). Every non-interop trap still runs.
         #[cfg(all(windows, target_env = "msvc"))]
-        if files.iter().any(|source| source.source.contains("subDevice")) {
+        if files.iter().any(|source| {
+            source.source.contains("subDevice") || source.source.contains("subWireMode")
+        }) {
             continue;
         }
         let expected = trap_corpus::trap_expected(&trap, &id);
@@ -677,6 +681,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                     "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
                     "t46-callback-userdata-freed" => {
                         Some("callback userdata points to a freed allocation")
+                    }
+                    "t48-wire-enum-unknown-value" => {
+                        Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
                     }
                     _ => None,
                 };
@@ -891,6 +898,54 @@ fn string_literal_union_equality_emits_an_integer_compare() {
     assert!(
         !comparison.contains("subscript_rt_str_eq"),
         "Q32 equality called string comparison: {comparison}"
+    );
+}
+
+#[test]
+fn wire_enum_foreign_crossing_uses_integer_tables_and_unknown_return_trap() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let mirror = "// @subscript-c-header include=\"wire.h\"\n\
+                  type WireMode = CEnum<{ \"m0\": 0x10; \"m1\": 23; \"m2\": -7 }>;\n\
+                  declare function subWireTake(value: WireMode): i32;\n\
+                  declare function subWireReturn(): WireMode;\n";
+    let source = "export function main(): void {\n\
+                    const returned: WireMode = subWireReturn();\n\
+                    subWireTake(\"m2\");\n\
+                    subWireTake(returned);\n\
+                  }\n";
+    let hir = check_program(&[
+        SourceFile::ambient("wire.d.ts", mirror),
+        SourceFile::new("test.ts", source),
+    ])
+    .expect("wire-enum crossing checks cleanly");
+    let c = emit_c(&hir).expect("wire-enum crossing emits C").source;
+    assert!(
+        c.contains("static const int32_t subscript_wire_values_0[] = { 16, 23, -7 };")
+    );
+    assert!(
+        c.lines().any(|line| line.contains("subWireTake(subscript_wire_values_0[")),
+        "parameter crossing did not index the wire table:\n{c}"
+    );
+    assert!(
+        c.contains("if (subscript_wire_values_0[") && c.contains("subWireReturn()"),
+        "return crossing did not map the wire value:\n{c}"
+    );
+    assert!(
+        c.contains("subscript_rt_trap_wire_enum(ctx,")
+            && c.contains("WireMode"),
+        "return crossing lacks the shared dynamic trap path:\n{c}"
+    );
+    let main = c
+        .split("void subscript_export_main(subscript_rt_context* ctx) {")
+        .nth(1)
+        .expect("main body");
+    assert!(
+        !main.contains("subscript_rt_str_lit(ctx,")
+            && !main.contains("subscript_rt_str_eq(ctx,")
+            && !main.contains("subscript_string_alias_0["),
+        "wire crossing performed a string operation:\n{main}"
     );
 }
 

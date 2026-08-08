@@ -14,11 +14,15 @@ fn main() {
     let header = directory.join("interop.h");
     let external_source = directory.join("external-device.c");
     let external_header = directory.join("external-device.h");
+    let wire_source = directory.join("wire-enum.c");
+    let wire_header = directory.join("wire-enum.h");
 
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", header.display());
     println!("cargo:rerun-if-changed={}", external_source.display());
     println!("cargo:rerun-if-changed={}", external_header.display());
+    println!("cargo:rerun-if-changed={}", wire_source.display());
+    println!("cargo:rerun-if-changed={}", wire_header.display());
 
     // interop.c uses _Float16, which MSVC cl cannot compile; the fixture is
     // never linked on this target (its dependency edges are gated off
@@ -32,6 +36,7 @@ fn main() {
     cc::Build::new()
         .file(&source)
         .file(&external_source)
+        .file(&wire_source)
         .include(&directory)
         .std("c11")
         .opt_level(2)

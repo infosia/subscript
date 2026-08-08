@@ -222,6 +222,31 @@ pub unsafe extern "C" fn subscript_rt_trap(ctx: *mut Context, kind: u32, pos_id:
     ctx.trap(kind, message, pos_id);
 }
 
+/// Records an R23 boundary trap for an integer outside a `CEnum` mapping.
+///
+/// # Safety
+///
+/// Shared contract; `alias` addresses `alias_len` readable UTF-8 bytes for
+/// the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_trap_wire_enum(
+    ctx: *mut Context,
+    alias: *const u8,
+    alias_len: u64,
+    wire_value: i32,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract supplies a readable compiler-owned byte span.
+    let bytes = unsafe { std::slice::from_raw_parts(alias, alias_len as usize) };
+    let alias = std::str::from_utf8(bytes).unwrap_or("<invalid alias name>");
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.trap(
+        TrapKind::WireEnumUnknownValue,
+        format!("unknown wire value {wire_value} for CEnum alias `{alias}`"),
+        pos_id,
+    );
+}
+
 /// Registers a permanent root range: `words` consecutive 8-byte slots
 /// at `base` (module globals of managed type, or global aggregates
 /// with managed interior).

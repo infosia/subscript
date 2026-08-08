@@ -12,6 +12,8 @@ declare type i16 = number;
 declare type u16 = number;
 declare type f16 = number;
 
+type CEnum<M extends Record<string, number>> = Extract<keyof M, string>;
+
 declare function print(message: string): void;
 declare function unreachable(): never;
 

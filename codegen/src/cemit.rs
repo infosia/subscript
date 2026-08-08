@@ -260,6 +260,7 @@ enum TrapOperand {
         handle: String,
         index: String,
     },
+    WireValue { wire: String, valid: String },
 }
 
 /// Post-call copy-back for a pointer-passed string-field boundary struct.
@@ -563,6 +564,17 @@ impl<'m> Emitter<'m> {
                     );
                 }
                 globals.push_str("};\n");
+                if let Some(wire_values) = &alias.wire_values {
+                    let values = wire_values
+                        .iter()
+                        .map(|value| value.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let _ = writeln!(
+                        globals,
+                        "static const int32_t subscript_wire_values_{alias_index}[] = {{ {values} }};"
+                    );
+                }
             }
         }
         // Bodies (which append prototypes and helper definitions as they
@@ -1243,6 +1255,28 @@ impl<'m> Emitter<'m> {
             | hir::TrapSite::DevReloadOnlyStaleCoroutine { .. } => {
                 // Explicitly one-tier sites: §8.1b leaves releasing-C
                 // lifetime behavior unspecified, and C has no reload mode.
+                Ok(())
+            }
+            hir::TrapSite::WireEnumValue { alias, pos } => {
+                let TrapOperand::WireValue { wire, valid } = operand else {
+                    return Err("wire-enum trap site has no wire value".to_string());
+                };
+                let definition = self
+                    .module
+                    .string_aliases
+                    .get(alias.0)
+                    .ok_or_else(|| "wire-enum alias id is out of range".to_string())?;
+                let pos_id = self.pos_id(pos);
+                let _ = writeln!(out, "{ind}if (!({valid})) {{");
+                let _ = writeln!(
+                    out,
+                    "{}subscript_rt_trap_wire_enum(ctx, (const unsigned char*){}, {}ull, {wire}, {pos_id}u);",
+                    indent(depth + 1),
+                    c_string_literal(definition.name.as_bytes()),
+                    definition.name.len(),
+                );
+                self.emit_trap_return(out, depth + 1)?;
+                let _ = writeln!(out, "{ind}}}");
                 Ok(())
             }
         }
@@ -3567,7 +3601,7 @@ impl<'m> Emitter<'m> {
                 )
             }
             hir::Callee::Foreign(name) => {
-                self.eval_foreign_call(name, args, ret_ty, pos, out, depth, checked)
+                self.eval_foreign_call(name, args, ret_ty, pos, sites, out, depth, checked)
             }
             // A Math intrinsic (stdlib.md §1) calls its opaque runtime
             // symbol — never a bare libm call, which clang would
@@ -4800,6 +4834,7 @@ impl<'m> Emitter<'m> {
         args: &[hir::Expr],
         ret_ty: &Type,
         pos: &Pos,
+        sites: &mut TrapSiteConsumer<'_>,
         out: &mut String,
         depth: usize,
         checked: bool,
@@ -4984,8 +5019,62 @@ impl<'m> Emitter<'m> {
             }
             Ok(result)
         } else {
-            self.eval_call_with_policy(call, ret_ty, checked, out, depth)
+            let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+            if let Type::StringAlias(alias) = ff.ret {
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::WireEnumValue { alias: site_alias, .. } if *site_alias == alias),
+                    "wire-enum foreign return has no HIR trap site",
+                )?;
+                self.unmarshal_wire_alias(alias, &result, site, out, depth)
+            } else {
+                Ok(result)
+            }
         }
+    }
+
+    /// Converts one foreign wire result to a declaration-order discriminant.
+    fn unmarshal_wire_alias(
+        &mut self,
+        alias: subscript_compiler::StringAliasId,
+        wire: &str,
+        site: &hir::TrapSite,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let count = self
+            .module
+            .string_aliases
+            .get(alias.0)
+            .ok_or_else(|| "wire-enum alias id is out of range".to_string())?
+            .wire_values
+            .as_ref()
+            .ok_or_else(|| "foreign string alias return has no wire mapping".to_string())?
+            .len();
+        let discriminant = self.fresh_tmp();
+        let index = self.fresh_tmp();
+        let ind = indent(depth);
+        let _ = writeln!(out, "{ind}int32_t {discriminant} = -1;");
+        let _ = writeln!(
+            out,
+            "{ind}for (int32_t {index} = 0; {index} < {count}; {index} += 1) {{"
+        );
+        let _ = writeln!(
+            out,
+            "{}if (subscript_wire_values_{}[{index}] == {wire}) {{ {discriminant} = {index}; break; }}",
+            indent(depth + 1),
+            alias.0,
+        );
+        let _ = writeln!(out, "{ind}}}");
+        self.emit_trap_site(
+            site,
+            TrapOperand::WireValue {
+                wire: wire.to_string(),
+                valid: format!("{discriminant} >= 0"),
+            },
+            out,
+            depth,
+        )?;
+        Ok(discriminant)
     }
 
     /// Materializes a foreign-call result before pointer scratch copy-back.
@@ -5037,6 +5126,24 @@ impl<'m> Emitter<'m> {
     ) -> Result<(Vec<String>, Option<String>), String> {
         let ind = indent(depth);
         match &parameter.ty {
+            Type::StringAlias(alias) => {
+                let definition = self
+                    .module
+                    .string_aliases
+                    .get(alias.0)
+                    .ok_or_else(|| "wire-enum alias id is out of range".to_string())?;
+                if definition.wire_values.is_none() {
+                    return Err(format!(
+                        "internal error at foreign function `{function_name}` parameter `{}`: plain string alias reached the boundary",
+                        parameter.name
+                    ));
+                }
+                let value = self.eval(arg, out, depth)?;
+                Ok((
+                    vec![format!("subscript_wire_values_{}[{value}]", alias.0)],
+                    Some("int32_t".to_string()),
+                ))
+            }
             Type::Str => {
                 let aggregate = match &parameter.foreign_provenance {
                     Some(hir::ForeignTypeProvenance::StringView { aggregate }) => {
@@ -7277,6 +7384,7 @@ typedef uint8_t (*SubAsyncResume)(void* ctx, void* frame, void* out);
 extern void subscript_rt_async_kick(void* ctx, void* frame, SubAsyncResume resume);
 extern void subscript_rt_delete(void* ctx, void* payload, uint32_t pos_id);
 extern void subscript_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
+extern void subscript_rt_trap_wire_enum(void* ctx, const unsigned char* alias, uint64_t alias_len, int32_t wire_value, uint32_t pos_id);
 extern void subscript_rt_root_add(void* ctx, void* base, uint64_t words);
 extern void subscript_rt_shadow_push(void* ctx, void* base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void* ctx);

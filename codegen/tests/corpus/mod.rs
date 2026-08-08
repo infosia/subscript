@@ -42,6 +42,15 @@ fn external_device_mirror() -> SourceFile {
     SourceFile::ambient("external-device.generated.d.ts", text)
 }
 
+/// The hand-authored R23 mirror for the synthetic wire-enum fixture.
+fn wire_enum_mirror() -> SourceFile {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../corpus/interop/wire-enum.d.ts");
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    SourceFile::ambient("wire-enum.d.ts", text)
+}
+
 /// True when any of `sources` names a foreign function, boundary struct,
 /// or flag member of the synthetic interop header. A false negative is not
 /// silent: the entry then fails to check with an unresolved `Sub…`
@@ -101,6 +110,8 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subByValue",
         // R21 host-owned state (compiler.md §49).
         "subHostOwnedState",
+        // R23 wire-mapped literal-union boundary crossings.
+        "subWireMode",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }
@@ -179,12 +190,18 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     // index zero, so both language ingestion and emitted C includes see
     // interop.h before external-device.h.
     let uses_external = uses_external_device_mirror(&sources);
+    let uses_wire_enum = sources
+        .iter()
+        .any(|source| source.source.contains("subWireMode") || source.source.contains("SubWireMode"));
     let uses_interop = uses_interop_mirror(&sources) || uses_external;
     if uses_external {
         sources.insert(0, external_device_mirror());
     }
     if uses_interop {
         sources.insert(0, interop_mirror());
+    }
+    if uses_wire_enum {
+        sources.insert(0, wire_enum_mirror());
     }
     sources
 }

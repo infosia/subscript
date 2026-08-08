@@ -191,6 +191,9 @@ pub struct StringAliasDef {
     pub name: String,
     /// Member spellings in declaration/discriminant order.
     pub members: Vec<String>,
+    /// Per-member C-boundary values for an R23 `CEnum` alias, in the same
+    /// declaration order. `None` identifies a plain Q32 alias.
+    pub wire_values: Option<Vec<i32>>,
     /// Position of the alias declaration.
     pub pos: Pos,
 }
@@ -497,6 +500,14 @@ pub enum TrapSite {
         /// Position of the generator `.next()` call.
         pos: Pos,
     },
+    /// A foreign return carrying an R23 wire value must map to a known
+    /// declaration-order discriminant.
+    WireEnumValue {
+        /// Wire-mapped alias whose table is used at the crossing.
+        alias: crate::types::StringAliasId,
+        /// Position of the foreign call.
+        pos: Pos,
+    },
 }
 
 impl TrapSite {
@@ -514,7 +525,8 @@ impl TrapSite {
             | TrapSite::NullNarrowing { pos }
             | TrapSite::ClassMismatch { pos, .. }
             | TrapSite::DevOnlyLifetime { pos }
-            | TrapSite::DevReloadOnlyStaleCoroutine { pos } => pos,
+            | TrapSite::DevReloadOnlyStaleCoroutine { pos }
+            | TrapSite::WireEnumValue { pos, .. } => pos,
         }
     }
 }
@@ -3026,6 +3038,28 @@ impl Expr {
                 }
                 if callee.has_call_site() {
                     sites.push(call(&self.pos));
+                }
+                if let Callee::Foreign(name) = callee {
+                    let wire_alias = module
+                        .foreign_fns
+                        .iter()
+                        .find(|foreign| foreign.name == *name)
+                        .and_then(|foreign| match foreign.ret {
+                            Type::StringAlias(alias) => Some(alias),
+                            _ => None,
+                        })
+                        .filter(|alias| {
+                            module
+                                .string_aliases
+                                .get(alias.0)
+                                .is_some_and(|definition| definition.wire_values.is_some())
+                        });
+                    if let Some(alias) = wire_alias {
+                        sites.push(TrapSite::WireEnumValue {
+                            alias,
+                            pos: self.pos.clone(),
+                        });
+                    }
                 }
                 sites
             }

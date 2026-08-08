@@ -673,11 +673,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // typing (a124), R19 conditional-arm narrowing (a125), and OBS-4
     // by-value register-image packing (a126), and R20 external types shared
     // across two generated mirrors (a127), and R21 host-owned state across
-    // two host-driven entry calls (a128).
+    // two host-driven entry calls (a128), and R23 wire-mapped literal-union
+    // boundary crossings (a129).
     assert_eq!(
         golden_ids.len(),
-        128,
-        "expected exactly 128 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        129,
+        "expected exactly 129 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -706,7 +707,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          golden, the a124 R18 contextual-conditional golden, and the a125 \
          R19 conditional-arm-narrowing golden, and the a126 OBS-4 by-value \
          register-image packing golden, and the a127 R20 external-type \
-         two-mirror golden, and the a128 R21 host-owned-state golden, found {}",
+         two-mirror golden, the a128 R21 host-owned-state golden, and the a129 \
+         R23 wire-enum interop golden, found {}",
         golden_ids.len()
     );
 

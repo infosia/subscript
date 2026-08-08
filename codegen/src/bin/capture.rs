@@ -93,6 +93,9 @@ extern "C" {
     fn subHostOwnedStateAdvance();
     fn subHostOwnedStatePreEntry(ctx: *mut std::ffi::c_void);
     fn subHostOwnedStatePostRun(ctx: *mut std::ffi::c_void);
+    fn subWireModeNext();
+    fn subWireModeEcho();
+    fn subWireModeUnknown();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -125,6 +128,7 @@ fn references_interop(source: &str) -> bool {
         "subProbeSetBindGroup",
         "subByValue",
         "subHostOwnedState",
+        "subWireMode",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -315,6 +319,12 @@ fn interop_library() -> NativeLibrary {
         ("subHostOwnedStateAdvance".to_string(), subHostOwnedStateAdvance as *const u8),
         ("subHostOwnedStatePreEntry".to_string(), subHostOwnedStatePreEntry as *const u8),
         ("subHostOwnedStatePostRun".to_string(), subHostOwnedStatePostRun as *const u8),
+        ("subWireModeNext".to_string(), subWireModeNext as *const u8),
+        ("subWireModeEcho".to_string(), subWireModeEcho as *const u8),
+        (
+            "subWireModeUnknown".to_string(),
+            subWireModeUnknown as *const u8,
+        ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime
     // function above into this capture process, with signatures matching the
@@ -322,7 +332,7 @@ fn interop_library() -> NativeLibrary {
     unsafe {
         NativeLibrary::new(
             vec![directory.clone()],
-            vec![directory.join("interop.c")],
+            vec![directory.join("interop.c"), directory.join("wire-enum.c")],
             symbols,
         )
     }
@@ -395,6 +405,9 @@ fn main() -> ExitCode {
         }
     };
 
+    let wire_enum = sources.iter().any(|source| {
+        source.source.contains("subWireMode") || source.source.contains("SubWireMode")
+    });
     let interop = sources
         .iter()
         .any(|source| references_interop(&source.source));
@@ -408,6 +421,17 @@ fn main() -> ExitCode {
             }
         };
         sources.insert(0, SourceFile::ambient("interop.generated.d.ts", text));
+    }
+    if wire_enum {
+        let mirror = accept.join("../interop/wire-enum.d.ts");
+        let text = match fs::read_to_string(&mirror) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("capture: read {}: {e}", mirror.display());
+                return ExitCode::from(2);
+            }
+        };
+        sources.insert(0, SourceFile::ambient("wire-enum.d.ts", text));
     }
 
     let result = if interop {

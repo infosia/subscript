@@ -163,6 +163,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S005,
         22,
     ),
+    ("r121-wire-enum-fractional.ts", RuleCode::S100, 8),
+    ("r122-wire-enum-duplicate.ts", RuleCode::S100, 9),
+    ("r123-wire-enum-out-of-range.ts", RuleCode::S100, 8),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -300,8 +303,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        116,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, and one R19 entry"
+        119,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, and three R23 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

@@ -89,6 +89,9 @@ extern "C" {
     fn subHostOwnedStatePostRun(ctx: *mut std::ffi::c_void);
     fn subExternalDeviceIdentity();
     fn subExternalDeviceTag();
+    fn subWireModeNext();
+    fn subWireModeEcho();
+    fn subWireModeUnknown();
 }
 
 /// Runs the fixture's ship-tier pre-entry hook for a dev-tier session.
@@ -248,6 +251,12 @@ pub fn library() -> NativeLibrary {
             "subExternalDeviceTag".to_string(),
             subExternalDeviceTag as *const u8,
         ),
+        ("subWireModeNext".to_string(), subWireModeNext as *const u8),
+        ("subWireModeEcho".to_string(), subWireModeEcho as *const u8),
+        (
+            "subWireModeUnknown".to_string(),
+            subWireModeUnknown as *const u8,
+        ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime
     // functions into the test process, and every address corresponds to the
@@ -258,6 +267,7 @@ pub fn library() -> NativeLibrary {
             vec![
                 directory.join("interop.c"),
                 directory.join("external-device.c"),
+                directory.join("wire-enum.c"),
             ],
             symbols,
         )
