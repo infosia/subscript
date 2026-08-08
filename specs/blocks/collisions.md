@@ -954,7 +954,12 @@ non-generic reference classes join the surface —
     comparisons lower to integer compares, never string compares.
   - **Boundary**: Q32 aliases may not appear in mirrors or boundary
     signatures (v1); a binding layer lowers them to integer enums
-    before its C facade.
+    before its C facade. *Revised 2026-08-08 (R23): an alias declared
+    through the prelude `CEnum` generic carries a per-member integer
+    wire value and is legal in boundary signatures at parameter and
+    return positions (`compiler.md` §50). The checker owns the
+    conversion at the crossing; an unknown wire value traps there.
+    A plain alias stays barred from boundary signatures.*
 
   Contract and exit criteria: `compiler.md` §24. Accept: `a91`.
   Reject: `r87` (non-member literal), `r88` (inline literal union;
