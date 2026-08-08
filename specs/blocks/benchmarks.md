@@ -274,6 +274,17 @@ backend exposes the policy as entry points (`bnNow`, a
 more-samples/record-sample pair, a report function); the implementer
 names them.
 
+**Clock quantum gate** *(added 2026-08-08, after the first run)*. The
+backend measures the clock's quantum at start: the smallest positive
+difference over 100 000 consecutive `bnNow` pairs. The report line
+carries the quantum. The runner rejects a variant whose quantum
+exceeds 1% of that variant's median region span. Reason, measured on
+the arm64 dev machine: `CLOCK_MONOTONIC` has a 1000 ns quantum and a
+region spans 5–7 µs, so the first run's samples collapsed onto
+quantized values, the spread gate read 0.00%, and every layer delta
+equaled the quantum. `CLOCK_MONOTONIC_RAW` has a 41 ns quantum on the
+same machine; `bnNow` must use a clock that passes the gate.
+
 ### The variants
 
 Five executables, one compiler, one flag set, each run in a fresh
