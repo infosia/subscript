@@ -27,12 +27,9 @@ pub fn render() -> Result<String, String> {
     let observer = parse_fn_type(CONTEXT_SOURCE, "TrapObserver")?;
     let print_observer_docs = docs_for(CONTEXT_SOURCE, "pub type PrintObserver")?;
     let print_observer = parse_fn_type(CONTEXT_SOURCE, "PrintObserver")?;
-    let diagnostics_observer_docs =
-        docs_for(CONTEXT_SOURCE, "pub type DiagnosticsObserver")?;
-    let diagnostics_observer =
-        parse_fn_type(CONTEXT_SOURCE, "DiagnosticsObserver")?;
-    let allocation_visitor_docs =
-        docs_for(CONTEXT_SOURCE, "pub type AllocationVisitor")?;
+    let diagnostics_observer_docs = docs_for(CONTEXT_SOURCE, "pub type DiagnosticsObserver")?;
+    let diagnostics_observer = parse_fn_type(CONTEXT_SOURCE, "DiagnosticsObserver")?;
+    let allocation_visitor_docs = docs_for(CONTEXT_SOURCE, "pub type AllocationVisitor")?;
     let allocation_visitor = parse_fn_type(CONTEXT_SOURCE, "AllocationVisitor")?;
     let entry_docs = docs_for(CONTEXT_SOURCE, "pub type ScriptMainEntry")?;
     let entry = parse_fn_type(CONTEXT_SOURCE, "ScriptMainEntry")?;
@@ -100,9 +97,7 @@ pub fn render() -> Result<String, String> {
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
     out.push_str("#endif\n\n");
-    out.push_str(
-        "typedef struct subscript_rt_context subscript_rt_context;\n\n",
-    );
+    out.push_str("typedef struct subscript_rt_context subscript_rt_context;\n\n");
     out.push_str("typedef struct subscript_rt_worker subscript_rt_worker;\n");
     out.push_str("typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;\n");
     out.push_str("typedef struct subscript_rt_worker_outbox subscript_rt_worker_outbox;\n\n");
@@ -143,8 +138,12 @@ pub fn render() -> Result<String, String> {
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_worker_entry", &worker_entry)?);
     out.push_str(";\n\n");
-    out.push_str("/* Every linked program defines subscript_init. A program with an exported main\n");
-    out.push_str(" * defines subscript_export_main; every other currently supported host export is\n");
+    out.push_str(
+        "/* Every linked program defines subscript_init. A program with an exported main\n",
+    );
+    out.push_str(
+        " * defines subscript_export_main; every other currently supported host export is\n",
+    );
     out.push_str(" * named `subscript_export_<name>` with the same signature. */\n");
     out.push_str(&c_function("subscript_init", &entry)?);
     out.push_str(";\n");
@@ -236,10 +235,10 @@ fn rewrite_context_c_type(text: &str) -> String {
     let mut cursor = 0;
     for (start, _) in text.match_indices(FROM) {
         let end = start + FROM.len();
-        let left_is_identifier = start > 0
-            && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
-        let right_is_identifier = end < bytes.len()
-            && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_');
+        let left_is_identifier =
+            start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
+        let right_is_identifier =
+            end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_');
         if left_is_identifier || right_is_identifier {
             continue;
         }
@@ -438,9 +437,8 @@ mod tests {
     #[test]
     fn generated_host_header_carries_the_observer_aliasing_rule() {
         let header = render().expect("render host header");
-        assert!(header.contains(
-            "calling any `subscript_rt_*` API that takes that subscript_rt_context"
-        ));
+        assert!(header
+            .contains("calling any `subscript_rt_*` API that takes that subscript_rt_context"));
         assert!(header.contains("pointer smuggled in `userdata`"));
         assert!(header.contains("undefined behaviour"));
     }
@@ -482,9 +480,9 @@ mod tests {
         assert!(header.contains(
             "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE UINT32_C(1)"
         ));
-        assert!(header.contains(
-            "#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT UINT32_C(2)"
-        ));
+        assert!(
+            header.contains("#define SUBSCRIPT_RT_DIAGNOSTICS_ADVISORY_BINDING_COUNT UINT32_C(2)")
+        );
         assert!(header.contains("typedef void (*subscript_rt_diagnostics_observer)"));
         assert!(header.contains("advisory does not trap, cancel, or otherwise change the release"));
         assert!(header.contains("must not\n * call back into script"));

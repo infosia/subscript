@@ -12,8 +12,7 @@
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::hir;
 use crate::types::{
-    scalar_size_align, Type, CRANELIFT_FRAME_ALIGNMENT,
-    MAX_AGGREGATE_BYTES, MAX_FRAME_BYTES,
+    scalar_size_align, Type, CRANELIFT_FRAME_ALIGNMENT, MAX_AGGREGATE_BYTES, MAX_FRAME_BYTES,
 };
 
 use super::Checker;
@@ -194,17 +193,13 @@ fn count_async_calls_expr(expr: &hir::Expr) -> u64 {
             callee + args.iter().map(count_async_calls_expr).sum::<u64>()
         }
         K::New { args, .. } => args.iter().map(count_async_calls_expr).sum(),
-        K::DescriptorLit { fields, .. } => fields
-            .iter()
-            .flatten()
-            .map(count_async_calls_expr)
-            .sum(),
+        K::DescriptorLit { fields, .. } => {
+            fields.iter().flatten().map(count_async_calls_expr).sum()
+        }
         K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => {
             count_async_calls_expr(obj)
         }
-        K::Index { obj, index, .. } => {
-            count_async_calls_expr(obj) + count_async_calls_expr(index)
-        }
+        K::Index { obj, index, .. } => count_async_calls_expr(obj) + count_async_calls_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_async_calls_expr).sum(),
         K::ArraySpreadLit(elems) => elems
             .iter()
@@ -233,10 +228,10 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> u64 {
         .iter()
         .map(|stmt| match stmt {
             hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => count_async_calls_expr(init),
-            hir::Stmt::Return { value, .. } => {
-                value.as_ref().map_or(0, count_async_calls_expr)
-            }
-            hir::Stmt::If { cond, then, els, .. } => {
+            hir::Stmt::Return { value, .. } => value.as_ref().map_or(0, count_async_calls_expr),
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
                 count_async_calls_expr(cond)
                     + count_async_calls(then)
                     + els.as_deref().map_or(0, count_async_calls)
@@ -244,7 +239,13 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> u64 {
             hir::Stmt::While { cond, body, .. } => {
                 count_async_calls_expr(cond) + count_async_calls(body)
             }
-            hir::Stmt::For { init, cond, step, body, .. } => {
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
                 init.as_deref()
                     .map_or(0, |stmt| count_async_calls(std::slice::from_ref(stmt)))
                     + cond.as_ref().map_or(0, count_async_calls_expr)
@@ -403,9 +404,7 @@ impl<'a> Validator<'a> {
             | Type::Map(..)
             | Type::Set(_)
             | Type::Generator(_) => true,
-            Type::Nullable(inner) => {
-                self.is_managed(inner) || matches!(**inner, Type::Func(_))
-            }
+            Type::Nullable(inner) => self.is_managed(inner) || matches!(**inner, Type::Func(_)),
             Type::Class(id) => self.classes.get(id.0).is_some_and(|class| !class.is_value),
             _ => false,
         }
@@ -444,11 +443,10 @@ impl<'a> Validator<'a> {
             return;
         }
         let align = layout.align.max(8);
-        let end = raw_round_up(frame.end, align)
-            .and_then(|start| start.checked_add(layout.size.max(1)));
-        let final_size = end.and_then(|end| {
-            raw_round_up(end, u64::from(CRANELIFT_FRAME_ALIGNMENT))
-        });
+        let end =
+            raw_round_up(frame.end, align).and_then(|start| start.checked_add(layout.size.max(1)));
+        let final_size =
+            end.and_then(|end| raw_round_up(end, u64::from(CRANELIFT_FRAME_ALIGNMENT)));
         if final_size.is_none_or(|size| size > u64::from(MAX_FRAME_BYTES)) {
             self.diagnostics.push(Diagnostic::new(
                 RuleCode::S100,
@@ -599,13 +597,7 @@ impl<'a> Validator<'a> {
 
     fn closure_storage_layout(&mut self, captures: &[hir::Capture]) -> Option<Layout> {
         (!captures.is_empty())
-            .then(|| {
-                self.sequence_layout(
-                    0,
-                    captures.iter().map(|capture| &capture.ty),
-                    1,
-                )
-            })
+            .then(|| self.sequence_layout(0, captures.iter().map(|capture| &capture.ty), 1))
             .flatten()
     }
 
@@ -761,13 +753,7 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn add_type_slot(
-        &mut self,
-        frame: &mut FrameBudget,
-        ty: &Type,
-        description: &str,
-        pos: &Pos,
-    ) {
+    fn add_type_slot(&mut self, frame: &mut FrameBudget, ty: &Type, description: &str, pos: &Pos) {
         if let Outcome::Layout(layout) = self.type_layout(ty) {
             self.add_frame_slot(frame, layout, description, pos);
         }
@@ -803,19 +789,10 @@ impl<'a> Validator<'a> {
             && !(destination && self.expression_builds_into_destination(expr))
             && matches!(
                 &expr.kind,
-                K::Zero
-                    | K::Call { .. }
-                    | K::New { .. }
-                    | K::ArrayLit(_)
-                    | K::ArraySpreadLit(_)
+                K::Zero | K::Call { .. } | K::New { .. } | K::ArrayLit(_) | K::ArraySpreadLit(_)
             );
         if result_needs_slot {
-            self.add_type_slot(
-                frame,
-                &expr.ty,
-                "aggregate expression storage",
-                &expr.pos,
-            );
+            self.add_type_slot(frame, &expr.ty, "aggregate expression storage", &expr.pos);
         }
 
         match &expr.kind {
@@ -955,12 +932,7 @@ impl<'a> Validator<'a> {
                 ..
             } => {
                 if let Some(layout) = self.closure_storage_layout(captures) {
-                    self.add_frame_slot(
-                        frame,
-                        layout,
-                        "closure environment storage",
-                        &expr.pos,
-                    );
+                    self.add_frame_slot(frame, layout, "closure environment storage", &expr.pos);
                 }
                 self.validate_plain_frame(params, body, &expr.pos, false);
             }
@@ -996,10 +968,7 @@ impl<'a> Validator<'a> {
         for stmt in stmts {
             match stmt {
                 hir::Stmt::Let { ty, init, pos, .. } => {
-                    if !generator
-                        && self.is_aggregate(ty)
-                        && !self.has_managed_interior(ty)
-                    {
+                    if !generator && self.is_aggregate(ty) && !self.has_managed_interior(ty) {
                         self.add_type_slot(frame, ty, "local aggregate storage", pos);
                     }
                     let destination = !generator && self.is_aggregate(ty);
@@ -1032,11 +1001,7 @@ impl<'a> Validator<'a> {
                     ..
                 } => {
                     if let Some(init) = init {
-                        self.validate_stmts_frame(
-                            std::slice::from_ref(init),
-                            frame,
-                            generator,
-                        );
+                        self.validate_stmts_frame(std::slice::from_ref(init), frame, generator);
                     }
                     if let Some(cond) = cond {
                         self.validate_expr_frame(cond, false, frame);
@@ -1053,10 +1018,7 @@ impl<'a> Validator<'a> {
                     pos,
                     ..
                 } => {
-                    if !generator
-                        && self.is_aggregate(ty)
-                        && !self.has_managed_interior(ty)
-                    {
+                    if !generator && self.is_aggregate(ty) && !self.has_managed_interior(ty) {
                         self.add_type_slot(frame, ty, "`for…of` binding storage", pos);
                     }
                     self.validate_expr_frame(subject, false, frame);
@@ -1167,7 +1129,10 @@ impl<'a> Validator<'a> {
                     .cloned()
                     .map(|constructor| (constructor, None))
                     .chain(class.methods.iter().cloned().map(move |method| {
-                        (method, Some(Type::Class(crate::types::ClassId(class_index))))
+                        (
+                            method,
+                            Some(Type::Class(crate::types::ClassId(class_index))),
+                        )
                     }))
             })
             .collect();

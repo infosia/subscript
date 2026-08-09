@@ -44,8 +44,8 @@ use cranelift_codegen::ir::{types, AbiParam, Endianness, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Configurable;
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
-use subscript_compiler::{hir, Pos, StringAliasId, Type};
 use subscript_compiler::types::MAX_AGGREGATE_BYTES;
+use subscript_compiler::{hir, Pos, StringAliasId, Type};
 
 use crate::layout::{Layouts, Repr};
 
@@ -432,10 +432,7 @@ impl<'a, M: Module> ModLower<'a, M> {
 
     /// Defines the declaration-ordered static formatting table for one
     /// Q32 alias and returns its module-data id.
-    pub fn string_alias_table_data(
-        &mut self,
-        alias_id: StringAliasId,
-    ) -> Result<DataId, String> {
+    pub fn string_alias_table_data(&mut self, alias_id: StringAliasId) -> Result<DataId, String> {
         if let Some(&id) = self.string_alias_tables.get(&alias_id) {
             return Ok(id);
         }
@@ -567,10 +564,7 @@ impl<'a, M: Module> ModLower<'a, M> {
     }
 }
 
-fn declare_rt<M: Module>(
-    module: &mut M,
-    call_conv: CallConv,
-) -> Result<RtFns, String> {
+fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, String> {
     let mut mk = |name: &str, params: &[types::Type], ret: Option<types::Type>| {
         let mut sig = Signature::new(call_conv);
         for &p in params {
@@ -600,7 +594,11 @@ fn declare_rt<M: Module>(
                 (params, F64)
             }
         };
-        math_ids.push(mk(&format!("subscript_rt_math_{}", f.name()), &params, Some(ret))?);
+        math_ids.push(mk(
+            &format!("subscript_rt_math_{}", f.name()),
+            &params,
+            Some(ret),
+        )?);
     }
     let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
         .try_into()
@@ -611,9 +609,7 @@ fn declare_rt<M: Module>(
     for f in hir::NumFn::ALL {
         use hir::NumFn as N;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
-            N::IsNaN | N::IsFinite | N::IsInteger | N::IsSafeInteger => {
-                (&[I64, F64], Some(I32))
-            }
+            N::IsNaN | N::IsFinite | N::IsInteger | N::IsSafeInteger => (&[I64, F64], Some(I32)),
             N::ParseInt => (&[I64, I64, I32, I32], Some(F64)),
             N::ParseFloat => (&[I64, I64, I32], Some(F64)),
             N::ToFixed => (&[I64, F64, I32, I32], Some(I64)),
@@ -738,24 +734,14 @@ fn declare_rt<M: Module>(
             A::ForEach => (&[I64, I64, I64, I64, I32, I32], None),
             // (ctx, recv, code, env, elem_kind, ret_kind, ret_size,
             // pos_id, indexed) -> array handle
-            A::Map => (
-                &[I64, I64, I64, I64, I32, I32, I64, I32, I32],
-                Some(I64),
-            ),
+            A::Map => (&[I64, I64, I64, I64, I32, I32, I64, I32, I32], Some(I64)),
             // (ctx, recv, code, env, kind, pos_id, indexed) -> array handle
             A::Filter => (&[I64, I64, I64, I64, I32, I32, I32], Some(I64)),
             // (ctx, recv, code, env, elem_kind, acc_kind, acc_size,
             // acc_ptr, indexed)
-            A::Reduce | A::ReduceRight => {
-                (
-                    &[I64, I64, I64, I64, I32, I32, I64, I64, I32],
-                    None,
-                )
-            }
+            A::Reduce | A::ReduceRight => (&[I64, I64, I64, I64, I32, I32, I64, I64, I32], None),
             // (ctx, recv, code, env, kind, indexed) -> i32
-            A::Some | A::Every | A::FindIndex => {
-                (&[I64, I64, I64, I64, I32, I32], Some(I32))
-            }
+            A::Some | A::Every | A::FindIndex => (&[I64, I64, I64, I64, I32, I32], Some(I32)),
             // (ctx, recv, code, env, kind)
             A::Sort => (&[I64, I64, I64, I64, I32], None),
             // (ctx, recv, start, delete_count, pos_id) -> array handle
@@ -775,8 +761,7 @@ fn declare_rt<M: Module>(
     let arr_ops: [FuncId; hir::ArrFn::ALL.len()] = arr_ids
         .try_into()
         .map_err(|_| internal("array import table size"))?;
-    let mut fixed_arr_ids: Vec<Option<FuncId>> =
-        Vec::with_capacity(hir::ArrFn::ALL.len());
+    let mut fixed_arr_ids: Vec<Option<FuncId>> = Vec::with_capacity(hir::ArrFn::ALL.len());
     for f in hir::ArrFn::ALL {
         use hir::ArrFn as A;
         let Some(symbol) = f.fixed_symbol() else {
@@ -788,25 +773,17 @@ fn declare_rt<M: Module>(
             A::ForEach => (&[I64, I64, I64, I64, I64, I64, I32, I32], None),
             // Plus result kind/size and allocation position.
             A::Map => (
-                &[
-                    I64, I64, I64, I64, I64, I64, I32, I32, I64, I32, I32,
-                ],
+                &[I64, I64, I64, I64, I64, I64, I32, I32, I64, I32, I32],
                 Some(I64),
             ),
-            A::Filter => (
-                &[I64, I64, I64, I64, I64, I64, I32, I32, I32],
-                Some(I64),
-            ),
+            A::Filter => (&[I64, I64, I64, I64, I64, I64, I32, I32, I32], Some(I64)),
             A::Reduce | A::ReduceRight => (
-                &[
-                    I64, I64, I64, I64, I64, I64, I32, I32, I64, I64, I32,
-                ],
+                &[I64, I64, I64, I64, I64, I64, I32, I32, I64, I64, I32],
                 None,
             ),
-            A::Some | A::Every | A::FindIndex => (
-                &[I64, I64, I64, I64, I64, I64, I32, I32],
-                Some(I32),
-            ),
+            A::Some | A::Every | A::FindIndex => {
+                (&[I64, I64, I64, I64, I64, I64, I32, I32], Some(I32))
+            }
             other => {
                 return Err(internal(format!(
                     "FixedArray symbol on unsupported ArrFn {other:?}"
@@ -854,9 +831,7 @@ fn declare_rt<M: Module>(
             F::Union | F::Intersection | F::Difference | F::SymmetricDifference => {
                 (&[I64, I64, I64, I32], Some(I64))
             }
-            F::IsSubsetOf | F::IsSupersetOf | F::IsDisjointFrom => {
-                (&[I64, I64, I64], Some(I32))
-            }
+            F::IsSubsetOf | F::IsSupersetOf | F::IsDisjointFrom => (&[I64, I64, I64], Some(I32)),
             other => return Err(internal(format!("unknown SetFn {other:?}"))),
         };
         set_ids.push(mk(f.symbol(), params, ret)?);
@@ -869,21 +844,13 @@ fn declare_rt<M: Module>(
         collect: mk("subscript_rt_collect", &[I64], None)?,
         alloc: mk("subscript_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
         globals_init: mk("subscript_rt_globals_init", &[I64, I64, I64], Some(I64))?,
-        boundary_scratch_mark: mk(
-            "subscript_rt_boundary_scratch_mark",
-            &[I64],
-            Some(I64),
-        )?,
+        boundary_scratch_mark: mk("subscript_rt_boundary_scratch_mark", &[I64], Some(I64))?,
         boundary_scratch_alloc: mk(
             "subscript_rt_boundary_scratch_alloc",
             &[I64, I64, I32],
             Some(I64),
         )?,
-        boundary_scratch_release: mk(
-            "subscript_rt_boundary_scratch_release",
-            &[I64, I64],
-            None,
-        )?,
+        boundary_scratch_release: mk("subscript_rt_boundary_scratch_release", &[I64, I64], None)?,
         delete: mk("subscript_rt_delete", &[I64, I64, I32], None)?,
         trap: mk("subscript_rt_trap", &[I64, I32, I32], None)?,
         trap_wire_enum: mk(
@@ -920,11 +887,7 @@ fn declare_rt<M: Module>(
         array_ptr: mk("subscript_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
         str_data: mk("subscript_rt_str_data", &[I64, I64], Some(I64))?,
         array_data: mk("subscript_rt_array_data", &[I64, I64], Some(I64))?,
-        assoc_iter_begin: mk(
-            "subscript_rt_assoc_iter_begin",
-            &[I64, I64, I32],
-            Some(I64),
-        )?,
+        assoc_iter_begin: mk("subscript_rt_assoc_iter_begin", &[I64, I64, I32], Some(I64))?,
         assoc_iter_copy: mk(
             "subscript_rt_assoc_iter_copy",
             &[I64, I64, I64, I32, I64, I32],
@@ -958,7 +921,11 @@ fn declare_rt<M: Module>(
         )?,
         // (ctx, code, env, userdata1, userdata2) → binding pointer (§14.4:
         // two userdata slots).
-        cb_bind: mk("subscript_rt_cb_bind", &[I64, I64, I64, I64, I64], Some(I64))?,
+        cb_bind: mk(
+            "subscript_rt_cb_bind",
+            &[I64, I64, I64, I64, I64],
+            Some(I64),
+        )?,
         // The generic C-ABI callback trampoline (P5.2b, §14.4). Generated
         // code never calls it — a foreign C API does — so it is imported
         // only to take its address (`func_addr`) for a callback-info
@@ -993,16 +960,8 @@ fn declare_rt<M: Module>(
         worker_poll: mk("subscript_rt_worker_poll", &[I64, I64], Some(I64))?,
         worker_close: mk("subscript_rt_worker_close", &[I64, I64], None)?,
         worker_join: mk("subscript_rt_worker_join", &[I64, I64], Some(I32))?,
-        worker_inbox_wait: mk(
-            "subscript_rt_worker_inbox_wait",
-            &[I64, I64],
-            Some(I64),
-        )?,
-        worker_inbox_poll: mk(
-            "subscript_rt_worker_inbox_poll",
-            &[I64, I64],
-            Some(I64),
-        )?,
+        worker_inbox_wait: mk("subscript_rt_worker_inbox_wait", &[I64, I64], Some(I64))?,
+        worker_inbox_poll: mk("subscript_rt_worker_inbox_poll", &[I64, I64], Some(I64))?,
         worker_outbox_post: mk(
             "subscript_rt_worker_outbox_post",
             &[I64, I64, I64],
@@ -1124,8 +1083,7 @@ pub(crate) fn lower_module_with<M: Module>(
             globals_align = globals_align.max(align);
             globals_size = round_up_layout(globals_size, align, "Context globals layout")?;
             let at = globals_size;
-            globals_size =
-                checked_layout_add(globals_size, size, "Context globals layout")?;
+            globals_size = checked_layout_add(globals_size, size, "Context globals layout")?;
             GlobalSlot::Offset(at)
         } else {
             let name = format!("subscript_g{gi}");
@@ -1143,11 +1101,7 @@ pub(crate) fn lower_module_with<M: Module>(
         };
         ml.globals.insert(g.name.clone(), (slot, g.ty.clone()));
     }
-    globals_size = round_up_layout(
-        globals_size,
-        globals_align,
-        "final Context globals layout",
-    )?;
+    globals_size = round_up_layout(globals_size, globals_align, "final Context globals layout")?;
     ml.globals_size = globals_size;
     ml.globals_align = globals_align;
 
@@ -1158,7 +1112,11 @@ pub(crate) fn lower_module_with<M: Module>(
     // external linkage: they are the host-entry surface (Q12) and the
     // AOT entry program resolves them at link time.
     let decl = |ml: &mut ModLower<M>, key: FnKey, sym: String, sig: &Signature, export: bool| {
-        let linkage = if export { Linkage::Export } else { Linkage::Local };
+        let linkage = if export {
+            Linkage::Export
+        } else {
+            Linkage::Local
+        };
         let id = ml
             .module
             .declare_function(&sym, linkage, sig)
@@ -1176,8 +1134,12 @@ pub(crate) fn lower_module_with<M: Module>(
             format!("subscript_f{i}")
         };
         if f.is_generator || f.is_async {
-            let sig =
-                ml.make_sig(&params, &Type::Generator(Box::new(Type::Void)), false, false)?;
+            let sig = ml.make_sig(
+                &params,
+                &Type::Generator(Box::new(Type::Void)),
+                false,
+                false,
+            )?;
             decl(&mut ml, FnKey::Free(f.name.clone()), sym, &sig, false)?;
             let rsig = ml.resume_sig();
             decl(
@@ -1206,17 +1168,19 @@ pub(crate) fn lower_module_with<M: Module>(
         if let Some(ctor) = &c.ctor {
             let params: Vec<Type> = ctor.params.iter().map(|p| p.ty.clone()).collect();
             let sig = ml.make_sig(&params, &Type::Void, false, true)?;
-            decl(&mut ml, FnKey::Ctor(ci), format!("subscript_ctor{ci}"), &sig, false)?;
+            decl(
+                &mut ml,
+                FnKey::Ctor(ci),
+                format!("subscript_ctor{ci}"),
+                &sig,
+                false,
+            )?;
         }
         for (mi, m) in c.methods.iter().enumerate() {
             let params: Vec<Type> = m.params.iter().map(|p| p.ty.clone()).collect();
             if m.is_async {
-                let sig = ml.make_sig(
-                    &params,
-                    &Type::Generator(Box::new(Type::Void)),
-                    false,
-                    true,
-                )?;
+                let sig =
+                    ml.make_sig(&params, &Type::Generator(Box::new(Type::Void)), false, true)?;
                 decl(
                     &mut ml,
                     FnKey::Method(ci, m.name.clone()),
@@ -1246,7 +1210,13 @@ pub(crate) fn lower_module_with<M: Module>(
     }
     {
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
-        decl(&mut ml, FnKey::Init, "subscript_init".to_string(), &sig, true)?;
+        decl(
+            &mut ml,
+            FnKey::Init,
+            "subscript_init".to_string(),
+            &sig,
+            true,
+        )?;
     }
     if !hirm.worker_entries.is_empty() {
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
@@ -1322,10 +1292,7 @@ pub(crate) fn lower_module_with<M: Module>(
         .get("main")
         .and_then(|&i| {
             let f = &hirm.functions[i];
-            (f.exported
-                && !f.is_generator
-                && f.params.is_empty()
-                && f.ret == Type::Void)
+            (f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void)
                 .then_some(())
         })
         .ok_or_else(|| internal("no exported `main(): void` entry point"))
@@ -1370,8 +1337,7 @@ pub(crate) fn lower_module_with<M: Module>(
 #[cfg(test)]
 mod tests {
     use super::{
-        boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul,
-        round_up_layout,
+        boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul, round_up_layout,
     };
     use std::str::FromStr;
     use target_lexicon::Triple;

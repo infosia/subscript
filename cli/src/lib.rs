@@ -663,10 +663,12 @@ impl WatchedFiles {
 fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>, Failure> {
     let entry = std::fs::canonicalize(entry)
         .map_err(|error| Failure::usage(format!("resolve source {}: {error}", entry.display())))?;
-    let directory = entry
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| Failure::usage(format!("source {} has no parent directory", entry.display())))?;
+    let directory = entry.parent().map(Path::to_path_buf).ok_or_else(|| {
+        Failure::usage(format!(
+            "source {} has no parent directory",
+            entry.display()
+        ))
+    })?;
     let mut paths = vec![entry];
     for file in files.iter().skip(1) {
         let candidate = directory.join(&file.name);
@@ -763,12 +765,8 @@ fn write_watch_step<O: Write, E: Write>(
         write_warnings(files, &step.warnings, stderr)?;
     }
     if !step.diagnostics.is_empty() {
-        writeln!(
-            stderr,
-            "{}",
-            render_diagnostics(files, &step.diagnostics)
-        )
-        .map_err(|error| Failure::usage(format!("write diagnostics: {error}")))?;
+        writeln!(stderr, "{}", render_diagnostics(files, &step.diagnostics))
+            .map_err(|error| Failure::usage(format!("write diagnostics: {error}")))?;
     }
 
     match step.outcome {

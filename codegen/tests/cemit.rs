@@ -21,11 +21,10 @@ mod native_fixture;
 
 use subscript_codegen::{
     host_c_compiler, run_c_aot, run_c_aot_with_alloc_failure,
-    run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
-    run_c_aot_with_native_libraries, run_jit, run_jit_with_alloc_failure,
-    run_jit_with_freed_handle_diagnostics_and_native_libraries,
-    run_jit_with_memory_accounting, run_jit_with_native_libraries,
-    runtime_system_libraries, RunError, TrapReport,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
+    run_jit, run_jit_with_alloc_failure,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
+    run_jit_with_native_libraries, runtime_system_libraries, RunError, TrapReport,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -33,18 +32,12 @@ use subscript_runtime::TrapKind;
 type TrapOutcome = ((TrapKind, String, subscript_compiler::Pos), Vec<u8>);
 
 fn trap_outcome(report: TrapReport) -> TrapOutcome {
-    (
-        (report.rule, report.message, report.pos),
-        report.stdout,
-    )
+    ((report.rule, report.message, report.pos), report.stdout)
 }
 
 fn render_run(result: &Result<Vec<u8>, RunError>) -> String {
     match result {
-        Ok(stdout) => format!(
-            "Complete(stdout={:?})",
-            String::from_utf8_lossy(stdout)
-        ),
+        Ok(stdout) => format!("Complete(stdout={:?})", String::from_utf8_lossy(stdout)),
         Err(RunError::Trap(report)) => format!(
             "Trap(kind={}, message={:?}, position={}, stdout={:?})",
             report.rule,
@@ -71,22 +64,16 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         | "t11-rem-zero-loop-condition"
         | "t12-div-zero-array-element"
         | "t13-rem-zero-array-element" => (TrapKind::DivisionByZero, 10),
-        "t14-div-zero-call-divisor" | "t15-rem-zero-call-divisor" => {
-            (TrapKind::DivisionByZero, 14)
-        }
+        "t14-div-zero-call-divisor" | "t15-rem-zero-call-divisor" => (TrapKind::DivisionByZero, 14),
         "t16-array-write-oob" => (TrapKind::IndexOutOfBounds, 11),
-        "t17-fixed-array-read-oob" | "t18-fixed-array-write-oob" => {
-            (TrapKind::IndexOutOfBounds, 8)
-        }
+        "t17-fixed-array-read-oob" | "t18-fixed-array-write-oob" => (TrapKind::IndexOutOfBounds, 8),
         "t19-array-compound-second-write-oob" => (TrapKind::IndexOutOfBounds, 16),
         "t20-narrow-null" => (TrapKind::NullNarrowing, 20),
         "t21-narrow-class-mismatch" => (TrapKind::ClassMismatch, 27),
         "t22-double-delete-q6" => (TrapKind::DoubleDelete, 19),
         "t23-use-after-delete-q6" => (TrapKind::UseAfterDelete, 23),
         "t24-stale-coroutine-reload" => (TrapKind::StaleCoroutine, 19),
-        "t25-allocation-sites-before-second-template-fault" => {
-            (TrapKind::DivisionByZero, 21)
-        }
+        "t25-allocation-sites-before-second-template-fault" => (TrapKind::DivisionByZero, 21),
         "t26-allocation-failure-new" => (TrapKind::AllocationFailure, 17),
         "t27-dynamic-value-field-write-oob" => (TrapKind::IndexOutOfBounds, 25),
         "t28-allocation-failure-array-literal" => (TrapKind::AllocationFailure, 9),
@@ -111,9 +98,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31),
         "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10),
         "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10),
-        "t49-wire-enum-struct-unknown-member" => {
-            (TrapKind::WireEnumUnknownValue, 12)
-        }
+        "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -346,7 +331,10 @@ fn ship_c_aot_reports_a_date_range_trap_with_its_position() {
         "export function main(): void {\n  const d: Date = new Date(8640000000000001);\n  print(d.toISOString());\n}\n",
     )];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::DateRange, "{tier}");
@@ -369,7 +357,10 @@ fn ship_c_aot_reports_a_to_iso_year_range_trap() {
         "export function main(): void {\n  const d: Date = new Date(8640000000000000);\n  print(d.toISOString());\n}\n",
     )];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::DateRange, "{tier}");
@@ -390,7 +381,10 @@ fn ship_c_aot_reports_a_to_iso_year_range_trap() {
 fn assert_str_range_trap_identical(src: &str, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::StrRange, "{tier}");
@@ -588,8 +582,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         // dev-tier-only mode; a shipped C binary has no body-swap mode.
         if matches!(
             id.as_str(),
-            "t24-stale-coroutine-reload"
-                | "t34-allocation-failure-unrepresentable-policy"
+            "t24-stale-coroutine-reload" | "t34-allocation-failure-unrepresentable-policy"
         ) {
             continue;
         }
@@ -608,8 +601,10 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         let expected = trap_corpus::trap_expected(&trap, &id);
         let expected_file = format!("{id}.ts");
         let (expected_kind, expected_line) = trap_expectation(&id);
-        let freed_handle_diagnostic =
-            matches!(id.as_str(), "t22-double-delete-q6" | "t23-use-after-delete-q6");
+        let freed_handle_diagnostic = matches!(
+            id.as_str(),
+            "t22-double-delete-q6" | "t23-use-after-delete-q6"
+        );
         let callback_userdata_diagnostic = id == "t46-callback-userdata-freed";
         let (jit, ship) = if let Some(n) = allocation_failure_count(&id) {
             (
@@ -618,8 +613,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             )
         } else if freed_handle_diagnostic {
             (
-                run_jit_with_memory_accounting(&files, true)
-                    .map(|(stdout, _)| stdout),
+                run_jit_with_memory_accounting(&files, true).map(|(stdout, _)| stdout),
                 run_c_aot(&files),
             )
         } else if callback_userdata_diagnostic {
@@ -628,14 +622,8 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             #[cfg(all(windows, target_env = "msvc"))]
             let libraries: [subscript_codegen::NativeLibrary; 0] = [];
             (
-                run_jit_with_freed_handle_diagnostics_and_native_libraries(
-                    &files,
-                    &libraries,
-                ),
-                run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
-                    &files,
-                    &libraries,
-                ),
+                run_jit_with_freed_handle_diagnostics_and_native_libraries(&files, &libraries),
+                run_c_aot_with_freed_handle_diagnostics_and_native_libraries(&files, &libraries),
             )
         } else {
             #[cfg(not(all(windows, target_env = "msvc")))]
@@ -680,9 +668,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                     }
                 }
                 let freed_handle_message = match id.as_str() {
-                    "t22-double-delete-q6" => {
-                        Some("Context.free of an already-deleted allocation")
-                    }
+                    "t22-double-delete-q6" => Some("Context.free of an already-deleted allocation"),
                     "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
                     "t46-callback-userdata-freed" => {
                         Some("callback userdata points to a freed allocation")
@@ -761,19 +747,12 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
 
 #[test]
 fn p20_review_accept_entries_reach_both_generators() {
-    let accept =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
+    let accept = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
     let mut failures = Vec::new();
     for (id, expected) in [
         ("a74-p20-string-array-compound", b"as\n".as_slice()),
-        (
-            "a75-p20-array-compound-expression",
-            b"17,17\n".as_slice(),
-        ),
-        (
-            "a76-p20-dynamic-value-field-write",
-            b"14,1\n".as_slice(),
-        ),
+        ("a75-p20-array-compound-expression", b"17,17\n".as_slice()),
+        ("a76-p20-dynamic-value-field-write", b"14,1\n".as_slice()),
     ] {
         let path = accept.join(format!("{id}.ts"));
         let source = std::fs::read_to_string(&path)
@@ -930,8 +909,7 @@ fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
     .expect("wire-enum crossing checks cleanly");
     let c = emit_c(&hir).expect("wire-enum crossing emits C").source;
     assert!(
-        !c.contains("subscript_wire_values_0")
-            && !c.contains("subscript_wire_alias0"),
+        !c.contains("subscript_wire_values_0") && !c.contains("subscript_wire_alias0"),
         "wire-table storage survived the representation revision:\n{c}"
     );
     assert!(
@@ -946,8 +924,7 @@ fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
         "return crossing did not validate wire membership:\n{c}"
     );
     assert!(
-        c.contains("subscript_rt_trap_wire_enum(ctx,")
-            && c.contains("WireMode"),
+        c.contains("subscript_rt_trap_wire_enum(ctx,") && c.contains("WireMode"),
         "return crossing lacks the shared dynamic trap path:\n{c}"
     );
     let main = c
@@ -991,7 +968,10 @@ fn wire_enum_switch_formatting_and_boundary_member_read_use_wire_values() {
     .expect("wire boundary member checks cleanly");
     let c = emit_c(&hir).expect("wire boundary member emits C").source;
     for label in ["case 16:", "case 23:", "case -7:"] {
-        assert!(c.contains(label), "missing wire-valued switch label `{label}`:\n{c}");
+        assert!(
+            c.contains(label),
+            "missing wire-valued switch label `{label}`:\n{c}"
+        );
     }
     assert!(
         c.contains("subscript_rt_trap_wire_enum(ctx,")
@@ -1039,8 +1019,7 @@ fn absence_presence_test_emits_reserved_integer_compare() {
         "presence comparison consulted the Q32 formatting table: {comparison}"
     );
     assert!(
-        c.lines()
-            .any(|line| line.contains("->compare = -1")),
+        c.lines().any(|line| line.contains("->compare = -1")),
         "omission did not store the reserved -1 discriminant:\n{c}"
     );
 }
@@ -1051,11 +1030,8 @@ fn a115_string_literal_union_switch_emits_integer_c_switches() {
     use subscript_compiler::check_program;
 
     let source = include_str!("../../corpus/accept/a115-switch-literal-union.ts");
-    let hir = check_program(&[SourceFile::new(
-        "a115-switch-literal-union.ts",
-        source,
-    )])
-    .expect("a115 checks cleanly");
+    let hir = check_program(&[SourceFile::new("a115-switch-literal-union.ts", source)])
+        .expect("a115 checks cleanly");
     let c = emit_c(&hir).expect("a115 emits C").source;
     assert_eq!(
         c.matches("int32_t _disc =").count(),
@@ -1164,7 +1140,10 @@ fn foreign_c_names_come_from_typed_mirror_provenance() {
         .source;
     let engine_include = c.find("#include \"engine.h\"").expect("engine include");
     let audio_include = c.find("#include \"audio.h\"").expect("audio include");
-    assert!(engine_include < audio_include, "mirror ingestion order: {c}");
+    assert!(
+        engine_include < audio_include,
+        "mirror ingestion order: {c}"
+    );
     assert_eq!(c.matches("#include \"engine.h\"").count(), 1, "{c}");
     assert_eq!(c.matches("#include \"audio.h\"").count(), 1, "{c}");
     assert!(
@@ -1286,7 +1265,10 @@ fn array_trapping_map_callback_reports_identically_across_tiers() {
         "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const ys: i32[] = xs.map((v: i32): i32 => xs[v + 1]);\n  print(`${ys.length}`);\n}\n",
     )];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
@@ -1307,7 +1289,10 @@ fn array_empty_shift_reports_identically_across_tiers() {
         "export function main(): void {\n  const xs: i32[] = [];\n  print(`${xs.shift()}`);\n}\n",
     )];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::EmptyPop, "{tier}");
@@ -1340,7 +1325,10 @@ fn array_methods_match_across_tiers_without_a_golden() {
 fn assert_callback_trap_identical(src: &str, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
@@ -1363,7 +1351,8 @@ fn array_trapping_callbacks_report_identically_across_tiers() {
     // leaves the receiver byte-identical — is not observable in-language
     // (the trap returns from the function), so it is pinned in the
     // shared runtime instead (`arrops.rs`, `callback_traps_abort_...`).
-    const PROLOGUE: &str = "let sink: i32 = 0;\nexport function main(): void {\n  const xs: i32[] = [1, 2, 3];\n";
+    const PROLOGUE: &str =
+        "let sink: i32 = 0;\nexport function main(): void {\n  const xs: i32[] = [1, 2, 3];\n";
     for call in [
         "xs.forEach((v: i32): void => { sink = sink + xs[v + 1]; });",
         "sink = xs.filter((v: i32): boolean => xs[v + 1] > 0).length;",
@@ -1373,7 +1362,10 @@ fn array_trapping_callbacks_report_identically_across_tiers() {
         "sink = xs.findIndex((v: i32): boolean => xs[v + 1] > 5);",
         "sink = xs.sort((a: i32, b: i32): i32 => xs[a + b] - 1).length;",
     ] {
-        assert_callback_trap_identical(&format!("{PROLOGUE}  {call}\n  print(`${{sink}}`);\n}}\n"), 4);
+        assert_callback_trap_identical(
+            &format!("{PROLOGUE}  {call}\n  print(`${{sink}}`);\n}}\n"),
+            4,
+        );
     }
 }
 
@@ -1391,8 +1383,7 @@ fn array_callback_growth_during_iteration_is_defined_on_both_tiers() {
 
 #[test]
 fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
-    let accept =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
+    let accept = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
     for id in [
         "a51-map",
         "a52-map-order",
@@ -1775,9 +1766,7 @@ fn allocation_metadata_regenerates_byte_identically() {
         "generated allocation metadata header drifted"
     );
     assert_eq!(
-        program
-            .allocation_metadata_source
-            .as_bytes(),
+        program.allocation_metadata_source.as_bytes(),
         include_bytes!("fixtures/p21-allocation-metadata.inc"),
         "generated allocation class/position tables drifted"
     );
@@ -1831,10 +1820,8 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
-    let dir = std::env::temp_dir().join(format!(
-        "subscript-cemit-pinned-now-{}",
-        std::process::id()
-    ));
+    let dir =
+        std::env::temp_dir().join(format!("subscript-cemit-pinned-now-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let _cleanup = Cleanup(dir.clone());
 
@@ -1911,7 +1898,9 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
         tool_output_report(&compile)
     );
 
-    let run = Command::new(&exe_path).output().expect("run linked program");
+    let run = Command::new(&exe_path)
+        .output()
+        .expect("run linked program");
     assert!(
         run.status.success(),
         "linked program exited with {}: {}",
@@ -1936,7 +1925,10 @@ fn ship_c_aot_reports_an_out_of_bounds_trap_with_its_position() {
         "function at(xs: FixedArray<i32, 3>, i: i32): i32 {\n  return xs[i];\n}\nexport function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${at(xs, 5)}`);\n}\n",
     )];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::IndexOutOfBounds, "{tier}");
@@ -1957,7 +1949,10 @@ fn ship_c_aot_reports_a_division_by_zero_trap() {
         "function f(d: i32): i32 {\n  return 10 / d;\n}\nexport function main(): void {\n  print(`${f(0)}`);\n}\n",
     )];
     let mut outcomes = Vec::new();
-    for (tier, result) in [("dev-JIT", run_jit(&files)), ("ship-C-AOT", run_c_aot(&files))] {
+    for (tier, result) in [
+        ("dev-JIT", run_jit(&files)),
+        ("ship-C-AOT", run_c_aot(&files)),
+    ] {
         match result {
             Err(RunError::Trap(t)) => {
                 assert_eq!(t.rule, TrapKind::DivisionByZero, "{tier}");

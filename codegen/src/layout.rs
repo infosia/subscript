@@ -57,10 +57,7 @@ pub(crate) fn arr_fmt_kind(ty: &Type) -> Result<hir::ArrFmtKind, String> {
 
 /// The [`hir::AssocKeyKind`] of a `Map` / `Set` key under the module's
 /// class table (stdlib.md §10, Q24).
-pub(crate) fn assoc_key_kind(
-    module: &hir::Module,
-    ty: &Type,
-) -> Result<hir::AssocKeyKind, String> {
+pub(crate) fn assoc_key_kind(module: &hir::Module, ty: &Type) -> Result<hir::AssocKeyKind, String> {
     hir::AssocKeyKind::of(ty, &|id| {
         module.classes.get(id.0).is_some_and(|class| class.is_value)
     })
@@ -199,9 +196,11 @@ fn round_up(value: u32, align: u32) -> Result<u32, String> {
     let mask = align
         .checked_sub(1)
         .ok_or_else(|| internal("zero layout alignment"))?;
-    let sum = value
-        .checked_add(mask)
-        .ok_or_else(|| internal(format!("rounding {value} to alignment {align} overflows u32")))?;
+    let sum = value.checked_add(mask).ok_or_else(|| {
+        internal(format!(
+            "rounding {value} to alignment {align} overflows u32"
+        ))
+    })?;
     ensure_supported_size(sum & !mask, "aligned aggregate layout")
 }
 
@@ -288,8 +287,7 @@ impl<'m> Builder<'m> {
 
 /// Size/alignment of every non-class, non-nested type.
 fn scalar_size_align(ty: &Type) -> Result<(u32, u32), String> {
-    compiler_scalar_size_align(ty)
-        .ok_or_else(|| internal(format!("unsized type {ty:?}")))
+    compiler_scalar_size_align(ty).ok_or_else(|| internal(format!("unsized type {ty:?}")))
 }
 
 impl Layouts {
@@ -444,9 +442,7 @@ pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
         | Type::Map(..)
         | Type::Set(_)
         | Type::Generator(_) => true,
-        Type::Nullable(inner) => {
-            is_managed(layouts, inner)? || matches!(**inner, Type::Func(_))
-        }
+        Type::Nullable(inner) => is_managed(layouts, inner)? || matches!(**inner, Type::Func(_)),
         Type::Class(id) => !layouts.class(id.0)?.is_value,
         _ => false,
     })
@@ -537,21 +533,19 @@ fn type_contains_managed(
         Type::Nullable(inner) => match &**inner {
             // A nullable value-class slot is a borrowed C struct pointer,
             // not an embedded copy of the pointed-to record.
-            Type::Class(id) => !module
-                .classes
-                .get(id.0)
-                .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?
-                .is_value,
+            Type::Class(id) => {
+                !module
+                    .classes
+                    .get(id.0)
+                    .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?
+                    .is_value
+            }
             Type::Func(_) => true,
             other => type_contains_managed(module, other, memo, known, visiting)?,
         },
         Type::Class(id) => class_contains_managed(module, id.0, memo, known, visiting)?,
-        Type::FixedArray(elem, _) => {
-            type_contains_managed(module, elem, memo, known, visiting)?
-        }
-        Type::IterResult(value) => {
-            type_contains_managed(module, value, memo, known, visiting)?
-        }
+        Type::FixedArray(elem, _) => type_contains_managed(module, elem, memo, known, visiting)?,
+        Type::IterResult(value) => type_contains_managed(module, value, memo, known, visiting)?,
         _ => false,
     })
 }
@@ -754,9 +748,18 @@ mod tests {
         assert_eq!(
             layouts[0].fields,
             vec![
-                FieldLayout { name: "a".into(), offset: 0 },
-                FieldLayout { name: "b".into(), offset: 8 },
-                FieldLayout { name: "c".into(), offset: 16 },
+                FieldLayout {
+                    name: "a".into(),
+                    offset: 0
+                },
+                FieldLayout {
+                    name: "b".into(),
+                    offset: 8
+                },
+                FieldLayout {
+                    name: "c".into(),
+                    offset: 16
+                },
             ]
         );
         assert_eq!(layouts[1].name, "V");
@@ -764,8 +767,14 @@ mod tests {
         assert_eq!(
             layouts[1].fields,
             vec![
-                FieldLayout { name: "x".into(), offset: 0 },
-                FieldLayout { name: "y".into(), offset: 4 },
+                FieldLayout {
+                    name: "x".into(),
+                    offset: 0
+                },
+                FieldLayout {
+                    name: "y".into(),
+                    offset: 4
+                },
             ]
         );
     }
@@ -781,14 +790,20 @@ mod tests {
     #[test]
     fn iter_result_layout_is_bool_then_aligned_value() {
         let layouts = layouts_of("export function main(): void {}\n");
-        assert_eq!(layouts.iter_result_value_offset(&Type::I32).expect("off"), 4);
+        assert_eq!(
+            layouts.iter_result_value_offset(&Type::I32).expect("off"),
+            4
+        );
         assert_eq!(
             layouts
                 .size_align(&Type::IterResult(Box::new(Type::I32)))
                 .expect("size"),
             (8, 4)
         );
-        assert_eq!(layouts.iter_result_value_offset(&Type::F64).expect("off"), 8);
+        assert_eq!(
+            layouts.iter_result_value_offset(&Type::F64).expect("off"),
+            8
+        );
         assert_eq!(
             layouts
                 .size_align(&Type::IterResult(Box::new(Type::F64)))

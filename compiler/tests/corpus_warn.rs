@@ -16,11 +16,7 @@ fn corpus_dir() -> PathBuf {
 const EXPECTED: &[(&str, WarnCode, u32)] = &[
     ("w01-loop-allocation-unreleased.ts", WarnCode::W001, 17),
     ("w02-use-after-free.ts", WarnCode::W002, 18),
-    (
-        "w03-fresh-callback-userdata-loop.ts",
-        WarnCode::W003,
-        19,
-    ),
+    ("w03-fresh-callback-userdata-loop.ts", WarnCode::W003, 19),
 ];
 
 fn checked_warnings(files: Vec<SourceFile>, label: &str) -> Vec<Warning> {

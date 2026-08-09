@@ -175,10 +175,7 @@ pub unsafe extern "C" fn subscript_rt_boundary_scratch_alloc(
 ///
 /// Shared contract; `mark` came from this Context.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_boundary_scratch_release(
-    ctx: *mut Context,
-    mark: u64,
-) {
+pub unsafe extern "C" fn subscript_rt_boundary_scratch_release(ctx: *mut Context, mark: u64) {
     unsafe { &mut *ctx }.boundary_scratch_release(mark as usize);
 }
 
@@ -348,9 +345,7 @@ pub unsafe extern "C" fn subscript_rt_assoc_iter_copy(
         return 0;
     }
     // SAFETY: receiver and output follow the shared traversal ABI.
-    i32::from(unsafe {
-        crate::assocops::iteration_copy(handle, index as usize, value != 0, out)
-    })
+    i32::from(unsafe { crate::assocops::iteration_copy(handle, index as usize, value != 0, out) })
 }
 
 /// Ends a traversal begun by [`subscript_rt_assoc_iter_begin`].
@@ -752,15 +747,9 @@ pub unsafe extern "C" fn subscript_rt_map_group_by(
     }
 }
 
-unsafe fn set_pair_is_live(
-    ctx: *mut Context,
-    left: *mut u8,
-    right: *mut u8,
-    pos_id: u32,
-) -> bool {
+unsafe fn set_pair_is_live(ctx: *mut Context, left: *mut u8, right: *mut u8, pos_id: u32) -> bool {
     let runtime = unsafe { &mut *ctx };
-    assoc_receiver_is_live(runtime, left, pos_id)
-        && assoc_receiver_is_live(runtime, right, pos_id)
+    assoc_receiver_is_live(runtime, left, pos_id) && assoc_receiver_is_live(runtime, right, pos_id)
 }
 
 /// `Set.union`: returns a fresh result in ES2024 order.
@@ -935,12 +924,7 @@ pub unsafe extern "C" fn subscript_rt_str_from_view(
 ///
 /// When `ptr` is non-null and `len` is nonzero it points at `len` readable
 /// bytes for this call.
-unsafe fn alloc_str_from_view(
-    ctx: &mut Context,
-    ptr: *const u8,
-    len: u64,
-    pos_id: u32,
-) -> *mut u8 {
+unsafe fn alloc_str_from_view(ctx: &mut Context, ptr: *const u8, len: u64, pos_id: u32) -> *mut u8 {
     let bytes: &[u8] = if ptr.is_null() || len == 0 {
         &[]
     } else {
@@ -1538,7 +1522,11 @@ unsafe fn str_trim_with(
 ///
 /// Shared contract; `s` is a live string handle.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_str_trim(ctx: *mut Context, s: *const u8, pos_id: u32) -> *mut u8 {
+pub unsafe extern "C" fn subscript_rt_str_trim(
+    ctx: *mut Context,
+    s: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
     // SAFETY: shared contract (forwarded).
     unsafe { str_trim_with(ctx, s, pos_id, crate::strops::trim) }
 }
@@ -1649,7 +1637,10 @@ unsafe fn str_pad(
         );
         return std::ptr::null_mut();
     }
-    ctx.alloc_str(&crate::strops::pad(&bytes, target, &pad_bytes, at_start), pos_id)
+    ctx.alloc_str(
+        &crate::strops::pad(&bytes, target, &pad_bytes, at_start),
+        pos_id,
+    )
 }
 
 /// `padStart(len, pad)` — see [`str_pad`]. The checker supplies the
@@ -2122,11 +2113,7 @@ pub unsafe extern "C" fn subscript_rt_json_finish(
     match ctx.json_builders().finish(builder) {
         Some(bytes) => ctx.alloc_str(&bytes, pos_id),
         None => {
-            ctx.trap(
-                TrapKind::Internal,
-                "unknown JSON builder in finish",
-                pos_id,
-            );
+            ctx.trap(TrapKind::Internal, "unknown JSON builder in finish", pos_id);
             std::ptr::null_mut()
         }
     }
@@ -2178,12 +2165,7 @@ macro_rules! json_integer {
         ///
         /// Shared contract; `builder` is live.
         #[no_mangle]
-        pub unsafe extern "C" fn $name(
-            ctx: *mut Context,
-            builder: u64,
-            value: $ty,
-            pos_id: u32,
-        ) {
+        pub unsafe extern "C" fn $name(ctx: *mut Context, builder: u64, value: $ty, pos_id: u32) {
             // SAFETY: shared contract.
             let ctx = unsafe { &mut *ctx };
             let ok = ctx.json_builders().$method(builder, value);
@@ -2300,11 +2282,7 @@ pub unsafe extern "C" fn subscript_rt_json_date(
 ///
 /// Shared contract; `builder` is live.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_json_null(
-    ctx: *mut Context,
-    builder: u64,
-    pos_id: u32,
-) {
+pub unsafe extern "C" fn subscript_rt_json_null(ctx: *mut Context, builder: u64, pos_id: u32) {
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
     let ok = ctx.json_builders().raw(builder, b"null");
@@ -2707,10 +2685,7 @@ pub unsafe extern "C" fn subscript_rt_num_is_integer(_ctx: *mut Context, value: 
 ///
 /// Shared contract; `ctx` is intentionally unused.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_num_is_safe_integer(
-    _ctx: *mut Context,
-    value: f64,
-) -> i32 {
+pub unsafe extern "C" fn subscript_rt_num_is_safe_integer(_ctx: *mut Context, value: f64) -> i32 {
     i32::from(crate::num::is_safe_integer(value))
 }
 
@@ -3297,14 +3272,11 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_freed_handle_diagnostics(
     let min_payload_bytes = usize::try_from(min_payload_bytes).unwrap_or(usize::MAX);
     let max_retained_bytes = usize::try_from(max_retained_bytes).unwrap_or(usize::MAX);
     // SAFETY: exclusive Context contract.
-    i32::from(
-        unsafe { &mut *ctx }
-            .set_freed_handle_diagnostics(
-                enabled != 0,
-                min_payload_bytes,
-                max_retained_bytes,
-            ),
-    )
+    i32::from(unsafe { &mut *ctx }.set_freed_handle_diagnostics(
+        enabled != 0,
+        min_payload_bytes,
+        max_retained_bytes,
+    ))
 }
 
 /// Refuses the `n`-th subsequent object-level Context allocation.
@@ -3367,10 +3339,7 @@ pub unsafe extern "C" fn subscript_rt_array_push(
     pos_id: u32,
 ) -> i32 {
     let runtime = unsafe { &mut *ctx };
-    if a.is_null()
-        || src.is_null()
-        || !runtime.require_live_handle(a as usize, pos_id)
-    {
+    if a.is_null() || src.is_null() || !runtime.require_live_handle(a as usize, pos_id) {
         return -1;
     }
     // SAFETY: receiver liveness was checked above; the shared contract
@@ -3470,9 +3439,8 @@ pub unsafe extern "C" fn subscript_rt_array_spread_assoc(
     let bound = unsafe { crate::assocops::iteration_begin(source) };
     for index in 0..bound {
         // SAFETY: scratch covers every accepted key width.
-        if unsafe {
-            crate::assocops::iteration_copy(source, index, false, scratch.as_mut_ptr())
-        } && unsafe { runtime.array_push(out, scratch.as_ptr(), pos_id) } < 0
+        if unsafe { crate::assocops::iteration_copy(source, index, false, scratch.as_mut_ptr()) }
+            && unsafe { runtime.array_push(out, scratch.as_ptr(), pos_id) } < 0
         {
             break;
         }
@@ -3506,22 +3474,14 @@ pub unsafe extern "C" fn subscript_rt_array_spread_string(
     while index < end {
         let mut next = index;
         // SAFETY: validated source and writable next index.
-        let value = unsafe {
-            subscript_rt_str_iter_code_point(ctx, source, index, &mut next, pos_id)
-        };
+        let value =
+            unsafe { subscript_rt_str_iter_code_point(ctx, source, index, &mut next, pos_id) };
         if value.is_null() || unsafe { (&*ctx).trapped() } {
             break;
         }
         let stored = value;
         // SAFETY: output element is one string handle.
-        if unsafe {
-            (&mut *ctx).array_push(
-                out,
-                (&raw const stored).cast::<u8>(),
-                pos_id,
-            )
-        } < 0
-        {
+        if unsafe { (&mut *ctx).array_push(out, (&raw const stored).cast::<u8>(), pos_id) } < 0 {
             break;
         }
         index = next;
@@ -4122,10 +4082,9 @@ pub unsafe extern "C" fn subscript_rt_fixed_arr_map(
     pos_id: u32,
     indexed: u32,
 ) -> *mut u8 {
-    let (Some(elem_kind), Some(ret_kind)) = (
-        unsafe { decode_elem_kind(ctx, elem_kind) },
-        unsafe { decode_elem_kind(ctx, ret_kind) },
-    ) else {
+    let (Some(elem_kind), Some(ret_kind)) = (unsafe { decode_elem_kind(ctx, elem_kind) }, unsafe {
+        decode_elem_kind(ctx, ret_kind)
+    }) else {
         return std::ptr::null_mut();
     };
     unsafe {
@@ -4194,10 +4153,9 @@ unsafe fn fixed_arr_reduce_entry(
     acc: *mut u8,
     indexed: u32,
 ) {
-    let (Some(elem_kind), Some(acc_kind)) = (
-        unsafe { decode_elem_kind(ctx, elem_kind) },
-        unsafe { decode_elem_kind(ctx, acc_kind) },
-    ) else {
+    let (Some(elem_kind), Some(acc_kind)) = (unsafe { decode_elem_kind(ctx, elem_kind) }, unsafe {
+        decode_elem_kind(ctx, acc_kind)
+    }) else {
         return;
     };
     if right {
@@ -4284,8 +4242,7 @@ pub unsafe extern "C" fn subscript_rt_fixed_arr_reduce_right(
 ) {
     unsafe {
         fixed_arr_reduce_entry(
-            true, ctx, data, len, elem_size, code, env, elem_kind, acc_kind, acc_size, acc,
-            indexed,
+            true, ctx, data, len, elem_size, code, env, elem_kind, acc_kind, acc_size, acc, indexed,
         )
     };
 }
@@ -4558,15 +4515,7 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
     // SAFETY: `code` is a language callback wrapper of this shape.
     let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(code) };
     // SAFETY: calling generated code that never unwinds across FFI.
-    unsafe {
-        f(
-            ctx_ptr,
-            env,
-            s,
-            callback_userdata1,
-            callback_userdata2,
-        )
-    };
+    unsafe { f(ctx_ptr, env, s, callback_userdata1, callback_userdata2) };
 }
 
 // ----- host driver entry points -----
@@ -4605,7 +4554,11 @@ pub unsafe extern "C" fn subscript_rt_worker_spawn(
     // SAFETY: shared exclusive Context contract.
     let parent = unsafe { &mut *parent };
     let Some(init) = init else {
-        parent.trap(TrapKind::Internal, "worker spawn requires an initializer", 0);
+        parent.trap(
+            TrapKind::Internal,
+            "worker spawn requires an initializer",
+            0,
+        );
         return std::ptr::null_mut();
     };
     let Some(entry) = entry else {
@@ -4681,10 +4634,7 @@ pub unsafe extern "C" fn subscript_rt_worker_poll(
 ///
 /// `parent` follows the exclusive Context contract and `worker` belongs to it.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_worker_close(
-    parent: *mut Context,
-    worker: *mut Worker,
-) {
+pub unsafe extern "C" fn subscript_rt_worker_close(parent: *mut Context, worker: *mut Worker) {
     // SAFETY: forwarded parent and worker contracts.
     unsafe { &mut *parent }.worker_close(worker);
 }
@@ -4860,7 +4810,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_trap_pos_id(ctx: *const Context) -> u3
 ///
 /// Shared contract; `len` is a writable `u64`.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_ctx_trap_message(ctx: *const Context, len: *mut u64) -> *const u8 {
+pub unsafe extern "C" fn subscript_rt_ctx_trap_message(
+    ctx: *const Context,
+    len: *mut u64,
+) -> *const u8 {
     // SAFETY: shared contract.
     let msg = unsafe { &*ctx }.trap_record().map(|r| r.message.as_bytes());
     let bytes = msg.unwrap_or(&[]);
@@ -5124,19 +5077,21 @@ mod tests {
 
     #[test]
     fn globals_init_conversion_failures_trap_before_returning_null() {
-        for converted in [
-            [None, Some(8usize)],
-            [Some(8usize), None],
-        ] {
+        for converted in [[None, Some(8usize)], [Some(8usize), None]] {
             let mut ctx = Context::new();
             let mut converted = converted.into_iter();
             let globals = globals_init_with_conversion(&mut ctx, 8, 8, |_| {
-                converted.next().expect("one conversion result per argument")
+                converted
+                    .next()
+                    .expect("one conversion result per argument")
             });
             assert!(globals.is_null());
             let trap = ctx.trap_record().expect("conversion failure traps");
             assert_eq!(trap.kind, TrapKind::Internal);
-            assert_eq!(trap.message, "module-global block layout is not representable");
+            assert_eq!(
+                trap.message,
+                "module-global block layout is not representable"
+            );
             assert_eq!(trap.pos_id, 0);
         }
     }
@@ -5410,10 +5365,7 @@ mod tests {
             );
             assert_ne!(first, second);
             assert_eq!(observed.calls, 1);
-            assert_eq!(
-                observed.kind,
-                crate::DIAGNOSTICS_ADVISORY_BINDING_COUNT
-            );
+            assert_eq!(observed.kind, crate::DIAGNOSTICS_ADVISORY_BINDING_COUNT);
             assert_eq!(observed.pos_id, 0);
             assert_eq!(
                 observed.message,
@@ -5484,10 +5436,11 @@ mod tests {
             payload_bytes: u64,
         ) {
             // SAFETY: each call below supplies a live Vec of this type.
-            unsafe {
-                &mut *userdata.cast::<Vec<(u32, u32, u64)>>()
-            }
-            .push((class_id, pos_id, payload_bytes));
+            unsafe { &mut *userdata.cast::<Vec<(u32, u32, u64)>>() }.push((
+                class_id,
+                pos_id,
+                payload_bytes,
+            ));
         }
 
         unsafe fn snapshot(ctx: *const Context) -> Vec<(u32, u32, u64)> {
@@ -5504,10 +5457,7 @@ mod tests {
             allocations
         }
 
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let p: *mut Context = &mut *ctx;
 
             let bmp_bytes = "é".repeat(1_000).into_bytes();
@@ -5531,7 +5481,11 @@ mod tests {
             }
             assert_eq!(index as usize, bmp_bytes.len(), "{tier}");
             // SAFETY: `bmp_handle` is the returned tagged BMP string.
-            assert_eq!(unsafe { ctx.str_bytes(bmp_handle) }, "é".as_bytes(), "{tier}");
+            assert_eq!(
+                unsafe { ctx.str_bytes(bmp_handle) },
+                "é".as_bytes(),
+                "{tier}"
+            );
             assert_eq!(
                 unsafe { snapshot(p) },
                 before_bmp,
@@ -5563,7 +5517,11 @@ mod tests {
             }
             assert_eq!(index as usize, astral_bytes.len(), "{tier}");
             // SAFETY: `astral_handle` is the live interned string.
-            assert_eq!(unsafe { ctx.str_bytes(astral_handle) }, "😀".as_bytes(), "{tier}");
+            assert_eq!(
+                unsafe { ctx.str_bytes(astral_handle) },
+                "😀".as_bytes(),
+                "{tier}"
+            );
             let after_astral = unsafe { snapshot(p) };
             assert_eq!(
                 after_astral.len(),
@@ -5638,10 +5596,7 @@ mod tests {
     fn exported_delete_invalidates_literal_and_astral_string_interns() {
         static LITERAL: &[u8] = b"interned";
 
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let p: *mut Context = &mut *ctx;
 
             // SAFETY: the static literal and exclusive Context satisfy the
@@ -5672,10 +5627,7 @@ mod tests {
 
     #[test]
     fn ffi_trap_observer_is_first_wins_and_null_clears_on_both_tier_policies() {
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let p: *mut Context = &mut *ctx;
             let mut observed = ObservedTrap::default();
             // SAFETY: live exclusive Context and live callback userdata.
@@ -5736,10 +5688,7 @@ mod tests {
 
     #[test]
     fn ffi_clear_trap_checks_depth_and_preserves_state_on_both_tier_policies() {
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let kept = ctx.alloc(8, 1, 0);
             ctx.print_line(b"before");
             ctx.bump_reload_epoch();
@@ -6169,7 +6118,10 @@ mod tests {
         unsafe {
             let a = subscript_rt_array_new(p, 4, 0);
             let v: i32 = 11;
-            assert_eq!(subscript_rt_array_push(p, a, &v as *const i32 as *const u8, 0), 1);
+            assert_eq!(
+                subscript_rt_array_push(p, a, &v as *const i32 as *const u8, 0),
+                1
+            );
             assert_eq!(subscript_rt_array_len(p, a), 1);
             assert!(subscript_rt_array_ptr(p, a, 3, 9).is_null());
         }
@@ -6303,14 +6255,20 @@ mod tests {
             let ms = subscript_rt_date_utc(p, 2020, 5, 15, 12, 34, 56, 789, 0);
             assert_eq!(ms, 1_592_224_496_789);
             assert_eq!(subscript_rt_date_new(p, ms, 0), ms);
-            assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_FULL_YEAR), 2020);
+            assert_eq!(
+                subscript_rt_date_get(p, ms, crate::date::FIELD_FULL_YEAR),
+                2020
+            );
             assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_MONTH), 5);
             assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_DATE), 15);
             assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_DAY), 1);
             assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_HOURS), 12);
             assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_MINUTES), 34);
             assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_SECONDS), 56);
-            assert_eq!(subscript_rt_date_get(p, ms, crate::date::FIELD_MILLISECONDS), 789);
+            assert_eq!(
+                subscript_rt_date_get(p, ms, crate::date::FIELD_MILLISECONDS),
+                789
+            );
             let iso = subscript_rt_date_to_iso(p, ms, 0);
             assert_eq!(ctx.str_bytes(iso), b"2020-06-15T12:34:56.789Z");
         }
@@ -6433,9 +6391,18 @@ mod tests {
                 subscript_rt_array_push(p, a, (&v as *const i32).cast(), 0);
             }
             let one = 1i32;
-            assert_eq!(subscript_rt_arr_index_of(p, a, (&one as *const i32).cast(), 0), 1);
-            assert_eq!(subscript_rt_arr_last_index_of(p, a, (&one as *const i32).cast(), 0), 3);
-            assert_eq!(subscript_rt_arr_includes(p, a, (&one as *const i32).cast(), 0), 1);
+            assert_eq!(
+                subscript_rt_arr_index_of(p, a, (&one as *const i32).cast(), 0),
+                1
+            );
+            assert_eq!(
+                subscript_rt_arr_last_index_of(p, a, (&one as *const i32).cast(), 0),
+                3
+            );
+            assert_eq!(
+                subscript_rt_arr_includes(p, a, (&one as *const i32).cast(), 0),
+                1
+            );
             let sep = ctx.alloc_str(b"-", 0);
             let joined = subscript_rt_arr_join(p, a, sep, 0, 0);
             assert_eq!(ctx.str_bytes(joined), b"3-1-2-1");
@@ -6462,14 +6429,7 @@ mod tests {
             subscript_rt_arr_fill(p, a, (&z as *const i32).cast(), 0, i32::MAX);
             subscript_rt_arr_reverse(p, a);
             assert_eq!(
-                subscript_rt_arr_every(
-                    p,
-                    a,
-                    triple_i32 as *const u8,
-                    std::ptr::null(),
-                    0,
-                    0,
-                ),
+                subscript_rt_arr_every(p, a, triple_i32 as *const u8, std::ptr::null(), 0, 0,),
                 0
             );
         }
@@ -6484,7 +6444,10 @@ mod tests {
         let x = 1i32;
         // SAFETY: valid context; live array; readable needle.
         unsafe {
-            assert_eq!(subscript_rt_arr_index_of(p, a, (&x as *const i32).cast(), 99), -1);
+            assert_eq!(
+                subscript_rt_arr_index_of(p, a, (&x as *const i32).cast(), 99),
+                -1
+            );
         }
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
     }

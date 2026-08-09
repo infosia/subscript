@@ -257,7 +257,10 @@ fn validate_nullable_positions(
 fn is_direct_registered_handle(field: &CField, registry: &HashMap<String, Kind>) -> bool {
     !field.pointer
         && field.array_len.is_none()
-        && matches!(registry.get(&field.base), Some(Kind::Handle | Kind::External))
+        && matches!(
+            registry.get(&field.base),
+            Some(Kind::Handle | Kind::External)
+        )
 }
 
 /// Rejects C positions that the mirror vocabulary or either lowering
@@ -430,15 +433,13 @@ fn validate_boundary_positions(
                             &mut HashSet::new(),
                         )?
                     {
-                        if let Some((inner_owner, inner_member)) =
-                            first_recursive_lowered_member(
-                                parsed,
-                                registry,
-                                &param.base,
-                                0,
-                                &mut HashSet::new(),
-                            )?
-                        {
+                        if let Some((inner_owner, inner_member)) = first_recursive_lowered_member(
+                            parsed,
+                            registry,
+                            &param.base,
+                            0,
+                            &mut HashSet::new(),
+                        )? {
                             return Err(ParseError(format!(
                                 "foreign function `{name}` parameter `{}` may read recursively-\
                                  lowered member `{inner_owner}.{inner_member}`; recursive \
@@ -449,12 +450,13 @@ fn validate_boundary_positions(
                     }
                     if !param.pointer && param.array_len.is_none() {
                         if let Some(Kind::ArrayPair(element)) = registry.get(&param.base) {
-                            let element_pointer_const = parsed.decls.iter().find_map(|decl| match decl {
-                                Decl::Struct { name, fields } if name == &param.base => {
-                                    fields.first().map(|field| field.is_const)
-                                }
-                                _ => None,
-                            });
+                            let element_pointer_const =
+                                parsed.decls.iter().find_map(|decl| match decl {
+                                    Decl::Struct { name, fields } if name == &param.base => {
+                                        fields.first().map(|field| field.is_const)
+                                    }
+                                    _ => None,
+                                });
                             if element_pointer_const == Some(false) {
                                 if let Some((inner_owner, inner_member)) =
                                     first_recursive_lowered_member(
@@ -623,12 +625,8 @@ fn validate_boundary_positions(
                 None
             };
             if let Some(root) = root {
-                let root_needs_scratch = boundary_aggregate_needs_scratch(
-                    parsed,
-                    registry,
-                    root,
-                    &mut HashSet::new(),
-                )?;
+                let root_needs_scratch =
+                    boundary_aggregate_needs_scratch(parsed, registry, root, &mut HashSet::new())?;
                 if root_needs_scratch {
                     validate_lowerable_boundary_aggregate(
                         parsed,
@@ -653,9 +651,9 @@ fn validate_boundary_positions(
     for owner in &string_field_structs {
         if !pointer_lowered.contains(owner) {
             let field = parsed.decls.iter().find_map(|decl| match decl {
-                Decl::Struct { name, fields } if name == owner => fields.iter().find(|field| {
-                    matches!(registry.get(&field.base), Some(Kind::StringView))
-                }),
+                Decl::Struct { name, fields } if name == owner => fields
+                    .iter()
+                    .find(|field| matches!(registry.get(&field.base), Some(Kind::StringView))),
                 _ => None,
             });
             return Err(ParseError(format!(
@@ -770,13 +768,7 @@ fn validate_lowerable_boundary_aggregate(
                 &field.base,
                 visiting,
             )?,
-            Some(
-                Kind::Enum
-                | Kind::Handle
-                | Kind::Alias
-                | Kind::External
-                | Kind::CEnum(_),
-            )
+            Some(Kind::Enum | Kind::Handle | Kind::Alias | Kind::External | Kind::CEnum(_))
             | None => {}
         }
     }
@@ -813,21 +805,11 @@ fn boundary_aggregate_needs_scratch(
             || (field.pointer
                 && field.array_len.is_none()
                 && matches!(registry.get(&field.base), Some(Kind::Boundary))
-                && boundary_aggregate_needs_scratch(
-                    parsed,
-                    registry,
-                    &field.base,
-                    visiting,
-                )?)
+                && boundary_aggregate_needs_scratch(parsed, registry, &field.base, visiting)?)
             || (!field.pointer
                 && field.array_len.is_none()
                 && matches!(registry.get(&field.base), Some(Kind::Boundary))
-                && boundary_aggregate_needs_scratch(
-                    parsed,
-                    registry,
-                    &field.base,
-                    visiting,
-                )?);
+                && boundary_aggregate_needs_scratch(parsed, registry, &field.base, visiting)?);
         if needs {
             visiting.remove(aggregate);
             return Ok(true);
@@ -1059,10 +1041,7 @@ fn emit_provenance(
             Decl::Func { name, params, .. } => {
                 emit_parameter_provenance(name, params, parsed, registry, &mut records)?;
             }
-            Decl::Enum { .. }
-            | Decl::FnPtr { .. }
-            | Decl::Struct { .. }
-            | Decl::Handle { .. } => {}
+            Decl::Enum { .. } | Decl::FnPtr { .. } | Decl::Struct { .. } | Decl::Handle { .. } => {}
         }
     }
     Ok(Some(records.join("\n")))
@@ -1077,8 +1056,7 @@ fn emit_parameter_provenance(
     registry: &HashMap<String, Kind>,
     records: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    let parameter_pairs =
-        parameter_array_pairs("foreign function", owner_name, params, registry)?;
+    let parameter_pairs = parameter_array_pairs("foreign function", owner_name, params, registry)?;
     for (index, param) in params.iter().enumerate() {
         if parameter_pairs.count_idx.contains(&index) {
             continue;
@@ -1173,10 +1151,7 @@ fn validate_callback_shapes(
 /// boundary through a field of an emitted struct. Direct foreign-function
 /// parameters and returns were rejected before this walk. Unreferenced
 /// host-only hooks are not part of the mirror.
-fn reachable_callbacks(
-    parsed: &Parsed,
-    registry: &HashMap<String, Kind>,
-) -> HashSet<String> {
+fn reachable_callbacks(parsed: &Parsed, registry: &HashMap<String, Kind>) -> HashSet<String> {
     let callback_names: HashSet<&str> = parsed
         .decls
         .iter()
@@ -1201,10 +1176,7 @@ fn reachable_callbacks(
                 }
             }
             Decl::Func { .. } => {}
-            Decl::Enum { .. }
-            | Decl::FnPtr { .. }
-            | Decl::Handle { .. }
-            | Decl::Struct { .. } => {}
+            Decl::Enum { .. } | Decl::FnPtr { .. } | Decl::Handle { .. } | Decl::Struct { .. } => {}
         }
     }
     reachable
@@ -1398,9 +1370,7 @@ fn embedded_array_pairs(
             .iter()
             .enumerate()
             .find(|(_, field)| field.pointer && field.name == element_name);
-        let immediate_pointer = fields
-            .get(count_index + 1)
-            .filter(|field| field.pointer);
+        let immediate_pointer = fields.get(count_index + 1).filter(|field| field.pointer);
         let Some((pointer_index, ptr)) = matching_pointer else {
             if let Some(ptr) = immediate_pointer {
                 return Err(ParseError(format!(
@@ -1497,9 +1467,7 @@ fn parameter_array_pairs(
             .iter()
             .enumerate()
             .find(|(_, param)| param.pointer && param.name == element_name);
-        let immediate_pointer = params
-            .get(count_index + 1)
-            .filter(|param| param.pointer);
+        let immediate_pointer = params.get(count_index + 1).filter(|param| param.pointer);
         let Some((pointer_index, ptr)) = matching_pointer else {
             if let Some(ptr) = immediate_pointer {
                 return Err(ParseError(format!(
@@ -1530,8 +1498,7 @@ fn parameter_array_pairs(
         }
         let elem = if let Some(scalar) = lang_scalar(&ptr.base) {
             scalar.to_string()
-        } else if matches!(reg.get(&ptr.base), Some(Kind::Handle | Kind::External))
-            && ptr.is_const
+        } else if matches!(reg.get(&ptr.base), Some(Kind::Handle | Kind::External)) && ptr.is_const
         {
             ptr.base.clone()
         } else {
@@ -1576,9 +1543,7 @@ fn emit_handle(name: &str) -> String {
     // under tsc, and no value can inhabit it (opaque). `unique symbol`
     // is not permitted on interface properties (tsc TS1332), so a named
     // `never` brand is used instead.
-    format!(
-        "interface {name} {{\n  readonly __sub_handle_{name}: never;\n}}"
-    )
+    format!("interface {name} {{\n  readonly __sub_handle_{name}: never;\n}}")
 }
 
 fn emit_fn_ptr(
@@ -1853,12 +1818,7 @@ mod tests {
         }];
         let m = emit(&parsed_with(decls)).expect("narrow scalars map");
         for expected in [
-            "a: i8;",
-            "b: u8;",
-            "c: i16;",
-            "d: u16;",
-            "e: f16;",
-            "f: i8;",
+            "a: i8;", "b: u8;", "c: i16;", "d: u16;", "e: f16;", "f: i8;",
         ] {
             assert!(m.contains(expected), "{m}");
         }
@@ -1886,7 +1846,11 @@ mod tests {
             fields: vec![field("SubThing *", true, false, "pp")],
         }];
         let err = emit(&parsed_with(decls)).expect_err("double pointer must fail loud");
-        assert!(err.0.contains("SubThing"), "message names the type: {}", err.0);
+        assert!(
+            err.0.contains("SubThing"),
+            "message names the type: {}",
+            err.0
+        );
     }
 
     #[test]
@@ -1895,10 +1859,19 @@ mod tests {
         // spelling that is not in the registry → fail loud.
         let decls = vec![Decl::Struct {
             name: "SubHasAnon".into(),
-            fields: vec![field("SubOuter::(unnamed at header.h:3:5)", false, false, "inner")],
+            fields: vec![field(
+                "SubOuter::(unnamed at header.h:3:5)",
+                false,
+                false,
+                "inner",
+            )],
         }];
         let err = emit(&parsed_with(decls)).expect_err("anonymous struct must fail loud");
-        assert!(err.0.contains("unnamed"), "message names the type: {}", err.0);
+        assert!(
+            err.0.contains("unnamed"),
+            "message names the type: {}",
+            err.0
+        );
     }
 
     #[test]
@@ -1956,7 +1929,10 @@ mod tests {
         ];
         let m = emit(&parsed_with(decls)).expect("registered enum pair maps");
         assert!(m.contains("viewFormats: SubFormat[];"), "{m}");
-        assert!(!m.contains("viewFormatsCount"), "count field is elided: {m}");
+        assert!(
+            !m.contains("viewFormatsCount"),
+            "count field is elided: {m}"
+        );
         assert!(
             m.contains("constructor(viewFormats: SubFormat[], usage: u32);"),
             "{m}"
@@ -2043,8 +2019,7 @@ mod tests {
                 field("uint8_t", true, true, "data"),
             ],
         }];
-        let err =
-            emit(&parsed_with(decls)).expect_err("non-adjacent scalar pair must fail loud");
+        let err = emit(&parsed_with(decls)).expect_err("non-adjacent scalar pair must fail loud");
         assert!(
             err.0
                 .contains("not the supported adjacent count-first shape"),

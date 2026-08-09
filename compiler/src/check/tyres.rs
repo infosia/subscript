@@ -188,7 +188,9 @@ impl<'p> Checker<'p> {
                 let Some(args) = &r.type_params else {
                     self.error(
                         RuleCode::S100,
-                        format!("generic reference class `{name}` requires explicit type arguments"),
+                        format!(
+                            "generic reference class `{name}` requires explicit type arguments"
+                        ),
                         pos,
                     );
                     return Type::Error;
@@ -205,15 +207,12 @@ impl<'p> Checker<'p> {
                 for argument in &args.params {
                     let message = self.resolve_type(argument);
                     let plain_reference = match message {
-                        Type::Class(id) => self
-                            .classes
-                            .get(id.0)
-                            .is_some_and(|class| {
-                                !class.is_value
-                                    && !class.is_descriptor
-                                    && !class.is_boundary
-                                    && !self.handle_classes.contains(&id)
-                            }),
+                        Type::Class(id) => self.classes.get(id.0).is_some_and(|class| {
+                            !class.is_value
+                                && !class.is_descriptor
+                                && !class.is_boundary
+                                && !self.handle_classes.contains(&id)
+                        }),
                         Type::Error => true,
                         _ => false,
                     };
@@ -232,10 +231,9 @@ impl<'p> Checker<'p> {
                     }
                 }
                 return match name {
-                    "Worker" => Type::Worker(
-                        Box::new(messages[0].clone()),
-                        Box::new(messages[1].clone()),
-                    ),
+                    "Worker" => {
+                        Type::Worker(Box::new(messages[0].clone()), Box::new(messages[1].clone()))
+                    }
                     "Inbox" => Type::Inbox(Box::new(messages[0].clone())),
                     "Outbox" => Type::Outbox(Box::new(messages[0].clone())),
                     _ => unreachable!("matched worker ambient name"),
@@ -480,11 +478,7 @@ impl<'p> Checker<'p> {
         match self.scope_item(name) {
             Some(ScopeItem::Class(id)) => {
                 if r.type_params.is_some() {
-                    self.error(
-                        RuleCode::S100,
-                        format!("`{}` is not generic", name),
-                        pos,
-                    );
+                    self.error(RuleCode::S100, format!("`{}` is not generic", name), pos);
                 }
                 Type::Class(id)
             }
@@ -535,11 +529,7 @@ impl<'p> Checker<'p> {
                 }
             }
             _ => {
-                self.error(
-                    RuleCode::S100,
-                    format!("unknown type name `{}`", name),
-                    pos,
-                );
+                self.error(RuleCode::S100, format!("unknown type name `{}`", name), pos);
                 Type::Error
             }
         }
@@ -618,11 +608,7 @@ impl<'p> Checker<'p> {
             }
         }
         let pos = self.pos(union.span);
-        self.error(
-            RuleCode::S011,
-            "unions are limited to `Ref | null`",
-            pos,
-        );
+        self.error(RuleCode::S011, "unions are limited to `Ref | null`", pos);
         Type::Error
     }
 

@@ -44,8 +44,7 @@ mod trap_sites;
 pub use aot::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_object,
     host_c_compiler, include_directory_arg, run_aot, run_aot_with_native_libraries, run_c_aot,
-    run_c_aot_with_alloc_failure,
-    run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_alloc_failure, run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
     run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
     runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
     AotObject, CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
@@ -55,9 +54,9 @@ pub use cemit::{emit_c, emit_c_without_main, CProgram};
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
-    run_jit_with_freed_handle_diagnostics_and_native_libraries,
-    run_jit_with_memory_accounting, run_jit_with_native_libraries, BenchSamples,
-    AbnormalTermination, JitMemoryAccounting, RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
+    run_jit_with_native_libraries, AbnormalTermination, BenchSamples, JitMemoryAccounting,
+    RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use native::NativeLibrary;
@@ -83,16 +82,16 @@ mod tests {
     fn run_trap(src: &str) -> TrapReport {
         match run(src) {
             Err(RunError::Trap(t)) => t,
-            Ok(out) => panic!("expected a trap, got output {:?}", String::from_utf8_lossy(&out)),
+            Ok(out) => panic!(
+                "expected a trap, got output {:?}",
+                String::from_utf8_lossy(&out)
+            ),
             Err(e) => panic!("expected a trap, got {e}"),
         }
     }
 
     fn run_freed_handle_trap(src: &str) -> TrapReport {
-        match run_jit_with_memory_accounting(
-            &[SourceFile::new("test.ts", src)],
-            true,
-        ) {
+        match run_jit_with_memory_accounting(&[SourceFile::new("test.ts", src)], true) {
             Err(RunError::Trap(t)) => t,
             Ok((out, _)) => panic!(
                 "expected a freed-handle trap, got output {:?}",
@@ -221,7 +220,10 @@ export function main(): void {
 
     #[test]
     fn hello_prints_to_the_sink() {
-        assert_eq!(run_ok("export function main(): void {\n  print(\"hello\");\n}\n"), "hello\n");
+        assert_eq!(
+            run_ok("export function main(): void {\n  print(\"hello\");\n}\n"),
+            "hello\n"
+        );
     }
 
     #[test]
@@ -240,10 +242,7 @@ export function main(): void {
         match err {
             Err(RunError::Rejected(diagnostics)) => {
                 assert_eq!(diagnostics[0].code, subscript_compiler::RuleCode::S100);
-                assert_eq!(
-                    (diagnostics[0].pos.line, diagnostics[0].pos.col),
-                    (3, 9)
-                );
+                assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (3, 9));
                 assert!(diagnostics[0].message.contains("2147483647 bytes"));
             }
             other => panic!("expected a checker rejection, got {other:?}"),
@@ -308,9 +307,8 @@ export function main(): void {
 
     #[test]
     fn empty_pop_traps() {
-        let t = run_trap(
-            "export function main(): void {\n  const xs: i32[] = [];\n  xs.pop();\n}\n",
-        );
+        let t =
+            run_trap("export function main(): void {\n  const xs: i32[] = [];\n  xs.pop();\n}\n");
         assert_eq!(t.rule, TrapKind::EmptyPop);
     }
 

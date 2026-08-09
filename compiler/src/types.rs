@@ -27,8 +27,7 @@ pub const ABSENT_STRING_ALIAS_DISCRIMINANT: i64 = -1;
 /// [`CRANELIFT_FRAME_ALIGNMENT`]. This is therefore the greatest
 /// frame-aligned value representable by a positive `i32`, derived by
 /// clearing the alignment bits of `i32::MAX`.
-pub const MAX_FRAME_BYTES: u32 =
-    (i32::MAX as u32) & !(CRANELIFT_FRAME_ALIGNMENT - 1);
+pub const MAX_FRAME_BYTES: u32 = (i32::MAX as u32) & !(CRANELIFT_FRAME_ALIGNMENT - 1);
 
 /// Index of a class definition inside [`crate::hir::Module::classes`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

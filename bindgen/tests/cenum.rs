@@ -28,12 +28,10 @@ fn scalar_and_enum_typedefs_reference_aliases_without_declaring_them() {
     "#;
     let mirror = generate_for_header(header, "engine.h").expect("both CEnum bases bind");
 
-    assert!(mirror.contains(
-        "// @subscript-c-cenum typedef=\"EngineModeC\" alias=\"EngineMode\""
-    ));
-    assert!(mirror.contains(
-        "// @subscript-c-cenum typedef=\"EngineFlavorC\" alias=\"EngineFlavor\""
-    ));
+    assert!(mirror.contains("// @subscript-c-cenum typedef=\"EngineModeC\" alias=\"EngineMode\""));
+    assert!(
+        mirror.contains("// @subscript-c-cenum typedef=\"EngineFlavorC\" alias=\"EngineFlavor\"")
+    );
     assert!(mirror.contains("declare function engineModeNext(): EngineMode;"));
     assert!(mirror.contains("declare function engineModeEcho(value: EngineMode): i32;"));
     assert!(mirror.contains("declare function engineFlavorNext(): EngineFlavor;"));
@@ -44,7 +42,10 @@ fn scalar_and_enum_typedefs_reference_aliases_without_declaring_them() {
         "declare enum EngineFlavor",
         "declare enum EngineFlavorC",
     ] {
-        assert!(!mirror.contains(forbidden), "unexpected `{forbidden}` in:\n{mirror}");
+        assert!(
+            !mirror.contains(forbidden),
+            "unexpected `{forbidden}` in:\n{mirror}"
+        );
     }
 }
 
@@ -97,7 +98,10 @@ fn direct_struct_member_emits_the_ambient_alias() {
     )
     .expect("§52 lifts the direct struct-member restriction");
     assert!(mirror.contains("  mode: EngineMode;"), "{mirror}");
-    assert!(mirror.contains("  constructor(mode: EngineMode);"), "{mirror}");
+    assert!(
+        mirror.contains("  constructor(mode: EngineMode);"),
+        "{mirror}"
+    );
 }
 
 #[test]
@@ -114,9 +118,15 @@ fn recognized_standalone_and_embedded_pairs_emit_alias_arrays() {
         "engine.h",
     )
     .expect("§52 maps recognized CEnum pairs to alias arrays");
-    assert!(mirror.contains("declare function engineModesFirst(values: EngineMode[]): i32;"), "{mirror}");
+    assert!(
+        mirror.contains("declare function engineModesFirst(values: EngineMode[]): i32;"),
+        "{mirror}"
+    );
     assert!(mirror.contains("  modes: EngineMode[];"), "{mirror}");
-    assert!(mirror.contains("  constructor(modes: EngineMode[], tag: i32);"), "{mirror}");
+    assert!(
+        mirror.contains("  constructor(modes: EngineMode[], tag: i32);"),
+        "{mirror}"
+    );
 }
 
 #[test]

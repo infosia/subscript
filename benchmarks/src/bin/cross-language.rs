@@ -131,8 +131,7 @@ impl Measured {
             return true;
         };
         self.median_s > 0.0
-            && ((max - self.median_s) / self.median_s)
-                .max((self.median_s - min) / self.median_s)
+            && ((max - self.median_s) / self.median_s).max((self.median_s - min) / self.median_s)
                 > NOISE_LIMIT
     }
 }
@@ -212,8 +211,9 @@ fn parse_args() -> Result<Args, Fail> {
         ));
     }
     if a.jit_child.is_some() && (a.only.is_some() || a.check) {
-        return Err("the private --jit-child mode cannot be combined with --only or --check"
-            .to_string());
+        return Err(
+            "the private --jit-child mode cannot be combined with --only or --check".to_string(),
+        );
     }
     Ok(a)
 }
@@ -269,7 +269,15 @@ fn run() -> Result<ExitCode, Fail> {
         let files = vec![SourceFile::new(format!("{id}.ts"), ts_src)];
 
         let c = measure_c(&tools, &dir, &work, id, args.warmup, args.timed);
-        let ship = measure_ship(&tools, &files, &work, &staticlib, id, args.warmup, args.timed);
+        let ship = measure_ship(
+            &tools,
+            &files,
+            &work,
+            &staticlib,
+            id,
+            args.warmup,
+            args.timed,
+        );
         let jit = measure_jit(&ts_path, args.warmup, args.timed);
         let lua = measure_script(
             &tools.luajit,
@@ -372,8 +380,22 @@ fn run() -> Result<ExitCode, Fail> {
     let versions = versions(&tools);
     let generated = today();
 
-    let json = render_json(&rows, &machine, &versions, &generated, args.warmup, args.timed);
-    let readme = render_readme(&rows, &machine, &versions, &generated, args.warmup, args.timed);
+    let json = render_json(
+        &rows,
+        &machine,
+        &versions,
+        &generated,
+        args.warmup,
+        args.timed,
+    );
+    let readme = render_readme(
+        &rows,
+        &machine,
+        &versions,
+        &generated,
+        args.warmup,
+        args.timed,
+    );
     std::fs::write(root.join("results.json"), json.as_bytes())
         .map_err(|e| format!("write results.json: {e}"))?;
     std::fs::write(root.join("README.md"), readme.as_bytes())
@@ -457,7 +479,11 @@ fn check_only(dir: &Path, ids: &[&str]) -> Result<ExitCode, Fail> {
             }
         }
     }
-    Ok(if ok { ExitCode::SUCCESS } else { ExitCode::from(1) })
+    Ok(if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
 }
 
 /// One workload's per-subject outcomes and its agreed checksum.
@@ -553,7 +579,9 @@ fn measure_c(
         return Outcome::Unavailable("clang is not installed".to_string());
     };
     let src = dir.join("c").join(format!("{id}.c"));
-    let exe = work.path.join(format!("c-{id}{}", std::env::consts::EXE_SUFFIX));
+    let exe = work
+        .path
+        .join(format!("c-{id}{}", std::env::consts::EXE_SUFFIX));
     let build = Command::new(cc)
         .args(BASELINE_CFLAGS)
         .arg(&src)
@@ -562,12 +590,7 @@ fn measure_c(
         .output();
     match build {
         Ok(o) if o.status.success() => {}
-        Ok(o) => {
-            return Outcome::Error(format!(
-                "compile failed:\n{}",
-                tool_output_report(&o)
-            ))
-        }
+        Ok(o) => return Outcome::Error(format!("compile failed:\n{}", tool_output_report(&o))),
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
     }
     let argv: Vec<std::ffi::OsString> = vec![warmup.to_string().into(), timed.to_string().into()];
@@ -593,10 +616,7 @@ fn measure_ship(
         Err(diags) => {
             return Outcome::Error(format!(
                 "did not check: {}",
-                diags
-                    .first()
-                    .map(|d| d.message.clone())
-                    .unwrap_or_default()
+                diags.first().map(|d| d.message.clone()).unwrap_or_default()
             ))
         }
     };
@@ -629,10 +649,7 @@ fn measure_ship(
     match build {
         Ok(o) if o.status.success() => {}
         Ok(o) => {
-            return Outcome::Error(format!(
-                "compile/link failed:\n{}",
-                tool_output_report(&o)
-            ))
+            return Outcome::Error(format!("compile/link failed:\n{}", tool_output_report(&o)))
         }
         Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
     }
@@ -734,12 +751,7 @@ fn measure_collect_node(
 
 /// Runs `collect` under JSC when either the shell's `gc()` hook is already
 /// present or `--useDollarVM=true` exposes `$vm.gc()`.
-fn measure_collect_jsc(
-    tool: &Option<PathBuf>,
-    dir: &Path,
-    warmup: usize,
-    timed: usize,
-) -> Outcome {
+fn measure_collect_jsc(tool: &Option<PathBuf>, dir: &Path, warmup: usize, timed: usize) -> Outcome {
     let Some(exe) = tool else {
         return Outcome::Unavailable("JavaScriptCore is not installed".to_string());
     };
@@ -748,17 +760,7 @@ fn measure_collect_jsc(
         throw new Error('forced collection unavailable')";
     let default_probe = Command::new(exe).args(["-e", probe_source]).output();
     if matches!(default_probe, Ok(ref out) if out.status.success()) {
-        return measure_script(
-            tool,
-            dir,
-            "js",
-            "js",
-            "collect",
-            warmup,
-            timed,
-            true,
-            &[],
-        );
+        return measure_script(tool, dir, "js", "js", "collect", warmup, timed, true, &[]);
     }
     let dollar_vm_probe = Command::new(exe)
         .args(["--useDollarVM=true", "-e", probe_source])
@@ -836,9 +838,7 @@ fn run_self_timed(
                 let seconds = match seconds.parse() {
                     Ok(value) => value,
                     Err(_) => {
-                        return Outcome::Error(format!(
-                            "warm-up time `{seconds}` is not a number"
-                        ))
+                        return Outcome::Error(format!("warm-up time `{seconds}` is not a number"))
                     }
                 };
                 warmup_report = Some((iterations, seconds));
@@ -858,9 +858,7 @@ fn run_self_timed(
                 }
                 let seconds = match seconds.parse() {
                     Ok(value) => value,
-                    Err(_) => {
-                        return Outcome::Error(format!("sample `{seconds}` is not a number"))
-                    }
+                    Err(_) => return Outcome::Error(format!("sample `{seconds}` is not a number")),
                 };
                 samples_s.push(seconds);
             }
@@ -993,7 +991,13 @@ fn run_jit_process(source: &Path, warmup: usize, timed: usize) -> Result<LoopedR
         .arg("--timed")
         .arg(timed.to_string())
         .output()
-        .map_err(|e| format!("run {} --jit-child {}: {e}", exe.display(), source.display()))?;
+        .map_err(|e| {
+            format!(
+                "run {} --jit-child {}: {e}",
+                exe.display(),
+                source.display()
+            )
+        })?;
     let label = format!("{} --jit-child {}", exe.display(), source.display());
     parse_looped_output(&label, out, timed)
 }
@@ -1129,9 +1133,8 @@ fn resolve_jsc() -> Option<PathBuf> {
     if let Some(p) = find_on_path("jsc") {
         return Some(p);
     }
-    let helper = PathBuf::from(
-        "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc",
-    );
+    let helper =
+        PathBuf::from("/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc");
     helper.is_file().then_some(helper)
 }
 
@@ -1154,7 +1157,13 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
 /// needs on windows-msvc (mirrors `codegen::aot`). Empty elsewhere.
 fn runtime_system_libs() -> &'static [&'static str] {
     if cfg!(all(windows, target_env = "msvc")) {
-        &["-lkernel32", "-lntdll", "-luserenv", "-lws2_32", "-ldbghelp"]
+        &[
+            "-lkernel32",
+            "-lntdll",
+            "-luserenv",
+            "-lws2_32",
+            "-ldbghelp",
+        ]
     } else {
         &[]
     }
@@ -1178,7 +1187,8 @@ struct WorkDir {
 
 impl WorkDir {
     fn new() -> Result<WorkDir, Fail> {
-        let path = std::env::temp_dir().join(format!("subscript-benchmarks-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("subscript-benchmarks-{}", std::process::id()));
         std::fs::create_dir_all(&path).map_err(|e| format!("temp dir: {e}"))?;
         Ok(WorkDir { path })
     }
@@ -1208,7 +1218,11 @@ impl Machine {
             os: std::env::consts::OS.to_string(),
             cpu: cpu_brand(),
             cores: sysctl("hw.ncpu")
-                .or_else(|| std::thread::available_parallelism().ok().map(|n| n.to_string()))
+                .or_else(|| {
+                    std::thread::available_parallelism()
+                        .ok()
+                        .map(|n| n.to_string())
+                })
                 .unwrap_or_else(|| "unknown".to_string()),
             power: ac_power(),
         }
@@ -1260,7 +1274,11 @@ fn ac_power() -> String {
 /// First line of a command's output, for version banners.
 fn first_line(cmd: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new(cmd).args(args).output().ok()?;
-    let text = if out.stdout.is_empty() { out.stderr } else { out.stdout };
+    let text = if out.stdout.is_empty() {
+        out.stderr
+    } else {
+        out.stdout
+    };
     String::from_utf8_lossy(&text)
         .lines()
         .next()
@@ -1329,10 +1347,13 @@ fn jsc_version(tools: &Tools) -> String {
 
 /// macOS product version via `sw_vers -productVersion`.
 fn sw_vers() -> Option<String> {
-    let out = Command::new("sw_vers").arg("-productVersion").output().ok()?;
-    out.status.success().then(|| {
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
-    })
+    let out = Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// The UTC date `YYYY-MM-DD` the snapshot was captured.
@@ -1407,7 +1428,11 @@ fn render_readme(
     let _ = writeln!(s, "## Machine");
     let _ = writeln!(s);
     let _ = writeln!(s, "- host: {} / {}", machine.arch, machine.os);
-    let _ = writeln!(s, "- CPU: {} ({} logical cores)", machine.cpu, machine.cores);
+    let _ = writeln!(
+        s,
+        "- CPU: {} ({} logical cores)",
+        machine.cpu, machine.cores
+    );
     let _ = writeln!(s, "- power: {}", machine.power);
     let _ = writeln!(s);
     let _ = writeln!(s, "## Runtimes");
@@ -1451,10 +1476,7 @@ fn render_readme(
         s,
         "| Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |"
     );
-    let _ = writeln!(
-        s,
-        "|---|---|---|---|---|---|---|---|"
-    );
+    let _ = writeln!(s, "|---|---|---|---|---|---|---|---|");
     for row in rows {
         let baseline = row.measured("C").map(|m| m.median_s);
         let checksum = row
@@ -1465,7 +1487,11 @@ fn render_readme(
             s,
             "| {} | {} | {} | {} | {} | {} | {} | {} |",
             row.id,
-            if row.matched { checksum } else { format!("{checksum} (MISMATCH)") },
+            if row.matched {
+                checksum
+            } else {
+                format!("{checksum} (MISMATCH)")
+            },
             cell(row, "C", baseline),
             cell(row, "subscript-ship", baseline),
             cell(row, "subscript-jit", baseline),
@@ -1563,8 +1589,8 @@ fn render_readme(
             if let Some(m) = row.sampled(subject) {
                 if let Some((min, max)) = m.spread() {
                     if m.median_s > 0.0 {
-                        let spread = ((max - m.median_s) / m.median_s)
-                            .max((m.median_s - min) / m.median_s);
+                        let spread =
+                            ((max - m.median_s) / m.median_s).max((m.median_s - min) / m.median_s);
                         if spread > NOISE_LIMIT {
                             noisy.push(format!("{}/{subject} ({:.0}%)", row.id, spread * 100.0));
                         }
@@ -1625,7 +1651,15 @@ fn render_json(
         let _ = writeln!(s, "    {}: {}{comma}", jstr(name), jstr(ver));
     }
     let _ = writeln!(s, "  }},");
-    let _ = writeln!(s, "  \"subjects\": [{}],", SUBJECTS.iter().map(|s| jstr(s)).collect::<Vec<_>>().join(", "));
+    let _ = writeln!(
+        s,
+        "  \"subjects\": [{}],",
+        SUBJECTS
+            .iter()
+            .map(|s| jstr(s))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let _ = writeln!(s, "  \"workloads\": [");
     for (ri, row) in rows.iter().enumerate() {
         let _ = writeln!(s, "    {{");
@@ -1634,7 +1668,9 @@ fn render_json(
         let _ = writeln!(
             s,
             "      \"checksum\": {},",
-            row.checksum.map(|c| c.to_string()).unwrap_or_else(|| "null".to_string())
+            row.checksum
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "null".to_string())
         );
         let _ = writeln!(s, "      \"checksum_match\": {},", row.matched);
         let _ = writeln!(s, "      \"medians_s\": {{");

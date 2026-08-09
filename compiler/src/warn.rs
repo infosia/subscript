@@ -332,12 +332,7 @@ impl WarningChecker<'_> {
             }
             ExprKind::DescriptorLit { fields, .. } => {
                 for value in fields.iter().flatten() {
-                    self.scan_w001_expr(
-                        value,
-                        loop_depth,
-                        collect_mutes,
-                        AllocationSink::Escape,
-                    );
+                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
             }
             ExprKind::Field { obj, .. }
@@ -420,12 +415,7 @@ impl WarningChecker<'_> {
             }
             ExprKind::DescriptorLit { fields, .. } => {
                 for value in fields.iter().flatten() {
-                    self.scan_w001_expr(
-                        value,
-                        loop_depth,
-                        collect_mutes,
-                        AllocationSink::Escape,
-                    );
+                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
             }
             _ => {}
@@ -484,9 +474,7 @@ impl WarningChecker<'_> {
                         self.scan_w003_stmt_header(init, loop_depth, &fresh);
                         if let Stmt::Let { name, init, .. } = init.as_ref() {
                             body_fresh.remove(name);
-                            if loop_depth > 0
-                                && is_reference_new_allocation(self.module, init)
-                            {
+                            if loop_depth > 0 && is_reference_new_allocation(self.module, init) {
                                 body_fresh.insert(name.clone());
                             }
                         }
@@ -525,12 +513,7 @@ impl WarningChecker<'_> {
         }
     }
 
-    fn scan_w003_stmt_header(
-        &mut self,
-        stmt: &Stmt,
-        loop_depth: usize,
-        fresh: &HashSet<String>,
-    ) {
+    fn scan_w003_stmt_header(&mut self, stmt: &Stmt, loop_depth: usize, fresh: &HashSet<String>) {
         match stmt {
             Stmt::Let { init, .. } | Stmt::Expr(init) => {
                 self.scan_w003_expr(init, loop_depth, fresh);
@@ -539,15 +522,8 @@ impl WarningChecker<'_> {
         }
     }
 
-    fn scan_w003_expr(
-        &mut self,
-        expr: &Expr,
-        loop_depth: usize,
-        fresh: &HashSet<String>,
-    ) {
-        if loop_depth > 0
-            && callback_info_has_fresh_userdata(self.module, expr, fresh)
-        {
+    fn scan_w003_expr(&mut self, expr: &Expr, loop_depth: usize, fresh: &HashSet<String>) {
+        if loop_depth > 0 && callback_info_has_fresh_userdata(self.module, expr, fresh) {
             self.push(Warning::new(
                 WarnCode::W003,
                 "this callback-info aggregate registers freshly allocated userdata in each loop iteration",
@@ -570,9 +546,7 @@ impl WarningChecker<'_> {
             ExprKind::Call { callee, args } => {
                 match callee {
                     Callee::Value(value) => self.scan_w003_expr(value, loop_depth, fresh),
-                    Callee::Method { recv, .. } => {
-                        self.scan_w003_expr(recv, loop_depth, fresh)
-                    }
+                    Callee::Method { recv, .. } => self.scan_w003_expr(recv, loop_depth, fresh),
                     _ => {}
                 }
                 for arg in args {
@@ -1087,11 +1061,7 @@ fn callback_info_has_fresh_userdata(
     false
 }
 
-fn is_fresh_userdata_argument(
-    module: &hir::Module,
-    expr: &Expr,
-    fresh: &HashSet<String>,
-) -> bool {
+fn is_fresh_userdata_argument(module: &hir::Module, expr: &Expr, fresh: &HashSet<String>) -> bool {
     if is_reference_new_allocation(module, expr) {
         return true;
     }
@@ -1174,10 +1144,9 @@ fn contains_collect_in_expr(expr: &Expr) -> bool {
             contains_collect_in_expr(target) || contains_collect_in_expr(value)
         }
         ExprKind::New { args, .. } => args.iter().any(contains_collect_in_expr),
-        ExprKind::DescriptorLit { fields, .. } => fields
-            .iter()
-            .flatten()
-            .any(contains_collect_in_expr),
+        ExprKind::DescriptorLit { fields, .. } => {
+            fields.iter().flatten().any(contains_collect_in_expr)
+        }
         ExprKind::Field { obj, .. } | ExprKind::JsonResultValue(obj) | ExprKind::Length(obj) => {
             contains_collect_in_expr(obj)
         }

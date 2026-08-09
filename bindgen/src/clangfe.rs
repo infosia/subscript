@@ -151,7 +151,10 @@ pub fn parse(source: &str) -> Result<Parsed, ParseError> {
         } else {
             match parse_inner(source) {
                 Ok(parsed) => (parsed, false),
-                Err(_) => (parse_inner(&source_with_external_preamble(source, &externals))?, true),
+                Err(_) => (
+                    parse_inner(&source_with_external_preamble(source, &externals))?,
+                    true,
+                ),
             }
         };
 
@@ -263,9 +266,7 @@ fn cenum_directives(source: &str) -> Result<Vec<CEnumMapping>, ParseError> {
                     "`@subscript-cenum` requires a C typedef name and an alias name".to_string(),
                 ));
             };
-            if fields.next().is_some()
-                || !is_c_identifier(typedef_name)
-                || !is_c_identifier(alias)
+            if fields.next().is_some() || !is_c_identifier(typedef_name) || !is_c_identifier(alias)
             {
                 return Err(ParseError(format!(
                     "`@subscript-cenum` requires exactly two identifiers, found `{}`",
@@ -319,8 +320,7 @@ fn comment_bodies(source: &str) -> Vec<&str> {
             b'/' if bytes.get(index + 1) == Some(&b'*') => {
                 let start = index + 2;
                 index = start;
-                while index + 1 < bytes.len()
-                    && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
                 {
                     index += 1;
                 }
@@ -342,9 +342,7 @@ fn comment_bodies(source: &str) -> Vec<&str> {
 fn directive_lines(comment: &str) -> impl Iterator<Item = &str> {
     comment.lines().map(|line| {
         let line = line.trim();
-        line.strip_prefix('*')
-            .map(str::trim_start)
-            .unwrap_or(line)
+        line.strip_prefix('*').map(str::trim_start).unwrap_or(line)
     })
 }
 
@@ -396,13 +394,16 @@ fn validate_cenum_mappings(
 ) -> Result<(), ParseError> {
     for mapping in mappings {
         let typedef_name = mapping.typedef_name.as_str();
-        let enum_typedef = parsed.decls.iter().any(
-            |decl| matches!(decl, Decl::Enum { name, .. } if name == typedef_name),
-        );
-        let scalar_alias = parsed.aliases.iter().find(|alias| alias.name == typedef_name);
+        let enum_typedef = parsed
+            .decls
+            .iter()
+            .any(|decl| matches!(decl, Decl::Enum { name, .. } if name == typedef_name));
+        let scalar_alias = parsed
+            .aliases
+            .iter()
+            .find(|alias| alias.name == typedef_name);
         let other_typedef = parsed.decls.iter().find(|decl| {
-            decl_type_name(decl) == Some(typedef_name)
-                && !matches!(decl, Decl::Enum { .. })
+            decl_type_name(decl) == Some(typedef_name) && !matches!(decl, Decl::Enum { .. })
         });
 
         if !enum_typedef && scalar_alias.is_none() && other_typedef.is_none() {
@@ -536,10 +537,7 @@ fn cenum_other_use_site(parsed: &Parsed, typedef_name: &str) -> Option<String> {
                     } else {
                         ""
                     };
-                    return Some(format!(
-                        "struct `{name}` member `{}`{shape}",
-                        field.name
-                    ));
+                    return Some(format!("struct `{name}` member `{}`{shape}", field.name));
                 }
             }
             Decl::FnPtr { name, ret, params } => {
@@ -648,7 +646,10 @@ fn cenum_alias_collision_site(
                     return Some(format!("header typedef `{name}`"));
                 }
                 if let Some(param) = params.iter().find(|param| param.name == alias) {
-                    return Some(format!("header callback parameter `{}.{}`", name, param.name));
+                    return Some(format!(
+                        "header callback parameter `{}.{}`",
+                        name, param.name
+                    ));
                 }
             }
             Decl::Func { name, params, .. } => {
@@ -656,15 +657,26 @@ fn cenum_alias_collision_site(
                     return Some(format!("header function `{name}`"));
                 }
                 if let Some(param) = params.iter().find(|param| param.name == alias) {
-                    return Some(format!("header function parameter `{}.{}`", name, param.name));
+                    return Some(format!(
+                        "header function parameter `{}.{}`",
+                        name, param.name
+                    ));
                 }
             }
         }
     }
-    if let Some(declared) = parsed.aliases.iter().find(|declared| declared.name == alias) {
+    if let Some(declared) = parsed
+        .aliases
+        .iter()
+        .find(|declared| declared.name == alias)
+    {
         return Some(format!("header typedef `{}`", declared.name));
     }
-    if let Some(constant) = parsed.constants.iter().find(|constant| constant.name == alias) {
+    if let Some(constant) = parsed
+        .constants
+        .iter()
+        .find(|constant| constant.name == alias)
+    {
         return Some(format!("header constant `{}`", constant.name));
     }
     if let Some(mac) = parsed.macros.iter().find(|mac| mac.name == alias) {
@@ -742,8 +754,8 @@ unsafe fn parse_inner(source: &str) -> Result<Parsed, ParseError> {
     // becomes the translation unit's main file, so `isFromMainFile`
     // separates our declarations from included system headers.
     let filename = CString::new("header.h").expect("no NUL in literal");
-    let contents = CString::new(source)
-        .map_err(|_| ParseError("header source contains a NUL byte".into()))?;
+    let contents =
+        CString::new(source).map_err(|_| ParseError("header source contains a NUL byte".into()))?;
     let mut unsaved = CXUnsavedFile {
         Filename: filename.as_ptr(),
         Contents: contents.as_ptr(),
@@ -793,8 +805,10 @@ unsafe fn visit_top_level(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), P
         CXCursor_TypedefDecl => visit_typedef(cursor, parsed)?,
         CXCursor_FunctionDecl => {
             let name = cursor_spelling(cursor);
-            let mut ret =
-                strip_name(field_from_type(clang_getCursorResultType(cursor), String::new()));
+            let mut ret = strip_name(field_from_type(
+                clang_getCursorResultType(cursor),
+                String::new(),
+            ));
             ret.nullable |= cursor_return_contains_nullable(cursor, &name);
             let params = function_params(cursor);
             record_doc(cursor, &name, parsed);
@@ -1121,7 +1135,9 @@ unsafe fn type_contains_nullable(ty: CXType) -> bool {
 /// True when a declaration cursor's libclang token stream contains the
 /// `_Nullable` attribute.
 unsafe fn cursor_contains_nullable(cursor: CXCursor) -> bool {
-    cursor_tokens(cursor).iter().any(|token| token == "_Nullable")
+    cursor_tokens(cursor)
+        .iter()
+        .any(|token| token == "_Nullable")
 }
 
 /// True when `_Nullable` occurs in the return-type tokens preceding a

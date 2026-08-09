@@ -63,8 +63,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
 use subscript_compiler::types::display_type;
 use subscript_compiler::{
-    check_program, hir, ClassId, Diagnostic, EnumId, Pos, SourceFile,
-    StringAliasId, Type,
+    check_program, hir, ClassId, Diagnostic, EnumId, Pos, SourceFile, StringAliasId, Type,
 };
 use subscript_runtime::Context;
 
@@ -202,10 +201,7 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
             ),
         );
         if let Some(ctor) = &c.ctor {
-            push(
-                format!("constructor {}", c.name),
-                &signature_text(m, ctor),
-            );
+            push(format!("constructor {}", c.name), &signature_text(m, ctor));
         }
         for method in &c.methods {
             push(
@@ -226,13 +222,16 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
         );
     }
     for alias in &m.string_aliases {
-        let wires = alias.wire_values.as_ref().map_or_else(String::new, |values| {
-            values
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(",")
-        });
+        let wires = alias
+            .wire_values
+            .as_ref()
+            .map_or_else(String::new, |values| {
+                values
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            });
         push(
             format!("string alias {}", alias.name),
             &format!("{}|{}|{wires}", alias.name, alias.members.join(";")),
@@ -250,7 +249,14 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
 
     let mut value: u64 = 0xcbf2_9ce4_8422_2325;
     for (name, h) in &entries {
-        value = fnv1a(&[value.to_le_bytes(), fnv1a(name.as_bytes()).to_le_bytes(), h.to_le_bytes()].concat());
+        value = fnv1a(
+            &[
+                value.to_le_bytes(),
+                fnv1a(name.as_bytes()).to_le_bytes(),
+                h.to_le_bytes(),
+            ]
+            .concat(),
+        );
     }
     DeclarationHash { entries, value }
 }
@@ -412,10 +418,7 @@ impl Generation {
 
 /// Compiles `hir` in reload mode into a fresh JIT module and resolves
 /// every slot to a finalized code address.
-fn compile(
-    hirm: &hir::Module,
-    libraries: &[NativeLibrary],
-) -> Result<Generation, RunError> {
+fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation, RunError> {
     let flags = dev_flags().map_err(RunError::Internal)?;
     let isa = cranelift_native::builder()
         .map_err(|e| RunError::Internal(internal(format!("host ISA: {e}"))))
@@ -452,9 +455,8 @@ fn compile(
         return Err(RunError::Internal(internal(format!("finalize: {e}"))));
     }
 
-    let slot_index = |id: FuncId, slots: &[Option<FuncId>]| {
-        slots.iter().position(|s| *s == Some(id))
-    };
+    let slot_index =
+        |id: FuncId, slots: &[Option<FuncId>]| slots.iter().position(|s| *s == Some(id));
     let init_slot = slot_index(lowered.init, &lowered.slots);
     let mut entries = HashMap::new();
     for e in &lowered.entries {
@@ -597,8 +599,7 @@ impl ReloadSession {
         let init_slot = gen
             .init_slot
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
-        call_slot(&mut session.ctx, &session.table, init_slot)
-            .map_err(RunError::Internal)?;
+        call_slot(&mut session.ctx, &session.table, init_slot).map_err(RunError::Internal)?;
         let trap = match session.check_trap() {
             Ok(()) => None,
             Err(RunError::Trap(trap)) => Some(trap),
@@ -721,9 +722,7 @@ impl ReloadSession {
             });
         }
         let gen = compile(&hirm, &self.native_libraries).map_err(|error| match error {
-            RunError::UnresolvedForeignSymbol(name) => {
-                ReloadError::UnresolvedForeignSymbol(name)
-            }
+            RunError::UnresolvedForeignSymbol(name) => ReloadError::UnresolvedForeignSymbol(name),
             other => ReloadError::Internal(other.to_string()),
         })?;
         // Both follow from the unchanged declaration hash; checked
@@ -828,7 +827,9 @@ mod tests {
 
     #[test]
     fn declaration_hash_changes_for_a_new_field() {
-        let a = hash_of("class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {}\n");
+        let a = hash_of(
+            "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {}\n",
+        );
         let b = hash_of("class C { x: i32; y: i32; constructor() { this.x = 1; this.y = 2; } }\nexport function main(): void {}\n");
         assert_ne!(a, b);
         assert_eq!(a.first_difference(&b).as_deref(), Some("class C"));
@@ -848,16 +849,22 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(a.first_difference(&b).as_deref(), Some("enum E"));
 
-        let c = hash_of("let g: FixedArray<i32, 4> = [0, 0, 0, 0];\nexport function main(): void {}\n");
-        let d = hash_of("let g: FixedArray<i32, 5> = [0, 0, 0, 0, 0];\nexport function main(): void {}\n");
+        let c =
+            hash_of("let g: FixedArray<i32, 4> = [0, 0, 0, 0];\nexport function main(): void {}\n");
+        let d = hash_of(
+            "let g: FixedArray<i32, 5> = [0, 0, 0, 0, 0];\nexport function main(): void {}\n",
+        );
         assert_ne!(c, d);
         assert_eq!(c.first_difference(&d).as_deref(), Some("variable g"));
     }
 
     #[test]
     fn declaration_hash_changes_for_a_signature_edit() {
-        let a = hash_of("function f(x: i32): i32 {\n  return x;\n}\nexport function main(): void {}\n");
-        let b = hash_of("function f(x: i64): i32 {\n  return x as i32;\n}\nexport function main(): void {}\n");
+        let a =
+            hash_of("function f(x: i32): i32 {\n  return x;\n}\nexport function main(): void {}\n");
+        let b = hash_of(
+            "function f(x: i64): i32 {\n  return x as i32;\n}\nexport function main(): void {}\n",
+        );
         assert_ne!(a, b);
         assert_eq!(a.first_difference(&b).as_deref(), Some("function f"));
     }
@@ -1001,7 +1008,9 @@ mod tests {
             .expect("ReloadSession field list")
             .0;
         let context = fields.find("ctx: Box<Context>").expect("Context field");
-        let modules = fields.find("modules: Vec<JITModule>").expect("JIT modules field");
+        let modules = fields
+            .find("modules: Vec<JITModule>")
+            .expect("JIT modules field");
         assert!(
             context < modules,
             "ReloadSession must drop its Context, which joins workers, before JIT modules"
@@ -1010,14 +1019,13 @@ mod tests {
 
     #[test]
     fn initializer_trap_can_be_captured_without_dropping_the_session() {
-        let (mut s, trap) = ReloadSession::new_capturing_initializer_trap(&src(
-            "let xs: i32[] = [];\n\
+        let (mut s, trap) =
+            ReloadSession::new_capturing_initializer_trap(&src("let xs: i32[] = [];\n\
              let value: i32 = xs.pop();\n\
              export function main(): void {\n\
              \x20 print(\"still live\");\n\
-             }\n",
-        ))
-        .expect("session");
+             }\n"))
+            .expect("session");
         assert_eq!(trap.map(|report| report.rule), Some(TrapKind::EmptyPop));
         assert!(s.take_output().is_empty());
 
@@ -1027,15 +1035,13 @@ mod tests {
 
     #[test]
     fn unknown_entry_is_an_internal_error() {
-        let mut s =
-            ReloadSession::new(&src("export function main(): void {}\n")).expect("session");
+        let mut s = ReloadSession::new(&src("export function main(): void {}\n")).expect("session");
         assert!(matches!(s.call_export("nope"), Err(RunError::Internal(_))));
     }
 
     #[test]
     fn reload_of_unchecked_sources_is_rejected() {
-        let mut s =
-            ReloadSession::new(&src("export function main(): void {}\n")).expect("session");
+        let mut s = ReloadSession::new(&src("export function main(): void {}\n")).expect("session");
         assert!(matches!(
             s.reload(&src("const x: number = 1;\n")),
             Err(ReloadError::Rejected(_))
@@ -1049,7 +1055,9 @@ mod tests {
         };
         assert!(e.to_string().contains("class C"));
         assert!(ReloadError::ScriptOnStack.to_string().contains("stack"));
-        assert!(ReloadError::LiveWorkers.to_string().contains("live workers"));
+        assert!(ReloadError::LiveWorkers
+            .to_string()
+            .contains("live workers"));
     }
 
     #[test]

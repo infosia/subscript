@@ -23,9 +23,9 @@ use std::process::{Command, ExitCode};
 
 #[cfg(unix)]
 use subscript_codegen::{
-    add_c11_optimized_flags, add_executable_output, emit_c, host_c_compiler,
-    include_directory_arg, runtime_staticlib_path, runtime_system_libraries,
-    tool_output_report, HostCCompiler, AOT_ENTRY_C,
+    add_c11_optimized_flags, add_executable_output, emit_c, host_c_compiler, include_directory_arg,
+    runtime_staticlib_path, runtime_system_libraries, tool_output_report, HostCCompiler,
+    AOT_ENTRY_C,
 };
 #[cfg(unix)]
 use subscript_compiler::{check_program, SourceFile};
@@ -397,7 +397,8 @@ fn run() -> Result<bool, Fail> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let work = WorkDir::new()?;
     let compiler = host_c_compiler().map_err(|error| format!("C compiler: {error}"))?;
-    let runtime = runtime_staticlib_path().map_err(|error| format!("runtime staticlib: {error}"))?;
+    let runtime =
+        runtime_staticlib_path().map_err(|error| format!("runtime staticlib: {error}"))?;
     let backend_object = compile_backend(&compiler, &manifest, &work.path)?;
 
     let script_source = emit_script()?;
@@ -625,7 +626,9 @@ fn run_subject(name: &'static str, executable: &Path) -> Result<Measurement, Fai
 fn parse_report(name: &str, line: &str) -> Result<Report, Fail> {
     let fields: Vec<&str> = line.split_whitespace().collect();
     if fields.len() != 5 || fields[0] != "bound-call" {
-        return Err(format!("{name} printed an unreadable report line: `{line}`"));
+        return Err(format!(
+            "{name} printed an unreadable report line: `{line}`"
+        ));
     }
     let checksum = parse_field(name, fields[1], "checksum")?;
     let warmup_ms = parse_field(name, fields[2], "warmup_ms")?;
@@ -674,10 +677,7 @@ fn verify_checksums(measurements: &[Measurement]) -> Result<(), Fail> {
         if measurement.report.checksum != first.report.checksum {
             return Err(format!(
                 "checksum mismatch: {}={} but {}={}",
-                first.name,
-                first.report.checksum,
-                measurement.name,
-                measurement.report.checksum
+                first.name, first.report.checksum, measurement.name, measurement.report.checksum
             ));
         }
     }

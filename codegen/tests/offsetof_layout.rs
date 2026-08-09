@@ -523,7 +523,9 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubPadB", vec!["head", "mid", "tail"]),
         (
             "SubNarrowPacket",
-            vec!["kind", "delta", "weight", "serial", "bias", "count", "scale"],
+            vec![
+                "kind", "delta", "weight", "serial", "bias", "count", "scale",
+            ],
         ),
         ("SubExtent", vec!["width", "height", "depth"]),
         ("SubImageInfo", vec!["extent", "mipLevels", "usage"]),
@@ -538,7 +540,10 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
         ("SubPassInfo", vec!["access", "width", "height"]),
         ("SubResourceDesc", vec!["usage", "range", "count"]),
         ("SubDrawList", vec!["layer", "drawsCount", "draws"]),
-        ("SubCommandBuffer", vec!["queue", "commandsCount", "commands"]),
+        (
+            "SubCommandBuffer",
+            vec!["queue", "commandsCount", "commands"],
+        ),
         ("SubCompletionInfo", vec!["callback", "userdata"]),
         // P7.1 async/Future shapes (§14).
         ("SubFuture", vec!["id"]),
@@ -591,11 +596,8 @@ impl TempDir {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "subscript-offsetof-{}-{}",
-            std::process::id(),
-            n
-        ));
+        let path =
+            std::env::temp_dir().join(format!("subscript-offsetof-{}-{}", std::process::id(), n));
         std::fs::create_dir_all(&path).expect("create temp dir");
         TempDir { path }
     }
@@ -636,7 +638,9 @@ fn c_truth(structs: &[(&'static str, Vec<&'static str>)]) -> BTreeMap<String, CL
     let dir = TempDir::new();
     let src = dir.path.join("probe.c");
     std::fs::write(&src, body).expect("write probe.c");
-    let exe = dir.path.join(format!("probe{}", std::env::consts::EXE_SUFFIX));
+    let exe = dir
+        .path
+        .join(format!("probe{}", std::env::consts::EXE_SUFFIX));
 
     let cc = host_c_compiler().expect("resolve a capable C compiler");
     let compile = cc
@@ -726,9 +730,8 @@ fn language_layout_matches_c_offsetof_for_every_mirrored_struct() {
         "the round-3 fixture must retain the downstream's measured layout"
     );
 
-    let mut report = String::from(
-        "\nper-struct layout (language vs C), size/align and field offsets:\n",
-    );
+    let mut report =
+        String::from("\nper-struct layout (language vs C), size/align and field offsets:\n");
     let mut failures: Vec<String> = Vec::new();
 
     for (name, fields) in &structs {

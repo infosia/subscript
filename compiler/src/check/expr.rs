@@ -7,8 +7,8 @@ use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
-    self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn,
-    NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
+    self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, NumFn,
+    RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
 };
 use crate::types::{ClassId, FuncType, Type};
 
@@ -254,12 +254,7 @@ impl<'p> Checker<'p> {
     /// Checks Q34/R13's three awaitable forms. The AST call is handled here
     /// instead of through the ordinary call path so an async call can never
     /// materialize a Promise-typed value in HIR.
-    fn check_await(
-        &mut self,
-        awaited: &ast::AwaitExpr,
-        fx: &mut FnCtx,
-        pos: Pos,
-    ) -> hir::Expr {
+    fn check_await(&mut self, awaited: &ast::AwaitExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         if !fx.frames.last().is_some_and(|frame| frame.is_async) {
             self.error(
                 RuleCode::S013,
@@ -282,7 +277,11 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         let ast::Callee::Expr(callee) = &call.callee else {
-            self.error(RuleCode::S100, "awaitable expressions must be direct calls", pos.clone());
+            self.error(
+                RuleCode::S100,
+                "awaitable expressions must be direct calls",
+                pos.clone(),
+            );
             return self.err_expr(pos);
         };
         let mut callee: &ast::Expr = callee;
@@ -313,7 +312,12 @@ impl<'p> Checker<'p> {
         match callee {
             ast::Expr::Ident(ident) => {
                 let name = ident.sym.to_string();
-                if fx.scopes.iter().rev().any(|scope| scope.vars.contains_key(&name)) {
+                if fx
+                    .scopes
+                    .iter()
+                    .rev()
+                    .any(|scope| scope.vars.contains_key(&name))
+                {
                     self.error(
                         RuleCode::S100,
                         "an async awaitable cannot be called through a local value",
@@ -489,10 +493,8 @@ impl<'p> Checker<'p> {
                     name.clone()
                 } else {
                     let name = loop {
-                        let name = format!(
-                            "__subscript_regex_literal_{}",
-                            self.next_regex_literal_id
-                        );
+                        let name =
+                            format!("__subscript_regex_literal_{}", self.next_regex_literal_id);
                         self.next_regex_literal_id += 1;
                         if !self.global_sigs.contains_key(&name) {
                             break name;
@@ -558,8 +560,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let raw: &str = n.raw.as_ref().map(|a| a.as_ref()).unwrap_or("");
         let hex = raw.starts_with("0x") || raw.starts_with("0X");
-        let fractional =
-            raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')));
+        let fractional = raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')));
         let value = if negate { -n.value } else { n.value };
         let target = match ctx {
             Some(t) if t.is_numeric() => t.clone(),
@@ -630,11 +631,7 @@ impl<'p> Checker<'p> {
                 let printable = checked.ty.is_numeric()
                     || matches!(
                         checked.ty,
-                        Type::Str
-                            | Type::Bool
-                            | Type::Enum(_)
-                            | Type::StringAlias(_)
-                            | Type::Error
+                        Type::Str | Type::Bool | Type::Enum(_) | Type::StringAlias(_) | Type::Error
                     );
                 if checked.ty == Type::Date {
                     // Q20: a Date has no implicit string form (the lib's
@@ -736,7 +733,10 @@ impl<'p> Checker<'p> {
             Some(ScopeItem::GenericFunc(_)) => {
                 self.error(
                     RuleCode::S100,
-                    format!("generic function `{}` requires explicit type arguments", name),
+                    format!(
+                        "generic function `{}` requires explicit type arguments",
+                        name
+                    ),
                     pos.clone(),
                 );
                 self.err_expr(pos)
@@ -784,11 +784,7 @@ impl<'p> Checker<'p> {
                         pos,
                     }
                 } else if name == "eval" || name == "Function" {
-                    self.error(
-                        RuleCode::S002,
-                        "no dynamic code evaluation",
-                        pos.clone(),
-                    );
+                    self.error(RuleCode::S002, "no dynamic code evaluation", pos.clone());
                     self.err_expr(pos)
                 } else if name == "Context" {
                     self.error(
@@ -1303,7 +1299,11 @@ impl<'p> Checker<'p> {
                 (hop, Type::Bool, comparable)
             }
             B::EqEqEq | B::NotEqEq => {
-                let hop = if op == B::EqEqEq { BinOp::Eq } else { BinOp::Ne };
+                let hop = if op == B::EqEqEq {
+                    BinOp::Eq
+                } else {
+                    BinOp::Ne
+                };
                 let null_cmp = matches!(
                     (&lt, &rt),
                     (Type::Null, Type::Nullable(_))
@@ -1427,20 +1427,12 @@ impl<'p> Checker<'p> {
         });
         let mut base = fx.narrowed.clone();
 
-        fx.narrowed = base
-            .iter()
-            .cloned()
-            .chain(then_extra.clone())
-            .collect();
+        fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
         let then = self.check_expr(&c.cons, ctx, fx);
         // Keep kills: facts removed inside the arm stay removed.
         base.retain(|key| fx.narrowed.contains(key) || then_extra.contains(key));
 
-        fx.narrowed = base
-            .iter()
-            .cloned()
-            .chain(else_extra.clone())
-            .collect();
+        fx.narrowed = base.iter().cloned().chain(else_extra.clone()).collect();
         let els = self.check_expr(&c.alt, ctx, fx);
         base.retain(|key| fx.narrowed.contains(key) || else_extra.contains(key));
         fx.narrowed = base;
@@ -1452,12 +1444,7 @@ impl<'p> Checker<'p> {
                 then.pos.clone(),
                 "the then branch",
             );
-            self.require_assignable(
-                &els.ty.clone(),
-                context,
-                els.pos.clone(),
-                "the else branch",
-            );
+            self.require_assignable(&els.ty.clone(), context, els.pos.clone(), "the else branch");
             context.clone()
         } else {
             let then_ty = then.ty.clone();
@@ -1598,11 +1585,7 @@ impl<'p> Checker<'p> {
                 Some(e) if e.spread.is_none() => elems.push(e),
                 Some(_) => unreachable!("spread literal dispatched above"),
                 None => {
-                    self.error(
-                        RuleCode::S100,
-                        "array holes are not decided",
-                        pos.clone(),
-                    );
+                    self.error(RuleCode::S100, "array holes are not decided", pos.clone());
                 }
             }
         }
@@ -1882,11 +1865,7 @@ impl<'p> Checker<'p> {
         let mut inferred: Option<Type> = context_elem.clone();
         for slot in &a.elems {
             let Some(slot) = slot else {
-                self.error(
-                    RuleCode::S100,
-                    "array holes are not decided",
-                    pos.clone(),
-                );
+                self.error(RuleCode::S100, "array holes are not decided", pos.clone());
                 continue;
             };
             let is_spread = slot.spread.is_some();
@@ -1897,21 +1876,13 @@ impl<'p> Checker<'p> {
             );
             let (spread, element_ty) = if is_spread {
                 let selected = match &expr.ty {
-                    Type::Array(elem) => {
-                        Some((hir::SpreadKind::Array, (**elem).clone()))
-                    }
+                    Type::Array(elem) => Some((hir::SpreadKind::Array, (**elem).clone())),
                     Type::FixedArray(elem, _) => {
                         Some((hir::SpreadKind::FixedArray, (**elem).clone()))
                     }
-                    Type::Map(key, _) => {
-                        Some((hir::SpreadKind::MapKeys, (**key).clone()))
-                    }
-                    Type::Set(key) => {
-                        Some((hir::SpreadKind::SetValues, (**key).clone()))
-                    }
-                    Type::Str => {
-                        Some((hir::SpreadKind::StringCodePoints, Type::Str))
-                    }
+                    Type::Map(key, _) => Some((hir::SpreadKind::MapKeys, (**key).clone())),
+                    Type::Set(key) => Some((hir::SpreadKind::SetValues, (**key).clone())),
+                    Type::Str => Some((hir::SpreadKind::StringCodePoints, Type::Str)),
                     Type::Generator(_) => {
                         self.error(
                             RuleCode::S014,
@@ -1995,7 +1966,10 @@ impl<'p> Checker<'p> {
             let name = self.type_name(&checked.ty);
             self.error(
                 RuleCode::S011,
-                format!("`{}` may be null here; narrow with a null check first", name),
+                format!(
+                    "`{}` may be null here; narrow with a null check first",
+                    name
+                ),
                 checked.pos.clone(),
             );
             checked.ty = Type::Error;
@@ -2015,14 +1989,12 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         for_write: bool,
     ) -> Option<hir::Expr> {
-        let ast::Expr::Ident(id) = obj else { return None };
+        let ast::Expr::Ident(id) = obj else {
+            return None;
+        };
         let name = id.sym.to_string();
         // A local binding shadows any type name.
-        let is_local = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|s| s.vars.contains_key(&name));
+        let is_local = fx.scopes.iter().rev().any(|s| s.vars.contains_key(&name));
         if is_local {
             return None;
         }
@@ -2132,8 +2104,10 @@ impl<'p> Checker<'p> {
                 );
                 Some(self.err_expr(prop_pos))
             }
-            Some(ScopeItem::Global(_)) | Some(ScopeItem::Func(_))
-            | Some(ScopeItem::GenericFunc(_)) | Some(ScopeItem::Foreign(_)) => None,
+            Some(ScopeItem::Global(_))
+            | Some(ScopeItem::Func(_))
+            | Some(ScopeItem::GenericFunc(_))
+            | Some(ScopeItem::Foreign(_)) => None,
             None => {
                 if name == "Object" {
                     if prop == "setPrototypeOf" {
@@ -2165,11 +2139,7 @@ impl<'p> Checker<'p> {
         if id.sym.as_ref() != "Math" {
             return false;
         }
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|s| s.vars.contains_key("Math"));
+        let shadowed = fx.scopes.iter().rev().any(|s| s.vars.contains_key("Math"));
         !shadowed && self.scope_item("Math").is_none()
     }
 
@@ -2429,12 +2399,7 @@ impl<'p> Checker<'p> {
         };
         if c.args.len() != params.len() {
             if f == NumFn::ParseInt && c.args.len() == 1 && call_name == "parseInt" {
-                self.reject_api_form(
-                    "global",
-                    "parseInt(value)",
-                    "parseInt(value)",
-                    pos.clone(),
-                );
+                self.reject_api_form("global", "parseInt(value)", "parseInt(value)", pos.clone());
             } else {
                 self.error(
                     RuleCode::S014,
@@ -2466,11 +2431,7 @@ impl<'p> Checker<'p> {
     /// Consulted by both member access and `new Date(…)` so shadowing
     /// behaves identically in every position.
     fn date_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|s| s.vars.contains_key("Date"));
+        let shadowed = fx.scopes.iter().rev().any(|s| s.vars.contains_key("Date"));
         !shadowed && self.scope_item("Date").is_none()
     }
 
@@ -2536,24 +2497,14 @@ impl<'p> Checker<'p> {
             Type::FixedArray(element, _) => {
                 self.non_transferable_message_field(element, path, pos, visiting)
             }
-            Type::Class(id)
-                if self
-                    .classes
-                    .get(id.0)
-                    .is_some_and(|class| class.is_value) =>
-            {
+            Type::Class(id) if self.classes.get(id.0).is_some_and(|class| class.is_value) => {
                 if !visiting.insert(*id) {
                     return None;
                 }
                 let class = &self.classes[id.0];
                 let result = class.fields.iter().find_map(|field| {
                     let nested = format!("{path}.{}", field.name);
-                    self.non_transferable_message_field(
-                        &field.ty,
-                        &nested,
-                        &field.pos,
-                        visiting,
-                    )
+                    self.non_transferable_message_field(&field.ty, &nested, &field.pos, visiting)
                 });
                 visiting.remove(id);
                 result
@@ -2587,16 +2538,18 @@ impl<'p> Checker<'p> {
         true
     }
 
-    fn check_worker_spawn(
-        &mut self,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
-        pos: Pos,
-    ) -> hir::Expr {
-        if c.args.len() != 1 || c.args.first().is_some_and(|argument| argument.spread.is_some()) {
+    fn check_worker_spawn(&mut self, c: &ast::CallExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+        if c.args.len() != 1
+            || c.args
+                .first()
+                .is_some_and(|argument| argument.spread.is_some())
+        {
             self.error(
                 RuleCode::S100,
-                format!("`Worker.spawn` expects one directly named entry function, got {} argument(s)", c.args.len()),
+                format!(
+                    "`Worker.spawn` expects one directly named entry function, got {} argument(s)",
+                    c.args.len()
+                ),
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -2659,9 +2612,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let (input, output) = match (&sig.params[0].ty, &sig.params[1].ty) {
-            (Type::Inbox(input), Type::Outbox(output)) => {
-                ((**input).clone(), (**output).clone())
-            }
+            (Type::Inbox(input), Type::Outbox(output)) => ((**input).clone(), (**output).clone()),
             _ => {
                 self.error(
                     RuleCode::S100,
@@ -2827,8 +2778,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let literal_without_global = name == "replaceAll"
             && c.args.first().is_some_and(|arg| {
-                regex_literal(&arg.expr)
-                    .is_some_and(|regex| !regex.flags.as_ref().contains('g'))
+                regex_literal(&arg.expr).is_some_and(|regex| !regex.flags.as_ref().contains('g'))
             });
         if literal_without_global {
             let diagnostic_pos = c
@@ -2977,7 +2927,10 @@ impl<'p> Checker<'p> {
             return self.err_expr(prop_pos);
         }
         let why = if matches!(prop, "UTC" | "now") {
-            format!("`Date.{}` may only be called, not read as a value (Q20)", prop)
+            format!(
+                "`Date.{}` may only be called, not read as a value (Q20)",
+                prop
+            )
         } else {
             format!("`Date.{}` is outside the accepted Date subset (Q20)", prop)
         };
@@ -3067,12 +3020,7 @@ impl<'p> Checker<'p> {
                 }
             }
             0 => {
-                self.reject_api_form(
-                    "Date",
-                    "new Date()",
-                    "new Date()",
-                    pos.clone(),
-                );
+                self.reject_api_form("Date", "new Date()", "new Date()", pos.clone());
                 self.err_expr(pos)
             }
             _ => {
@@ -3164,12 +3112,7 @@ impl<'p> Checker<'p> {
             "toFixed" | "toString" | "toExponential" | "toPrecision"
         ) {
             if name == "toLocaleString" {
-                self.reject_api_form(
-                    "f32 / f64",
-                    "toLocaleString",
-                    "toLocaleString",
-                    prop_pos,
-                );
+                self.reject_api_form("f32 / f64", "toLocaleString", "toLocaleString", prop_pos);
                 return self.err_expr(pos);
             }
             let type_name = self.type_name(&recv.ty);
@@ -3235,10 +3178,7 @@ impl<'p> Checker<'p> {
             }
             self.error(
                 RuleCode::S014,
-                format!(
-                    "{arity_message}, got {} argument(s) (Q26)",
-                    c.args.len()
-                ),
+                format!("{arity_message}, got {} argument(s) (Q26)", c.args.len()),
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -3299,10 +3239,7 @@ impl<'p> Checker<'p> {
         let optional_slice = f == StrFn::Slice;
         let optional_zero_position =
             matches!(f, StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith);
-        let optional_end_position = matches!(
-            f,
-            StrFn::EndsWith | StrFn::Substring | StrFn::Substr
-        );
+        let optional_end_position = matches!(f, StrFn::EndsWith | StrFn::Substring | StrFn::Substr);
         let optional_pad = matches!(f, StrFn::PadStart | StrFn::PadEnd);
         let params: Vec<ParamSig> = f
             .params()
@@ -3436,7 +3373,8 @@ impl<'p> Checker<'p> {
         // The callback-taking methods (and the equality searches) move
         // element values across the runtime↔script boundary; the
         // checker gates the element kinds that can (Q22).
-        let needs_elem_kind = f.takes_callback() || matches!(f, A::IndexOf | A::LastIndexOf | A::Includes);
+        let needs_elem_kind =
+            f.takes_callback() || matches!(f, A::IndexOf | A::LastIndexOf | A::Includes);
         if needs_elem_kind && self.arr_elem_kind(&elem).is_none() {
             let elem_n = self.type_name(&elem);
             self.error(
@@ -3460,7 +3398,11 @@ impl<'p> Checker<'p> {
                 }];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, f.name()));
-                let ty = if f == A::Includes { Type::Bool } else { Type::I32 };
+                let ty = if f == A::Includes {
+                    Type::Bool
+                } else {
+                    Type::I32
+                };
                 mk(args, ty, pos)
             }
             A::Join => {
@@ -3694,18 +3636,16 @@ impl<'p> Checker<'p> {
             }
             A::Sort => {
                 if c.args.is_empty() {
-                    self.reject_api_form(
-                        "T[]",
-                        "sort()",
-                        "sort()",
-                        pos.clone(),
-                    );
+                    self.reject_api_form("T[]", "sort()", "sort()", pos.clone());
                     return self.err_expr(pos);
                 }
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
-                        format!("`sort` expects 1 argument (the comparator), got {}", c.args.len()),
+                        format!(
+                            "`sort` expects 1 argument (the comparator), got {}",
+                            c.args.len()
+                        ),
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -3727,12 +3667,7 @@ impl<'p> Checker<'p> {
                     } else {
                         "reduceRight(callback)"
                     };
-                    self.reject_api_form(
-                        "T[]",
-                        surface,
-                        surface,
-                        pos.clone(),
-                    );
+                    self.reject_api_form("T[]", surface, surface, pos.clone());
                     return self.err_expr(pos);
                 }
                 if c.args.len() != 2 {
@@ -3838,14 +3773,8 @@ impl<'p> Checker<'p> {
                     A::Map => None, // `U` inferred from the callback
                     _ => Some(Type::Bool),
                 };
-                let cb = self.check_arr_callback(
-                    &c.args[0],
-                    vec![elem],
-                    ret_ctx,
-                    fx,
-                    f.name(),
-                    true,
-                );
+                let cb =
+                    self.check_arr_callback(&c.args[0], vec![elem], ret_ctx, fx, f.name(), true);
                 let ty = match f {
                     A::ForEach => Type::Void,
                     A::Filter => arr_ty,
@@ -3901,12 +3830,7 @@ impl<'p> Checker<'p> {
     /// Checks the Q27 static `Map.groupBy` intrinsic. Both generic
     /// arguments are inferred from the array and callback return, as for
     /// `Array.map`; the key result must be in the Q24 whitelist.
-    fn check_map_group_by(
-        &mut self,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
-        pos: Pos,
-    ) -> hir::Expr {
+    fn check_map_group_by(&mut self, c: &ast::CallExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         if c.args.len() != 2 {
             self.error(
                 RuleCode::S100,
@@ -4023,12 +3947,7 @@ impl<'p> Checker<'p> {
         match operation {
             MapFn::Get => {
                 if !self.map_get_value_ok(&value) {
-                    self.reject_api_form(
-                        "Map<K, scalar V>",
-                        "get(key)",
-                        "get(key)",
-                        prop_pos,
-                    );
+                    self.reject_api_form("Map<K, scalar V>", "get(key)", "get(key)", prop_pos);
                     return self.err_expr(pos);
                 }
                 let params = [ParamSig {
@@ -4109,12 +4028,7 @@ impl<'p> Checker<'p> {
                         "Map.delete"
                     },
                 ));
-                mk(
-                    operation,
-                    args,
-                    Type::Bool,
-                    pos,
-                )
+                mk(operation, args, Type::Bool, pos)
             }
             MapFn::Clear => {
                 let checked = self.check_args(&[], &c.args, fx, &pos, "Map.clear");
@@ -4199,13 +4113,7 @@ impl<'p> Checker<'p> {
                     has_default: false,
                 }];
                 let mut args = vec![recv];
-                args.extend(self.check_args(
-                    &params,
-                    &c.args,
-                    fx,
-                    &pos,
-                    &format!("Set.{name}"),
-                ));
+                args.extend(self.check_args(&params, &c.args, fx, &pos, &format!("Set.{name}")));
                 let ty = match operation {
                     SetFn::Add => set_ty,
                     SetFn::Has | SetFn::Delete => Type::Bool,
@@ -4386,18 +4294,11 @@ impl<'p> Checker<'p> {
             ) else {
                 return self.err_expr(a_pos);
             };
-            let checked =
-                self.check_lambda_with(a, Some(&expected), ret.as_ref(), fx, a_pos);
+            let checked = self.check_lambda_with(a, Some(&expected), ret.as_ref(), fx, a_pos);
             // An annotation may override the context; the resulting
             // function type must still match one accepted shape (the
             // return stays free when it is inferred).
-            return self.expect_callback_shape(
-                checked,
-                &params,
-                ret.as_ref(),
-                method,
-                allow_index,
-            );
+            return self.expect_callback_shape(checked, &params, ret.as_ref(), method, allow_index);
         }
         // A function value (named reference or function-typed local).
         // A dual-arity Array callback has no single contextual function
@@ -4434,12 +4335,7 @@ impl<'p> Checker<'p> {
         }
         if allow_index && actual == base.len() + 2 {
             let actual = format!("{method} callback with the container parameter");
-            let _ = self.reject_api_form(
-                "T[]",
-                "callback(value, index, array)",
-                &actual,
-                pos,
-            );
+            let _ = self.reject_api_form("T[]", "callback(value, index, array)", &actual, pos);
             return None;
         }
         let q_rule = if method == "Map.groupBy" {
@@ -4531,10 +4427,7 @@ impl<'p> Checker<'p> {
             RuleCode::S100,
             format!(
                 "type mismatch: the `{}` callback expects `{}` => {}, got `{}`",
-                method,
-                wanted,
-                ret_n,
-                got
+                method, wanted, ret_n, got
             ),
             checked.pos.clone(),
         );
@@ -4600,10 +4493,7 @@ impl<'p> Checker<'p> {
                 let mut expr = self.member_on(obj, &name, prop_pos, false);
                 self.apply_narrowing(&mut expr, fx);
                 let narrowed = path_key(&expr).is_some_and(|key| fx.narrowed.contains(&key));
-                if self.is_absence_capable_member_expr(&expr)
-                    && !allow_absence_test
-                    && !narrowed
-                {
+                if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
                     self.error(
                         RuleCode::S100,
                         "an absence-capable descriptor member may be read only after an `!== undefined` presence test",
@@ -4706,9 +4596,7 @@ impl<'p> Checker<'p> {
                 if let Some(ty) = field {
                     if !for_write
                         && name == "value"
-                        && self
-                            .json_result_value_type(&Type::Class(id))
-                            .is_some()
+                        && self.json_result_value_type(&Type::Class(id)).is_some()
                     {
                         return hir::Expr {
                             kind: ExprKind::JsonResultValue(Box::new(obj)),
@@ -4775,18 +4663,14 @@ impl<'p> Checker<'p> {
                     {
                         self.error(
                             RuleCode::S100,
-                            format!(
-                                "method `{}` may only be called, not read as a value",
-                                name
-                            ),
+                            format!("method `{}` may only be called, not read as a value", name),
                             prop_pos.clone(),
                         );
                     } else if !self.arr_subset_rejection(name, prop_pos.clone()) {
                         self.arr_surface_error(name, prop_pos.clone());
                     }
                 } else if !for_write
-                    && crate::ambient::arr_method(name)
-                        .is_some_and(|f| f.fixed_symbol().is_some())
+                    && crate::ambient::arr_method(name).is_some_and(|f| f.fixed_symbol().is_some())
                 {
                     self.error(
                         RuleCode::S100,
@@ -4981,7 +4865,10 @@ impl<'p> Checker<'p> {
                 if for_write {
                     self.error(
                         RuleCode::S014,
-                        format!("`Date` is an immutable value; `{}` cannot be assigned (Q20)", name),
+                        format!(
+                            "`Date` is an immutable value; `{}` cannot be assigned (Q20)",
+                            name
+                        ),
                         prop_pos.clone(),
                     );
                 } else if name == "getTime" || crate::ambient::date_method(name).is_some() {
@@ -4998,11 +4885,7 @@ impl<'p> Checker<'p> {
             ty if ty.is_numeric() => {
                 let known = matches!(
                     name,
-                    "toFixed"
-                        | "toPrecision"
-                        | "toExponential"
-                        | "toLocaleString"
-                        | "toString"
+                    "toFixed" | "toPrecision" | "toExponential" | "toLocaleString" | "toString"
                 );
                 if known {
                     self.error(
@@ -5092,9 +4975,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             let numeric_ok = match bin {
-                BinOp::Add => {
-                    target_ty.is_numeric() || target_ty == Type::Str
-                }
+                BinOp::Add => target_ty.is_numeric() || target_ty == Type::Str,
                 BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => target_ty.is_numeric(),
                 _ => target_ty.is_integer(),
             };
@@ -5159,8 +5040,7 @@ impl<'p> Checker<'p> {
         // extensions.
         if let Some(key) = path_key(&target) {
             let prefix = format!("{}.", key);
-            fx.narrowed
-                .retain(|k| k != &key && !k.starts_with(&prefix));
+            fx.narrowed.retain(|k| k != &key && !k.starts_with(&prefix));
         }
         hir::Expr {
             kind: ExprKind::Assign {
@@ -5695,16 +5575,12 @@ impl<'p> Checker<'p> {
         };
         match recv.ty.clone() {
             Type::Error => self.err_expr(pos),
-            ty if ty.is_numeric() => {
-                self.check_number_method(recv, &name, c, fx, pos, prop_pos)
-            }
+            ty if ty.is_numeric() => self.check_number_method(recv, &name, c, fx, pos, prop_pos),
             Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
                 self.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
             }
-            Type::Set(key) => {
-                self.check_set_method(recv, *key, &name, c, fx, pos, prop_pos)
-            }
+            Type::Set(key) => self.check_set_method(recv, *key, &name, c, fx, pos, prop_pos),
             Type::Worker(input, output) => {
                 let (function, params, ret) = match name.as_str() {
                     "post" => (
@@ -5716,11 +5592,7 @@ impl<'p> Checker<'p> {
                         }],
                         Type::Void,
                     ),
-                    "poll" => (
-                        WorkerFn::Poll,
-                        Vec::new(),
-                        Type::Nullable(output.clone()),
-                    ),
+                    "poll" => (WorkerFn::Poll, Vec::new(), Type::Nullable(output.clone())),
                     "close" => (WorkerFn::Close, Vec::new(), Type::Void),
                     "join" => (WorkerFn::Join, Vec::new(), Type::Void),
                     _ => {
@@ -5838,14 +5710,7 @@ impl<'p> Checker<'p> {
             Type::FixedArray(elem, n) => {
                 if let Some(f) = crate::ambient::arr_method(&name) {
                     if f.fixed_symbol().is_some() {
-                        return self.check_array_method(
-                            recv,
-                            (*elem).clone(),
-                            f,
-                            c,
-                            fx,
-                            pos,
-                        );
+                        return self.check_array_method(recv, (*elem).clone(), f, c, fx, pos);
                     }
                     self.reject_api_form(
                         "FixedArray<T, N>",
@@ -6012,11 +5877,7 @@ impl<'p> Checker<'p> {
             callee = &p.expr;
         }
         let ast::Expr::Ident(id) = callee else {
-            self.error(
-                RuleCode::S100,
-                "`new` requires a class name",
-                pos.clone(),
-            );
+            self.error(RuleCode::S100, "`new` requires a class name", pos.clone());
             return self.err_expr(pos);
         };
         let name = id.sym.to_string();
@@ -6150,10 +6011,7 @@ impl<'p> Checker<'p> {
                 None => {
                     self.error(
                         RuleCode::S100,
-                        format!(
-                            "generic class `{}` requires explicit type arguments",
-                            name
-                        ),
+                        format!("generic class `{}` requires explicit type arguments", name),
                         ident_pos.clone(),
                     );
                     None
@@ -6369,11 +6227,7 @@ impl<'p> Checker<'p> {
                     if !matches!(ret, Type::Void | Type::Error)
                         && !super::stmt::always_returns(&out)
                     {
-                        self.error(
-                            RuleCode::S100,
-                            "not all paths return a value",
-                            pos.clone(),
-                        );
+                        self.error(RuleCode::S100, "not all paths return a value", pos.clone());
                     }
                 }
                 out

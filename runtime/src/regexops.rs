@@ -239,9 +239,7 @@ unsafe fn text_from_parts<'a>(data: *const u8, len: usize) -> &'a str {
     // Those callers only mutate regex/trap state, which is disjoint from
     // the separately allocated string payload, and neither calls an
     // allocation, delete, or collection operation while `str` is live.
-    unsafe {
-        std::str::from_utf8_unchecked(std::slice::from_raw_parts(data, len))
-    }
+    unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(data, len)) }
 }
 
 fn matcher(ctx: &mut Context, handle: *const u8, pos_id: u32) -> Option<(Arc<Regex>, bool)> {
@@ -724,10 +722,7 @@ mod tests {
 
     #[test]
     fn collection_reclaims_handle_state_but_retains_compiled_patterns() {
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let handle = regex(&mut ctx, "(a)", "");
             let subject = string(&mut ctx, "ba");
             assert_eq!(test(&mut ctx, handle, subject, 0), 1, "{tier}");
@@ -740,11 +735,7 @@ mod tests {
             ctx.collect();
             assert!(ctx.is_live(handle as usize), "{tier}");
             assert_eq!(ctx.regex_store().values.len(), 1, "{tier}");
-            assert_eq!(
-                match_boundary(&mut ctx, handle, 1, false, 0),
-                1,
-                "{tier}"
-            );
+            assert_eq!(match_boundary(&mut ctx, handle, 1, false, 0), 1, "{tier}");
 
             // SAFETY: `root` remains live and registered for this test.
             unsafe { root_ptr.write(0) };
@@ -828,14 +819,8 @@ mod tests {
     #[test]
     fn repeated_matching_preserves_whole_subject_context_and_byte_offsets() {
         let mut ctx = Context::new();
-        assert_eq!(
-            replace_text(&mut ctx, "XXX", r"(?<=X)X", "g", "Z"),
-            b"XZZ"
-        );
-        assert_eq!(
-            replace_text(&mut ctx, "XXX", r"^X", "g", "Z"),
-            b"ZXX"
-        );
+        assert_eq!(replace_text(&mut ctx, "XXX", r"(?<=X)X", "g", "Z"), b"XZZ");
+        assert_eq!(replace_text(&mut ctx, "XXX", r"^X", "g", "Z"), b"ZXX");
         assert_eq!(
             replace_text(&mut ctx, "ab cd", r"\b[a-z]", "g", "Z"),
             b"Zb Zd"
@@ -844,10 +829,7 @@ mod tests {
             replace_text(&mut ctx, "abc", r"ab|(?<=ab)c", "g", "Z"),
             b"ZZ"
         );
-        assert_eq!(
-            replace_text(&mut ctx, "XX", r"(?<=X)", "g", "-"),
-            b"X-X-"
-        );
+        assert_eq!(replace_text(&mut ctx, "XX", r"(?<=X)", "g", "-"), b"X-X-");
 
         let pattern = string(&mut ctx, "X");
         let flags = string(&mut ctx, "g");
@@ -869,10 +851,7 @@ mod tests {
             split_text(&mut ctx, "XXX", r"(?<=X)X"),
             [b"X".as_slice(), b"", b""]
         );
-        assert_eq!(
-            split_text(&mut ctx, "XXX", r"^X"),
-            [b"".as_slice(), b"XX"]
-        );
+        assert_eq!(split_text(&mut ctx, "XXX", r"^X"), [b"".as_slice(), b"XX"]);
         assert_eq!(
             split_text(&mut ctx, "ab cd", r"\b"),
             [b"ab".as_slice(), b" ", b"cd"]
@@ -949,7 +928,10 @@ mod tests {
         let subject = string(&mut ctx, &subject_text);
         let replacement = string(&mut ctx, "Z");
         let result = replace_all(&mut ctx, subject, regex, replacement, 9);
-        assert!(result.is_null(), "must not return a partially replaced string");
+        assert!(
+            result.is_null(),
+            "must not return a partially replaced string"
+        );
         assert_eq!(
             ctx.trap_record().map(|record| record.kind),
             Some(TrapKind::RegexBudget)

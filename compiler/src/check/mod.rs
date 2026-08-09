@@ -27,9 +27,7 @@ use crate::types::{ClassId, EnumId, StringAliasId, Type};
 fn module_decl(item: &ast::ModuleItem) -> Option<&ast::Decl> {
     match item {
         ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => Some(decl),
-        ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => {
-            Some(&export.decl)
-        }
+        ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => Some(&export.decl),
         _ => None,
     }
 }
@@ -55,9 +53,8 @@ fn type_reference_name(ty: Option<&ast::TsType>) -> Option<&str> {
 /// Extracts the declaration-ordered members of the one program type-alias
 /// form admitted by Q32.
 fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
-    let ast::TsType::TsUnionOrIntersectionType(
-        ast::TsUnionOrIntersectionType::TsUnionType(union),
-    ) = ty
+    let ast::TsType::TsUnionOrIntersectionType(ast::TsUnionOrIntersectionType::TsUnionType(union)) =
+        ty
     else {
         return None;
     };
@@ -824,7 +821,10 @@ impl<'p> Checker<'p> {
         } else {
             self.error(
                 RuleCode::S100,
-                format!("type mismatch: {} expects `{}`, got `{}`", what, to_n, from_n),
+                format!(
+                    "type mismatch: {} expects `{}`, got `{}`",
+                    what, to_n, from_n
+                ),
                 pos,
             );
         }
@@ -1047,7 +1047,11 @@ impl<'p> Checker<'p> {
         for d in &v.decls {
             let ast::Pat::Ident(binding) = &d.name else {
                 let pos = self.pos(d.span);
-                self.error(RuleCode::S100, "destructuring is not in the decided surface", pos);
+                self.error(
+                    RuleCode::S100,
+                    "destructuring is not in the decided surface",
+                    pos,
+                );
                 continue;
             };
             let name = binding.id.sym.to_string();
@@ -1071,7 +1075,11 @@ impl<'p> Checker<'p> {
                 ast::TsEnumMemberId::Ident(id) => id.sym.to_string(),
                 ast::TsEnumMemberId::Str(s) => {
                     let p = self.pos(s.span);
-                    self.error(RuleCode::S100, "string enum member names are not decided", p);
+                    self.error(
+                        RuleCode::S100,
+                        "string enum member names are not decided",
+                        p,
+                    );
                     continue;
                 }
             };
@@ -1120,12 +1128,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn collect_string_alias(
-        &mut self,
-        file: usize,
-        alias: &ast::TsTypeAliasDecl,
-        exported: bool,
-    ) {
+    fn collect_string_alias(&mut self, file: usize, alias: &ast::TsTypeAliasDecl, exported: bool) {
         let name = alias.id.sym.to_string();
         let pos = self.pos(alias.id.span);
         if alias.type_params.is_some() {
@@ -1157,7 +1160,10 @@ impl<'p> Checker<'p> {
             return;
         }
         let mut seen = HashSet::new();
-        if let Some(duplicate) = members.iter().find(|member| !seen.insert((*member).clone())) {
+        if let Some(duplicate) = members
+            .iter()
+            .find(|member| !seen.insert((*member).clone()))
+        {
             self.error(
                 RuleCode::S100,
                 format!("duplicate string-literal union member `{duplicate}`"),
@@ -1391,7 +1397,11 @@ impl<'p> Checker<'p> {
         for d in &v.decls {
             let ast::Pat::Ident(binding) = &d.name else {
                 let pos = self.pos(d.span);
-                self.error(RuleCode::S100, "destructuring is not in the decided surface", pos);
+                self.error(
+                    RuleCode::S100,
+                    "destructuring is not in the decided surface",
+                    pos,
+                );
                 continue;
             };
             let name = binding.id.sym.to_string();
@@ -1469,8 +1479,8 @@ impl<'p> Checker<'p> {
                     let mut params = Vec::with_capacity(sig.params.len());
                     for (index, parameter) in sig.params.iter().enumerate() {
                         let ast_parameter = f.function.params.get(index);
-                        let parameter_pos = ast_parameter
-                            .map_or_else(|| pos.clone(), |p| self.pos(p.span));
+                        let parameter_pos =
+                            ast_parameter.map_or_else(|| pos.clone(), |p| self.pos(p.span));
                         let foreign_provenance = self.foreign_parameter_provenance(
                             file,
                             &name,
@@ -1539,7 +1549,9 @@ impl<'p> Checker<'p> {
                 }
                 ast::Decl::Var(v) => {
                     for d in &v.decls {
-                        let ast::Pat::Ident(binding) = &d.name else { continue };
+                        let ast::Pat::Ident(binding) = &d.name else {
+                            continue;
+                        };
                         let name = binding.id.sym.to_string();
                         let ty = match &binding.type_ann {
                             Some(ann) => self.resolve_type(&ann.type_ann),
@@ -1567,13 +1579,8 @@ impl<'p> Checker<'p> {
                                 }
                             },
                         };
-                        self.global_sigs.insert(
-                            name,
-                            GlobalSig {
-                                ty,
-                                mutable: false,
-                            },
-                        );
+                        self.global_sigs
+                            .insert(name, GlobalSig { ty, mutable: false });
                     }
                 }
                 _ => {}
@@ -1596,12 +1603,7 @@ impl<'p> Checker<'p> {
                     .trim_start_matches("./")
                     .trim_end_matches(".ts")
                     .to_string();
-                let Some(target) = self
-                    .prog
-                    .files
-                    .iter()
-                    .position(|f| f.stem == stem)
-                else {
+                let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
                     let pos = self.pos(import.src.span);
                     self.error(
                         RuleCode::S100,
@@ -1698,7 +1700,9 @@ impl<'p> Checker<'p> {
                 }
                 ast::Decl::Var(v) => {
                     for d in &v.decls {
-                        let ast::Pat::Ident(binding) = &d.name else { continue };
+                        let ast::Pat::Ident(binding) = &d.name else {
+                            continue;
+                        };
                         let name = binding.id.sym.to_string();
                         let ty = match &binding.type_ann {
                             Some(ann) => self.resolve_type(&ann.type_ann),
@@ -1909,15 +1913,11 @@ impl<'p> Checker<'p> {
                         self.error(RuleCode::S100, "static fields are not decided", pos);
                         continue;
                     }
-                    let is_defaulted = is_descriptor
-                        && prop.is_optional
-                        && prop.value.is_some()
-                        && !prop.definite;
+                    let is_defaulted =
+                        is_descriptor && prop.is_optional && prop.value.is_some() && !prop.definite;
                     if is_descriptor {
                         match (prop.definite, prop.is_optional, prop.value.is_some()) {
-                            (true, false, false)
-                            | (false, true, true)
-                            | (false, true, false) => {}
+                            (true, false, false) | (false, true, true) | (false, true, false) => {}
                             (_, true, false) => {
                                 let pos = self.pos(prop.span);
                                 self.error(
@@ -1962,8 +1962,8 @@ impl<'p> Checker<'p> {
                     let pos = self.pos(key.span);
                     let ty = match &prop.type_ann {
                         Some(ann) => {
-                            let allow_wire = self.in_boundary
-                                && self.boundary_classes.contains(&id);
+                            let allow_wire =
+                                self.in_boundary && self.boundary_classes.contains(&id);
                             self.allow_wire_alias_boundary = allow_wire;
                             let ty = self.resolve_type(&ann.type_ann);
                             self.allow_wire_alias_boundary = false;
@@ -2016,18 +2016,17 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
-                    let foreign_provenance =
-                        if self.in_boundary && matches!(ty, Type::Func(_)) {
-                            self.callback_provenance(
-                                self.cur_file,
-                                prop.type_ann
-                                    .as_deref()
-                                    .map(|annotation| annotation.type_ann.as_ref()),
-                                pos.clone(),
-                            )
-                        } else {
-                            None
-                        };
+                    let foreign_provenance = if self.in_boundary && matches!(ty, Type::Func(_)) {
+                        self.callback_provenance(
+                            self.cur_file,
+                            prop.type_ann
+                                .as_deref()
+                                .map(|annotation| annotation.type_ann.as_ref()),
+                            pos.clone(),
+                        )
+                    } else {
+                        None
+                    };
                     // Boundary structs (mirror-ingested) relax the C2
                     // value-field whitelist: they may carry `X | null`,
                     // `object | null`, and function-pointer fields.
@@ -2284,9 +2283,10 @@ impl<'p> Checker<'p> {
             ast::Decl::Fn(f) if f.function.type_params.is_none() => {
                 let name = f.ident.sym.to_string();
                 let pos = self.pos(f.ident.span);
-                let Some(sig) = self.fn_sigs.get(&name).cloned() else { return };
-                let function =
-                    self.check_function(&f.function, &name, exported, &sig, None, pos);
+                let Some(sig) = self.fn_sigs.get(&name).cloned() else {
+                    return;
+                };
+                let function = self.check_function(&f.function, &name, exported, &sig, None, pos);
                 if let Some(function) = function {
                     self.functions.push(function);
                 }
@@ -2299,9 +2299,13 @@ impl<'p> Checker<'p> {
             }
             ast::Decl::Var(v) => {
                 for d in &v.decls {
-                    let ast::Pat::Ident(binding) = &d.name else { continue };
+                    let ast::Pat::Ident(binding) = &d.name else {
+                        continue;
+                    };
                     let name = binding.id.sym.to_string();
-                    let Some(sig) = self.global_sigs.get(&name).cloned() else { continue };
+                    let Some(sig) = self.global_sigs.get(&name).cloned() else {
+                        continue;
+                    };
                     let pos = self.pos(binding.id.span);
                     let mut fx = FnCtx::new(Type::Void, false, None);
                     let init = match &d.init {
@@ -2451,7 +2455,9 @@ impl<'p> Checker<'p> {
         for member in &class.body {
             match member {
                 ast::ClassMember::ClassProp(prop) => {
-                    let ast::PropName::Ident(key) = &prop.key else { continue };
+                    let ast::PropName::Ident(key) = &prop.key else {
+                        continue;
+                    };
                     let Some(value) = &prop.value else { continue };
                     let field_ty = self.classes[id.0]
                         .fields
@@ -2476,7 +2482,9 @@ impl<'p> Checker<'p> {
                     }
                 }
                 ast::ClassMember::Constructor(ctor) => {
-                    let Some(params) = self.class_sigs[id.0].ctor.clone() else { continue };
+                    let Some(params) = self.class_sigs[id.0].ctor.clone() else {
+                        continue;
+                    };
                     let pos = self.pos(ctor.span);
                     let sig = FnSig {
                         params,
@@ -2488,7 +2496,9 @@ impl<'p> Checker<'p> {
                     let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
                     let mut hir_params = Vec::new();
                     for (i, p) in ctor.params.iter().enumerate() {
-                        let ast::ParamOrTsParamProp::Param(param) = p else { continue };
+                        let ast::ParamOrTsParamProp::Param(param) = p else {
+                            continue;
+                        };
                         let Some(ps) = sig.params.get(i) else { break };
                         let default = match &param.pat {
                             ast::Pat::Assign(a) => {
@@ -2531,7 +2541,9 @@ impl<'p> Checker<'p> {
                     });
                 }
                 ast::ClassMember::Method(method) => {
-                    let ast::PropName::Ident(key) = &method.key else { continue };
+                    let ast::PropName::Ident(key) = &method.key else {
+                        continue;
+                    };
                     if method.is_static || method.kind != ast::MethodKind::Method {
                         continue;
                     }
@@ -2566,12 +2578,7 @@ impl<'p> Checker<'p> {
 
     /// Instantiates a generic function at explicit type arguments and
     /// checks its body immediately. Returns the instance name.
-    pub(crate) fn instantiate_fn(
-        &mut self,
-        key: &str,
-        args: &[Type],
-        pos: Pos,
-    ) -> Option<String> {
+    pub(crate) fn instantiate_fn(&mut self, key: &str, args: &[Type], pos: Pos) -> Option<String> {
         let template = self.generic_fns.get(key)?.clone();
         if template.type_params.len() != args.len() {
             self.error(
@@ -2673,12 +2680,7 @@ impl<'p> Checker<'p> {
     /// Looks a name up in the local scope stack. A hit that crosses a
     /// lambda boundary is a capture: it is recorded on every crossed
     /// lambda frame and must refer to a `const` binding (C5).
-    pub(crate) fn lookup_local(
-        &mut self,
-        name: &str,
-        pos: &Pos,
-        fx: &mut FnCtx,
-    ) -> Option<Local> {
+    pub(crate) fn lookup_local(&mut self, name: &str, pos: &Pos, fx: &mut FnCtx) -> Option<Local> {
         let mut crossed = 0usize;
         let mut found: Option<(usize, Local)> = None;
         for scope in fx.scopes.iter().rev() {
@@ -2752,9 +2754,7 @@ impl<'p> Checker<'p> {
                 self.is_capturing_value(then, fx) || self.is_capturing_value(els, fx)
             }
             hir::ExprKind::Assign { value, .. } => self.is_capturing_value(value, fx),
-            hir::ExprKind::ArrayLit(elems) => {
-                elems.iter().any(|e| self.is_capturing_value(e, fx))
-            }
+            hir::ExprKind::ArrayLit(elems) => elems.iter().any(|e| self.is_capturing_value(e, fx)),
             hir::ExprKind::ArraySpreadLit(elems) => elems
                 .iter()
                 .any(|e| e.spread.is_none() && self.is_capturing_value(&e.expr, fx)),

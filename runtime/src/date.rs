@@ -106,7 +106,11 @@ pub fn utc_ms(
 ) -> Option<i64> {
     // ECMA MakeFullYear: two-digit years select the 20th century.
     let year = i64::from(year);
-    let year = if (0..=99).contains(&year) { 1900 + year } else { year };
+    let year = if (0..=99).contains(&year) {
+        1900 + year
+    } else {
+        year
+    };
     let ym = year * 12 + i64::from(month0);
     let y = ym.div_euclid(12);
     let m = (ym.rem_euclid(12) + 1) as u32;
@@ -256,7 +260,11 @@ mod tests {
         let end = days_from_civil(2400, 12, 31);
         for z in start..=end {
             let (y, m, d) = civil_from_days(z);
-            assert_eq!(days_from_civil(y, m, i64::from(d)), z, "round trip at day {z}");
+            assert_eq!(
+                days_from_civil(y, m, i64::from(d)),
+                z,
+                "round trip at day {z}"
+            );
         }
         // Spot years at the toISOString bounds.
         for y in [0i64, 9999] {
@@ -288,13 +296,25 @@ mod tests {
     #[test]
     fn utc_ms_carries_month_and_day_arithmetically() {
         // month0 13 rolls into February of the next year.
-        assert_eq!(utc_ms(2020, 13, 1, 0, 0, 0, 0), utc_ms(2021, 1, 1, 0, 0, 0, 0));
+        assert_eq!(
+            utc_ms(2020, 13, 1, 0, 0, 0, 0),
+            utc_ms(2021, 1, 1, 0, 0, 0, 0)
+        );
         // day 0 is the last day of the previous month (2020 is leap).
-        assert_eq!(utc_ms(2020, 2, 0, 0, 0, 0, 0), utc_ms(2020, 1, 29, 0, 0, 0, 0));
+        assert_eq!(
+            utc_ms(2020, 2, 0, 0, 0, 0, 0),
+            utc_ms(2020, 1, 29, 0, 0, 0, 0)
+        );
         // 1900-02-29 does not exist; it is 1900-03-01.
-        assert_eq!(utc_ms(1900, 1, 29, 0, 0, 0, 0), utc_ms(1900, 2, 1, 0, 0, 0, 0));
+        assert_eq!(
+            utc_ms(1900, 1, 29, 0, 0, 0, 0),
+            utc_ms(1900, 2, 1, 0, 0, 0, 0)
+        );
         // Negative month0 carries backwards.
-        assert_eq!(utc_ms(2020, -1, 1, 0, 0, 0, 0), utc_ms(2019, 11, 1, 0, 0, 0, 0));
+        assert_eq!(
+            utc_ms(2020, -1, 1, 0, 0, 0, 0),
+            utc_ms(2019, 11, 1, 0, 0, 0, 0)
+        );
     }
 
     #[test]
@@ -370,8 +390,14 @@ mod tests {
     #[test]
     fn time_clip_extremes_decompose_to_the_known_calendar_dates() {
         let max = decompose(MAX_DATE_MS);
-        assert_eq!((max.year, max.month0, max.day, max.weekday), (275_760, 8, 13, 6));
+        assert_eq!(
+            (max.year, max.month0, max.day, max.weekday),
+            (275_760, 8, 13, 6)
+        );
         let min = decompose(-MAX_DATE_MS);
-        assert_eq!((min.year, min.month0, min.day, min.weekday), (-271_821, 3, 20, 2));
+        assert_eq!(
+            (min.year, min.month0, min.day, min.weekday),
+            (-271_821, 3, 20, 2)
+        );
     }
 }

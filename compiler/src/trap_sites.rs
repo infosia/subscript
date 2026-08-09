@@ -185,12 +185,8 @@ impl Analyzer {
                 if let Some(init) = init {
                     self.stmt(init);
                 }
-                let proof = self.induction_interval(
-                    init.as_deref(),
-                    cond.as_ref(),
-                    step.as_ref(),
-                    body,
-                );
+                let proof =
+                    self.induction_interval(init.as_deref(), cond.as_ref(), step.as_ref(), body);
                 if let Some((name, range)) = proof {
                     self.ranges.insert(name, range);
                 }
@@ -408,13 +404,7 @@ impl Analyzer {
         {
             return None;
         }
-        Some((
-            name,
-            Interval {
-                lo: start.lo,
-                hi,
-            },
-        ))
+        Some((name, Interval { lo: start.lo, hi }))
     }
 }
 
@@ -509,21 +499,15 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
         K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => {
             expr_assigns_to(obj, name)
         }
-        K::Index { obj, index, .. } => {
-            expr_assigns_to(obj, name) || expr_assigns_to(index, name)
-        }
+        K::Index { obj, index, .. } => expr_assigns_to(obj, name) || expr_assigns_to(index, name),
         K::ArrayLit(elems) => elems.iter().any(|elem| expr_assigns_to(elem, name)),
-        K::ArraySpreadLit(elems) => elems
-            .iter()
-            .any(|elem| expr_assigns_to(&elem.expr, name)),
+        K::ArraySpreadLit(elems) => elems.iter().any(|elem| expr_assigns_to(&elem.expr, name)),
         K::Template(parts) => parts.iter().any(|part| match part {
             hir::TplPart::Expr(expr) => expr_assigns_to(expr, name),
             hir::TplPart::Text(_) => false,
         }),
         K::Cond { cond, then, els } => {
-            expr_assigns_to(cond, name)
-                || expr_assigns_to(then, name)
-                || expr_assigns_to(els, name)
+            expr_assigns_to(cond, name) || expr_assigns_to(then, name) || expr_assigns_to(els, name)
         }
         K::Yield(value) => value
             .as_deref()

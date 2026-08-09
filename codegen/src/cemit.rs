@@ -181,9 +181,7 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h str, &'h Type)>) {
                 }
                 walk_lets(body, out);
             }
-            hir::Stmt::ForOf {
-                name, ty, body, ..
-            } => {
+            hir::Stmt::ForOf { name, ty, body, .. } => {
                 out.push((name, ty));
                 walk_lets(body, out);
             }
@@ -256,10 +254,7 @@ enum TrapOperand {
     Pending,
     Value(String),
     Condition(String),
-    DynamicIndex {
-        handle: String,
-        index: String,
-    },
+    DynamicIndex { handle: String, index: String },
     WireValue { wire: String, valid: String },
 }
 
@@ -599,7 +594,10 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(self.protos, "{proto};");
             }
         }
-        let _ = writeln!(self.protos, "void subscript_init(subscript_rt_context* ctx);");
+        let _ = writeln!(
+            self.protos,
+            "void subscript_init(subscript_rt_context* ctx);"
+        );
         for index in 0..self.module.worker_entries.len() {
             self.emit_worker_entry_adapter(index)?;
         }
@@ -643,12 +641,7 @@ impl<'m> Emitter<'m> {
             );
         }
         for foreign in &self.module.foreign_fns {
-            if self
-                .module
-                .foreign_mirrors
-                .get(foreign.mirror.0)
-                .is_none()
-            {
+            if self.module.foreign_mirrors.get(foreign.mirror.0).is_none() {
                 return Err(format!(
                     "internal error at foreign function `{}`: mirror provenance index {} is missing",
                     foreign.name, foreign.mirror.0
@@ -798,7 +791,11 @@ impl<'m> Emitter<'m> {
         }
         match ty {
             Type::FixedArray(elem, n) => {
-                let _ = writeln!(out, "typedef struct {{ {} a[{n}]; }} {name};", self.ctype(elem)?);
+                let _ = writeln!(
+                    out,
+                    "typedef struct {{ {} a[{n}]; }} {name};",
+                    self.ctype(elem)?
+                );
             }
             Type::IterResult(v) => {
                 let _ = writeln!(
@@ -861,10 +858,14 @@ impl<'m> Emitter<'m> {
         let params = self.param_list(&ctor.params)?;
         let sep = if params.is_empty() { "" } else { ", " };
         if c.is_value {
-            Ok(format!("static {cname} subscript_ctor{ci}(void* ctx{sep}{params})"))
+            Ok(format!(
+                "static {cname} subscript_ctor{ci}(void* ctx{sep}{params})"
+            ))
         } else {
-            Ok(format!("static void subscript_ctor{ci}(void* ctx, void* _this{}{params})",
-                if params.is_empty() { "" } else { ", " }))
+            Ok(format!(
+                "static void subscript_ctor{ci}(void* ctx, void* _this{}{params})",
+                if params.is_empty() { "" } else { ", " }
+            ))
         }
     }
 
@@ -909,9 +910,15 @@ impl<'m> Emitter<'m> {
     fn gen_creator_signature(&self, f: &hir::Function) -> Result<String, String> {
         let params = self.param_list(&f.params)?;
         if params.is_empty() {
-            Ok(format!("static void* subscript_fn_{}(void* ctx)", sanitize(&f.name)))
+            Ok(format!(
+                "static void* subscript_fn_{}(void* ctx)",
+                sanitize(&f.name)
+            ))
         } else {
-            Ok(format!("static void* subscript_fn_{}(void* ctx, {params})", sanitize(&f.name)))
+            Ok(format!(
+                "static void* subscript_fn_{}(void* ctx, {params})",
+                sanitize(&f.name)
+            ))
         }
     }
 
@@ -925,7 +932,12 @@ impl<'m> Emitter<'m> {
 
     // ----- constructors -----
 
-    fn emit_constructor(&mut self, out: &mut String, ci: usize, c: &hir::ClassDef) -> Result<(), String> {
+    fn emit_constructor(
+        &mut self,
+        out: &mut String,
+        ci: usize,
+        c: &hir::ClassDef,
+    ) -> Result<(), String> {
         let ctor = c.ctor.as_ref().ok_or("constructor missing")?;
         let sig = self.ctor_signature(ci, c)?;
         let cname = self.class_name(ClassId(ci))?;
@@ -954,7 +966,11 @@ impl<'m> Emitter<'m> {
                 if c.is_value {
                     let _ = writeln!(out, "    _this.{} = {v};", sanitize(&field.name));
                 } else {
-                    let _ = writeln!(out, "    (({cname}*)_this)->{} = {v};", sanitize(&field.name));
+                    let _ = writeln!(
+                        out,
+                        "    (({cname}*)_this)->{} = {v};",
+                        sanitize(&field.name)
+                    );
                 }
             }
         }
@@ -967,7 +983,12 @@ impl<'m> Emitter<'m> {
         Ok(())
     }
 
-    fn emit_method(&mut self, out: &mut String, ci: usize, m: &hir::Function) -> Result<(), String> {
+    fn emit_method(
+        &mut self,
+        out: &mut String,
+        ci: usize,
+        m: &hir::Function,
+    ) -> Result<(), String> {
         let sig = self.method_signature(ci, m)?;
         let is_value = self.class(ClassId(ci))?.is_value;
         let _ = writeln!(out, "{sig} {{");
@@ -1019,7 +1040,13 @@ impl<'m> Emitter<'m> {
     /// a live handle held in one survives `Context.collect()`; the frame is
     /// pushed here and popped at every exit, exactly as the CLIF path's
     /// `shadow_push`/`shadow_pop` do (the P2 M1 fix, on the CLIF side).
-    fn emit_prologue(&mut self, out: &mut String, params: &[hir::Param], body: &[hir::Stmt], depth: usize) -> Result<(), String> {
+    fn emit_prologue(
+        &mut self,
+        out: &mut String,
+        params: &[hir::Param],
+        body: &[hir::Stmt],
+        depth: usize,
+    ) -> Result<(), String> {
         for p in params {
             self.local_types.push((p.name.clone(), p.ty.clone()));
         }
@@ -1028,7 +1055,10 @@ impl<'m> Emitter<'m> {
             return Ok(());
         }
         let ind = indent(depth);
-        let _ = writeln!(out, "{ind}void* _ssroots[{n}]; memset(_ssroots, 0, sizeof _ssroots);");
+        let _ = writeln!(
+            out,
+            "{ind}void* _ssroots[{n}]; memset(_ssroots, 0, sizeof _ssroots);"
+        );
         let _ = writeln!(out, "{ind}subscript_rt_shadow_push(ctx, _ssroots, {n}ull);");
         self.has_shadow = true;
         let mut slot = 0u32;
@@ -1051,7 +1081,14 @@ impl<'m> Emitter<'m> {
     /// managed-interior aggregate occupies `managed_words` consecutive
     /// slots holding its bytes (its interior handles land on
     /// word-aligned offsets the conservative scan reads).
-    fn root_slot_store(&mut self, out: &mut String, ty: &Type, slot: u32, value: &str, depth: usize) -> Result<String, String> {
+    fn root_slot_store(
+        &mut self,
+        out: &mut String,
+        ty: &Type,
+        slot: u32,
+        value: &str,
+        depth: usize,
+    ) -> Result<String, String> {
         let ind = indent(depth);
         if is_managed(&self.layouts, ty)? {
             let _ = writeln!(out, "{ind}_ssroots[{slot}] = {value};");
@@ -1325,9 +1362,7 @@ impl<'m> Emitter<'m> {
             | Type::U64
             | Type::Bool
             | Type::Enum(_)
-            | Type::StringAlias(_) => {
-                "0".to_string()
-            }
+            | Type::StringAlias(_) => "0".to_string(),
             Type::Str
             | Type::RegExp
             | Type::Object
@@ -1388,11 +1423,17 @@ impl<'m> Emitter<'m> {
                     let _ = writeln!(out, "}}");
                 } else {
                     let cn = Emitter::fn_c_name(f);
-                    let _ = writeln!(out, "void {export}(subscript_rt_context* ctx) {{ {cn}(ctx); }}");
+                    let _ = writeln!(
+                        out,
+                        "void {export}(subscript_rt_context* ctx) {{ {cn}(ctx); }}"
+                    );
                 }
             }
         }
-        let _ = writeln!(out, "void subscript_kick_async_exports(subscript_rt_context* ctx) {{");
+        let _ = writeln!(
+            out,
+            "void subscript_kick_async_exports(subscript_rt_context* ctx) {{"
+        );
         for f in &self.module.functions {
             if f.exported
                 && f.is_async
@@ -1400,11 +1441,7 @@ impl<'m> Emitter<'m> {
                 && f.params.is_empty()
                 && f.ret == Type::Void
             {
-                let _ = writeln!(
-                    out,
-                    "    subscript_export_{}(ctx);",
-                    sanitize(&f.name)
-                );
+                let _ = writeln!(out, "    subscript_export_{}(ctx);", sanitize(&f.name));
                 let _ = writeln!(out, "    if (*(const uint32_t*)ctx != 0u) return;");
             }
         }
@@ -1414,7 +1451,12 @@ impl<'m> Emitter<'m> {
 
     // ----- statements -----
 
-    fn emit_block(&mut self, out: &mut String, stmts: &[hir::Stmt], depth: usize) -> Result<(), String> {
+    fn emit_block(
+        &mut self,
+        out: &mut String,
+        stmts: &[hir::Stmt],
+        depth: usize,
+    ) -> Result<(), String> {
         for s in stmts {
             self.emit_stmt(out, s, depth)?;
         }
@@ -1427,7 +1469,9 @@ impl<'m> Emitter<'m> {
             hir::Stmt::Let { name, ty, init, .. } => self.emit_let(out, name, ty, init, depth),
             hir::Stmt::Expr(e) => self.emit_expr_stmt(out, e, depth),
             hir::Stmt::Return { value, .. } => self.emit_return(out, value.as_ref(), depth),
-            hir::Stmt::If { cond, then, els, .. } => {
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
                 let c = self.eval(cond, out, depth)?;
                 let _ = writeln!(out, "{ind}if ({c}) {{");
                 self.emit_block(out, then, depth + 1)?;
@@ -1439,9 +1483,20 @@ impl<'m> Emitter<'m> {
                 Ok(())
             }
             hir::Stmt::While { cond, body, .. } => self.emit_while(out, cond, body, depth),
-            hir::Stmt::For { init, cond, step, body, .. } => {
-                self.emit_for(out, init.as_deref(), cond.as_ref(), step.as_ref(), body, depth)
-            }
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => self.emit_for(
+                out,
+                init.as_deref(),
+                cond.as_ref(),
+                step.as_ref(),
+                body,
+                depth,
+            ),
             hir::Stmt::ForOf { .. } => self.emit_for_of(out, s, depth),
             hir::Stmt::Switch { disc, cases, .. } => self.emit_switch(out, disc, cases, depth),
             hir::Stmt::Break(_) => {
@@ -1460,11 +1515,20 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{ind}}}");
                 Ok(())
             }
-            other => Err(format!("statement {other:?} is outside the run set's scope")),
+            other => Err(format!(
+                "statement {other:?} is outside the run set's scope"
+            )),
         }
     }
 
-    fn emit_let(&mut self, out: &mut String, name: &str, ty: &Type, init: &hir::Expr, depth: usize) -> Result<(), String> {
+    fn emit_let(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        ty: &Type,
+        init: &hir::Expr,
+        depth: usize,
+    ) -> Result<(), String> {
         let ind = indent(depth);
         // Generator locals live in the frame, not as C variables.
         if self.gen.is_some() {
@@ -1508,7 +1572,12 @@ impl<'m> Emitter<'m> {
         }
     }
 
-    fn emit_return(&mut self, out: &mut String, value: Option<&hir::Expr>, depth: usize) -> Result<(), String> {
+    fn emit_return(
+        &mut self,
+        out: &mut String,
+        value: Option<&hir::Expr>,
+        depth: usize,
+    ) -> Result<(), String> {
         let ind = indent(depth);
         // Inside a coroutine resume body, `return` completes the frame.
         if let Some(kind) = self.gen.as_ref().map(|g| g.kind) {
@@ -1537,10 +1606,7 @@ impl<'m> Emitter<'m> {
                 let text = self.eval(v, out, depth)?;
                 if let Type::Class(cid) = self.current_ret.clone() {
                     if self.is_value_class(cid)?
-                        && self.boundary_struct_contains_pointer_member(
-                            cid,
-                            &mut HashSet::new(),
-                        )?
+                        && self.boundary_struct_contains_pointer_member(cid, &mut HashSet::new())?
                     {
                         let ctype = self.class_name(cid)?;
                         let stable = self.fresh_tmp();
@@ -1574,7 +1640,13 @@ impl<'m> Emitter<'m> {
         }
     }
 
-    fn emit_while(&mut self, out: &mut String, cond: &hir::Expr, body: &[hir::Stmt], depth: usize) -> Result<(), String> {
+    fn emit_while(
+        &mut self,
+        out: &mut String,
+        cond: &hir::Expr,
+        body: &[hir::Stmt],
+        depth: usize,
+    ) -> Result<(), String> {
         let ind = indent(depth);
         let ind1 = indent(depth + 1);
         let top = self.fresh_label();
@@ -1750,10 +1822,7 @@ impl<'m> Emitter<'m> {
                 );
             }
             K::FixedArrayValues => {
-                let _ = writeln!(
-                    out,
-                    "{ind1}{binding} = ({subject_tmp}).a[{index}];"
-                );
+                let _ = writeln!(out, "{ind1}{binding} = ({subject_tmp}).a[{index}];");
             }
             K::MapKeys | K::MapValues | K::SetValues => {
                 let cty = self.ctype(ty)?;
@@ -1809,7 +1878,13 @@ impl<'m> Emitter<'m> {
         Ok(())
     }
 
-    fn emit_switch(&mut self, out: &mut String, disc: &hir::Expr, cases: &[hir::SwitchCase], depth: usize) -> Result<(), String> {
+    fn emit_switch(
+        &mut self,
+        out: &mut String,
+        disc: &hir::Expr,
+        cases: &[hir::SwitchCase],
+        depth: usize,
+    ) -> Result<(), String> {
         let ind = indent(depth);
         let ind1 = indent(depth + 1);
         let dv = self.eval(disc, out, depth)?;
@@ -1909,7 +1984,12 @@ impl<'m> Emitter<'m> {
 
     // ----- expression statements -----
 
-    fn emit_expr_stmt(&mut self, out: &mut String, e: &hir::Expr, depth: usize) -> Result<(), String> {
+    fn emit_expr_stmt(
+        &mut self,
+        out: &mut String,
+        e: &hir::Expr,
+        depth: usize,
+    ) -> Result<(), String> {
         use hir::ExprKind as K;
         let ind = indent(depth);
         match &e.kind {
@@ -1937,14 +2017,10 @@ impl<'m> Emitter<'m> {
             K::Call {
                 callee: hir::Callee::Method { recv, name },
                 args,
-            }
-                if is_array_mutator(&recv.ty, name) =>
-            {
+            } if is_array_mutator(&recv.ty, name) => {
                 let sites = e.trap_sites(self.module);
                 lower_trap_sites(&sites, "array mutator call", |sites| {
-                    self.emit_array_mutator(
-                        out, recv, name, args, &e.pos, sites, depth,
-                    )?;
+                    self.emit_array_mutator(out, recv, name, args, &e.pos, sites, depth)?;
                     if let Some(site) =
                         sites.take(|site| matches!(site, hir::TrapSite::Call { .. }))
                     {
@@ -1995,12 +2071,7 @@ impl<'m> Emitter<'m> {
                 while let Some(site) =
                     sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                 {
-                    self.emit_trap_site(
-                        site,
-                        TrapOperand::Value(p.clone()),
-                        out,
-                        depth,
-                    )?;
+                    self.emit_trap_site(site, TrapOperand::Value(p.clone()), out, depth)?;
                 }
                 let pid = self.pos_id(pos);
                 let _ = writeln!(out, "{ind}subscript_rt_delete(ctx, {p}, {pid}u);");
@@ -2033,12 +2104,7 @@ impl<'m> Emitter<'m> {
         while let Some(site) =
             sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
         {
-            self.emit_trap_site(
-                site,
-                TrapOperand::Value(h.clone()),
-                out,
-                depth,
-            )?;
+            self.emit_trap_site(site, TrapOperand::Value(h.clone()), out, depth)?;
         }
         let ect = self.ctype(&elem)?;
         let pid = self.pos_id(pos);
@@ -2106,30 +2172,22 @@ impl<'m> Emitter<'m> {
             }
             Some(bin) => {
                 if target.ty == Type::Str && bin == hir::BinOp::Add {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            "string compound assignment has no HIR allocation site",
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        "string compound assignment has no HIR allocation site",
+                    )?;
                     let v = self.eval(value, out, depth)?;
                     let pid = self.pos_id(&target.pos);
-                    let call =
-                        format!("subscript_rt_str_concat(ctx, {place}, {v}, {pid}u)");
-                    let result = self.eval_site_checked_call(
-                        call,
-                        &Type::Str,
-                        site,
-                        out,
-                        depth,
-                    )?;
+                    let call = format!("subscript_rt_str_concat(ctx, {place}, {v}, {pid}u)");
+                    let result = self.eval_site_checked_call(call, &Type::Str, site, out, depth)?;
                     let _ = writeln!(out, "{ind}{place} = {result};");
-                } else if target.ty.is_integer() && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem) {
+                } else if target.ty.is_integer() && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem)
+                {
                     let v = self.eval(value, out, depth)?;
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                            "integer compound assignment has no HIR trap site",
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                        "integer compound assignment has no HIR trap site",
+                    )?;
                     let result = self.eval_checked_divrem(
                         &target.ty,
                         bin == hir::BinOp::Div,
@@ -2177,33 +2235,19 @@ impl<'m> Emitter<'m> {
         while let Some(site) =
             sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
         {
-            self.emit_trap_site(
-                site,
-                TrapOperand::Value(handle.clone()),
-                out,
-                depth,
-            )?;
+            self.emit_trap_site(site, TrapOperand::Value(handle.clone()), out, depth)?;
         }
         let index = self.eval_pinned(index, out, depth)?;
-        let read_site = sites
-            .take(|site| matches!(site, hir::TrapSite::IndexRead { .. }));
-        let write_site = sites
-            .take_required(
-                |site| matches!(site, hir::TrapSite::IndexWrite { .. }),
-                "dynamic array assignment has no HIR write site",
-            )?;
+        let read_site = sites.take(|site| matches!(site, hir::TrapSite::IndexRead { .. }));
+        let write_site = sites.take_required(
+            |site| matches!(site, hir::TrapSite::IndexWrite { .. }),
+            "dynamic array assignment has no HIR write site",
+        )?;
 
         let current = if op.is_some() {
-            let read_site =
-                read_site.ok_or("compound array assignment has no HIR read site")?;
-            let pointer = self.emit_dynamic_index_addr(
-                &handle,
-                &index,
-                elem,
-                read_site,
-                out,
-                depth,
-            )?;
+            let read_site = read_site.ok_or("compound array assignment has no HIR read site")?;
+            let pointer =
+                self.emit_dynamic_index_addr(&handle, &index, elem, read_site, out, depth)?;
             let current = self.fresh_tmp();
             let _ = writeln!(out, "{ind}{ect} {current} = *{pointer};");
             Some(current)
@@ -2217,24 +2261,21 @@ impl<'m> Emitter<'m> {
         let assigned = match (op, current) {
             (None, None) => rhs_tmp,
             (Some(hir::BinOp::Add), Some(current)) if **elem == Type::Str => {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                        "string array compound assignment has no HIR allocation site",
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    "string array compound assignment has no HIR allocation site",
+                )?;
                 let pos_id = self.pos_id(&target.pos);
-                let call =
-                    format!("subscript_rt_str_concat(ctx, {current}, {rhs_tmp}, {pos_id}u)");
+                let call = format!("subscript_rt_str_concat(ctx, {current}, {rhs_tmp}, {pos_id}u)");
                 self.eval_site_checked_call(call, elem, site, out, depth)?
             }
             (Some(bin @ (hir::BinOp::Div | hir::BinOp::Rem)), Some(current))
                 if elem.is_integer() =>
             {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                        "integer array compound assignment has no HIR trap site",
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                    "integer array compound assignment has no HIR trap site",
+                )?;
                 self.eval_checked_divrem(
                     elem,
                     bin == hir::BinOp::Div,
@@ -2254,10 +2295,7 @@ impl<'m> Emitter<'m> {
             (Some(bin), Some(current)) => {
                 let symbol = binop_sym(bin)?;
                 let combined = self.fresh_tmp();
-                let _ = writeln!(
-                    out,
-                    "{ind}{ect} {combined} = {current} {symbol} {rhs_tmp};"
-                );
+                let _ = writeln!(out, "{ind}{ect} {combined} = {current} {symbol} {rhs_tmp};");
                 combined
             }
             _ => return Err("invalid dynamic-array assignment shape".to_string()),
@@ -2265,14 +2303,8 @@ impl<'m> Emitter<'m> {
 
         // Resolve only after the RHS and compound operation: either may
         // fault or reallocate before the growth-safe write.
-        let pointer = self.emit_dynamic_index_addr(
-            &handle,
-            &index,
-            elem,
-            write_site,
-            out,
-            depth,
-        )?;
+        let pointer =
+            self.emit_dynamic_index_addr(&handle, &index, elem, write_site, out, depth)?;
         let _ = writeln!(out, "{ind}*{pointer} = {assigned};");
         Ok(assigned)
     }
@@ -2314,8 +2346,7 @@ impl<'m> Emitter<'m> {
                     if let Some(site) = sites.take(|site| {
                         matches!(
                             site,
-                            hir::TrapSite::IndexRead { .. }
-                                | hir::TrapSite::IndexWrite { .. }
+                            hir::TrapSite::IndexRead { .. } | hir::TrapSite::IndexWrite { .. }
                         )
                     }) {
                         let elem = match &obj.ty {
@@ -2340,30 +2371,23 @@ impl<'m> Emitter<'m> {
                 }
                 Type::Array(elem) => {
                     let handle = self.eval_pinned(obj, out, depth)?;
-                    while let Some(site) = sites
-                        .take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                    while let Some(site) =
+                        sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                     {
-                        self.emit_trap_site(
-                            site,
-                            TrapOperand::Value(handle.clone()),
-                            out,
-                            depth,
-                        )?;
+                        self.emit_trap_site(site, TrapOperand::Value(handle.clone()), out, depth)?;
                     }
                     let index = self.eval_pinned(index, out, depth)?;
                     let site = sites.take_required(
                         |site| {
                             matches!(
                                 site,
-                                hir::TrapSite::IndexRead { .. }
-                                    | hir::TrapSite::IndexWrite { .. }
+                                hir::TrapSite::IndexRead { .. } | hir::TrapSite::IndexWrite { .. }
                             )
                         },
                         "checked dynamic-array place has no HIR index site",
                     )?;
-                    let pointer = self.emit_dynamic_index_addr(
-                        &handle, &index, elem, site, out, depth,
-                    )?;
+                    let pointer =
+                        self.emit_dynamic_index_addr(&handle, &index, elem, site, out, depth)?;
                     Ok(format!("(*{pointer})"))
                 }
                 other => Err(format!("assignment target index on {other:?}")),
@@ -2389,17 +2413,11 @@ impl<'m> Emitter<'m> {
                 } else {
                     let cname = self.class_name(*id)?;
                     let o = self.eval_pinned(obj, out, depth)?;
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
-                            "reference field place has no HIR lifetime site",
-                        )?;
-                    self.emit_trap_site(
-                        site,
-                        TrapOperand::Value(o.clone()),
-                        out,
-                        depth,
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
+                        "reference field place has no HIR lifetime site",
                     )?;
+                    self.emit_trap_site(site, TrapOperand::Value(o.clone()), out, depth)?;
                     Ok((format!("(({cname}*)({o}))"), "->"))
                 }
             }
@@ -2412,7 +2430,12 @@ impl<'m> Emitter<'m> {
     /// value bound to a temporary, which is both a legal `.field` base in
     /// C (an rvalue struct is not) and the dev tier's behaviour: the
     /// write lands in a temporary and is correctly lost (C2).
-    fn place_or_eval(&mut self, obj: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    fn place_or_eval(
+        &mut self,
+        obj: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         use hir::ExprKind as K;
         match &obj.kind {
             K::Local(_) | K::Global(_) | K::Field { .. } | K::Index { .. } | K::This => {
@@ -2610,11 +2633,7 @@ impl<'m> Emitter<'m> {
                 Type::FixedArray(_, n) => Ok(n.to_string()),
                 other => Err(format!("length of {other:?}")),
             },
-            K::Index {
-                obj,
-                index,
-                ..
-            } => {
+            K::Index { obj, index, .. } => {
                 let sites = e.trap_sites(self.module);
                 lower_trap_sites(&sites, "index read", |sites| {
                     self.eval_index(obj, index, sites, out, depth)
@@ -2638,9 +2657,12 @@ impl<'m> Emitter<'m> {
                     self.eval_template(parts, sites, out, depth)
                 })
             }
-            K::Lambda { params, ret, body, captures } => {
-                self.eval_lambda(params, ret, body, captures, out, depth)
-            }
+            K::Lambda {
+                params,
+                ret,
+                body,
+                captures,
+            } => self.eval_lambda(params, ret, body, captures, out, depth),
             K::Yield(arg) => self.eval_yield(arg.as_deref(), out, depth),
             K::AsyncSuspend => self.eval_async_suspend(out, depth),
             K::AsyncCall { callee, args } => {
@@ -2650,13 +2672,20 @@ impl<'m> Emitter<'m> {
                 })
             }
             K::Cond { cond, then, els } => self.eval_cond(cond, then, els, &e.ty, out, depth),
-            other => Err(format!("expression {other:?} is outside the run set's scope")),
+            other => Err(format!(
+                "expression {other:?} is outside the run set's scope"
+            )),
         }
     }
 
     /// Evaluates an operand list left to right (see [`Self::eval_operands`])
     /// and joins the results into a C argument list.
-    fn eval_list(&mut self, elems: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_list(
+        &mut self,
+        elems: &[hir::Expr],
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let refs: Vec<&hir::Expr> = elems.iter().collect();
         Ok(self.eval_operands(&refs, out, depth)?.join(", "))
     }
@@ -2672,7 +2701,12 @@ impl<'m> Emitter<'m> {
     /// operand is bound to a temporary exactly when a **later** operand
     /// lowered to statements — so a list whose operands are plain
     /// expressions emits exactly what it did before, with no temporaries.
-    fn eval_operands(&mut self, exprs: &[&hir::Expr], out: &mut String, depth: usize) -> Result<Vec<String>, String> {
+    fn eval_operands(
+        &mut self,
+        exprs: &[&hir::Expr],
+        out: &mut String,
+        depth: usize,
+    ) -> Result<Vec<String>, String> {
         let n = exprs.len();
         let mut bufs: Vec<String> = Vec::with_capacity(n);
         let mut vals: Vec<String> = Vec::with_capacity(n);
@@ -2702,7 +2736,13 @@ impl<'m> Emitter<'m> {
     /// so it is computed here rather than where the expression string
     /// lands. Constants are returned unchanged: no statement can change
     /// them.
-    fn bind_tmp(&mut self, v: &str, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    fn bind_tmp(
+        &mut self,
+        v: &str,
+        e: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         use hir::ExprKind as K;
         if matches!(
             e.kind,
@@ -2730,7 +2770,12 @@ impl<'m> Emitter<'m> {
     /// property.
     ///
     /// Constants are returned unchanged: no statement can change them.
-    fn eval_pinned(&mut self, e: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_pinned(
+        &mut self,
+        e: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let v = self.eval(e, out, depth)?;
         self.bind_tmp(&v, e, out, depth)
     }
@@ -2768,7 +2813,11 @@ impl<'m> Emitter<'m> {
         depth: usize,
     ) -> Result<String, String> {
         use hir::BinOp as B;
-        let operand_ty = if left.ty == Type::Null { right.ty.clone() } else { left.ty.clone() };
+        let operand_ty = if left.ty == Type::Null {
+            right.ty.clone()
+        } else {
+            left.ty.clone()
+        };
 
         // `&&`/`||` short-circuit: the right operand may lower to
         // statements, which C's `&&` cannot guard — emit the branch, as
@@ -2778,7 +2827,11 @@ impl<'m> Emitter<'m> {
             let l = self.eval(left, out, depth)?;
             let res = self.fresh_tmp();
             let _ = writeln!(out, "{ind}int32_t {res} = ({l}) != 0;");
-            let guard = if op == B::And { res.clone() } else { format!("!{res}") };
+            let guard = if op == B::And {
+                res.clone()
+            } else {
+                format!("!{res}")
+            };
             let _ = writeln!(out, "{ind}if ({guard}) {{");
             let r = self.eval(right, out, depth + 1)?;
             let _ = writeln!(out, "{}{res} = ({r}) != 0;", indent(depth + 1));
@@ -2791,14 +2844,12 @@ impl<'m> Emitter<'m> {
             let (l, r) = (&ops[0], &ops[1]);
             return match op {
                 B::Add => {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            "string addition has no HIR allocation site",
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        "string addition has no HIR allocation site",
+                    )?;
                     let pid = self.pos_id(pos);
-                    let call =
-                        format!("subscript_rt_str_concat(ctx, {l}, {r}, {pid}u)");
+                    let call = format!("subscript_rt_str_concat(ctx, {l}, {r}, {pid}u)");
                     self.eval_site_checked_call(call, &Type::Str, site, out, depth)
                 }
                 B::Eq => Ok(format!("(subscript_rt_str_eq(ctx, {l}, {r}) != 0)")),
@@ -2818,36 +2869,18 @@ impl<'m> Emitter<'m> {
         let float = operand_ty.is_float();
         match op {
             B::Div if !float => {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                        "integer division has no HIR trap site",
-                    )?;
-                return self.eval_checked_divrem(
-                    &operand_ty,
-                    true,
-                    l,
-                    r,
-                    site,
-                    out,
-                    depth,
-                );
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                    "integer division has no HIR trap site",
+                )?;
+                return self.eval_checked_divrem(&operand_ty, true, l, r, site, out, depth);
             }
             B::Rem => {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                        "integer remainder has no HIR trap site",
-                    )?;
-                return self.eval_checked_divrem(
-                    &operand_ty,
-                    false,
-                    l,
-                    r,
-                    site,
-                    out,
-                    depth,
-                );
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                    "integer remainder has no HIR trap site",
+                )?;
+                return self.eval_checked_divrem(&operand_ty, false, l, r, site, out, depth);
             }
             _ => {}
         }
@@ -2898,12 +2931,7 @@ impl<'m> Emitter<'m> {
         let right_tmp = self.fresh_tmp();
         let _ = writeln!(out, "{ind}{cty} {left_tmp} = {left};");
         let _ = writeln!(out, "{ind}{cty} {right_tmp} = {right};");
-        self.emit_trap_site(
-            site,
-            TrapOperand::Value(right_tmp.clone()),
-            out,
-            depth,
-        )?;
+        self.emit_trap_site(site, TrapOperand::Value(right_tmp.clone()), out, depth)?;
         let call = format!("{helper}(ctx, {left_tmp}, {right_tmp}, {pid}u)");
         let result = self.fresh_tmp();
         let _ = writeln!(out, "{ind}{cty} {result} = {call};");
@@ -3000,30 +3028,20 @@ impl<'m> Emitter<'m> {
             None => Ok(format!("({place} = {v})")),
             Some(bin) => {
                 if target.ty == Type::Str && bin == hir::BinOp::Add {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            "string compound expression has no HIR allocation site",
-                        )?;
-                    let pid = self.pos_id(&target.pos);
-                    let call =
-                        format!("subscript_rt_str_concat(ctx, {place}, {v}, {pid}u)");
-                    let result = self.eval_site_checked_call(
-                        call,
-                        &Type::Str,
-                        site,
-                        out,
-                        depth,
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        "string compound expression has no HIR allocation site",
                     )?;
+                    let pid = self.pos_id(&target.pos);
+                    let call = format!("subscript_rt_str_concat(ctx, {place}, {v}, {pid}u)");
+                    let result = self.eval_site_checked_call(call, &Type::Str, site, out, depth)?;
                     Ok(format!("({place} = {result})"))
-                } else if target.ty.is_integer()
-                    && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem)
+                } else if target.ty.is_integer() && matches!(bin, hir::BinOp::Div | hir::BinOp::Rem)
                 {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                            "integer compound expression has no HIR trap site",
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                        "integer compound expression has no HIR trap site",
+                    )?;
                     let result = self.eval_checked_divrem(
                         &target.ty,
                         bin == hir::BinOp::Div,
@@ -3065,7 +3083,11 @@ impl<'m> Emitter<'m> {
         }
         // Every non-reference cast is a C cast, except that enum sources
         // behave as i32.
-        let from = if matches!(from, Type::Enum(_)) { Type::I32 } else { from.clone() };
+        let from = if matches!(from, Type::Enum(_)) {
+            Type::I32
+        } else {
+            from.clone()
+        };
         if from == *to {
             return Ok(format!("({v})"));
         }
@@ -3110,17 +3132,11 @@ impl<'m> Emitter<'m> {
             Type::Class(id) => {
                 let cname = self.class_name(*id)?;
                 let base = self.eval_pinned(obj, out, depth)?;
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
-                        "reference field has no HIR lifetime site",
-                    )?;
-                self.emit_trap_site(
-                    site,
-                    TrapOperand::Value(base.clone()),
-                    out,
-                    depth,
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
+                    "reference field has no HIR lifetime site",
                 )?;
+                self.emit_trap_site(site, TrapOperand::Value(base.clone()), out, depth)?;
                 Ok(format!("(({cname}*)({base}))->{}", sanitize(name)))
             }
             Type::IterResult(_) => {
@@ -3158,8 +3174,7 @@ impl<'m> Emitter<'m> {
         while let Some(site) = sites.take(|site| {
             matches!(
                 site,
-                hir::TrapSite::DevOnlyLifetime { .. }
-                    | hir::TrapSite::JsonResultValue { .. }
+                hir::TrapSite::DevOnlyLifetime { .. } | hir::TrapSite::JsonResultValue { .. }
             )
         }) {
             let operand = if matches!(site, hir::TrapSite::DevOnlyLifetime { .. }) {
@@ -3208,27 +3223,18 @@ impl<'m> Emitter<'m> {
                 while let Some(site) =
                     sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                 {
-                    self.emit_trap_site(
-                        site,
-                        TrapOperand::Value(h.clone()),
-                        out,
-                        depth,
-                    )?;
+                    self.emit_trap_site(site, TrapOperand::Value(h.clone()), out, depth)?;
                 }
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::IndexRead { .. }),
-                        "dynamic index has no HIR read site",
-                    )?;
-                let p = self.emit_dynamic_index_addr(
-                    h, idx, elem, site, out, depth,
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::IndexRead { .. }),
+                    "dynamic index has no HIR read site",
                 )?;
+                let p = self.emit_dynamic_index_addr(h, idx, elem, site, out, depth)?;
                 Ok(format!("(*{p})"))
             }
             other => Err(format!("index on {other:?}")),
         }
     }
-
 
     fn eval_array_lit(
         &mut self,
@@ -3246,25 +3252,22 @@ impl<'m> Emitter<'m> {
                 Ok(format!("(({cty}){{ {{ {vals} }} }})"))
             }
             Type::Array(elem) => {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                        "array literal has no HIR allocation site",
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    "array literal has no HIR allocation site",
+                )?;
                 let hir::TrapSite::Allocation { pos } = site else {
                     return Err("array literal has a non-allocation HIR site".to_string());
                 };
                 let ect = self.ctype(elem)?;
                 let pid = self.pos_id(pos);
-                let call =
-                    format!("subscript_rt_array_new(ctx, sizeof({ect}), {pid}u)");
+                let call = format!("subscript_rt_array_new(ctx, sizeof({ect}), {pid}u)");
                 let h = self.eval_site_checked_call(call, ty, site, out, depth)?;
                 for e in elems {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            "array literal element has no HIR allocation site",
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        "array literal element has no HIR allocation site",
+                    )?;
                     let hir::TrapSite::Allocation { pos } = site else {
                         return Err(
                             "array literal element has a non-allocation HIR site".to_string()
@@ -3296,11 +3299,10 @@ impl<'m> Emitter<'m> {
             return Err("spread literal is not a dynamic array".to_string());
         };
         let ind = indent(depth);
-        let initial = sites
-            .take_required(
-                |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                "array spread literal has no allocation site",
-            )?;
+        let initial = sites.take_required(
+            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+            "array spread literal has no allocation site",
+        )?;
         let hir::TrapSite::Allocation { pos } = initial else {
             return Err("array spread literal allocation site kind".to_string());
         };
@@ -3310,11 +3312,10 @@ impl<'m> Emitter<'m> {
         let handle = self.eval_site_checked_call(call, ty, initial, out, depth)?;
 
         for elem in elems {
-            let site = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    "array spread element has no allocation site",
-                )?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                "array spread element has no allocation site",
+            )?;
             let hir::TrapSite::Allocation { pos } = site else {
                 return Err("array spread element site kind".to_string());
             };
@@ -3376,11 +3377,10 @@ impl<'m> Emitter<'m> {
     ) -> Result<String, String> {
         let ind = indent(depth);
         let Some((first, rest)) = parts.split_first() else {
-            let site = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    "empty template has no HIR allocation site",
-                )?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                "empty template has no HIR allocation site",
+            )?;
             let result = self.string_literal(b"", site, out, depth)?;
             return Ok(result);
         };
@@ -3391,11 +3391,10 @@ impl<'m> Emitter<'m> {
          -> Result<String, String> {
             match part {
                 hir::TplPart::Text(t) => {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            "template text has no HIR allocation site",
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        "template text has no HIR allocation site",
+                    )?;
                     this.string_literal(t.as_bytes(), site, out, depth)
                 }
                 hir::TplPart::Expr(e) => {
@@ -3418,11 +3417,10 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind}void* {acc} = {first};");
         for part in rest {
             let piece = eval_part(self, part, sites, out)?;
-            let site = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    "template concat has no HIR allocation site",
-                )?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                "template concat has no HIR allocation site",
+            )?;
             let hir::TrapSite::Allocation { pos } = site else {
                 return Err("template concat has a non-allocation HIR site".to_string());
             };
@@ -3496,9 +3494,7 @@ impl<'m> Emitter<'m> {
             Type::F32 => format!("subscript_rt_fmt_f32(ctx, {v}, {pid}u)"),
             Type::F64 => format!("subscript_rt_fmt_f64(ctx, {v}, {pid}u)"),
             Type::F16 => {
-                format!(
-                    "subscript_rt_fmt_f64(ctx, subscript_rt_f16_to_f64({v}), {pid}u)"
-                )
+                format!("subscript_rt_fmt_f64(ctx, subscript_rt_f16_to_f64({v}), {pid}u)")
             }
             Type::Bool => format!("subscript_rt_fmt_bool(ctx, {v}, {pid}u)"),
             other => return Err(format!("interpolation of {other:?}")),
@@ -3506,7 +3502,15 @@ impl<'m> Emitter<'m> {
         self.eval_site_checked_call(call, &Type::Str, site, out, depth)
     }
 
-    fn eval_cond(&mut self, cond: &hir::Expr, then: &hir::Expr, els: &hir::Expr, ty: &Type, out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_cond(
+        &mut self,
+        cond: &hir::Expr,
+        then: &hir::Expr,
+        els: &hir::Expr,
+        ty: &Type,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let ind = indent(depth);
         // Evaluate the arms into a shared temporary via if/else so each
         // arm's side effects run only on its branch.
@@ -3605,17 +3609,7 @@ impl<'m> Emitter<'m> {
                 }
             }
             hir::Callee::Method { recv, name } => {
-                self.eval_method(
-                    recv,
-                    name,
-                    args,
-                    ret_ty,
-                    pos,
-                    sites,
-                    out,
-                    depth,
-                    checked,
-                )
+                self.eval_method(recv, name, args, ret_ty, pos, sites, out, depth, checked)
             }
             hir::Callee::Foreign(name) => {
                 self.eval_foreign_call(name, args, ret_ty, pos, sites, out, depth, checked)
@@ -3641,9 +3635,7 @@ impl<'m> Emitter<'m> {
                 } else {
                     format!("{}(ctx, {argv})", f.symbol())
                 };
-                let result = self.eval_call_with_policy(
-                    call, ret_ty, checked, out, depth,
-                )?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(if f.returns_bool() {
                     format!("({result} != 0)")
                 } else {
@@ -3681,8 +3673,8 @@ impl<'m> Emitter<'m> {
                         let code = accessor
                             .field_code()
                             .ok_or_else(|| format!("Date intrinsic {accessor:?}"))?;
-                        let ms = self
-                            .eval(args.first().ok_or("Date accessor receiver")?, out, depth)?;
+                        let ms =
+                            self.eval(args.first().ok_or("Date accessor receiver")?, out, depth)?;
                         format!("subscript_rt_date_get(ctx, {ms}, {code}u)")
                     }
                 };
@@ -3700,9 +3692,7 @@ impl<'m> Emitter<'m> {
                 } else {
                     format!("{}(ctx, {argv}, {pid}u)", f.symbol())
                 };
-                let result = self.eval_call_with_policy(
-                    call, ret_ty, checked, out, depth,
-                )?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(if f.returns_bool() {
                     format!("({result} != 0)")
                 } else {
@@ -3726,9 +3716,7 @@ impl<'m> Emitter<'m> {
                 } else {
                     format!("{}(ctx, {argv})", f.symbol())
                 };
-                let result = self.eval_call_with_policy(
-                    call, ret_ty, checked, out, depth,
-                )?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(match f.ret() {
                     StrRet::Bool => format!("({result} != 0)"),
                     _ => result,
@@ -3770,18 +3758,12 @@ impl<'m> Emitter<'m> {
             // temporaries and passed by pointer; a callback passes its
             // SubFn (code, env) halves; kind tags come from the shared
             // compiler mapping so the tiers cannot disagree.
-            hir::Callee::Arr(f) => {
-                self.eval_arr_call(*f, args, ret_ty, pos, out, depth, checked)
-            }
+            hir::Callee::Arr(f) => self.eval_arr_call(*f, args, ret_ty, pos, out, depth, checked),
             // Map/Set use the same opaque Context runtime in both tiers.
             // The concrete monomorphized key/value widths and key-kind
             // tag cross that boundary with construction.
-            hir::Callee::Map(f) => {
-                self.eval_map_call(*f, args, ret_ty, pos, out, depth, checked)
-            }
-            hir::Callee::Set(f) => {
-                self.eval_set_call(*f, args, ret_ty, pos, out, depth, checked)
-            }
+            hir::Callee::Map(f) => self.eval_map_call(*f, args, ret_ty, pos, out, depth, checked),
+            hir::Callee::Set(f) => self.eval_set_call(*f, args, ret_ty, pos, out, depth, checked),
             hir::Callee::Worker(function) => {
                 self.eval_worker_call(*function, args, ret_ty, out, depth, checked)
             }
@@ -3949,10 +3931,7 @@ impl<'m> Emitter<'m> {
                 self.eval_pinned(recv, out, depth)?
             };
             let data = self.fresh_tmp();
-            let _ = writeln!(
-                out,
-                "{ind}const void* {data} = (const void*)({base}).a;"
-            );
+            let _ = writeln!(out, "{ind}const void* {data} = (const void*)({base}).a;");
             data
         } else {
             self.eval_pinned(recv, out, depth)?
@@ -3993,9 +3972,7 @@ impl<'m> Emitter<'m> {
                 let t = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{ect} {t} = {x};");
                 let call = format!("{sym}(ctx, {h}, &{t}, {kind}u)");
-                let result = self.eval_call_with_policy(
-                    call, ret_ty, checked, out, depth,
-                )?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(if f == A::Includes {
                     format!("({result} != 0)")
                 } else {
@@ -4056,7 +4033,10 @@ impl<'m> Emitter<'m> {
                 let ect = self.ctype(&elem)?;
                 let value = self.fresh_tmp();
                 let pid = self.pos_id(pos);
-                let _ = writeln!(out, "{ind}{ect} {value}; {sym}(ctx, {h}, &{value}, {pid}u);");
+                let _ = writeln!(
+                    out,
+                    "{ind}{ect} {value}; {sym}(ctx, {h}, &{value}, {pid}u);"
+                );
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -4102,20 +4082,16 @@ impl<'m> Emitter<'m> {
                     }
                     (A::Filter, None) => {
                         let pid = self.pos_id(pos);
-                        format!(
-                            "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {pid}u, {indexed}u)"
-                        )
+                        format!("{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {pid}u, {indexed}u)")
                     }
                     (_, Some(_)) => format!(
                         "{sym}(ctx, {h}{fixed_shape}, {tf}.code, {tf}.env, {kind}u, {indexed}u)"
                     ),
-                    (_, None) => format!(
-                        "{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {indexed}u)"
-                    ),
+                    (_, None) => {
+                        format!("{sym}(ctx, {h}, {tf}.code, {tf}.env, {kind}u, {indexed}u)")
+                    }
                 };
-                let result = self.eval_call_with_policy(
-                    call, ret_ty, checked, out, depth,
-                )?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(match f {
                     A::Some | A::Every => format!("({result} != 0)"),
                     _ => result,
@@ -4214,22 +4190,13 @@ impl<'m> Emitter<'m> {
                 },
                 other => return Err(format!("Map.groupBy shape {other:?}")),
             };
-            let items = self.eval_pinned(
-                args.first().ok_or("Map.groupBy items")?,
-                out,
-                depth,
-            )?;
-            let callback = self.eval(
-                args.get(1).ok_or("Map.groupBy callback")?,
-                out,
-                depth,
-            )?;
+            let items = self.eval_pinned(args.first().ok_or("Map.groupBy items")?, out, depth)?;
+            let callback = self.eval(args.get(1).ok_or("Map.groupBy callback")?, out, depth)?;
             let ft = self.fresh_tmp();
             let _ = writeln!(out, "{ind}SubFn {ft} = {callback};");
             let bridge = self.emit_group_bridge(&elem, &key)?;
             let key_ct = self.ctype(&key)?;
-            let key_kind =
-                crate::layout::assoc_key_kind(self.module, &key)?.code();
+            let key_kind = crate::layout::assoc_key_kind(self.module, &key)?.code();
             let pid = self.pos_id(pos);
             let call = format!(
                 "subscript_rt_map_group_by(ctx, {items}, {ft}.code, {ft}.env, (const void*)&{bridge}, sizeof({key_ct}), {key_kind}u, {pid}u)"
@@ -4273,7 +4240,10 @@ impl<'m> Emitter<'m> {
                 let result = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let _ = writeln!(out, "{ind}{value_ct} {result} = {{0}};");
-                let _ = writeln!(out, "{ind}(void)subscript_rt_map_get(ctx, {h}, &{kt}, &{result});");
+                let _ = writeln!(
+                    out,
+                    "{ind}(void)subscript_rt_map_get(ctx, {h}, &{kt}, &{result});"
+                );
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -4305,7 +4275,10 @@ impl<'m> Emitter<'m> {
                 let vt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{value_ct} {vt} = {value_expr};");
                 let pid = self.pos_id(pos);
-                let _ = writeln!(out, "{ind}subscript_rt_map_set(ctx, {h}, &{kt}, &{vt}, {pid}u);");
+                let _ = writeln!(
+                    out,
+                    "{ind}subscript_rt_map_set(ctx, {h}, &{kt}, &{vt}, {pid}u);"
+                );
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -4316,8 +4289,7 @@ impl<'m> Emitter<'m> {
                 let kt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let call = format!("{}(ctx, {h}, &{kt})", f.symbol());
-                let result =
-                    self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(format!("({result} != 0)"))
             }
             M::Clear => {
@@ -4370,9 +4342,7 @@ impl<'m> Emitter<'m> {
         };
         if f == S::New {
             let pid = self.pos_id(pos);
-            let call = format!(
-                "subscript_rt_set_new(ctx, sizeof({key_ct}), {key_kind}u, {pid}u)"
-            );
+            let call = format!("subscript_rt_set_new(ctx, sizeof({key_ct}), {key_kind}u, {pid}u)");
             return self.eval_call_with_policy(call, ret_ty, checked, out, depth);
         }
 
@@ -4398,8 +4368,7 @@ impl<'m> Emitter<'m> {
                 let kt = self.fresh_tmp();
                 let _ = writeln!(out, "{ind}{key_ct} {kt} = {key_expr};");
                 let call = format!("{}(ctx, {h}, &{kt})", f.symbol());
-                let result =
-                    self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(format!("({result} != 0)"))
             }
             S::Clear => {
@@ -4425,8 +4394,7 @@ impl<'m> Emitter<'m> {
             S::IsSubsetOf | S::IsSupersetOf | S::IsDisjointFrom => {
                 let other = self.eval_pinned(arg_at(1)?, out, depth)?;
                 let call = format!("{}(ctx, {h}, {other})", f.symbol());
-                let result =
-                    self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
+                let result = self.eval_call_with_policy(call, ret_ty, checked, out, depth)?;
                 Ok(format!("({result} != 0)"))
             }
             other => Err(format!("unknown SetFn {other:?}")),
@@ -4437,11 +4405,7 @@ impl<'m> Emitter<'m> {
     /// association runtime. Map callbacks receive `(value, key)` and Set
     /// callbacks receive `(key)`; the runtime performs the post-return
     /// trap check.
-    fn emit_assoc_bridge(
-        &mut self,
-        key: &Type,
-        value: Option<&Type>,
-    ) -> Result<String, String> {
+    fn emit_assoc_bridge(&mut self, key: &Type, value: Option<&Type>) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
         let name = format!("subscript_assoc_bridge{n}");
@@ -4508,11 +4472,7 @@ impl<'m> Emitter<'m> {
 
     /// Defines the typed C callback adapter used by `Map.groupBy`.
     /// The runtime supplies an owned element copy and a key result slot.
-    fn emit_group_bridge(
-        &mut self,
-        elem: &Type,
-        key: &Type,
-    ) -> Result<String, String> {
+    fn emit_group_bridge(&mut self, elem: &Type, key: &Type) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
         let name = format!("subscript_group_bridge{n}");
@@ -4703,15 +4663,9 @@ impl<'m> Emitter<'m> {
     /// than copy its language bytes. Unlike the root scratch predicate, a
     /// plain struct-pointer member is sufficient here because §33 must
     /// redirect it to child scratch once construction is active.
-    fn boundary_struct_requires_recursive_build(
-        &self,
-        cid: ClassId,
-    ) -> Result<bool, String> {
+    fn boundary_struct_requires_recursive_build(&self, cid: ClassId) -> Result<bool, String> {
         Ok(self.boundary_struct_needs_scratch(cid)?
-            || self.boundary_struct_contains_pointer_member(
-                cid,
-                &mut HashSet::new(),
-            )?)
+            || self.boundary_struct_contains_pointer_member(cid, &mut HashSet::new())?)
     }
 
     fn boundary_struct_contains_pointer_member(
@@ -4833,7 +4787,12 @@ impl<'m> Emitter<'m> {
     /// the header-type cast: a value struct's storage address (chain-slot
     /// address-of), or an existing pointer (`null`, or a `Struct | null`
     /// value).
-    fn boundary_struct_ptr_expr(&mut self, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    fn boundary_struct_ptr_expr(
+        &mut self,
+        arg: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         if let Type::Class(cid) = arg.ty {
             if self.is_value_class(cid)? {
                 return self.value_recv_ptr(arg, cid, out, depth);
@@ -4859,13 +4818,16 @@ impl<'m> Emitter<'m> {
         if !self.foreign_symbols.iter().any(|symbol| symbol == name) {
             self.foreign_symbols.push(name.to_string());
         }
-        let ff = self.module.foreign_fns.iter().find(|f| f.name == name)
+        let ff = self
+            .module
+            .foreign_fns
+            .iter()
+            .find(|f| f.name == name)
             .ok_or_else(|| format!("unknown foreign function `{name}`"))?
             .clone();
         let mut uses_scratch_allocations = false;
         for parameter in &ff.params {
-            uses_scratch_allocations |=
-                self.boundary_type_needs_scratch_array(&parameter.ty)?;
+            uses_scratch_allocations |= self.boundary_type_needs_scratch_array(&parameter.ty)?;
         }
         let scratch_mark = if uses_scratch_allocations {
             let mark = self.fresh_tmp();
@@ -4918,12 +4880,7 @@ impl<'m> Emitter<'m> {
                     ));
                 }
                 let t = self.fresh_tmp();
-                let _ = writeln!(
-                    out,
-                    "{}{ct} {t} = {};",
-                    indent(depth),
-                    part_groups[i][0]
-                );
+                let _ = writeln!(out, "{}{ct} {t} = {};", indent(depth), part_groups[i][0]);
                 part_groups[i][0] = t;
             }
         }
@@ -5150,9 +5107,7 @@ impl<'m> Emitter<'m> {
             }
             Type::Str => {
                 let aggregate = match &parameter.foreign_provenance {
-                    Some(hir::ForeignTypeProvenance::StringView { aggregate }) => {
-                        aggregate.clone()
-                    }
+                    Some(hir::ForeignTypeProvenance::StringView { aggregate }) => aggregate.clone(),
                     None => {
                         return Err(format!(
                             "internal error at foreign function `{function_name}` parameter `{}`: missing string-view provenance",
@@ -5194,8 +5149,12 @@ impl<'m> Emitter<'m> {
                 // recursively lowered struct element uses a call-duration
                 // C-layout scratch array (§32).
                 let lowered_element = match &**element_ty {
-                    Type::Class(cid) if self.is_value_class(*cid)?
-                        && self.boundary_struct_requires_recursive_build(*cid)? => Some(*cid),
+                    Type::Class(cid)
+                        if self.is_value_class(*cid)?
+                            && self.boundary_struct_requires_recursive_build(*cid)? =>
+                    {
+                        Some(*cid)
+                    }
                     _ => None,
                 };
                 let (d, n) = if let Some(element_cid) = lowered_element {
@@ -5212,8 +5171,14 @@ impl<'m> Emitter<'m> {
                 } else {
                     let d = self.fresh_tmp();
                     let n = self.fresh_tmp();
-                    let _ = writeln!(out, "{ind}const void* {d} = subscript_rt_array_data(ctx, {t});");
-                    let _ = writeln!(out, "{ind}size_t {n} = (size_t)subscript_rt_array_len(ctx, {t});");
+                    let _ = writeln!(
+                        out,
+                        "{ind}const void* {d} = subscript_rt_array_data(ctx, {t});"
+                    );
+                    let _ = writeln!(
+                        out,
+                        "{ind}size_t {n} = (size_t)subscript_rt_array_len(ctx, {t});"
+                    );
                     (d, n)
                 };
                 match provenance {
@@ -5274,19 +5239,19 @@ impl<'m> Emitter<'m> {
                     .boundary_struct_ptr_id(&parameter.ty)?
                     .ok_or_else(|| "boundary struct ptr lacks a class id".to_string())?;
                 if self.boundary_struct_needs_scratch(cid)? {
-                    let (expr, writeback) =
-                        self.marshal_string_field_boundary_c_ptr(
-                            cid,
-                            arg,
-                            out,
-                            depth,
-                            scratch_mark,
-                            call_pos,
-                        )?;
+                    let (expr, writeback) = self.marshal_string_field_boundary_c_ptr(
+                        cid,
+                        arg,
+                        out,
+                        depth,
+                        scratch_mark,
+                        call_pos,
+                    )?;
                     boundary_writebacks.push(writeback);
                     Ok((vec![expr], None))
                 } else {
-                    let cast = self.boundary_ptr_cast(&parameter.ty)?
+                    let cast = self
+                        .boundary_ptr_cast(&parameter.ty)?
                         .ok_or_else(|| "boundary struct ptr lacks a header type".to_string())?;
                     let expr = self.boundary_struct_ptr_expr(arg, out, depth)?;
                     Ok((vec![format!("({cast})({expr})")], Some(cast)))
@@ -5552,7 +5517,10 @@ impl<'m> Emitter<'m> {
         let count = self.fresh_tmp();
         let scratch = self.fresh_tmp();
         let index = self.fresh_tmp();
-        let _ = writeln!(out, "{ind}size_t {count} = (size_t)subscript_rt_array_len(ctx, {handle});");
+        let _ = writeln!(
+            out,
+            "{ind}size_t {count} = (size_t)subscript_rt_array_len(ctx, {handle});"
+        );
         let _ = writeln!(out, "{ind}const {language_element}* {source} = (const {language_element}*)subscript_rt_array_data(ctx, {handle});");
         let pos_id = self.pos_id(call_pos);
         let _ = writeln!(
@@ -5560,7 +5528,10 @@ impl<'m> Emitter<'m> {
             "{ind}{header_element}* {scratch} = ({header_element}*)subscript_rt_boundary_scratch_alloc(ctx, (uint64_t)({count} * sizeof({header_element})), {pos_id}u);"
         );
         self.emit_trap_check(out, depth)?;
-        let _ = writeln!(out, "{ind}for (size_t {index} = 0; {index} < {count}; {index}++) {{");
+        let _ = writeln!(
+            out,
+            "{ind}for (size_t {index} = 0; {index} < {count}; {index}++) {{"
+        );
         self.emit_boundary_scratch_c_value(
             element_cid,
             &format!("{source}[{index}]"),
@@ -5659,7 +5630,13 @@ impl<'m> Emitter<'m> {
     /// field becomes the generic trampoline plus a binding built from the
     /// following userdata slot (the callback-info idiom), so the C API
     /// sees `(fnptr, void* userdata)`.
-    fn marshal_boundary_c_struct(&mut self, cid: ClassId, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    fn marshal_boundary_c_struct(
+        &mut self,
+        cid: ClassId,
+        arg: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let ind = indent(depth);
         let lang_ty = self.class_name(cid)?;
         let v = self.eval(arg, out, depth)?;
@@ -5695,9 +5672,11 @@ impl<'m> Emitter<'m> {
                     // trampoline reads; the C struct's first userdata slot
                     // carries the binding, any second slot carries null (the
                     // binding is authoritative for both language userdata).
-                    let ud1 = fields.get(i + 1)
-                        .ok_or_else(|| "a callback field needs a following userdata slot".to_string())?;
-                    let has_ud2 = fields.get(i + 2)
+                    let ud1 = fields.get(i + 1).ok_or_else(|| {
+                        "a callback field needs a following userdata slot".to_string()
+                    })?;
+                    let has_ud2 = fields
+                        .get(i + 2)
                         .map(|f| is_userdata_slot(&f.ty))
                         .unwrap_or(false);
                     let ud2_expr = if has_ud2 {
@@ -5705,12 +5684,13 @@ impl<'m> Emitter<'m> {
                     } else {
                         "NULL".to_string()
                     };
-                    parts.push(format!(
-                        "({callback_typedef})&subscript_rt_cb_trampoline"
-                    ));
+                    parts.push(format!("({callback_typedef})&subscript_rt_cb_trampoline"));
                     parts.push(format!(
                         "subscript_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{}, {})",
-                        sanitize(&f.name), sanitize(&f.name), sanitize(&ud1.name), ud2_expr
+                        sanitize(&f.name),
+                        sanitize(&f.name),
+                        sanitize(&ud1.name),
+                        ud2_expr
                     ));
                     if has_ud2 {
                         // Second userdata C slot → null.
@@ -5746,7 +5726,13 @@ impl<'m> Emitter<'m> {
     /// A boundary-struct field initializer: for a `Struct | null` field
     /// receiving a value struct, the address of that struct's storage
     /// (chain-slot address-of); otherwise the plain value.
-    fn boundary_field_init(&mut self, fty: &Type, arg: &hir::Expr, out: &mut String, depth: usize) -> Result<String, String> {
+    fn boundary_field_init(
+        &mut self,
+        fty: &Type,
+        arg: &hir::Expr,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         if let Some(cast) = self.boundary_ptr_cast(fty)? {
             // Same header-pointer cast as at a direct foreign-call argument
             // (see `marshal_foreign_c_arg`): layout-identical, ABI-safe,
@@ -5760,7 +5746,13 @@ impl<'m> Emitter<'m> {
     /// The argument list of a script call: the declared arguments, with
     /// each omitted optional filled by its default, evaluated left to
     /// right ([`Self::eval_operands`]).
-    fn call_args(&mut self, params: &[hir::Param], args: &[hir::Expr], out: &mut String, depth: usize) -> Result<String, String> {
+    fn call_args(
+        &mut self,
+        params: &[hir::Param],
+        args: &[hir::Expr],
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let mut exprs: Vec<&hir::Expr> = Vec::with_capacity(params.len());
         for (i, p) in params.iter().enumerate() {
             exprs.push(match args.get(i) {
@@ -5798,17 +5790,16 @@ impl<'m> Emitter<'m> {
                 while let Some(site) =
                     sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                 {
-                    self.emit_trap_site(
-                        site,
-                        TrapOperand::Value(h.clone()),
-                        out,
-                        depth,
-                    )?;
+                    self.emit_trap_site(site, TrapOperand::Value(h.clone()), out, depth)?;
                 }
                 let ect = self.ctype(&elem)?;
                 let pid = self.pos_id(pos);
                 let d = self.fresh_tmp();
-                let _ = writeln!(out, "{}{ect} {d}; subscript_rt_array_pop(ctx, {h}, &{d}, {pid}u);", indent(depth));
+                let _ = writeln!(
+                    out,
+                    "{}{ect} {d}; subscript_rt_array_pop(ctx, {h}, &{d}, {pid}u);",
+                    indent(depth)
+                );
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -5826,19 +5817,18 @@ impl<'m> Emitter<'m> {
                             | hir::TrapSite::DevReloadOnlyStaleCoroutine { .. }
                     )
                 }) {
-                    self.emit_trap_site(
-                        site,
-                        TrapOperand::Value(g.clone()),
-                        out,
-                        depth,
-                    )?;
+                    self.emit_trap_site(site, TrapOperand::Value(g.clone()), out, depth)?;
                 }
                 let ir = self.iter_result_name(&y)?;
                 let creator = self.generator_of(recv)?;
                 let step = self.fresh_tmp();
                 let ind = indent(depth);
                 let _ = writeln!(out, "{ind}{ir} {step}; memset(&{step}, 0, sizeof {step});");
-                let _ = writeln!(out, "{ind}{step}.done = subscript_resume_{}(ctx, {g}, &{step}.value);", sanitize(&creator));
+                let _ = writeln!(
+                    out,
+                    "{ind}{step}.done = subscript_resume_{}(ctx, {g}, &{step}.value);",
+                    sanitize(&creator)
+                );
                 if checked {
                     self.emit_trap_check(out, depth)?;
                 }
@@ -5884,8 +5874,11 @@ impl<'m> Emitter<'m> {
                 }
                 out.push_str(&abuf);
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call =
-                    format!("subscript_m{}_{}(ctx, {recv_c}{sep}{argv})", cid.0, sanitize(name));
+                let call = format!(
+                    "subscript_m{}_{}(ctx, {recv_c}{sep}{argv})",
+                    cid.0,
+                    sanitize(name)
+                );
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             other => Err(format!("method on {other:?}")),
@@ -5897,7 +5890,13 @@ impl<'m> Emitter<'m> {
     /// method mutates it; an rvalue is materialized into a temporary
     /// first, so a mutation of the temporary is correctly lost, matching
     /// the CLIF path (whose rvalue receiver is a temp too).
-    fn value_recv_ptr(&mut self, recv: &hir::Expr, cid: ClassId, out: &mut String, depth: usize) -> Result<String, String> {
+    fn value_recv_ptr(
+        &mut self,
+        recv: &hir::Expr,
+        cid: ClassId,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         use hir::ExprKind as K;
         let addressable = matches!(
             recv.kind,
@@ -5937,7 +5936,9 @@ impl<'m> Emitter<'m> {
             if args.len() != fields.len() {
                 return Err(format!(
                     "boundary struct `{}` expects {} field arguments, got {}",
-                    c.name, fields.len(), args.len()
+                    c.name,
+                    fields.len(),
+                    args.len()
                 ));
             }
             // Field initializers run left to right, like any other
@@ -5972,30 +5973,22 @@ impl<'m> Emitter<'m> {
         }
         if self.is_value_class(class)? {
             if let Some(ctor) = &c.ctor {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::Call { .. }),
-                        "value constructor has no HIR call site",
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Call { .. }),
+                    "value constructor has no HIR call site",
+                )?;
                 let argv = self.call_args(&ctor.params, args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let call = format!("subscript_ctor{}(ctx{sep}{argv})", class.0);
-                self.eval_site_checked_call(
-                    call,
-                    &Type::Class(class),
-                    site,
-                    out,
-                    depth,
-                )
+                self.eval_site_checked_call(call, &Type::Class(class), site, out, depth)
             } else {
                 Ok(format!("({}){{0}}", self.class_name(class)?))
             }
         } else {
-            let allocation = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    "reference new has no HIR allocation site",
-                )?;
+            let allocation = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                "reference new has no HIR allocation site",
+            )?;
             let hir::TrapSite::Allocation { pos } = allocation else {
                 unreachable!()
             };
@@ -6005,19 +5998,13 @@ impl<'m> Emitter<'m> {
                 "subscript_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
                 class.0
             );
-            let this = self.eval_site_checked_call(
-                call,
-                &Type::Class(class),
-                allocation,
-                out,
-                depth,
-            )?;
+            let this =
+                self.eval_site_checked_call(call, &Type::Class(class), allocation, out, depth)?;
             if let Some(ctor) = &c.ctor {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::Call { .. }),
-                        "reference constructor has no HIR call site",
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Call { .. }),
+                    "reference constructor has no HIR call site",
+                )?;
                 let argv = self.call_args(&ctor.params, args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let call = format!("subscript_ctor{}(ctx, {this}{sep}{argv})", class.0);
@@ -6063,13 +6050,8 @@ impl<'m> Emitter<'m> {
             "subscript_rt_alloc(ctx, sizeof({cname}), {}u, {pid}u)",
             class.0
         );
-        let this = self.eval_site_checked_call(
-            call,
-            &Type::Class(class),
-            allocation,
-            out,
-            depth,
-        )?;
+        let this =
+            self.eval_site_checked_call(call, &Type::Class(class), allocation, out, depth)?;
 
         for (slot, field) in fields.iter().zip(&descriptor.fields) {
             let value = match slot {
@@ -6122,9 +6104,16 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(self.protos, "{sig};");
         let argv: Vec<String> = f.params.iter().map(|p| sanitize(&p.name)).collect();
         let asep = if argv.is_empty() { "" } else { ", " };
-        let call = format!("subscript_fn_{}(ctx{asep}{})", sanitize(name), argv.join(", "));
-        let _ = writeln!(self.helpers, "{sig} {{ (void)_env; {}{call}; }}",
-            if f.ret == Type::Void { "" } else { "return " });
+        let call = format!(
+            "subscript_fn_{}(ctx{asep}{})",
+            sanitize(name),
+            argv.join(", ")
+        );
+        let _ = writeln!(
+            self.helpers,
+            "{sig} {{ (void)_env; {}{call}; }}",
+            if f.ret == Type::Void { "" } else { "return " }
+        );
         Ok(())
     }
 
@@ -6137,7 +6126,15 @@ impl<'m> Emitter<'m> {
         Ok(format!("{ret}(*)({})", parts.join(", ")))
     }
 
-    fn eval_lambda(&mut self, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], captures: &[hir::Capture], out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_lambda(
+        &mut self,
+        params: &[hir::Param],
+        ret: &Type,
+        body: &[hir::Stmt],
+        captures: &[hir::Capture],
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let n = self.lambda;
         self.lambda += 1;
         let name = format!("subscript_lambda{n}");
@@ -6165,7 +6162,12 @@ impl<'m> Emitter<'m> {
             let etmp = self.fresh_tmp();
             let _ = writeln!(out, "{ind}{env_ty} {etmp};");
             for (cn, _) in &cap_tys {
-                let _ = writeln!(out, "{ind}{etmp}.{} = {};", sanitize(cn), self.local_ref(cn));
+                let _ = writeln!(
+                    out,
+                    "{ind}{etmp}.{} = {};",
+                    sanitize(cn),
+                    self.local_ref(cn)
+                );
             }
             format!("(void*)&{etmp}")
         };
@@ -6175,7 +6177,15 @@ impl<'m> Emitter<'m> {
         Ok(format!("((SubFn){{ (void*)&{name}, {env_expr} }})"))
     }
 
-    fn emit_lambda_fn(&mut self, name: &str, env_ty: &str, params: &[hir::Param], ret: &Type, body: &[hir::Stmt], caps: &[(String, Type)]) -> Result<(), String> {
+    fn emit_lambda_fn(
+        &mut self,
+        name: &str,
+        env_ty: &str,
+        params: &[hir::Param],
+        ret: &Type,
+        body: &[hir::Stmt],
+        caps: &[(String, Type)],
+    ) -> Result<(), String> {
         let retc = self.ctype(ret)?;
         let params_c = self.param_list(params)?;
         let sep = if params_c.is_empty() { "" } else { ", " };
@@ -6208,7 +6218,13 @@ impl<'m> Emitter<'m> {
         // Captures become local const copies read from the env, with
         // their actual types (C2).
         for (cn, ct) in caps {
-            let _ = writeln!(fbody, "    {} {} = _e->{};", self.ctype(ct)?, sanitize(cn), sanitize(cn));
+            let _ = writeln!(
+                fbody,
+                "    {} {} = _e->{};",
+                self.ctype(ct)?,
+                sanitize(cn),
+                sanitize(cn)
+            );
             self.local_types.push((cn.clone(), ct.clone()));
         }
         self.emit_block(&mut fbody, body, 1)?;
@@ -6259,10 +6275,18 @@ impl<'m> Emitter<'m> {
     }
 
     fn gen_next_let_field(&mut self, name: &str) -> Result<String, String> {
-        let g = self.gen.as_mut().ok_or("generator let outside a generator")?;
-        let field = g.let_fields.get(g.let_cursor).cloned().ok_or("generator frame let cursor exhausted")?;
+        let g = self
+            .gen
+            .as_mut()
+            .ok_or("generator let outside a generator")?;
+        let field = g
+            .let_fields
+            .get(g.let_cursor)
+            .cloned()
+            .ok_or("generator frame let cursor exhausted")?;
         g.let_cursor += 1;
-        self.gen_locals.push((name.to_string(), format!("_f->{field}")));
+        self.gen_locals
+            .push((name.to_string(), format!("_f->{field}")));
         Ok(field)
     }
 
@@ -6293,14 +6317,22 @@ impl<'m> Emitter<'m> {
         let mut let_fields = Vec::with_capacity(lets.len());
         let mut struct_body = String::from("    int32_t _state;\n");
         for p in &f.params {
-            let _ = writeln!(struct_body, "    {} {};", self.ctype(&p.ty)?, sanitize(&p.name));
+            let _ = writeln!(
+                struct_body,
+                "    {} {};",
+                self.ctype(&p.ty)?,
+                sanitize(&p.name)
+            );
         }
         for (i, (_, ty)) in lets.iter().enumerate() {
             let field = format!("g{i}");
             let _ = writeln!(struct_body, "    {} {};", self.ctype(ty)?, field);
             let_fields.push(field);
         }
-        let _ = writeln!(out, "typedef struct {gen_struct} {{\n{struct_body}}} {gen_struct};");
+        let _ = writeln!(
+            out,
+            "typedef struct {gen_struct} {{\n{struct_body}}} {gen_struct};"
+        );
 
         // Creator.
         let creator_sig = self.gen_creator_signature(f)?;
@@ -6316,7 +6348,11 @@ impl<'m> Emitter<'m> {
                 return Err("generator has a non-allocation HIR site".to_string());
             };
             let pid = self.pos_id(pos);
-            let _ = writeln!(out, "    void* _frame = subscript_rt_alloc(ctx, sizeof({gen_struct}), {}u, {pid}u);", rtc::CLASS_GENERATOR);
+            let _ = writeln!(
+                out,
+                "    void* _frame = subscript_rt_alloc(ctx, sizeof({gen_struct}), {}u, {pid}u);",
+                rtc::CLASS_GENERATOR
+            );
             self.emit_trap_site(site, TrapOperand::Pending, out, 1)
         })?;
         let _ = writeln!(out, "    {gen_struct}* _f = ({gen_struct}*)_frame;");
@@ -6354,7 +6390,8 @@ impl<'m> Emitter<'m> {
             child_fields: Vec::new(),
         });
         for p in &f.params {
-            self.gen_locals.push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
+            self.gen_locals
+                .push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
         }
         self.emit_block(out, &f.body, 1)?;
         // Fell off the end: done.
@@ -6432,10 +6469,7 @@ impl<'m> Emitter<'m> {
             None => self.gen_creator_signature(f)?,
         };
         let _ = writeln!(out, "{creator_sig} {{");
-        self.begin_fn(
-            ThisCtx::None,
-            Type::Generator(Box::new(Type::Void)),
-        );
+        self.begin_fn(ThisCtx::None, Type::Generator(Box::new(Type::Void)));
         let sites = f.trap_sites();
         lower_trap_sites(&sites, "async frame creation", |sites| {
             let site = sites.take_required(
@@ -6512,7 +6546,12 @@ impl<'m> Emitter<'m> {
         Ok(())
     }
 
-    fn eval_yield(&mut self, arg: Option<&hir::Expr>, out: &mut String, depth: usize) -> Result<String, String> {
+    fn eval_yield(
+        &mut self,
+        arg: Option<&hir::Expr>,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
         let ind = indent(depth);
         let (n, yct) = {
             let g = self.gen.as_ref().ok_or("yield outside a generator")?;
@@ -6593,12 +6632,7 @@ impl<'m> Emitter<'m> {
             while let Some(site) =
                 sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
             {
-                self.emit_trap_site(
-                    site,
-                    TrapOperand::Value(receiver_value.clone()),
-                    out,
-                    depth,
-                )?;
+                self.emit_trap_site(site, TrapOperand::Value(receiver_value.clone()), out, depth)?;
             }
             // Keep the receiver live if an explicit argument collects before
             // the method creator installs it in the child frame.
@@ -6696,8 +6730,7 @@ fn is_aggregate(ty: &Type) -> bool {
 /// form (`Type::Nullable(Object)`) or a bare `object` (§14.4): a callback
 /// field is followed by one or two such slots.
 fn is_userdata_slot(ty: &Type) -> bool {
-    matches!(ty, Type::Object)
-        || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
+    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
 }
 
 fn collect_aggr_ty(ty: &Type, set: &mut Vec<Type>) {
@@ -6806,7 +6839,9 @@ fn collect_aggr_expr(e: &hir::Expr, set: &mut Vec<Type>) {
                 collect_aggr_expr(arg, set);
             }
         }
-        K::Lambda { params, ret, body, .. } => {
+        K::Lambda {
+            params, ret, body, ..
+        } => {
             for p in params {
                 collect_aggr_ty(&p.ty, set);
             }
@@ -6826,7 +6861,9 @@ fn collect_aggr_stmts(stmts: &[hir::Stmt], set: &mut Vec<Type>) {
             }
             hir::Stmt::Expr(e) => collect_aggr_expr(e, set),
             hir::Stmt::Return { value: Some(v), .. } => collect_aggr_expr(v, set),
-            hir::Stmt::If { cond, then, els, .. } => {
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
                 collect_aggr_expr(cond, set);
                 collect_aggr_stmts(then, set);
                 if let Some(e) = els {
@@ -6837,7 +6874,13 @@ fn collect_aggr_stmts(stmts: &[hir::Stmt], set: &mut Vec<Type>) {
                 collect_aggr_expr(cond, set);
                 collect_aggr_stmts(body, set);
             }
-            hir::Stmt::For { init, cond, step, body, .. } => {
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
                 if let Some(i) = init {
                     collect_aggr_stmts(std::slice::from_ref(&**i), set);
                 }
@@ -6878,14 +6921,24 @@ fn count_yields(stmts: &[hir::Stmt]) -> u32 {
             hir::Stmt::Let { init, .. } => n += count_yields_expr(init),
             hir::Stmt::Expr(e) => n += count_yields_expr(e),
             hir::Stmt::Return { value, .. } => n += value.as_ref().map_or(0, count_yields_expr),
-            hir::Stmt::If { cond, then, els, .. } => {
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
                 n += count_yields_expr(cond) + count_yields(then);
                 if let Some(e) = els {
                     n += count_yields(e);
                 }
             }
-            hir::Stmt::While { cond, body, .. } => n += count_yields_expr(cond) + count_yields(body),
-            hir::Stmt::For { init, cond, step, body, .. } => {
+            hir::Stmt::While { cond, body, .. } => {
+                n += count_yields_expr(cond) + count_yields(body)
+            }
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
                 if let Some(i) = init {
                     n += count_yields(std::slice::from_ref(&**i));
                 }
@@ -6932,18 +6985,12 @@ fn count_yields_expr(e: &hir::Expr) -> u32 {
             n
         }
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
-        K::DescriptorLit { fields, .. } => fields
-            .iter()
-            .flatten()
-            .map(count_yields_expr)
-            .sum(),
+        K::DescriptorLit { fields, .. } => fields.iter().flatten().map(count_yields_expr).sum(),
         K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
-        K::ArraySpreadLit(elems) => {
-            elems.iter().map(|elem| count_yields_expr(&elem.expr)).sum()
-        }
+        K::ArraySpreadLit(elems) => elems.iter().map(|elem| count_yields_expr(&elem.expr)).sum(),
         K::Template(parts) => parts
             .iter()
             .map(|p| match p {
@@ -6966,9 +7013,12 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> u32 {
                 1 + callee.receiver().map_or(0, expr) + args.iter().map(expr).sum::<u32>()
             }
             K::Unary { operand, .. } | K::Cast(operand) => expr(operand),
-            K::Binary { left, right, .. } | K::Assign { target: left, value: right, .. } => {
-                expr(left) + expr(right)
-            }
+            K::Binary { left, right, .. }
+            | K::Assign {
+                target: left,
+                value: right,
+                ..
+            } => expr(left) + expr(right),
             K::Call { callee, args } => {
                 let callee_count = match callee {
                     hir::Callee::Value(value) => expr(value),
@@ -7002,13 +7052,17 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> u32 {
         count += match stmt {
             hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => expr(init),
             hir::Stmt::Return { value, .. } => value.as_ref().map_or(0, expr),
-            hir::Stmt::If { cond, then, els, .. } => {
-                expr(cond)
-                    + count_async_calls(then)
-                    + els.as_deref().map_or(0, count_async_calls)
-            }
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => expr(cond) + count_async_calls(then) + els.as_deref().map_or(0, count_async_calls),
             hir::Stmt::While { cond, body, .. } => expr(cond) + count_async_calls(body),
-            hir::Stmt::For { init, cond, step, body, .. } => {
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
                 init.as_deref()
                     .map_or(0, |stmt| count_async_calls(std::slice::from_ref(stmt)))
                     + cond.as_ref().map_or(0, expr)
@@ -7177,11 +7231,42 @@ fn sanitize(name: &str) -> String {
 fn is_c_keyword(s: &str) -> bool {
     matches!(
         s,
-        "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do"
-            | "double" | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if"
-            | "inline" | "int" | "long" | "register" | "restrict" | "return" | "short"
-            | "signed" | "sizeof" | "static" | "struct" | "switch" | "typedef" | "union"
-            | "unsigned" | "void" | "volatile" | "while" | "_Bool" | "_Complex"
+        "auto"
+            | "break"
+            | "case"
+            | "char"
+            | "const"
+            | "continue"
+            | "default"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "extern"
+            | "float"
+            | "for"
+            | "goto"
+            | "if"
+            | "inline"
+            | "int"
+            | "long"
+            | "register"
+            | "restrict"
+            | "return"
+            | "short"
+            | "signed"
+            | "sizeof"
+            | "static"
+            | "struct"
+            | "switch"
+            | "typedef"
+            | "union"
+            | "unsigned"
+            | "void"
+            | "volatile"
+            | "while"
+            | "_Bool"
+            | "_Complex"
             | "ctx"
     )
 }
@@ -7278,10 +7363,7 @@ extern const uint64_t subscript_alloc_position_count;
     .to_string()
 }
 
-fn render_allocation_metadata_definitions(
-    module: &hir::Module,
-    positions: &[Pos],
-) -> String {
+fn render_allocation_metadata_definitions(module: &hir::Module, positions: &[Pos]) -> String {
     let mut out = String::from(
         "\n/* Allocation attribution tables. Generated from checked HIR and the\n\
          * exact pos_id sequence above; consume through the generated\n\
@@ -7787,7 +7869,8 @@ mod tests {
 
     #[test]
     fn emits_the_host_entry_surface() {
-        let c = emit("export function main(): void {\n  const x: f32 = 1.5;\n  print(`${x}`);\n}\n");
+        let c =
+            emit("export function main(): void {\n  const x: f32 = 1.5;\n  print(`${x}`);\n}\n");
         assert!(c.contains("void subscript_init(subscript_rt_context* ctx)"));
         assert!(c.contains("void subscript_export_main(subscript_rt_context* ctx)"));
         assert!(c.contains("subscript_rt_fmt_f32"));

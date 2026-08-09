@@ -9,9 +9,7 @@ use std::fmt::Write as _;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
-use subscript_codegen::{
-    run_c_aot_with_native_libraries, run_jit_with_native_libraries,
-};
+use subscript_codegen::{run_c_aot_with_native_libraries, run_jit_with_native_libraries};
 use subscript_compiler::SourceFile;
 
 const MIRROR: &str = include_str!("../../corpus/interop/interop.generated.d.ts");
@@ -71,9 +69,8 @@ fn two_pointer_descriptor_output_is_invariant_under_uncalled_function_padding() 
     for padding in PADDING_COUNTS {
         let jit = run_jit_with_native_libraries(&files(padding), &[native_fixture::library()])
             .unwrap_or_else(|error| panic!("N={padding} dev-JIT run failed: {error}"));
-        let ship =
-            run_c_aot_with_native_libraries(&files(padding), &[native_fixture::library()])
-                .unwrap_or_else(|error| panic!("N={padding} ship-C-AOT run failed: {error}"));
+        let ship = run_c_aot_with_native_libraries(&files(padding), &[native_fixture::library()])
+            .unwrap_or_else(|error| panic!("N={padding} ship-C-AOT run failed: {error}"));
         assert_eq!(jit, EXPECTED, "N={padding} boundary observations are wrong");
         assert_eq!(ship, jit, "N={padding} tier outputs differ");
         if let Some(expected) = &reference {
@@ -83,4 +80,3 @@ fn two_pointer_descriptor_output_is_invariant_under_uncalled_function_padding() 
         }
     }
 }
-

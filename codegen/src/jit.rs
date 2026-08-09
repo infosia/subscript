@@ -7,9 +7,9 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 #[cfg(unix)]
 use std::io::{Read, Seek, SeekFrom};
-use std::io::Write;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
@@ -1093,10 +1093,8 @@ impl TemporaryFile {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         for _ in 0..100 {
             let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "subscript-jit-{}-{tag}-{n}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("subscript-jit-{}-{tag}-{n}", std::process::id()));
             match OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -1208,9 +1206,11 @@ impl RetainedOutput {
 
     #[cfg(unix)]
     fn bytes(&mut self) -> Result<Vec<u8>, RunError> {
-        self.file.seek(SeekFrom::Start(self.start)).map_err(|error| {
-            RunError::Internal(internal(format!("seek JIT output file: {error}")))
-        })?;
+        self.file
+            .seek(SeekFrom::Start(self.start))
+            .map_err(|error| {
+                RunError::Internal(internal(format!("seek JIT output file: {error}")))
+            })?;
         let mut bytes = Vec::new();
         self.file.read_to_end(&mut bytes).map_err(|error| {
             RunError::Internal(internal(format!("read JIT output file: {error}")))
@@ -1326,8 +1326,8 @@ fn execute_entry(
         Some(capture_stdout_line),
         (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
     );
-    let aborting_stdout = needs_panic_stdout_fallback
-        .then(|| AbortingStdoutGuard::install(&stdout.bytes));
+    let aborting_stdout =
+        needs_panic_stdout_fallback.then(|| AbortingStdoutGuard::install(&stdout.bytes));
     let diagnostics_set = ctx.set_freed_handle_diagnostics(
         freed_handle_diagnostics,
         0,
@@ -1446,12 +1446,14 @@ impl<'a> ProtocolReader<'a> {
     }
 
     fn take(&mut self, len: usize) -> Result<&'a [u8], RunError> {
-        let end = self.offset.checked_add(len).ok_or_else(|| {
-            RunError::Internal(internal("overflow reading JIT child protocol"))
-        })?;
-        let bytes = self.bytes.get(self.offset..end).ok_or_else(|| {
-            RunError::Internal(internal("truncated JIT child protocol"))
-        })?;
+        let end = self
+            .offset
+            .checked_add(len)
+            .ok_or_else(|| RunError::Internal(internal("overflow reading JIT child protocol")))?;
+        let bytes = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or_else(|| RunError::Internal(internal("truncated JIT child protocol")))?;
         self.offset = end;
         Ok(bytes)
     }
@@ -1467,18 +1469,17 @@ impl<'a> ProtocolReader<'a> {
     }
 
     fn bytes(&mut self) -> Result<&'a [u8], RunError> {
-        let len = u64::from_le_bytes(
-            self.take(8)?.try_into().expect("eight protocol bytes"),
-        );
-        let len = usize::try_from(len).map_err(|_| {
-            RunError::Internal(internal("oversized field in JIT child protocol"))
-        })?;
+        let len = u64::from_le_bytes(self.take(8)?.try_into().expect("eight protocol bytes"));
+        let len = usize::try_from(len)
+            .map_err(|_| RunError::Internal(internal("oversized field in JIT child protocol")))?;
         self.take(len)
     }
 
     fn string(&mut self) -> Result<String, RunError> {
         String::from_utf8(self.bytes()?.to_vec()).map_err(|error| {
-            RunError::Internal(internal(format!("invalid UTF-8 in JIT child protocol: {error}")))
+            RunError::Internal(internal(format!(
+                "invalid UTF-8 in JIT child protocol: {error}"
+            )))
         })
     }
 }
@@ -1574,9 +1575,7 @@ fn execute_entry_retained(
         if waited == child {
             break;
         }
-        if waited < 0
-            && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
-        {
+        if waited < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
             continue;
         }
         return Err(RunError::Internal(internal(format!(

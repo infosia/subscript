@@ -18,29 +18,29 @@ fn corpus_dir() -> PathBuf {
 /// (`specs/blocks/compiler.md` §12.4).
 fn interop_mirror() -> SourceFile {
     let path = corpus_dir().join("interop/interop.generated.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+    let source =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
     SourceFile::ambient("interop.generated.d.ts", source)
 }
 
 fn external_device_mirror() -> SourceFile {
     let path = corpus_dir().join("interop/external-device.generated.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+    let source =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
     SourceFile::ambient("external-device.generated.d.ts", source)
 }
 
 fn wire_enum_mirror() -> SourceFile {
     let path = corpus_dir().join("interop/wire-enum.generated.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+    let source =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
     SourceFile::ambient("wire-enum.generated.d.ts", source)
 }
 
 fn wire_enum_aliases() -> SourceFile {
     let path = corpus_dir().join("interop/wire-enum-aliases.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+    let source =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
     SourceFile::ambient("wire-enum-aliases.d.ts", source)
 }
 
@@ -91,15 +91,13 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     let uses_external = sources
         .iter()
         .any(|source| source.source.contains("subExternalDevice"));
-    let uses_wire_enum = sources
-        .iter()
-        .any(|source| {
-            source.source.contains("subWireMode") || source.source.contains("subBindTone")
-        });
+    let uses_wire_enum = sources.iter().any(|source| {
+        source.source.contains("subWireMode") || source.source.contains("subBindTone")
+    });
     let uses_interop = uses_external
         || sources
-        .iter()
-        .any(|s| INTEROP_TOKENS.iter().any(|t| s.source.contains(t)));
+            .iter()
+            .any(|s| INTEROP_TOKENS.iter().any(|t| s.source.contains(t)));
     if uses_external {
         sources.insert(0, external_device_mirror());
     }
@@ -269,7 +267,11 @@ fn a40_math_calls_are_intrinsics_and_constants_fold_to_literals() {
         ) {
             continue; // a41, a62, and the Q27 Stage 1 entry respectively
         }
-        assert!(maths.contains(&f), "a40 lacks a Math.{} intrinsic call", f.name());
+        assert!(
+            maths.contains(&f),
+            "a40 lacks a Math.{} intrinsic call",
+            f.name()
+        );
     }
     // The 8 constants folded to f64 literals with the exact
     // std::f64::consts bit patterns (stdlib.md §1).
@@ -363,7 +365,11 @@ fn a42_date_operations_are_intrinsics_and_the_type_is_nominal() {
         hir::DateFn::GetUtcMilliseconds,
         hir::DateFn::ToIso,
     ] {
-        assert!(dates.contains(&f), "a42 lacks a Date intrinsic for {}", f.name());
+        assert!(
+            dates.contains(&f),
+            "a42 lacks a Date intrinsic for {}",
+            f.name()
+        );
     }
     assert!(
         methods.is_empty(),
@@ -374,10 +380,7 @@ fn a42_date_operations_are_intrinsics_and_the_type_is_nominal() {
 #[test]
 fn a02_conversions_resolve_to_distinct_sized_types() {
     let accept = corpus_dir().join("accept");
-    let module = check_entry(&[(
-        "a02-integer-types.ts",
-        accept.join("a02-integer-types.ts"),
-    )]);
+    let module = check_entry(&[("a02-integer-types.ts", accept.join("a02-integer-types.ts"))]);
     let main = find_fn(&module, "main");
     // const narrowed: f32 = realSum as f32;  (f64 -> f32)
     let hir::Stmt::Let { name, ty, init, .. } = &main.body[6] else {
@@ -425,10 +428,7 @@ fn a04_value_class_type_is_nominal_and_by_value() {
 #[test]
 fn a12_generics_are_monomorphized_in_hir() {
     let accept = corpus_dir().join("accept");
-    let module = check_entry(&[(
-        "a12-generics-mono.ts",
-        accept.join("a12-generics-mono.ts"),
-    )]);
+    let module = check_entry(&[("a12-generics-mono.ts", accept.join("a12-generics-mono.ts"))]);
     assert_eq!(find_fn(&module, "identity<i32>").ret, Type::I32);
     assert_eq!(find_fn(&module, "identity<f64>").ret, Type::F64);
     assert_eq!(find_class(&module, "Box<i32>").fields[0].ty, Type::I32);

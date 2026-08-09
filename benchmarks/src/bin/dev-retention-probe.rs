@@ -105,7 +105,6 @@ impl Variant {
             Variant::Collect => "drop reference, then Context.collect per frame",
         }
     }
-
 }
 
 struct Sample {
@@ -399,9 +398,7 @@ fn print_sweep_summary(settings: &[SettingResult]) -> Result<(), String> {
                 return Err(format!(
                     "diagnostics {} shape {} variant {variant} measured {:.3} bytes/allocation; \
                      expected {expected}",
-                    setting.label,
-                    off_shape.shape.id,
-                    growth.per_allocation
+                    setting.label, off_shape.shape.id, growth.per_allocation
                 ));
             }
         }
@@ -430,9 +427,10 @@ fn print_rule(result: &SettingResult) -> Result<(), String> {
         for variant in [&shape.free, &shape.collect] {
             if result.setting.enabled
                 && result.setting.max_retained_bytes != usize::MAX
-                && variant.samples.iter().any(|sample| {
-                    sample.reserved_bytes > result.setting.max_retained_bytes as u64
-                })
+                && variant
+                    .samples
+                    .iter()
+                    .any(|sample| sample.reserved_bytes > result.setting.max_retained_bytes as u64)
             {
                 return Err(format!(
                     "diagnostics {} shape {} variant {} exceeded its retention budget",

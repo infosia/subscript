@@ -17,8 +17,8 @@ use std::str::FromStr;
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
-use cranelift_codegen::settings::{self, Configurable};
 use cranelift_codegen::isa;
+use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 use cranelift_object::object::macho::PLATFORM_IOS;
@@ -78,7 +78,8 @@ fn emit_object(triple_str: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     // extern "C" fn subscript_rt_print_i64(i64)
     let mut print_sig = module.make_signature();
     print_sig.params.push(AbiParam::new(types::I64));
-    let print_id = module.declare_function("subscript_rt_print_i64", Linkage::Import, &print_sig)?;
+    let print_id =
+        module.declare_function("subscript_rt_print_i64", Linkage::Import, &print_sig)?;
 
     // exported fn spike_main() -> i64
     let mut main_sig = module.make_signature();
@@ -179,7 +180,11 @@ mod tests {
         assert_eq!(file.format(), format);
         assert_eq!(file.architecture(), Architecture::Aarch64);
 
-        let prefix = if format == BinaryFormat::MachO { "_" } else { "" };
+        let prefix = if format == BinaryFormat::MachO {
+            "_"
+        } else {
+            ""
+        };
         let main_name = format!("{prefix}spike_main");
         let print_name = format!("{prefix}subscript_rt_print_i64");
 
@@ -194,8 +199,14 @@ mod tests {
             .symbols()
             .find(|s| s.name() == Ok(print_name.as_str()))
             .expect("subscript_rt_print_i64 symbol must be present");
-        assert!(print_sym.is_undefined(), "subscript_rt_print_i64 must be an undefined import");
-        assert!(print_sym.is_global(), "subscript_rt_print_i64 must be global");
+        assert!(
+            print_sym.is_undefined(),
+            "subscript_rt_print_i64 must be an undefined import"
+        );
+        assert!(
+            print_sym.is_global(),
+            "subscript_rt_print_i64 must be global"
+        );
     }
 
     #[test]

@@ -16,8 +16,7 @@ const BEFORE_ABORT: &str = "before-native-abort\nstill-before-native-abort\n";
 const DEV_RETENTION_SKIP: &str =
     "dev-JIT retention skipped: this platform does not isolate the run (compiler.md §44.10)";
 
-type IsolatedDevRun =
-    fn(&[SourceFile], &[NativeLibrary]) -> Result<Vec<u8>, RunError>;
+type IsolatedDevRun = fn(&[SourceFile], &[NativeLibrary]) -> Result<Vec<u8>, RunError>;
 
 #[cfg(unix)]
 fn isolated_dev_run() -> Option<IsolatedDevRun> {
@@ -39,10 +38,7 @@ unsafe extern "C" fn hard_terminate_jit_process() {
 
 fn aborting_program(fixture: &Path, mode: &str) -> (Vec<SourceFile>, NativeLibrary) {
     let (foreign_name, foreign_address) = match mode {
-        "panic" => (
-            "subscriptTestPanic",
-            panic_across_jit_boundary as *const u8,
-        ),
+        "panic" => ("subscriptTestPanic", panic_across_jit_boundary as *const u8),
         "signal" => (
             "subscriptTestSignal",
             hard_terminate_jit_process as *const u8,
@@ -133,10 +129,7 @@ fn jit_output_file_override_child() {
     };
     let fixture = PathBuf::from(std::env::var_os(ABORT_FIXTURE_DIR).expect("fixture directory"));
     let (files, library) = aborting_program(&fixture, &mode);
-    assert_abnormal_output(
-        run_dev(&files, &[library]),
-        "dev-JIT output-file override",
-    );
+    assert_abnormal_output(run_dev(&files, &[library]), "dev-JIT output-file override");
 }
 
 fn abort_fixture(mode: &str) -> PathBuf {
@@ -186,10 +179,7 @@ fn non_unwinding_panic_surfaces_output_already_produced() {
     };
     let fixture = abort_fixture("panic");
     let (files, library) = aborting_program(&fixture, "panic");
-    assert_abnormal_output(
-        run_dev(&files, &[library]),
-        "dev-JIT panic",
-    );
+    assert_abnormal_output(run_dev(&files, &[library]), "dev-JIT panic");
     std::fs::remove_dir_all(&fixture).expect("remove abort fixture directory");
 }
 
@@ -228,10 +218,7 @@ fn no_opt_in_hard_signal_returns_retained_output_on_both_tiers() {
     let fixture = abort_fixture("signal");
     if let Some(run_dev) = isolated_dev_run() {
         let (jit_files, jit_library) = aborting_program(&fixture, "signal");
-        assert_abnormal_output(
-            run_dev(&jit_files, &[jit_library]),
-            "dev-JIT hard signal",
-        );
+        assert_abnormal_output(run_dev(&jit_files, &[jit_library]), "dev-JIT hard signal");
     } else {
         println!("{DEV_RETENTION_SKIP}");
     }

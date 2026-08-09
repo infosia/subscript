@@ -24,10 +24,9 @@ pub fn corpus_accept() -> PathBuf {
 /// The corpus gate supplies the fixture's [`subscript_codegen::NativeLibrary`]
 /// beside this mirror for entries that use it.
 fn interop_mirror() -> SourceFile {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../corpus/interop/interop.generated.d.ts");
-    let text =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop/interop.generated.d.ts");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     SourceFile::ambient("interop.generated.d.ts", text)
 }
 
@@ -37,8 +36,7 @@ fn interop_mirror() -> SourceFile {
 fn external_device_mirror() -> SourceFile {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../corpus/interop/external-device.generated.d.ts");
-    let text =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     SourceFile::ambient("external-device.generated.d.ts", text)
 }
 
@@ -46,17 +44,15 @@ fn external_device_mirror() -> SourceFile {
 fn wire_enum_mirror() -> SourceFile {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../corpus/interop/wire-enum.generated.d.ts");
-    let text =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     SourceFile::ambient("wire-enum.generated.d.ts", text)
 }
 
 /// Hand-authored ambient wire tables referenced by [`wire_enum_mirror`].
 fn wire_enum_aliases() -> SourceFile {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../corpus/interop/wire-enum-aliases.d.ts");
-    let text =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop/wire-enum-aliases.d.ts");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     SourceFile::ambient("wire-enum-aliases.d.ts", text)
 }
 
@@ -200,13 +196,11 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     // index zero, so both language ingestion and emitted C includes see
     // interop.h before external-device.h.
     let uses_external = uses_external_device_mirror(&sources);
-    let uses_wire_enum = sources
-        .iter()
-        .any(|source| {
-            ["subWireMode", "SubWireMode", "subBindTone", "SubBindTone"]
-                .iter()
-                .any(|token| source.source.contains(token))
-        });
+    let uses_wire_enum = sources.iter().any(|source| {
+        ["subWireMode", "SubWireMode", "subBindTone", "SubBindTone"]
+            .iter()
+            .any(|token| source.source.contains(token))
+    });
     let uses_interop = uses_interop_mirror(&sources) || uses_external;
     if uses_external {
         sources.insert(0, external_device_mirror());

@@ -16,9 +16,7 @@
 //! stop retaining their referents; clear eagerly retires both backing
 //! allocations.
 
-use crate::context::{
-    Context, CLASS_MAP, CLASS_MAP_DATA, CLASS_MAP_INDEX, CLASS_SET,
-};
+use crate::context::{Context, CLASS_MAP, CLASS_MAP_DATA, CLASS_MAP_INDEX, CLASS_SET};
 use crate::trap::TrapKind;
 
 const EMPTY: u64 = 0;
@@ -100,12 +98,7 @@ fn shape_ok(kind: KeyKind, key_size: usize) -> bool {
     }
 }
 
-fn allocation_size(
-    ctx: &mut Context,
-    count: usize,
-    stride: usize,
-    pos_id: u32,
-) -> Option<usize> {
+fn allocation_size(ctx: &mut Context, count: usize, stride: usize, pos_id: u32) -> Option<usize> {
     match count.checked_mul(stride) {
         Some(size) => Some(size),
         None => {
@@ -374,12 +367,7 @@ struct Lookup {
     entry: Option<usize>,
 }
 
-unsafe fn lookup(
-    ctx: *mut Context,
-    h: &AssocHeader,
-    key: *const u8,
-    hash: u64,
-) -> Lookup {
+unsafe fn lookup(ctx: *mut Context, h: &AssocHeader, key: *const u8, hash: u64) -> Lookup {
     let cap = h.bucket_cap as usize;
     if cap == 0 || h.buckets.is_null() {
         return Lookup {
@@ -534,11 +522,7 @@ unsafe fn compact_entries(handle: *mut u8) -> bool {
             // always moves toward the front, so unread sources remain
             // intact.
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    entry_ptr(h, read),
-                    entry_ptr(h, write),
-                    stride,
-                )
+                std::ptr::copy_nonoverlapping(entry_ptr(h, read), entry_ptr(h, write), stride)
             };
         }
         // SAFETY: the packed entry prefix is readable.
@@ -561,13 +545,7 @@ unsafe fn compact_entries(handle: *mut u8) -> bool {
     if write < old_len {
         // SAFETY: the packed prefix ends at `write`; zeroing the old
         // suffix removes duplicate managed handles left by moves.
-        unsafe {
-            std::ptr::write_bytes(
-                entry_ptr(h, write),
-                0,
-                (old_len - write) * stride,
-            )
-        };
+        unsafe { std::ptr::write_bytes(entry_ptr(h, write), 0, (old_len - write) * stride) };
     }
     h.order_len = write as u64;
     h.tombstones = 0;
@@ -619,9 +597,7 @@ unsafe fn ensure_capacity(ctx: &mut Context, handle: *mut u8, pos_id: u32) -> bo
     if h.bucket_cap == 0 || used.saturating_mul(4) >= h.bucket_cap.saturating_mul(3) {
         let new_cap = if h.bucket_cap == 0 {
             INITIAL_BUCKET_CAP
-        } else if h.len.saturating_add(1).saturating_mul(4)
-            >= h.bucket_cap.saturating_mul(3)
-        {
+        } else if h.len.saturating_add(1).saturating_mul(4) >= h.bucket_cap.saturating_mul(3) {
             match (h.bucket_cap as usize).checked_mul(2) {
                 Some(v) => v,
                 None => {
@@ -696,18 +672,9 @@ pub(crate) unsafe fn insert(
     unsafe {
         ep.cast::<u64>().write_unaligned(hash);
         ep.add(8).cast::<u64>().write_unaligned(1);
-        copy_stored_key(
-            kind,
-            key,
-            ep.add(key_offset()),
-            h.key_size as usize,
-        );
+        copy_stored_key(kind, key, ep.add(key_offset()), h.key_size as usize);
         if h.value_size != 0 && !value.is_null() {
-            std::ptr::copy_nonoverlapping(
-                value,
-                ep.add(value_offset(h)),
-                h.value_size as usize,
-            );
+            std::ptr::copy_nonoverlapping(value, ep.add(value_offset(h)), h.value_size as usize);
         }
         let slot = h.buckets.add(vacant.bucket * 8).cast::<u64>();
         if slot.read_unaligned() == TOMBSTONE {
@@ -738,12 +705,7 @@ unsafe fn find_entry(ctx: *mut Context, handle: *mut u8, key: *const u8) -> Opti
 ///
 /// `handle` is a live map; `key` is readable for its key width and
 /// `out` is writable for its value width.
-pub(crate) unsafe fn get(
-    ctx: *mut Context,
-    handle: *mut u8,
-    key: *const u8,
-    out: *mut u8,
-) -> bool {
+pub(crate) unsafe fn get(ctx: *mut Context, handle: *mut u8, key: *const u8, out: *mut u8) -> bool {
     // SAFETY: caller contract.
     let Some(entry) = (unsafe { find_entry(ctx, handle, key) }) else {
         return false;
@@ -831,11 +793,7 @@ pub(crate) unsafe fn delete(ctx: *mut Context, handle: *mut u8, key: *const u8) 
             .add(found.bucket * 8)
             .cast::<u64>()
             .write_unaligned(TOMBSTONE);
-        std::ptr::write_bytes(
-            entry_ptr(h, entry),
-            0,
-            h.entry_stride as usize,
-        );
+        std::ptr::write_bytes(entry_ptr(h, entry), 0, h.entry_stride as usize);
     }
     h.len = h.len.saturating_sub(1);
     h.tombstones = h.tombstones.saturating_add(1);
@@ -873,28 +831,15 @@ pub(crate) unsafe fn clear(ctx: &mut Context, handle: *mut u8) {
 /// Fixed ABI of a generated Map callback bridge. The bridge loads
 /// monomorphized value/key bytes and invokes the actual script function
 /// under that tier's language calling convention.
-type MapBridge = unsafe extern "C" fn(
-    *mut Context,
-    *const u8,
-    *const u8,
-    *const u8,
-    *const u8,
-);
+type MapBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8, *const u8);
 
 /// Fixed ABI of a generated Set callback bridge.
-type SetBridge =
-    unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8);
+type SetBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8);
 
 /// Fixed ABI of a generated `Map.groupBy` callback bridge. The bridge
 /// copies/loads one array element into the script ABI and writes the
 /// callback's concrete key result to `key_out`.
-type GroupBridge = unsafe extern "C" fn(
-    *mut Context,
-    *const u8,
-    *const u8,
-    *const u8,
-    *mut u8,
-);
+type GroupBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8, *mut u8);
 
 /// Groups an array under callback-produced keys. The output map, every
 /// group array, and every stored element own fresh Context storage.
@@ -962,15 +907,7 @@ pub(crate) unsafe fn group_by(
         let mut key = 0u64;
         // SAFETY: generated bridge contract. Q24 key widths are at most
         // eight bytes, validated by `new`.
-        unsafe {
-            call(
-                ctx,
-                code,
-                env,
-                element_ptr,
-                (&mut key as *mut u64).cast(),
-            )
-        };
+        unsafe { call(ctx, code, env, element_ptr, (&mut key as *mut u64).cast()) };
         if unsafe { (*ctx).trapped() } {
             break;
         }
@@ -1020,16 +957,8 @@ unsafe fn set_shapes_match(left: *mut u8, right: *mut u8) -> bool {
     if left.is_null() || right.is_null() {
         return false;
     }
-    let (a, b) = unsafe {
-        (
-            &*left.cast::<AssocHeader>(),
-            &*right.cast::<AssocHeader>(),
-        )
-    };
-    a.value_size == 0
-        && b.value_size == 0
-        && a.key_size == b.key_size
-        && a.key_kind == b.key_kind
+    let (a, b) = unsafe { (&*left.cast::<AssocHeader>(), &*right.cast::<AssocHeader>()) };
+    a.value_size == 0 && b.value_size == 0 && a.key_size == b.key_size && a.key_kind == b.key_kind
 }
 
 unsafe fn new_set_like(ctx: *mut Context, source: *mut u8, pos_id: u32) -> *mut u8 {
@@ -1285,10 +1214,7 @@ pub(crate) unsafe fn iteration_begin(handle: *mut u8) -> usize {
 ///
 /// `handle` is a live Map/Set payload and `index` is below the bound
 /// returned by [`iteration_begin`].
-unsafe fn iteration_entry(
-    handle: *mut u8,
-    index: usize,
-) -> Option<(*const u8, *const u8)> {
+unsafe fn iteration_entry(handle: *mut u8, index: usize) -> Option<(*const u8, *const u8)> {
     if handle.is_null() {
         return None;
     }
@@ -1473,13 +1399,7 @@ mod tests {
         let set = new(ctx, 4, 0, KeyKind::Bits, true, 0);
         for value in values {
             unsafe {
-                insert(
-                    ctx,
-                    set,
-                    (value as *const i32).cast(),
-                    std::ptr::null(),
-                    0,
-                );
+                insert(ctx, set, (value as *const i32).cast(), std::ptr::null(), 0);
             }
         }
         set
@@ -1517,12 +1437,7 @@ mod tests {
         };
     }
 
-    unsafe extern "C" fn collect_pair(
-        _ctx: *mut Context,
-        env: *const u8,
-        value: i32,
-        key: i32,
-    ) {
+    unsafe extern "C" fn collect_pair(_ctx: *mut Context, env: *const u8, value: i32, key: i32) {
         // SAFETY: env points at the test's Vec for this synchronous call.
         unsafe { &mut *(env as *mut Vec<(i32, i32)>) }.push((key, value));
     }
@@ -1687,8 +1602,11 @@ mod tests {
                 .cast::<Pair>()
                 .write_unaligned(changed);
         }
-        let original =
-            unsafe { ctx.array_elem_ptr(items, 0, 0).cast::<Pair>().read_unaligned() };
+        let original = unsafe {
+            ctx.array_elem_ptr(items, 0, 0)
+                .cast::<Pair>()
+                .read_unaligned()
+        };
         assert_eq!(original, Pair { value: 1, tag: 10 });
     }
 
@@ -1852,7 +1770,11 @@ mod tests {
         assert!(unsafe { has(&mut *ctx, h, (&pos_zero as *const f64).cast()) });
         // SAFETY: the first ordered entry is active f64 key storage.
         assert_eq!(
-            unsafe { entry_key(&*h.cast::<AssocHeader>(), 0).cast::<u64>().read_unaligned() },
+            unsafe {
+                entry_key(&*h.cast::<AssocHeader>(), 0)
+                    .cast::<u64>()
+                    .read_unaligned()
+            },
             0,
             "-0 must be stored as +0 for traversal"
         );
@@ -1898,7 +1820,11 @@ mod tests {
         // SAFETY: live header.
         assert_eq!(unsafe { len(h) }, 2);
         assert_eq!(
-            unsafe { entry_key(&*h.cast::<AssocHeader>(), 1).cast::<u64>().read_unaligned() },
+            unsafe {
+                entry_key(&*h.cast::<AssocHeader>(), 1)
+                    .cast::<u64>()
+                    .read_unaligned()
+            },
             CANONICAL_F64_NAN_BITS
         );
 

@@ -14,9 +14,8 @@ fn external_type_is_referenced_without_a_declaration_and_records_provenance() {
         .expect("an external type may be supplied by another ambient mirror");
 
     assert!(mirror.contains("// @subscript-c-external type=\"SubDevice\""));
-    assert!(mirror.contains(
-        "declare function subExternalDeviceIdentity(device: SubDevice): SubDevice;"
-    ));
+    assert!(mirror
+        .contains("declare function subExternalDeviceIdentity(device: SubDevice): SubDevice;"));
     assert!(!mirror.contains("interface SubDevice"));
     assert!(!mirror.contains("declare class SubDevice"));
     assert!(!mirror.contains("declare enum SubDevice"));

@@ -85,18 +85,8 @@ unsafe extern "C" fn observe(descriptor: *const u8) -> u32 {
         for (count_offset, data_offset) in [(16, 24), (48, 56)] {
             // SAFETY: the target was validated above and each pair offset is
             // fixed by the actual C layout described above.
-            let count = unsafe {
-                target
-                    .add(count_offset)
-                    .cast::<usize>()
-                    .read_unaligned()
-            };
-            let data = unsafe {
-                target
-                    .add(data_offset)
-                    .cast::<*const u8>()
-                    .read_unaligned()
-            };
+            let count = unsafe { target.add(count_offset).cast::<usize>().read_unaligned() };
+            let data = unsafe { target.add(data_offset).cast::<*const u8>().read_unaligned() };
             if count != 2 || data.is_null() || data.addr() % 4 != 0 {
                 return 8;
             }

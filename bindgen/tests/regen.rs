@@ -21,8 +21,7 @@ fn external_header() -> String {
 }
 
 fn wire_enum_header() -> String {
-    fs::read_to_string(repo().join("corpus/interop/wire-enum.h"))
-        .expect("read wire-enum.h")
+    fs::read_to_string(repo().join("corpus/interop/wire-enum.h")).expect("read wire-enum.h")
 }
 
 #[test]
@@ -41,13 +40,11 @@ fn committed_mirror_is_byte_identical_to_regeneration() {
 
 #[test]
 fn external_mirror_is_byte_identical_to_regeneration() {
-    let generated =
-        subscript_bindgen::generate_for_header(&external_header(), "external-device.h")
-            .expect("generate external mirror");
-    let committed = fs::read_to_string(
-        repo().join("corpus/interop/external-device.generated.d.ts"),
-    )
-    .expect("read committed external mirror");
+    let generated = subscript_bindgen::generate_for_header(&external_header(), "external-device.h")
+        .expect("generate external mirror");
+    let committed =
+        fs::read_to_string(repo().join("corpus/interop/external-device.generated.d.ts"))
+            .expect("read committed external mirror");
     assert_eq!(
         generated, committed,
         "the committed external mirror drifted from the generator output; regenerate with \
@@ -58,13 +55,10 @@ fn external_mirror_is_byte_identical_to_regeneration() {
 
 #[test]
 fn wire_enum_mirror_is_byte_identical_to_regeneration() {
-    let generated =
-        subscript_bindgen::generate_for_header(&wire_enum_header(), "wire-enum.h")
-            .expect("generate wire-enum mirror");
-    let committed = fs::read_to_string(
-        repo().join("corpus/interop/wire-enum.generated.d.ts"),
-    )
-    .expect("read committed wire-enum mirror");
+    let generated = subscript_bindgen::generate_for_header(&wire_enum_header(), "wire-enum.h")
+        .expect("generate wire-enum mirror");
+    let committed = fs::read_to_string(repo().join("corpus/interop/wire-enum.generated.d.ts"))
+        .expect("read committed wire-enum mirror");
     assert_eq!(
         generated, committed,
         "the committed wire-enum mirror drifted from the generator output; regenerate with \
@@ -155,9 +149,9 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(!m.contains("commands: SubDevice | null"));
     // R12 (§35). A direct registered-handle foreign-function parameter
     // retains null while the leading unqualified handle remains non-null.
-    assert!(m.contains(
-        "subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;"
-    ));
+    assert!(
+        m.contains("subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;")
+    );
     // R21 (§49). The host-owned fixture is an opaque handle with explicit
     // lifecycle functions and a non-owning accessor used by script code.
     assert!(m.contains("interface SubHostOwnedState {"));

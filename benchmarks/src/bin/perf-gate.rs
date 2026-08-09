@@ -70,7 +70,8 @@ const ENTRY_ID: &str = "a22-matrix-propagation";
 const ENTRY_SOURCE: &str = include_str!("../../../corpus/accept/a22-matrix-propagation.ts");
 
 /// The entry's frozen golden output (`specs/blocks/compiler.md` §2).
-const ENTRY_GOLDEN: &[u8] = include_bytes!("../../../corpus/accept/a22-matrix-propagation.expected");
+const ENTRY_GOLDEN: &[u8] =
+    include_bytes!("../../../corpus/accept/a22-matrix-propagation.expected");
 
 /// The hand-written C baseline, written out and compiled at run time.
 const BASELINE_C: &str = include_str!("../../a22-baseline.c");
@@ -277,7 +278,10 @@ fn write_report(
     };
 
     w(report, format_args!("== subscript P4 performance gate =="))?;
-    w(report, format_args!("entry:       corpus/accept/{ENTRY_ID}.ts"))?;
+    w(
+        report,
+        format_args!("entry:       corpus/accept/{ENTRY_ID}.ts"),
+    )?;
     w(
         report,
         format_args!(
@@ -296,7 +300,9 @@ fn write_report(
     )?;
     w(
         report,
-        format_args!("procedure:   {warmup} warm-up runs discarded, {timed} timed runs, median reported"),
+        format_args!(
+            "procedure:   {warmup} warm-up runs discarded, {timed} timed runs, median reported"
+        ),
     )?;
     w(
         report,
@@ -682,7 +688,9 @@ fn measure_emitted_c(
                 .unwrap_or_else(|| "no diagnostic".to_string())
         )
     })?;
-    let c_source = emit_c(&module).map_err(|e| format!("C emission: {e}"))?.source;
+    let c_source = emit_c(&module)
+        .map_err(|e| format!("C emission: {e}"))?
+        .source;
     let emit = started.elapsed();
 
     let source = dir.join("a22-cemit.c");

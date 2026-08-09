@@ -105,12 +105,8 @@ pub type DiagnosticsObserver = unsafe extern "C" fn(
 /// [`Context::live_bytes`]: exact requested bytes in the development
 /// tier and for ship-tier large allocations, size-class payload capacity
 /// for ship-tier arena blocks.
-pub type AllocationVisitor = unsafe extern "C" fn(
-    userdata: *mut c_void,
-    class_id: u32,
-    pos_id: u32,
-    payload_bytes: u64,
-);
+pub type AllocationVisitor =
+    unsafe extern "C" fn(userdata: *mut c_void, class_id: u32, pos_id: u32, payload_bytes: u64);
 
 /// C calling convention shared by the module initializer (`subscript_init`) and every
 /// supported host export.
@@ -129,11 +125,7 @@ pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 /// for the fulfilled value (null for the zero-argument `Promise<void>` root
 /// exports driven by the runtime). The return is 1 on completion and 0 on
 /// suspension.
-pub type AsyncResume = unsafe extern "C" fn(
-    ctx: *mut Context,
-    frame: *mut u8,
-    out: *mut u8,
-) -> u8;
+pub type AsyncResume = unsafe extern "C" fn(ctx: *mut Context, frame: *mut u8, out: *mut u8) -> u8;
 
 #[derive(Clone, Copy)]
 struct AsyncRoot {
@@ -668,11 +660,7 @@ impl Context {
         }
     }
 
-    pub(crate) unsafe fn worker_post(
-        &mut self,
-        worker: *mut Worker,
-        payload: *const u8,
-    ) -> bool {
+    pub(crate) unsafe fn worker_post(&mut self, worker: *mut Worker, payload: *const u8) -> bool {
         if self.trapped() {
             return false;
         }
@@ -689,7 +677,11 @@ impl Context {
                 false
             }
             None => {
-                self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+                self.trap(
+                    TrapKind::Internal,
+                    "worker handle is not owned by Context",
+                    0,
+                );
                 false
             }
         }
@@ -700,7 +692,11 @@ impl Context {
             return std::ptr::null_mut();
         }
         let Some(receive) = self.workers.poll(worker) else {
-            self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+            self.trap(
+                TrapKind::Internal,
+                "worker handle is not owned by Context",
+                0,
+            );
             return std::ptr::null_mut();
         };
         crate::worker::materialize_parent(self, receive)
@@ -708,13 +704,21 @@ impl Context {
 
     pub(crate) fn worker_close(&mut self, worker: *mut Worker) {
         if !self.workers.close(worker) {
-            self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+            self.trap(
+                TrapKind::Internal,
+                "worker handle is not owned by Context",
+                0,
+            );
         }
     }
 
     pub(crate) fn worker_join(&mut self, worker: *mut Worker) -> bool {
         let Some(outcome) = self.workers.join(worker) else {
-            self.trap(TrapKind::Internal, "worker handle is not owned by Context", 0);
+            self.trap(
+                TrapKind::Internal,
+                "worker handle is not owned by Context",
+                0,
+            );
             return false;
         };
         match outcome {
@@ -1093,11 +1097,7 @@ impl Context {
 
     /// Installs a host observer for the first trap in each uncleared
     /// run. Passing `None` clears the observer and its userdata.
-    pub fn set_trap_observer(
-        &mut self,
-        observer: Option<TrapObserver>,
-        userdata: *mut c_void,
-    ) {
+    pub fn set_trap_observer(&mut self, observer: Option<TrapObserver>, userdata: *mut c_void) {
         self.trap_observer = observer;
         self.trap_observer_userdata = if observer.is_some() {
             userdata
@@ -1195,11 +1195,7 @@ impl Context {
 
     /// Installs a host observer for printed lines. Passing `None` clears
     /// the observer and its userdata.
-    pub fn set_print_observer(
-        &mut self,
-        observer: Option<PrintObserver>,
-        userdata: *mut c_void,
-    ) {
+    pub fn set_print_observer(&mut self, observer: Option<PrintObserver>, userdata: *mut c_void) {
         self.print_observer = observer;
         self.print_observer_userdata = if observer.is_some() {
             userdata
@@ -1523,9 +1519,7 @@ impl Context {
             bump: 0,
         });
         // Keep the membership index sorted by base address.
-        let pos = self
-            .chunk_map
-            .partition_point(|&(b, _)| b < base as usize);
+        let pos = self.chunk_map.partition_point(|&(b, _)| b < base as usize);
         self.chunk_map.insert(pos, (base as usize, idx));
         self.open[class] = Some(idx);
         #[cfg(test)]
@@ -1613,7 +1607,10 @@ impl Context {
         }
         // SAFETY: `bi < bump <= blocks_per_chunk`, so the block base is
         // inside the owned chunk.
-        Some((unsafe { chunk.base.add(bi * chunk.block_size) }, chunk.class))
+        Some((
+            unsafe { chunk.base.add(bi * chunk.block_size) },
+            chunk.class,
+        ))
     }
 
     /// Clears the separately allocated storage owned by a Map/Set before
@@ -1911,8 +1908,7 @@ impl Context {
         if self.freed_handle_diagnostics && self.dead_allocations.contains(&address) {
             // SAFETY: dead-set membership means the retained allocation and
             // its complete header are still owned by this Context.
-            let pos_id =
-                unsafe { payload.offset(POS_ID_OFFSET as isize).cast::<u32>().read() };
+            let pos_id = unsafe { payload.offset(POS_ID_OFFSET as isize).cast::<u32>().read() };
             self.trap(
                 TrapKind::CallbackUserdataFreed,
                 "callback userdata points to a freed allocation",
@@ -1997,9 +1993,10 @@ impl Context {
                 .chunks
                 .iter()
                 .fold(0usize, |sum, c| sum.saturating_add(c.layout.size()));
-            return self.large.values().fold(chunk_bytes, |sum, a| {
-                sum.saturating_add(a.layout.size())
-            });
+            return self
+                .large
+                .values()
+                .fold(chunk_bytes, |sum, a| sum.saturating_add(a.layout.size()));
         }
         let live_layout_bytes = self
             .allocations
@@ -2071,14 +2068,7 @@ impl Context {
                     )
                 };
                 // SAFETY: the host supplied `visitor` and its userdata.
-                unsafe {
-                    visitor(
-                        userdata,
-                        class_id,
-                        pos_id,
-                        allocation.payload_size as u64,
-                    )
-                };
+                unsafe { visitor(userdata, class_id, pos_id, allocation.payload_size as u64) };
                 count += 1;
             }
             return count;
@@ -2094,14 +2084,7 @@ impl Context {
                 )
             };
             // SAFETY: the host supplied `visitor` and its userdata.
-            unsafe {
-                visitor(
-                    userdata,
-                    class_id,
-                    pos_id,
-                    allocation.payload_size as u64,
-                )
-            };
+            unsafe { visitor(userdata, class_id, pos_id, allocation.payload_size as u64) };
             count += 1;
         }
         count
@@ -2293,8 +2276,7 @@ impl Context {
     /// is stamped `MARK_STATE` and its payload words are pushed.
     fn arena_mark(&mut self, work: &mut Vec<usize>) {
         while let Some(addr) = work.pop() {
-            let (block, payload_size) = if let Some((block, class)) =
-                self.arena_lookup_block(addr)
+            let (block, payload_size) = if let Some((block, class)) = self.arena_lookup_block(addr)
             {
                 // SAFETY: `block` heads a block inside an owned chunk;
                 // the state read stays inside it.
@@ -2787,11 +2769,7 @@ mod tests {
         polls: u8,
     }
 
-    unsafe extern "C" fn test_async_resume(
-        ctx: *mut Context,
-        frame: *mut u8,
-        _out: *mut u8,
-    ) -> u8 {
+    unsafe extern "C" fn test_async_resume(ctx: *mut Context, frame: *mut u8, _out: *mut u8) -> u8 {
         // SAFETY: the tests pass matching live `TestAsyncFrame` values.
         let ctx = unsafe { &mut *ctx };
         let frame = unsafe { &mut *frame.cast::<TestAsyncFrame>() };
@@ -2825,7 +2803,12 @@ mod tests {
         let mut ctx = Context::new();
         let mut frame = TestAsyncFrame { id: 1, polls: 0 };
         // SAFETY: `frame` remains live for the test.
-        unsafe { ctx.async_kick((&mut frame as *mut TestAsyncFrame).cast(), test_async_resume) };
+        unsafe {
+            ctx.async_kick(
+                (&mut frame as *mut TestAsyncFrame).cast(),
+                test_async_resume,
+            )
+        };
         ctx.trap(TrapKind::Internal, "test trap", 7);
         // SAFETY: the queued callback and frame remain valid, but the trap
         // contract prevents the callback from being invoked.
@@ -2841,7 +2824,10 @@ mod tests {
             let mut ctx = Context::new();
             // SAFETY: `frame` outlives the Context and its pending queue.
             unsafe {
-                ctx.async_kick((&mut frame as *mut TestAsyncFrame).cast(), test_async_resume)
+                ctx.async_kick(
+                    (&mut frame as *mut TestAsyncFrame).cast(),
+                    test_async_resume,
+                )
             };
             assert_eq!(ctx.async_pending(), 1);
         }
@@ -2856,8 +2842,12 @@ mod tests {
         // SAFETY: both allocations have exactly the test-frame payload and
         // remain Context-owned throughout the poll round.
         unsafe {
-            first.cast::<TestAsyncFrame>().write(TestAsyncFrame { id: 3, polls: 0 });
-            second.cast::<TestAsyncFrame>().write(TestAsyncFrame { id: 2, polls: 0 });
+            first
+                .cast::<TestAsyncFrame>()
+                .write(TestAsyncFrame { id: 3, polls: 0 });
+            second
+                .cast::<TestAsyncFrame>()
+                .write(TestAsyncFrame { id: 2, polls: 0 });
             ctx.async_kick(first, test_async_resume);
             ctx.async_kick(second, test_async_resume);
             assert_eq!(ctx.async_step(), 0);
@@ -2939,7 +2929,10 @@ mod tests {
         // clock (stdlib.md §3).
         let a = ctx.now_utc_ms();
         let b = ctx.now_utc_ms();
-        assert!(crate::date::in_range(a), "system clock out of TimeClip: {a}");
+        assert!(
+            crate::date::in_range(a),
+            "system clock out of TimeClip: {a}"
+        );
         assert!(b >= a);
         // Pinned: exactly the set value, stable across reads, negative
         // (pre-1970) values included.
@@ -3048,11 +3041,7 @@ mod tests {
 
     #[test]
     fn print_observer_controls_delivery_and_sink_retention() {
-        unsafe extern "C" fn observe(
-            userdata: *mut c_void,
-            line: *const u8,
-            line_len: u64,
-        ) {
+        unsafe extern "C" fn observe(userdata: *mut c_void, line: *const u8, line_len: u64) {
             // SAFETY: the test passes a live Vec with this exact type and
             // the observer contract keeps the line readable for this call.
             let lines = unsafe { &mut *userdata.cast::<Vec<Vec<u8>>>() };
@@ -3068,10 +3057,7 @@ mod tests {
 
         let mut ctx = Context::new();
         let mut observed = Vec::<Vec<u8>>::new();
-        ctx.set_print_observer(
-            Some(observe),
-            std::ptr::from_mut(&mut observed).cast(),
-        );
+        ctx.set_print_observer(Some(observe), std::ptr::from_mut(&mut observed).cast());
         ctx.print_line(b"first");
         ctx.print_line(b"second");
         assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
@@ -3102,8 +3088,7 @@ mod tests {
         assert_eq!(first, repeated);
         assert_eq!(ctx.callbacks.len(), 1);
 
-        let second =
-            ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2);
+        let second = ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2);
         assert_ne!(first, second);
         assert_eq!(ctx.callbacks.len(), 2);
     }
@@ -3133,10 +3118,7 @@ mod tests {
 
         let mut ctx = Context::new();
         let mut observed = Advisories::default();
-        ctx.set_diagnostics_observer(
-            Some(observe),
-            std::ptr::from_mut(&mut observed).cast(),
-        );
+        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut observed).cast());
         ctx.set_binding_count_advisory(2);
         let code = callback_code as *const () as *const u8;
         let mut first_userdata = 1u8;
@@ -3167,10 +3149,8 @@ mod tests {
 
         let mut zero_ctx = Context::new();
         let mut zero_observed = Advisories::default();
-        zero_ctx.set_diagnostics_observer(
-            Some(observe),
-            std::ptr::from_mut(&mut zero_observed).cast(),
-        );
+        zero_ctx
+            .set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut zero_observed).cast());
         zero_ctx.set_binding_count_advisory(0);
         zero_ctx.bind_callback(
             code,
@@ -3208,14 +3188,12 @@ mod tests {
         let code = callback_code as *const () as *const u8;
         let mut userdata = 1u8;
         let userdata = std::ptr::from_mut(&mut userdata);
-        let first =
-            ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
 
         let mut calls = 0u32;
         ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut calls).cast());
         ctx.set_binding_count_advisory(1);
-        let repeated =
-            ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let repeated = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
 
         assert_eq!(first, repeated);
         assert_eq!(ctx.callbacks.len(), 1);
@@ -3252,10 +3230,7 @@ mod tests {
     fn callback_userdata_rooted_survives_collect() {
         fn callback_code() {}
 
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let first = ctx.alloc(16, 1, 10);
             let second = ctx.alloc(16, 2, 11);
             assert!(!first.is_null() && !second.is_null(), "{tier}");
@@ -3278,10 +3253,7 @@ mod tests {
     fn callback_userdata_freed_slot_is_skipped_at_mark() {
         fn callback_code() {}
 
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
             let freed = ctx.alloc(16, 1, 12);
             let unrooted = ctx.alloc(16, 2, 13);
@@ -3298,7 +3270,10 @@ mod tests {
 
             assert!(!ctx.trapped(), "{tier}: mark must skip the dead slot");
             assert!(!ctx.is_live(freed as usize), "{tier}: freed slot");
-            assert!(!ctx.is_live(unrooted as usize), "{tier}: unrooted allocation");
+            assert!(
+                !ctx.is_live(unrooted as usize),
+                "{tier}: unrooted allocation"
+            );
             assert_eq!(ctx.live_count(), 0, "{tier}: live accounting");
         }
     }
@@ -3342,10 +3317,7 @@ mod tests {
             registered,
         );
         let mut advisory = Advisory::default();
-        ctx.set_diagnostics_observer(
-            Some(observe),
-            std::ptr::from_mut(&mut advisory).cast(),
-        );
+        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast());
 
         ctx.delete(registered as usize, 91);
 
@@ -3365,10 +3337,7 @@ mod tests {
     fn diagnostics_observer_unset_has_zero_change() {
         fn callback_code() {}
 
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             assert!(ctx.diagnostics_observer.is_none(), "{tier}");
             assert!(ctx.diagnostics_observer_userdata.is_null(), "{tier}");
             assert_eq!(
@@ -3389,7 +3358,10 @@ mod tests {
 
             assert!(!ctx.is_live(registered as usize), "{tier}");
             assert!(!ctx.trapped(), "{tier}: default free behavior changed");
-            assert!(ctx.dead_allocations.is_empty(), "{tier}: free retained memory");
+            assert!(
+                ctx.dead_allocations.is_empty(),
+                "{tier}: free retained memory"
+            );
         }
     }
 
@@ -3401,7 +3373,10 @@ mod tests {
         assert!(ctx.is_live(p as usize));
         // SAFETY: p is a fresh 24-byte payload with a 16-byte header.
         unsafe {
-            assert_eq!((p.offset(STATE_OFFSET as isize) as *const u64).read(), LIVE_STATE);
+            assert_eq!(
+                (p.offset(STATE_OFFSET as isize) as *const u64).read(),
+                LIVE_STATE
+            );
             assert_eq!((p.offset(CLASS_ID_OFFSET as isize) as *const u32).read(), 3);
             assert_eq!((p.offset(POS_ID_OFFSET as isize) as *const u32).read(), 41);
             for i in 0..24 {
@@ -3412,10 +3387,7 @@ mod tests {
 
     #[test]
     fn allocation_fault_counts_object_requests_identically_in_both_tiers() {
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             ctx.fail_alloc_after(2);
             assert!(!ctx.alloc(8, 1, 10).is_null(), "{tier}: first request");
             assert!(ctx.alloc(5000, 2, 11).is_null(), "{tier}: second request");
@@ -3446,8 +3418,7 @@ mod tests {
             payload_bytes: u64,
         ) {
             // SAFETY: the test passes a live Vec of this exact type.
-            let triples =
-                unsafe { &mut *userdata.cast::<Vec<(u32, u32, u64)>>() };
+            let triples = unsafe { &mut *userdata.cast::<Vec<(u32, u32, u64)>>() };
             triples.push((class_id, pos_id, payload_bytes));
         }
 
@@ -3487,10 +3458,7 @@ mod tests {
     #[test]
     fn memory_accounting_walks_live_blocks_without_running_counters() {
         let mut measured = Vec::new();
-        for (tier, mut ctx) in [
-            ("dev", Context::new()),
-            ("ship", Context::new_releasing()),
-        ] {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let first = ctx.alloc(1, 1, 0);
             let deleted = ctx.alloc(17, 1, 0);
             let large = ctx.alloc(5000, 1, 0);
@@ -3746,9 +3714,7 @@ mod tests {
         for value in 0..9i32 {
             // SAFETY: `array` is a live i32 array and `value` supplies one
             // initialized element for the duration of the call.
-            assert!(unsafe {
-                ctx.array_push(array, (&value as *const i32).cast(), 0)
-            } > 0);
+            assert!(unsafe { ctx.array_push(array, (&value as *const i32).cast(), 0) } > 0);
         }
 
         assert_eq!(ctx.dead_allocations.len(), 1);
@@ -3799,8 +3765,7 @@ mod tests {
 
         assert!(!ctx.require_live_handle(below as usize, 19));
         assert_eq!(
-            ctx.trap_record()
-                .map(|record| (record.kind, record.pos_id)),
+            ctx.trap_record().map(|record| (record.kind, record.pos_id)),
             Some((TrapKind::UseAfterDelete, 19))
         );
     }
@@ -3814,7 +3779,10 @@ mod tests {
         assert!(!ctx.is_live(p as usize));
         // SAFETY: diagnostic mode retains the bytes after delete.
         unsafe {
-            assert_eq!((p.offset(STATE_OFFSET as isize) as *const u64).read(), DEAD_STATE);
+            assert_eq!(
+                (p.offset(STATE_OFFSET as isize) as *const u64).read(),
+                DEAD_STATE
+            );
         }
         assert!(!ctx.trapped());
         ctx.delete(p as usize, 6);
@@ -3862,7 +3830,10 @@ mod tests {
             );
             let trap = ctx.trap_record().expect("use-after-delete trap");
             assert_eq!(trap.kind, TrapKind::UseAfterDelete, "distance {distance}");
-            assert_eq!(trap.message, "use of a deleted allocation", "distance {distance}");
+            assert_eq!(
+                trap.message, "use of a deleted allocation",
+                "distance {distance}"
+            );
             assert_eq!(trap.pos_id, 91, "distance {distance}");
             ctx.clear_trap();
         }
@@ -3915,7 +3886,11 @@ mod tests {
         assert_eq!(ctx.live_count(), 1);
         // The block is released, not merely marked dead.
         assert!(!ctx.is_live(a as usize));
-        assert_eq!(ctx.allocation_count(), 1, "ship mode leaves no entry behind");
+        assert_eq!(
+            ctx.allocation_count(),
+            1,
+            "ship mode leaves no entry behind"
+        );
 
         // A second delete of the now-released pointer does NOT trap
         // (undefined-but-safe no-op, §8.1b), unlike the diagnostic-mode
@@ -3952,7 +3927,10 @@ mod tests {
         let mut ctx = Context::new();
         assert!(ctx.set_freed_handle_diagnostics(true, 32, usize::MAX));
         ctx.delete(0x1000, 1);
-        assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::InvalidDelete));
+        assert_eq!(
+            ctx.trap_record().map(|r| r.kind),
+            Some(TrapKind::InvalidDelete)
+        );
     }
 
     #[test]
@@ -3974,7 +3952,10 @@ mod tests {
         assert_eq!(ctx.trap_flag, 0, "the offset-0 flag is the cleared bit");
         // ...and nothing else moved.
         assert!(ctx.is_live(kept as usize));
-        assert!(!ctx.is_live(deleted as usize), "a deleted allocation stays dead");
+        assert!(
+            !ctx.is_live(deleted as usize),
+            "a deleted allocation stays dead"
+        );
         assert_eq!(ctx.reload_epoch(), 1, "staleness survives the clear");
         assert_eq!(ctx.stdout_bytes(), b"before\n");
 
@@ -4260,7 +4241,10 @@ mod tests {
         ctx.root_add(&mut slot as *mut usize as usize, 1);
         ctx.collect();
         assert!(ctx.is_live(h as usize));
-        assert!(ctx.is_live(inner as usize), "element reached via data pointer");
+        assert!(
+            ctx.is_live(inner as usize),
+            "element reached via data pointer"
+        );
     }
 
     // §8.1a-1: array growth with diagnostics off frees each retired data
@@ -4362,11 +4346,18 @@ mod tests {
         ctx.delete(big2 as usize, 0);
         let stats = ctx.test_stats();
         use std::sync::atomic::Ordering::SeqCst;
-        assert!(stats.chunks.load(SeqCst) >= 2, "distinct classes use distinct chunks");
+        assert!(
+            stats.chunks.load(SeqCst) >= 2,
+            "distinct classes use distinct chunks"
+        );
         assert_eq!(stats.large.load(SeqCst), 1);
         drop(ctx);
         assert_eq!(stats.chunks.load(SeqCst), 0, "drop must free every chunk");
-        assert_eq!(stats.large.load(SeqCst), 0, "drop must free every large record");
+        assert_eq!(
+            stats.large.load(SeqCst),
+            0,
+            "drop must free every large record"
+        );
     }
 
     // Arena edition of the collect tests: unreachable classed blocks are
@@ -4424,7 +4415,10 @@ mod tests {
         let big = ctx.alloc(2 * LARGEST_BLOCK, 1, 0);
         assert!(!big.is_null());
         assert!(ctx.is_live(big as usize));
-        assert!(!ctx.is_live(big as usize + 8), "interior address is not a payload");
+        assert!(
+            !ctx.is_live(big as usize + 8),
+            "interior address is not a payload"
+        );
         assert_eq!(ctx.live_count(), 1);
         // A classed block referenced from the large payload's interior
         // survives collect: the record's size drives the trace.
@@ -4436,7 +4430,10 @@ mod tests {
         ctx.root_add(slot_ptr as usize, 1);
         ctx.collect();
         assert!(ctx.is_live(big as usize));
-        assert!(ctx.is_live(inner as usize), "traced through the large payload");
+        assert!(
+            ctx.is_live(inner as usize),
+            "traced through the large payload"
+        );
         // Unrooted, collect frees the record (and the inner block).
         // SAFETY: `slot` is alive for the whole test.
         unsafe { slot_ptr.write(0) };

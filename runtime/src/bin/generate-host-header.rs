@@ -4,8 +4,7 @@
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let output =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("include/subscript_runtime.h");
+    let output = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("include/subscript_runtime.h");
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
     }

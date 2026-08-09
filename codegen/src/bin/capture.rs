@@ -18,9 +18,7 @@ use std::process::ExitCode;
 
 use subscript_codegen::run_jit;
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
-use subscript_codegen::{
-    run_jit_with_native_libraries, NativeLibrary, ReloadSession, RunError,
-};
+use subscript_codegen::{run_jit_with_native_libraries, NativeLibrary, ReloadSession, RunError};
 use subscript_compiler::SourceFile;
 
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
@@ -227,8 +225,14 @@ fn interop_library() -> NativeLibrary {
             subDeviceKickAsync as *const u8,
         ),
         ("subDeviceWait".to_string(), subDeviceWait as *const u8),
-        ("subDeviceSumBytes".to_string(), subDeviceSumBytes as *const u8),
-        ("subDeviceFillBytes".to_string(), subDeviceFillBytes as *const u8),
+        (
+            "subDeviceSumBytes".to_string(),
+            subDeviceSumBytes as *const u8,
+        ),
+        (
+            "subDeviceFillBytes".to_string(),
+            subDeviceFillBytes as *const u8,
+        ),
         (
             "subDeviceFillShorts".to_string(),
             subDeviceFillShorts as *const u8,
@@ -305,23 +309,74 @@ fn interop_library() -> NativeLibrary {
             "subProbeSetBindGroupCheck".to_string(),
             subProbeSetBindGroupCheck as *const u8,
         ),
-        ("subByValueI32OneReport".to_string(), subByValueI32OneReport as *const u8),
-        ("subByValueI32PairReport".to_string(), subByValueI32PairReport as *const u8),
-        ("subByValueI32TripleReport".to_string(), subByValueI32TripleReport as *const u8),
-        ("subByValueI16I16I32Report".to_string(), subByValueI16I16I32Report as *const u8),
-        ("subByValueU8FourReport".to_string(), subByValueU8FourReport as *const u8),
-        ("subByValueI64PairReport".to_string(), subByValueI64PairReport as *const u8),
-        ("subByValueF32Hfa2Report".to_string(), subByValueF32Hfa2Report as *const u8),
-        ("subByValueF32Hfa4Report".to_string(), subByValueF32Hfa4Report as *const u8),
-        ("subByValueI32F32Report".to_string(), subByValueI32F32Report as *const u8),
-        ("subByValueI32I64Report".to_string(), subByValueI32I64Report as *const u8),
-        ("subByValueI64TripleReport".to_string(), subByValueI64TripleReport as *const u8),
-        ("subHostOwnedStateCreate".to_string(), subHostOwnedStateCreate as *const u8),
-        ("subHostOwnedStateDestroy".to_string(), subHostOwnedStateDestroy as *const u8),
-        ("subHostOwnedStateBorrow".to_string(), subHostOwnedStateBorrow as *const u8),
-        ("subHostOwnedStateAdvance".to_string(), subHostOwnedStateAdvance as *const u8),
-        ("subHostOwnedStatePreEntry".to_string(), subHostOwnedStatePreEntry as *const u8),
-        ("subHostOwnedStatePostRun".to_string(), subHostOwnedStatePostRun as *const u8),
+        (
+            "subByValueI32OneReport".to_string(),
+            subByValueI32OneReport as *const u8,
+        ),
+        (
+            "subByValueI32PairReport".to_string(),
+            subByValueI32PairReport as *const u8,
+        ),
+        (
+            "subByValueI32TripleReport".to_string(),
+            subByValueI32TripleReport as *const u8,
+        ),
+        (
+            "subByValueI16I16I32Report".to_string(),
+            subByValueI16I16I32Report as *const u8,
+        ),
+        (
+            "subByValueU8FourReport".to_string(),
+            subByValueU8FourReport as *const u8,
+        ),
+        (
+            "subByValueI64PairReport".to_string(),
+            subByValueI64PairReport as *const u8,
+        ),
+        (
+            "subByValueF32Hfa2Report".to_string(),
+            subByValueF32Hfa2Report as *const u8,
+        ),
+        (
+            "subByValueF32Hfa4Report".to_string(),
+            subByValueF32Hfa4Report as *const u8,
+        ),
+        (
+            "subByValueI32F32Report".to_string(),
+            subByValueI32F32Report as *const u8,
+        ),
+        (
+            "subByValueI32I64Report".to_string(),
+            subByValueI32I64Report as *const u8,
+        ),
+        (
+            "subByValueI64TripleReport".to_string(),
+            subByValueI64TripleReport as *const u8,
+        ),
+        (
+            "subHostOwnedStateCreate".to_string(),
+            subHostOwnedStateCreate as *const u8,
+        ),
+        (
+            "subHostOwnedStateDestroy".to_string(),
+            subHostOwnedStateDestroy as *const u8,
+        ),
+        (
+            "subHostOwnedStateBorrow".to_string(),
+            subHostOwnedStateBorrow as *const u8,
+        ),
+        (
+            "subHostOwnedStateAdvance".to_string(),
+            subHostOwnedStateAdvance as *const u8,
+        ),
+        (
+            "subHostOwnedStatePreEntry".to_string(),
+            subHostOwnedStatePreEntry as *const u8,
+        ),
+        (
+            "subHostOwnedStatePostRun".to_string(),
+            subHostOwnedStatePostRun as *const u8,
+        ),
         ("subWireModeNext".to_string(), subWireModeNext as *const u8),
         ("subWireModeEcho".to_string(), subWireModeEcho as *const u8),
         (

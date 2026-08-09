@@ -1651,9 +1651,7 @@ impl StrFn {
     #[must_use]
     pub fn params(self) -> &'static [StrParam] {
         match self {
-            StrFn::Slice | StrFn::Substring | StrFn::Substr => {
-                &[StrParam::I32, StrParam::I32]
-            }
+            StrFn::Slice | StrFn::Substring | StrFn::Substr => &[StrParam::I32, StrParam::I32],
             StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => {
                 &[StrParam::Str, StrParam::I32]
             }
@@ -2408,7 +2406,9 @@ impl SetFn {
             SetFn::Union => "Returns a fresh union in ES2024 result order.",
             SetFn::Intersection => "Returns a fresh intersection in ES2024 result order.",
             SetFn::Difference => "Returns a fresh receiver-minus-argument set.",
-            SetFn::SymmetricDifference => "Returns a fresh symmetric difference in receiver-then-argument order.",
+            SetFn::SymmetricDifference => {
+                "Returns a fresh symmetric difference in receiver-then-argument order."
+            }
             SetFn::IsSubsetOf => "Tests whether every receiver key is in the argument.",
             SetFn::IsSupersetOf => "Tests whether every argument key is in the receiver.",
             SetFn::IsDisjointFrom => "Tests whether the sets have no common key.",
@@ -2478,12 +2478,9 @@ impl ArrElemKind {
             | Type::Array(_)
             | Type::Map(..)
             | Type::Set(_) => ArrElemKind::Int,
-            Type::I8
-            | Type::I16
-            | Type::I32
-            | Type::I64
-            | Type::Enum(_)
-            | Type::Date => ArrElemKind::SignedInt,
+            Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Enum(_) | Type::Date => {
+                ArrElemKind::SignedInt
+            }
             Type::Class(id) if !is_value_class(*id) => ArrElemKind::Int,
             Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
             Type::F32 => ArrElemKind::F32,
@@ -2637,9 +2634,7 @@ impl Callee {
     /// answer to which checks an operation carries.
     fn has_call_site(&self) -> bool {
         match self {
-            Callee::Func(_) | Callee::Value(_) | Callee::Method { .. } | Callee::Foreign(_) => {
-                true
-            }
+            Callee::Func(_) | Callee::Value(_) | Callee::Method { .. } | Callee::Foreign(_) => true,
             Callee::Ambient(f) => f.can_trap(),
             Callee::Math(f) => f.can_trap(),
             Callee::Num(f) => f.takes_pos_id(),
@@ -2941,11 +2936,9 @@ impl Expr {
         };
         let reference_value = |ty: &Type| match ty {
             Type::Class(id) => class_is_reference(*id),
-            Type::Array(_)
-            | Type::Map(..)
-            | Type::Set(_)
-            | Type::Generator(_)
-            | Type::Object => true,
+            Type::Array(_) | Type::Map(..) | Type::Set(_) | Type::Generator(_) | Type::Object => {
+                true
+            }
             Type::Nullable(inner) => {
                 matches!(
                     &**inner,
@@ -2981,9 +2974,7 @@ impl Expr {
             K::Binary { op, left, .. } if *op == B::Add && left.ty == Type::Str => {
                 vec![allocation(&self.pos)]
             }
-            K::Binary { op, left, .. }
-                if matches!(op, B::Div | B::Rem) && left.ty.is_integer() =>
-            {
+            K::Binary { op, left, .. } if matches!(op, B::Div | B::Rem) && left.ty.is_integer() => {
                 vec![TrapSite::DivisionByZero {
                     pos: self.pos.clone(),
                 }]
@@ -3365,7 +3356,9 @@ mod tests {
         symbols.sort_unstable();
         symbols.dedup();
         assert_eq!(symbols.len(), StrFn::ALL.len());
-        assert!(StrFn::ALL.iter().all(|f| f.symbol().starts_with("subscript_rt_str_")));
+        assert!(StrFn::ALL
+            .iter()
+            .all(|f| f.symbol().starts_with("subscript_rt_str_")));
         assert_eq!(StrFn::ToUpperCase.symbol(), "subscript_rt_str_to_upper");
         assert_eq!(StrFn::CharCodeAt.name(), "charCodeAt");
     }
@@ -3386,11 +3379,17 @@ mod tests {
         symbols.sort_unstable();
         symbols.dedup();
         assert_eq!(symbols.len(), ArrFn::ALL.len());
-        assert!(ArrFn::ALL.iter().all(|f| f.symbol().starts_with("subscript_rt_arr_")));
+        assert!(ArrFn::ALL
+            .iter()
+            .all(|f| f.symbol().starts_with("subscript_rt_arr_")));
         assert_eq!(ArrFn::ForEach.symbol(), "subscript_rt_arr_for_each");
         assert_eq!(ArrFn::FindIndex.name(), "findIndex");
         // Callback set: exactly the nine closure-taking methods.
-        let with_cb: Vec<ArrFn> = ArrFn::ALL.iter().copied().filter(|f| f.takes_callback()).collect();
+        let with_cb: Vec<ArrFn> = ArrFn::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.takes_callback())
+            .collect();
         assert_eq!(
             with_cb,
             [
@@ -3531,7 +3530,10 @@ mod tests {
         assert_eq!(ArrFmtKind::of(&Type::U8), Some(ArrFmtKind::U8));
         assert_eq!(ArrFmtKind::of(&Type::I16), Some(ArrFmtKind::I16));
         assert_eq!(ArrFmtKind::of(&Type::U16), Some(ArrFmtKind::U16));
-        assert_eq!(ArrFmtKind::of(&Type::Enum(EnumId(0))), Some(ArrFmtKind::I32));
+        assert_eq!(
+            ArrFmtKind::of(&Type::Enum(EnumId(0))),
+            Some(ArrFmtKind::I32)
+        );
         assert_eq!(ArrFmtKind::of(&Type::U32), Some(ArrFmtKind::U32));
         assert_eq!(ArrFmtKind::of(&Type::I64), Some(ArrFmtKind::I64));
         assert_eq!(ArrFmtKind::of(&Type::U64), Some(ArrFmtKind::U64));

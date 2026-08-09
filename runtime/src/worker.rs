@@ -17,11 +17,8 @@ const CLASS_WORKER_MESSAGE: u32 = 0xFFFF_FF0A;
 pub type WorkerInit = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Entry called on a worker thread with its dedicated Context and endpoints.
-pub type WorkerEntry = unsafe extern "C" fn(
-    ctx: *mut Context,
-    inbox: *mut WorkerInbox,
-    outbox: *mut WorkerOutbox,
-);
+pub type WorkerEntry =
+    unsafe extern "C" fn(ctx: *mut Context, inbox: *mut WorkerInbox, outbox: *mut WorkerOutbox);
 
 /// Parent-owned opaque handle for one runtime worker.
 ///
@@ -379,10 +376,7 @@ fn materialize(ctx: &mut Context, receive: Receive) -> *mut u8 {
     payload
 }
 
-pub(crate) unsafe fn inbox_wait(
-    ctx: &mut Context,
-    inbox: *mut WorkerInbox,
-) -> *mut u8 {
+pub(crate) unsafe fn inbox_wait(ctx: &mut Context, inbox: *mut WorkerInbox) -> *mut u8 {
     if inbox.is_null() || ctx.trapped() {
         return std::ptr::null_mut();
     }
@@ -390,10 +384,7 @@ pub(crate) unsafe fn inbox_wait(
     materialize(ctx, unsafe { &*inbox }.queue.wait())
 }
 
-pub(crate) unsafe fn inbox_poll(
-    ctx: &mut Context,
-    inbox: *mut WorkerInbox,
-) -> *mut u8 {
+pub(crate) unsafe fn inbox_poll(ctx: &mut Context, inbox: *mut WorkerInbox) -> *mut u8 {
     if inbox.is_null() || ctx.trapped() {
         return std::ptr::null_mut();
     }
@@ -440,11 +431,10 @@ mod tests {
 
     use super::*;
     use crate::ffi::{
-        subscript_rt_ctx_clear_trap, subscript_rt_ctx_live_allocations,
-        subscript_rt_ctx_new, subscript_rt_ctx_release, subscript_rt_ctx_trap_kind,
-        subscript_rt_trap, subscript_rt_worker_close, subscript_rt_worker_inbox_poll,
-        subscript_rt_worker_inbox_wait, subscript_rt_worker_join,
-        subscript_rt_worker_outbox_post, subscript_rt_worker_poll,
+        subscript_rt_ctx_clear_trap, subscript_rt_ctx_live_allocations, subscript_rt_ctx_new,
+        subscript_rt_ctx_release, subscript_rt_ctx_trap_kind, subscript_rt_trap,
+        subscript_rt_worker_close, subscript_rt_worker_inbox_poll, subscript_rt_worker_inbox_wait,
+        subscript_rt_worker_join, subscript_rt_worker_outbox_post, subscript_rt_worker_poll,
         subscript_rt_worker_post, subscript_rt_worker_spawn,
     };
     use crate::trap::TrapKind;
@@ -492,9 +482,8 @@ mod tests {
     ) {
         // SAFETY: the current worker Context is itself a valid spawn parent;
         // both callbacks stay linked through the nested join.
-        let child = unsafe {
-            subscript_rt_worker_spawn(ctx, Some(no_op_init), Some(clean_entry), 0, 0)
-        };
+        let child =
+            unsafe { subscript_rt_worker_spawn(ctx, Some(no_op_init), Some(clean_entry), 0, 0) };
         if child.is_null() {
             return;
         }
@@ -635,9 +624,8 @@ mod tests {
     fn trapped_worker_traps_joining_context_with_kind_22() {
         let parent = subscript_rt_ctx_new();
         // SAFETY: fresh parent Context and linked callbacks.
-        let worker = unsafe {
-            subscript_rt_worker_spawn(parent, Some(no_op_init), Some(trap_entry), 0, 0)
-        };
+        let worker =
+            unsafe { subscript_rt_worker_spawn(parent, Some(no_op_init), Some(trap_entry), 0, 0) };
         assert!(!worker.is_null());
         // SAFETY: the worker terminates after recording its trap.
         assert_eq!(unsafe { subscript_rt_worker_join(parent, worker) }, 0);

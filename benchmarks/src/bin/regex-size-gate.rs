@@ -72,15 +72,12 @@ fn run() -> Result<(), String> {
             String::from_utf8_lossy(&regex.stdout)
         ));
     }
-    let delta = regex
-        .bytes
-        .checked_sub(baseline.bytes)
-        .ok_or_else(|| {
-            format!(
-                "regex side is smaller than baseline: baseline={} B, regex={} B",
-                baseline.bytes, regex.bytes
-            )
-        })?;
+    let delta = regex.bytes.checked_sub(baseline.bytes).ok_or_else(|| {
+        format!(
+            "regex side is smaller than baseline: baseline={} B, regex={} B",
+            baseline.bytes, regex.bytes
+        )
+    })?;
     let regress = regress_live_bytes(&regex.map)?;
 
     println!("baseline stripped: {} B", baseline.bytes);
@@ -150,16 +147,15 @@ fn link_subject(
     source: &str,
     staticlib: &Path,
 ) -> Result<Linked, String> {
-    let module = check_program(&[SourceFile::new(file, source)])
-        .map_err(|diagnostics| {
-            format!(
-                "{file} did not check: {}",
-                diagnostics
-                    .first()
-                    .map(|diagnostic| diagnostic.message.as_str())
-                    .unwrap_or("no diagnostic")
-            )
-        })?;
+    let module = check_program(&[SourceFile::new(file, source)]).map_err(|diagnostics| {
+        format!(
+            "{file} did not check: {}",
+            diagnostics
+                .first()
+                .map(|diagnostic| diagnostic.message.as_str())
+                .unwrap_or("no diagnostic")
+        )
+    })?;
     let emitted = emit_c(&module).map_err(|error| format!("emit {file}: {error}"))?;
     let program = work.join(format!("{id}.c"));
     let entry = work.join(format!("{id}-entry.c"));
@@ -190,10 +186,7 @@ fn link_subject(
         .output()
         .map_err(|error| format!("run compiler {:?}: {error}", compiler))?;
     if !link.status.success() {
-        return Err(format!(
-            "link {id} failed:\n{}",
-            tool_output_report(&link)
-        ));
+        return Err(format!("link {id} failed:\n{}", tool_output_report(&link)));
     }
     let strip = Command::new("strip")
         .arg(&executable)
@@ -226,8 +219,7 @@ fn link_subject(
 }
 
 fn regress_live_bytes(map: &Path) -> Result<u64, String> {
-    let bytes = std::fs::read(map)
-        .map_err(|error| format!("read {}: {error}", map.display()))?;
+    let bytes = std::fs::read(map).map_err(|error| format!("read {}: {error}", map.display()))?;
     let text = String::from_utf8_lossy(&bytes);
     let mut regress_files = HashSet::new();
     let mut in_objects = false;

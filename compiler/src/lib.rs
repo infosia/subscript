@@ -10,12 +10,12 @@
 //! rule codes (S001–S013, S100) and TS positions. Loaders can use
 //! [`parse_import_specifiers`] to discover imports with the same parser.
 
+pub mod api_reference;
 pub mod diag;
 mod diag_render;
 pub mod hir;
-pub mod types;
-pub mod api_reference;
 pub mod language_reference;
+pub mod types;
 
 mod ambient;
 mod check;
@@ -112,10 +112,8 @@ mod tests {
 
     #[test]
     fn minimal_program_checks_clean() {
-        let module = check_one(
-            "export function main(): void {\n  print(\"hello\");\n}\n",
-        )
-        .expect("clean check");
+        let module = check_one("export function main(): void {\n  print(\"hello\");\n}\n")
+            .expect("clean check");
         assert_eq!(module.functions.len(), 1);
         assert_eq!(module.functions[0].name, "main");
         assert!(module.functions[0].exported);
@@ -167,9 +165,10 @@ mod tests {
 
     #[test]
     fn replace_all_rejects_a_non_global_regex_literal_early() {
-        let diagnostics =
-            check_one("export function main(): void {\n  print(\"aaa\".replaceAll(/a/, \"Z\"));\n}\n")
-                .expect_err("literal without g must be rejected by the checker");
+        let diagnostics = check_one(
+            "export function main(): void {\n  print(\"aaa\".replaceAll(/a/, \"Z\"));\n}\n",
+        )
+        .expect_err("literal without g must be rejected by the checker");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
         assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (2, 26));
         assert!(diagnostics[0].message.contains("requires the `g` flag"));
@@ -248,10 +247,9 @@ mod tests {
 
     #[test]
     fn context_free_integer_literal_defaults_to_i32() {
-        let module = check_one(
-            "export function main(): void {\n  const x = 3;\n  print(`${x}`);\n}\n",
-        )
-        .expect("clean");
+        let module =
+            check_one("export function main(): void {\n  const x = 3;\n  print(`${x}`);\n}\n")
+                .expect("clean");
         let hir::Stmt::Let { ty, .. } = &module.functions[0].body[0] else {
             panic!("expected let");
         };
@@ -260,10 +258,9 @@ mod tests {
 
     #[test]
     fn context_free_fractional_literal_defaults_to_f64() {
-        let module = check_one(
-            "export function main(): void {\n  const x = 1.5;\n  print(`${x}`);\n}\n",
-        )
-        .expect("clean");
+        let module =
+            check_one("export function main(): void {\n  const x = 1.5;\n  print(`${x}`);\n}\n")
+                .expect("clean");
         let hir::Stmt::Let { ty, .. } = &module.functions[0].body[0] else {
             panic!("expected let");
         };
@@ -534,10 +531,7 @@ mod tests {
                 "type Bad = CEnum<{ \"m0\": 2147483648 }>;\n",
                 "outside the i32 range",
             ),
-            (
-                "type Bad = CEnum<{}>;\n",
-                "must have at least one member",
-            ),
+            ("type Bad = CEnum<{}>;\n", "must have at least one member"),
         ] {
             let diagnostics = check_one(source).expect_err("invalid CEnum mapping must fail");
             assert!(
@@ -630,7 +624,9 @@ mod tests {
         )
         .expect_err("a Q32 switch member may appear only once");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
-        assert!(diagnostics[0].message.contains("duplicate case label \"a\""));
+        assert!(diagnostics[0]
+            .message
+            .contains("duplicate case label \"a\""));
         assert!(diagnostics[0].message.contains("`Format`"));
     }
 
@@ -1078,7 +1074,9 @@ mod tests {
         )
         .expect_err("missing required descriptor member");
         assert_eq!(missing[0].code, RuleCode::S100);
-        assert!(missing[0].message.contains("missing required member `count`"));
+        assert!(missing[0]
+            .message
+            .contains("missing required member `count`"));
 
         let excess = check_one(
             "@Descriptor\n\
@@ -1278,8 +1276,7 @@ mod tests {
 
     #[test]
     fn throw_is_s010() {
-        let err =
-            check_one("export function main(): void {\n  throw \"x\";\n}\n").unwrap_err();
+        let err = check_one("export function main(): void {\n  throw \"x\";\n}\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S010);
         assert_eq!(
             err[0].message,
@@ -1290,10 +1287,9 @@ mod tests {
 
     #[test]
     fn async_function_erases_promise_to_its_fulfilled_type() {
-        let module = check_one(
-            "async function f(): Promise<void> {\n  await Context.suspend();\n}\n",
-        )
-        .expect("async function");
+        let module =
+            check_one("async function f(): Promise<void> {\n  await Context.suspend();\n}\n")
+                .expect("async function");
         assert!(module.functions[0].is_async);
         assert_eq!(module.functions[0].ret, Type::Void);
     }
@@ -1324,7 +1320,10 @@ mod tests {
             .iter()
             .find(|method| method.name == "run")
             .expect("run method");
-        let hir::Stmt::Return { value: Some(value), .. } = &run.body[0] else {
+        let hir::Stmt::Return {
+            value: Some(value), ..
+        } = &run.body[0]
+        else {
             panic!("run return")
         };
         let hir::ExprKind::AsyncCall { callee, args } = &value.kind else {
@@ -1398,7 +1397,9 @@ mod tests {
         )
         .expect_err("awaited sync method");
         assert_eq!(awaited[0].code, RuleCode::S100);
-        assert!(awaited[0].message.contains("synchronous and cannot be awaited"));
+        assert!(awaited[0]
+            .message
+            .contains("synchronous and cannot be awaited"));
 
         let value = check_one(
             "class C { async m(): Promise<void> {} }\nexport function main(): void {\n  const c: C = new C();\n  c.m;\n}\n",
@@ -1416,10 +1417,9 @@ mod tests {
 
     #[test]
     fn nonwhitelisted_array_member_is_s100_naming_the_member() {
-        let err = check_one(
-            "export function main(): void {\n  const xs: i32[] = [1];\n  xs.map;\n}\n",
-        )
-        .unwrap_err();
+        let err =
+            check_one("export function main(): void {\n  const xs: i32[] = [1];\n  xs.map;\n}\n")
+                .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
         assert!(err[0].message.contains("map"));
     }
@@ -1503,7 +1503,11 @@ mod tests {
             ))
             .unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{member}");
-            assert!(err[0].message.contains(member), "{member}: {}", err[0].message);
+            assert!(
+                err[0].message.contains(member),
+                "{member}: {}",
+                err[0].message
+            );
             assert!(
                 err[0].message.contains(q_rule),
                 "{member}: {}",
@@ -1579,7 +1583,7 @@ mod tests {
         assert_eq!(get(hir::ArrFn::Join).1, 2); // recv + defaulted ","
         assert_eq!(get(hir::ArrFn::Slice).1, 3); // recv + start + end
         assert_eq!(get(hir::ArrFn::Fill).1, 4); // recv + x + start + end
-        // map's U is inferred from the closure: string[].
+                                                // map's U is inferred from the closure: string[].
         assert_eq!(get(hir::ArrFn::Map).2, Type::Array(Box::new(Type::Str)));
         // reduce's result is the init's type.
         assert_eq!(get(hir::ArrFn::Reduce).2, Type::Str);
@@ -1602,11 +1606,7 @@ mod tests {
                 "Q22",
             ),
             ("find", "xs.find((v: i32): boolean => v > 1)", "Q22"),
-            (
-                "findLast",
-                "xs.findLast((v: i32): boolean => v > 1)",
-                "Q22",
-            ),
+            ("findLast", "xs.findLast((v: i32): boolean => v > 1)", "Q22"),
             ("flat", "xs.flat()", "Q22"),
             ("keys", "xs.keys()", "Q30"),
         ] {
@@ -1615,7 +1615,11 @@ mod tests {
             ))
             .unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{member}");
-            assert!(err[0].message.contains(member), "{member}: {}", err[0].message);
+            assert!(
+                err[0].message.contains(member),
+                "{member}: {}",
+                err[0].message
+            );
             assert!(
                 err[0].message.contains(q_rule),
                 "{member}: {}",
@@ -1736,8 +1740,8 @@ mod tests {
             let src = format!(
                 "export function main(): void {{\n  const xs: i32[] = [1, 2, 3];\n  const total: {acc} = xs.reduce({cb}, 0);\n  print(`${{total}}`);\n}}\n"
             );
-            let module = check_one(&src)
-                .unwrap_or_else(|e| panic!("{acc} accumulator rejected: {e:?}"));
+            let module =
+                check_one(&src).unwrap_or_else(|e| panic!("{acc} accumulator rejected: {e:?}"));
             assert_eq!(module.functions.len(), 1, "{acc}");
         }
     }
@@ -1802,10 +1806,9 @@ mod tests {
 
     #[test]
     fn array_method_read_as_a_value_is_rejected() {
-        let err = check_one(
-            "export function main(): void {\n  const xs: i32[] = [1];\n  xs.map;\n}\n",
-        )
-        .unwrap_err();
+        let err =
+            check_one("export function main(): void {\n  const xs: i32[] = [1];\n  xs.map;\n}\n")
+                .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
         assert!(err[0].message.contains("only be called"));
     }
@@ -1925,22 +1928,15 @@ mod tests {
             "parseInt(\"1\");",
             "Number.parseInt(\"1\");",
         ] {
-            let err = check_one(&format!(
-                "export function main(): void {{\n  {body}\n}}\n"
-            ))
-            .unwrap_err();
+            let err =
+                check_one(&format!("export function main(): void {{\n  {body}\n}}\n")).unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
             assert!(err[0].message.contains("Q25"), "{body}: {}", err[0].message);
         }
 
-        for body in [
-            "(1.0 as f64).toPrecision();",
-            "(1.0 as f64).toString();",
-        ] {
-            let err = check_one(&format!(
-                "export function main(): void {{\n  {body}\n}}\n"
-            ))
-            .unwrap_err();
+        for body in ["(1.0 as f64).toPrecision();", "(1.0 as f64).toString();"] {
+            let err =
+                check_one(&format!("export function main(): void {{\n  {body}\n}}\n")).unwrap_err();
             assert_eq!(err[0].code, RuleCode::S014, "{body}: {err:?}");
             assert!(err[0].message.contains("Q26"), "{body}: {}", err[0].message);
         }
@@ -2130,10 +2126,8 @@ mod tests {
     #[test]
     fn const_rebinding_is_rejected_but_field_writes_are_not() {
         // Q17: `const` blocks rebinding only.
-        let err = check_one(
-            "export function main(): void {\n  const x: i32 = 1;\n  x = 2;\n}\n",
-        )
-        .unwrap_err();
+        let err = check_one("export function main(): void {\n  const x: i32 = 1;\n  x = 2;\n}\n")
+            .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
         assert!(err[0].message.contains("rebind"));
 
@@ -2203,8 +2197,9 @@ mod tests {
 
     #[test]
     fn optional_parameters_are_s012() {
-        let err = check_one("function f(x?: i32): void {}\nexport function main(): void { f(); }\n")
-            .unwrap_err();
+        let err =
+            check_one("function f(x?: i32): void {}\nexport function main(): void { f(); }\n")
+                .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S012);
     }
 
@@ -2234,10 +2229,8 @@ mod tests {
 
     #[test]
     fn context_namespace_is_neither_a_value_nor_a_class() {
-        let value_err = check_one(
-            "export function main(): void {\n  const value = Context;\n}\n",
-        )
-        .unwrap_err();
+        let value_err =
+            check_one("export function main(): void {\n  const value = Context;\n}\n").unwrap_err();
         assert_eq!(value_err[0].code, RuleCode::S014);
         assert_eq!(
             value_err[0].message,
@@ -2262,7 +2255,11 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S008);
-        assert!(err[0].message.contains("B"), "message names the member: {}", err[0].message);
+        assert!(
+            err[0].message.contains("B"),
+            "message names the member: {}",
+            err[0].message
+        );
     }
 
     #[test]
@@ -2389,7 +2386,10 @@ mod tests {
     #[test]
     fn minor3_cross_file_duplicate_class_names_are_s100() {
         let err = check_program(&[
-            SourceFile::new("a.ts", "export class C { x: i32 = 1; }\nexport function main(): void {}\n"),
+            SourceFile::new(
+                "a.ts",
+                "export class C { x: i32 = 1; }\nexport function main(): void {}\n",
+            ),
             SourceFile::new("b.ts", "export class C { x: i32 = 1; }\n"),
         ])
         .unwrap_err();
@@ -2484,7 +2484,11 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
-        assert!(err[0].message.contains("getTime"), "message: {}", err[0].message);
+        assert!(
+            err[0].message.contains("getTime"),
+            "message: {}",
+            err[0].message
+        );
         // Relational comparison is the same rejection.
         let err = check_one(
             "export function main(): void {\n  const a: Date = new Date(0);\n  const b: Date = new Date(1);\n  if (a < b) {\n    print(\"before\");\n  }\n}\n",
@@ -2503,10 +2507,8 @@ mod tests {
     fn date_as_a_value_and_static_member_reads_are_s014() {
         let err = check_one("export function main(): void {\n  const d = Date;\n}\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
-        let err = check_one(
-            "export function main(): void {\n  const f = Date.now;\n}\n",
-        )
-        .unwrap_err();
+        let err =
+            check_one("export function main(): void {\n  const f = Date.now;\n}\n").unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
         let err = check_one(
             "export function main(): void {\n  const t: i64 = Date.parse(\"2020\");\n}\n",
@@ -2649,14 +2651,8 @@ mod tests {
     #[test]
     fn q35_context_affinity_rejects_every_container_type_argument() {
         let cases = [
-            (
-                "Map key",
-                "Map<Worker<WorkerMessage, WorkerMessage>, i32>",
-            ),
-            (
-                "Set element",
-                "Set<Worker<WorkerMessage, WorkerMessage>>",
-            ),
+            ("Map key", "Map<Worker<WorkerMessage, WorkerMessage>, i32>"),
+            ("Set element", "Set<Worker<WorkerMessage, WorkerMessage>>"),
             (
                 "local Map value",
                 "Map<i32, Worker<WorkerMessage, WorkerMessage>>",
@@ -2695,7 +2691,10 @@ mod tests {
             );
             let diagnostics = check_one(&source).expect_err("non-entry spawn argument");
             assert_eq!(diagnostics[0].code, RuleCode::S100, "{argument}");
-            assert!(diagnostics[0].message.contains("Worker.spawn"), "{argument}");
+            assert!(
+                diagnostics[0].message.contains("Worker.spawn"),
+                "{argument}"
+            );
         }
     }
 

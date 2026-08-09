@@ -332,7 +332,8 @@ fn an_accepted_reload_after_a_trap_takes_effect_on_the_next_call() {
 
     // A swap after a trap is applied normally, and its bodies run.
     let v3 = v2.replace("ticks=${ticks}", "count=${ticks}");
-    s.reload(&files(&v3)).expect("swap after a trap is accepted");
+    s.reload(&files(&v3))
+        .expect("swap after a trap is accepted");
     s.call_export("report").expect("call after the second swap");
     assert_eq!(output(&mut s), "count=1\n");
 }
@@ -394,7 +395,8 @@ export function main(): void {
     assert_eq!(output(&mut s), "hits=2\n");
     // And the faulting entry still faults, deterministically.
     assert!(matches!(s.call_export("fault"), Err(RunError::Trap(_))));
-    s.call_export("ok").expect("good call after the second trap");
+    s.call_export("ok")
+        .expect("good call after the second trap");
     assert_eq!(output(&mut s), "hits=3\n");
 }
 
@@ -423,11 +425,13 @@ fn reload_mode_reproduces_every_committed_golden() {
             continue;
         }
         #[cfg(not(all(windows, target_env = "msvc")))]
-        let libraries = uses_fixture.then(native_fixture::library).into_iter().collect::<Vec<_>>();
+        let libraries = uses_fixture
+            .then(native_fixture::library)
+            .into_iter()
+            .collect::<Vec<_>>();
         #[cfg(all(windows, target_env = "msvc"))]
         let libraries: Vec<subscript_codegen::NativeLibrary> = Vec::new();
-        let mut session =
-            match ReloadSession::new_with_native_libraries(&sources, &libraries) {
+        let mut session = match ReloadSession::new_with_native_libraries(&sources, &libraries) {
             Ok(s) => s,
             Err(e) => {
                 failures.push(format!("{id}: session failed: {e}"));

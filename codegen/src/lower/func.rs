@@ -28,10 +28,8 @@ use cranelift_codegen::ir::{
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
+use subscript_compiler::types::{CRANELIFT_FRAME_ALIGNMENT, MAX_FRAME_BYTES};
 use subscript_compiler::{hir, ClassId, Pos, Type};
-use subscript_compiler::types::{
-    CRANELIFT_FRAME_ALIGNMENT, MAX_FRAME_BYTES,
-};
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
@@ -388,10 +386,7 @@ fn plan_aggregate_arg(
     }
 }
 
-fn sysv_register_images_contain_f16(
-    images: &[EightbyteImage],
-    f16_offsets: &[u32],
-) -> bool {
+fn sysv_register_images_contain_f16(images: &[EightbyteImage], f16_offsets: &[u32]) -> bool {
     f16_offsets.iter().any(|offset| {
         images
             .iter()
@@ -458,10 +453,7 @@ fn plan_sysv_struct_return(
                         .to_string(),
                 );
             }
-            if images
-                .iter()
-                .any(|image| image.class == RegisterClass::Sse)
-            {
+            if images.iter().any(|image| image.class == RegisterClass::Sse) {
                 return Err(
                     "foreign call returning a SysV SSE-class boundary struct by value is not \
                      supported in the dev JIT: the float return register path is not modeled \
@@ -482,8 +474,7 @@ fn plan_sysv_struct_return(
 /// (two-userdata info); this distinguishes a trailing userdata slot from
 /// any other field.
 fn is_userdata_slot(ty: &Type) -> bool {
-    matches!(ty, Type::Object)
-        || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
+    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
 }
 
 // ----- pre-passes -----
@@ -576,18 +567,12 @@ fn count_yields_expr(e: &hir::Expr) -> usize {
             n
         }
         K::New { args, .. } => args.iter().map(count_yields_expr).sum(),
-        K::DescriptorLit { fields, .. } => fields
-            .iter()
-            .flatten()
-            .map(count_yields_expr)
-            .sum(),
+        K::DescriptorLit { fields, .. } => fields.iter().flatten().map(count_yields_expr).sum(),
         K::Field { obj, .. } | K::JsonResultValue(obj) => count_yields_expr(obj),
         K::Length(obj) => count_yields_expr(obj),
         K::Index { obj, index, .. } => count_yields_expr(obj) + count_yields_expr(index),
         K::ArrayLit(elems) => elems.iter().map(count_yields_expr).sum(),
-        K::ArraySpreadLit(elems) => {
-            elems.iter().map(|elem| count_yields_expr(&elem.expr)).sum()
-        }
+        K::ArraySpreadLit(elems) => elems.iter().map(|elem| count_yields_expr(&elem.expr)).sum(),
         K::Template(parts) => parts
             .iter()
             .map(|p| match p {
@@ -687,7 +672,9 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> usize {
                         walk_async_calls_expr(value, out);
                     }
                 }
-                hir::Stmt::If { cond, then, els, .. } => {
+                hir::Stmt::If {
+                    cond, then, els, ..
+                } => {
                     walk_async_calls_expr(cond, out);
                     walk(then, out);
                     if let Some(els) = els {
@@ -698,7 +685,13 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> usize {
                     walk_async_calls_expr(cond, out);
                     walk(body, out);
                 }
-                hir::Stmt::For { init, cond, step, body, .. } => {
+                hir::Stmt::For {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    ..
+                } => {
                     if let Some(init) = init {
                         walk(std::slice::from_ref(init), out);
                     }
@@ -743,7 +736,9 @@ fn count_yields(stmts: &[hir::Stmt]) -> usize {
             hir::Stmt::Return { value, .. } => {
                 n += value.as_ref().map_or(0, count_yields_expr);
             }
-            hir::Stmt::If { cond, then, els, .. } => {
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
                 n += count_yields_expr(cond) + count_yields(then);
                 if let Some(e) = els {
                     n += count_yields(e);
@@ -753,7 +748,11 @@ fn count_yields(stmts: &[hir::Stmt]) -> usize {
                 n += count_yields_expr(cond) + count_yields(body);
             }
             hir::Stmt::For {
-                init, cond, step, body, ..
+                init,
+                cond,
+                step,
+                body,
+                ..
             } => {
                 if let Some(i) = init {
                     n += count_yields(std::slice::from_ref(i));
@@ -1047,11 +1046,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ///
     /// This match must stay exhaustive. Adding a `TrapSite` variant without
     /// teaching this lowering what it means is therefore a compile error.
-    fn emit_trap_site(
-        &mut self,
-        site: &hir::TrapSite,
-        operand: TrapOperand,
-    ) -> Result<(), String> {
+    fn emit_trap_site(&mut self, site: &hir::TrapSite, operand: TrapOperand) -> Result<(), String> {
         let value = |operand: TrapOperand, what: &str| match operand {
             TrapOperand::Value(value) | TrapOperand::Condition(value) => Ok(value),
             TrapOperand::WireValue { .. } => Err(internal(format!("{what} trap operand"))),
@@ -1074,67 +1069,54 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             hir::TrapSite::DivisionByZero { pos } => {
                 let divisor = value(operand, "division")?;
-                let nonzero = self
-                    .b
-                    .ins()
-                    .icmp_imm(IntCC::NotEqual, divisor, 0);
+                let nonzero = self.b.ins().icmp_imm(IntCC::NotEqual, divisor, 0);
                 self.guard(nonzero, TrapKind::DivisionByZero, pos)
             }
-            hir::TrapSite::IndexRead { pos } | hir::TrapSite::IndexWrite { pos } => {
-                match operand {
-                    TrapOperand::Pending => {
-                        self.trap_check();
-                        Ok(())
-                    }
-                    TrapOperand::Value(condition) | TrapOperand::Condition(condition) => {
-                        self.guard(condition, TrapKind::IndexOutOfBounds, pos)
-                    }
-                    TrapOperand::WireValue { .. } => {
-                        Err(internal("index trap received a wire-enum operand"))
-                    }
+            hir::TrapSite::IndexRead { pos } | hir::TrapSite::IndexWrite { pos } => match operand {
+                TrapOperand::Pending => {
+                    self.trap_check();
+                    Ok(())
                 }
-            }
+                TrapOperand::Value(condition) | TrapOperand::Condition(condition) => {
+                    self.guard(condition, TrapKind::IndexOutOfBounds, pos)
+                }
+                TrapOperand::WireValue { .. } => {
+                    Err(internal("index trap received a wire-enum operand"))
+                }
+            },
             hir::TrapSite::JsonResultValue { pos } => {
                 let condition = value(operand, "JsonResult.value")?;
                 self.guard(condition, TrapKind::JsonResultValue, pos)
             }
             hir::TrapSite::NullNarrowing { pos } => {
                 let pointer = value(operand, "null narrowing")?;
-                let nonnull = self
-                    .b
-                    .ins()
-                    .icmp_imm(IntCC::NotEqual, pointer, 0);
+                let nonnull = self.b.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
                 self.guard(nonnull, TrapKind::NullNarrowing, pos)
             }
             hir::TrapSite::ClassMismatch { class, pos } => {
                 let pointer = value(operand, "class narrowing")?;
-                let class_id = self.b.ins().load(
-                    types::I32,
-                    flags(),
-                    pointer,
-                    rtc::CLASS_ID_OFFSET,
-                );
-                let matches = self.b.ins().icmp_imm(
-                    IntCC::Equal,
-                    class_id,
-                    i64::from(class.0 as u32),
-                );
+                let class_id =
+                    self.b
+                        .ins()
+                        .load(types::I32, flags(), pointer, rtc::CLASS_ID_OFFSET);
+                let matches =
+                    self.b
+                        .ins()
+                        .icmp_imm(IntCC::Equal, class_id, i64::from(class.0 as u32));
                 self.guard(matches, TrapKind::ClassMismatch, pos)
             }
-            hir::TrapSite::DevOnlyLifetime { pos } => {
-                match operand {
-                    TrapOperand::Pending => {
-                        self.trap_check();
-                        Ok(())
-                    }
-                    TrapOperand::Value(pointer) | TrapOperand::Condition(pointer) => {
-                        self.live_check(pointer, pos)
-                    }
-                    TrapOperand::WireValue { .. } => {
-                        Err(internal("lifetime trap received a wire-enum operand"))
-                    }
+            hir::TrapSite::DevOnlyLifetime { pos } => match operand {
+                TrapOperand::Pending => {
+                    self.trap_check();
+                    Ok(())
                 }
-            }
+                TrapOperand::Value(pointer) | TrapOperand::Condition(pointer) => {
+                    self.live_check(pointer, pos)
+                }
+                TrapOperand::WireValue { .. } => {
+                    Err(internal("lifetime trap received a wire-enum operand"))
+                }
+            },
             hir::TrapSite::DevReloadOnlyStaleCoroutine { pos } => {
                 let frame = value(operand, "stale coroutine")?;
                 self.reload_epoch_check(frame, pos)
@@ -1556,9 +1538,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }),
             K::RawNew { class } => {
                 let sites = e.trap_sites(self.ml.hir);
-                lower_trap_sites(&sites, "RawNew", |sites| {
-                    self.eval_raw_new(class.0, sites)
-                })
+                lower_trap_sites(&sites, "RawNew", |sites| self.eval_raw_new(class.0, sites))
             }
             K::Field { obj, name } => {
                 let sites = e.trap_sites(self.ml.hir);
@@ -1599,11 +1579,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     other => Err(internal(format!("length of {other:?}"))),
                 }
             }
-            K::Index {
-                obj,
-                index,
-                ..
-            } => {
+            K::Index { obj, index, .. } => {
                 let sites = e.trap_sites(self.ml.hir);
                 lower_trap_sites(&sites, "index read", |sites| {
                     let (addr, elem_ty) = self.index_addr(obj, index, sites)?;
@@ -1624,9 +1600,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             K::Template(parts) => {
                 let sites = e.trap_sites(self.ml.hir);
-                lower_trap_sites(&sites, "template", |sites| {
-                    self.eval_template(parts, sites)
-                })
+                lower_trap_sites(&sites, "template", |sites| self.eval_template(parts, sites))
             }
             K::Lambda {
                 params,
@@ -1689,11 +1663,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
-    fn string_literal(
-        &mut self,
-        bytes: &[u8],
-        site: &hir::TrapSite,
-    ) -> Result<Value, String> {
+    fn string_literal(&mut self, bytes: &[u8], site: &hir::TrapSite) -> Result<Value, String> {
         let hir::TrapSite::Allocation { pos } = site else {
             return Err(internal("string literal has a non-allocation HIR site"));
         };
@@ -1703,11 +1673,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let len = self.iconst(types::I64, bytes.len() as i64);
         let pid = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pid);
-        let r = self.call_rt(
-            self.ml.rt.str_lit,
-            &[self.ctx_v, addr, len, pos_v],
-            false,
-        )?;
+        let r = self.call_rt(self.ml.rt.str_lit, &[self.ctx_v, addr, len, pos_v], false)?;
         self.emit_trap_site(site, TrapOperand::Pending)?;
         r.ok_or_else(|| internal("str_lit result"))
     }
@@ -1778,15 +1744,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let r = self.expect_s(r)?;
             return match op {
                 B::Add => {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            internal("string addition has no HIR allocation site"),
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("string addition has no HIR allocation site"),
+                    )?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    let res = self
-                        .call_rt(self.ml.rt.str_concat, &[self.ctx_v, l, r, pos_v], false)?;
+                    let res =
+                        self.call_rt(self.ml.rt.str_concat, &[self.ctx_v, l, r, pos_v], false)?;
                     self.emit_trap_site(site, TrapOperand::Pending)?;
                     res.map(RV::S).ok_or_else(|| internal("concat result"))
                 }
@@ -1865,11 +1830,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         return Err(internal("float remainder"));
                     }
                 } else {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                            internal("integer div/rem has no HIR trap site"),
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                        internal("integer div/rem has no HIR trap site"),
+                    )?;
                     return self
                         .int_divrem(op == B::Div, l, r, unsigned, site)
                         .map(RV::S);
@@ -2041,7 +2005,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Ok(RV::S(out));
         }
         if from.is_integer() && matches!(to, Type::F32 | Type::F64) {
-            let target = if to == Type::F32 { types::F32 } else { types::F64 };
+            let target = if to == Type::F32 {
+                types::F32
+            } else {
+                types::F64
+            };
             // The x64 backend only converts from 32/64-bit integers; a
             // narrow source (I8/I16) is `unreachable!` there. Widen it to
             // I32 first, matching its signedness, before the float convert.
@@ -2157,11 +2125,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     Ok((base, off, fty))
                 } else {
                     let ptr = self.expect_s(rv)?;
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
-                            internal("reference field has no HIR lifetime site"),
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
+                        internal("reference field has no HIR lifetime site"),
+                    )?;
                     self.emit_trap_site(site, TrapOperand::Value(ptr))?;
                     Ok((ptr, off, fty))
                 }
@@ -2245,15 +2212,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
                 // HIR already made the proof-based elision decision.
-                if let Some(site) =
-                    sites.take(|site| {
-                        matches!(
-                            site,
-                            hir::TrapSite::IndexRead { .. }
-                                | hir::TrapSite::IndexWrite { .. }
-                        )
-                    })
-                {
+                if let Some(site) = sites.take(|site| {
+                    matches!(
+                        site,
+                        hir::TrapSite::IndexRead { .. } | hir::TrapSite::IndexWrite { .. }
+                    )
+                }) {
                     let ok = self
                         .b
                         .ins()
@@ -2276,11 +2240,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::IndexRead { .. }),
-                        internal("dynamic index has no HIR read site"),
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::IndexRead { .. }),
+                    internal("dynamic index has no HIR read site"),
+                )?;
                 let addr = self.resolve_array_elem(h, idx, site)?;
                 Ok((addr, (**elem).clone()))
             }
@@ -2308,11 +2271,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let (addr, off, fty) = self.field_addr(obj, name, sites)?;
                 Ok((Place::Mem(addr, off), fty))
             }
-            K::Index {
-                obj,
-                index,
-                ..
-            } => {
+            K::Index { obj, index, .. } => {
                 if let Type::Array(elem) = &obj.ty {
                     // Deferred: the element address is resolved at the
                     // moment of the access, after the assigned value
@@ -2416,20 +2375,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(match op {
             B::Add => {
                 if *ty == Type::Str {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            internal(
-                                "string compound assignment has no HIR allocation site",
-                            ),
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("string compound assignment has no HIR allocation site"),
+                    )?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    let res = self.call_rt(
-                        self.ml.rt.str_concat,
-                        &[self.ctx_v, l, r, pos_v],
-                        false,
-                    )?;
+                    let res =
+                        self.call_rt(self.ml.rt.str_concat, &[self.ctx_v, l, r, pos_v], false)?;
                     self.emit_trap_site(site, TrapOperand::Pending)?;
                     res.ok_or_else(|| internal("concat result"))?
                 } else if float {
@@ -2456,20 +2409,18 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 if float {
                     self.b.ins().fdiv(l, r)
                 } else {
-                    let site = sites
-                        .take_required(
-                            |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                            internal("integer compound div has no HIR trap site"),
-                        )?;
+                    let site = sites.take_required(
+                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                        internal("integer compound div has no HIR trap site"),
+                    )?;
                     self.int_divrem(true, l, r, unsigned, site)?
                 }
             }
             B::Rem => {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
-                        internal("integer compound rem has no HIR trap site"),
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::DivisionByZero { .. }),
+                    internal("integer compound rem has no HIR trap site"),
+                )?;
                 self.int_divrem(false, l, r, unsigned, site)?
             }
             B::BitAnd => self.b.ins().band(l, r),
@@ -2614,8 +2565,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     // Creator call: allocates and initializes the frame.
                     let mut argv = vec![self.ctx_v];
                     self.push_args(&mut argv, &f.params, args)?;
-                    let res =
-                        self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
+                    let res = self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
                     return Ok(RV::S(
                         *res.first().ok_or_else(|| internal("creator result"))?,
                     ));
@@ -2627,13 +2577,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 self.push_args(&mut argv, &f.params, args)?;
                 let ret = f.ret.clone();
-                let res =
-                    self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
+                let res = self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
                 self.shape_results(&ret, &res, sret)
             }
-            hir::Callee::Ambient(a) => {
-                self.eval_ambient(*a, args, pos, sites, checked)
-            }
+            hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos, sites, checked),
             hir::Callee::Math(f) => self.eval_math(*f, args, checked),
             hir::Callee::Num(f) => self.eval_num(*f, args, pos, checked),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
@@ -2677,9 +2624,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Method { recv, name } => {
                 self.eval_method(recv, name, args, ret_ty, pos, sites, dest, checked)
             }
-            hir::Callee::Foreign(name) => {
-                self.eval_foreign_call(name, args, pos, sites, checked)
-            }
+            hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, pos, sites, checked),
             other => Err(internal(format!("callee {other:?}"))),
         }
     }
@@ -2754,9 +2699,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         };
         let result = self.call_rt(runtime, &values, checked)?;
         Ok(match function {
-            W::Poll | W::InboxWait | W::InboxPoll => RV::S(
-                result.ok_or_else(|| internal(format!("{function:?} result")))?,
-            ),
+            W::Poll | W::InboxWait | W::InboxPoll => {
+                RV::S(result.ok_or_else(|| internal(format!("{function:?} result")))?)
+            }
             W::Post | W::Close | W::Join | W::OutboxPost => RV::None,
             W::Spawn(_) => unreachable!("spawn returned above"),
             _ => return Err(internal(format!("unknown WorkerFn {function:?}"))),
@@ -2798,8 +2743,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
         let mut uses_scratch_allocations = false;
         for parameter in &params {
-            uses_scratch_allocations |=
-                self.boundary_type_needs_scratch_array(&parameter.ty)?;
+            uses_scratch_allocations |= self.boundary_type_needs_scratch_array(&parameter.ty)?;
         }
         let scratch_mark = if uses_scratch_allocations {
             Some(
@@ -2902,10 +2846,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal("foreign string alias return has no wire mapping"))?;
         let mut valid = self.iconst(types::I8, 0);
         for value in values {
-            let matches = self
-                .b
-                .ins()
-                .icmp_imm(IntCC::Equal, wire, i64::from(value));
+            let matches = self.b.ins().icmp_imm(IntCC::Equal, wire, i64::from(value));
             valid = self.b.ins().bor(valid, matches);
         }
         self.emit_trap_site(site, TrapOperand::WireValue { wire, valid })?;
@@ -2970,7 +2911,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                  Win64/SysV return it in SIMD registers, which the register-return path \
                  does not yet model (compiler.md §12.3a — fail loud, never a silent \
                  mis-marshal) (at {pos})",
-                if leaves.first() == Some(&types::F32) { "f32" } else { "f64" }
+                if leaves.first() == Some(&types::F32) {
+                    "f32"
+                } else {
+                    "f64"
+                }
             )));
         }
         if self.is_win64() {
@@ -3015,23 +2960,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                             }
                         })
                         .collect::<Vec<_>>();
-                    let chunk_count = u32::try_from(chunks.len()).map_err(|_| {
-                        internal("struct-return chunk count does not fit in u32")
-                    })?;
-                    let slot_size = checked_layout_mul(
-                        chunk_count,
-                        8,
-                        "SysV struct-return register image",
-                    )?;
+                    let chunk_count = u32::try_from(chunks.len())
+                        .map_err(|_| internal("struct-return chunk count does not fit in u32"))?;
+                    let slot_size =
+                        checked_layout_mul(chunk_count, 8, "SysV struct-return register image")?;
                     let slot = self.temp_slot(slot_size, align.max(8));
                     return Ok(StructRet::Reg { slot, chunks });
                 }
                 SysVStructReturnPlan::Memory => {
                     let slot = self.temp_slot(size, align);
-                    sig.params.push(AbiParam::special(
-                        types::I64,
-                        ArgumentPurpose::StructReturn,
-                    ));
+                    sig.params
+                        .push(AbiParam::special(types::I64, ArgumentPurpose::StructReturn));
                     return Ok(StructRet::Sret(slot));
                 }
             }
@@ -3107,10 +3046,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// Flattens a return type into `(C byte offset, CLIF type)` leaves for
     /// SysV eightbyte classification. Padding is absent from the list and
     /// therefore does not change a register class.
-    fn return_leaf_layout(
-        &self,
-        ty: &Type,
-    ) -> Result<(Vec<(u32, types::Type)>, Vec<u32>), String> {
+    fn return_leaf_layout(&self, ty: &Type) -> Result<(Vec<(u32, types::Type)>, Vec<u32>), String> {
         let mut out = Vec::new();
         let mut f16_offsets = Vec::new();
         self.collect_leaf_layout(ty, 0, &mut out, &mut f16_offsets)?;
@@ -3138,32 +3074,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         .field_offsets
                         .get(index)
                         .ok_or_else(|| internal("return leaf field offset out of range"))?;
-                    let offset = checked_layout_add(
-                        base,
-                        field_offset,
-                        "SysV return leaf offset",
-                    )?;
+                    let offset = checked_layout_add(base, field_offset, "SysV return leaf offset")?;
                     self.collect_leaf_layout(&field.ty, offset, out, f16_offsets)?;
                 }
             }
             Type::FixedArray(elem, count) => {
                 let (element_size, element_align) = self.ml.layouts.size_align(elem)?;
-                let stride = round_up_layout(
-                    element_size,
-                    element_align,
-                    "SysV return array stride",
-                )?;
+                let stride =
+                    round_up_layout(element_size, element_align, "SysV return array stride")?;
                 for index in 0..*count {
-                    let element_offset = checked_layout_mul(
-                        stride,
-                        index,
-                        "SysV return array offset",
-                    )?;
-                    let offset = checked_layout_add(
-                        base,
-                        element_offset,
-                        "SysV return array leaf offset",
-                    )?;
+                    let element_offset =
+                        checked_layout_mul(stride, index, "SysV return array offset")?;
+                    let offset =
+                        checked_layout_add(base, element_offset, "SysV return array leaf offset")?;
                     self.collect_leaf_layout(elem, offset, out, f16_offsets)?;
                 }
             }
@@ -3315,10 +3238,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .ok_or_else(|| internal("boundary return field offset"))?
                 as i32;
             if let Some(target_cid) = self.boundary_struct_ptr_id(&field.ty) {
-                let pointer = self
-                    .b
-                    .ins()
-                    .load(types::I64, flags(), source, offset);
+                let pointer = self.b.ins().load(types::I64, flags(), source, offset);
                 let non_null = self.b.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
                 let copy = self.b.create_block();
                 let ready = self.b.create_block();
@@ -3337,18 +3257,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     )?
                     .ok_or_else(|| internal("boundary return scratch allocation result"))?;
                 self.trap_check();
-                self.copy_bytes(
-                    stable,
-                    pointer,
-                    target_layout.size,
-                    target_layout.align,
-                );
-                self.stabilize_boundary_return_value_inner(
-                    target_cid,
-                    stable,
-                    pos,
-                    visiting,
-                )?;
+                self.copy_bytes(stable, pointer, target_layout.size, target_layout.align);
+                self.stabilize_boundary_return_value_inner(target_cid, stable, pos, visiting)?;
                 self.b.ins().store(flags(), stable, source, offset);
                 self.b.ins().jump(ready, &[]);
                 self.b.seal_block(copy);
@@ -3359,12 +3269,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             if let Type::Class(inner) = &field.ty {
                 if self.is_value_class_ty(&field.ty) {
                     let nested = self.addr_off(source, i64::from(offset));
-                    self.stabilize_boundary_return_value_inner(
-                        inner.0,
-                        nested,
-                        pos,
-                        visiting,
-                    )?;
+                    self.stabilize_boundary_return_value_inner(inner.0, nested, pos, visiting)?;
                     continue;
                 }
             }
@@ -3375,10 +3280,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 if !self.is_value_class_ty(element) {
                     continue;
                 }
-                let handle = self
-                    .b
-                    .ins()
-                    .load(types::I64, flags(), source, offset);
+                let handle = self.b.ins().load(types::I64, flags(), source, offset);
                 let len = self
                     .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
                     .ok_or_else(|| internal("boundary return array length"))?;
@@ -3407,9 +3309,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     visiting,
                 )?;
                 let next = self.b.ins().iadd_imm(item, 1);
-                self.b
-                    .ins()
-                    .jump(loop_block, &[BlockArg::Value(next)]);
+                self.b.ins().jump(loop_block, &[BlockArg::Value(next)]);
                 self.b.seal_block(body_block);
                 self.b.seal_block(loop_block);
                 self.b.switch_to_block(done_block);
@@ -3452,8 +3352,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     // A pointer member activates scratch when its target has
                     // an absorbed lowering. Once its parent is in scratch,
                     // §33 also rebuilds plain targets beside that lowering.
-                    Type::Class(inner)
-                        if self.is_value_class_ty(&Type::Class(*inner)) => {
+                    Type::Class(inner) if self.is_value_class_ty(&Type::Class(*inner)) => {
                         self.boundary_struct_needs_scratch_inner(inner.0, visiting)?
                     }
                     _ => false,
@@ -3475,10 +3374,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// redirect it to child scratch once construction is active.
     fn boundary_struct_requires_recursive_build(&self, cid: usize) -> Result<bool, String> {
         Ok(self.boundary_struct_needs_scratch(cid)?
-            || self.boundary_struct_contains_pointer_member(
-                cid,
-                &mut HashSet::new(),
-            )?)
+            || self.boundary_struct_contains_pointer_member(cid, &mut HashSet::new())?)
     }
 
     fn boundary_struct_contains_pointer_member(
@@ -3505,8 +3401,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     self.boundary_struct_contains_pointer_member(inner.0, visiting)?
                 }
                 Type::Array(inner) => match &**inner {
-                    Type::Class(inner)
-                        if self.is_value_class_ty(&Type::Class(*inner)) => {
+                    Type::Class(inner) if self.is_value_class_ty(&Type::Class(*inner)) => {
                         self.boundary_struct_contains_pointer_member(inner.0, visiting)?
                     }
                     _ => false,
@@ -3689,10 +3584,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         // A descriptor is the C aggregate `{ T *items;
                         // size_t count; }` (16 bytes, align 8), passed BY
                         // VALUE — target-specific ABI as above (§12.3a).
-                        let comps = [
-                            (0u32, types::I64, data),
-                            (8u32, types::I64, count),
-                        ];
+                        let comps = [(0u32, types::I64, data), (8u32, types::I64, count)];
                         self.push_aggregate_abi(sig, argv, &comps, 16, 8, &[])?;
                         Ok(())
                     }
@@ -3727,12 +3619,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal("boundary struct pointer lacks a class id"))?;
                 if self.boundary_struct_needs_scratch(cid)? {
                     let (pointer, writeback) =
-                        self.marshal_string_field_boundary_ptr(
-                            cid,
-                            v,
-                            scratch_mark,
-                            call_pos,
-                        )?;
+                        self.marshal_string_field_boundary_ptr(cid, v, scratch_mark, call_pos)?;
                     self.push_abi(sig, argv, types::I64, pointer);
                     boundary_writebacks.push(writeback);
                 } else {
@@ -3767,11 +3654,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::I8 | Type::U8 => (1, 1),
             Type::I16 | Type::U16 | Type::F16 => (2, 2),
             Type::I64 | Type::U64 | Type::F64 => (8, 8),
-            Type::I32
-            | Type::U32
-            | Type::F32
-            | Type::Enum(_)
-            | Type::StringAlias(_) => (4, 4),
+            Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) | Type::StringAlias(_) => (4, 4),
             Type::Bool => (1, 1),
             Type::Class(id) if self.is_value_class_ty(ty) => {
                 let (_, size, align) = self.boundary_c_layout(id.0)?;
@@ -3825,13 +3708,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let ready = self.b.create_block();
         self.b.ins().brif(non_null, populate, &[], ready, &[]);
         self.b.switch_to_block(populate);
-        self.populate_boundary_scratch_value(
-            cid,
-            source,
-            scratch,
-            scratch_mark,
-            call_pos,
-        )?;
+        self.populate_boundary_scratch_value(cid, source, scratch, scratch_mark, call_pos)?;
         self.b.ins().jump(ready, &[]);
         self.b.seal_block(populate);
         self.b.switch_to_block(ready);
@@ -3891,9 +3768,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal("str_len result"))?;
                 let len = self.b.ins().uextend(types::I64, len32);
                 self.b.ins().store(flags(), data, destination, c_offset);
-                self.b
-                    .ins()
-                    .store(flags(), len, destination, c_offset + 8);
+                self.b.ins().store(flags(), len, destination, c_offset + 8);
                 continue;
             }
             if let Type::Array(element_ty) = &field.ty {
@@ -3924,30 +3799,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
                         .ok_or_else(|| internal("array_data result"))?,
                 };
-                self.b
-                    .ins()
-                    .store(flags(), count, destination, c_offset);
-                self.b
-                    .ins()
-                    .store(flags(), data, destination, c_offset + 8);
+                self.b.ins().store(flags(), count, destination, c_offset);
+                self.b.ins().store(flags(), data, destination, c_offset + 8);
                 continue;
             }
             if let Some(pointer_cid) = self.boundary_struct_ptr_id(&field.ty) {
-                let mark = scratch_mark.ok_or_else(|| {
-                    internal("recursive boundary pointer lacks a scratch scope")
-                })?;
-                let source_pointer = self
-                    .b
-                    .ins()
-                    .load(types::I64, flags(), source, language_offset);
+                let mark = scratch_mark
+                    .ok_or_else(|| internal("recursive boundary pointer lacks a scratch scope"))?;
+                let source_pointer =
+                    self.b
+                        .ins()
+                        .load(types::I64, flags(), source, language_offset);
                 let null = self.iconst(types::I64, 0);
-                self.b
-                    .ins()
-                    .store(flags(), null, destination, c_offset);
-                let non_null = self
-                    .b
-                    .ins()
-                    .icmp_imm(IntCC::NotEqual, source_pointer, 0);
+                self.b.ins().store(flags(), null, destination, c_offset);
+                let non_null = self.b.ins().icmp_imm(IntCC::NotEqual, source_pointer, 0);
                 let populate = self.b.create_block();
                 let ready = self.b.create_block();
                 self.b.ins().brif(non_null, populate, &[], ready, &[]);
@@ -4014,9 +3879,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     class.name, field.name
                 )));
             };
-            self.b
-                .ins()
-                .store(flags(), scalar, destination, c_offset);
+            self.b.ins().store(flags(), scalar, destination, c_offset);
         }
         Ok(())
     }
@@ -4101,10 +3964,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal("boundary struct class id out of range"))?;
         let language_layout = self.ml.layouts.class(writeback.cid)?.clone();
         let (c_offsets, _, _) = self.boundary_c_layout(writeback.cid)?;
-        let non_null = self
-            .b
-            .ins()
-            .icmp_imm(IntCC::NotEqual, writeback.source, 0);
+        let non_null = self.b.ins().icmp_imm(IntCC::NotEqual, writeback.source, 0);
         let copy = self.b.create_block();
         let done = self.b.create_block();
         self.b.ins().brif(non_null, copy, &[], done, &[]);
@@ -4138,12 +3998,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         false,
                     )?
                     .ok_or_else(|| internal("str_from_view result"))?;
-                self.b.ins().store(
-                    flags(),
-                    handle,
-                    writeback.source,
-                    language_offset,
-                );
+                self.b
+                    .ins()
+                    .store(flags(), handle, writeback.source, language_offset);
                 self.trap_check();
                 continue;
             }
@@ -4184,12 +4041,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .b
                 .ins()
                 .load(clif, flags(), writeback.scratch, c_offset);
-            self.store_val(
-                &field.ty,
-                writeback.source,
-                language_offset,
-                RV::S(value),
-            )?;
+            self.store_val(&field.ty, writeback.source, language_offset, RV::S(value))?;
         }
         self.b.ins().jump(done, &[]);
         self.b.seal_block(copy);
@@ -4253,7 +4105,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let lang_off = *layout
                 .field_offsets
                 .get(i)
-                .ok_or_else(|| internal("boundary field offset"))? as i32;
+                .ok_or_else(|| internal("boundary field offset"))?
+                as i32;
             let (cs, ca) = self.boundary_c_field(&field.ty)?;
             coff = round_up_layout(coff, ca, "boundary C struct layout")?;
             struct_align = struct_align.max(ca);
@@ -4274,10 +4127,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     // into one binding record the trampoline reads; the C
                     // struct's first userdata slot carries the binding and any
                     // second slot carries null (the binding is authoritative).
-                    let ud1_field = class
-                        .fields
-                        .get(i + 1)
-                        .ok_or_else(|| internal("a callback field needs a following userdata slot"))?;
+                    let ud1_field = class.fields.get(i + 1).ok_or_else(|| {
+                        internal("a callback field needs a following userdata slot")
+                    })?;
                     let ud1_lang = *layout
                         .field_offsets
                         .get(i + 1)
@@ -4300,28 +4152,28 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         self.iconst(types::I64, 0)
                     };
                     let record = self
-                        .call_rt(self.ml.rt.cb_bind, &[self.ctx_v, code, env, ud1, ud2], false)?
+                        .call_rt(
+                            self.ml.rt.cb_bind,
+                            &[self.ctx_v, code, env, ud1, ud2],
+                            false,
+                        )?
                         .ok_or_else(|| internal("cb_bind result"))?;
                     // First userdata C slot → the binding.
                     let (uds1, uda1) = self.boundary_c_field(&ud1_field.ty)?;
-                    coff =
-                        round_up_layout(coff, uda1, "boundary callback userdata layout")?;
+                    coff = round_up_layout(coff, uda1, "boundary callback userdata layout")?;
                     struct_align = struct_align.max(uda1);
                     comps.push((coff, types::I64, record));
-                    coff =
-                        checked_layout_add(coff, uds1, "boundary callback userdata layout")?;
+                    coff = checked_layout_add(coff, uds1, "boundary callback userdata layout")?;
                     if has_ud2 {
                         // Second userdata C slot → null (the binding carries
                         // the real second userdata).
                         let ud2_field = &class.fields[i + 2];
                         let (uds2, uda2) = self.boundary_c_field(&ud2_field.ty)?;
-                        coff =
-                            round_up_layout(coff, uda2, "boundary callback userdata layout")?;
+                        coff = round_up_layout(coff, uda2, "boundary callback userdata layout")?;
                         struct_align = struct_align.max(uda2);
                         let nullv = self.iconst(types::I64, 0);
                         comps.push((coff, types::I64, nullv));
-                        coff =
-                            checked_layout_add(coff, uds2, "boundary callback userdata layout")?;
+                        coff = checked_layout_add(coff, uds2, "boundary callback userdata layout")?;
                         i += 3;
                     } else {
                         i += 2;
@@ -4353,9 +4205,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let rv = self.load_val(&ty, addr, lang_off)?;
                     let clif = match self.ml.layouts.repr(&ty)? {
                         Repr::Scalar(t) => t,
-                        other => {
-                            return Err(internal(format!("boundary field repr {other:?}")))
-                        }
+                        other => return Err(internal(format!("boundary field repr {other:?}"))),
                     };
                     let v = self.expect_s(rv)?;
                     comps.push((coff, clif, v));
@@ -4367,19 +4217,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
             }
         }
-        let total = round_up_layout(
-            coff,
-            struct_align.max(1),
-            "final boundary C struct layout",
-        )?;
-        self.push_aggregate_abi(
-            sig,
-            argv,
-            &comps,
-            total,
-            struct_align.max(1),
-            &f16_offsets,
-        )?;
+        let total = round_up_layout(coff, struct_align.max(1), "final boundary C struct layout")?;
+        self.push_aggregate_abi(sig, argv, &comps, total, struct_align.max(1), &f16_offsets)?;
         Ok(())
     }
 
@@ -4477,11 +4316,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.push_abi(sig, argv, types::I64, slot);
             }
             AggregateArgPlan::SysVMemory { size } => {
-                let stack_size = round_up_layout(
-                    size,
-                    8,
-                    "SysV MEMORY-class stack argument",
-                )?;
+                let stack_size = round_up_layout(size, 8, "SysV MEMORY-class stack argument")?;
                 let slot = self.temp_slot(stack_size, align.max(8));
                 self.zero_bytes(slot, stack_size, align.max(8));
                 for (offset, _, value) in comps {
@@ -4659,8 +4494,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let ms = scalar_arg(self, args.first().ok_or_else(|| internal("Date arity"))?)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res =
-                    self.call_rt(self.ml.rt.date_new, &[self.ctx_v, ms, pos_v], checked)?;
+                let res = self.call_rt(self.ml.rt.date_new, &[self.ctx_v, ms, pos_v], checked)?;
                 res.map(RV::S).ok_or_else(|| internal("Date result"))
             }
             D::Utc => {
@@ -4683,15 +4517,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             D::ToIso => {
                 let ms = scalar_arg(
                     self,
-                    args.first().ok_or_else(|| internal("toISOString receiver"))?,
+                    args.first()
+                        .ok_or_else(|| internal("toISOString receiver"))?,
                 )?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res = self.call_rt(
-                    self.ml.rt.date_to_iso,
-                    &[self.ctx_v, ms, pos_v],
-                    checked,
-                )?;
+                let res =
+                    self.call_rt(self.ml.rt.date_to_iso, &[self.ctx_v, ms, pos_v], checked)?;
                 res.map(RV::S).ok_or_else(|| internal("toISOString result"))
             }
             accessor => {
@@ -4700,14 +4532,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal(format!("Date intrinsic {accessor:?}")))?;
                 let ms = scalar_arg(
                     self,
-                    args.first().ok_or_else(|| internal("Date accessor receiver"))?,
+                    args.first()
+                        .ok_or_else(|| internal("Date accessor receiver"))?,
                 )?;
                 let field = self.iconst(types::I32, i64::from(code));
-                let res = self.call_rt(
-                    self.ml.rt.date_get,
-                    &[self.ctx_v, ms, field],
-                    checked,
-                )?;
+                let res = self.call_rt(self.ml.rt.date_get, &[self.ctx_v, ms, field], checked)?;
                 res.map(RV::S)
                     .ok_or_else(|| internal(format!("Date accessor {} result", accessor.name())))
             }
@@ -4740,8 +4569,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let pid = self.pos_id(pos);
             argv.push(self.iconst(types::I32, pid));
         }
-        let res =
-            self.call_rt(self.ml.rt.str_ops[f as usize], &argv, checked)?;
+        let res = self.call_rt(self.ml.rt.str_ops[f as usize], &argv, checked)?;
         let res = res.ok_or_else(|| internal(format!("{} result", f.name())))?;
         Ok(RV::S(match f.ret() {
             hir::StrRet::Bool => self.b.ins().icmp_imm(IntCC::NotEqual, res, 0),
@@ -4807,7 +4635,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         checked: bool,
     ) -> Result<RV, String> {
         use hir::ArrFn as A;
-        let recv = args.first().ok_or_else(|| internal("array method receiver"))?;
+        let recv = args
+            .first()
+            .ok_or_else(|| internal("array method receiver"))?;
         let (elem, fixed_len) = match &recv.ty {
             Type::Array(e) => ((**e).clone(), None),
             Type::FixedArray(e, n) => ((**e).clone(), Some(*n)),
@@ -4830,9 +4660,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .ok_or_else(|| internal(format!("{} arity (checker normalizes)", f.name())))
         };
         let callback_indexed = |callback: &hir::Expr| -> Result<bool, String> {
-            let indexed_arity = f.callback_index_arity().ok_or_else(|| {
-                internal(format!("{} has no indexed callback shape", f.name()))
-            })?;
+            let indexed_arity = f
+                .callback_index_arity()
+                .ok_or_else(|| internal(format!("{} has no indexed callback shape", f.name())))?;
             let Type::Func(ft) = &callback.ty else {
                 return Err(internal(format!("{} callback is not a function", f.name())));
             };
@@ -4909,11 +4739,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let delete_count = self.expect_s(delete_count)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res = self.call_rt(
-                    rt,
-                    &[self.ctx_v, h, start, delete_count, pos_v],
-                    checked,
-                )?;
+                let res =
+                    self.call_rt(rt, &[self.ctx_v, h, start, delete_count, pos_v], checked)?;
                 res.map(RV::S).ok_or_else(|| internal("splice result"))
             }
             A::Shift => {
@@ -5003,14 +4830,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     argv.push(self.iconst(types::I64, i64::from(n)));
                     argv.push(self.iconst(types::I64, i64::from(elem_stride)));
                 }
-                argv.extend([
-                    code, env, ekv, rkv, size_v, pos_v, indexed_v,
-                ]);
-                let res = self.call_rt(
-                    rt,
-                    &argv,
-                    checked,
-                )?;
+                argv.extend([code, env, ekv, rkv, size_v, pos_v, indexed_v]);
+                let res = self.call_rt(rt, &argv, checked)?;
                 res.map(RV::S).ok_or_else(|| internal("map result"))
             }
             A::Reduce | A::ReduceRight => {
@@ -5034,14 +4855,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     argv.push(self.iconst(types::I64, i64::from(n)));
                     argv.push(self.iconst(types::I64, i64::from(elem_stride)));
                 }
-                argv.extend([
-                    code, env, ekv, akv, size_v, slot, indexed_v,
-                ]);
-                self.call_rt(
-                    rt,
-                    &argv,
-                    checked,
-                )?;
+                argv.extend([code, env, ekv, akv, size_v, slot, indexed_v]);
+                self.call_rt(rt, &argv, checked)?;
                 self.load_val(ret_ty, slot, 0)
             }
             other => Err(internal(format!("unknown ArrFn {other:?}"))),
@@ -5066,17 +4881,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     Type::Array(group_elem) if **group_elem == **elem => {
                         ((**key).clone(), (**elem).clone())
                     }
-                    other => {
-                        return Err(internal(format!(
-                            "Map.groupBy result value {other:?}"
-                        )))
-                    }
+                    other => return Err(internal(format!("Map.groupBy result value {other:?}"))),
                 },
                 other => return Err(internal(format!("Map.groupBy shape {other:?}"))),
             };
-            let items_expr = args
-                .first()
-                .ok_or_else(|| internal("Map.groupBy items"))?;
+            let items_expr = args.first().ok_or_else(|| internal("Map.groupBy items"))?;
             let items_rv = self.eval(items_expr)?;
             let items = self.expect_s(items_rv)?;
             self.live_check(items, pos)?;
@@ -5086,10 +4895,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             )?;
             let (code, env) = self.expect_p(callback)?;
             let bridge_id = define_group_bridge(self.ml, &elem, &key)?;
-            let bridge_ref = self
-                .ml
-                .module
-                .declare_func_in_func(bridge_id, self.b.func);
+            let bridge_ref = self.ml.module.declare_func_in_func(bridge_id, self.b.func);
             let bridge = self.b.ins().func_addr(types::I64, bridge_ref);
             let (key_size, _) = self.ml.layouts.size_align(&key)?;
             let kind = crate::layout::assoc_key_kind(self.ml.hir, &key)?;
@@ -5104,8 +4910,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.iconst(types::I32, i64::from(kind.code())),
                 self.iconst(types::I32, i64::from(pos_id)),
             ];
-            let result =
-                self.call_rt(self.ml.rt.map_ops[f as usize], &argv, checked)?;
+            let result = self.call_rt(self.ml.rt.map_ops[f as usize], &argv, checked)?;
             return result
                 .map(RV::S)
                 .ok_or_else(|| internal("Map.groupBy result"));
@@ -5175,11 +4980,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let slot_size = size.max(8);
                 let access_align = 1u32 << slot_size.trailing_zeros();
                 self.zero_bytes(out, slot_size, align.max(8).min(access_align));
-                self.call_rt(
-                    rt,
-                    &[self.ctx_v, handle, key_ptr, fallback, out],
-                    false,
-                )?;
+                self.call_rt(rt, &[self.ctx_v, handle, key_ptr, fallback, out], false)?;
                 self.load_val(&value, out, 0)
             }
             F::Set => {
@@ -5199,13 +5000,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             F::Has | F::Delete => {
                 let key_rv = self.eval(arg(1)?)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
-                let result =
-                    self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
-                let result =
-                    result.ok_or_else(|| internal(format!("Map.{} result", f.name())))?;
-                Ok(RV::S(
-                    self.b.ins().icmp_imm(IntCC::NotEqual, result, 0),
-                ))
+                let result = self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
+                let result = result.ok_or_else(|| internal(format!("Map.{} result", f.name())))?;
+                Ok(RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, result, 0)))
             }
             F::Clear => {
                 self.call_rt(rt, &[self.ctx_v, handle], false)?;
@@ -5215,16 +5012,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let callback = self.eval(arg(1)?)?;
                 let (code, env) = self.expect_p(callback)?;
                 let bridge_id = define_assoc_bridge(self.ml, &key, Some(&value))?;
-                let bridge_ref = self
-                    .ml
-                    .module
-                    .declare_func_in_func(bridge_id, self.b.func);
+                let bridge_ref = self.ml.module.declare_func_in_func(bridge_id, self.b.func);
                 let bridge = self.b.ins().func_addr(types::I64, bridge_ref);
-                self.call_rt(
-                    rt,
-                    &[self.ctx_v, handle, code, env, bridge],
-                    checked,
-                )?;
+                self.call_rt(rt, &[self.ctx_v, handle, code, env, bridge], checked)?;
                 Ok(RV::None)
             }
             F::New => Err(internal("Map.New reached receiver lowering")),
@@ -5295,13 +5085,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             F::Has | F::Delete => {
                 let key_rv = self.eval(arg(1)?)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
-                let result =
-                    self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
-                let result =
-                    result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
-                Ok(RV::S(
-                    self.b.ins().icmp_imm(IntCC::NotEqual, result, 0),
-                ))
+                let result = self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
+                let result = result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
+                Ok(RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, result, 0)))
             }
             F::Clear => {
                 self.call_rt(rt, &[self.ctx_v, handle], false)?;
@@ -5311,16 +5097,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let callback = self.eval(arg(1)?)?;
                 let (code, env) = self.expect_p(callback)?;
                 let bridge_id = define_assoc_bridge(self.ml, &key, None)?;
-                let bridge_ref = self
-                    .ml
-                    .module
-                    .declare_func_in_func(bridge_id, self.b.func);
+                let bridge_ref = self.ml.module.declare_func_in_func(bridge_id, self.b.func);
                 let bridge = self.b.ins().func_addr(types::I64, bridge_ref);
-                self.call_rt(
-                    rt,
-                    &[self.ctx_v, handle, code, env, bridge],
-                    checked,
-                )?;
+                self.call_rt(rt, &[self.ctx_v, handle, code, env, bridge], checked)?;
                 Ok(RV::None)
             }
             F::Union | F::Intersection | F::Difference | F::SymmetricDifference => {
@@ -5329,8 +5108,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.live_check(other, pos)?;
                 let pos_id = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, i64::from(pos_id));
-                let result =
-                    self.call_rt(rt, &[self.ctx_v, handle, other, pos_v], checked)?;
+                let result = self.call_rt(rt, &[self.ctx_v, handle, other, pos_v], checked)?;
                 result
                     .map(RV::S)
                     .ok_or_else(|| internal(format!("Set.{} result", f.name())))
@@ -5339,13 +5117,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let other_rv = self.eval(arg(1)?)?;
                 let other = self.expect_s(other_rv)?;
                 self.live_check(other, pos)?;
-                let result =
-                    self.call_rt(rt, &[self.ctx_v, handle, other], false)?;
-                let result =
-                    result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
-                Ok(RV::S(
-                    self.b.ins().icmp_imm(IntCC::NotEqual, result, 0),
-                ))
+                let result = self.call_rt(rt, &[self.ctx_v, handle, other], false)?;
+                let result = result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
+                Ok(RV::S(self.b.ins().icmp_imm(IntCC::NotEqual, result, 0)))
             }
             F::New => Err(internal("Set.New reached receiver lowering")),
             other => Err(internal(format!("unknown SetFn {other:?}"))),
@@ -5386,16 +5160,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let ptr = self.expect_s(rv)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                self.call_rt(
-                    self.ml.rt.delete,
-                    &[self.ctx_v, ptr, pos_v],
-                    false,
+                self.call_rt(self.ml.rt.delete, &[self.ctx_v, ptr, pos_v], false)?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
+                    internal("Context.free has no HIR lifetime site"),
                 )?;
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }),
-                        internal("Context.free has no HIR lifetime site"),
-                    )?;
                 self.emit_trap_site(site, TrapOperand::Pending)?;
                 Ok(RV::None)
             }
@@ -5442,11 +5211,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         let dst = self.temp_slot(size.max(8), align.max(8));
                         let pid = self.pos_id(pos);
                         let pos_v = self.iconst(types::I32, pid);
-                        self.call_rt(
-                            self.ml.rt.array_pop,
-                            &[self.ctx_v, h, dst, pos_v],
-                            checked,
-                        )?;
+                        self.call_rt(self.ml.rt.array_pop, &[self.ctx_v, h, dst, pos_v], checked)?;
                         self.load_val(&elem, dst, 0)
                     }
                     other => Err(internal(format!("array method `{other}`"))),
@@ -5497,8 +5262,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let this = match rv {
                     RV::A(ptr) => ptr,
                     RV::S(ptr) => {
-                        while let Some(site) = sites
-                            .take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
+                        while let Some(site) =
+                            sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                         {
                             self.emit_trap_site(site, TrapOperand::Value(ptr))?;
                         }
@@ -5515,11 +5280,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 argv.push(this);
                 self.push_args(&mut argv, &m.params, args)?;
                 let ret = m.ret.clone();
-                let res = self.call_script(
-                    &FnKey::Method(cid.0, name.to_string()),
-                    &argv,
-                    checked,
-                )?;
+                let res =
+                    self.call_script(&FnKey::Method(cid.0, name.to_string()), &argv, checked)?;
                 self.shape_results(&ret, &res, sret)
             }
             other => Err(internal(format!("method on {other:?}"))),
@@ -5552,20 +5314,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.zero_bytes(slot, layout.size, layout.align);
             slot
         } else {
-            let site = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    internal("reference new has no HIR allocation site"),
-                )?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                internal("reference new has no HIR allocation site"),
+            )?;
             let size = self.iconst(types::I64, i64::from(layout.size));
             let class_v = self.iconst(types::I32, i64::from(cid as u32));
             let pid = self.pos_id(pos);
             let pos_v = self.iconst(types::I32, pid);
-            let res = self.call_rt(
-                self.ml.rt.alloc,
-                &[self.ctx_v, size, class_v, pos_v],
-                false,
-            )?;
+            let res = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], false)?;
             self.emit_trap_site(site, TrapOperand::Pending)?;
             res.ok_or_else(|| internal("alloc result"))?
         };
@@ -5598,11 +5355,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
         }
         if let Some(ctor) = &class.ctor {
-            let site = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Call { .. }),
-                    internal("constructor call has no HIR call site"),
-                )?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Call { .. }),
+                internal("constructor call has no HIR call site"),
+            )?;
             let mut argv = vec![self.ctx_v, this];
             self.push_args(&mut argv, &ctor.params, args)?;
             self.call_script(&FnKey::Ctor(cid), &argv, false)?;
@@ -5634,7 +5390,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .ok_or_else(|| internal("descriptor class id out of range"))?;
         let layout = self.ml.layouts.class(cid)?.clone();
         if !class.is_descriptor || layout.is_value {
-            return Err(internal("DescriptorLit does not name a descriptor reference class"));
+            return Err(internal(
+                "DescriptorLit does not name a descriptor reference class",
+            ));
         }
         if fields.len() != class.fields.len() {
             return Err(internal(format!(
@@ -5652,11 +5410,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let class_v = self.iconst(types::I32, i64::from(cid as u32));
         let pid = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pid);
-        let result = self.call_rt(
-            self.ml.rt.alloc,
-            &[self.ctx_v, size, class_v, pos_v],
-            false,
-        )?;
+        let result = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], false)?;
         self.emit_trap_site(site, TrapOperand::Pending)?;
         let this = result.ok_or_else(|| internal("descriptor allocation result"))?;
 
@@ -5692,16 +5446,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// Allocates a zeroed reference-class payload without running source
     /// field initializers or its constructor. Only checker-generated
     /// JSON.parse construction uses this path.
-    fn eval_raw_new(
-        &mut self,
-        cid: usize,
-        sites: &mut TrapSiteConsumer<'_>,
-    ) -> Result<RV, String> {
-        let site = sites
-            .take_required(
-                |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                internal("RawNew has no HIR allocation site"),
-            )?;
+    fn eval_raw_new(&mut self, cid: usize, sites: &mut TrapSiteConsumer<'_>) -> Result<RV, String> {
+        let site = sites.take_required(
+            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+            internal("RawNew has no HIR allocation site"),
+        )?;
         let hir::TrapSite::Allocation { pos } = site else {
             return Err(internal("RawNew has a non-allocation HIR site"));
         };
@@ -5713,11 +5462,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let class_v = self.iconst(types::I32, i64::from(cid as u32));
         let pos_id = self.pos_id(pos);
         let pos_v = self.iconst(types::I32, pos_id);
-        let result = self.call_rt(
-            self.ml.rt.alloc,
-            &[self.ctx_v, size, class_v, pos_v],
-            false,
-        )?;
+        let result = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], false)?;
         self.emit_trap_site(site, TrapOperand::Pending)?;
         Ok(RV::S(result.ok_or_else(|| {
             internal("raw JSON object allocation result")
@@ -5732,11 +5477,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     ) -> Result<RV, String> {
         match ty {
             Type::Array(elem) => {
-                let site = sites
-                    .take_required(
-                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                        internal("array literal has no HIR allocation site"),
-                    )?;
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("array literal has no HIR allocation site"),
+                )?;
                 let hir::TrapSite::Allocation { pos } = site else {
                     return Err(internal("array literal has a non-allocation HIR site"));
                 };
@@ -5744,11 +5488,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let stride_v = self.iconst(types::I64, i64::from(stride));
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
-                let res = self.call_rt(
-                    self.ml.rt.array_new,
-                    &[self.ctx_v, stride_v, pos_v],
-                    false,
-                )?;
+                let res =
+                    self.call_rt(self.ml.rt.array_new, &[self.ctx_v, stride_v, pos_v], false)?;
                 self.emit_trap_site(site, TrapOperand::Pending)?;
                 let h = res.ok_or_else(|| internal("array_new result"))?;
                 for e in elems {
@@ -5765,11 +5506,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let src = self.materialize(rv, elem)?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    self.call_rt(
-                        self.ml.rt.array_push,
-                        &[self.ctx_v, h, src, pos_v],
-                        false,
-                    )?;
+                    self.call_rt(self.ml.rt.array_push, &[self.ctx_v, h, src, pos_v], false)?;
                     self.emit_trap_site(site, TrapOperand::Pending)?;
                 }
                 Ok(RV::S(h))
@@ -5793,11 +5530,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let Type::Array(elem_ty) = ty else {
             return Err(internal("spread literal is not a dynamic array"));
         };
-        let initial = sites
-            .take_required(
-                |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                internal("array spread literal has no allocation site"),
-            )?;
+        let initial = sites.take_required(
+            |site| matches!(site, hir::TrapSite::Allocation { .. }),
+            internal("array spread literal has no allocation site"),
+        )?;
         let hir::TrapSite::Allocation { pos } = initial else {
             return Err(internal("array spread literal allocation site kind"));
         };
@@ -5806,20 +5542,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let pos_id = self.pos_id(pos);
         let pid = self.iconst(types::I32, pos_id);
         let handle = self
-            .call_rt(
-                self.ml.rt.array_new,
-                &[self.ctx_v, stride_v, pid],
-                false,
-            )?
+            .call_rt(self.ml.rt.array_new, &[self.ctx_v, stride_v, pid], false)?
             .ok_or_else(|| internal("array spread literal handle"))?;
         self.emit_trap_site(initial, TrapOperand::Pending)?;
 
         for elem in elems {
-            let site = sites
-                .take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    internal("array spread element has no allocation site"),
-                )?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                internal("array spread element has no allocation site"),
+            )?;
             let hir::TrapSite::Allocation { pos } = site else {
                 return Err(internal("array spread element site kind"));
             };
@@ -5933,14 +5664,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     Ok(())
                 })
             }
-            K::DescriptorLit { .. } => {
-                Err(internal("descriptor reference cannot build into aggregate storage"))
-            }
+            K::DescriptorLit { .. } => Err(internal(
+                "descriptor reference cannot build into aggregate storage",
+            )),
             K::Call { callee, args } => {
                 let sites = e.trap_sites(self.ml.hir);
                 lower_trap_sites(&sites, "call", |sites| {
-                    let rv =
-                        self.eval_call(callee, args, &e.ty, &e.pos, sites, Some(dest))?;
+                    let rv = self.eval_call(callee, args, &e.ty, &e.pos, sites, Some(dest))?;
                     match rv {
                         RV::A(addr) => {
                             // Calls that take an `sret` wrote straight into
@@ -6013,11 +5743,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     };
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
-                    let res = self.call_rt(
-                        self.ml.rt.str_concat,
-                        &[self.ctx_v, prev, h, pos_v],
-                        false,
-                    )?;
+                    let res =
+                        self.call_rt(self.ml.rt.str_concat, &[self.ctx_v, prev, h, pos_v], false)?;
                     self.emit_trap_site(site, TrapOperand::Pending)?;
                     res.ok_or_else(|| internal("concat result"))?
                 }
@@ -6086,11 +5813,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let entry = self.b.ins().iadd(base, offset);
             let data = self.b.ins().load(types::I64, flags(), entry, 0);
             let len = self.b.ins().load(types::I64, flags(), entry, 8);
-            let result = self.call_rt(
-                self.ml.rt.str_lit,
-                &[self.ctx_v, data, len, pos_v],
-                false,
-            )?;
+            let result =
+                self.call_rt(self.ml.rt.str_lit, &[self.ctx_v, data, len, pos_v], false)?;
             self.emit_trap_site(site, TrapOperand::Pending)?;
             return result.ok_or_else(|| internal("string alias formatting result"));
         }
@@ -6151,8 +5875,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let env = if captures.is_empty() {
             self.iconst(types::I64, 0)
         } else {
-            let size =
-                round_up_layout(off.max(1), env_align, "final closure environment layout")?;
+            let size = round_up_layout(off.max(1), env_align, "final closure environment layout")?;
             let slot = self.temp_slot(size, env_align);
             for (name, ty, at) in &cap_info {
                 let binding = self.lookup(name)?;
@@ -6257,7 +5980,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Err(internal("awaited synchronous target"));
         }
         let child_off = {
-            let g = self.genc.as_mut().ok_or_else(|| internal("async context"))?;
+            let g = self
+                .genc
+                .as_mut()
+                .ok_or_else(|| internal("async context"))?;
             let off = *g
                 .child_offsets
                 .get(g.next_child)
@@ -6290,9 +6016,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let child = *created
             .first()
             .ok_or_else(|| internal("async creator result"))?;
-        self.b
-            .ins()
-            .store(flags(), child, parent, child_off as i32);
+        self.b.ins().store(flags(), child, parent, child_off as i32);
 
         let (size, align) = self.ml.layouts.size_align(ret)?;
         let out_slot = if *ret == Type::Void {
@@ -6397,9 +6121,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
     fn lower_stmt(&mut self, s: &hir::Stmt) -> Result<(), String> {
         match s {
-            hir::Stmt::Let { name, ty, init, .. } => {
-                self.declare_local(name, ty, init)
-            }
+            hir::Stmt::Let { name, ty, init, .. } => self.declare_local(name, ty, init),
             hir::Stmt::Expr(e) => {
                 self.eval(e)?;
                 Ok(())
@@ -6412,9 +6134,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 // return the `done` flag, never an aggregate.)
                 let ret_ty = self.ret_ty.clone();
                 if !self.is_resume {
-                    if let (Some(v), Repr::Agg { .. }) =
-                        (value, self.ml.layouts.repr(&ret_ty)?)
-                    {
+                    if let (Some(v), Repr::Agg { .. }) = (value, self.ml.layouts.repr(&ret_ty)?) {
                         let sret = self.sret_v.ok_or_else(|| internal("missing sret"))?;
                         self.eval_agg_into(v, sret, &ret_ty)?;
                         if let Type::Class(cid) = ret_ty {
@@ -6440,7 +6160,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 };
                 self.emit_return(rv)
             }
-            hir::Stmt::If { cond, then, els, .. } => {
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
                 let c = self.eval(cond)?;
                 let c = self.expect_s(c)?;
                 let then_blk = self.b.create_block();
@@ -6556,8 +6278,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let d = self.eval(disc)?;
                 let d = self.expect_s(d)?;
                 let exit = self.b.create_block();
-                let body_blocks: Vec<Block> =
-                    cases.iter().map(|_| self.b.create_block()).collect();
+                let body_blocks: Vec<Block> = cases.iter().map(|_| self.b.create_block()).collect();
                 let default_idx = cases.iter().position(|c| c.test.is_none());
                 // Test chain in source order (tests are evaluated in
                 // order; `default` is skipped by the chain and entered
@@ -6697,20 +6418,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.b.ins().jump(hdr, &[]);
         self.b.switch_to_block(hdr);
         let index = self.b.use_var(index_var);
-        let below_snapshot = self
-            .b
-            .ins()
-            .icmp(IntCC::UnsignedLessThan, index, bound);
+        let below_snapshot = self.b.ins().icmp(IntCC::UnsignedLessThan, index, bound);
         let condition = if matches!(kind, K::ArrayValues | K::ArrayKeys) {
             let handle = subject_scalar.ok_or_else(|| internal("array for-of handle"))?;
             let current = self
                 .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
                 .ok_or_else(|| internal("array for-of current length"))?;
             let current = self.b.ins().uextend(types::I64, current);
-            let below_current =
-                self.b
-                    .ins()
-                    .icmp(IntCC::UnsignedLessThan, index, current);
+            let below_current = self.b.ins().icmp(IntCC::UnsignedLessThan, index, current);
             self.b.ins().band(below_snapshot, below_current)
         } else {
             below_snapshot
@@ -6807,11 +6522,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
         self.b.switch_to_block(exit);
         if let Some(handle) = assoc_handle {
-            self.call_rt(
-                self.ml.rt.assoc_iter_end,
-                &[self.ctx_v, handle],
-                false,
-            )?;
+            self.call_rt(self.ml.rt.assoc_iter_end, &[self.ctx_v, handle], false)?;
             self.assoc_iters.pop();
         }
         self.scope_pop();
@@ -6828,11 +6539,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     fn end_assoc_iters(&mut self) -> Result<(), String> {
         let handles: Vec<Value> = self.assoc_iters.iter().rev().copied().collect();
         for handle in handles {
-            self.call_rt(
-                self.ml.rt.assoc_iter_end,
-                &[self.ctx_v, handle],
-                false,
-            )?;
+            self.call_rt(self.ml.rt.assoc_iter_end, &[self.ctx_v, handle], false)?;
         }
         Ok(())
     }
@@ -7026,10 +6733,7 @@ fn shadow_words<M: Module>(
 }
 
 /// Emits the shadow-frame prologue; returns the base address.
-fn shadow_prologue<M: Module>(
-    body: &mut Body<M>,
-    slots: u32,
-) -> Result<(), String> {
+fn shadow_prologue<M: Module>(body: &mut Body<M>, slots: u32) -> Result<(), String> {
     if slots == 0 {
         return Ok(());
     }
@@ -7532,7 +7236,13 @@ fn generator_frame<M: Module>(
         off = checked_layout_add(off, 8, "async child-frame layout")?;
     }
     let size = round_up_layout(off, 8, "final generator frame layout")?;
-    Ok((receiver_offset, param_offsets, let_offsets, child_offsets, size))
+    Ok((
+        receiver_offset,
+        param_offsets,
+        let_offsets,
+        child_offsets,
+        size,
+    ))
 }
 
 /// Defines the creator and resume functions of a `function*` (C8).
@@ -7540,8 +7250,7 @@ pub(crate) fn define_generator<M: Module>(
     ml: &mut ModLower<M>,
     f: &hir::Function,
 ) -> Result<(), String> {
-    let (_, param_offsets, let_offsets, child_offsets, frame_size) =
-        generator_frame(ml, f, None)?;
+    let (_, param_offsets, let_offsets, child_offsets, frame_size) = generator_frame(ml, f, None)?;
     let yield_ty = match &f.ret {
         Type::Generator(y) => (**y).clone(),
         other => return Err(internal(format!("generator return {other:?}"))),
@@ -7552,8 +7261,12 @@ pub(crate) fn define_generator<M: Module>(
     // --- creator ---
     {
         let params_ty: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
-        let sig =
-            ml.make_sig(&params_ty, &Type::Generator(Box::new(Type::Void)), false, false)?;
+        let sig = ml.make_sig(
+            &params_ty,
+            &Type::Generator(Box::new(Type::Void)),
+            false,
+            false,
+        )?;
         let mut cctx = ml.module.make_context();
         cctx.func.signature = sig;
         let mut fbx = FunctionBuilderContext::new();
@@ -7854,10 +7567,7 @@ fn define_async_with<M: Module>(
                 body.emit_trap_site(site, TrapOperand::Pending)?;
                 result.ok_or_else(|| internal("async frame alloc result"))
             })?;
-            let resume_ref = body
-                .ml
-                .module
-                .declare_func_in_func(resume_id, body.b.func);
+            let resume_ref = body.ml.module.declare_func_in_func(resume_id, body.b.func);
             let resume_addr = body.b.ins().func_addr(types::I64, resume_ref);
             body.b
                 .ins()
@@ -7884,10 +7594,8 @@ fn define_async_with<M: Module>(
                 let value = match body.ml.layouts.repr(&param.ty)? {
                     Repr::None => continue,
                     Repr::Pair => {
-                        let value = RV::P(
-                            pro.param_vals[value_index],
-                            pro.param_vals[value_index + 1],
-                        );
+                        let value =
+                            RV::P(pro.param_vals[value_index], pro.param_vals[value_index + 1]);
                         value_index += 2;
                         value
                     }
@@ -7931,9 +7639,8 @@ fn define_async_with<M: Module>(
             let suspension_count = count_yields(&f.body);
             let start = b.create_block();
             let done_block = b.create_block();
-            let resume_blocks: Vec<Block> = (0..suspension_count)
-                .map(|_| b.create_block())
-                .collect();
+            let resume_blocks: Vec<Block> =
+                (0..suspension_count).map(|_| b.create_block()).collect();
             let state = b.ins().load(types::I32, flags(), frame, 0);
             for (index, &block) in std::iter::once(&start).chain(&resume_blocks).enumerate() {
                 let equal = b.ins().icmp_imm(IntCC::Equal, state, index as i64);
@@ -8129,11 +7836,7 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
         if body.ml.context_globals && !body.ml.opts.reload {
             let size = body.iconst(types::I64, i64::from(body.ml.globals_size));
             let align = body.iconst(types::I64, i64::from(body.ml.globals_align));
-            body.call_rt(
-                body.ml.rt.globals_init,
-                &[body.ctx_v, size, align],
-                false,
-            )?;
+            body.call_rt(body.ml.rt.globals_init, &[body.ctx_v, size, align], false)?;
             body.trap_check();
         }
         let globals: Vec<hir::Global> = body.ml.hir.globals.to_vec();
@@ -8147,11 +7850,7 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<M>) -> Result<(), String>
             let words = managed_words(&body.ml.layouts, &ty)?;
             if words > 0 {
                 let words_v = body.iconst(types::I64, i64::from(words));
-                body.call_rt(
-                    body.ml.rt.root_add,
-                    &[body.ctx_v, addr, words_v],
-                    false,
-                )?;
+                body.call_rt(body.ml.rt.root_add, &[body.ctx_v, addr, words_v], false)?;
             }
         }
         body.finish()?;
@@ -8259,13 +7958,11 @@ pub(crate) fn define_worker_entry<M: Module>(
 mod hfa_tests {
     use super::{
         ensure_explicit_frame_supported, ensure_sysv_argument_register_capacity,
-        is_pure_hfa_leaves, plan_aggregate_arg, plan_sysv_struct_return,
-        AggregateArgAbi, AggregateArgPlan, EightbyteImage, RegisterClass,
-        SysVStructReturnPlan,
+        is_pure_hfa_leaves, plan_aggregate_arg, plan_sysv_struct_return, AggregateArgAbi,
+        AggregateArgPlan, EightbyteImage, RegisterClass, SysVStructReturnPlan,
     };
     use cranelift_codegen::ir::{
-        types, AbiParam, ArgumentPurpose, Function, Signature, StackSlotData,
-        StackSlotKind,
+        types, AbiParam, ArgumentPurpose, Function, Signature, StackSlotData, StackSlotKind,
     };
     use cranelift_codegen::isa::CallConv;
     use subscript_compiler::types::MAX_FRAME_BYTES;
@@ -8364,10 +8061,7 @@ mod hfa_tests {
                 "{i32,i32}",
                 vec![(0, types::I32), (4, types::I32)],
                 8,
-                Eightbytes(vec![image(
-                    0,
-                    &[(0, types::I32), (4, types::I32)],
-                )]),
+                Eightbytes(vec![image(0, &[(0, types::I32), (4, types::I32)])]),
             ),
             (
                 "{i32,i32,i32}",
@@ -8441,10 +8135,7 @@ mod hfa_tests {
                 "mixed {i32,f32}",
                 vec![(0, types::I32), (4, types::F32)],
                 8,
-                Eightbytes(vec![image(
-                    0,
-                    &[(0, types::I32), (4, types::F32)],
-                )]),
+                Eightbytes(vec![image(0, &[(0, types::I32), (4, types::F32)])]),
             ),
             (
                 "padded {i32,i64}",
@@ -8545,18 +8236,8 @@ mod hfa_tests {
                 16
             ),
             Eightbytes(vec![
-                sysv_image(
-                    0,
-                    &[(0, types::I64)],
-                    RegisterClass::Integer,
-                    types::I64,
-                ),
-                sysv_image(
-                    8,
-                    &[(8, types::I64)],
-                    RegisterClass::Integer,
-                    types::I64,
-                ),
+                sysv_image(0, &[(0, types::I64)], RegisterClass::Integer, types::I64,),
+                sysv_image(8, &[(8, types::I64)], RegisterClass::Integer, types::I64,),
             ]),
             "pointer and length use two INTEGER eightbytes"
         );
@@ -8567,18 +8248,8 @@ mod hfa_tests {
                 16
             ),
             Eightbytes(vec![
-                sysv_image(
-                    0,
-                    &[(0, types::I64)],
-                    RegisterClass::Integer,
-                    types::I64,
-                ),
-                sysv_image(
-                    8,
-                    &[(8, types::F64)],
-                    RegisterClass::Sse,
-                    types::F64,
-                ),
+                sysv_image(0, &[(0, types::I64)], RegisterClass::Integer, types::I64,),
+                sysv_image(8, &[(8, types::F64)], RegisterClass::Sse, types::F64,),
             ]),
             "mixed eightbytes keep independent INTEGER and SSE classes"
         );
@@ -8611,10 +8282,8 @@ mod hfa_tests {
     #[test]
     fn sysv_register_argument_fails_loud_when_gp_registers_are_exhausted() {
         let mut sig = Signature::new(CallConv::SystemV);
-        sig.params.push(AbiParam::special(
-            types::I64,
-            ArgumentPurpose::StructReturn,
-        ));
+        sig.params
+            .push(AbiParam::special(types::I64, ArgumentPurpose::StructReturn));
         for _ in 0..5 {
             sig.params.push(AbiParam::new(types::I64));
         }
@@ -8633,11 +8302,9 @@ mod hfa_tests {
     #[test]
     fn sysv_register_argument_with_f16_fails_loud() {
         let sig = Signature::new(CallConv::SystemV);
-        let AggregateArgPlan::Eightbytes(images) = plan_aggregate_arg(
-            AggregateArgAbi::SysV,
-            &[(0, types::I16)],
-            2,
-        ) else {
+        let AggregateArgPlan::Eightbytes(images) =
+            plan_aggregate_arg(AggregateArgAbi::SysV, &[(0, types::I16)], 2)
+        else {
             panic!("a two-byte aligned aggregate should have a register plan");
         };
 
@@ -8649,25 +8316,11 @@ mod hfa_tests {
     #[test]
     fn sysv_struct_return_plans_integer_registers_and_memory() {
         assert_eq!(
-            plan_sysv_struct_return(
-                &[(0, types::I64), (8, types::I64)],
-                16,
-                &[],
-            )
-            .expect("two INTEGER eightbytes are supported"),
+            plan_sysv_struct_return(&[(0, types::I64), (8, types::I64)], 16, &[],)
+                .expect("two INTEGER eightbytes are supported"),
             SysVStructReturnPlan::Registers(vec![
-                sysv_image(
-                    0,
-                    &[(0, types::I64)],
-                    RegisterClass::Integer,
-                    types::I64,
-                ),
-                sysv_image(
-                    8,
-                    &[(8, types::I64)],
-                    RegisterClass::Integer,
-                    types::I64,
-                ),
+                sysv_image(0, &[(0, types::I64)], RegisterClass::Integer, types::I64,),
+                sysv_image(8, &[(8, types::I64)], RegisterClass::Integer, types::I64,),
             ])
         );
         assert_eq!(

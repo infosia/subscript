@@ -20,12 +20,11 @@ fn assert_named(diagnostics: &[Diagnostic], mirror: &str, needle: &str) {
 
 #[test]
 fn foreign_declarations_without_a_header_record_are_rejected() {
-    let diagnostics = reject("missing-header.d.ts", "declare function engineRun(): void;\n");
-    assert_named(
-        &diagnostics,
+    let diagnostics = reject(
         "missing-header.d.ts",
-        "@subscript-c-header",
+        "declare function engineRun(): void;\n",
     );
+    assert_named(&diagnostics, "missing-header.d.ts", "@subscript-c-header");
 }
 
 #[test]
@@ -35,7 +34,11 @@ fn a_malformed_record_is_rejected_with_its_mirror_name() {
         "// @subscript-c-header include=engine.h\n\
          declare function engineRun(): void;\n",
     );
-    assert_named(&diagnostics, "malformed.d.ts", "malformed provenance record");
+    assert_named(
+        &diagnostics,
+        "malformed.d.ts",
+        "malformed provenance record",
+    );
     assert_named(&diagnostics, "malformed.d.ts", "include=engine.h");
 }
 
@@ -115,7 +118,11 @@ fn cenum_record_fields_must_be_non_empty() {
         ),
     ] {
         let diagnostics = reject(name, record);
-        assert_named(&diagnostics, name, "cenum typedef and alias fields must be non-empty");
+        assert_named(
+            &diagnostics,
+            name,
+            "cenum typedef and alias fields must be non-empty",
+        );
     }
 }
 

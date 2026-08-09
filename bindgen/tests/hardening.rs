@@ -29,7 +29,10 @@ fn bare_long_is_target_dependent_and_fails_loud() {
     // the builtin map so it cannot mirror a target-dependent width.
     let header = "typedef struct SubHasLong { long n; } SubHasLong;";
     let err = generate(header).expect_err("bare long must fail loud");
-    assert!(err.to_string().contains("long"), "message names long: {err}");
+    assert!(
+        err.to_string().contains("long"),
+        "message names long: {err}"
+    );
 }
 
 #[test]
@@ -37,7 +40,10 @@ fn double_pointer_field_fails_loud() {
     let header = "typedef struct T { int x; } T; \
                   typedef struct U { const T **pp; } U;";
     let err = generate(header).expect_err("a double pointer must fail loud");
-    assert!(err.to_string().contains('T'), "message names the type: {err}");
+    assert!(
+        err.to_string().contains('T'),
+        "message names the type: {err}"
+    );
     assert!(
         err.to_string().contains("unmapped"),
         "clean unmapped-type error: {err}"
@@ -80,14 +86,16 @@ fn narrow_c_scalars_map_but_plain_char_fails_without_an_explicit_target() {
         "h: u16;",
         "half: f16;",
     ] {
-        assert!(mirror.contains(expected), "missing `{expected}` in:\n{mirror}");
+        assert!(
+            mirror.contains(expected),
+            "missing `{expected}` in:\n{mirror}"
+        );
     }
 }
 
 #[test]
 fn typedefed_binary16_float_maps_to_f16() {
-    let header =
-        "typedef _Float16 SubHalf; typedef struct W { SubHalf half; } W;";
+    let header = "typedef _Float16 SubHalf; typedef struct W { SubHalf half; } W;";
     let mirror = generate(header).expect("typedefed binary16 maps");
     assert!(mirror.contains("type SubHalf = f16;"), "{mirror}");
     assert!(mirror.contains("half: SubHalf;"), "{mirror}");
@@ -125,7 +133,8 @@ fn packed_record_fails_loud() {
 
 #[test]
 fn over_aligned_record_fails_loud() {
-    let header = "#include <stdint.h>\ntypedef struct __attribute__((aligned(16))) A { uint8_t a; } A;";
+    let header =
+        "#include <stdint.h>\ntypedef struct __attribute__((aligned(16))) A { uint8_t a; } A;";
     let err = generate(header).expect_err("over-aligned records cannot be mirrored");
     assert_eq!(
         err.to_string(),

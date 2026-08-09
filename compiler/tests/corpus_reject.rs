@@ -112,57 +112,21 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r103-async-cstruct-method.ts", RuleCode::S100, 9),
     ("r104-async-generic-class-method.ts", RuleCode::S100, 8),
     ("r105-floating-async-method-call.ts", RuleCode::S013, 16),
-    (
-        "r106-capturing-lambda-worker-entry.ts",
-        RuleCode::S100,
-        15,
-    ),
+    ("r106-capturing-lambda-worker-entry.ts", RuleCode::S100, 15),
     ("r107-async-worker-entry.ts", RuleCode::S100, 20),
-    (
-        "r108-string-field-worker-message.ts",
-        RuleCode::S100,
-        8,
-    ),
+    ("r108-string-field-worker-message.ts", RuleCode::S100, 8),
     ("r109-worker-module-global.ts", RuleCode::S100, 18),
     ("r110-new-worker.ts", RuleCode::S100, 13),
     ("r111-worker-in-map-value.ts", RuleCode::S100, 19),
-    (
-        "r112-switch-alias-missing-member.ts",
-        RuleCode::S100,
-        12,
-    ),
+    ("r112-switch-alias-missing-member.ts", RuleCode::S100, 12),
     ("r113-switch-alias-non-member.ts", RuleCode::S100, 16),
-    (
-        "r114-switch-alias-duplicate-member.ts",
-        RuleCode::S100,
-        19,
-    ),
+    ("r114-switch-alias-duplicate-member.ts", RuleCode::S100, 19),
     ("r115-unreachable-as-value.ts", RuleCode::S100, 9),
-    (
-        "r116-object-literal-nullable-class.ts",
-        RuleCode::S005,
-        11,
-    ),
-    (
-        "r117-explicit-undefined-member.ts",
-        RuleCode::S012,
-        16,
-    ),
-    (
-        "r118-unnarrowed-absence-read.ts",
-        RuleCode::S100,
-        17,
-    ),
-    (
-        "r119-conditional-without-context.ts",
-        RuleCode::S100,
-        18,
-    ),
-    (
-        "r120-narrowing-escapes-conditional.ts",
-        RuleCode::S005,
-        22,
-    ),
+    ("r116-object-literal-nullable-class.ts", RuleCode::S005, 11),
+    ("r117-explicit-undefined-member.ts", RuleCode::S012, 16),
+    ("r118-unnarrowed-absence-read.ts", RuleCode::S100, 17),
+    ("r119-conditional-without-context.ts", RuleCode::S100, 18),
+    ("r120-narrowing-escapes-conditional.ts", RuleCode::S005, 22),
     ("r121-wire-enum-fractional.ts", RuleCode::S100, 8),
     ("r122-wire-enum-duplicate.ts", RuleCode::S100, 9),
     ("r123-wire-enum-out-of-range.ts", RuleCode::S100, 8),
@@ -171,31 +135,15 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         10,
     ),
-    (
-        "r66-coroutine-step-layout-too-large.ts",
-        RuleCode::S100,
-        12,
-    ),
-    (
-        "r67-frame-local-boundary-too-large.ts",
-        RuleCode::S100,
-        8,
-    ),
-    (
-        "r68-cstruct-stack-frame-too-large.ts",
-        RuleCode::S100,
-        13,
-    ),
+    ("r66-coroutine-step-layout-too-large.ts", RuleCode::S100, 12),
+    ("r67-frame-local-boundary-too-large.ts", RuleCode::S100, 8),
+    ("r68-cstruct-stack-frame-too-large.ts", RuleCode::S100, 13),
     (
         "r69-closure-environment-layout-too-large.ts",
         RuleCode::S100,
         13,
     ),
-    (
-        "r70-generator-frame-layout-too-large.ts",
-        RuleCode::S100,
-        9,
-    ),
+    ("r70-generator-frame-layout-too-large.ts", RuleCode::S100, 9),
     (
         "r71-accumulated-frame-locals-too-large.ts",
         RuleCode::S100,
@@ -234,8 +182,8 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
     let dir = corpus_dir().join("reject");
     for (file, code, line) in expected_entries() {
         let path = dir.join(file);
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        let source =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
         let result = check_program(&[SourceFile::new(file, source)]);
         let diags = match result {
             Err(diags) => diags,
@@ -364,8 +312,8 @@ fn aggregate_layout_rejections_pin_the_exact_construct_and_limit() {
         ("r65-cstruct-field-offset-layout-too-large.ts", 10, 3),
         ("r66-coroutine-step-layout-too-large.ts", 12, 23),
     ] {
-        let source = fs::read_to_string(dir.join(file))
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let source =
+            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let diagnostics = check_program(&[SourceFile::new(file, source)])
             .expect_err("oversized aggregate must be rejected");
         assert_eq!(diagnostics[0].code, RuleCode::S100, "{file}");
@@ -417,8 +365,8 @@ fn frame_and_synthesized_aggregate_rejections_are_checker_diagnostics() {
             "2147483632 bytes",
         ),
     ] {
-        let source = fs::read_to_string(dir.join(file))
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let source =
+            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let diagnostics = check_program(&[SourceFile::new(file, source)])
             .expect_err("oversized frame/environment must be rejected by the checker");
         assert_eq!(diagnostics[0].code, RuleCode::S100, "{file}");
@@ -461,8 +409,8 @@ export function main(): void {}
 fn q27_array_variadic_rejections_name_the_missing_prerequisite() {
     let dir = corpus_dir().join("reject");
     for file in ["r32-array-splice.ts", "r51-array-unshift-variadic.ts"] {
-        let source = fs::read_to_string(dir.join(file))
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let source =
+            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let diagnostics = check_program(&[SourceFile::new(file, source)])
             .expect_err("variadic Array form must be rejected");
         let message = &diagnostics[0].message;
@@ -480,8 +428,8 @@ fn q27_map_set_rejections_name_the_missing_language_shapes() {
         ("r52-object-groupby.ts", "null-prototype object"),
         ("r53-set-algebra-nonset.ts", "no set-like protocol"),
     ] {
-        let source = fs::read_to_string(dir.join(file))
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let source =
+            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let diagnostics = check_program(&[SourceFile::new(file, source)])
             .expect_err("Q27 Map/Set form must be rejected");
         assert!(
@@ -537,10 +485,10 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
         ),
         ("r78-call-spread-variadic.ts", &["variadic parameters"][..]),
     ] {
-        let source = fs::read_to_string(dir.join(file))
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
-        let diagnostics = check_program(&[SourceFile::new(file, source)])
-            .expect_err("Q30 rejection must fail");
+        let source =
+            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics =
+            check_program(&[SourceFile::new(file, source)]).expect_err("Q30 rejection must fail");
         let message = &diagnostics[0].message;
         for needle in required {
             assert!(

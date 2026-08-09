@@ -148,18 +148,17 @@ impl Checker<'_> {
         }
 
         let tracked = self.json_type_can_cycle(&value.ty);
-        let wrapper =
-            match self.synthesize_json_serializer(&value.ty, tracked, pos.clone()) {
-                Ok(wrapper) => wrapper,
-                Err(detail) => {
-                    self.error(
-                        RuleCode::S014,
-                        format!("cannot generate `JSON.stringify` helper: {detail}"),
-                        member_pos,
-                    );
-                    return self.err_expr(pos);
-                }
-            };
+        let wrapper = match self.synthesize_json_serializer(&value.ty, tracked, pos.clone()) {
+            Ok(wrapper) => wrapper,
+            Err(detail) => {
+                self.error(
+                    RuleCode::S014,
+                    format!("cannot generate `JSON.stringify` helper: {detail}"),
+                    member_pos,
+                );
+                return self.err_expr(pos);
+            }
+        };
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(wrapper),
@@ -399,9 +398,9 @@ impl Checker<'_> {
             done: &mut HashSet<ClassId>,
         ) -> bool {
             match ty {
-                Type::Array(element)
-                | Type::FixedArray(element, _)
-                | Type::Nullable(element) => walk(checker, element, active, done),
+                Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
+                    walk(checker, element, active, done)
+                }
                 Type::Class(id) => {
                     if let Some(start) = active.iter().position(|candidate| candidate == id) {
                         return active[start..]
@@ -521,9 +520,9 @@ impl Checker<'_> {
         }
         out.push(ty.clone());
         match ty {
-            Type::Array(element)
-            | Type::FixedArray(element, _)
-            | Type::Nullable(element) => self.collect_json_types(element, out),
+            Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
+                self.collect_json_types(element, out)
+            }
             Type::Class(id) => {
                 for field in &self.classes[id.0].fields {
                     self.collect_json_types(&field.ty, out);
@@ -608,12 +607,7 @@ impl Checker<'_> {
             Type::Class(id) => {
                 let object = self.json_object_body(*id, types, names, pos)?;
                 if !self.classes[id.0].is_value && tracked {
-                    let visit = json_call(
-                        JsonFn::Visit,
-                        vec![builder(), value()],
-                        Type::Bool,
-                        pos,
-                    );
+                    let visit = json_call(JsonFn::Visit, vec![builder(), value()], Type::Bool, pos);
                     let mut then = object;
                     then.push(hir::Stmt::Expr(json_call(
                         JsonFn::Leave,
@@ -1076,12 +1070,7 @@ impl Checker<'_> {
             cond: json_binary(BinOp::Lt, index(), len(), Type::Bool, pos),
             body: vec![
                 json_return_false_unless(
-                    script_call(
-                        element_validator,
-                        vec![parser(), child],
-                        Type::Bool,
-                        pos,
-                    ),
+                    script_call(element_validator, vec![parser(), child], Type::Bool, pos),
                     pos,
                 ),
                 hir::Stmt::Expr(json_increment(index(), pos)),

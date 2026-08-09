@@ -25,9 +25,9 @@ use subscript_codegen::{
 // on windows-msvc; split out so the import is not unused there.
 #[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::emit_c;
-use subscript_compiler::SourceFile;
 #[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_compiler::check_program;
+use subscript_compiler::SourceFile;
 
 const ENGINE_MIRROR_NAME: &str = "engine.generated.d.ts";
 const INTEROP_MIRROR_NAME: &str = "interop.generated.d.ts";
@@ -198,10 +198,22 @@ fn source_files(
 fn engine_library() -> NativeLibrary {
     let directory = examples_root().join("engine");
     let symbols = vec![
-        ("engineWorldCreate".to_string(), engineWorldCreate as *const u8),
-        ("engineWorldRetain".to_string(), engineWorldRetain as *const u8),
-        ("engineWorldRelease".to_string(), engineWorldRelease as *const u8),
-        ("engineWorldSetName".to_string(), engineWorldSetName as *const u8),
+        (
+            "engineWorldCreate".to_string(),
+            engineWorldCreate as *const u8,
+        ),
+        (
+            "engineWorldRetain".to_string(),
+            engineWorldRetain as *const u8,
+        ),
+        (
+            "engineWorldRelease".to_string(),
+            engineWorldRelease as *const u8,
+        ),
+        (
+            "engineWorldSetName".to_string(),
+            engineWorldSetName as *const u8,
+        ),
         (
             "engineWorldSetTransform".to_string(),
             engineWorldSetTransform as *const u8,
@@ -228,13 +240,22 @@ fn engine_library() -> NativeLibrary {
             engineWorldLastEvent as *const u8,
         ),
         ("engineWorldStep".to_string(), engineWorldStep as *const u8),
-        ("engineFrameBegin".to_string(), engineFrameBegin as *const u8),
-        ("engineFrameWorld".to_string(), engineFrameWorld as *const u8),
+        (
+            "engineFrameBegin".to_string(),
+            engineFrameBegin as *const u8,
+        ),
+        (
+            "engineFrameWorld".to_string(),
+            engineFrameWorld as *const u8,
+        ),
         (
             "engineFrameFixedStep".to_string(),
             engineFrameFixedStep as *const u8,
         ),
-        ("engineFrameIndex".to_string(), engineFrameIndex as *const u8),
+        (
+            "engineFrameIndex".to_string(),
+            engineFrameIndex as *const u8,
+        ),
     ];
     // SAFETY: build.rs links these static-lifetime functions into the test
     // process, and every address has the signature declared by engine.h and

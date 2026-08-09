@@ -244,12 +244,7 @@ macro_rules! with_abi {
 /// `code` is a language function value's code pointer whose C signature
 /// is exactly `(ctx, env, A) -> R` after monomorphization; it never
 /// unwinds (trap-flag discipline).
-unsafe fn call1<A: Copy, R: Copy>(
-    code: *const u8,
-    ctx: *mut Context,
-    env: *const u8,
-    a: A,
-) -> R {
+unsafe fn call1<A: Copy, R: Copy>(code: *const u8, ctx: *mut Context, env: *const u8, a: A) -> R {
     // SAFETY: caller guarantees the signature; a fn pointer and a data
     // pointer have the same size on every supported (64-bit) target.
     let f: unsafe extern "C" fn(*mut Context, *const u8, A) -> R =
@@ -397,7 +392,13 @@ unsafe fn read_uint(p: *const u8, size: usize) -> u64 {
 /// [`abi_of`] accepts (the searches check it once, before the loop, as
 /// the callback operations do); string handles are live handles of
 /// `ctx` (or null).
-unsafe fn elem_eq(ctx: *mut Context, kind: ElemKind, size: usize, p: *const u8, x: *const u8) -> bool {
+unsafe fn elem_eq(
+    ctx: *mut Context,
+    kind: ElemKind,
+    size: usize,
+    p: *const u8,
+    x: *const u8,
+) -> bool {
     match kind {
         ElemKind::Int | ElemKind::SignedInt => {
             // SAFETY: caller contract.
@@ -886,12 +887,7 @@ pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) {
 ///
 /// `h` is a live array of `ctx` (or null); `x` is readable for the
 /// element size.
-pub unsafe fn unshift(
-    ctx: *mut Context,
-    h: *mut u8,
-    x: *const u8,
-    pos_id: u32,
-) -> i32 {
+pub unsafe fn unshift(ctx: *mut Context, h: *mut u8, x: *const u8, pos_id: u32) -> i32 {
     if h.is_null() || x.is_null() {
         return -1;
     }
@@ -923,13 +919,7 @@ pub unsafe fn unshift(
 /// # Safety
 ///
 /// `h` is a live array of `ctx` (or null).
-pub unsafe fn copy_within(
-    ctx: *mut Context,
-    h: *mut u8,
-    target: i32,
-    start: i32,
-    end: i32,
-) {
+pub unsafe fn copy_within(ctx: *mut Context, h: *mut u8, target: i32, start: i32, end: i32) {
     if h.is_null() {
         return;
     }
@@ -948,11 +938,7 @@ pub unsafe fn copy_within(
     // deliberately provides memmove semantics for overlapping ranges.
     let data = unsafe { (*ctx).array_data(h) }.cast_mut();
     unsafe {
-        std::ptr::copy(
-            data.add(from * esz),
-            data.add(to * esz),
-            count * esz,
-        );
+        std::ptr::copy(data.add(from * esz), data.add(to * esz), count * esz);
     }
 }
 
@@ -1067,18 +1053,14 @@ pub unsafe fn map(
                 // SAFETY: `i` in bounds; widths match by dispatch.
                 let v: T = unsafe { read_elem(ctx, h, i) };
                 // SAFETY: callback contract (caller).
-                let r: R =
-                    unsafe { call_value::<T, R>(code, ctx, env, v, i as i32, indexed) };
+                let r: R = unsafe { call_value::<T, R>(code, ctx, env, v, i as i32, indexed) };
                 // SAFETY: caller contract.
                 if unsafe { (*ctx).trapped() } {
                     break;
                 }
                 // SAFETY: `out` is a live `ret_size`-element array;
                 // `size_of::<R>() == ret_size` by dispatch.
-                if unsafe {
-                    (*ctx).array_push(out, (&r as *const R).cast::<u8>(), pos_id)
-                } < 0
-                {
+                if unsafe { (*ctx).array_push(out, (&r as *const R).cast::<u8>(), pos_id) } < 0 {
                     break;
                 }
             }
@@ -1131,18 +1113,14 @@ pub unsafe fn filter(
             let v: T = unsafe { read_elem(ctx, h, i) };
             // SAFETY: callback contract (caller). A language boolean
             // returns as its low byte on both tiers.
-            let keep: u8 =
-                unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
+            let keep: u8 = unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
             // SAFETY: caller contract.
             if unsafe { (*ctx).trapped() } {
                 break;
             }
             if keep != 0 {
                 // SAFETY: `v` is `esz` bytes by dispatch.
-                if unsafe {
-                    (*ctx).array_push(out, (&v as *const T).cast::<u8>(), pos_id)
-                } < 0
-                {
+                if unsafe { (*ctx).array_push(out, (&v as *const T).cast::<u8>(), pos_id) } < 0 {
                     break;
                 }
             }
@@ -1215,8 +1193,7 @@ unsafe fn reduce_direction(
                 // SAFETY: `i` in bounds; widths match by dispatch.
                 let v: T = unsafe { read_elem(ctx, h, i) };
                 // SAFETY: callback contract (caller).
-                let r: A =
-                    unsafe { call_reduce(code, ctx, env, acc, v, i as i32, indexed) };
+                let r: A = unsafe { call_reduce(code, ctx, env, acc, v, i as i32, indexed) };
                 // SAFETY: caller contract.
                 if unsafe { (*ctx).trapped() } {
                     break; // keep the last completed accumulator
@@ -1355,8 +1332,7 @@ unsafe fn search(
             // SAFETY: `i` in bounds; widths match by dispatch.
             let v: T = unsafe { read_elem(ctx, h, i) };
             // SAFETY: callback contract (caller).
-            let r: u8 =
-                unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
+            let r: u8 = unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
             // SAFETY: caller contract.
             if unsafe { (*ctx).trapped() } {
                 return trapped_result;
@@ -1378,7 +1354,14 @@ unsafe fn search(
 ///
 /// As [`for_each`], with callback shape `(ctx, env, T) -> boolean` or
 /// `(ctx, env, T, i32) -> boolean`.
-pub unsafe fn some(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u8, kind: ElemKind, indexed: bool) -> i32 {
+pub unsafe fn some(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) -> i32 {
     // SAFETY: forwarded contract.
     unsafe { search(ctx, h, code, env, kind, SearchMode::Some, indexed) }
 }
@@ -1389,7 +1372,14 @@ pub unsafe fn some(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u
 /// # Safety
 ///
 /// As [`some`].
-pub unsafe fn every(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u8, kind: ElemKind, indexed: bool) -> i32 {
+pub unsafe fn every(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) -> i32 {
     // SAFETY: forwarded contract.
     unsafe { search(ctx, h, code, env, kind, SearchMode::Every, indexed) }
 }
@@ -1422,10 +1412,19 @@ pub unsafe fn find_index(
 /// `data` is readable for `(i + 1) * size_of::<T>()` bytes.
 unsafe fn fixed_read<T>(data: *const u8, i: usize) -> T {
     // SAFETY: caller contract.
-    unsafe { data.add(i * std::mem::size_of::<T>()).cast::<T>().read_unaligned() }
+    unsafe {
+        data.add(i * std::mem::size_of::<T>())
+            .cast::<T>()
+            .read_unaligned()
+    }
 }
 
-unsafe fn fixed_cb_blocked(ctx: *mut Context, data: *const u8, len: usize, code: *const u8) -> bool {
+unsafe fn fixed_cb_blocked(
+    ctx: *mut Context,
+    data: *const u8,
+    len: usize,
+    code: *const u8,
+) -> bool {
     code.is_null() || (data.is_null() && len != 0) || unsafe { (*ctx).trapped() }
 }
 
@@ -1455,8 +1454,7 @@ pub unsafe fn fixed_for_each(
     with_abi!(abi, T, {
         for i in 0..len {
             let value: T = unsafe { fixed_read(data, i) };
-            let (): () =
-                unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+            let (): () = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
             if unsafe { (*ctx).trapped() } {
                 break;
             }
@@ -1486,10 +1484,9 @@ pub unsafe fn fixed_map(
     if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
         return std::ptr::null_mut();
     }
-    let (Some(ea), Some(ra)) = (
-        unsafe { abi_or_trap(ctx, elem_kind, elem_size) },
-        unsafe { abi_or_trap(ctx, ret_kind, ret_size) },
-    ) else {
+    let (Some(ea), Some(ra)) = (unsafe { abi_or_trap(ctx, elem_kind, elem_size) }, unsafe {
+        abi_or_trap(ctx, ret_kind, ret_size)
+    }) else {
         return std::ptr::null_mut();
     };
     let out = unsafe { &mut *ctx }.array_new(ret_size, pos_id);
@@ -1504,15 +1501,11 @@ pub unsafe fn fixed_map(
         with_abi!(ra, R, {
             for i in 0..len {
                 let value: T = unsafe { fixed_read(data, i) };
-                let result: R =
-                    unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+                let result: R = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
                 if unsafe { (*ctx).trapped() } {
                     break;
                 }
-                if unsafe {
-                    (*ctx).array_push(out, (&result as *const R).cast(), pos_id)
-                } < 0
-                {
+                if unsafe { (*ctx).array_push(out, (&result as *const R).cast(), pos_id) } < 0 {
                     break;
                 }
             }
@@ -1553,15 +1546,12 @@ pub unsafe fn fixed_filter(
     with_abi!(abi, T, {
         for i in 0..len {
             let value: T = unsafe { fixed_read(data, i) };
-            let keep: u8 =
-                unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+            let keep: u8 = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
             if unsafe { (*ctx).trapped() } {
                 break;
             }
             if keep != 0
-                && unsafe {
-                    (*ctx).array_push(out, (&value as *const T).cast(), pos_id)
-                } < 0
+                && unsafe { (*ctx).array_push(out, (&value as *const T).cast(), pos_id) } < 0
             {
                 break;
             }
@@ -1588,10 +1578,9 @@ unsafe fn fixed_reduce_direction(
     if acc_ptr.is_null() || unsafe { fixed_cb_blocked(ctx, data, len, code) } {
         return;
     }
-    let (Some(ea), Some(aa)) = (
-        unsafe { abi_or_trap(ctx, elem_kind, elem_size) },
-        unsafe { abi_or_trap(ctx, acc_kind, acc_size) },
-    ) else {
+    let (Some(ea), Some(aa)) = (unsafe { abi_or_trap(ctx, elem_kind, elem_size) }, unsafe {
+        abi_or_trap(ctx, acc_kind, acc_size)
+    }) else {
         return;
     };
     with_abi!(ea, T, {
@@ -1714,8 +1703,7 @@ unsafe fn fixed_search(
     with_abi!(abi, T, {
         for i in 0..len {
             let value: T = unsafe { fixed_read(data, i) };
-            let result: u8 =
-                unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
+            let result: u8 = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
             if unsafe { (*ctx).trapped() } {
                 return trapped_result;
             }
@@ -1977,7 +1965,9 @@ mod tests {
         unsafe {
             let n = ctx.array_len(h) as usize;
             let data = ctx.array_data(h);
-            (0..n).map(|i| data.add(i * 4).cast::<i32>().read_unaligned()).collect()
+            (0..n)
+                .map(|i| data.add(i * 4).cast::<i32>().read_unaligned())
+                .collect()
         }
     }
 
@@ -2008,25 +1998,20 @@ mod tests {
         acc + f64::from(v)
     }
 
-    unsafe extern "C" fn append_digit(_ctx: *mut Context, _env: *const u8, acc: i32, v: i32) -> i32 {
+    unsafe extern "C" fn append_digit(
+        _ctx: *mut Context,
+        _env: *const u8,
+        acc: i32,
+        v: i32,
+    ) -> i32 {
         acc * 10 + v
     }
 
-    unsafe extern "C" fn add_index(
-        _ctx: *mut Context,
-        _env: *const u8,
-        v: i32,
-        i: i32,
-    ) -> i32 {
+    unsafe extern "C" fn add_index(_ctx: *mut Context, _env: *const u8, v: i32, i: i32) -> i32 {
         v + i
     }
 
-    unsafe extern "C" fn odd_index(
-        _ctx: *mut Context,
-        _env: *const u8,
-        _v: i32,
-        i: i32,
-    ) -> u8 {
+    unsafe extern "C" fn odd_index(_ctx: *mut Context, _env: *const u8, _v: i32, i: i32) -> u8 {
         u8::from(i % 2 != 0)
     }
 
@@ -2040,12 +2025,7 @@ mod tests {
         acc * 10 + i
     }
 
-    unsafe extern "C" fn record_index(
-        _ctx: *mut Context,
-        env: *const u8,
-        _v: i32,
-        i: i32,
-    ) {
+    unsafe extern "C" fn record_index(_ctx: *mut Context, env: *const u8, _v: i32, i: i32) {
         // SAFETY: the test passes a pointer to an i32 accumulator.
         unsafe { *(env as *mut i32) = *(env as *mut i32) * 10 + i };
     }
@@ -2148,12 +2128,18 @@ mod tests {
             let nz = -0.0f64;
             assert_eq!(index_of(p, f, (&nz as *const f64).cast(), ElemKind::F64), 0);
             let nan = f64::NAN;
-            assert_eq!(index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64), -1);
+            assert_eq!(
+                index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64),
+                -1
+            );
             assert_eq!(
                 last_index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64),
                 -1
             );
-            assert_eq!(includes(p, f, (&nan as *const f64).cast(), ElemKind::F64), 1);
+            assert_eq!(
+                includes(p, f, (&nan as *const f64).cast(), ElemKind::F64),
+                1
+            );
 
             // Strings by content: a distinct allocation still matches.
             let s = arr_str(&mut c, &["alpha", "beta"]);
@@ -2560,27 +2546,13 @@ mod tests {
             let mut probes: i64 = 0;
             let env = (&mut probes as *mut i64).cast::<u8>();
             assert_eq!(
-                some(
-                    p,
-                    h,
-                    count_and_test as *const u8,
-                    env,
-                    ElemKind::Int,
-                    false,
-                ),
+                some(p, h, count_and_test as *const u8, env, ElemKind::Int, false,),
                 1
             );
             assert_eq!(probes, 3); // stopped at the first hit (v == 3)
             probes = 0;
             assert_eq!(
-                every(
-                    p,
-                    h,
-                    count_and_test as *const u8,
-                    env,
-                    ElemKind::Int,
-                    false,
-                ),
+                every(p, h, count_and_test as *const u8, env, ElemKind::Int, false,),
                 0
             );
             assert_eq!(probes, 1); // stopped at the first miss (v == 1)
@@ -2667,7 +2639,13 @@ mod tests {
 
             // sort: a comparator trap leaves the array exactly as it was.
             let s = arr_i32(&mut c, &[3, 1, 2]);
-            sort(p, s, cmp_trapping as *const u8, std::ptr::null(), ElemKind::Int);
+            sort(
+                p,
+                s,
+                cmp_trapping as *const u8,
+                std::ptr::null(),
+                ElemKind::Int,
+            );
             assert!(c.trapped());
             assert_eq!(i32_items(&c, s), vec![3, 1, 2]);
             c.clear_trap();

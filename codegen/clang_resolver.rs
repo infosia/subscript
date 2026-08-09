@@ -32,11 +32,10 @@ fn resolve_capable_clang_with(
     cc: Option<OsString>,
     path: Option<&OsStr>,
 ) -> Result<PathBuf, ResolveClangError> {
-    let probe_directory = TempDirectory::create("clang-probe").map_err(|error| {
-        ResolveClangError {
+    let probe_directory =
+        TempDirectory::create("clang-probe").map_err(|error| ResolveClangError {
             message: format!("create the clang `_Float16` capability probe: {error}"),
-        }
-    })?;
+        })?;
     let source = probe_directory.path().join("probe.c");
     fs::write(
         &source,
@@ -202,8 +201,8 @@ mod tests {
 
     #[test]
     fn capability_probe_picks_clang_15_and_rejects_incapable_explicit_cc() {
-        let directory = TempDirectory::create("clang-resolver-test")
-            .expect("create resolver test directory");
+        let directory =
+            TempDirectory::create("clang-resolver-test").expect("create resolver test directory");
         let driver_source = directory.path().join("fake-driver.rs");
         fs::write(
             &driver_source,
@@ -248,11 +247,8 @@ fn main() {
         fs::hard_link(&configured_cc, directory.path().join("clang-14"))
             .expect("create clang-14 fake driver");
 
-        let resolved = resolve_capable_clang_with(
-            None,
-            Some(directory.path().as_os_str()),
-        )
-        .expect("resolve the capable fake clang");
+        let resolved = resolve_capable_clang_with(None, Some(directory.path().as_os_str()))
+            .expect("resolve the capable fake clang");
         assert_eq!(resolved, directory.path().join("clang-15"));
 
         let error = resolve_capable_clang_with(

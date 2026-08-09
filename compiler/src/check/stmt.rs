@@ -43,9 +43,7 @@ pub(crate) fn narrow_paths(
                     }
                 }
                 let is_absent = |expr: &hir::Expr| match (&expr.kind, &expr.ty) {
-                    (ExprKind::Int(value), Type::StringAlias(id)) => {
-                        *value == alias_absence(*id)
-                    }
+                    (ExprKind::Int(value), Type::StringAlias(id)) => *value == alias_absence(*id),
                     _ => false,
                 };
                 let (absent_side, other) = if is_absent(left) {
@@ -117,9 +115,7 @@ fn stmt_returns(s: &hir::Stmt) -> bool {
                     && cases.iter().all(|c| c.test.is_some()));
             covers_discriminant && cases.iter().all(|c| always_returns(&c.body))
         }
-        hir::Stmt::While { cond, body, .. } => {
-            is_true_literal(cond) && !contains_break(body)
-        }
+        hir::Stmt::While { cond, body, .. } => is_true_literal(cond) && !contains_break(body),
         hir::Stmt::For { cond, body, .. } => {
             cond.as_ref().map_or(true, is_true_literal) && !contains_break(body)
         }
@@ -355,7 +351,11 @@ impl<'p> Checker<'p> {
                     self.error(RuleCode::S100, "labeled break is not decided", pos.clone());
                 }
                 if fx.loop_depth == 0 && fx.switch_depth == 0 {
-                    self.error(RuleCode::S100, "`break` outside a loop or switch", pos.clone());
+                    self.error(
+                        RuleCode::S100,
+                        "`break` outside a loop or switch",
+                        pos.clone(),
+                    );
                 }
                 out.push(hir::Stmt::Break(pos));
                 true
@@ -477,11 +477,7 @@ impl<'p> Checker<'p> {
                         Type::Error
                     }
                     Type::Void => {
-                        self.error(
-                            RuleCode::S100,
-                            "cannot bind a `void` value",
-                            pos.clone(),
-                        );
+                        self.error(RuleCode::S100, "cannot bind a `void` value", pos.clone());
                         Type::Error
                     }
                     t => t.clone(),
@@ -708,9 +704,7 @@ impl<'p> Checker<'p> {
         });
         let then_extra = cond
             .as_ref()
-            .map(|c| {
-                narrow_paths(c, &|id| self.string_aliases[id.0].absence_discriminant()).0
-            })
+            .map(|c| narrow_paths(c, &|id| self.string_aliases[id.0].absence_discriminant()).0)
             .unwrap_or_default();
 
         let mut base = fx.narrowed.clone();
@@ -736,12 +730,7 @@ impl<'p> Checker<'p> {
     /// are recognized here, before ordinary call checking, because
     /// `keys()` / `values()` intentionally have no value type outside
     /// this exact subject position.
-    fn check_for_of(
-        &mut self,
-        f: &ast::ForOfStmt,
-        fx: &mut FnCtx,
-        out: &mut Vec<hir::Stmt>,
-    ) {
+    fn check_for_of(&mut self, f: &ast::ForOfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(f.span);
         if f.is_await {
             self.error(
@@ -752,13 +741,10 @@ impl<'p> Checker<'p> {
             return;
         }
 
-        let Some((name, mutable, binding_pos, annotation)) =
-            self.for_of_binding(&f.left)
-        else {
+        let Some((name, mutable, binding_pos, annotation)) = self.for_of_binding(&f.left) else {
             return;
         };
-        let (subject, kind, elem_ty, generator) =
-            self.check_for_of_subject(&f.right, fx);
+        let (subject, kind, elem_ty, generator) = self.check_for_of_subject(&f.right, fx);
         if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
             return;
         }
@@ -986,21 +972,18 @@ impl<'p> Checker<'p> {
                                 (Type::Array(_), "keys") => {
                                     Some((hir::ForOfKind::ArrayKeys, Type::I32))
                                 }
-                                (Type::Array(elem), "values") => Some((
-                                    hir::ForOfKind::ArrayValues,
-                                    (**elem).clone(),
-                                )),
+                                (Type::Array(elem), "values") => {
+                                    Some((hir::ForOfKind::ArrayValues, (**elem).clone()))
+                                }
                                 (Type::Map(key, _), "keys") => {
                                     Some((hir::ForOfKind::MapKeys, (**key).clone()))
                                 }
-                                (Type::Map(_, value), "values") => Some((
-                                    hir::ForOfKind::MapValues,
-                                    (**value).clone(),
-                                )),
-                                (Type::Set(key), "keys" | "values") => Some((
-                                    hir::ForOfKind::SetValues,
-                                    (**key).clone(),
-                                )),
+                                (Type::Map(_, value), "values") => {
+                                    Some((hir::ForOfKind::MapValues, (**value).clone()))
+                                }
+                                (Type::Set(key), "keys" | "values") => {
+                                    Some((hir::ForOfKind::SetValues, (**key).clone()))
+                                }
                                 _ => None,
                             };
                             if let Some((kind, elem)) = selected {
@@ -1027,31 +1010,15 @@ impl<'p> Checker<'p> {
         let subject = self.check_expr(expression, None, fx);
         self.in_for_of_subject = saved_for_of_subject;
         let selected = match &subject.ty {
-            Type::Array(elem) => Some((
-                Some(hir::ForOfKind::ArrayValues),
-                (**elem).clone(),
-                false,
-            )),
+            Type::Array(elem) => Some((Some(hir::ForOfKind::ArrayValues), (**elem).clone(), false)),
             Type::FixedArray(elem, _) => Some((
                 Some(hir::ForOfKind::FixedArrayValues),
                 (**elem).clone(),
                 false,
             )),
-            Type::Map(key, _) => Some((
-                Some(hir::ForOfKind::MapKeys),
-                (**key).clone(),
-                false,
-            )),
-            Type::Set(key) => Some((
-                Some(hir::ForOfKind::SetValues),
-                (**key).clone(),
-                false,
-            )),
-            Type::Str => Some((
-                Some(hir::ForOfKind::StringCodePoints),
-                Type::Str,
-                false,
-            )),
+            Type::Map(key, _) => Some((Some(hir::ForOfKind::MapKeys), (**key).clone(), false)),
+            Type::Set(key) => Some((Some(hir::ForOfKind::SetValues), (**key).clone(), false)),
+            Type::Str => Some((Some(hir::ForOfKind::StringCodePoints), Type::Str, false)),
             Type::Generator(value) => Some((None, (**value).clone(), true)),
             Type::Error => return (subject, None, Type::Error, false),
             _ => None,
@@ -1124,8 +1091,7 @@ impl<'p> Checker<'p> {
                     match &**t {
                         ast::Expr::Lit(ast::Lit::Str(label)) => {
                             let label = label.value.to_string();
-                            if let Some(index) =
-                                members.iter().position(|member| member == &label)
+                            if let Some(index) = members.iter().position(|member| member == &label)
                             {
                                 self.require_assignable(
                                     &checked.ty.clone(),
@@ -1237,9 +1203,7 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond, &|_| {
-            ABSENT_STRING_ALIAS_DISCRIMINANT
-        });
+        let (when_true, when_false) = narrow_paths(&cond, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT);
         assert_eq!(when_true, vec!["p".to_string()]);
         assert!(when_false.is_empty());
 
@@ -1251,9 +1215,7 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond_eq, &|_| {
-            ABSENT_STRING_ALIAS_DISCRIMINANT
-        });
+        let (when_true, when_false) = narrow_paths(&cond_eq, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT);
         assert!(when_true.is_empty());
         assert_eq!(when_false, vec!["p".to_string()]);
     }

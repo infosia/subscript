@@ -749,10 +749,7 @@ mod tests {
         assert!(builders.f64(id, 1e21));
         assert!(builders.raw(id, b"|"));
         assert!(builders.f32(id, 0.1));
-        assert_eq!(
-            builders.finish(id).expect("output"),
-            b"0|1e+21|0.1"
-        );
+        assert_eq!(builders.finish(id).expect("output"), b"0|1e+21|0.1");
     }
 
     #[test]

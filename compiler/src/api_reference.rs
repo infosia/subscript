@@ -635,18 +635,11 @@ mod tests {
                 "{method}: malformed accepted row"
             );
         }
-        assert!(markdown.contains(
-            "| `sort(comparator: (left: T, right: T) => i32): T[]` |"
-        ));
-        assert!(markdown.contains(
-            "| `forEach(callback: (value: V, key: K) => void): void` |"
-        ));
-        assert!(markdown.contains(
-            "| `groupBy<K, T>(items: T[], callback: (value: T) => K): Map<K, T[]>` |"
-        ));
-        assert!(markdown.contains(
-            "| `forEach(callback: (key: K) => void): void` |"
-        ));
+        assert!(markdown.contains("| `sort(comparator: (left: T, right: T) => i32): T[]` |"));
+        assert!(markdown.contains("| `forEach(callback: (value: V, key: K) => void): void` |"));
+        assert!(markdown
+            .contains("| `groupBy<K, T>(items: T[], callback: (value: T) => K): Map<K, T[]>` |"));
+        assert!(markdown.contains("| `forEach(callback: (key: K) => void): void` |"));
     }
 
     #[test]

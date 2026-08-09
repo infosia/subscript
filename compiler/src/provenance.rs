@@ -52,9 +52,8 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             continue;
         };
         let line_number = index as u32 + 1;
-        let parsed = parse_line(body).map_err(|reason| {
-            malformed(name, line_number, trimmed, reason)
-        })?;
+        let parsed =
+            parse_line(body).map_err(|reason| malformed(name, line_number, trimmed, reason))?;
         match parsed {
             Parsed::Header(include) => {
                 if include.is_empty()
@@ -84,8 +83,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 element,
                 element_const,
             } => {
-                if [function.as_str(), parameter.as_str(), aggregate.as_str(), element.as_str()]
-                    .contains(&"")
+                if [
+                    function.as_str(),
+                    parameter.as_str(),
+                    aggregate.as_str(),
+                    element.as_str(),
+                ]
+                .contains(&"")
                 {
                     return Err(malformed(
                         name,
@@ -96,12 +100,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 let key = (function, parameter);
                 if mirror.parameters.contains_key(&key) {
-                    return Err(duplicate(
-                        name,
-                        line_number,
-                        trimmed,
-                        "parameter",
-                    ));
+                    return Err(duplicate(name, line_number, trimmed, "parameter"));
                 }
                 mirror.parameters.insert(
                     key,
@@ -131,12 +130,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 let key = (function, parameter);
                 if mirror.parameters.contains_key(&key) {
-                    return Err(duplicate(
-                        name,
-                        line_number,
-                        trimmed,
-                        "parameter",
-                    ));
+                    return Err(duplicate(name, line_number, trimmed, "parameter"));
                 }
                 mirror.parameters.insert(
                     key,
@@ -163,12 +157,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 let key = (function, parameter);
                 if mirror.parameters.contains_key(&key) {
-                    return Err(duplicate(
-                        name,
-                        line_number,
-                        trimmed,
-                        "parameter",
-                    ));
+                    return Err(duplicate(name, line_number, trimmed, "parameter"));
                 }
                 mirror.parameters.insert(
                     key,
@@ -192,12 +181,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     ));
                 }
                 if mirror.callbacks.contains_key(&typedef_name) {
-                    return Err(duplicate(
-                        name,
-                        line_number,
-                        trimmed,
-                        "callback typedef",
-                    ));
+                    return Err(duplicate(name, line_number, trimmed, "callback typedef"));
                 }
                 mirror.callbacks.insert(
                     typedef_name.clone(),
@@ -250,12 +234,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
     Ok(mirror)
 }
 
-fn malformed(
-    name: &str,
-    line: u32,
-    raw: &str,
-    reason: impl AsRef<str>,
-) -> Diagnostic {
+fn malformed(name: &str, line: u32, raw: &str, reason: impl AsRef<str>) -> Diagnostic {
     Diagnostic::new(
         RuleCode::S100,
         format!(
@@ -269,9 +248,7 @@ fn malformed(
 fn duplicate(name: &str, line: u32, raw: &str, kind: &str) -> Diagnostic {
     Diagnostic::new(
         RuleCode::S100,
-        format!(
-            "mirror `{name}` has duplicate provenance for one {kind}: `{raw}`"
-        ),
+        format!("mirror `{name}` has duplicate provenance for one {kind}: `{raw}`"),
         Pos::new(name, line, 1),
     )
 }

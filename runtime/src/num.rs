@@ -80,7 +80,11 @@ pub fn parse_int(value: &str, radix: u32) -> f64 {
         return f64::NAN;
     }
     let magnitude = integer.to_f64().unwrap_or(f64::INFINITY);
-    if negative { -magnitude } else { magnitude }
+    if negative {
+        -magnitude
+    } else {
+        magnitude
+    }
 }
 
 fn decimal_prefix_len(value: &str) -> usize {
@@ -196,8 +200,7 @@ fn finite_to_string_radix(mut value: f64, radix: u32) -> String {
             fraction -= f64::from(digit);
 
             if fraction + delta > 1.0
-                && (fraction > 0.5
-                    || ((fraction - 0.5).abs() < f64::EPSILON && digit & 1 != 0))
+                && (fraction > 0.5 || ((fraction - 0.5).abs() < f64::EPSILON && digit & 1 != 0))
             {
                 while let Some(previous) = fraction_digits.pop() {
                     if u32::from(previous) + 1 < radix {
@@ -305,10 +308,7 @@ fn finite_parts(value: f64) -> (BigUint, i32) {
     if raw_exp == 0 {
         (BigUint::from(fraction), -1074)
     } else {
-        (
-            BigUint::from((1_u64 << 52) | fraction),
-            raw_exp - 1023 - 52,
-        )
+        (BigUint::from((1_u64 << 52) | fraction), raw_exp - 1023 - 52)
     }
 }
 
@@ -518,10 +518,7 @@ mod tests {
             to_string_radix_f64(1234.5678, 10),
             crate::fmt::fmt_f64(1234.5678)
         );
-        assert_eq!(
-            to_string_radix_f32(0.1, 10),
-            crate::fmt::fmt_f32(0.1)
-        );
+        assert_eq!(to_string_radix_f32(0.1, 10), crate::fmt::fmt_f32(0.1));
         assert_eq!(to_string_radix_f64(f64::NAN, 16), "NaN");
         assert_eq!(to_string_radix_f64(f64::NEG_INFINITY, 2), "-Infinity");
     }

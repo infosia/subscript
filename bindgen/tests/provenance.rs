@@ -7,8 +7,8 @@ use subscript_bindgen::generate_for_header;
 
 #[test]
 fn header_record_uses_the_include_basename() {
-    let mirror =
-        generate_for_header("void engineRun(void);", "engine.h").expect("minimal foreign header maps");
+    let mirror = generate_for_header("void engineRun(void);", "engine.h")
+        .expect("minimal foreign header maps");
     assert!(
         mirror.contains("// @subscript-c-header include=\"engine.h\""),
         "{mirror}"
@@ -142,7 +142,10 @@ fn unreachable_unsupported_callback_is_omitted_without_rejecting_header() {
     ";
     let mirror = generate_for_header(header, "host.h")
         .expect("an unreachable host-only callback does not cross the boundary");
-    assert!(mirror.contains("declare function engineRun(): void;"), "{mirror}");
+    assert!(
+        mirror.contains("declare function engineRun(): void;"),
+        "{mirror}"
+    );
     assert!(!mirror.contains("type EngineAllocator"), "{mirror}");
     assert!(
         !mirror.contains("@subscript-c-callback typedef=\"EngineAllocator\""),
@@ -263,12 +266,11 @@ fn by_value_string_view_return_is_rejected() {
         } EngineText;
         EngineText engineWorldName(void);
     ";
-    let error =
-        generate_for_header(header, "return.h").expect_err("string-view return must fail");
+    let error = generate_for_header(header, "return.h").expect_err("string-view return must fail");
     assert!(
-        error
-            .to_string()
-            .contains("foreign function `engineWorldName` returns string-view aggregate `EngineText`"),
+        error.to_string().contains(
+            "foreign function `engineWorldName` returns string-view aggregate `EngineText`"
+        ),
         "{error}"
     );
     assert!(
@@ -290,8 +292,7 @@ fn by_value_descriptor_return_is_rejected() {
         } EngineIds;
         EngineIds engineWorldIds(void);
     ";
-    let error =
-        generate_for_header(header, "return.h").expect_err("descriptor return must fail");
+    let error = generate_for_header(header, "return.h").expect_err("descriptor return must fail");
     assert!(
         error
             .to_string()
@@ -553,7 +554,10 @@ fn downstream_texture_descriptor_shape_collapses_enum_pair_and_accepts_extent() 
         .expect("texture descriptor declare block");
     assert!(block.contains("label: string;"), "{mirror}");
     assert!(block.contains("extent: SGPUProbeExtent3D;"), "{mirror}");
-    assert!(block.contains("viewFormats: SGPUProbeFormat[];"), "{mirror}");
+    assert!(
+        block.contains("viewFormats: SGPUProbeFormat[];"),
+        "{mirror}"
+    );
     assert!(!block.contains("viewFormatsCount"), "{mirror}");
     assert!(!block.contains("SGPUProbeFormat | null"), "{mirror}");
 }
@@ -577,9 +581,12 @@ fn recursive_compute_pipeline_string_field_evidence_shape() {
     ";
     let mirror = generate_for_header(header, "pipeline.h")
         .expect("embedded string-field aggregate lowers recursively");
-    assert!(mirror.contains(
-        "declare class SGPUComputeState {\n  entryPoint: string;\n  constantCount: u32;"
-    ), "{mirror}");
+    assert!(
+        mirror.contains(
+            "declare class SGPUComputeState {\n  entryPoint: string;\n  constantCount: u32;"
+        ),
+        "{mirror}"
+    );
     assert!(mirror.contains(
         "declare class SGPUComputePipelineDescriptor {\n  label: string;\n  compute: SGPUComputeState;\n  marker: u32;"
     ), "{mirror}");
@@ -619,9 +626,10 @@ fn recursive_render_pipeline_collapsed_pair_evidence_shape() {
     assert!(mirror.contains(
         "declare class SGPUVertexBufferLayout {\n  arrayStride: u64;\n  attributes: SGPUVertexAttribute[];"
     ), "{mirror}");
-    assert!(mirror.contains(
-        "declare class SGPUVertexState {\n  buffers: SGPUVertexBufferLayout[];"
-    ), "{mirror}");
+    assert!(
+        mirror.contains("declare class SGPUVertexState {\n  buffers: SGPUVertexBufferLayout[];"),
+        "{mirror}"
+    );
     assert!(mirror.contains(
         "declare class SGPURenderPipelineDescriptor {\n  label: string;\n  vertex: SGPUVertexState;\n  marker: u32;"
     ), "{mirror}");
@@ -648,9 +656,10 @@ fn recursive_string_field_pair_element_evidence_shape() {
     ";
     let mirror = generate_for_header(header, "pipeline.h")
         .expect("string-field pair elements lower through a scratch array");
-    assert!(mirror.contains(
-        "declare class SGPUConstantEntry {\n  key: string;\n  value: f64;"
-    ), "{mirror}");
+    assert!(
+        mirror.contains("declare class SGPUConstantEntry {\n  key: string;\n  value: f64;"),
+        "{mirror}"
+    );
     assert!(mirror.contains(
         "declare class SGPUProgrammableStage {\n  constants: SGPUConstantEntry[];\n  marker: f64;"
     ), "{mirror}");
@@ -691,12 +700,16 @@ fn recursive_render_pipeline_struct_pointer_evidence_shape() {
     ";
     let mirror = generate_for_header(header, "pipeline.h")
         .expect("struct-pointer members lower recursively");
-    assert!(mirror.contains(
-        "declare class SGPUConstantEntry {\n  key: string;\n  value: f64;"
-    ), "{mirror}");
-    assert!(mirror.contains(
-        "declare class SGPUBlendState {\n  colorOperation: u32;\n  alphaOperation: u32;"
-    ), "{mirror}");
+    assert!(
+        mirror.contains("declare class SGPUConstantEntry {\n  key: string;\n  value: f64;"),
+        "{mirror}"
+    );
+    assert!(
+        mirror.contains(
+            "declare class SGPUBlendState {\n  colorOperation: u32;\n  alphaOperation: u32;"
+        ),
+        "{mirror}"
+    );
     assert!(mirror.contains(
         "declare class SGPUColorTargetState {\n  format: u32;\n  blend: SGPUBlendState | null;\n  writeMask: u32;"
     ), "{mirror}");
@@ -815,11 +828,15 @@ fn unsupported_recursive_member_names_the_innermost_field() {
     let error = generate_for_header(header, "pipeline.h")
         .expect_err("recursive callback member has no write lowering");
     assert!(
-        error.to_string().contains("`SGPUInner.callback` which is a callback"),
+        error
+            .to_string()
+            .contains("`SGPUInner.callback` which is a callback"),
         "{error}"
     );
     assert!(
-        error.to_string().contains("no write-direction scratch lowering"),
+        error
+            .to_string()
+            .contains("no write-direction scratch lowering"),
         "{error}"
     );
 }
@@ -837,11 +854,15 @@ fn unsupported_pointer_reachable_member_names_the_innermost_field() {
     let error = generate_for_header(header, "pipeline.h")
         .expect_err("pointer-reachable callback member has no write lowering");
     assert!(
-        error.to_string().contains("`SGPUInner.callback` which is a callback"),
+        error
+            .to_string()
+            .contains("`SGPUInner.callback` which is a callback"),
         "{error}"
     );
     assert!(
-        error.to_string().contains("no write-direction scratch lowering"),
+        error
+            .to_string()
+            .contains("no write-direction scratch lowering"),
         "{error}"
     );
 }
@@ -860,9 +881,14 @@ fn cyclic_pointer_reachable_lowering_fails_loud_at_innermost_member() {
     let error = generate_for_header(header, "pipeline.h")
         .expect_err("cyclic pointer scratch construction must fail loud");
     assert!(error.to_string().contains("`SGPUNode.next`"), "{error}");
-    assert!(error.to_string().contains("struct-pointer type cycle"), "{error}");
     assert!(
-        error.to_string().contains("no finite write-direction scratch lowering"),
+        error.to_string().contains("struct-pointer type cycle"),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("no finite write-direction scratch lowering"),
         "{error}"
     );
 }
@@ -1085,7 +1111,10 @@ fn mutable_registered_opaque_handle_parameter_pair_fails_loud_as_input_only() {
     let error = generate_for_header(header, "queue.h")
         .expect_err("mutable opaque-handle parameter pairs have no lowering");
     let message = error.to_string();
-    assert!(message.contains("unsupported element `SGPUCommandBuffer`"), "{error}");
+    assert!(
+        message.contains("unsupported element `SGPUCommandBuffer`"),
+        "{error}"
+    );
     assert!(message.contains("handles are input-only"), "{error}");
     assert!(message.contains("bare count"), "{error}");
 }
@@ -1131,7 +1160,10 @@ fn mutable_registered_opaque_handle_struct_pair_fails_loud_as_input_only() {
     let error = generate_for_header(header, "pipeline.h")
         .expect_err("mutable opaque-handle pairs have no lowering");
     let message = error.to_string();
-    assert!(message.contains("unsupported element `SGPUBindGroupLayout`"), "{error}");
+    assert!(
+        message.contains("unsupported element `SGPUBindGroupLayout`"),
+        "{error}"
+    );
     assert!(message.contains("handles are input-only"), "{error}");
 }
 
@@ -1147,8 +1179,8 @@ fn nullable_handle_field_prefix_spelling_is_reported_and_lowered() {
             _Nullable SGPUTextureView textureView;
         } SGPUBindGroupEntry;
     ";
-    let mirror = generate_for_header(header, "bind-group.h")
-        .expect("prefix `_Nullable` handle field maps");
+    let mirror =
+        generate_for_header(header, "bind-group.h").expect("prefix `_Nullable` handle field maps");
     assert!(mirror.contains("buffer: SGPUBuffer | null;"), "{mirror}");
     assert!(mirror.contains("sampler: SGPUSampler | null;"), "{mirror}");
     assert!(
@@ -1165,8 +1197,8 @@ fn nullable_handle_field_suffix_spelling_is_reported_and_lowered() {
             SGPUSampler _Nullable sampler;
         } SGPUBindGroupEntry;
     ";
-    let mirror = generate_for_header(header, "bind-group.h")
-        .expect("suffix `_Nullable` handle field maps");
+    let mirror =
+        generate_for_header(header, "bind-group.h").expect("suffix `_Nullable` handle field maps");
     assert!(mirror.contains("sampler: SGPUSampler | null;"), "{mirror}");
 }
 
@@ -1176,8 +1208,8 @@ fn unqualified_handle_field_stays_non_nullable() {
         typedef struct SGPUBufferImpl *SGPUBuffer;
         typedef struct SGPUEntry { SGPUBuffer buffer; } SGPUEntry;
     ";
-    let mirror = generate_for_header(header, "bind-group.h")
-        .expect("unqualified handle field maps");
+    let mirror =
+        generate_for_header(header, "bind-group.h").expect("unqualified handle field maps");
     assert!(mirror.contains("buffer: SGPUBuffer;"), "{mirror}");
     assert!(!mirror.contains("buffer: SGPUBuffer | null;"), "{mirror}");
 }
@@ -1215,8 +1247,8 @@ fn unqualified_handle_parameter_stays_non_nullable() {
         typedef struct SGPUBindGroupImpl *SGPUBindGroup;
         void sgpuSetBindGroup(SGPUBindGroup group);
     ";
-    let mirror = generate_for_header(header, "bind-group.h")
-        .expect("unqualified handle parameter maps");
+    let mirror =
+        generate_for_header(header, "bind-group.h").expect("unqualified handle parameter maps");
     assert!(mirror.contains("group: SGPUBindGroup"), "{mirror}");
     assert!(!mirror.contains("group: SGPUBindGroup | null"), "{mirror}");
 }
@@ -1231,7 +1263,10 @@ fn nullable_non_handle_field_fails_loud() {
     let error = generate_for_header(header, "nullable.h")
         .expect_err("nullable non-handle field must fail loud");
     let message = error.to_string();
-    assert!(message.contains("struct `SGPUEntry` field `userdata`"), "{error}");
+    assert!(
+        message.contains("struct `SGPUEntry` field `userdata`"),
+        "{error}"
+    );
     assert!(message.contains(
         "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
     ), "{error}");
@@ -1245,7 +1280,10 @@ fn nullable_non_handle_parameter_fails_loud() {
     let error = generate_for_header(header, "nullable.h")
         .expect_err("nullable non-handle parameter must fail loud");
     let message = error.to_string();
-    assert!(message.contains("foreign function `sgpuUse` parameter `userdata`"), "{error}");
+    assert!(
+        message.contains("foreign function `sgpuUse` parameter `userdata`"),
+        "{error}"
+    );
     assert!(message.contains(
         "only direct registered opaque-handle fields, boundary-struct pointer fields, and direct registered opaque-handle foreign-function parameters support `_Nullable`"
     ), "{error}");
@@ -1257,8 +1295,8 @@ fn nullable_return_fails_loud() {
         typedef struct SGPUBufferImpl *SGPUBuffer;
         SGPUBuffer _Nullable sgpuGet(void);
     ";
-    let error = generate_for_header(header, "nullable.h")
-        .expect_err("nullable return must fail loud");
+    let error =
+        generate_for_header(header, "nullable.h").expect_err("nullable return must fail loud");
     assert!(
         error
             .to_string()
@@ -1308,8 +1346,8 @@ fn nullable_struct_pointer_field_is_reported_and_lowered() {
 }
 
 #[test]
-fn every_mirror_accepted_registered_struct_pointer_member_has_a_recursive_lowering_regardless_of_nullability()
-{
+fn every_mirror_accepted_registered_struct_pointer_member_has_a_recursive_lowering_regardless_of_nullability(
+) {
     struct Position {
         name: &'static str,
         declaration: &'static str,
@@ -1365,9 +1403,7 @@ fn every_mirror_accepted_registered_struct_pointer_member_has_a_recursive_loweri
 
     for (spelling, nullability) in [("plain", ""), ("_Nullable", " _Nullable")] {
         for position in &positions {
-            let declaration = position
-                .declaration
-                .replace("{nullability}", nullability);
+            let declaration = position.declaration.replace("{nullability}", nullability);
             let header = format!(
                 "#include <stddef.h>\n#include <stdint.h>\n\
                  typedef struct EngineText {{ const char *data; size_t len; }} EngineText;\n\
@@ -1378,11 +1414,9 @@ fn every_mirror_accepted_registered_struct_pointer_member_has_a_recursive_loweri
             let accepted = result.is_ok();
             let detail = result.as_ref().err().map(ToString::to_string);
             assert_eq!(
-                accepted,
-                position.lowered,
+                accepted, position.lowered,
                 "{} / {spelling}: accepted={accepted} but lowered={}: {detail:?}",
-                position.name,
-                position.lowered,
+                position.name, position.lowered,
             );
             if let Ok(mirror) = result {
                 assert!(
@@ -1481,16 +1515,16 @@ fn every_mirror_accepted_string_field_position_has_a_recursive_lowering_at_any_d
         let accepted = result.is_ok();
         let detail = result.as_ref().err().map(ToString::to_string);
         assert_eq!(
-            accepted,
-            position.lowered,
+            accepted, position.lowered,
             "{}: accepted={} but lowered={}: {:?}",
-            position.name,
-            accepted,
-            position.lowered,
-            detail
+            position.name, accepted, position.lowered, detail
         );
         if let Ok(mirror) = result {
-            assert!(mirror.contains("label: string;"), "{}: {mirror}", position.name);
+            assert!(
+                mirror.contains("label: string;"),
+                "{}: {mirror}",
+                position.name
+            );
             assert!(
                 mirror.contains("record: EngineRecord | null"),
                 "{}: accepted position did not retain its pointer lowering: {mirror}",
@@ -1519,7 +1553,10 @@ fn every_mirror_accepted_string_field_position_has_a_recursive_lowering_at_any_d
     ";
     let aggregate_mirror = generate_for_header(aggregate_header, "audit.h")
         .expect("plain nested aggregate has pointer-scratch lowering");
-    assert!(aggregate_mirror.contains("label: string;"), "{aggregate_mirror}");
+    assert!(
+        aggregate_mirror.contains("label: string;"),
+        "{aggregate_mirror}"
+    );
     assert!(
         aggregate_mirror.contains("extent: EngineExtent;"),
         "{aggregate_mirror}"

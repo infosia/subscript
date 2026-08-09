@@ -25,13 +25,13 @@ mod corpus;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
-use subscript_codegen::{
-    run_aot_with_native_libraries, run_c_aot_with_native_libraries,
-    run_c_aot_with_native_libraries_and_host_hooks, run_jit_with_native_libraries,
-    NativeLibrary, RunError,
-};
 #[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::ReloadSession;
+use subscript_codegen::{
+    run_aot_with_native_libraries, run_c_aot_with_native_libraries,
+    run_c_aot_with_native_libraries_and_host_hooks, run_jit_with_native_libraries, NativeLibrary,
+    RunError,
+};
 
 const HOST_OWNED_STATE_ID: &str = "a128-host-owned-state";
 const HOST_OWNED_STATE_PRE_ENTRY: &str = "subHostOwnedStatePreEntry";
@@ -54,12 +54,7 @@ fn run_ship_corpus_entry(
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
     let (pre_entry, post_run) = host_hooks(id);
-    run_c_aot_with_native_libraries_and_host_hooks(
-        sources,
-        libraries,
-        pre_entry,
-        post_run,
-    )
+    run_c_aot_with_native_libraries_and_host_hooks(sources, libraries, pre_entry, post_run)
 }
 
 fn run_dev_corpus_entry(
@@ -302,11 +297,7 @@ fn string_field_pointer_read_direction_matches_both_tiers_and_golden() {
     let golden = corpus::golden_bytes(&accept, id);
     println!("dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
-    assert_eq!(
-        jit,
-        golden,
-        "{id}: C-filled view was not materialized"
-    );
+    assert_eq!(jit, golden, "{id}: C-filled view was not materialized");
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -391,7 +382,10 @@ fn struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden() {
     let golden = corpus::golden_bytes(&accept, id);
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
-    assert_eq!(jit, golden, "{id}: pointer-reachable C observations are wrong");
+    assert_eq!(
+        jit, golden,
+        "{id}: pointer-reachable C observations are wrong"
+    );
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -451,7 +445,10 @@ fn unmarked_struct_pointer_in_array_element_matches_both_tiers_and_golden() {
     let golden = corpus::golden_bytes(&accept, id);
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
-    assert_eq!(jit, golden, "{id}: unmarked-pointer C observations are wrong");
+    assert_eq!(
+        jit, golden,
+        "{id}: unmarked-pointer C observations are wrong"
+    );
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -491,7 +488,10 @@ fn wide_descriptor_breadth_and_depth_match_both_tiers_and_golden() {
     let golden = corpus::golden_bytes(&accept, id);
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
-    assert_eq!(jit, golden, "{id}: wide-descriptor C observations are wrong");
+    assert_eq!(
+        jit, golden,
+        "{id}: wide-descriptor C observations are wrong"
+    );
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -511,7 +511,10 @@ fn contextual_conditionals_match_both_tiers_and_golden() {
     let golden = corpus::golden_bytes(&accept, id);
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
-    assert_eq!(jit, golden, "{id}: contextual conditional observations are wrong");
+    assert_eq!(
+        jit, golden,
+        "{id}: contextual conditional observations are wrong"
+    );
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -571,7 +574,10 @@ fn handle_parameter_pair_matches_both_tiers_and_golden() {
     let golden = corpus::golden_bytes(&accept, id);
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
-    assert_eq!(jit, golden, "{id}: C handle identity observations are wrong");
+    assert_eq!(
+        jit, golden,
+        "{id}: C handle identity observations are wrong"
+    );
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -830,6 +836,10 @@ fn every_corpus_entry_with_a_golden_ends_in_a_newline() {
     for id in corpus::golden_ids(&accept) {
         let golden = corpus::golden_bytes(&accept, &id);
         assert!(!golden.is_empty(), "{id}: golden is empty");
-        assert_eq!(golden.last(), Some(&b'\n'), "{id}: golden has no final newline");
+        assert_eq!(
+            golden.last(),
+            Some(&b'\n'),
+            "{id}: golden has no final newline"
+        );
     }
 }

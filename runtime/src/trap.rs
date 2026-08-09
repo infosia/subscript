@@ -196,7 +196,10 @@ mod tests {
 
     #[test]
     fn display_is_the_rule_name() {
-        assert_eq!(TrapKind::IndexOutOfBounds.to_string(), "index-out-of-bounds");
+        assert_eq!(
+            TrapKind::IndexOutOfBounds.to_string(),
+            "index-out-of-bounds"
+        );
     }
 
     #[test]
@@ -216,10 +219,7 @@ mod tests {
     #[test]
     fn unreachable_reached_kind_has_stable_number_and_rule() {
         assert_eq!(TrapKind::UnreachableReached as u32, 23);
-        assert_eq!(
-            TrapKind::from_u32(23),
-            Some(TrapKind::UnreachableReached)
-        );
+        assert_eq!(TrapKind::from_u32(23), Some(TrapKind::UnreachableReached));
         assert_eq!(TrapKind::UnreachableReached.rule(), "unreachable-reached");
     }
 

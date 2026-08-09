@@ -64,8 +64,7 @@ fn missing_owner_mirror_reports_the_existing_unknown_type_error() {
     .expect_err("the external mirror alone must not synthesize its missing type");
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == RuleCode::S100
-            && diagnostic.message == "unknown type name `SubDevice`"
+        diagnostic.code == RuleCode::S100 && diagnostic.message == "unknown type name `SubDevice`"
     }));
 }
 
@@ -83,8 +82,7 @@ fn missing_cenum_alias_ambient_reports_the_existing_unknown_type_error() {
     .expect_err("a generated CEnum reference must not synthesize its ambient alias");
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == RuleCode::S100
-            && diagnostic.message == "unknown type name `EngineMode`"
+        diagnostic.code == RuleCode::S100 && diagnostic.message == "unknown type name `EngineMode`"
     }));
 }
 
@@ -208,10 +206,18 @@ fn using_program_type_checks_against_the_generated_mirror() {
 
     // The typed-slice facades map their `{const T*; size_t}` descriptor to
     // `T[]` for each primitive element type, and return i32.
-    let f32_slice = module.foreign_fns.iter().find(|f| f.name == "subSliceChecksumF32").unwrap();
+    let f32_slice = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subSliceChecksumF32")
+        .unwrap();
     assert_eq!(f32_slice.params[0].ty, Type::Array(Box::new(Type::F32)));
     assert_eq!(f32_slice.ret, Type::I32);
-    let i64_slice = module.foreign_fns.iter().find(|f| f.name == "subSliceChecksumI64").unwrap();
+    let i64_slice = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subSliceChecksumI64")
+        .unwrap();
     assert_eq!(i64_slice.params[0].ty, Type::Array(Box::new(Type::I64)));
     let f16_slice = module
         .foreign_fns
@@ -225,7 +231,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
         .find(|c| c.name == "SubNarrowPacket")
         .expect("production-shaped narrow packet");
     assert_eq!(
-        packet.fields.iter().map(|f| f.ty.clone()).collect::<Vec<_>>(),
+        packet
+            .fields
+            .iter()
+            .map(|f| f.ty.clone())
+            .collect::<Vec<_>>(),
         vec![
             Type::U8,
             Type::I16,
@@ -267,9 +277,17 @@ fn using_program_type_checks_against_the_generated_mirror() {
 
     // subDeviceSetLabel takes a mapped `string` (string-view boundary
     // form), and subDeviceSubmit a mapped `u32[]` (array-pair descriptor).
-    let set_label = module.foreign_fns.iter().find(|f| f.name == "subDeviceSetLabel").unwrap();
+    let set_label = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subDeviceSetLabel")
+        .unwrap();
     assert_eq!(set_label.params[1].ty, Type::Str);
-    let submit = module.foreign_fns.iter().find(|f| f.name == "subDeviceSubmit").unwrap();
+    let submit = module
+        .foreign_fns
+        .iter()
+        .find(|f| f.name == "subDeviceSubmit")
+        .unwrap();
     assert_eq!(submit.params[1].ty, Type::Array(Box::new(Type::U32)));
 
     let set_bind_group = module
@@ -327,16 +345,27 @@ fn using_program_type_checks_against_the_generated_mirror() {
     let mut foreign_calls = 0;
     for stmt in &main.body {
         if let hir::Stmt::Let { init, .. } = stmt {
-            if let hir::ExprKind::Call { callee: hir::Callee::Foreign(_), .. } = &init.kind {
+            if let hir::ExprKind::Call {
+                callee: hir::Callee::Foreign(_),
+                ..
+            } = &init.kind
+            {
                 foreign_calls += 1;
             }
         } else if let hir::Stmt::Expr(e) = stmt {
-            if let hir::ExprKind::Call { callee: hir::Callee::Foreign(_), .. } = &e.kind {
+            if let hir::ExprKind::Call {
+                callee: hir::Callee::Foreign(_),
+                ..
+            } = &e.kind
+            {
                 foreign_calls += 1;
             }
         }
     }
-    assert!(foreign_calls >= 4, "expected several foreign calls, got {foreign_calls}");
+    assert!(
+        foreign_calls >= 4,
+        "expected several foreign calls, got {foreign_calls}"
+    );
 }
 
 fn first_code(program: &str) -> RuleCode {
@@ -390,7 +419,8 @@ fn value_class_with_null_in_ordinary_code_is_rejected() {
 
 #[test]
 fn constructing_an_opaque_handle_is_rejected() {
-    let code = first_code("export function main(): void {\n  const d: SubDevice = new SubDevice();\n}\n");
+    let code =
+        first_code("export function main(): void {\n  const d: SubDevice = new SubDevice();\n}\n");
     assert_eq!(code, RuleCode::S100);
 }
 

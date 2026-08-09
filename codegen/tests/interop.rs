@@ -24,9 +24,8 @@
 mod native_fixture;
 
 use subscript_codegen::{
-    run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
-    run_c_aot_with_native_libraries, run_jit,
-    run_jit_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
+    run_jit, run_jit_with_freed_handle_diagnostics_and_native_libraries,
     run_jit_with_native_libraries, RunError,
 };
 use subscript_compiler::SourceFile;
@@ -214,7 +213,10 @@ fn chain_extension_payload_is_read_through_its_embedded_header() {
     let output = both_tiers(prog);
     assert_eq!(golden, b"222\n");
     assert_eq!(output, golden);
-    println!("a89-interop-chain-payload: {:?}", String::from_utf8_lossy(&output));
+    println!(
+        "a89-interop-chain-payload: {:?}",
+        String::from_utf8_lossy(&output)
+    );
 }
 
 /// P6.3 async model: a completion callback is REGISTERED (subDeviceOnComplete)
@@ -276,14 +278,8 @@ fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
         ]
     };
     let libraries = [native_fixture::library()];
-    let jit = run_jit_with_freed_handle_diagnostics_and_native_libraries(
-        &files(),
-        &libraries,
-    );
-    let ship = run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
-        &files(),
-        &libraries,
-    );
+    let jit = run_jit_with_freed_handle_diagnostics_and_native_libraries(&files(), &libraries);
+    let ship = run_c_aot_with_freed_handle_diagnostics_and_native_libraries(&files(), &libraries);
 
     let report = match (jit, ship) {
         (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {

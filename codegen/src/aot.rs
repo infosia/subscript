@@ -524,8 +524,7 @@ pub fn host_c_compiler() -> Result<HostCCompiler, RunError> {
 
     #[cfg(unix)]
     {
-        static RESOLVED: std::sync::OnceLock<Result<PathBuf, String>> =
-            std::sync::OnceLock::new();
+        static RESOLVED: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
         let program = RESOLVED
             .get_or_init(|| {
                 clang_resolver::resolve_capable_clang().map_err(|error| error.to_string())
@@ -923,14 +922,7 @@ pub fn run_c_aot_with_native_libraries_and_host_hooks(
     pre_entry_hook: Option<&str>,
     post_run_hook: Option<&str>,
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(
-        files,
-        None,
-        false,
-        libraries,
-        pre_entry_hook,
-        post_run_hook,
-    )
+    run_c_aot_configured(files, None, false, libraries, pre_entry_hook, post_run_hook)
 }
 
 /// Runs the emitted-C ship tier with freed-handle diagnostics enabled and
@@ -1004,14 +996,10 @@ fn aot_entry_with_host_hooks(
 
     let mut declarations = String::new();
     if let Some(hook) = pre_entry_hook {
-        declarations.push_str(&format!(
-            "\nextern void {hook}(subscript_rt_context *ctx);"
-        ));
+        declarations.push_str(&format!("\nextern void {hook}(subscript_rt_context *ctx);"));
     }
     if let Some(hook) = post_run_hook.filter(|hook| Some(*hook) != pre_entry_hook) {
-        declarations.push_str(&format!(
-            "\nextern void {hook}(subscript_rt_context *ctx);"
-        ));
+        declarations.push_str(&format!("\nextern void {hook}(subscript_rt_context *ctx);"));
     }
 
     let mut entry = AOT_ENTRY_C.replacen(
@@ -1190,16 +1178,16 @@ mod tests {
             (Some(PRE), Some(POST)),
         ] {
             let entry = aot_entry_with_host_hooks(pre, post).expect("generate entry");
-            assert_eq!(entry.contains(&format!("extern void {PRE}(")), pre.is_some());
+            assert_eq!(
+                entry.contains(&format!("extern void {PRE}(")),
+                pre.is_some()
+            );
             assert_eq!(entry.contains(&format!("    {PRE}(ctx);")), pre.is_some());
             assert_eq!(
                 entry.contains(&format!("extern void {POST}(")),
                 post.is_some()
             );
-            assert_eq!(
-                entry.contains(&format!("    {POST}(ctx);")),
-                post.is_some()
-            );
+            assert_eq!(entry.contains(&format!("    {POST}(ctx);")), post.is_some());
         }
 
         let entry = aot_entry_with_host_hooks(Some(PRE), Some(POST)).expect("generate entry");

@@ -83,8 +83,7 @@ fn load_entry(accept: &std::path::Path, id: &str) -> Result<Vec<SourceFile>, Str
         names.sort_by_key(|n| !n.contains("main"));
         let mut out = Vec::new();
         for n in names {
-            let text =
-                fs::read_to_string(dir.join(&n)).map_err(|e| format!("read {n}: {e}"))?;
+            let text = fs::read_to_string(dir.join(&n)).map_err(|e| format!("read {n}: {e}"))?;
             out.push(SourceFile::new(n, text));
         }
         Ok(out)
