@@ -20,12 +20,16 @@ mod trap_corpus;
 mod native_fixture;
 
 use subscript_codegen::{
-    host_c_compiler, run_c_aot, run_c_aot_with_alloc_failure,
+    run_c_aot, run_c_aot_with_alloc_failure,
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
     run_jit, run_jit_with_alloc_failure,
     run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
-    run_jit_with_native_libraries, runtime_system_libraries, RunError, TrapReport,
+    run_jit_with_native_libraries, RunError, TrapReport,
 };
+// The MSVC branch uses `cc::windows_registry` and its own system library
+// list, so these symbols have no use.
+#[cfg(not(all(windows, target_env = "msvc")))]
+use subscript_codegen::{host_c_compiler, runtime_system_libraries};
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
 
