@@ -24,6 +24,13 @@ SWC parse (TS-subset front end, Rust)
   arrays, traps, coroutine state, Q14 numeric formatting
 ```
 
+- **Dev-tier hosts**: Windows, macOS, and `x86_64-unknown-linux-gnu`. The
+  Linux host runs the full differential gate green (§12.3a SysV dev-JIT
+  struct-by-value marshaling landed 2026-08-09;
+  `specs/tracking/linux-portability.md`). AAPCS64 (arm64) and Win64
+  non-regression after that shared refactor is re-verified on their own
+  hosts — a tracked gate before the phase closes. The ship tier stays
+  arm64-only (§11).
 - One HIR→CLIF lowering serves both tiers; dev/ship semantics coincide by
   construction. *(Superseded for the ship tier by Rev 8 / §11: the ship
   tier is HIR→C→`clang` (LLVM), a second lowering, after P4 measured
@@ -808,6 +815,20 @@ carried across; the exact per-toolchain flag set is the implementation's
 and is validated by execution, not asserted here. `CC`/`AR` overrides
 remain honored where the driver accepts them.
 
+**Unix clang selection (2026-08-09).** The synthetic interop fixture
+(`corpus/interop/interop.h`) is clang-only by construction: it spells
+`_Nullable` and `_Float16` to exercise the libclang binder. GCC rejects
+`_Nullable`; clang before 15 rejects `_Float16` on x86-64 (measured on
+Ubuntu 22.04: gcc 11, gcc 12, clang 14 each fail; clang 15 compiles the
+fixture). The Unix default driver is therefore wrong for this fixture on a
+GCC host. The fixture build scripts (`codegen/build.rs`,
+`codegen/tests/native-fixture/build.rs`) must select a clang that compiles
+x86 `_Float16`: resolve `$CC` first, then `clang`, then a `clang-NN` on
+`PATH` newest-first; the first driver that compiles `_Float16` wins. A host
+with no capable clang fails loud (§8.3), never a silent GCC fallback. This
+matches §11b's runtime clang resolution and the fixture's "gate compiler is
+clang" design. Evidence: `specs/tracking/linux-portability.md`.
+
 Consequence: the workspace compiles on `x86_64-pc-windows-msvc` — already a
 stated dev-tier host (§1). This is the *compilation* contract only; the
 C-invocation sites that run while tests execute are §11b, and the dev-JIT
@@ -856,6 +877,18 @@ stdout sets that stream to binary mode (`_setmode(_fileno(stdout),
 _O_BINARY)`, `_WIN32`-guarded) so the MSVCRT text mode does not translate
 `\n` to `\r\n` and corrupt the byte-compared output; a no-op on every other
 platform.
+
+**Linux runtime system libraries (2026-08-09).** A manual clang link of the
+runtime staticlib on Linux must add the platform native system libraries
+`rustc` supplies automatically, the same way the Windows path adds its
+import libraries. macOS hides them in `libSystem`, so the gap is latent
+there and appears first on Linux: without them the link fails with
+`undefined reference to exp/log/pow/sin/…` from the runtime's `f64` math
+(measured). The list is the **set** `rustc --print native-static-libs` reports for the
+target (`gcc_s`, `util`, `rt`, `pthread`, `m`, `dl`, `c` on
+`x86_64-unknown-linux-gnu`) — the whole set, never just `-lm`; link order is
+immaterial for these libraries. `runtime_system_libraries` returns this set
+on Linux, empty on macOS. Evidence: `specs/tracking/linux-portability.md`.
 
 The benchmark harness (`benchmarks/src/bin/perf-gate.rs`, with its committed
 `benchmarks/a22-baseline.c` and `benchmarks/aot-entry.c`) is a fourth clang site with
@@ -1053,12 +1086,59 @@ Implemented and verified:
   field expands to trampoline+binding = 16 bytes, so any struct carrying
   one is by-reference on Win64.)
 
-On any host whose ABI is not one of these — x86-64 SysV is the open case —
-lowering a foreign call that passes a boundary struct by value remains a
+Implemented 2026-08-09 and verified byte-exact on the x86-64-linux gate
+(interop 13/13, golden 27/27, dev-JIT ≡ ship-C-AOT ≡ golden;
+`specs/tracking/linux-portability.md`):
+
+- **SysV (`x86_64-unknown-*`, System V AMD64)**: the struct is split into
+  eightbytes and each eightbyte gets a class. An eightbyte whose bytes are
+  all float (`f32`/`f64`) is class **SSE** and passes in the next SSE
+  register as an `F64`/`F32` image; every other eightbyte is class
+  **INTEGER** and passes in the next general register as an `I64` image,
+  with sub-eightbyte fields packed at their C offsets. This is the AAPCS64
+  eightbyte-image rule (§47) plus the per-eightbyte INTEGER/SSE split that
+  AAPCS64 does not make. A struct of at most 16 bytes uses one or two
+  eightbytes. A larger struct, or one with an unaligned field, is class
+  **MEMORY**: an argument passes **on the stack by value** — a copy, not a
+  pointer — and a return passes through a hidden pointer. SysV and AAPCS64
+  diverge here: AAPCS64 passes a larger struct **by reference**, so the
+  by-reference `Indirect` path stays AAPCS64/Win64 only.
+
+On any host whose ABI is none of AAPCS64, Win64, or SysV, lowering a
+foreign call that passes or returns a boundary struct by value stays a
 **loud codegen error**, never a silent mis-marshal, since dev-JIT ≡ ship-C
-equivalence is otherwise unverifiable there. SysV dev marshaling is the
-remaining tracked follow-up (`specs/tracking/windows-portability.md`,
-`specs/tracking/p5-interop.md`).
+equivalence is otherwise unverifiable there.
+
+The corpus exercises the SysV **MEMORY argument** path directly — a 24-byte
+`SubCallbackInfo` (`{ fn-ptr, void*, void* }`, in `a25`–`a90`) and a
+`{ i64, i64, i64 }` triple (`a126`) are each passed by value — so that path
+is **implemented**, not staged: the dev JIT builds the struct in a caller
+slot and passes it by value on the stack (Cranelift `StructArgument`),
+never the by-reference `Indirect` path. What stays a loud error on SysV is
+a struct **return in SSE-class registers** (a float or HFA return in
+XMM0/XMM1): the dev JIT models no float return register on **any** ABI —
+the AAPCS64 and Win64 HFA-return cases are the same loud error — so this is
+a shared, accepted follow-up, not a Linux-specific gap. An INTEGER-class
+SysV return (RAX, then RDX) and a MEMORY return (hidden pointer, like the
+other ABIs) are implemented.
+
+Two SysV argument shapes stay a **loud error**, each a silent-mis-marshal
+risk the differential gate cannot see (no corpus entry exercises them):
+
+- **Argument register pressure.** psABI §3.2.3 step 5: when an aggregate's
+  eightbytes do not all fit in the remaining argument registers, the whole
+  aggregate reverts to the stack. The dev JIT pushes eightbytes as
+  independent scalars, so it cannot split-then-revert; when it detects that
+  the remaining GP/SSE registers cannot hold every eightbyte it raises a
+  loud error rather than mis-marshal. The stack-revert path is a tracked
+  follow-up. AAPCS64 has the same unmodeled revert and is the same
+  follow-up.
+- **An `f16` leaf in a register-class eightbyte.** The psABI classifies
+  `_Float16` as SSE, but `f16` is storage-only here (§16.2) and lowers to
+  `I16`, so the eightbyte would classify INTEGER. A register-class SysV
+  aggregate with an `f16` field is a loud error; a MEMORY-class one (a byte
+  copy) is unaffected. Full SSE classification of `f16` across both tiers
+  is a tracked follow-up.
 
 A length-carrying **string view** (`{ const char*; size_t; }`) and a
 **`(pointer, count)` array descriptor** (`{ const T*; size_t; }`) are each
@@ -1073,7 +1153,8 @@ two registers. Only genuinely scalar/pointer boundary args — a single
 handle, `object|null`, a lone pointer — are target-neutral. Each ABI is
 validated by the standing differential gate (dev-JIT ≡ ship-C-AOT ≡ golden)
 on a host of that ABI: the AAPCS64 path on arm64, the Win64 path on
-Windows-x64.
+Windows-x64, and the SysV path on x86-64 Linux
+(`specs/tracking/linux-portability.md`).
 
 ### 12.4 Headless end-to-end slice on both tiers
 

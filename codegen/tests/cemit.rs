@@ -20,12 +20,12 @@ mod trap_corpus;
 mod native_fixture;
 
 use subscript_codegen::{
-    run_c_aot, run_c_aot_with_alloc_failure,
+    host_c_compiler, run_c_aot, run_c_aot_with_alloc_failure,
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
     run_c_aot_with_native_libraries, run_jit, run_jit_with_alloc_failure,
     run_jit_with_freed_handle_diagnostics_and_native_libraries,
-    run_jit_with_memory_accounting, run_jit_with_native_libraries, RunError,
-    TrapReport,
+    run_jit_with_memory_accounting, run_jit_with_native_libraries,
+    runtime_system_libraries, RunError, TrapReport,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -1889,8 +1889,9 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     };
     #[cfg(not(all(windows, target_env = "msvc")))]
     let compile = {
-        let cc = std::env::var_os("CC").unwrap_or_else(|| "clang".into());
-        Command::new(&cc)
+        let compiler = host_c_compiler().expect("resolve the host C compiler");
+        compiler
+            .command()
             .arg("-std=c11")
             .arg("-O2")
             .arg("-fwrapv")
@@ -1898,6 +1899,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
             .arg(&src_path)
             .arg(&entry_path)
             .arg(&staticlib)
+            .args(runtime_system_libraries(compiler.style()))
             .arg("-o")
             .arg(&exe_path)
             .output()

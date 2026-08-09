@@ -332,18 +332,15 @@ pub(super) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u
 /// §12.3a). A by-value aggregate's C ABI differs by target, so only the
 /// implemented-and-verified ABIs are permitted; any other dev host must
 /// fail loudly rather than silently mis-marshal (dev-JIT ≠ ship-C).
-/// Supported: aarch64 (AAPCS64, any OS) and x86-64 on Windows (Win64).
-/// x86-64 on non-Windows (SysV) is **not** implemented and stays
-/// unsupported. Only genuinely scalar / single-pointer boundary arguments
-/// are target-neutral and are **not** gated by this; a `(ptr,len)` /
-/// string-view descriptor is a 16-byte by-value aggregate whose C ABI is
-/// target-specific (e.g. by reference on Win64) and is handled on the
-/// by-value struct path this gates.
+/// Supported: aarch64 (AAPCS64, any OS), x86-64 on Windows (Win64), and
+/// x86-64 on non-Windows (SysV). Only genuinely scalar / single-pointer
+/// boundary arguments are target-neutral and are **not** gated by this; a
+/// `(ptr,len)` / string-view descriptor is a 16-byte by-value aggregate
+/// whose C ABI is target-specific and is handled on this path.
 pub(crate) fn boundary_struct_by_value_supported(triple: &target_lexicon::Triple) -> bool {
-    use target_lexicon::{Architecture, OperatingSystem};
+    use target_lexicon::Architecture;
     matches!(triple.architecture, Architecture::Aarch64(_))
-        || (matches!(triple.architecture, Architecture::X86_64)
-            && matches!(triple.operating_system, OperatingSystem::Windows))
+        || matches!(triple.architecture, Architecture::X86_64)
 }
 
 impl<'a, M: Module> ModLower<'a, M> {
@@ -1379,24 +1376,26 @@ mod tests {
     use std::str::FromStr;
     use target_lexicon::Triple;
 
-    /// The dev-JIT boundary-struct-by-value marshaler implements AAPCS64
-    /// (aarch64, any OS) and Win64 (x86-64 on Windows) only (compiler.md
-    /// §12.3a): the classifier must accept those and reject x86-64 SysV
-    /// (unimplemented), so an unsupported target fails loudly at codegen
-    /// instead of silently mis-marshaling (dev-JIT ≠ ship-C).
+    /// The dev-JIT boundary-struct-by-value marshaler implements AAPCS64,
+    /// Win64, and x86-64 SysV (compiler.md §12.3a). Other architectures
+    /// fail loudly instead of silently mis-marshaling (dev-JIT ≠ ship-C).
     #[test]
-    fn boundary_struct_by_value_is_aapcs64_and_win64() {
-        for t in ["aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+    fn boundary_struct_by_value_supports_aapcs64_win64_and_sysv() {
+        for t in [
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-gnu",
+        ] {
             let triple = Triple::from_str(t).expect("triple");
             assert!(
                 boundary_struct_by_value_supported(&triple),
                 "{t} must be supported by the by-value struct path"
             );
         }
-        let sysv = Triple::from_str("x86_64-unknown-linux-gnu").expect("triple");
+        let unsupported = Triple::from_str("i686-unknown-linux-gnu").expect("triple");
         assert!(
-            !boundary_struct_by_value_supported(&sysv),
-            "x86_64-unknown-linux-gnu (SysV) must be unsupported by the by-value struct path"
+            !boundary_struct_by_value_supported(&unsupported),
+            "i686-unknown-linux-gnu must be unsupported by the by-value struct path"
         );
     }
 

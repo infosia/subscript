@@ -7,7 +7,11 @@
 
 use std::path::PathBuf;
 
-fn main() {
+#[cfg(unix)]
+#[path = "../../clang_resolver.rs"]
+mod clang_resolver;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let directory = manifest.join("../../../corpus/interop");
     let source = directory.join("interop.c");
@@ -30,10 +34,13 @@ fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     if target_os == "windows" && target_env == "msvc" {
-        return;
+        return Ok(());
     }
 
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    #[cfg(unix)]
+    build.compiler(clang_resolver::resolve_capable_clang()?);
+    build
         .file(&source)
         .file(&external_source)
         .file(&wire_source)
@@ -41,4 +48,5 @@ fn main() {
         .std("c11")
         .opt_level(2)
         .compile("subscript_interop_fixture");
+    Ok(())
 }

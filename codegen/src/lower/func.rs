@@ -73,12 +73,26 @@ enum TrapOperand {
 enum StructRet {
     /// A hidden result pointer was passed; the callee wrote the slot.
     Sret(Value),
-    /// The struct was returned in registers; each `(byte offset, CLIF
-    /// type)` chunk is one returned value to store into the slot.
+    /// The struct was returned in registers; each chunk is one returned
+    /// value to store into the slot.
     Reg {
         slot: Value,
-        chunks: Vec<(u32, types::Type)>,
+        chunks: Vec<RegisterChunk>,
     },
+}
+
+/// The target register bank for one aggregate register image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegisterClass {
+    Integer,
+    Sse,
+}
+
+/// One returned register image and its destination in the language slot.
+struct RegisterChunk {
+    offset: u32,
+    ty: types::Type,
+    class: RegisterClass,
 }
 
 /// One pointer-passed boundary struct whose C-layout scratch storage must be
@@ -229,16 +243,18 @@ fn is_pure_hfa_leaves(leaves: &[types::Type]) -> bool {
 enum AggregateArgAbi {
     Aapcs64,
     Win64,
+    SysV,
 }
 
-/// One AAPCS64 general-register image. `offset` is the image's byte offset
-/// in the C struct; `components` records which C-layout fields are packed
-/// into it. The emitted value is always one `i64` loaded from a zeroed
-/// caller slot after those components have been stored at their C offsets.
+/// One aggregate register image. `offset` is the image's byte offset in the
+/// C struct; `components` records which C-layout fields are packed into it.
+/// AAPCS64 images are always INTEGER. SysV classifies each image separately.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct EightbyteImage {
     offset: u32,
     components: Vec<(u32, types::Type)>,
+    class: RegisterClass,
+    ty: types::Type,
 }
 
 /// Register-image plan for one by-value boundary aggregate argument.
@@ -246,13 +262,39 @@ struct EightbyteImage {
 enum AggregateArgPlan {
     /// AAPCS64 HFA: fields remain component-wise float-register arguments.
     Hfa(Vec<(u32, types::Type)>),
-    /// AAPCS64 non-HFA composite of at most 16 bytes: one or two integer
-    /// register images, with every field packed at its C offset.
+    /// AAPCS64 non-HFA or SysV register-class composite of at most 16 bytes.
     Eightbytes(Vec<EightbyteImage>),
     /// Win64 1/2/4/8-byte struct: the complete packed integer image.
     PackedInteger(types::Type),
     /// Caller copy whose address is the ABI argument.
     Indirect,
+    /// SysV MEMORY class. The caller copies `size` bytes onto the call stack.
+    SysVMemory { size: u32 },
+}
+
+/// Register or hidden-pointer plan for one SysV boundary-struct return.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SysVStructReturnPlan {
+    Registers(Vec<EightbyteImage>),
+    Memory,
+}
+
+fn sysv_component_is_unaligned(offset: u32, ty: types::Type) -> bool {
+    let width = ty.bytes();
+    let align = width.min(8).max(1);
+    offset % align != 0 || offset % 8 + width > 8
+}
+
+fn sysv_sse_image_type(
+    image_offset: u32,
+    components: &[(u32, types::Type)],
+    total: u32,
+) -> types::Type {
+    if components == [(image_offset, types::F32)] && total <= image_offset + 4 {
+        types::F32
+    } else {
+        types::F64
+    }
 }
 
 /// Computes the target ABI's register-image plan from C-layout components.
@@ -282,13 +324,59 @@ fn plan_aggregate_arg(
                                 *component_offset >= offset && *component_offset < offset + 8
                             })
                             .collect();
-                        EightbyteImage { offset, components }
+                        EightbyteImage {
+                            offset,
+                            components,
+                            class: RegisterClass::Integer,
+                            ty: types::I64,
+                        }
                     })
                     .collect();
                 AggregateArgPlan::Eightbytes(images)
             } else {
                 AggregateArgPlan::Indirect
             }
+        }
+        AggregateArgAbi::SysV => {
+            if total > 16
+                || components
+                    .iter()
+                    .any(|(offset, ty)| sysv_component_is_unaligned(*offset, *ty))
+            {
+                return AggregateArgPlan::SysVMemory { size: total };
+            }
+            let count = total.div_ceil(8);
+            let images = (0..count)
+                .map(|index| {
+                    let offset = index * 8;
+                    let image_components = components
+                        .iter()
+                        .copied()
+                        .filter(|(component_offset, _)| {
+                            *component_offset >= offset && *component_offset < offset + 8
+                        })
+                        .collect::<Vec<_>>();
+                    let all_float = !image_components.is_empty()
+                        && image_components
+                            .iter()
+                            .all(|(_, ty)| matches!(*ty, types::F32 | types::F64));
+                    let (class, ty) = if all_float {
+                        (
+                            RegisterClass::Sse,
+                            sysv_sse_image_type(offset, &image_components, total),
+                        )
+                    } else {
+                        (RegisterClass::Integer, types::I64)
+                    };
+                    EightbyteImage {
+                        offset,
+                        components: image_components,
+                        class,
+                        ty,
+                    }
+                })
+                .collect();
+            AggregateArgPlan::Eightbytes(images)
         }
         AggregateArgAbi::Win64 => match total {
             1 => AggregateArgPlan::PackedInteger(types::I8),
@@ -297,6 +385,94 @@ fn plan_aggregate_arg(
             8 => AggregateArgPlan::PackedInteger(types::I64),
             _ => AggregateArgPlan::Indirect,
         },
+    }
+}
+
+fn sysv_register_images_contain_f16(
+    images: &[EightbyteImage],
+    f16_offsets: &[u32],
+) -> bool {
+    f16_offsets.iter().any(|offset| {
+        images
+            .iter()
+            .any(|image| *offset >= image.offset && *offset < image.offset + 8)
+    })
+}
+
+fn ensure_sysv_argument_register_capacity(
+    sig: &Signature,
+    images: &[EightbyteImage],
+    f16_offsets: &[u32],
+) -> Result<(), String> {
+    if sysv_register_images_contain_f16(images, f16_offsets) {
+        return Err(internal(
+            "SysV by-value struct with an f16 field in a register-class eightbyte is not \
+             supported; f16 is storage-only (compiler.md §16.2)",
+        ));
+    }
+
+    let mut used_integer = 0usize;
+    let mut used_sse = 0usize;
+    for param in &sig.params {
+        if matches!(param.purpose, ArgumentPurpose::StructArgument(_)) {
+            continue;
+        }
+        if param.value_type.is_float() {
+            used_sse += 1;
+        } else {
+            used_integer += 1;
+        }
+    }
+    let required_integer = images
+        .iter()
+        .filter(|image| image.class == RegisterClass::Integer)
+        .count();
+    let required_sse = images
+        .iter()
+        .filter(|image| image.class == RegisterClass::Sse)
+        .count();
+    if required_integer > 6usize.saturating_sub(used_integer)
+        || required_sse > 8usize.saturating_sub(used_sse)
+    {
+        return Err(internal(
+            "foreign call passing a SysV boundary struct by value under argument register \
+             pressure requires the SysV MEMORY-on-stack revert path, not yet implemented \
+             (compiler.md §12.3a — fail loud, never a silent mis-marshal)",
+        ));
+    }
+    Ok(())
+}
+
+fn plan_sysv_struct_return(
+    components: &[(u32, types::Type)],
+    size: u32,
+    f16_offsets: &[u32],
+) -> Result<SysVStructReturnPlan, String> {
+    match plan_aggregate_arg(AggregateArgAbi::SysV, components, size) {
+        AggregateArgPlan::Eightbytes(images) => {
+            if sysv_register_images_contain_f16(&images, f16_offsets) {
+                return Err(
+                    "foreign call returning a SysV by-value struct with an f16 field in a \
+                     register-class eightbyte is not supported; f16 is storage-only \
+                     (compiler.md §16.2)"
+                        .to_string(),
+                );
+            }
+            if images
+                .iter()
+                .any(|image| image.class == RegisterClass::Sse)
+            {
+                return Err(
+                    "foreign call returning a SysV SSE-class boundary struct by value is not \
+                     supported in the dev JIT: the float return register path is not modeled \
+                     (compiler.md §12.3a — fail loud, never a silent mis-marshal)"
+                        .to_string(),
+                );
+            }
+            Ok(SysVStructReturnPlan::Registers(images))
+        }
+        AggregateArgPlan::SysVMemory { .. } => Ok(SysVStructReturnPlan::Memory),
+        _ => Err("SysV struct-return planner produced a non-SysV plan".to_string()),
     }
 }
 
@@ -2703,7 +2879,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 // slot (§14.2): sret already wrote it; a register return is
                 // stored into the slot chunk-by-chunk.
                 let sr = struct_ret.ok_or_else(|| internal("struct-return plan missing"))?;
-                RV::A(self.finish_foreign_struct_return(sr, &res))
+                RV::A(self.finish_foreign_struct_return(sr, &res)?)
             }
             _ => RV::None,
         })
@@ -2738,21 +2914,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
     /// Plans the C-ABI return of a by-value boundary struct (§14.2),
     /// arch-gated by §12.3a exactly as by-value struct *arguments* are: the
-    /// by-value aggregate ABI is target-specific, so only AAPCS64 and Win64
-    /// are honored; any other host fails loud rather than silently
+    /// by-value aggregate ABI is target-specific, so AAPCS64, Win64, and
+    /// SysV are handled separately; any other host fails loud rather than
     /// mis-marshal (dev-JIT ≠ ship-C otherwise). A small struct is returned
     /// in registers (declared in `sig.returns`); a large one via `sret` (a
     /// hidden result pointer to a caller slot).
     ///
     /// A pure Homogeneous Floating-point Aggregate (all-`f32`/all-`f64`,
-    /// 1–4 members) is returned in SIMD registers on both ABIs and is
-    /// **rejected loud** here — the general-register paths below would read
-    /// the wrong registers (a silent mismatch). Non-HFA returns:
+    /// 1–4 members) is returned in SIMD registers and stays a loud error on
+    /// every ABI. SysV INTEGER eightbytes are supported, but an SSE-class
+    /// eightbyte also stays loud. Non-HFA returns:
     ///
     /// - **AAPCS64**: ≤ 16 bytes → general registers as `ceil(size/8)`
     ///   eightbyte integer chunks; larger → `sret`.
     /// - **Win64**: exactly 1/2/4/8 bytes → one integer register of that
     ///   width; every other size → `sret`.
+    /// - **SysV**: ≤ 16 bytes with INTEGER-only classes → one or two integer
+    ///   eightbytes; an SSE class fails loud; MEMORY class → `sret`.
     fn plan_foreign_struct_return(
         &mut self,
         ret: &Type,
@@ -2765,7 +2943,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if !crate::lower::boundary_struct_by_value_supported(&triple) {
             return Err(internal(format!(
                 "foreign call returning a boundary struct by value is only supported \
-                 on aarch64 (AAPCS64) and x86-64 Windows (Win64) in the dev JIT \
+                 on aarch64 (AAPCS64) and x86-64 (Win64 or SysV) in the dev JIT \
                  (compiler.md §12.3a); target {triple} is unsupported (at {pos})"
             )));
         }
@@ -2789,7 +2967,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Err(internal(format!(
                 "foreign call returning a homogeneous floating-point aggregate \
                  (all-{} struct) by value is not supported in the dev JIT: AAPCS64/\
-                 Win64 return it in SIMD registers, which the register-return path \
+                 Win64/SysV return it in SIMD registers, which the register-return path \
                  does not yet model (compiler.md §12.3a — fail loud, never a silent \
                  mis-marshal) (at {pos})",
                 if leaves.first() == Some(&types::F32) { "f32" } else { "f64" }
@@ -2808,7 +2986,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let slot = self.temp_slot(size, align);
                 return Ok(StructRet::Reg {
                     slot,
-                    chunks: vec![(0, w)],
+                    chunks: vec![RegisterChunk {
+                        offset: 0,
+                        ty: w,
+                        class: RegisterClass::Integer,
+                    }],
                 });
             }
             let slot = self.temp_slot(size, align);
@@ -2816,13 +2998,55 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .push(AbiParam::special(types::I64, ArgumentPurpose::StructReturn));
             return Ok(StructRet::Sret(slot));
         }
+        if self.is_sysv_amd64() {
+            let (components, f16_offsets) = self.return_leaf_layout(ret)?;
+            match plan_sysv_struct_return(&components, size, &f16_offsets)
+                .map_err(|message| internal(format!("{message} (at {pos})")))?
+            {
+                SysVStructReturnPlan::Registers(images) => {
+                    let chunks = images
+                        .into_iter()
+                        .map(|image| {
+                            sig.returns.push(AbiParam::new(image.ty));
+                            RegisterChunk {
+                                offset: image.offset,
+                                ty: image.ty,
+                                class: image.class,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let chunk_count = u32::try_from(chunks.len()).map_err(|_| {
+                        internal("struct-return chunk count does not fit in u32")
+                    })?;
+                    let slot_size = checked_layout_mul(
+                        chunk_count,
+                        8,
+                        "SysV struct-return register image",
+                    )?;
+                    let slot = self.temp_slot(slot_size, align.max(8));
+                    return Ok(StructRet::Reg { slot, chunks });
+                }
+                SysVStructReturnPlan::Memory => {
+                    let slot = self.temp_slot(size, align);
+                    sig.params.push(AbiParam::special(
+                        types::I64,
+                        ArgumentPurpose::StructReturn,
+                    ));
+                    return Ok(StructRet::Sret(slot));
+                }
+            }
+        }
         // AAPCS64.
         if size <= 16 {
             let mut chunks = Vec::new();
             let mut off = 0u32;
             while off < size {
                 sig.returns.push(AbiParam::new(types::I64));
-                chunks.push((off, types::I64));
+                chunks.push(RegisterChunk {
+                    offset: off,
+                    ty: types::I64,
+                    class: RegisterClass::Integer,
+                });
                 off += 8;
             }
             // The register image is up to `chunks.len() * 8` bytes; the slot
@@ -2880,6 +3104,86 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         Ok(out)
     }
 
+    /// Flattens a return type into `(C byte offset, CLIF type)` leaves for
+    /// SysV eightbyte classification. Padding is absent from the list and
+    /// therefore does not change a register class.
+    fn return_leaf_layout(
+        &self,
+        ty: &Type,
+    ) -> Result<(Vec<(u32, types::Type)>, Vec<u32>), String> {
+        let mut out = Vec::new();
+        let mut f16_offsets = Vec::new();
+        self.collect_leaf_layout(ty, 0, &mut out, &mut f16_offsets)?;
+        Ok((out, f16_offsets))
+    }
+
+    fn collect_leaf_layout(
+        &self,
+        ty: &Type,
+        base: u32,
+        out: &mut Vec<(u32, types::Type)>,
+        f16_offsets: &mut Vec<u32>,
+    ) -> Result<(), String> {
+        match ty {
+            Type::Class(id) if self.is_value_class_ty(ty) => {
+                let class = self
+                    .ml
+                    .hir
+                    .classes
+                    .get(id.0)
+                    .ok_or_else(|| internal("return leaf class id out of range"))?;
+                let layout = self.ml.layouts.class(id.0)?;
+                for (index, field) in class.fields.iter().enumerate() {
+                    let field_offset = *layout
+                        .field_offsets
+                        .get(index)
+                        .ok_or_else(|| internal("return leaf field offset out of range"))?;
+                    let offset = checked_layout_add(
+                        base,
+                        field_offset,
+                        "SysV return leaf offset",
+                    )?;
+                    self.collect_leaf_layout(&field.ty, offset, out, f16_offsets)?;
+                }
+            }
+            Type::FixedArray(elem, count) => {
+                let (element_size, element_align) = self.ml.layouts.size_align(elem)?;
+                let stride = round_up_layout(
+                    element_size,
+                    element_align,
+                    "SysV return array stride",
+                )?;
+                for index in 0..*count {
+                    let element_offset = checked_layout_mul(
+                        stride,
+                        index,
+                        "SysV return array offset",
+                    )?;
+                    let offset = checked_layout_add(
+                        base,
+                        element_offset,
+                        "SysV return array leaf offset",
+                    )?;
+                    self.collect_leaf_layout(elem, offset, out, f16_offsets)?;
+                }
+            }
+            other => match self.ml.layouts.repr(other)? {
+                Repr::Scalar(t) => {
+                    out.push((base, t));
+                    if *other == Type::F16 {
+                        f16_offsets.push(base);
+                    }
+                }
+                repr => {
+                    return Err(internal(format!(
+                        "SysV return leaf has unsupported representation {repr:?}"
+                    )))
+                }
+            },
+        }
+        Ok(())
+    }
+
     fn collect_leaf_clifs(&self, ty: &Type, out: &mut Vec<types::Type>) -> Result<(), String> {
         match ty {
             Type::Class(id) if self.is_value_class_ty(ty) => {
@@ -2911,14 +3215,32 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// Materializes a planned struct return into its language slot and
     /// returns the slot address. `sret` already wrote the slot; a register
     /// return stores each returned chunk at its offset.
-    fn finish_foreign_struct_return(&mut self, sr: StructRet, res: &[Value]) -> Value {
+    fn finish_foreign_struct_return(
+        &mut self,
+        sr: StructRet,
+        res: &[Value],
+    ) -> Result<Value, String> {
         match sr {
-            StructRet::Sret(slot) => slot,
+            StructRet::Sret(slot) => Ok(slot),
             StructRet::Reg { slot, chunks } => {
-                for ((off, _ty), v) in chunks.iter().zip(res) {
-                    self.b.ins().store(flags(), *v, slot, *off as i32);
+                if chunks.len() != res.len() {
+                    return Err(internal("foreign struct return register count mismatch"));
                 }
-                slot
+                for (chunk, value) in chunks.iter().zip(res) {
+                    let value_type = self.b.func.dfg.value_type(*value);
+                    let value_class = if value_type.is_float() {
+                        RegisterClass::Sse
+                    } else {
+                        RegisterClass::Integer
+                    };
+                    if value_type != chunk.ty || value_class != chunk.class {
+                        return Err(internal("foreign struct return register class mismatch"));
+                    }
+                    self.b
+                        .ins()
+                        .store(flags(), *value, slot, chunk.offset as i32);
+                }
+                Ok(slot)
             }
         }
     }
@@ -3323,7 +3645,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 // `{ const char *data; size_t len; }` (16 bytes, align 8),
                 // passed BY VALUE — so its ABI is target-specific exactly
                 // like any boundary struct (compiler.md §12.3a): AAPCS64
-                // packs it into two registers, Win64 passes it by reference.
+                // and SysV pack it into two registers; Win64 passes it by
+                // reference.
                 let h = self.expect_s(rv)?;
                 let data = self
                     .call_rt(self.ml.rt.str_data, &[self.ctx_v, h], false)?
@@ -3333,7 +3656,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal("str_len result"))?;
                 let len = self.b.ins().uextend(types::I64, len32);
                 let comps = [(0u32, types::I64, data), (8u32, types::I64, len)];
-                self.push_aggregate_abi(sig, argv, &comps, 16, 8);
+                self.push_aggregate_abi(sig, argv, &comps, 16, 8, &[])?;
                 Ok(())
             }
             Type::Array(element_ty) => {
@@ -3370,7 +3693,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                             (0u32, types::I64, data),
                             (8u32, types::I64, count),
                         ];
-                        self.push_aggregate_abi(sig, argv, &comps, 16, 8);
+                        self.push_aggregate_abi(sig, argv, &comps, 16, 8, &[])?;
                         Ok(())
                     }
                     Some(hir::ForeignTypeProvenance::ScalarPair { .. }) => {
@@ -3886,7 +4209,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// is passed by reference to a caller copy (AAPCS64 B.4). Win64: a
     /// 1/2/4/8-byte aggregate goes in one integer register as its raw bytes;
     /// any other size is passed by reference. Both match how the C compiler
-    /// passes it on the ship tier.
+    /// passes it on the ship tier. SysV classifies each aligned eightbyte as
+    /// INTEGER or SSE. A >16-byte or unaligned MEMORY-class aggregate uses
+    /// a caller slot that Cranelift copies onto the call stack by value.
     fn marshal_boundary_struct(
         &mut self,
         cid: usize,
@@ -3895,9 +4220,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         argv: &mut Vec<Value>,
     ) -> Result<(), String> {
         // A boundary struct passed BY VALUE has a target-specific C ABI;
-        // AAPCS64 (aarch64) and Win64 (x86-64/Windows) are implemented and
-        // verified (compiler.md §12.3a). On any other dev host this must
-        // fail loudly rather than silently mis-marshal (dev-JIT ≠ ship-C).
+        // AAPCS64, Win64, and x86-64 SysV are implemented and verified
+        // (compiler.md §12.3a). On any other dev host this must fail loudly
+        // rather than silently mis-marshal (dev-JIT ≠ ship-C).
         // Genuinely scalar/single-pointer boundary args are target-neutral
         // and reach here through other paths; a (ptr,len) descriptor is a
         // 16-byte by-value aggregate and reaches the ABI-specific path here.
@@ -3905,7 +4230,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         if !crate::lower::boundary_struct_by_value_supported(&triple) {
             return Err(internal(format!(
                 "foreign call passing a boundary struct by value is only supported \
-                 on aarch64 (AAPCS64) and x86-64 Windows (Win64) in the dev JIT \
+                 on aarch64 (AAPCS64) and x86-64 (Win64 or SysV) in the dev JIT \
                  (compiler.md §12.3a); target {triple} is unsupported"
             )));
         }
@@ -3919,6 +4244,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         // C-layout components: (byte offset in the C struct, CLIF type,
         // value). Offsets follow C struct rules over the C field sizes.
         let mut comps: Vec<(u32, types::Type, Value)> = Vec::new();
+        let mut f16_offsets = Vec::new();
         let mut coff = 0u32;
         let mut struct_align = 1u32;
         let mut i = 0;
@@ -4033,6 +4359,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     };
                     let v = self.expect_s(rv)?;
                     comps.push((coff, clif, v));
+                    if matches!(ty, Type::F16) {
+                        f16_offsets.push(coff);
+                    }
                     coff = checked_layout_add(coff, cs, "boundary C struct layout")?;
                     i += 1;
                 }
@@ -4043,7 +4372,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             struct_align.max(1),
             "final boundary C struct layout",
         )?;
-        self.push_aggregate_abi(sig, argv, &comps, total, struct_align.max(1));
+        self.push_aggregate_abi(
+            sig,
+            argv,
+            &comps,
+            total,
+            struct_align.max(1),
+            &f16_offsets,
+        )?;
         Ok(())
     }
 
@@ -4052,6 +4388,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let t = self.ml.module.isa().triple();
         matches!(t.architecture, target_lexicon::Architecture::X86_64)
             && matches!(t.operating_system, target_lexicon::OperatingSystem::Windows)
+    }
+
+    /// True when the JIT host targets the System V AMD64 ABI.
+    fn is_sysv_amd64(&self) -> bool {
+        let t = self.ml.module.isa().triple();
+        matches!(t.architecture, target_lexicon::Architecture::X86_64)
+            && !matches!(t.operating_system, target_lexicon::OperatingSystem::Windows)
     }
 
     /// Passes an aggregate of `total` bytes to a foreign call the way the
@@ -4064,9 +4407,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
     /// - **Win64**: exactly 1/2/4/8 bytes → one integer register holding
     ///   the struct's raw bytes as a same-width integer (no HFA, no
     ///   multi-register packing); every other size → by reference.
-    ///
-    /// SysV never reaches this helper: the target gate above rejects it
-    /// loudly before a signature can be built.
+    /// - **SysV**: aligned composites ≤ 16 bytes → one or two independently
+    ///   classified INTEGER/SSE eightbytes. A MEMORY-class argument uses a
+    ///   caller slot plus Cranelift's stack-by-value `StructArgument`.
     fn push_aggregate_abi(
         &mut self,
         sig: &mut Signature,
@@ -4074,9 +4417,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         comps: &[(u32, types::Type, Value)],
         total: u32,
         align: u32,
-    ) {
+        f16_offsets: &[u32],
+    ) -> Result<(), String> {
         let abi = if self.is_win64() {
             AggregateArgAbi::Win64
+        } else if self.is_sysv_amd64() {
+            AggregateArgAbi::SysV
         } else {
             AggregateArgAbi::Aapcs64
         };
@@ -4094,6 +4440,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
             }
             AggregateArgPlan::Eightbytes(images) => {
+                if abi == AggregateArgAbi::SysV {
+                    ensure_sysv_argument_register_capacity(sig, &images, f16_offsets)?;
+                }
                 let image_size = images.len() as u32 * 8;
                 let slot = self.temp_slot(image_size, align.max(8));
                 self.zero_bytes(slot, image_size, align.max(8));
@@ -4104,8 +4453,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let word = self
                         .b
                         .ins()
-                        .load(types::I64, flags(), slot, image.offset as i32);
-                    self.push_abi(sig, argv, types::I64, word);
+                        .load(image.ty, flags(), slot, image.offset as i32);
+                    self.push_abi(sig, argv, image.ty, word);
                 }
             }
             AggregateArgPlan::PackedInteger(width) => {
@@ -4127,7 +4476,25 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 self.push_abi(sig, argv, types::I64, slot);
             }
+            AggregateArgPlan::SysVMemory { size } => {
+                let stack_size = round_up_layout(
+                    size,
+                    8,
+                    "SysV MEMORY-class stack argument",
+                )?;
+                let slot = self.temp_slot(stack_size, align.max(8));
+                self.zero_bytes(slot, stack_size, align.max(8));
+                for (offset, _, value) in comps {
+                    self.b.ins().store(flags(), *value, slot, *offset as i32);
+                }
+                sig.params.push(AbiParam::special(
+                    types::I64,
+                    ArgumentPurpose::StructArgument(stack_size),
+                ));
+                argv.push(slot);
+            }
         }
+        Ok(())
     }
 
     /// Lowers a `Math.<fn>` intrinsic (stdlib.md §1) to its opaque
@@ -7891,12 +8258,16 @@ pub(crate) fn define_worker_entry<M: Module>(
 #[cfg(test)]
 mod hfa_tests {
     use super::{
-        ensure_explicit_frame_supported, is_pure_hfa_leaves, plan_aggregate_arg,
-        AggregateArgAbi, AggregateArgPlan, EightbyteImage,
+        ensure_explicit_frame_supported, ensure_sysv_argument_register_capacity,
+        is_pure_hfa_leaves, plan_aggregate_arg, plan_sysv_struct_return,
+        AggregateArgAbi, AggregateArgPlan, EightbyteImage, RegisterClass,
+        SysVStructReturnPlan,
     };
     use cranelift_codegen::ir::{
-        types, Function, StackSlotData, StackSlotKind,
+        types, AbiParam, ArgumentPurpose, Function, Signature, StackSlotData,
+        StackSlotKind,
     };
+    use cranelift_codegen::isa::CallConv;
     use subscript_compiler::types::MAX_FRAME_BYTES;
 
     #[test]
@@ -7959,6 +8330,22 @@ mod hfa_tests {
         EightbyteImage {
             offset,
             components: components.to_vec(),
+            class: RegisterClass::Integer,
+            ty: types::I64,
+        }
+    }
+
+    fn sysv_image(
+        offset: u32,
+        components: &[(u32, types::Type)],
+        class: RegisterClass,
+        ty: types::Type,
+    ) -> EightbyteImage {
+        EightbyteImage {
+            offset,
+            components: components.to_vec(),
+            class,
+            ty,
         }
     }
 
@@ -8116,6 +8503,181 @@ mod hfa_tests {
                 16
             ),
             Indirect
+        );
+    }
+
+    #[test]
+    fn sysv_argument_plan_classifies_eightbytes_and_marks_memory() {
+        use AggregateArgPlan::{Eightbytes, SysVMemory};
+
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::SysV,
+                &[(0, types::I32), (4, types::I32)],
+                8
+            ),
+            Eightbytes(vec![sysv_image(
+                0,
+                &[(0, types::I32), (4, types::I32)],
+                RegisterClass::Integer,
+                types::I64,
+            )]),
+            "two i32 fields share one INTEGER eightbyte"
+        );
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::SysV,
+                &[(0, types::F32), (4, types::F32)],
+                8
+            ),
+            Eightbytes(vec![sysv_image(
+                0,
+                &[(0, types::F32), (4, types::F32)],
+                RegisterClass::Sse,
+                types::F64,
+            )]),
+            "two f32 fields share one SSE eightbyte"
+        );
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::SysV,
+                &[(0, types::I64), (8, types::I64)],
+                16
+            ),
+            Eightbytes(vec![
+                sysv_image(
+                    0,
+                    &[(0, types::I64)],
+                    RegisterClass::Integer,
+                    types::I64,
+                ),
+                sysv_image(
+                    8,
+                    &[(8, types::I64)],
+                    RegisterClass::Integer,
+                    types::I64,
+                ),
+            ]),
+            "pointer and length use two INTEGER eightbytes"
+        );
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::SysV,
+                &[(0, types::I64), (8, types::F64)],
+                16
+            ),
+            Eightbytes(vec![
+                sysv_image(
+                    0,
+                    &[(0, types::I64)],
+                    RegisterClass::Integer,
+                    types::I64,
+                ),
+                sysv_image(
+                    8,
+                    &[(8, types::F64)],
+                    RegisterClass::Sse,
+                    types::F64,
+                ),
+            ]),
+            "mixed eightbytes keep independent INTEGER and SSE classes"
+        );
+        assert_eq!(
+            plan_aggregate_arg(AggregateArgAbi::SysV, &[(0, types::F32)], 4),
+            Eightbytes(vec![sysv_image(
+                0,
+                &[(0, types::F32)],
+                RegisterClass::Sse,
+                types::F32,
+            )]),
+            "one f32 uses an F32 SSE image"
+        );
+        assert_eq!(
+            plan_aggregate_arg(
+                AggregateArgAbi::SysV,
+                &[(0, types::I64), (8, types::I64), (16, types::I64)],
+                24
+            ),
+            SysVMemory { size: 24 },
+            "a struct larger than 16 bytes is MEMORY class"
+        );
+        assert_eq!(
+            plan_aggregate_arg(AggregateArgAbi::SysV, &[(4, types::I64)], 16),
+            SysVMemory { size: 16 },
+            "an unaligned field makes the struct MEMORY class"
+        );
+    }
+
+    #[test]
+    fn sysv_register_argument_fails_loud_when_gp_registers_are_exhausted() {
+        let mut sig = Signature::new(CallConv::SystemV);
+        sig.params.push(AbiParam::special(
+            types::I64,
+            ArgumentPurpose::StructReturn,
+        ));
+        for _ in 0..5 {
+            sig.params.push(AbiParam::new(types::I64));
+        }
+        let images = [sysv_image(
+            0,
+            &[(0, types::I64)],
+            RegisterClass::Integer,
+            types::I64,
+        )];
+
+        let error = ensure_sysv_argument_register_capacity(&sig, &images, &[])
+            .expect_err("the whole aggregate must revert after GP exhaustion");
+        assert!(error.contains("MEMORY-on-stack revert path"), "{error}");
+    }
+
+    #[test]
+    fn sysv_register_argument_with_f16_fails_loud() {
+        let sig = Signature::new(CallConv::SystemV);
+        let AggregateArgPlan::Eightbytes(images) = plan_aggregate_arg(
+            AggregateArgAbi::SysV,
+            &[(0, types::I16)],
+            2,
+        ) else {
+            panic!("a two-byte aligned aggregate should have a register plan");
+        };
+
+        let error = ensure_sysv_argument_register_capacity(&sig, &images, &[0])
+            .expect_err("f16 must not be silently classified as INTEGER");
+        assert!(error.contains("f16 is storage-only"), "{error}");
+    }
+
+    #[test]
+    fn sysv_struct_return_plans_integer_registers_and_memory() {
+        assert_eq!(
+            plan_sysv_struct_return(
+                &[(0, types::I64), (8, types::I64)],
+                16,
+                &[],
+            )
+            .expect("two INTEGER eightbytes are supported"),
+            SysVStructReturnPlan::Registers(vec![
+                sysv_image(
+                    0,
+                    &[(0, types::I64)],
+                    RegisterClass::Integer,
+                    types::I64,
+                ),
+                sysv_image(
+                    8,
+                    &[(8, types::I64)],
+                    RegisterClass::Integer,
+                    types::I64,
+                ),
+            ])
+        );
+        assert_eq!(
+            plan_sysv_struct_return(
+                &[(0, types::I64), (8, types::I64), (16, types::I64)],
+                24,
+                &[],
+            )
+            .expect("a large SysV return uses hidden sret"),
+            SysVStructReturnPlan::Memory
         );
     }
 }

@@ -46,6 +46,10 @@ use crate::lower::{aot_flags, internal, lower_module_with, LowerOptions};
 use crate::native::missing_symbol;
 use crate::NativeLibrary;
 
+#[cfg(unix)]
+#[path = "../clang_resolver.rs"]
+mod clang_resolver;
+
 /// Mach-O build version `10.0.0`, nibble-packed as `xxxx.yy.zz`. Apple's
 /// linker rejects an iOS object with no `LC_BUILD_VERSION`, and
 /// `cranelift-object 0.125.4` does not stamp one
@@ -408,7 +412,7 @@ pub fn runtime_staticlib_path() -> Result<PathBuf, RunError> {
 
 /// Finds `name` on `PATH`, returning its full path when an executable
 /// file exists. On Windows the `.exe` extension is tried as well.
-#[cfg(not(all(windows, target_env = "msvc")))]
+#[cfg(all(not(unix), not(all(windows, target_env = "msvc"))))]
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
@@ -479,16 +483,16 @@ impl HostCCompiler {
 }
 
 /// Resolves the platform C compiler used for ship-tier compilation and
-/// linking. `$CC` is honored verbatim on every target. The default is
-/// MSVC `cl` with its discovered toolchain environment on windows-msvc
-/// (compiler.md §11c), and clang on every other host (§11/§11b).
+/// linking. `$CC` is tried first on Unix. The default is MSVC `cl` with
+/// its discovered toolchain environment on windows-msvc (compiler.md
+/// §11c). Unix selects a clang that supports x86 `_Float16` (§11/§11b).
 ///
 /// # Errors
 ///
-/// [`RunError::Internal`] on windows-msvc when neither `$CC` is set nor
-/// the MSVC toolchain can be located; a missing toolchain is a failure,
-/// never a skip — the gate machine is the development machine (§8.3).
+/// [`RunError::Internal`] when the required host toolchain is unavailable.
+/// A missing toolchain is a failure, never a skip (§8.3).
 pub fn host_c_compiler() -> Result<HostCCompiler, RunError> {
+    #[cfg(not(unix))]
     if let Some(cc) = std::env::var_os("CC") {
         return Ok(HostCCompiler {
             program: cc,
@@ -518,10 +522,32 @@ pub fn host_c_compiler() -> Result<HostCCompiler, RunError> {
         })
     }
 
-    #[cfg(not(all(windows, target_env = "msvc")))]
+    #[cfg(unix)]
     {
+        static RESOLVED: std::sync::OnceLock<Result<PathBuf, String>> =
+            std::sync::OnceLock::new();
+        let program = RESOLVED
+            .get_or_init(|| {
+                clang_resolver::resolve_capable_clang().map_err(|error| error.to_string())
+            })
+            .clone()
+            .map_err(|error| RunError::Internal(internal(error)))?;
+        Ok(HostCCompiler {
+            program: program.into_os_string(),
+            env: Vec::new(),
+            style: CCompilerStyle::Unix,
+        })
+    }
+
+    #[cfg(all(not(unix), not(all(windows, target_env = "msvc"))))]
+    {
+        let program_files_clang = std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .map(|path| path.join("LLVM").join("bin").join("clang.exe"))
+            .filter(|path| path.is_file());
         Ok(HostCCompiler {
             program: find_on_path("clang")
+                .or(program_files_clang)
                 .map(PathBuf::into_os_string)
                 .unwrap_or_else(|| "clang".into()),
             env: Vec::new(),
@@ -635,25 +661,47 @@ fn object_path(directory: &Path, stem: &str) -> PathBuf {
 pub const WINDOWS_SYSTEM_LIBRARIES: &[&str] =
     &["kernel32", "ntdll", "userenv", "ws2_32", "dbghelp"];
 
-/// Returns the host system-library arguments for `style`.
-///
-/// The list is empty off Windows. On Windows it uses `name.lib` for
-/// Microsoft `cl` and `-lname` for a Unix-style driver. The runtime embeds
-/// Rust `std`, whose imports require the five libraries that `rustc` would
-/// otherwise pass automatically.
-#[must_use]
-pub fn runtime_system_libraries(style: CCompilerStyle) -> Vec<OsString> {
-    system_library_arguments(cfg!(windows), style)
+const LINUX_SYSTEM_LIBRARIES: &[&str] = &["m", "dl", "pthread", "rt", "util", "gcc_s", "c"];
+
+#[derive(Clone, Copy)]
+enum SystemLibraryPlatform {
+    Windows,
+    Linux,
+    MacOs,
+    Other,
 }
 
-fn system_library_arguments(windows: bool, style: CCompilerStyle) -> Vec<OsString> {
-    if !windows {
-        return Vec::new();
-    }
-    WINDOWS_SYSTEM_LIBRARIES
+/// Returns the host system-library arguments for `style`.
+///
+/// Windows uses its five Rust import libraries. Non-macOS Unix uses the
+/// native static libraries that `rustc` adds. macOS needs no explicit list.
+#[must_use]
+pub fn runtime_system_libraries(style: CCompilerStyle) -> Vec<OsString> {
+    let platform = if cfg!(target_os = "windows") {
+        SystemLibraryPlatform::Windows
+    } else if cfg!(target_os = "macos") {
+        SystemLibraryPlatform::MacOs
+    } else if cfg!(unix) {
+        SystemLibraryPlatform::Linux
+    } else {
+        SystemLibraryPlatform::Other
+    };
+    system_library_arguments(platform, style)
+}
+
+fn system_library_arguments(
+    platform: SystemLibraryPlatform,
+    style: CCompilerStyle,
+) -> Vec<OsString> {
+    let libraries = match platform {
+        SystemLibraryPlatform::Windows => WINDOWS_SYSTEM_LIBRARIES,
+        SystemLibraryPlatform::Linux => LINUX_SYSTEM_LIBRARIES,
+        SystemLibraryPlatform::MacOs | SystemLibraryPlatform::Other => return Vec::new(),
+    };
+    libraries
         .iter()
         .map(|name| {
-            if style.is_msvc() {
+            if matches!(platform, SystemLibraryPlatform::Windows) && style.is_msvc() {
                 OsString::from(format!("{name}.lib"))
             } else {
                 OsString::from(format!("-l{name}"))
@@ -1282,7 +1330,7 @@ mod tests {
             ["kernel32", "ntdll", "userenv", "ws2_32", "dbghelp"]
         );
         assert_eq!(
-            system_library_arguments(true, CCompilerStyle::Msvc),
+            system_library_arguments(SystemLibraryPlatform::Windows, CCompilerStyle::Msvc),
             [
                 "kernel32.lib",
                 "ntdll.lib",
@@ -1293,7 +1341,7 @@ mod tests {
             .map(OsString::from)
         );
         assert_eq!(
-            system_library_arguments(true, CCompilerStyle::Unix),
+            system_library_arguments(SystemLibraryPlatform::Windows, CCompilerStyle::Unix),
             [
                 "-lkernel32",
                 "-lntdll",
@@ -1304,8 +1352,35 @@ mod tests {
             .map(OsString::from)
         );
         assert_eq!(
+            system_library_arguments(SystemLibraryPlatform::Linux, CCompilerStyle::Unix),
+            [
+                "-lm",
+                "-ldl",
+                "-lpthread",
+                "-lrt",
+                "-lutil",
+                "-lgcc_s",
+                "-lc",
+            ]
+            .map(OsString::from)
+        );
+        assert!(
+            system_library_arguments(SystemLibraryPlatform::MacOs, CCompilerStyle::Unix).is_empty()
+        );
+        assert_eq!(
             runtime_system_libraries(CCompilerStyle::Unix),
-            system_library_arguments(cfg!(windows), CCompilerStyle::Unix)
+            system_library_arguments(
+                if cfg!(target_os = "windows") {
+                    SystemLibraryPlatform::Windows
+                } else if cfg!(target_os = "macos") {
+                    SystemLibraryPlatform::MacOs
+                } else if cfg!(unix) {
+                    SystemLibraryPlatform::Linux
+                } else {
+                    SystemLibraryPlatform::Other
+                },
+                CCompilerStyle::Unix
+            )
         );
 
         let compiler = host_c_compiler().map_err(|error| error.to_string())?;
