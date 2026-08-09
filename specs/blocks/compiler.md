@@ -28,9 +28,9 @@ SWC parse (TS-subset front end, Rust)
   Linux host runs the full differential gate green (§12.3a SysV dev-JIT
   struct-by-value marshaling landed 2026-08-09;
   `specs/tracking/linux-portability.md`). AAPCS64 (arm64) and Win64
-  non-regression after that shared refactor is re-verified on their own
-  hosts — a tracked gate before the phase closes. The ship tier stays
-  arm64-only (§11).
+  non-regression after that shared refactor: both re-verified on their
+  own hosts and discharged 2026-08-09 (tracking, "Remaining gate"). The
+  ship tier stays arm64-only (§11).
 - One HIR→CLIF lowering serves both tiers; dev/ship semantics coincide by
   construction. *(Superseded for the ship tier by Rev 8 / §11: the ship
   tier is HIR→C→`clang` (LLVM), a second lowering, after P4 measured

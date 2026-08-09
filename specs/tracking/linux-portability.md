@@ -1,6 +1,7 @@
 # Linux portability — evidence
 
-Status: in progress, 2026-08-09. Contract: `specs/blocks/compiler.md`
+Status: **complete 2026-08-09** (both host non-regressions
+discharged). Contract: `specs/blocks/compiler.md`
 §11a (crate C toolchain), §11b (runtime C toolchain), §12.3a (dev-tier
 boundary-struct marshaling), §1 (dev tier hosts).
 
@@ -152,8 +153,17 @@ Out of scope: `api_reference` (cause D, needs `node`);
   machine (macOS, Apple M2 class), at `cfb583d`, exit 0: every suite
   green, every golden byte-exact, `tsc` gate exit 0. The shared
   marshaler refactor does not change the AAPCS64 path's output.
-- **windows-msvc (Win64) non-regression** — open; re-run on
-  `x86_64-pc-windows-msvc`.
+- **windows-msvc (Win64) non-regression** — **discharged 2026-08-09**
+  (owner, recorded in commit `b3b670f`): on `x86_64-pc-windows-msvc`
+  with the pinned toolchain, `cargo build --workspace --all-targets`
+  0 warnings; `cargo test --workspace --no-fail-fast` 53 harnesses,
+  904 passed, 0 failed, 1 ignored; `cargo fmt --check` exit 0; no
+  golden byte changed. One unused-imports warning found there and
+  fixed in the same commit (cfg-gated imports in
+  `codegen/tests/cemit.rs`).
+
+Both non-regressions are discharged; no gate remains open in this
+phase.
 
 ## Follow-ups (tracked, beyond this phase)
 
