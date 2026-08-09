@@ -195,8 +195,10 @@ explicit.
   frame boundary; type or layout changes require a restart, and a
   coroutine suspended across a reload is invalidated with a clear trap.
 - **Shipping tier** — ahead-of-time compilation to C, built with the
-  platform C compiler ([LLVM](https://llvm.org)/clang) at `-std=c11 -O2`,
-  linked for arm64 devices (iOS, Android).
+  platform C compiler ([LLVM](https://llvm.org)/clang, or MSVC `cl` on
+  Windows) at `-std=c11 -O2`. Ship targets: arm64 devices (iOS,
+  Android) and the desktop hosts (macOS arm64, Windows x86-64, Linux
+  x86-64). The development tier runs on the same three desktops.
 
 The two tiers are held to **byte-identical output**: a standing
 differential gate runs every corpus program under both tiers and compares
@@ -265,7 +267,7 @@ TypeScript-subset source
   → semantic checker (sound narrowing; rule-specific diagnostics)
   → typed HIR
       ├─ dev tier:  HIR → Cranelift JIT  (hot reload)
-      └─ ship tier: HIR → C → clang/LLVM (arm64 AOT)
+      └─ ship tier: HIR → C → platform C compiler (AOT)
   both over one runtime: Context memory, values, strings, arrays,
   traps, coroutine state, deterministic numeric formatting
 ```
