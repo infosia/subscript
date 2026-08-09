@@ -16,7 +16,11 @@ subscript-compiler = { path = "../compiler" }
 subscript-runtime = { path = "../runtime" }
 # `arm64` is explicit: the ship tier emits objects for the two arm64
 # device triples regardless of what the host architecture is.
-cranelift-codegen = { version = "=0.125.4", features = ["arm64"] }
+# Every ship-target backend, host-independent: the retained
+# Cranelift-object cross-check emits arm64 (iOS/Android) and x86-64
+# (linux-gnu) objects on every dev host (compiler.md §11 "Ship
+# targets"). host-arch alone made the x86-64 triple fail on arm64.
+cranelift-codegen = { version = "=0.125.4", features = ["arm64", "x86"] }
 cranelift-frontend = "=0.125.4"
 cranelift-module = "=0.125.4"
 cranelift-jit = "=0.125.4"

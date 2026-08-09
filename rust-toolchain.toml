@@ -5,3 +5,7 @@
 # standing gate (CLAUDE.md, Code conventions).
 channel = "1.95.0"
 components = ["rustfmt", "clippy"]
+# Device-triple std for the mobile ship gate (device-link.sh builds
+# the runtime staticlib for these). rustup installs them with the
+# toolchain, so the pin does not strand a host without them.
+targets = ["aarch64-apple-ios", "aarch64-linux-android"]
