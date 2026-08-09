@@ -143,12 +143,12 @@ Out of scope: `api_reference` (cause D, needs `node`);
 
 ## Remaining gate before the phase is COMPLETE
 
-- **arm64 (AAPCS64) non-regression** — the Task 2 refactor added a
-  per-eightbyte register class and a three-way ABI selection to a path
-  shared with AAPCS64. Re-run the full suite on the arm64 reference machine
-  (macOS/M-series) and the 30-entry standing gate; AAPCS64 output must stay
-  byte-identical. Not runnable on this x86-64 host.
-- **windows-msvc (Win64) non-regression** — same reason; re-run on
+- **arm64 (AAPCS64) non-regression** — **discharged 2026-08-09.**
+  `cargo test --offline --workspace --release` on the arm64 reference
+  machine (macOS, Apple M2 class), at `cfb583d`, exit 0: every suite
+  green, every golden byte-exact, `tsc` gate exit 0. The shared
+  marshaler refactor does not change the AAPCS64 path's output.
+- **windows-msvc (Win64) non-regression** — open; re-run on
   `x86_64-pc-windows-msvc`.
 
 ## Follow-ups (tracked, beyond this phase)
