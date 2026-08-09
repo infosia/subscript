@@ -1791,6 +1791,16 @@ int main(void) {
                 BinaryFormat::Elf,
                 Architecture::X86_64,
             ),
+            (
+                "aarch64-apple-darwin",
+                BinaryFormat::MachO,
+                Architecture::Aarch64,
+            ),
+            (
+                "x86_64-pc-windows-msvc",
+                BinaryFormat::Coff,
+                Architecture::X86_64,
+            ),
         ] {
             let obj = emit_object(&sources(src), Some(triple)).expect("emit ship-target object");
             assert_eq!(obj.triple, triple);

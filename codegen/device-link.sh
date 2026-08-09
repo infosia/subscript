@@ -2,11 +2,11 @@
 # Ship-tier target link (specs/blocks/compiler.md 11). The ship
 # tier is C emission compiled by clang (LLVM); this proves the emitted C
 # for a run-set corpus entry compiles and links on both device triples
-# and the x86-64 Linux host target, against the real runtime static
-# library and generated C host entry. The mobile binaries are not
-# executed; the native Linux binary is run as a smoke check. No simulator
-# or emulator is involved. This replaces the P3 cranelift-object device
-# link (its ship role has ended); the P0.5 kill criterion is unaffected,
+# and the native macOS or x86-64 Linux host target. Each link uses the
+# real runtime static library and generated C host entry. The mobile
+# binaries do not run. Each native binary runs as a smoke check. No
+# simulator or emulator is involved. This replaces the P3
+# cranelift-object device link. Its ship role has ended. The P0.5 kill criterion is unaffected,
 # C emission was its pre-registered fallback architecture.
 #
 # It is not part of `cargo test`: the Android half needs an NDK, which
@@ -14,7 +14,8 @@
 # principle 4 — device-dependent runs are gated, never required).
 #
 # The Android half runs on any host with an NDK (contract §3); the iOS
-# half requires a Mac, and the Linux half requires an x86-64 Linux host.
+# half and the macOS section require a Mac. The Linux section requires an
+# x86-64 Linux host.
 #
 # Environment variables:
 #   ANDROID_NDK_HOME  (optional) Android NDK installation root. When set,
@@ -24,7 +25,7 @@
 #   ENTRY_ID          (optional) accept-corpus entry to compile;
 #                     defaults to a22-matrix-propagation.
 #
-# Requirements: clang for the Linux half; rustup target
+# Requirements: clang for the native sections; rustup target
 # aarch64-linux-android (plus aarch64-apple-ios on a Mac), Xcode command
 # line tools for the iOS half, and a populated cargo cache (every cargo
 # invocation is --offline).
@@ -75,7 +76,38 @@ else
     echo "note: host is $HOST_OS; the iOS half requires a Mac and is skipped" >&2
 fi
 
-# 3. x86-64 Linux: build the host runtime, compile+link the emitted C,
+# 3. macOS: build the host runtime, compile+link the emitted C, report the
+#    Mach-O, and execute it as a native smoke check. libSystem supplies
+#    the runtime system libraries (§11b), so this link needs no extra libraries.
+if [ "$HOST_OS" = "Darwin" ]; then
+    cargo build --offline --release -p subscript-runtime
+    "${CC:-clang}" -std=c11 -O2 -fwrapv -ffp-contract=off \
+        "$OUT_DIR/program.c" \
+        "$OUT_DIR/entry.c" \
+        "$TARGET_DIR/release/$RUNTIME_LIB" \
+        -o "$OUT_DIR/$ENTRY_ID-macos"
+    LINKED="$LINKED $OUT_DIR/$ENTRY_ID-macos"
+    file "$OUT_DIR/$ENTRY_ID-macos"
+    echo "macOS smoke output:"
+    SMOKE_OUTPUT="$OUT_DIR/$ENTRY_ID-macos.stdout"
+    if ! "$OUT_DIR/$ENTRY_ID-macos" > "$SMOKE_OUTPUT"; then
+        rm -f "$SMOKE_OUTPUT"
+        echo "error: the macOS smoke binary failed" >&2
+        exit 1
+    fi
+    cat "$SMOKE_OUTPUT"
+    if ! cmp -s "$SMOKE_OUTPUT" "$ACCEPT_DIR/$ENTRY_ID.expected"; then
+        echo "error: macOS smoke output does not match $ENTRY_ID.expected" >&2
+        rm -f "$SMOKE_OUTPUT"
+        exit 1
+    fi
+    rm -f "$SMOKE_OUTPUT"
+    echo "note: macOS smoke output matches $ENTRY_ID.expected"
+else
+    echo "note: host is $HOST_OS/$HOST_ARCH; the macOS target is skipped" >&2
+fi
+
+# 4. x86-64 Linux: build the host runtime, compile+link the emitted C,
 #    report the ELF, and execute it as a native smoke check. This runs
 #    before the Android NDK requirement so an ordinary Linux host always
 #    exercises its ship target.
@@ -108,7 +140,7 @@ else
     echo "note: host is $HOST_OS/$HOST_ARCH; the x86-64 Linux target is skipped" >&2
 fi
 
-# 4. Android: cross-build the runtime static library and compile+link
+# 5. Android: cross-build the runtime static library and compile+link
 #    the emitted C with NDK clang.
 if [ -z "${ANDROID_NDK_HOME:-}" ]; then
     echo "note: ANDROID_NDK_HOME is not set; the Android half is skipped" >&2
@@ -139,14 +171,17 @@ else
     export CC_aarch64_linux_android="$ANDROID_CC"
     export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
     cargo build --offline --release -p subscript-runtime --target aarch64-linux-android
+    # `rustc --print native-static-libs --target aarch64-linux-android`
+    # reports this target's system-library set.
     "$ANDROID_CC" --target=aarch64-linux-android24 -std=c11 -O2 -fwrapv -ffp-contract=off \
         "$OUT_DIR/program.c" \
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/aarch64-linux-android/release/$RUNTIME_LIB" \
+        -ldl -llog -lunwind -lm -lc \
         -o "$OUT_DIR/$ENTRY_ID-android"
     LINKED="$LINKED $OUT_DIR/$ENTRY_ID-android"
 fi
 
-# 5. Report the linked ship targets.
+# 6. Report the linked ship targets.
 # shellcheck disable=SC2086
 file $LINKED

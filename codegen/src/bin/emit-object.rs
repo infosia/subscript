@@ -2,11 +2,12 @@
 //!
 //! Emits one retained Cranelift-object cross-check object per ship target
 //! for shape parity: the `aarch64-apple-ios` (Mach-O) and
-//! `aarch64-linux-android` (ELF) device triples, plus the
-//! `x86_64-unknown-linux-gnu` (ELF) host target. The actual ship path is
-//! `subscript emit` followed by clang; see `device-link.sh`, which does not
-//! consume these objects. This binary also writes the generated C entry
-//! program next to the cross-check objects, but executes nothing.
+//! `aarch64-linux-android` (ELF) device triples, plus these host targets:
+//! `x86_64-unknown-linux-gnu` (ELF), `aarch64-apple-darwin` (Mach-O), and
+//! `x86_64-pc-windows-msvc` (COFF). The actual ship path is `subscript emit`
+//! followed by the platform C compiler. `device-link.sh` does not consume
+//! these objects. This binary also writes the generated C entry program, but
+//! executes nothing.
 //!
 //! Usage:
 //! `cargo run --offline -p subscript-codegen --bin emit-object -- <out-dir> [entry-id]`
@@ -21,10 +22,12 @@ use subscript_codegen::{emit_object, AOT_ENTRY_C};
 use subscript_compiler::SourceFile;
 
 /// Ship-target triples retained for Cranelift-object shape parity.
-const SHIP_TARGET_TRIPLES: [&str; 3] = [
+const SHIP_TARGET_TRIPLES: [&str; 5] = [
     "aarch64-apple-ios",
     "aarch64-linux-android",
     "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
 ];
 
 fn main() -> ExitCode {
