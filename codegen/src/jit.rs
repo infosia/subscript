@@ -1314,7 +1314,8 @@ fn execute_entry(
     write_through: Option<File>,
 ) -> Result<CompletedRun, RunError> {
     let init_ptr = module.get_finalized_function(lowered.init);
-    let main_ptr = module.get_finalized_function(lowered.main);
+    let main = lowered.main_id().map_err(RunError::Internal)?;
+    let main_ptr = module.get_finalized_function(main);
 
     let needs_panic_stdout_fallback = write_through.is_none();
     let mut ctx = Context::new();
@@ -1955,7 +1956,8 @@ pub(crate) fn allocation_attribution_after_run(
 
     let (module, lowered) = compile_jit(files, &[])?;
     let init = module.get_finalized_function(lowered.init);
-    let main = module.get_finalized_function(lowered.main);
+    let main_id = lowered.main_id().map_err(RunError::Internal)?;
+    let main = module.get_finalized_function(main_id);
     let mut ctx = Context::new();
     // SAFETY: both pointers are finalized entries and the module remains
     // live through the calls.
@@ -2133,7 +2135,7 @@ mod tests {
         );
         let (module, lowered) = compile_jit(&program, &[]).expect("compile observer program");
         let init = module.get_finalized_function(lowered.init);
-        let main = module.get_finalized_function(lowered.main);
+        let main = module.get_finalized_function(lowered.main_id().expect("main entry"));
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
         let mut observed = ObservedTrap::default();
@@ -2211,7 +2213,7 @@ mod tests {
         let program = [SourceFile::new("a01-hello.ts", source)];
         let (module, lowered) = compile_jit(&program, &[]).expect("compile a01");
         let init = module.get_finalized_function(lowered.init);
-        let main = module.get_finalized_function(lowered.main);
+        let main = module.get_finalized_function(lowered.main_id().expect("main entry"));
 
         let run = |with_observer: bool| {
             let mut ctx = Context::new();
@@ -2352,7 +2354,7 @@ mod tests {
         ), &[])
         .expect("compile");
         let init_ptr = module.get_finalized_function(lowered.init);
-        let main_ptr = module.get_finalized_function(lowered.main);
+        let main_ptr = module.get_finalized_function(lowered.main_id().expect("main entry"));
         let mut ctx = Context::new();
         ctx.set_now(1_592_224_496_789);
         type Entry = unsafe extern "C" fn(*mut Context);

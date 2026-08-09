@@ -14,8 +14,9 @@
 //! # Mechanism
 //!
 //! Reload-mode lowering ([`crate::lower::LowerOptions::reload`]) makes
-//! three changes, all of which exist so a body can be replaced under a
-//! live Context:
+//! the three code-generation changes below so a body can be replaced
+//! under a live Context. It also permits an entry-less module because
+//! the host drives named exports.
 //!
 //! - **Indirection table.** Every script call loads its target from a
 //!   host-owned table of code addresses, reached through the Context.
@@ -433,7 +434,14 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
 
     // A failure past this point must release the module's code pages:
     // a dropped `JITModule` frees nothing by itself.
-    let lowered = match lower_module_with(&mut module, hirm, LowerOptions { reload: true }) {
+    let lowered = match lower_module_with(
+        &mut module,
+        hirm,
+        LowerOptions {
+            reload: true,
+            require_main: false,
+        },
+    ) {
         Ok(l) => l,
         Err(e) => {
             // SAFETY: nothing ran and no pointer into this module
@@ -614,7 +622,8 @@ impl ReloadSession {
         &self.decls
     }
 
-    /// Calls the exported `main(): void`.
+    /// Calls the exported `main(): void` when the session has one.
+    /// Session creation does not require this entry.
     ///
     /// # Errors
     ///

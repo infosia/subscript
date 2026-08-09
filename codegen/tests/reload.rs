@@ -20,7 +20,7 @@ mod native_fixture;
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
-use subscript_codegen::{ReloadError, ReloadSession, RunError};
+use subscript_codegen::{run_jit, ReloadError, ReloadSession, RunError};
 use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
 
@@ -30,6 +30,80 @@ fn files(text: &str) -> Vec<SourceFile> {
 
 fn output(session: &mut ReloadSession) -> String {
     String::from_utf8(session.take_output()).expect("utf-8 output")
+}
+
+// ----- entry-less sessions (§53) -----
+
+const ENTRYLESS_V1: &str = "\
+let initialized: i32 = 41;
+export function frame(): void {
+  print(`frame v1: ${initialized}`);
+}
+export function shutdown(): void {
+  print(\"shutdown v1\");
+}
+";
+
+const ENTRYLESS_V2: &str = "\
+let initialized: i32 = 41;
+export function frame(): void {
+  print(`frame v2: ${initialized + 1}`);
+}
+export function shutdown(): void {
+  print(\"shutdown v1\");
+}
+";
+
+#[test]
+fn entryless_session_calls_named_exports_after_initialization() {
+    let mut session = ReloadSession::new(&files(ENTRYLESS_V1)).expect("entry-less session");
+    session.call_export("frame").expect("frame call");
+    session.call_export("shutdown").expect("shutdown call");
+    assert_eq!(session.take_output(), b"frame v1: 41\nshutdown v1\n");
+
+    let (_, trap) = ReloadSession::new_capturing_initializer_trap(&files(ENTRYLESS_V1))
+        .expect("entry-less trap-capturing session");
+    assert!(trap.is_none());
+    let _session = ReloadSession::new_with_native_libraries(&files(ENTRYLESS_V1), &[])
+        .expect("entry-less session with native libraries");
+}
+
+#[test]
+fn missing_main_ends_the_call_but_not_the_entryless_session() {
+    let mut session = ReloadSession::new(&files(ENTRYLESS_V1)).expect("entry-less session");
+    match session.call_main() {
+        Err(RunError::Internal(message)) => assert!(
+            message.contains("is not an exported zero-argument void function"),
+            "unexpected diagnostic: {message}"
+        ),
+        other => panic!("expected a missing-main error, got {other:?}"),
+    }
+
+    session
+        .call_export("frame")
+        .expect("frame call after missing main");
+    assert_eq!(session.take_output(), b"frame v1: 41\n");
+}
+
+#[test]
+fn entryless_session_observes_an_accepted_body_swap() {
+    let mut session = ReloadSession::new(&files(ENTRYLESS_V1)).expect("entry-less session");
+    session
+        .reload(&files(ENTRYLESS_V2))
+        .expect("body edit is accepted");
+    session.call_export("frame").expect("updated frame call");
+    assert_eq!(session.take_output(), b"frame v2: 42\n");
+}
+
+#[test]
+fn dev_run_still_requires_main_for_an_entryless_module() {
+    match run_jit(&files(ENTRYLESS_V1)) {
+        Err(RunError::Internal(message)) => assert!(
+            message.contains("no exported `main(): void` entry point"),
+            "unexpected diagnostic: {message}"
+        ),
+        other => panic!("expected a missing-main error, got {other:?}"),
+    }
 }
 
 // ----- (a) accepted body edit -----
