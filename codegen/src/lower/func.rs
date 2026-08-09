@@ -1388,7 +1388,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let sites = e.trap_sites(self.ml.hir);
                 lower_trap_sites(&sites, "field read", |sites| {
                     let (addr, off, fty) = self.field_addr(obj, name, sites)?;
-                    self.load_val(&fty, addr, off)
+                    let value = self.load_val(&fty, addr, off)?;
+                    if let Type::StringAlias(alias) = &e.ty {
+                        if let Some(site) = sites.take(|site| {
+                            matches!(site, hir::TrapSite::WireEnumValue { alias: site_alias, .. } if site_alias == alias)
+                        }) {
+                            let wire = self.expect_s(value)?;
+                            return Ok(RV::S(self.validate_wire_alias(*alias, wire, site)?));
+                        }
+                    }
+                    Ok(value)
                 })
             }
             K::JsonResultValue(obj) => {
@@ -2684,7 +2693,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         |site| matches!(site, hir::TrapSite::WireEnumValue { alias: site_alias, .. } if *site_alias == alias),
                         internal("wire-enum foreign return has no HIR trap site"),
                     )?;
-                    RV::S(self.unmarshal_wire_alias(alias, result, site)?)
+                    RV::S(self.validate_wire_alias(alias, result, site)?)
                 } else {
                     RV::S(result)
                 }
@@ -2700,8 +2709,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         })
     }
 
-    /// Converts one foreign `i32` wire result to its language discriminant.
-    fn unmarshal_wire_alias(
+    /// Validates one C-entered wire result and preserves its identity
+    /// representation (§52.1/§52.3).
+    fn validate_wire_alias(
         &mut self,
         alias: subscript_compiler::StringAliasId,
         wire: Value,
@@ -2714,23 +2724,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .get(alias.0)
             .and_then(|definition| definition.wire_values.clone())
             .ok_or_else(|| internal("foreign string alias return has no wire mapping"))?;
-        let mut discriminant = self.iconst(types::I32, -1);
-        for (index, value) in values.into_iter().enumerate() {
+        let mut valid = self.iconst(types::I8, 0);
+        for value in values {
             let matches = self
                 .b
                 .ins()
                 .icmp_imm(IntCC::Equal, wire, i64::from(value));
-            let index = i64::try_from(index)
-                .map_err(|_| internal("wire-enum discriminant does not fit i64"))?;
-            let member = self.iconst(types::I32, index);
-            discriminant = self.b.ins().select(matches, member, discriminant);
+            valid = self.b.ins().bor(valid, matches);
         }
-        let valid = self
-            .b
-            .ins()
-            .icmp_imm(IntCC::NotEqual, discriminant, -1);
         self.emit_trap_site(site, TrapOperand::WireValue { wire, valid })?;
-        Ok(discriminant)
+        Ok(wire)
     }
 
     /// Plans the C-ABI return of a by-value boundary struct (§14.2),
@@ -3302,14 +3305,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let ty = &parameter.ty;
         match ty {
             Type::StringAlias(alias) => {
-                let discriminant = self.expect_s(rv)?;
-                let table = self.ml.wire_alias_table_data(*alias)?;
-                let global = self.ml.module.declare_data_in_func(table, self.b.func);
-                let base = self.b.ins().symbol_value(types::I64, global);
-                let index = self.b.ins().uextend(types::I64, discriminant);
-                let offset = self.b.ins().ishl_imm(index, 2);
-                let entry = self.b.ins().iadd(base, offset);
-                let wire = self.b.ins().load(types::I32, flags(), entry, 0);
+                let definition = self
+                    .ml
+                    .hir
+                    .string_aliases
+                    .get(alias.0)
+                    .ok_or_else(|| internal("wire-enum alias id is out of range"))?;
+                if definition.wire_values.is_none() {
+                    return Err(internal("plain string alias reached a foreign parameter"));
+                }
+                let wire = self.expect_s(rv)?;
                 self.push_abi(sig, argv, types::I32, wire);
                 Ok(())
             }
@@ -3439,7 +3444,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::I8 | Type::U8 => (1, 1),
             Type::I16 | Type::U16 | Type::F16 => (2, 2),
             Type::I64 | Type::U64 | Type::F64 => (8, 8),
-            Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
+            Type::I32
+            | Type::U32
+            | Type::F32
+            | Type::Enum(_)
+            | Type::StringAlias(_) => (4, 4),
             Type::Bool => (1, 1),
             Type::Class(id) if self.is_value_class_ty(ty) => {
                 let (_, size, align) = self.boundary_c_layout(id.0)?;
@@ -5684,7 +5693,28 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let table = self.ml.string_alias_table_data(*id)?;
             let gv = self.ml.module.declare_data_in_func(table, self.b.func);
             let base = self.b.ins().symbol_value(types::I64, gv);
-            let index = self.b.ins().uextend(types::I64, v);
+            let definition = self
+                .ml
+                .hir
+                .string_aliases
+                .get(id.0)
+                .ok_or_else(|| internal("string alias id is out of range"))?;
+            let index = if let Some(wire_values) = &definition.wire_values {
+                let mut index = self.iconst(types::I64, 0);
+                for (member_index, wire_value) in wire_values.iter().enumerate() {
+                    let matches = self
+                        .b
+                        .ins()
+                        .icmp_imm(IntCC::Equal, v, i64::from(*wire_value));
+                    let member_index = i64::try_from(member_index)
+                        .map_err(|_| internal("string alias member index does not fit i64"))?;
+                    let member = self.iconst(types::I64, member_index);
+                    index = self.b.ins().select(matches, member, index);
+                }
+                index
+            } else {
+                self.b.ins().uextend(types::I64, v)
+            };
             let offset = self.b.ins().ishl_imm(index, 4);
             let entry = self.b.ins().iadd(base, offset);
             let data = self.b.ins().load(types::I64, flags(), entry, 0);

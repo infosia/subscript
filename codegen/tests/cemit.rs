@@ -111,6 +111,9 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31),
         "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10),
         "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10),
+        "t49-wire-enum-struct-unknown-member" => {
+            (TrapKind::WireEnumUnknownValue, 12)
+        }
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -567,14 +570,14 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 48;
+    let expected_count = 49;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
          coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, t46 \
-         callback-userdata coverage, t47 unreachable coverage, and t48 wire-enum crossing \
-         coverage), found {}",
+         callback-userdata coverage, t47 unreachable coverage, t48 wire-enum crossing, and \
+         t49 wire-enum boundary-member coverage), found {}",
         ids.len()
     );
 
@@ -685,6 +688,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                         Some("callback userdata points to a freed allocation")
                     }
                     "t48-wire-enum-unknown-value" => {
+                        Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
+                    }
+                    "t49-wire-enum-struct-unknown-member" => {
                         Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
                     }
                     _ => None,
@@ -904,7 +910,7 @@ fn string_literal_union_equality_emits_an_integer_compare() {
 }
 
 #[test]
-fn wire_enum_foreign_crossing_uses_integer_tables_and_unknown_return_trap() {
+fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
 
@@ -924,15 +930,20 @@ fn wire_enum_foreign_crossing_uses_integer_tables_and_unknown_return_trap() {
     .expect("wire-enum crossing checks cleanly");
     let c = emit_c(&hir).expect("wire-enum crossing emits C").source;
     assert!(
-        c.contains("static const int32_t subscript_wire_values_0[] = { 16, 23, -7 };")
+        !c.contains("subscript_wire_values_0")
+            && !c.contains("subscript_wire_alias0"),
+        "wire-table storage survived the representation revision:\n{c}"
     );
     assert!(
-        c.lines().any(|line| line.contains("subWireTake(subscript_wire_values_0[")),
-        "parameter crossing did not index the wire table:\n{c}"
+        c.lines().any(|line| line.contains("subWireTake(-7)")),
+        "member literal was not passed as its wire value:\n{c}"
     );
     assert!(
-        c.contains("if (subscript_wire_values_0[") && c.contains("subWireReturn()"),
-        "return crossing did not map the wire value:\n{c}"
+        c.contains("subWireReturn()")
+            && c.contains("== 16")
+            && c.contains("== 23")
+            && c.contains("== -7"),
+        "return crossing did not validate wire membership:\n{c}"
     );
     assert!(
         c.contains("subscript_rt_trap_wire_enum(ctx,")
@@ -948,6 +959,57 @@ fn wire_enum_foreign_crossing_uses_integer_tables_and_unknown_return_trap() {
             && !main.contains("subscript_rt_str_eq(ctx,")
             && !main.contains("subscript_string_alias_0["),
         "wire crossing performed a string operation:\n{main}"
+    );
+}
+
+#[test]
+fn wire_enum_switch_formatting_and_boundary_member_read_use_wire_values() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let mirror = "// @subscript-c-header include=\"wire.h\"\n\
+                  type WireMode = CEnum<{ \"m0\": 0x10; \"m1\": 23; \"m2\": -7 }>;\n\
+                  declare class WireRecord {\n\
+                    mode: WireMode;\n\
+                    constructor(mode: WireMode);\n\
+                  }\n\
+                  declare function subWireFill(value: WireRecord | null): void;\n";
+    let source = "export function main(): void {\n\
+                    const record: WireRecord = new WireRecord(\"m2\");\n\
+                    subWireFill(record);\n\
+                    const mode: WireMode = record.mode;\n\
+                    switch (mode) {\n\
+                      case \"m0\": print(`${mode}`); break;\n\
+                      case \"m1\": print(`${mode}`); break;\n\
+                      case \"m2\": print(`${mode}`); break;\n\
+                    }\n\
+                  }\n";
+    let hir = check_program(&[
+        SourceFile::ambient("wire.d.ts", mirror),
+        SourceFile::new("test.ts", source),
+    ])
+    .expect("wire boundary member checks cleanly");
+    let c = emit_c(&hir).expect("wire boundary member emits C").source;
+    for label in ["case 16:", "case 23:", "case -7:"] {
+        assert!(c.contains(label), "missing wire-valued switch label `{label}`:\n{c}");
+    }
+    assert!(
+        c.contains("subscript_rt_trap_wire_enum(ctx,")
+            && c.contains("WireMode")
+            && c.contains("== 16")
+            && c.contains("== 23")
+            && c.contains("== -7"),
+        "boundary member read lacks wire membership validation:\n{c}"
+    );
+    let main = c
+        .split("static void subscript_fn_main(void* ctx) {")
+        .nth(1)
+        .expect("main body");
+    assert!(
+        main.contains("subscript_string_alias_0[")
+            && !main.contains("subscript_rt_str_eq")
+            && !main.contains("strcmp("),
+        "wire formatting must resolve its string entry with integer lookup only:\n{main}"
     );
 }
 

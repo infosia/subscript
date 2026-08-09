@@ -564,17 +564,6 @@ impl<'m> Emitter<'m> {
                     );
                 }
                 globals.push_str("};\n");
-                if let Some(wire_values) = &alias.wire_values {
-                    let values = wire_values
-                        .iter()
-                        .map(|value| value.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let _ = writeln!(
-                        globals,
-                        "static const int32_t subscript_wire_values_{alias_index}[] = {{ {values} }};"
-                    );
-                }
             }
         }
         // Bodies (which append prototypes and helper definitions as they
@@ -1831,9 +1820,9 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind}{{");
         let _ = writeln!(out, "{ind1}{dty} _disc = {dv};");
         if matches!(disc.ty, Type::StringAlias(_)) {
-            // Q32/R14 case labels are checker-proven alias members, whose
-            // HIR values are declaration-order i32 discriminants. Keep the
-            // ship tier jump-table eligible and never consult string data.
+            // Q32/R14 case labels are checker-proven alias members. Plain
+            // aliases carry declaration-order discriminants; wire aliases
+            // carry wire values (§52.1). Both remain integer-only switches.
             let ind2 = indent(depth + 2);
             let _ = writeln!(out, "{ind1}switch (_disc) {{");
             for (i, case) in cases.iter().enumerate() {
@@ -2590,7 +2579,17 @@ impl<'m> Emitter<'m> {
             K::Field { obj, name } => {
                 let sites = e.trap_sites(self.module);
                 lower_trap_sites(&sites, "field read", |sites| {
-                    self.eval_field(obj, name, sites, out, depth)
+                    let value = self.eval_field(obj, name, sites, out, depth)?;
+                    if let Type::StringAlias(alias) = &e.ty {
+                        if let Some(site) = sites.take(|site| {
+                            matches!(site, hir::TrapSite::WireEnumValue { alias: site_alias, .. } if site_alias == alias)
+                        }) {
+                            let wire = self.fresh_tmp();
+                            let _ = writeln!(out, "{}int32_t {wire} = {value};", indent(depth));
+                            return self.validate_wire_alias(*alias, &wire, site, out, depth);
+                        }
+                    }
+                    Ok(value)
                 })
             }
             K::JsonResultValue(obj) => {
@@ -3454,8 +3453,26 @@ impl<'m> Emitter<'m> {
         };
         let pid = self.pos_id(pos);
         if let Type::StringAlias(id) = ty {
+            let definition = self
+                .module
+                .string_aliases
+                .get(id.0)
+                .ok_or_else(|| "string alias id is out of range".to_string())?;
             let index = self.fresh_tmp();
-            let _ = writeln!(out, "{}int32_t {index} = {v};", indent(depth));
+            if let Some(wire_values) = &definition.wire_values {
+                let wire = self.fresh_tmp();
+                let _ = writeln!(out, "{}int32_t {wire} = {v};", indent(depth));
+                let _ = writeln!(out, "{}int32_t {index} = 0;", indent(depth));
+                for (member_index, wire_value) in wire_values.iter().enumerate() {
+                    let _ = writeln!(
+                        out,
+                        "{}if ({wire} == {wire_value}) {{ {index} = {member_index}; }}",
+                        indent(depth)
+                    );
+                }
+            } else {
+                let _ = writeln!(out, "{}int32_t {index} = {v};", indent(depth));
+            }
             let table = format!("subscript_string_alias_{}", id.0);
             let call = format!(
                 "subscript_rt_str_lit(ctx, {table}[{index}].data, \
@@ -5025,15 +5042,16 @@ impl<'m> Emitter<'m> {
                     |site| matches!(site, hir::TrapSite::WireEnumValue { alias: site_alias, .. } if *site_alias == alias),
                     "wire-enum foreign return has no HIR trap site",
                 )?;
-                self.unmarshal_wire_alias(alias, &result, site, out, depth)
+                self.validate_wire_alias(alias, &result, site, out, depth)
             } else {
                 Ok(result)
             }
         }
     }
 
-    /// Converts one foreign wire result to a declaration-order discriminant.
-    fn unmarshal_wire_alias(
+    /// Validates one C-entered wire result and preserves its identity
+    /// representation (§52.1/§52.3).
+    fn validate_wire_alias(
         &mut self,
         alias: subscript_compiler::StringAliasId,
         wire: &str,
@@ -5041,40 +5059,29 @@ impl<'m> Emitter<'m> {
         out: &mut String,
         depth: usize,
     ) -> Result<String, String> {
-        let count = self
+        let values = self
             .module
             .string_aliases
             .get(alias.0)
             .ok_or_else(|| "wire-enum alias id is out of range".to_string())?
             .wire_values
             .as_ref()
-            .ok_or_else(|| "foreign string alias return has no wire mapping".to_string())?
-            .len();
-        let discriminant = self.fresh_tmp();
-        let index = self.fresh_tmp();
-        let ind = indent(depth);
-        let _ = writeln!(out, "{ind}int32_t {discriminant} = -1;");
-        let _ = writeln!(
-            out,
-            "{ind}for (int32_t {index} = 0; {index} < {count}; {index} += 1) {{"
-        );
-        let _ = writeln!(
-            out,
-            "{}if (subscript_wire_values_{}[{index}] == {wire}) {{ {discriminant} = {index}; break; }}",
-            indent(depth + 1),
-            alias.0,
-        );
-        let _ = writeln!(out, "{ind}}}");
+            .ok_or_else(|| "foreign string alias return has no wire mapping".to_string())?;
+        let valid = values
+            .iter()
+            .map(|value| format!("{wire} == {value}"))
+            .collect::<Vec<_>>()
+            .join(" || ");
         self.emit_trap_site(
             site,
             TrapOperand::WireValue {
                 wire: wire.to_string(),
-                valid: format!("{discriminant} >= 0"),
+                valid,
             },
             out,
             depth,
         )?;
-        Ok(discriminant)
+        Ok(wire.to_string())
     }
 
     /// Materializes a foreign-call result before pointer scratch copy-back.
@@ -5139,10 +5146,7 @@ impl<'m> Emitter<'m> {
                     ));
                 }
                 let value = self.eval(arg, out, depth)?;
-                Ok((
-                    vec![format!("subscript_wire_values_{}[{value}]", alias.0)],
-                    Some("int32_t".to_string()),
-                ))
+                Ok((vec![value], Some("int32_t".to_string())))
             }
             Type::Str => {
                 let aggregate = match &parameter.foreign_provenance {
@@ -5456,6 +5460,7 @@ impl<'m> Emitter<'m> {
                 | Type::F64
                 | Type::Bool
                 | Type::Enum(_)
+                | Type::StringAlias(_)
                 | Type::Object => components.push(source_field),
                 Type::Class(inner) if !self.is_value_class(*inner)? => {
                     components.push(source_field)

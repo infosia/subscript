@@ -773,6 +773,16 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// The §52 boundary spellings whose storage is exactly one wire value,
+    /// or a zero-copy descriptor of wire-value elements.
+    fn supported_wire_alias_boundary_type(ty: &Type) -> bool {
+        match ty {
+            Type::StringAlias(_) => true,
+            Type::Array(element) => matches!(&**element, Type::StringAlias(_)),
+            _ => false,
+        }
+    }
+
     /// Emits the rule-specific diagnostic for a failed assignment.
     pub(crate) fn require_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
         if self.assignable(from, to) {
@@ -1435,12 +1445,12 @@ impl<'p> Checker<'p> {
                     self.allow_wire_alias_boundary = false;
                     for parameter in &sig.params {
                         if Self::contains_string_alias(&parameter.ty)
-                            && !matches!(parameter.ty, Type::StringAlias(_))
+                            && !Self::supported_wire_alias_boundary_type(&parameter.ty)
                         {
                             self.error(
                                 RuleCode::S100,
                                 format!(
-                                    "wire-mapped aliases are supported only as direct foreign-function parameters; `{}` nests one inside another boundary type",
+                                    "wire-mapped aliases are supported only as direct foreign-function parameters or array-descriptor elements; `{}` nests one inside another boundary type",
                                     parameter.name
                                 ),
                                 pos.clone(),
@@ -1951,7 +1961,14 @@ impl<'p> Checker<'p> {
                     }
                     let pos = self.pos(key.span);
                     let ty = match &prop.type_ann {
-                        Some(ann) => self.resolve_type(&ann.type_ann),
+                        Some(ann) => {
+                            let allow_wire = self.in_boundary
+                                && self.boundary_classes.contains(&id);
+                            self.allow_wire_alias_boundary = allow_wire;
+                            let ty = self.resolve_type(&ann.type_ann);
+                            self.allow_wire_alias_boundary = false;
+                            ty
+                        }
                         None => {
                             self.error(
                                 RuleCode::S100,
@@ -1961,6 +1978,19 @@ impl<'p> Checker<'p> {
                             Type::Error
                         }
                     };
+                    if self.in_boundary
+                        && Self::contains_string_alias(&ty)
+                        && !Self::supported_wire_alias_boundary_type(&ty)
+                    {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "wire-mapped aliases are supported only as direct boundary-struct members or array-pair elements; member `{}` nests one inside another boundary type",
+                                key.sym
+                            ),
+                            pos.clone(),
+                        );
+                    }
                     let is_absence_capable = is_descriptor
                         && !prop.definite
                         && prop.is_optional
@@ -2039,7 +2069,23 @@ impl<'p> Checker<'p> {
                     for p in &ctor.params {
                         match p {
                             ast::ParamOrTsParamProp::Param(param) => {
-                                params.push(self.resolve_param_pat(&param.pat));
+                                self.allow_wire_alias_boundary = self.in_boundary;
+                                let resolved = self.resolve_param_pat(&param.pat);
+                                self.allow_wire_alias_boundary = false;
+                                if self.in_boundary
+                                    && Self::contains_string_alias(&resolved.ty)
+                                    && !Self::supported_wire_alias_boundary_type(&resolved.ty)
+                                {
+                                    self.error(
+                                        RuleCode::S100,
+                                        format!(
+                                            "wire-mapped aliases are supported only as direct mirror-constructor parameters or array-pair elements; parameter `{}` nests one inside another boundary type",
+                                            resolved.name
+                                        ),
+                                        self.pos(param.span),
+                                    );
+                                }
+                                params.push(resolved);
                             }
                             ast::ParamOrTsParamProp::TsParamProp(pp) => {
                                 let pos = self.pos(pp.span);

@@ -13,10 +13,11 @@ pub const MAX_AGGREGATE_BYTES: u32 = i32::MAX as u32;
 /// targets.
 pub const CRANELIFT_FRAME_ALIGNMENT: u32 = 16;
 
-/// Reserved Q32 discriminant used for an absent descriptor member (R16).
+/// Reserved plain-Q32 discriminant used for an absent descriptor member (R16).
 ///
-/// Ordinary alias members are numbered from zero in declaration order,
-/// so this value is outside every member set.
+/// Ordinary plain-alias members are numbered from zero in declaration order,
+/// so this value is outside every plain member set. Wire-mapped aliases choose
+/// an alias-specific value outside their wire set instead (§52.1).
 pub const ABSENT_STRING_ALIAS_DISCRIMINANT: i64 = -1;
 
 /// Maximum supported accumulated Cranelift frame storage.
@@ -99,8 +100,9 @@ pub enum Type {
     Enum(EnumId),
     /// A nominal, closed string-literal union alias (Q32).
     ///
-    /// Values are represented by an `i32` member index; the alias id is
-    /// retained here so same-membered declarations remain distinct.
+    /// Plain aliases are represented by an `i32` member index. Wire-mapped
+    /// aliases are represented by their declared `i32` wire value (§52.1).
+    /// The alias id is retained so same-membered declarations remain distinct.
     StringAlias(StringAliasId),
     /// `FixedArray<T, N>` with `N` known at compile time (Q3).
     FixedArray(Box<Type>, u32),

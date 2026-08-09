@@ -81,23 +81,42 @@ fn zero_direct_function_uses_is_an_error_naming_the_typedef() {
     );
     assert_eq!(
         error,
-        "`@subscript-cenum` typedef `EngineModeC` has zero uses in direct bound-function parameter or return positions"
+        "`@subscript-cenum` typedef `EngineModeC` has zero uses in supported boundary positions"
     );
 }
 
 #[test]
-fn struct_member_use_is_an_error_naming_the_member() {
-    let error = reject(
+fn direct_struct_member_emits_the_ambient_alias() {
+    let mirror = generate_for_header(
         "#include <stdint.h>\n\
          typedef int32_t EngineModeC;\n\
          /* @subscript-cenum EngineModeC EngineMode */\n\
          typedef struct EngineState { EngineModeC mode; } EngineState;\n\
          EngineModeC engineModeNext(void);",
-    );
-    assert_eq!(
-        error,
-        "`@subscript-cenum` typedef `EngineModeC` is used at struct `EngineState` member `mode`; only direct bound-function parameter and return positions are supported"
-    );
+        "engine.h",
+    )
+    .expect("§52 lifts the direct struct-member restriction");
+    assert!(mirror.contains("  mode: EngineMode;"), "{mirror}");
+    assert!(mirror.contains("  constructor(mode: EngineMode);"), "{mirror}");
+}
+
+#[test]
+fn recognized_standalone_and_embedded_pairs_emit_alias_arrays() {
+    let mirror = generate_for_header(
+        "#include <stddef.h>\n\
+         #include <stdint.h>\n\
+         typedef int32_t EngineModeC;\n\
+         /* @subscript-cenum EngineModeC EngineMode */\n\
+         typedef struct EngineModeSlice { const EngineModeC *data; size_t count; } EngineModeSlice;\n\
+         typedef struct EngineState { size_t modesCount; const EngineModeC *modes; int32_t tag; } EngineState;\n\
+         int32_t engineModesFirst(EngineModeSlice values);\n\
+         int32_t engineStateFirst(const EngineState *state);",
+        "engine.h",
+    )
+    .expect("§52 maps recognized CEnum pairs to alias arrays");
+    assert!(mirror.contains("declare function engineModesFirst(values: EngineMode[]): i32;"), "{mirror}");
+    assert!(mirror.contains("  modes: EngineMode[];"), "{mirror}");
+    assert!(mirror.contains("  constructor(modes: EngineMode[], tag: i32);"), "{mirror}");
 }
 
 #[test]
@@ -111,7 +130,7 @@ fn pointer_target_use_is_an_error_naming_the_parameter() {
     );
     assert_eq!(
         error,
-        "`@subscript-cenum` typedef `EngineModeC` is used at foreign function `engineModeWrite` parameter `mode` pointer target; only direct bound-function parameter and return positions are supported"
+        "`@subscript-cenum` typedef `EngineModeC` is used at foreign function `engineModeWrite` parameter `mode` pointer target; supported uses are direct bound-function parameters/returns, direct struct members, and recognized array-pair elements"
     );
 }
 
@@ -121,12 +140,12 @@ fn array_element_use_is_an_error_naming_the_member() {
         "#include <stdint.h>\n\
          typedef int32_t EngineModeC;\n\
          /* @subscript-cenum EngineModeC EngineMode */\n\
-         typedef struct EngineModes { EngineModeC modes[2]; } EngineModes;\n\
+         typedef struct EngineModes { EngineModeC current; EngineModeC modes[2]; } EngineModes;\n\
          EngineModeC engineModeNext(void);",
     );
     assert_eq!(
         error,
-        "`@subscript-cenum` typedef `EngineModeC` is used at struct `EngineModes` member `modes` array element; only direct bound-function parameter and return positions are supported"
+        "`@subscript-cenum` typedef `EngineModeC` is used at struct `EngineModes` member `modes` array element; supported uses are direct bound-function parameters/returns, direct struct members, and recognized array-pair elements"
     );
 }
 
@@ -141,7 +160,7 @@ fn another_typedef_base_use_is_an_error_naming_that_typedef() {
     );
     assert_eq!(
         error,
-        "`@subscript-cenum` typedef `EngineModeC` is used at typedef `EngineOtherModeC` base; only direct bound-function parameter and return positions are supported"
+        "`@subscript-cenum` typedef `EngineModeC` is used at typedef `EngineOtherModeC` base; supported uses are direct bound-function parameters/returns, direct struct members, and recognized array-pair elements"
     );
 }
 

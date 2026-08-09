@@ -266,8 +266,6 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub str_data: HashMap<Vec<u8>, DataId>,
     /// Per-Q32-alias tables of `(member bytes pointer, byte length)`.
     pub string_alias_tables: HashMap<StringAliasId, DataId>,
-    /// Per-R23-alias tables of declaration-ordered `i32` wire values.
-    pub wire_alias_tables: HashMap<StringAliasId, DataId>,
     pub globals: HashMap<String, (GlobalSlot, Type)>,
     /// Imported foreign C symbols, declared on first use (P5.2b).
     pub foreign_ids: HashMap<String, FuncId>,
@@ -500,50 +498,6 @@ impl<'a, M: Module> ModLower<'a, M> {
             .define_data(id, &desc)
             .map_err(|error| internal(format!("define string alias table: {error}")))?;
         self.string_alias_tables.insert(alias_id, id);
-        Ok(id)
-    }
-
-    /// Defines the declaration-ordered `i32` wire table for one R23 alias.
-    pub fn wire_alias_table_data(
-        &mut self,
-        alias_id: StringAliasId,
-    ) -> Result<DataId, String> {
-        if let Some(&id) = self.wire_alias_tables.get(&alias_id) {
-            return Ok(id);
-        }
-        let values = self
-            .hir
-            .string_aliases
-            .get(alias_id.0)
-            .ok_or_else(|| internal(format!("string alias id {} is out of range", alias_id.0)))?
-            .wire_values
-            .clone()
-            .ok_or_else(|| internal(format!("string alias {} has no wire mapping", alias_id.0)))?;
-        let endian = self.module.isa().endianness();
-        let byte_len = values
-            .len()
-            .checked_mul(4)
-            .ok_or_else(|| internal("wire alias table byte length overflow"))?;
-        let mut contents = Vec::with_capacity(byte_len);
-        for value in values {
-            let encoded = match endian {
-                Endianness::Little => value.to_le_bytes(),
-                Endianness::Big => value.to_be_bytes(),
-            };
-            contents.extend_from_slice(&encoded);
-        }
-        let name = format!("subscript_wire_alias{}", alias_id.0);
-        let id = self
-            .module
-            .declare_data(&name, Linkage::Local, false, false)
-            .map_err(|error| internal(format!("declare wire alias table: {error}")))?;
-        let mut description = DataDescription::new();
-        description.define(contents.into_boxed_slice());
-        description.set_align(4);
-        self.module
-            .define_data(id, &description)
-            .map_err(|error| internal(format!("define wire alias table: {error}")))?;
-        self.wire_alias_tables.insert(alias_id, id);
         Ok(id)
     }
 
@@ -1142,7 +1096,6 @@ pub(crate) fn lower_module_with<M: Module>(
         fn_index: HashMap::new(),
         str_data: HashMap::new(),
         string_alias_tables: HashMap::new(),
-        wire_alias_tables: HashMap::new(),
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
         foreign_symbols: Vec::new(),

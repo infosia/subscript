@@ -16,8 +16,22 @@
 // @subscript-c-cenum typedef="SubWireModeC" alias="SubWireMode"
 // @subscript-c-cenum typedef="SubBindToneC" alias="SubBindTone"
 
+declare class SubWireModeRecord {
+  tag: i32;
+  mode: SubWireMode;
+  tone: SubBindTone;
+  modes: SubWireMode[];
+  serial: u32;
+  constructor(tag: i32, mode: SubWireMode, tone: SubBindTone, modes: SubWireMode[], serial: u32);
+}
+
 declare function subWireModeNext(): SubWireMode;
 declare function subWireModeEcho(value: SubWireMode): i32;
 declare function subWireModeUnknown(): SubWireMode;
 declare function subBindToneNext(): SubBindTone;
 declare function subBindToneEcho(value: SubBindTone): i32;
+declare function subWireModeRecordEchoMode(value: SubWireModeRecord | null): i32;
+declare function subWireModeRecordEchoTone(value: SubWireModeRecord): i32;
+declare function subWireModeRecordEchoElement(value: SubWireModeRecord | null, index: u32): i32;
+declare function subWireModeRecordFill(value: SubWireModeRecord | null): void;
+declare function subWireModeRecordFillUnknown(value: SubWireModeRecord | null): void;

@@ -431,14 +431,14 @@ fn validate_cenum_mappings(
 
         if let Some(site) = cenum_other_use_site(parsed, typedef_name) {
             return Err(ParseError(format!(
-                "`@subscript-cenum` typedef `{typedef_name}` is used at {site}; only direct bound-function parameter and return positions are supported"
+                "`@subscript-cenum` typedef `{typedef_name}` is used at {site}; supported uses are direct bound-function parameters/returns, direct struct members, and recognized array-pair elements"
             )));
         }
 
-        let direct_uses = parsed
+        let supported_uses = parsed
             .decls
             .iter()
-            .filter_map(|decl| match decl {
+            .map(|decl| match decl {
                 Decl::Func { ret, params, .. } => Some(
                     usize::from(cenum_direct_field(ret, typedef_name))
                         + params
@@ -446,12 +446,22 @@ fn validate_cenum_mappings(
                             .filter(|param| cenum_direct_field(param, typedef_name))
                             .count(),
                 ),
+                Decl::Struct { fields, .. } => Some(
+                    fields
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, field)| {
+                            cenum_supported_struct_field(fields, *index, field, typedef_name)
+                        })
+                        .count(),
+                ),
                 _ => None,
             })
+            .flatten()
             .sum::<usize>();
-        if direct_uses == 0 {
+        if supported_uses == 0 {
             return Err(ParseError(format!(
-                "`@subscript-cenum` typedef `{typedef_name}` has zero uses in direct bound-function parameter or return positions"
+                "`@subscript-cenum` typedef `{typedef_name}` has zero uses in supported boundary positions"
             )));
         }
     }
@@ -472,6 +482,42 @@ fn cenum_direct_field(field: &CField, typedef_name: &str) -> bool {
     field.base == typedef_name && !field.pointer && field.array_len.is_none()
 }
 
+fn cenum_supported_struct_field(
+    fields: &[CField],
+    index: usize,
+    field: &CField,
+    typedef_name: &str,
+) -> bool {
+    if field.base != typedef_name || field.array_len.is_some() {
+        return false;
+    }
+    if !field.pointer {
+        return true;
+    }
+    let standalone_descriptor = index == 0
+        && fields.len() == 2
+        && fields[1].base == "size_t"
+        && !fields[1].pointer
+        && fields[1].array_len.is_none();
+    if standalone_descriptor {
+        return true;
+    }
+    let Some(count) = index.checked_sub(1).and_then(|count| fields.get(count)) else {
+        return false;
+    };
+    !count.pointer
+        && count.array_len.is_none()
+        && count.base == "size_t"
+        && (count
+            .name
+            .strip_suffix("Count")
+            .is_some_and(|name| !name.is_empty() && name == field.name)
+            || count
+                .name
+                .strip_suffix("_count")
+                .is_some_and(|name| !name.is_empty() && name == field.name))
+}
+
 /// Returns the first forbidden use site of an annotated typedef. The source
 /// model preserves the C owner and member/parameter names, so every error
 /// points at the declaration that must be changed.
@@ -479,7 +525,10 @@ fn cenum_other_use_site(parsed: &Parsed, typedef_name: &str) -> Option<String> {
     for decl in &parsed.decls {
         match decl {
             Decl::Struct { name, fields } => {
-                if let Some(field) = fields.iter().find(|field| field.base == typedef_name) {
+                if let Some((_, field)) = fields.iter().enumerate().find(|(index, field)| {
+                    field.base == typedef_name
+                        && !cenum_supported_struct_field(fields, *index, field, typedef_name)
+                }) {
                     let shape = if field.array_len.is_some() {
                         " array element"
                     } else if field.pointer {

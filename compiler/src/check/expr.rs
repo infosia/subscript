@@ -10,9 +10,7 @@ use crate::hir::{
     self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn,
     NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
 };
-use crate::types::{
-    ClassId, FuncType, Type, ABSENT_STRING_ALIAS_DISCRIMINANT,
-};
+use crate::types::{ClassId, FuncType, Type};
 
 use super::stmt::narrow_paths;
 use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
@@ -437,13 +435,15 @@ impl<'p> Checker<'p> {
             ast::Lit::Str(s) => {
                 let value = s.value.to_string();
                 if let Some(Type::StringAlias(id)) = ctx {
-                    if let Some(index) = self
-                        .string_aliases
-                        .get(id.0)
-                        .and_then(|alias| alias.members.iter().position(|member| member == &value))
-                    {
+                    if let Some(discriminant) = self.string_aliases.get(id.0).and_then(|alias| {
+                        alias
+                            .members
+                            .iter()
+                            .position(|member| member == &value)
+                            .and_then(|index| alias.member_discriminant(index))
+                    }) {
                         return hir::Expr {
-                            kind: ExprKind::Int(index as i64),
+                            kind: ExprKind::Int(discriminant),
                             ty: Type::StringAlias(*id),
                             pos,
                         };
@@ -1206,8 +1206,15 @@ impl<'p> Checker<'p> {
             return Some(self.err_expr(pos));
         }
 
+        let sentinel_value = match &checked.ty {
+            Type::StringAlias(id) => self
+                .string_aliases
+                .get(id.0)
+                .map_or(-1, hir::StringAliasDef::absence_discriminant),
+            _ => -1,
+        };
         let sentinel = hir::Expr {
-            kind: ExprKind::Int(ABSENT_STRING_ALIAS_DISCRIMINANT),
+            kind: ExprKind::Int(sentinel_value),
             ty: checked.ty.clone(),
             pos: self.pos(undefined_source.span()),
         };
@@ -1415,7 +1422,9 @@ impl<'p> Checker<'p> {
                 cond.pos.clone(),
             );
         }
-        let (then_extra, else_extra) = narrow_paths(&cond);
+        let (then_extra, else_extra) = narrow_paths(&cond, &|id| {
+            self.string_aliases[id.0].absence_discriminant()
+        });
         let mut base = fx.narrowed.clone();
 
         fx.narrowed = base
@@ -1794,11 +1803,20 @@ impl<'p> Checker<'p> {
                 }
                 Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, fx)),
                 None if field.is_defaulted => None,
-                None if field.is_absence_capable => Some(hir::Expr {
-                    kind: ExprKind::Int(ABSENT_STRING_ALIAS_DISCRIMINANT),
-                    ty: field.ty.clone(),
-                    pos: pos.clone(),
-                }),
+                None if field.is_absence_capable => {
+                    let sentinel = match &field.ty {
+                        Type::StringAlias(id) => self
+                            .string_aliases
+                            .get(id.0)
+                            .map_or(-1, hir::StringAliasDef::absence_discriminant),
+                        _ => -1,
+                    };
+                    Some(hir::Expr {
+                        kind: ExprKind::Int(sentinel),
+                        ty: field.ty.clone(),
+                        pos: pos.clone(),
+                    })
+                }
                 None => {
                     self.error(
                         RuleCode::S100,

@@ -417,6 +417,92 @@ mod tests {
     }
 
     #[test]
+    fn wire_mapped_alias_is_accepted_in_boundary_struct_pair_and_constructor_positions() {
+        let module = check_program(&[
+            SourceFile::ambient(
+                "wire.d.ts",
+                "// @subscript-c-header include=\"wire.h\"\n\
+                 // @subscript-c-descriptor function=\"takeModes\" parameter=\"modes\" aggregate=\"WireModes\" element=\"WireModeC\" const=true\n\
+                 type WireMode = CEnum<{ \"m0\": 0x10; \"m1\": 23; \"m2\": -7 }>;\n\
+                 declare class WireRecord {\n\
+                   mode: WireMode;\n\
+                   modes: WireMode[];\n\
+                   constructor(mode: WireMode, modes: WireMode[]);\n\
+                 }\n\
+                 declare function takeModes(modes: WireMode[]): i32;\n",
+            ),
+            SourceFile::new(
+                "test.ts",
+                "export function main(): void {\n\
+                   const record: WireRecord = new WireRecord(\"m2\", [\"m0\", \"m1\"]);\n\
+                   print(`${record.mode}:${takeModes(record.modes)}`);\n\
+                 }\n",
+            ),
+        ])
+        .expect("§52 wire aliases are legal in all three new boundary positions");
+        let record = module
+            .classes
+            .iter()
+            .find(|class| class.name == "WireRecord")
+            .expect("WireRecord boundary class");
+        assert!(matches!(record.fields[0].ty, Type::StringAlias(_)));
+        assert!(matches!(
+            record.fields[1].ty,
+            Type::Array(ref element) if matches!(&**element, Type::StringAlias(_))
+        ));
+        assert!(matches!(
+            module.foreign_fns[0].params[0].ty,
+            Type::Array(ref element) if matches!(&**element, Type::StringAlias(_))
+        ));
+    }
+
+    #[test]
+    fn plain_string_alias_stays_rejected_in_each_new_boundary_position() {
+        for (label, declaration) in [
+            (
+                "struct member",
+                "declare class Boundary { value: PlainMode; constructor(value: i32); }\n",
+            ),
+            (
+                "pair element",
+                "declare class Boundary { values: PlainMode[]; constructor(values: i32[]); }\n",
+            ),
+            (
+                "constructor parameter",
+                "declare class Boundary { value: i32; constructor(value: PlainMode); }\n",
+            ),
+        ] {
+            let mirror = format!(
+                "// @subscript-c-header include=\"plain.h\"\n\
+                 type PlainMode = \"m0\" | \"m1\";\n{declaration}"
+            );
+            let diagnostics = check_program(&[
+                SourceFile::ambient("plain.d.ts", mirror),
+                SourceFile::new("test.ts", "export function main(): void {}\n"),
+            ])
+            .unwrap_err();
+            assert!(
+                diagnostics.iter().any(|diagnostic| diagnostic
+                    .message
+                    .contains("cannot appear in a boundary signature")),
+                "plain alias {label} unexpectedly lacked the boundary rejection: {diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn wire_alias_absence_sentinel_is_outside_the_wire_set() {
+        let module = check_one(
+            "type Mode = CEnum<{ \"min\": -2147483648; \"next\": -2147483647 }>;\n\
+             @Descriptor\n\
+             class Options { mode?: Mode; }\n\
+             export function main(): void { const options: Options = {}; }\n",
+        )
+        .expect("wire alias may use values that collide with the plain sentinel policy");
+        assert_eq!(module.string_aliases[0].absence_discriminant(), -2147483646);
+    }
+
+    #[test]
     fn plain_string_alias_stays_rejected_at_foreign_parameter_and_return_positions() {
         let diagnostics = check_program(&[
             SourceFile::ambient(

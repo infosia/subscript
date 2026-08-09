@@ -1436,6 +1436,7 @@ fn embedded_array_pairs(
         } else {
             match reg.get(&ptr.base) {
                 Some(Kind::Enum | Kind::Boundary) => ptr.base.clone(),
+                Some(Kind::CEnum(alias)) => alias.clone(),
                 Some(Kind::Handle | Kind::External) if ptr.is_const => ptr.base.clone(),
                 _ => {
                     return Err(ParseError(format!(
@@ -1686,7 +1687,13 @@ fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError
 /// unknown spelling into the mirror.
 fn map_named(base: &str, reg: &HashMap<String, Kind>) -> Result<String, ParseError> {
     match reg.get(base) {
-        Some(Kind::ArrayPair(elem)) => Ok(format!("{elem}[]")),
+        Some(Kind::ArrayPair(elem)) => {
+            let element = match reg.get(elem) {
+                Some(Kind::CEnum(alias)) => alias,
+                _ => elem,
+            };
+            Ok(format!("{element}[]"))
+        }
         Some(Kind::StringView) => Ok("string".to_string()),
         Some(Kind::CEnum(alias)) => Ok(alias.clone()),
         // Enum, FnPtr, Handle, Boundary, Alias all use their declared name.

@@ -198,6 +198,35 @@ pub struct StringAliasDef {
     pub pos: Pos,
 }
 
+impl StringAliasDef {
+    /// The implementation-reserved discriminant for an absent descriptor
+    /// member. Plain aliases retain R16's `-1`; a wire alias chooses the
+    /// first `i32` at or above `i32::MIN` that is outside its wire set.
+    #[must_use]
+    pub fn absence_discriminant(&self) -> i64 {
+        let Some(wire_values) = &self.wire_values else {
+            return crate::types::ABSENT_STRING_ALIAS_DISCRIMINANT;
+        };
+        let mut candidate = i32::MIN;
+        while wire_values.contains(&candidate) {
+            candidate = candidate
+                .checked_add(1)
+                .expect("a CEnum with at most i32::MAX members leaves a sentinel");
+        }
+        i64::from(candidate)
+    }
+
+    /// The representation of the declaration-ordered member at `index`.
+    /// Wire aliases use the declared wire value; plain aliases use `index`.
+    #[must_use]
+    pub fn member_discriminant(&self, index: usize) -> Option<i64> {
+        match &self.wire_values {
+            Some(values) => values.get(index).copied().map(i64::from),
+            None => i64::try_from(index).ok(),
+        }
+    }
+}
+
 /// A module-level variable.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -500,8 +529,7 @@ pub enum TrapSite {
         /// Position of the generator `.next()` call.
         pos: Pos,
     },
-    /// A foreign return carrying an R23 wire value must map to a known
-    /// declaration-order discriminant.
+    /// A C-entered wire-alias value must be a declared member value.
     WireEnumValue {
         /// Wire-mapped alias whose table is used at the crossing.
         alias: crate::types::StringAliasId,
@@ -3088,7 +3116,29 @@ impl Expr {
             }
             K::DescriptorLit { .. } => vec![allocation(&self.pos)],
             K::RawNew { .. } => vec![allocation(&self.pos)],
-            K::Field { obj, .. } if reference_value(&obj.ty) => vec![lifetime(&obj.pos)],
+            K::Field { obj, .. } => {
+                let mut sites = Vec::new();
+                if reference_value(&obj.ty) {
+                    sites.push(lifetime(&obj.pos));
+                }
+                if let (Type::StringAlias(alias), Type::Class(class)) = (&self.ty, &obj.ty) {
+                    let wire_member = module
+                        .classes
+                        .get(class.0)
+                        .is_some_and(|definition| definition.is_boundary)
+                        && module
+                            .string_aliases
+                            .get(alias.0)
+                            .is_some_and(|definition| definition.wire_values.is_some());
+                    if wire_member {
+                        sites.push(TrapSite::WireEnumValue {
+                            alias: *alias,
+                            pos: self.pos.clone(),
+                        });
+                    }
+                }
+                sites
+            }
             K::JsonResultValue(obj) => vec![
                 lifetime(&obj.pos),
                 TrapSite::JsonResultValue {
@@ -3149,7 +3199,6 @@ impl Expr {
             | K::Unary { .. }
             | K::Binary { .. }
             | K::Cast(_)
-            | K::Field { .. }
             | K::Length(_)
             | K::Index { .. }
             | K::ArrayLit(_)

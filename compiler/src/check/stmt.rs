@@ -8,14 +8,20 @@ use swc_ecma_ast as ast;
 
 use crate::diag::RuleCode;
 use crate::hir::{self, BinOp, ExprKind};
-use crate::types::{Type, ABSENT_STRING_ALIAS_DISCRIMINANT};
+use crate::types::{StringAliasId, Type};
+
+#[cfg(test)]
+use crate::types::ABSENT_STRING_ALIAS_DISCRIMINANT;
 
 use super::expr::path_key;
 use super::{Checker, FnCtx, Local};
 
 /// Narrowing facts derived from a checked condition: paths known non-null
 /// or known present when the condition is true / false.
-pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
+pub(crate) fn narrow_paths(
+    cond: &hir::Expr,
+    alias_absence: &impl Fn(StringAliasId) -> i64,
+) -> (Vec<String>, Vec<String>) {
     if let ExprKind::Binary { op, left, right } = &cond.kind {
         match op {
             BinOp::Eq | BinOp::Ne => {
@@ -36,17 +42,15 @@ pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
                         };
                     }
                 }
-                let (absent_side, other) = if matches!(
-                    (&left.kind, &left.ty),
-                    (ExprKind::Int(value), Type::StringAlias(_))
-                        if *value == ABSENT_STRING_ALIAS_DISCRIMINANT
-                ) {
+                let is_absent = |expr: &hir::Expr| match (&expr.kind, &expr.ty) {
+                    (ExprKind::Int(value), Type::StringAlias(id)) => {
+                        *value == alias_absence(*id)
+                    }
+                    _ => false,
+                };
+                let (absent_side, other) = if is_absent(left) {
                     (Some(()), right)
-                } else if matches!(
-                    (&right.kind, &right.ty),
-                    (ExprKind::Int(value), Type::StringAlias(_))
-                        if *value == ABSENT_STRING_ALIAS_DISCRIMINANT
-                ) {
+                } else if is_absent(right) {
                     (Some(()), left)
                 } else {
                     (None, left)
@@ -64,8 +68,8 @@ pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
                 (Vec::new(), Vec::new())
             }
             BinOp::And => {
-                let (mut t1, _) = narrow_paths(left);
-                let (t2, _) = narrow_paths(right);
+                let (mut t1, _) = narrow_paths(left, alias_absence);
+                let (t2, _) = narrow_paths(right, alias_absence);
                 t1.extend(t2);
                 (t1, Vec::new())
             }
@@ -597,7 +601,9 @@ impl<'p> Checker<'p> {
         let pos = self.pos(i.span);
         let cond = self.check_expr(&i.test, None, fx);
         self.require_bool(&cond);
-        let (then_extra, else_extra) = narrow_paths(&cond);
+        let (then_extra, else_extra) = narrow_paths(&cond, &|id| {
+            self.string_aliases[id.0].absence_discriminant()
+        });
 
         let mut base = fx.narrowed.clone();
 
@@ -654,7 +660,9 @@ impl<'p> Checker<'p> {
 
         let cond = self.check_expr(&w.test, None, fx);
         self.require_bool(&cond);
-        let (then_extra, _) = narrow_paths(&cond);
+        let (then_extra, _) = narrow_paths(&cond, &|id| {
+            self.string_aliases[id.0].absence_discriminant()
+        });
 
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
@@ -700,7 +708,9 @@ impl<'p> Checker<'p> {
         });
         let then_extra = cond
             .as_ref()
-            .map(|c| narrow_paths(c).0)
+            .map(|c| {
+                narrow_paths(c, &|id| self.string_aliases[id.0].absence_discriminant()).0
+            })
             .unwrap_or_default();
 
         let mut base = fx.narrowed.clone();
@@ -1227,7 +1237,9 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond);
+        let (when_true, when_false) = narrow_paths(&cond, &|_| {
+            ABSENT_STRING_ALIAS_DISCRIMINANT
+        });
         assert_eq!(when_true, vec!["p".to_string()]);
         assert!(when_false.is_empty());
 
@@ -1239,7 +1251,9 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond_eq);
+        let (when_true, when_false) = narrow_paths(&cond_eq, &|_| {
+            ABSENT_STRING_ALIAS_DISCRIMINANT
+        });
         assert!(when_true.is_empty());
         assert_eq!(when_false, vec!["p".to_string()]);
     }
@@ -1275,7 +1289,7 @@ mod tests {
             Type::Bool,
         );
         assert_eq!(
-            narrow_paths(&not_equal),
+            narrow_paths(&not_equal, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT),
             (vec!["sampler.compare".to_string()], Vec::new())
         );
 
@@ -1288,7 +1302,7 @@ mod tests {
             Type::Bool,
         );
         assert_eq!(
-            narrow_paths(&equal),
+            narrow_paths(&equal, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT),
             (Vec::new(), vec!["sampler.compare".to_string()])
         );
     }

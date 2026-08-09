@@ -675,11 +675,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // across two generated mirrors (a127), and R21 host-owned state across
     // two host-driven entry calls (a128), and R23 wire-mapped literal-union
     // boundary crossings (a129), and R24 bind-generated enum-typedef CEnum
-    // crossings (a130).
+    // crossings (a130), and §52 wire aliases in boundary structs (a131).
     assert_eq!(
         golden_ids.len(),
-        130,
-        "expected exactly 130 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        131,
+        "expected exactly 131 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -709,8 +709,9 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          R19 conditional-arm-narrowing golden, and the a126 OBS-4 by-value \
          register-image packing golden, and the a127 R20 external-type \
          two-mirror golden, the a128 R21 host-owned-state golden, and the a129 \
-         R23 wire-enum interop golden, and the a130 R24 bind-generated \
-         enum-typedef wire-enum golden, found {}",
+         R23 wire-enum interop golden, the a130 R24 bind-generated \
+         enum-typedef wire-enum golden, and the a131 §52 wire-enum \
+         boundary-struct golden, found {}",
         golden_ids.len()
     );
 

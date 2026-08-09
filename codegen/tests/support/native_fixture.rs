@@ -94,6 +94,11 @@ extern "C" {
     fn subWireModeUnknown();
     fn subBindToneNext();
     fn subBindToneEcho();
+    fn subWireModeRecordEchoMode();
+    fn subWireModeRecordEchoTone();
+    fn subWireModeRecordEchoElement();
+    fn subWireModeRecordFill();
+    fn subWireModeRecordFillUnknown();
 }
 
 /// Runs the fixture's ship-tier pre-entry hook for a dev-tier session.
@@ -261,6 +266,26 @@ pub fn library() -> NativeLibrary {
         ),
         ("subBindToneNext".to_string(), subBindToneNext as *const u8),
         ("subBindToneEcho".to_string(), subBindToneEcho as *const u8),
+        (
+            "subWireModeRecordEchoMode".to_string(),
+            subWireModeRecordEchoMode as *const u8,
+        ),
+        (
+            "subWireModeRecordEchoTone".to_string(),
+            subWireModeRecordEchoTone as *const u8,
+        ),
+        (
+            "subWireModeRecordEchoElement".to_string(),
+            subWireModeRecordEchoElement as *const u8,
+        ),
+        (
+            "subWireModeRecordFill".to_string(),
+            subWireModeRecordFill as *const u8,
+        ),
+        (
+            "subWireModeRecordFillUnknown".to_string(),
+            subWireModeRecordFillUnknown as *const u8,
+        ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime
     // functions into the test process, and every address corresponds to the
