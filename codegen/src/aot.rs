@@ -1773,15 +1773,28 @@ int main(void) {
     }
 
     #[test]
-    fn device_triples_emit_objects_for_the_real_lowering() {
+    fn ship_target_triples_emit_objects_for_the_real_lowering() {
         let src = "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < xs.length; i += 1) {\n    total += xs[i];\n  }\n  print(`${total}`);\n}\n";
-        for (triple, format) in [
-            ("aarch64-apple-ios", BinaryFormat::MachO),
-            ("aarch64-linux-android", BinaryFormat::Elf),
+        for (triple, format, architecture) in [
+            (
+                "aarch64-apple-ios",
+                BinaryFormat::MachO,
+                Architecture::Aarch64,
+            ),
+            (
+                "aarch64-linux-android",
+                BinaryFormat::Elf,
+                Architecture::Aarch64,
+            ),
+            (
+                "x86_64-unknown-linux-gnu",
+                BinaryFormat::Elf,
+                Architecture::X86_64,
+            ),
         ] {
-            let obj = emit_object(&sources(src), Some(triple)).expect("emit device object");
+            let obj = emit_object(&sources(src), Some(triple)).expect("emit ship-target object");
             assert_eq!(obj.triple, triple);
-            assert_object_shape(&obj.bytes, format, Architecture::Aarch64);
+            assert_object_shape(&obj.bytes, format, architecture);
         }
     }
 

@@ -1,11 +1,12 @@
-//! Device-triple object emitter (`specs/blocks/compiler.md` §8.1).
+//! Retained ship-target object cross-check (`specs/blocks/compiler.md` §8.1).
 //!
-//! Emits one relocatable object per device triple —
-//! `aarch64-apple-ios` (Mach-O) and `aarch64-linux-android` (ELF) —
-//! for one accept-corpus entry, through the same lowering the dev JIT
-//! and the host AOT path use, and writes the generated C entry program
-//! next to them. `device-link.sh` links the results with the platform
-//! toolchains; nothing here executes a produced binary.
+//! Emits one retained Cranelift-object cross-check object per ship target
+//! for shape parity: the `aarch64-apple-ios` (Mach-O) and
+//! `aarch64-linux-android` (ELF) device triples, plus the
+//! `x86_64-unknown-linux-gnu` (ELF) host target. The actual ship path is
+//! `subscript emit` followed by clang; see `device-link.sh`, which does not
+//! consume these objects. This binary also writes the generated C entry
+//! program next to the cross-check objects, but executes nothing.
 //!
 //! Usage:
 //! `cargo run --offline -p subscript-codegen --bin emit-object -- <out-dir> [entry-id]`
@@ -19,8 +20,12 @@ use std::process::ExitCode;
 use subscript_codegen::{emit_object, AOT_ENTRY_C};
 use subscript_compiler::SourceFile;
 
-/// The device triples P3 must link for (contract §3, §8.1).
-const DEVICE_TRIPLES: [&str; 2] = ["aarch64-apple-ios", "aarch64-linux-android"];
+/// Ship-target triples retained for Cranelift-object shape parity.
+const SHIP_TARGET_TRIPLES: [&str; 3] = [
+    "aarch64-apple-ios",
+    "aarch64-linux-android",
+    "x86_64-unknown-linux-gnu",
+];
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -51,7 +56,7 @@ fn main() -> ExitCode {
     }
     println!("wrote {}", entry_c.display());
 
-    for triple in DEVICE_TRIPLES {
+    for triple in SHIP_TARGET_TRIPLES {
         let object = match emit_object(&sources, Some(triple)) {
             Ok(o) => o,
             Err(e) => {

@@ -30,13 +30,17 @@ SWC parse (TS-subset front end, Rust)
   `specs/tracking/linux-portability.md`). AAPCS64 (arm64) and Win64
   non-regression after that shared refactor: both re-verified on their
   own hosts and discharged 2026-08-09 (tracking, "Remaining gate"). The
-  ship tier stays arm64-only (§11).
+  ship tier ships the arm64 mobile device triples (iOS, Android) and, added
+  2026-08-09, the desktop host target `x86_64-unknown-linux-gnu` (§11).
 - One HIR→CLIF lowering serves both tiers; dev/ship semantics coincide by
   construction. *(Superseded for the ship tier by Rev 8 / §11: the ship
   tier is HIR→C→`clang` (LLVM), a second lowering, after P4 measured
   Cranelift AOT at 23× a C baseline. dev/ship agreement is then
   established by verification — the standing gate — not by construction.
-  The dev tier is unchanged: Cranelift JIT with hot reload.)*
+  The dev tier is unchanged: Cranelift JIT with hot reload. The diagram's
+  ship-target list is superseded too — §11 ships the arm64 mobile device
+  triples and `x86_64-unknown-linux-gnu`; the "arm64-only" note predates
+  the latter.)*
 - **Coroutines**: CPS transform in codegen (iOS-safe; no fibers, no stack
   switching). Suspended state lives in the runtime as Context data.
 - **Traps** (OOB, null narrowing, checked `as`, literal-range, failed
@@ -251,7 +255,10 @@ Observable obligations only; internal design is the implementer's.
 - Device-triple AOT (`aarch64-apple-ios`, `aarch64-linux-android`)
   must still **compile and link** for a run-set entry — the P0.5 spike
   proved a minimal program; P3 proves the real lowering's output links.
-  No device execution is required (P0.5 criterion, unchanged).
+  No device execution is required (P0.5 criterion, unchanged). The
+  `x86_64-unknown-linux-gnu` host ship target (§11) is emitted the same
+  way for Cranelift-object shape parity and, being native, is additionally
+  executed by the standing gate.
 - Cross-tier determinism: the AOT binary's stdout bytes must equal the
   JIT's for every run-set entry. Where they differ, the language rule
   decides which side is wrong (§2), never the golden.
@@ -786,12 +793,22 @@ ship tier.
   established — by verification, since the two tiers are separate
   lowerings (plan §8 Rev 2). The `cranelift-object` AOT path is retained
   only as an optional extra cross-check column; its ship role has ended.
-- **Device triples**: the C is cross-compiled with `clang`
-  (`--target=aarch64-apple-ios` / `aarch64-linux-android` via the NDK)
-  and linked, replacing the `cranelift-object` device link. Compile+link
-  only, as §3 — no device execution. The P0.5 kill criterion is
-  unaffected: it already passed, and C emission was its pre-registered
-  fallback architecture.
+- **Ship targets**: the emitted C is compiled and linked per target,
+  replacing the `cranelift-object` device link.
+  - Two cross-compiled **mobile device triples** — `aarch64-apple-ios`
+    (Xcode clang) and `aarch64-linux-android` (NDK clang) — compile+link
+    only, as §3, no device execution.
+  - One **desktop host target**, `x86_64-unknown-linux-gnu` (added
+    2026-08-09): natively compiled, linked, **and executed** byte-exact by
+    the standing gate when the gate runs on an x86-64 Linux host
+    (`run_c_aot`; dev-JIT ≡ ship-C-AOT ≡ golden), so it is the
+    most-verified ship target — the mobile triples never execute.
+    Measured 2026-08-09: `subscript emit` → clang (host runtime staticlib +
+    the §11b Linux system libraries) produces an x86-64 ELF PIE that runs
+    and prints the golden output (`specs/tracking/linux-portability.md`).
+
+  The P0.5 kill criterion is unaffected: it already passed, and C emission
+  was its pre-registered fallback architecture.
 - **Reuse or replicate the runtime**: the emitted C may link the
   existing runtime staticlib or emit self-contained equivalents; either
   way behaviour must match the runtime (the standing gate enforces it).
@@ -1057,9 +1074,10 @@ This runs for the dev targets (host) and is the concrete discharge of
 
 ### 12.3a Dev-tier boundary-struct marshaling: AAPCS64 and Win64
 
-The ship tier is arm64-only C emission (§11), where the platform C
+The ship tier is C emission (§11), where the platform C
 compiler performs all boundary-struct argument marshaling and is correct
-by construction. The dev JIT must hand-build the C-ABI call, and passing
+by construction on every ship target (arm64 iOS/Android and
+`x86_64-unknown-linux-gnu`). The dev JIT must hand-build the C-ABI call, and passing
 a boundary **struct by value** across a foreign call is ABI-specific. The
 marshaler branches on the **target ABI**, not merely the architecture,
 because x86-64 hosts split by OS: `x86_64-pc-windows-msvc` is Win64,

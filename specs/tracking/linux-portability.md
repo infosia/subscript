@@ -165,6 +165,28 @@ Out of scope: `api_reference` (cause D, needs `node`);
 Both non-regressions are discharged; no gate remains open in this
 phase.
 
+## Ship target — x86_64 Linux (2026-08-09)
+
+The dev-tier port above also makes `x86_64-unknown-linux-gnu` a **ship
+target** (compiler.md §11 "Ship targets", §1). The ship tier is
+HIR→C→clang, so the platform C compiler marshals the ABI and the dev-tier
+SysV work is not needed here; the manual link needs the Task 1 Linux system
+libraries (§11b).
+
+Measured 2026-08-09 (`$CC` unset): `target/release/subscript emit
+a01-hello.ts -o out` produced `program.c` + `entry.c`; native clang
+(`-std=c11 -O2 -fwrapv -ffp-contract=off`) linked them with the host
+`libsubscript_runtime.a` and `-lm -ldl -lpthread -lrt -lutil -lgcc_s -lc`
+into an ELF 64-bit x86-64 PIE; running it printed the golden `hello`, exit
+0. The standing gate already runs the same ship-C path byte-exact
+(`run_c_aot`, golden 27/27), so x86-64 Linux is the one ship target that
+executes in the gate — the mobile device triples only compile+link.
+
+Tooling parity landed with this change: `x86_64-unknown-linux-gnu` is added
+to the device-triple object emitter (`codegen/src/bin/emit-object.rs`, its
+`aot.rs` shape test) and to `codegen/device-link.sh` (a native-clang
+compile+link section), beside the arm64 iOS/Android triples.
+
 ## Follow-ups (tracked, beyond this phase)
 
 - SysV argument **register-pressure stack revert** (psABI §3.2.3 step 5) —

@@ -101,8 +101,9 @@ union, generators-as-coroutines with `async` rejected.
 
 ## 6. Phase plan
 
-Contract for P1–P5: `specs/blocks/compiler.md`. Targets: dev Windows/Mac,
-ship iOS/Android (arm64-only).
+Contract for P1–P5: `specs/blocks/compiler.md`. Targets: dev Windows/Mac
+and `x86_64-unknown-linux-gnu`; ship arm64 iOS/Android plus the
+`x86_64-unknown-linux-gnu` desktop host (compiler.md §11, §1).
 
 - **P0 — seeding (this revision).** Founding record (this plan,
   `CLAUDE.md`), corpus `a01`–`a24` + `r01`–`r14`, `prelude/lang.d.ts`,

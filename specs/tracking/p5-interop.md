@@ -178,7 +178,7 @@ ship target, and the run set's platform).
   path — scalar/pointer/`(ptr,len)`/`Struct|null`-pointer/`object|null`
   args stay target-neutral). x86-64 SysV / Win64 marshaling is a
   tracked follow-up (untested on this arm64 machine; a fail-loud
-  restriction beats untested ABI code). The ship tier is arm64-only C
+  restriction beats untested ABI code). The ship tier is C
   emission where the C compiler marshals correctly, so shipped code is
   unaffected.
 - MINOR m1 fixed: the trampoline now checks `ctx.trapped()` before
