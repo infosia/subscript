@@ -1,7 +1,10 @@
 # Windows portability — evidence
 
-Status: in progress, 2026-07-23. Contract: `specs/blocks/compiler.md`
-§11a; architecture §1 (dev tier: cranelift-jit, Windows/Mac).
+Status: the workspace is green on `x86_64-pc-windows-msvc`, measured
+2026-08-09 at `085ce32` (last section). Contract:
+`specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
+cranelift-jit, Windows/Mac). This file keeps the record from
+2026-07-23 forward, so the older sections state older states.
 
 ## Finding (2026-07-23)
 
@@ -609,6 +612,70 @@ This is the second instance of that class after §11c.3, and it entered
 with the same OBS-3 rounds: `c9e49e7` added the panic test, `fab7fdd`
 added the other two. Both are inside the 42 commits after `0becd2b`,
 the last point where this host measured the workspace green.
+
+## Full Windows gate at `085ce32`, 2026-08-09
+
+### Result
+
+The workspace is green on `x86_64-pc-windows-msvc`. Every gate ran on
+this host at `085ce32`, after the Linux port (`cfb583d`) and the
+desktop ship targets (`fba2012`, `39623e7`) arrived:
+
+| Gate | Result |
+|---|---|
+| `cargo build --workspace --all-targets` | 0 warnings, 0 errors |
+| the same in the release profile | 0 warnings, 0 errors |
+| `cargo test --workspace --no-fail-fast` | 53 harnesses, 904 passed, 0 failed, 1 ignored |
+| `cargo fmt --check` | exit 0 |
+| `npx tsc -p tsconfig.json` | exit 0 |
+
+The 5-triple ship-target object test is part of that run. Its own
+evidence is in `desktop-ship-targets.md`.
+
+### The toolchain pin took effect here
+
+`rust-toolchain.toml` (`37561d0`) pins 1.95.0. This host defaulted to
+1.97.0 before the pin. rustup installed 1.95.0 and both device-triple
+std targets on Windows without an error. All numbers above are from
+the pinned toolchain. `cargo fmt --check` now exits 0 on this host,
+so the formatting disagreement recorded for the 2026-08-02 run is
+gone; the pin was the fix.
+
+### One defect, found and fixed
+
+`cargo build --workspace --all-targets` gave one warning at
+`d124f7c`:
+
+    warning: unused imports: `host_c_compiler` and `runtime_system_libraries`
+      --> codegen\tests\cemit.rs:23:5
+
+The Linux port added a second compile branch in
+`codegen/tests/cemit.rs` under
+`#[cfg(not(all(windows, target_env = "msvc")))]`. That branch holds
+the only use sites of the two symbols. The import list stayed
+unconditional, so both symbols are dead on windows-msvc. Fixed in
+`b3b670f`: the imports now carry the predicate of their use site. The
+file already applies that predicate to `mod native_fixture`.
+
+This is the same class as §11c.3 and §44.10 — a change that is
+correct on the reference platform and incorrect on this one — but at
+the lowest severity: a warning, not a failure.
+
+### Two earlier Windows findings, re-measured
+
+1. **§11c.3 structural golden exclusion still holds.** The golden
+   sweep prints `compared 84 entries, skipped 47 entries`. The sum is
+   131 and the committed golden count is 131, so every entry is
+   accounted for. The skip count moved from 44 to 47 with the entries
+   added since 2026-08-05.
+2. **§44.10 no longer ends a harness.** `native_library` gives 6
+   passed, 0 failed. The three tests that ended the harness process
+   now run the process-ending program in a re-executed child test
+   process (`codegen/tests/native_library.rs:119-199`). The
+   structural limit itself is unchanged: `execute_entry_retained`
+   still runs in the caller's process on every non-Unix platform
+   (`codegen/src/jit.rs:1612`). The tests isolate the limit; they do
+   not remove it.
 
 ### Task plan (handoff — coding agent)
 
