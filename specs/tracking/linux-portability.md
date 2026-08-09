@@ -108,8 +108,12 @@ Out of scope: `api_reference` (cause D, needs `node`);
   plan set.
 - 2026-08-09: Task 1 (clang resolver + Linux system libs) implemented by
   the coding agent, reverted once for a workspace-wide `cargo fmt` that
-  reformatted ~65 out-of-scope files (this repo is not stable-rustfmt
-  canonical — never run a formatter here), then re-done clean. Orchestrator
+  reformatted ~65 out-of-scope files (this repo was not stable-rustfmt
+  canonical at the time), then re-done clean. *(Superseded 2026-08-09:
+  the tree is now rustfmt-canonical under the `rust-toolchain.toml` pin
+  and `cargo fmt --check` is a standing gate — CLAUDE.md, Code
+  conventions. The rule against formatter runs from any other toolchain
+  version stands.)* Orchestrator
   re-verified with `$CC` unset: `cargo build --workspace` green,
   offsetof 1/0, interop 4 pass / 9 §12.3a (no `undefined reference`),
   codegen lib 141/0. Causes A + B clear.

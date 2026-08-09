@@ -1,0 +1,7 @@
+[toolchain]
+# Owner decision 2026-08-09: pin the toolchain so rustc and rustfmt
+# (1.9.0-stable) are identical on every dev host. The tree is
+# rustfmt-canonical under this pin; `cargo fmt --check` is a
+# standing gate (CLAUDE.md, Code conventions).
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

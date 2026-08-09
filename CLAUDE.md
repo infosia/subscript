@@ -187,6 +187,11 @@ on a correctness or soundness lint requires a justifying comment (blanket
 allows only on generated-bindings modules); C↔Rust conversions macro-driven
 in one module; colocate each area's code with its own module.
 
+**Formatting** *(Owner, 2026-08-09)*: the tree is rustfmt-canonical
+under the toolchain `rust-toolchain.toml` pins. `cargo fmt --check`
+is a standing gate. Do not run a formatter from any other toolchain
+version.
+
 ## Workflow per area
 
 1. Write/extend `specs/blocks/<area>.md` — contract first.
