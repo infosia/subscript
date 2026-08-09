@@ -30,8 +30,9 @@ SWC parse (TS-subset front end, Rust)
   `specs/tracking/linux-portability.md`). AAPCS64 (arm64) and Win64
   non-regression after that shared refactor: both re-verified on their
   own hosts and discharged 2026-08-09 (tracking, "Remaining gate"). The
-  ship tier ships the arm64 mobile device triples (iOS, Android) and, added
-  2026-08-09, the desktop host target `x86_64-unknown-linux-gnu` (§11).
+  ship tier ships the arm64 mobile device triples (iOS, Android) and the
+  desktop host targets `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`,
+  and `x86_64-pc-windows-msvc` (§11; desktops added 2026-08-09).
 - One HIR→CLIF lowering serves both tiers; dev/ship semantics coincide by
   construction. *(Superseded for the ship tier by Rev 8 / §11: the ship
   tier is HIR→C→`clang` (LLVM), a second lowering, after P4 measured
@@ -256,9 +257,10 @@ Observable obligations only; internal design is the implementer's.
   must still **compile and link** for a run-set entry — the P0.5 spike
   proved a minimal program; P3 proves the real lowering's output links.
   No device execution is required (P0.5 criterion, unchanged). The
-  `x86_64-unknown-linux-gnu` host ship target (§11) is emitted the same
-  way for Cranelift-object shape parity and, being native, is additionally
-  executed by the standing gate.
+  desktop host ship targets (§11: `x86_64-unknown-linux-gnu`,
+  `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`) are emitted the same
+  way for Cranelift-object shape parity and, being native, are
+  additionally executed by the standing gate on their own hosts.
 - Cross-tier determinism: the AOT binary's stdout bytes must equal the
   JIT's for every run-set entry. Where they differ, the language rule
   decides which side is wrong (§2), never the golden.
@@ -798,14 +800,28 @@ ship tier.
   - Two cross-compiled **mobile device triples** — `aarch64-apple-ios`
     (Xcode clang) and `aarch64-linux-android` (NDK clang) — compile+link
     only, as §3, no device execution.
-  - One **desktop host target**, `x86_64-unknown-linux-gnu` (added
-    2026-08-09): natively compiled, linked, **and executed** byte-exact by
-    the standing gate when the gate runs on an x86-64 Linux host
-    (`run_c_aot`; dev-JIT ≡ ship-C-AOT ≡ golden), so it is the
-    most-verified ship target — the mobile triples never execute.
-    Measured 2026-08-09: `subscript emit` → clang (host runtime staticlib +
-    the §11b Linux system libraries) produces an x86-64 ELF PIE that runs
-    and prints the golden output (`specs/tracking/linux-portability.md`).
+  - **Desktop host targets** — each natively compiled, linked, **and
+    executed** byte-exact by the standing gate when the gate runs on a
+    host of that triple (`run_c_aot`; dev-JIT ≡ ship-C-AOT ≡ golden), so
+    they are the most-verified ship targets — the mobile triples never
+    execute:
+    - `x86_64-unknown-linux-gnu` (added 2026-08-09). Measured:
+      `subscript emit` → clang (host runtime staticlib + the §11b Linux
+      system libraries) produces an x86-64 ELF PIE that runs and prints
+      the golden output (`specs/tracking/linux-portability.md`).
+    - `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` (owner
+      decision 2026-08-09). Standing evidence at declaration: the full
+      gate executes the ship-C path on the arm64 macOS reference machine
+      (every suite green, every golden byte-exact) and on windows-msvc
+      (53 harnesses, 904 passed, 0 failed — commit `b3b670f`), through
+      the §11b/§11c host toolchains. The declaration slice adds tooling
+      parity only: both triples join the retained Cranelift-object
+      cross-check (`SHIP_TARGET_TRIPLES`) with per-triple object-format
+      assertions (Mach-O/ARM64, COFF/X86_64), and the macOS host gets a
+      native `device-link.sh` section in the Linux section's shape. The
+      Windows link smoke is the standing gate itself (`run_c_aot` under
+      MSVC `cl`); the shell script does not run there and no separate
+      script is added.
 
   The P0.5 kill criterion is unaffected: it already passed, and C emission
   was its pre-registered fallback architecture.
