@@ -202,6 +202,21 @@ test is the `api_reference` witness; this host resolves no JS
 engine (`s54-link-input-order.md`), and macOS ran it green at
 `a94eeb0`.
 
+## The JS toolchain gates run on this host (2026-08-10)
+
+Node v24.19.0 (the witness baseline is the v24 line,
+`js-api-sweep.md`) and the pinned typescript 5.9.2 are installed.
+
+Measured at `346f2bd`, release profile:
+
+- `api_reference` witness suite: 1 passed, 0 failed, exit 0.
+- `npx tsc -p tsconfig.json`: exit 0.
+- Full workspace gate, no test filtered: 927 passed, 0 failed, 1
+  ignored, 0 filtered, exit 0.
+
+Every gate now runs on this host. No count is borrowed from the
+reference machine.
+
 ## Follow-ups (tracked, beyond this phase)
 
 - SysV argument **register-pressure stack revert** (psABI §3.2.3 step 5) —
