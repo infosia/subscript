@@ -993,23 +993,28 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     })
 }
 
-/// Cranelift settings for the dev tier: no position-independent code
-/// (the JIT resolves everything by absolute address in-process).
+/// Cranelift settings for the dev tier: absolute-address code plus inline
+/// probes. A frame larger than one page must touch the guard page before
+/// its first write, or Windows faults on that write.
 pub(crate) fn dev_flags() -> Result<cranelift_codegen::settings::Flags, String> {
     let mut fb = cranelift_codegen::settings::builder();
     fb.set("opt_level", "speed")
         .and_then(|()| fb.set("is_pic", "false"))
+        .and_then(|()| fb.set("enable_probestack", "true"))
+        .and_then(|()| fb.set("probestack_strategy", "inline"))
         .map_err(|e| internal(format!("settings: {e}")))?;
     Ok(cranelift_codegen::settings::Flags::new(fb))
 }
 
-/// Cranelift settings for the ship tier: position-independent code, as
-/// the P0.5 spike used, because the object is linked into a PIE on
-/// every target platform this project ships to.
+/// Cranelift settings for the ship tier: position-independent code plus
+/// inline probes. A frame larger than one page must touch the guard page
+/// before its first write, or Windows faults on that write.
 pub(crate) fn aot_flags() -> Result<cranelift_codegen::settings::Flags, String> {
     let mut fb = cranelift_codegen::settings::builder();
     fb.set("opt_level", "speed")
         .and_then(|()| fb.set("is_pic", "true"))
+        .and_then(|()| fb.set("enable_probestack", "true"))
+        .and_then(|()| fb.set("probestack_strategy", "inline"))
         .map_err(|e| internal(format!("settings: {e}")))?;
     Ok(cranelift_codegen::settings::Flags::new(fb))
 }
@@ -1363,10 +1368,30 @@ pub(crate) fn lower_module_with<M: Module>(
 #[cfg(test)]
 mod tests {
     use super::{
-        boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul, round_up_layout,
+        aot_flags, boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul,
+        dev_flags, round_up_layout,
     };
+    use cranelift_codegen::settings::ProbestackStrategy;
     use std::str::FromStr;
     use target_lexicon::Triple;
+
+    #[test]
+    fn cranelift_flags_use_inline_stack_probes() {
+        for (tier, flags) in [
+            ("dev", dev_flags().expect("dev flags")),
+            ("AOT", aot_flags().expect("AOT flags")),
+        ] {
+            assert!(
+                flags.enable_probestack(),
+                "{tier} flags must enable stack probes"
+            );
+            assert_eq!(
+                flags.probestack_strategy(),
+                ProbestackStrategy::Inline,
+                "{tier} flags must use inline stack probes"
+            );
+        }
+    }
 
     /// The dev-JIT boundary-struct-by-value marshaler implements AAPCS64,
     /// Win64, and x86-64 SysV (compiler.md §12.3a). Other architectures
