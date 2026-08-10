@@ -96,3 +96,25 @@ macOS and windows-msvc ran no test for this change. Both
 platforms resolve an archive independent of its position, so the
 order change cannot regress them. The fixture crate is ungated,
 so the next Windows gate run will build the archive with `cl`.
+
+## macOS confirmation — 2026-08-10
+
+Measured on the arm64 macOS reference machine at `a94eeb0`, with
+the pinned toolchain:
+
+- `cargo test --offline --release -p subscript-codegen --test
+  native_library`: 7 passed, 0 failed, exit 0. The archive test
+  passes; `ld64` resolves an archive at any position, so this run
+  checks for a regression from the reorder and finds none.
+- Full workspace release gate: 926 passed, 0 failed, 1 ignored,
+  exit 0. The count includes the new archive test and the
+  `api_reference` witness test, which this host runs (`node`
+  resolves here). That closes one of the two gates the Linux host
+  could not run.
+- `tsc` gate: exit 0. That closes the other.
+- `cargo build --offline --workspace --all-targets`: 0 warnings.
+  `cargo fmt --check`: exit 0.
+
+Open: the windows-msvc gate has not run this change. The fixture
+crate is ungated, so the next Windows gate run builds the archive
+with `cl`.
