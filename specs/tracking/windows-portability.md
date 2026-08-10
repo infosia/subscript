@@ -885,3 +885,20 @@ The archive fixture crate builds with `cl` on this host, as §54.3
 criterion 4 requires.
 
 
+
+### §55 criterion 5 — reference machine, both profiles
+
+Measured on the arm64 macOS reference machine at `4e46dfb`, with
+the pinned toolchain, per the §55.3 criterion-4 rule that a gate
+runs both profiles:
+
+- Dev profile: `cargo test --offline --workspace` — 927 passed, 0
+  failed, 1 ignored, exit 0.
+- Release profile: `cargo test --offline --workspace --release` —
+  927 passed, 0 failed, 1 ignored, exit 0.
+- The counts include the new flag read-back unit test.
+- Golden ledger: 183 files, all SHA-256 unchanged — every golden
+  is byte-identical across the probestack change.
+- `cargo fmt --check` exit 0; `tsc` gate exit 0.
+
+§55.3 criterion 5 holds. Every §55 criterion is now discharged.
