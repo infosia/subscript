@@ -187,6 +187,21 @@ to the device-triple object emitter (`codegen/src/bin/emit-object.rs`, its
 `aot.rs` shape test) and to `codegen/device-link.sh` (a native-clang
 compile+link section), beside the arm64 iOS/Android triples.
 
+## §55 stack probes — both profiles on this host (2026-08-10)
+
+`3c3e7d7` turns on `enable_probestack` with the inline strategy in
+both Cranelift flag sets (compiler.md §55). The rule is
+target-independent, so the Linux gate re-ran at `cca69b0` in both
+profiles — the §55 lesson is that a profile that only builds is
+not a gate.
+
+Measured on this host, toolchain 1.95.0, release and dev profiles:
+926 passed, 0 failed, 1 ignored, 1 filtered, exit 0 in each.
+`cargo fmt --check` exit 0. Golden ledger unchanged. The filtered
+test is the `api_reference` witness; this host resolves no JS
+engine (`s54-link-input-order.md`), and macOS ran it green at
+`a94eeb0`.
+
 ## Follow-ups (tracked, beyond this phase)
 
 - SysV argument **register-pressure stack revert** (psABI §3.2.3 step 5) —
