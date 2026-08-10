@@ -65,6 +65,37 @@ absolute or escaping path and no new external name of the forms above
 entered the history; it is not a proof that some unnamed sibling project
 is unmentioned.
 
+## Sweep 2026-08-10 — clean, one item raised (incremental)
+
+Boundary `bb78eb6` (the 2026-08-02 record) to `585e073`: 79
+commits, scanned with `git log -p` so content added and later
+removed is still seen, plus every commit message in the range, the
+full current tree, the staged diff of `585e073`, and the untracked
+files it added. Same pattern set as the three earlier sweeps.
+
+| Checked | Scope | Result |
+|---|---|---|
+| `/Users/`, `/home/…`, `C:\…`, `\\?\…`, `%AppData%`, `OneDrive`, the owner's account name | 79 commits' diffs, all their messages, current tree, the staged and untracked additions | 0 |
+| `/private/tmp`, `/private/var`, `/var/folders`, `/opt/homebrew`, `/Applications/`, the session scratch directory | same | 0 |
+| relative paths escaping the repository root | current tree | 0 — the deepest, `../../../` from `benchmarks/src/bin/` and `codegen/tests/native-fixture/`, reaches the repository root and stops |
+| private keys, API keys, tokens, passwords | current tree | 0 |
+| email addresses in file content | current tree | 0 |
+| credential-shaped tracked filenames (`.env`, `*.pem`, `id_rsa`, `*.p12`, `*.keystore`) | current tree | 0 |
+
+The `codegen/tests/archive-fixture` crate that `585e073` adds
+embeds no path. Its build script resolves the header directory
+from `CARGO_MANIFEST_DIR` and the archive from `OUT_DIR`, and
+passes both to the test through `cargo:rustc-env`.
+
+`infosia` still appears in exactly the five ruled-on places.
+Reported as accepted under ruling 1, not raised.
+
+**Raised, and open.** `bindgen/tests/provenance.rs` spells its
+synthetic descriptors with the `SGPU`/`sgpu` prefix, in about 30
+places, added inside this range. The prefix is not a name this
+project defines anywhere else. The owner must rule whether it
+stays. The sweep does not change it.
+
 ## Rulings — not violations
 
 Both were raised in the sweep and settled by the owner on 2026-07-28.
