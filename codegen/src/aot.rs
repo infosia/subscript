@@ -737,7 +737,7 @@ fn require_native_symbols(
     }
 }
 
-fn add_native_compile_inputs(
+fn add_native_include_directories(
     command: &mut Command,
     libraries: &[NativeLibrary],
     style: CCompilerStyle,
@@ -747,6 +747,10 @@ fn add_native_compile_inputs(
             command.arg(include_directory_arg(style, directory));
         }
     }
+}
+
+/// Adds the caller's link inputs after the emitted translation units (compiler.md §54).
+fn add_native_link_inputs(command: &mut Command, libraries: &[NativeLibrary]) {
     for library in libraries {
         for source in library.c_sources() {
             command.arg(source);
@@ -818,10 +822,10 @@ pub fn run_aot_with_native_libraries(
         add_c11_optimized_flags(&mut command, cc.style());
         add_object_directory(&mut command, &dir.path, cc.style());
     }
-    add_native_compile_inputs(&mut command, libraries, cc.style());
+    add_native_include_directories(&mut command, libraries, cc.style());
+    command.arg(&entry_path).arg(&obj_path);
+    add_native_link_inputs(&mut command, libraries);
     command
-        .arg(&entry_path)
-        .arg(&obj_path)
         .arg(&staticlib)
         .args(runtime_system_libraries(cc.style()));
     add_executable_output(&mut command, &exe_path, cc.style());
@@ -1093,10 +1097,10 @@ fn run_c_aot_configured(
         // into the temp dir under their basenames.
         add_object_directory(&mut command, &dir.path, cc.style());
     }
-    add_native_compile_inputs(&mut command, libraries, cc.style());
+    add_native_include_directories(&mut command, libraries, cc.style());
+    command.arg(&src_path).arg(&entry_path);
+    add_native_link_inputs(&mut command, libraries);
     command
-        .arg(&src_path)
-        .arg(&entry_path)
         .arg(&staticlib)
         .args(runtime_system_libraries(cc.style()));
     add_executable_output(&mut command, &exe_path, cc.style());

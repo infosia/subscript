@@ -38,6 +38,8 @@ cc = "1"
 # Object-file inspection for the AOT emission tests, as in the P0.5
 # spike; the same version the spike pins.
 object = { version = "0.36", default-features = false, features = ["read", "std"] }
+# This fixture has no `_Float16`, so the MSVC gate keeps it.
+subscript-archive-fixture = { path = "tests/archive-fixture" }
 
 # The interop fixture's build script compiles `corpus/interop/interop.c`,
 # which uses `_Float16` — a type MSVC `cl` cannot compile. Gate it off

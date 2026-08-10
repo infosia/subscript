@@ -1,0 +1,12 @@
+[package]
+name = "subscript-archive-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Test-only static archive for native link-input order."
+
+[lib]
+path = "lib.rs"
+
+[build-dependencies]
+cc = "1"

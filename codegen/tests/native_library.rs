@@ -1,12 +1,16 @@
 //! Caller-supplied native-library surface, explicit resolution errors, and
 //! abort-time output preservation for the run helpers.
 
+// Naming the dev-dependency propagates its test-only native archive into
+// this integration-test link.
+extern crate subscript_archive_fixture;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use subscript_codegen::{
-    run_c_aot, run_c_aot_with_native_libraries, run_jit, NativeLibrary, RunError,
-    JIT_OUTPUT_FILE_ENV,
+    run_aot_with_native_libraries, run_c_aot, run_c_aot_with_native_libraries, run_jit,
+    run_jit_with_native_libraries, NativeLibrary, RunError, JIT_OUTPUT_FILE_ENV,
 };
 use subscript_compiler::SourceFile;
 
@@ -15,6 +19,11 @@ const ABORT_FIXTURE_DIR: &str = "SUBSCRIPT_CODEGEN_ABORT_OUTPUT_FIXTURE_DIR";
 const BEFORE_ABORT: &str = "before-native-abort\nstill-before-native-abort\n";
 const DEV_RETENTION_SKIP: &str =
     "dev-JIT retention skipped: this platform does not isolate the run (compiler.md §44.10)";
+const ARCHIVE_ONLY_EXPECTED: &[u8] = b"22\n";
+
+extern "C" {
+    fn subArchiveOnlyProbe(value: i32) -> i32;
+}
 
 type IsolatedDevRun = fn(&[SourceFile], &[NativeLibrary]) -> Result<Vec<u8>, RunError>;
 
@@ -89,6 +98,54 @@ fn missing_symbol_program() -> Vec<SourceFile> {
             "export function main(): void {\n  stage4MissingForeignSymbol();\n}\n",
         ),
     ]
+}
+
+#[test]
+fn static_archive_link_input_follows_translation_units_on_all_tiers() {
+    let files = vec![
+        SourceFile::ambient(
+            "archive-only.generated.d.ts",
+            "// @subscript-c-header include=\"archive-only.h\"\n\
+             declare function subArchiveOnlyProbe(value: i32): i32;\n",
+        ),
+        SourceFile::new(
+            "main.ts",
+            "export function main(): void {\n\
+               print(`${subArchiveOnlyProbe(7)}`);\n\
+             }\n",
+        ),
+    ];
+    // SAFETY: the fixture crate links this static-lifetime function into
+    // the test process with the signature in the inline mirror and header.
+    let library = unsafe {
+        NativeLibrary::new(
+            vec![PathBuf::from(subscript_archive_fixture::CRATE_DIRECTORY)],
+            vec![PathBuf::from(subscript_archive_fixture::ARCHIVE_PATH)],
+            vec![(
+                "subArchiveOnlyProbe".to_string(),
+                subArchiveOnlyProbe as *const u8,
+            )],
+        )
+    };
+
+    let c_aot = run_c_aot_with_native_libraries(&files, std::slice::from_ref(&library))
+        .expect("ship C-AOT tier runs with the static archive");
+    assert_eq!(c_aot, ARCHIVE_ONLY_EXPECTED, "ship C-AOT tier output");
+
+    let object_aot = run_aot_with_native_libraries(&files, std::slice::from_ref(&library))
+        .expect("retained Cranelift-object AOT tier runs with the static archive");
+    assert_eq!(
+        object_aot, ARCHIVE_ONLY_EXPECTED,
+        "retained Cranelift-object AOT tier output"
+    );
+
+    let jit = run_jit_with_native_libraries(&files, std::slice::from_ref(&library))
+        .expect("dev JIT tier runs with the registered archive symbol");
+    assert_eq!(jit, c_aot, "dev JIT tier differs from ship C-AOT tier");
+    assert_eq!(
+        jit, object_aot,
+        "dev JIT tier differs from retained Cranelift-object AOT tier"
+    );
 }
 
 #[test]

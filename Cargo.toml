@@ -7,6 +7,7 @@ members = [
     "compiler",
     "runtime",
     "codegen",
+    "codegen/tests/archive-fixture",
     "codegen/tests/native-fixture",
     "examples",
     "examples/rust-host",
