@@ -1,7 +1,8 @@
 # Windows portability — evidence
 
-Status: the workspace is green on `x86_64-pc-windows-msvc`, measured
-2026-08-09 at `085ce32` (last section). Contract:
+Status: the workspace is green on `x86_64-pc-windows-msvc` in the dev
+profile and the release profile, measured 2026-08-10 at `3c3e7d7`
+(the section at the end of this file). Contract:
 `specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
 cranelift-jit, Windows/Mac). This file keeps the record from
 2026-07-23 forward, so the older sections state older states.
@@ -797,5 +798,90 @@ Measured after the fix on `x86_64-pc-windows-msvc`: `cargo build
 --workspace --tests --benches` gives 0 warnings, and `cargo test
 --workspace --no-fail-fast` gives 51 harnesses, 875 passed, 0 failed,
 1 ignored.
+
+## Full Windows gate at `3c3e7d7`, 2026-08-10 — the release profile
+
+### Why this run is different
+
+Every earlier Windows gate ran `cargo test --workspace` in the dev
+profile alone. The release profile built here, but it never ran. This
+run added it. It found one crash, and the crash is old.
+
+### Result
+
+| Gate | Result |
+|---|---|
+| `cargo build --offline --workspace --all-targets` | 0 warnings, dev and release |
+| `cargo test --offline --workspace --no-fail-fast` | 55 harnesses, 910 passed, 0 failed |
+| the same with `--release` | 55 harnesses, 910 passed, 0 failed |
+| `cargo fmt --check` | exit 0 |
+| `npx tsc` | exit 0 |
+| golden sweep | compared 84, skipped 47 |
+
+The counts are from `3c3e7d7`. Before the fix, at `cbfbb6a`, the dev
+profile gave 909 passed and the release profile gave 908 passed with
+one harness dead.
+
+### The defect — no stack probe in either flag set
+
+`codegen/tests/boundary_scratch_breadth.rs` ended with
+`STATUS_ACCESS_VIOLATION` (`0xc0000005`) in the release profile:
+
+    $ cargo test --offline --release -p subscript-codegen \
+        --test boundary_scratch_breadth
+    running 1 test
+    error: test failed, to rerun pass `-p subscript-codegen --test boundary_scratch_breadth`
+    Caused by:
+      process didn't exit successfully: ... (exit code: 0xc0000005, STATUS_ACCESS_VIOLATION)
+
+Cause and rule: `specs/blocks/compiler.md` §55. Cranelift emitted no
+stack probe, and a frame larger than one page moved the stack pointer
+past the Windows guard page.
+
+Evidence, one variable at a time, in a worktree at `085ce32`:
+
+| Condition | Release-profile result |
+|---|---|
+| the flags as committed | `STATUS_ACCESS_VIOLATION` |
+| plus `enable_probestack` and `probestack_strategy = "inline"` | 1 passed |
+| the patch reverted again | `STATUS_ACCESS_VIOLATION` |
+
+`RUST_MIN_STACK=67108864` changed nothing, so the reserved stack size
+is not the cause. The dev profile passed at every step, so the profile
+of the host is not the cause either. It decides only how much stack
+the host commits before it calls the generated code.
+
+Fixed in `3c3e7d7`; contract in `80eb93f`.
+
+### The class, third instance
+
+A change correct on the reference platform and incorrect on this one:
+§11c.3, then §44.10, now §55. This instance is different in one way:
+the source is not a change at all. The code was wrong from the first
+Cranelift flag set, and the gate never ran the configuration that
+shows it. A profile that only builds is not a gate.
+
+The durable rule is in §55.3 criterion 4: the Windows gate runs both
+profiles.
+
+### The five ship-target objects do not move
+
+`aot_flags()` changed, so the objects were re-measured: ios 10008,
+android 11968, linux-gnu 11896, darwin 9984, windows-msvc 10246. Every
+count is the same as the 2026-08-09 run. Cranelift emits a probe only
+for a frame larger than one page, and no frame in `a01-hello` reaches
+one page.
+
+### §54 archive test, first Windows run
+
+`s54-link-input-order.md` left the windows-msvc run open. It ran here:
+
+    $ cargo test --offline --release -p subscript-codegen \
+        --test native_library
+    test static_archive_link_input_follows_translation_units_on_all_tiers ... ok
+    test result: ok. 7 passed; 0 failed
+
+The archive fixture crate builds with `cl` on this host, as §54.3
+criterion 4 requires.
 
 

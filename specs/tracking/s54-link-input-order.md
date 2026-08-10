@@ -115,6 +115,19 @@ the pinned toolchain:
 - `cargo build --offline --workspace --all-targets`: 0 warnings.
   `cargo fmt --check`: exit 0.
 
-Open: the windows-msvc gate has not run this change. The fixture
-crate is ungated, so the next Windows gate run builds the archive
-with `cl`.
+## windows-msvc confirmation — 2026-08-10
+
+The last open gate ran. Measured on `x86_64-pc-windows-msvc` at
+`3c3e7d7`, with the pinned toolchain:
+
+    $ cargo test --offline --release -p subscript-codegen \
+        --test native_library
+    test static_archive_link_input_follows_translation_units_on_all_tiers ... ok
+    test result: ok. 7 passed; 0 failed
+
+`cl` builds the archive fixture crate on this host, so §54.3
+criterion 4 holds. `link.exe` resolves the archive at either
+position, and the test finds no regression from the reorder. The
+full Windows gate for that commit is in `windows-portability.md`.
+
+Every gate of §54 now has a run. Nothing is open.
