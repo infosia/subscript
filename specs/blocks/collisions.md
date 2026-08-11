@@ -56,10 +56,13 @@ conversions do not exist; mixed-type arithmetic without `as` is rejected.
 `as` also spells checked reference narrowing: `x as C`, where `x` is the
 boundary-opaque `object | null` (C7 boundary forms), traps (C6 model) on
 `null` or on class mismatch, in both tiers.
-`i64`/`u64` values are exact 64-bit at runtime in both tiers; the `tsc`
-view (`number`) cannot express integer literals above 2^53 − 1, so such
-literals are out of the surface syntax until a need is evidenced.
-Accept: `a02`. Reject: `r08-bare-number` (`number` in a declaration).
+`i64`/`u64` values are exact 64-bit at runtime in both tiers. An integer
+literal reads from its spelling at the target's width, so the full `i64`
+and `u64` ranges have surface spellings (R26 evidence; `compiler.md`
+§56). The `tsc` view (`number`) rounds such a literal and accepts it:
+TS 80008 is a suggestion, not an error (measured, `tsc` exit 0).
+Accept: `a02`, `a132`. Reject: `r08-bare-number` (`number` in a
+declaration), `r124` (`u64` overflow), `r125` (`i64` underflow).
 
 ### C4. Integer literals — contextual typing
 
@@ -1108,8 +1111,6 @@ non-generic reference classes join the surface —
 
 - Value-class fields of reference/string/nullable types (C2): undecided
   until a corpus program needs them; the field-type whitelist stands.
-- `i64`/`u64` literals above 2^53 − 1 (C3): no surface spelling; revisit
-  with evidence.
 - Generic constraints/variance beyond monomorphized `a12` shapes: revisit
   with corpus evidence.
 
