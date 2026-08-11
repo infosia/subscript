@@ -146,20 +146,6 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
         let mut block = format!("type {} = {scalar};", alias.name);
         for c in &parsed.constants {
             if c.type_base == alias.name {
-                // The mirror carries the value as a bare numeric literal,
-                // which the language reads through the f64-exact integer
-                // range (collisions.md C3: no i64/u64 literal surface above
-                // 2^53-1). A larger flag value would truncate silently when
-                // folded, so refuse to mirror it — fail loud at the source.
-                if !exact_f64_integer(c.value) {
-                    return Err(ParseError(format!(
-                        "flag member `{}` has value {} outside the exactly-f64-\
-                         representable integer range (|v| <= 2^53-1); the language \
-                         has no integer-literal surface above 2^53 (collisions.md \
-                         C3), so this flag cannot be mirrored as a folded constant",
-                        c.name, c.value
-                    )));
-                }
                 block.push_str(&format!("\ndeclare const {} = {};", c.name, c.value));
             }
         }
@@ -1323,13 +1309,6 @@ fn alias_scalar(alias: &Alias) -> Option<&'static str> {
     alias.chain.iter().find_map(|s| lang_scalar(s))
 }
 
-/// True when `v` is exactly representable as an `f64` integer
-/// (`|v| <= 2^53 - 1`) — the range a bare numeric literal survives without
-/// silent rounding (collisions.md C3).
-fn exact_f64_integer(v: i64) -> bool {
-    v.unsigned_abs() <= (1u64 << 53) - 1
-}
-
 /// Descriptor-embedded `(count, pointer)` array pairs within a struct or
 /// function parameter list: pointer indices mapped to language element
 /// spellings, and count indices elided from the mirror.
@@ -2151,7 +2130,7 @@ mod tests {
     }
 
     #[test]
-    fn flag_value_above_f64_exact_range_fails_loud() {
+    fn flag_value_above_f64_exact_range_is_emitted_exactly() {
         let mut p = Parsed::default();
         p.aliases = vec![Alias {
             name: "SubBig".into(),
@@ -2163,9 +2142,11 @@ mod tests {
             type_base: "SubBig".into(),
             value: (1i64 << 53) + 1,
         }];
-        let err = emit(&p).expect_err("flag value above 2^53 must fail loud");
-        assert!(err.0.contains("SUB_BIG_ONE"), "{}", err.0);
-        assert!(err.0.contains("2^53"), "{}", err.0);
+        let mirror = emit(&p).expect("flag value above 2^53 emits");
+        assert!(
+            mirror.contains("declare const SUB_BIG_ONE = 9007199254740993;"),
+            "{mirror}"
+        );
     }
 
     #[test]

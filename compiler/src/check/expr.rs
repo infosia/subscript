@@ -83,10 +83,24 @@ fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
     }
 }
 
-fn int_range(ty: &Type) -> Option<(i64, i64)> {
-    // i64/u64 literals are capped at the f64-exact range; larger
-    // spellings are out of the surface syntax (C3).
-    const EXACT: i64 = 9_007_199_254_740_991; // 2^53 - 1
+fn int_range(ty: &Type) -> Option<(i128, i128)> {
+    match ty {
+        Type::I8 => Some((i128::from(i8::MIN), i128::from(i8::MAX))),
+        Type::U8 => Some((0, i128::from(u8::MAX))),
+        Type::I16 => Some((i128::from(i16::MIN), i128::from(i16::MAX))),
+        Type::U16 => Some((0, i128::from(u16::MAX))),
+        Type::I32 => Some((i128::from(i32::MIN), i128::from(i32::MAX))),
+        Type::U32 => Some((0, i128::from(u32::MAX))),
+        Type::I64 => Some((i128::from(i64::MIN), i128::from(i64::MAX))),
+        Type::U64 => Some((0, i128::from(u64::MAX))),
+        _ => None,
+    }
+}
+
+/// The pre-R26 f64 range retained for synthesized numeric nodes without a
+/// source spelling. Such nodes are exact within this channel's old cap.
+fn synthesized_int_range(ty: &Type) -> Option<(i64, i64)> {
+    const EXACT: i64 = 9_007_199_254_740_991;
     match ty {
         Type::I8 => Some((i64::from(i8::MIN), i64::from(i8::MAX))),
         Type::U8 => Some((0, i64::from(u8::MAX))),
@@ -98,6 +112,21 @@ fn int_range(ty: &Type) -> Option<(i64, i64)> {
         Type::U64 => Some((0, EXACT)),
         _ => None,
     }
+}
+
+/// Reinterprets HIR integer bits according to the expression's sized type.
+fn int_value_at_type(bits: i64, ty: &Type) -> Option<i128> {
+    Some(match ty {
+        Type::I8 => i128::from(bits as i8),
+        Type::U8 => i128::from(bits as u8),
+        Type::I16 => i128::from(bits as i16),
+        Type::U16 => i128::from(bits as u16),
+        Type::I32 => i128::from(bits as i32),
+        Type::U32 => i128::from(bits as u32),
+        Type::I64 => i128::from(bits),
+        Type::U64 => i128::from(bits as u64),
+        _ => return None,
+    })
 }
 
 fn integer_width(ty: &Type) -> Option<i64> {
@@ -598,8 +627,19 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let (lo, hi) = int_range(&target).unwrap_or((i64::MIN, i64::MAX));
-        if value < lo as f64 || value > hi as f64 {
+        let integer = if let Some(raw) = n.raw.as_deref() {
+            let (lo, hi) =
+                int_range(&target).unwrap_or((i128::from(i64::MIN), i128::from(i64::MAX)));
+            super::parse_integer_spelling(raw, negate)
+                .filter(|value| *value >= lo && *value <= hi)
+                .map(|value| value as i64)
+        } else {
+            // Synthesized numeric nodes have no source spelling; retain the
+            // parser-value path used before R26.
+            let (lo, hi) = synthesized_int_range(&target).unwrap_or((i64::MIN, i64::MAX));
+            (value >= lo as f64 && value <= hi as f64).then_some(value as i64)
+        };
+        let Some(integer) = integer else {
             let name = self.type_name(&target);
             self.error(
                 RuleCode::S008,
@@ -607,9 +647,9 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
             return self.err_expr(pos);
-        }
+        };
         hir::Expr {
-            kind: ExprKind::Int(value as i64),
+            kind: ExprKind::Int(integer),
             ty: target,
             pos,
         }
@@ -1337,14 +1377,16 @@ impl<'p> Checker<'p> {
             }
             _ => (BinOp::Add, Type::Error, err),
         };
+        let literal_shift_amount = match &right.kind {
+            ExprKind::Int(bits) => int_value_at_type(*bits, &right.ty),
+            _ => None,
+        };
         if ok
             && matches!(op, B::LShift | B::RShift | B::ZeroFillRShift)
-            && matches!(&right.kind, ExprKind::Int(amount) if *amount >= integer_width(&lt).unwrap_or(i64::MAX))
+            && literal_shift_amount
+                .is_some_and(|amount| amount >= i128::from(integer_width(&lt).unwrap_or(i64::MAX)))
         {
-            let amount = match &right.kind {
-                ExprKind::Int(amount) => *amount,
-                _ => 0,
-            };
+            let amount = literal_shift_amount.unwrap_or(0);
             let width = integer_width(&lt).unwrap_or(0);
             let name = self.type_name(&lt);
             self.error(
@@ -4987,17 +5029,16 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
             }
+            let literal_shift_amount = match &value.kind {
+                ExprKind::Int(bits) => int_value_at_type(*bits, &value.ty),
+                _ => None,
+            };
             if matches!(bin, BinOp::Shl | BinOp::Shr | BinOp::UShr)
-                && matches!(
-                    &value.kind,
-                    ExprKind::Int(amount)
-                        if *amount >= integer_width(&target_ty).unwrap_or(i64::MAX)
-                )
+                && literal_shift_amount.is_some_and(|amount| {
+                    amount >= i128::from(integer_width(&target_ty).unwrap_or(i64::MAX))
+                })
             {
-                let amount = match &value.kind {
-                    ExprKind::Int(amount) => *amount,
-                    _ => 0,
-                };
+                let amount = literal_shift_amount.unwrap_or(0);
                 let width = integer_width(&target_ty).unwrap_or(0);
                 let name = self.type_name(&target_ty);
                 self.error(

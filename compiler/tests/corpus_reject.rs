@@ -130,6 +130,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r121-wire-enum-fractional.ts", RuleCode::S100, 8),
     ("r122-wire-enum-duplicate.ts", RuleCode::S100, 9),
     ("r123-wire-enum-out-of-range.ts", RuleCode::S100, 8),
+    ("r124-u64-literal-overflow.ts", RuleCode::S008, 7),
+    ("r125-i64-literal-underflow.ts", RuleCode::S008, 7),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -251,8 +253,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        119,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, and three R23 entries"
+        121,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, and two R26 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -497,4 +499,18 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
             );
         }
     }
+}
+
+#[test]
+fn r26_u64_max_shift_amount_is_rejected_at_its_unsigned_value() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "shift.ts",
+        "export function main(): void {\n  const one: u64 = 1;\n  const bad: u64 = one << 0xFFFFFFFFFFFFFFFF;\n  print(`${bad}`);\n}\n",
+    )])
+    .expect_err("u64 max shift amount must be rejected");
+    assert_eq!(diagnostics[0].code, RuleCode::S008);
+    assert_eq!(
+        diagnostics[0].message,
+        "literal shift amount 18446744073709551615 is out of range for `u64` width 64"
+    );
 }

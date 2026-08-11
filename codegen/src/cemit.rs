@@ -7279,7 +7279,13 @@ fn int_literal(v: i64, ty: &Type) -> String {
         Type::I16 => format!("((int16_t){v})"),
         Type::U32 => format!("{}u", v as u32),
         Type::U64 => format!("{}ull", v as u64),
-        Type::I64 => format!("{v}ll"),
+        Type::I64 => {
+            if v == i64::MIN {
+                "(-9223372036854775807ll - 1)".to_string()
+            } else {
+                format!("{v}ll")
+            }
+        }
         _ => {
             if v == i64::from(i32::MIN) {
                 "(-2147483647 - 1)".to_string()
@@ -7877,6 +7883,14 @@ mod tests {
         assert!(c.contains("1.5f"));
         assert!(c.contains("if (*(const uint32_t*)ctx != 0u)"));
         assert!(!c.contains("subscript_rt_ctx_trap_kind(ctx)"));
+    }
+
+    #[test]
+    fn i64_min_literal_uses_a_valid_c_spelling() {
+        let c = emit(
+            "export function main(): void {\n  const low: i64 = -9223372036854775808;\n  print(`${low}`);\n}\n",
+        );
+        assert!(c.contains("(-9223372036854775807ll - 1)"), "{c}");
     }
 
     #[test]

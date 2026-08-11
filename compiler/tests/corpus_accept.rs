@@ -156,7 +156,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        130,
+        131,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -192,7 +192,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          packing entry, the a127 R20 external-type two-mirror entry, and the \
          a128 R21 host-owned-state entry, the a129 R23 wire-enum entry, and \
          the a130 R24 bind-generated enum-typedef wire-enum entry, and the a131 §52 \
-         wire-enum boundary-struct entry"
+         wire-enum boundary-struct entry, and the a132 R26 full-width integer-literal entry"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
@@ -489,4 +489,55 @@ fn a20_generator_types_flow_through_next() {
     };
     assert_eq!(name, "generator");
     assert_eq!(*ty, Type::Generator(Box::new(Type::I32)));
+}
+
+#[test]
+fn r26_full_width_literals_store_twos_complement_bits() {
+    let accept = corpus_dir().join("accept");
+    let module = check_entry(&[(
+        "a132-int-literal-64bit.ts",
+        accept.join("a132-int-literal-64bit.ts"),
+    )]);
+    let decimal_max = module
+        .globals
+        .iter()
+        .find(|global| global.name == "decimalMax")
+        .expect("decimalMax global");
+    assert_eq!(decimal_max.ty, Type::U64);
+    assert!(matches!(&decimal_max.init.kind, hir::ExprKind::Int(-1)));
+
+    let signed_min = module
+        .globals
+        .iter()
+        .find(|global| global.name == "signedMin")
+        .expect("signedMin global");
+    assert_eq!(signed_min.ty, Type::I64);
+    assert!(matches!(
+        &signed_min.init.kind,
+        hir::ExprKind::Int(value) if *value == i64::MIN
+    ));
+}
+
+#[test]
+fn r26_ambient_flag_above_f64_exact_range_reaches_program_exactly() {
+    let module = check_program(&[
+        SourceFile::ambient(
+            "flags.generated.d.ts",
+            "type SubFlags = u64;\ndeclare const SUB_BIG_ONE = 9007199254740993;\n",
+        ),
+        SourceFile::new(
+            "program.ts",
+            "export function main(): void {\n  const exact: u64 = SUB_BIG_ONE;\n  print(`${exact}`);\n}\n",
+        ),
+    ])
+    .expect("full-width ambient flag checks");
+    let main = find_fn(&module, "main");
+    let hir::Stmt::Let { init, .. } = &main.body[0] else {
+        panic!("expected exact flag local");
+    };
+    assert!(matches!(
+        &init.kind,
+        hir::ExprKind::Int(value) if *value == 9_007_199_254_740_993
+    ));
+    assert_eq!(init.ty, Type::U64);
 }

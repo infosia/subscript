@@ -95,11 +95,39 @@ fn wire_alias_literal(ty: &ast::TsType) -> Option<&ast::TsTypeLit> {
     Some(literal)
 }
 
+/// Reads one parser-accepted integer spelling exactly, applying the folded
+/// unary sign before returning its mathematical value (R26).
+fn parse_integer_spelling(raw: &str, negate: bool) -> Option<i128> {
+    let (radix, digits) =
+        if let Some(digits) = raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X")) {
+            (16, digits)
+        } else if let Some(digits) = raw.strip_prefix("0b").or_else(|| raw.strip_prefix("0B")) {
+            (2, digits)
+        } else if let Some(digits) = raw.strip_prefix("0o").or_else(|| raw.strip_prefix("0O")) {
+            (8, digits)
+        } else {
+            (10, raw)
+        };
+    let digits: String = digits.chars().filter(|c| *c != '_').collect();
+    let magnitude = u128::from_str_radix(&digits, radix).ok()?;
+    let magnitude = i128::try_from(magnitude).ok()?;
+    if negate {
+        magnitude.checked_neg()
+    } else {
+        Some(magnitude)
+    }
+}
+
 /// The integer value of a non-negative numeric-literal expression (a flag
-/// member initializer, §13.2), or `None` for any other expression.
+/// member initializer, §13.2), or `None` for any other expression. Source
+/// spellings are read at u64 width; synthesized nodes retain the f64 path.
 fn int_literal_value(e: &ast::Expr) -> Option<i64> {
     match e {
         ast::Expr::Lit(ast::Lit::Num(n)) => {
+            if let Some(raw) = n.raw.as_deref() {
+                let value = parse_integer_spelling(raw, false)?;
+                return (value >= 0 && value <= i128::from(u64::MAX)).then_some(value as i64);
+            }
             let v = n.value;
             if v.is_finite() && v.fract() == 0.0 && v >= 0.0 {
                 Some(v as i64)
