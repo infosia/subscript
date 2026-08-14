@@ -176,6 +176,22 @@ non-generic reference classes join the surface —
 `await recv.m(...)` as a third direct-await form (`compiler.md`
 §37). Accept adds `a110`–`a111`; reject adds `r101`–`r105`.
 
+### C9. Field initializers — every construction, no `this`
+
+*(R27, 2026-08-15; `compiler.md` §57.)* A declared field
+initializer runs on every construction, in declaration order, with
+or without a declared constructor. Constructor arguments evaluate
+before the initializers; the constructor body runs after them.
+This is the TS order (measured under `node`, exit 0).
+
+A field initializer must not read `this`. Stock `tsc` accepts
+`this` there, so this is a narrowing: the checker rejects it with
+S100. Before R27, no program with `this` in a field initializer
+ran on the dev tier (internal lowering error), so the narrowing
+retires no working program.
+
+Accept: `a133`, `a134`. Reject: `r126-this-in-field-init`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different
