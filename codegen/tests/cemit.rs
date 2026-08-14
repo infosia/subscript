@@ -867,6 +867,37 @@ fn acyclic_json_serializer_emits_no_tracking_operations() {
 }
 
 #[test]
+fn constructor_less_value_class_emits_field_initializer_store() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "@CStruct\nclass ValueField {\n  value: i32 = 37;\n}\nexport function main(): void {\n  const field: ValueField = new ValueField();\n  print(`${field.value}`);\n}\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emit C").source;
+    assert!(
+        c.lines()
+            .any(|line| line.contains(".value = 37;") && line.contains("_t")),
+        "constructor-less value initializer store is missing:\n{c}"
+    );
+}
+
+#[test]
+fn constructor_less_reference_class_emits_field_initializer_store() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "class ReferenceField {\n  value: i32 = 41;\n}\nexport function main(): void {\n  const field: ReferenceField = new ReferenceField();\n  print(`${field.value}`);\n}\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emit C").source;
+    assert!(
+        c.lines().any(|line| {
+            line.contains("((Sub_0_ReferenceField*)") && line.contains(")->value = 41;")
+        }),
+        "constructor-less reference initializer store is missing:\n{c}"
+    );
+}
+
+#[test]
 fn string_literal_union_equality_emits_an_integer_compare() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

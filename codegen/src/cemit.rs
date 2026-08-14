@@ -5982,7 +5982,25 @@ impl<'m> Emitter<'m> {
                 let call = format!("subscript_ctor{}(ctx{sep}{argv})", class.0);
                 self.eval_site_checked_call(call, &Type::Class(class), site, out, depth)
             } else {
-                Ok(format!("({}){{0}}", self.class_name(class)?))
+                let cname = self.class_name(class)?;
+                if c.fields.iter().any(|field| field.init.is_some()) {
+                    let this = self.fresh_tmp();
+                    let _ = writeln!(out, "{}{cname} {this} = ({cname}){{0}};", indent(depth));
+                    for field in &c.fields {
+                        if let Some(init) = &field.init {
+                            let value = self.eval(init, out, depth)?;
+                            let _ = writeln!(
+                                out,
+                                "{}{this}.{} = {value};",
+                                indent(depth),
+                                sanitize(&field.name)
+                            );
+                        }
+                    }
+                    Ok(this)
+                } else {
+                    Ok(format!("({cname}){{0}}"))
+                }
             }
         } else {
             let allocation = sites.take_required(
@@ -6009,6 +6027,18 @@ impl<'m> Emitter<'m> {
                 let sep = if argv.is_empty() { "" } else { ", " };
                 let call = format!("subscript_ctor{}(ctx, {this}{sep}{argv})", class.0);
                 self.eval_site_checked_call(call, &Type::Void, site, out, depth)?;
+            } else {
+                for field in &c.fields {
+                    if let Some(init) = &field.init {
+                        let value = self.eval(init, out, depth)?;
+                        let _ = writeln!(
+                            out,
+                            "{}(({cname}*){this})->{} = {value};",
+                            indent(depth),
+                            sanitize(&field.name)
+                        );
+                    }
+                }
             }
             Ok(this)
         }

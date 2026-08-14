@@ -156,7 +156,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        131,
+        133,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -192,7 +192,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          packing entry, the a127 R20 external-type two-mirror entry, and the \
          a128 R21 host-owned-state entry, the a129 R23 wire-enum entry, and \
          the a130 R24 bind-generated enum-typedef wire-enum entry, and the a131 §52 \
-         wire-enum boundary-struct entry, and the a132 R26 full-width integer-literal entry"
+         wire-enum boundary-struct entry, the a132 R26 full-width integer-literal entry, and the \
+         a133–a134 R27 field-initializer entries"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

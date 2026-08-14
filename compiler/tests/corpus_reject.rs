@@ -132,6 +132,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r123-wire-enum-out-of-range.ts", RuleCode::S100, 8),
     ("r124-u64-literal-overflow.ts", RuleCode::S008, 7),
     ("r125-i64-literal-underflow.ts", RuleCode::S008, 7),
+    ("r126-this-in-field-init.ts", RuleCode::S100, 9),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -253,8 +254,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        121,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, and two R26 entries"
+        122,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, and one R27 entry"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -278,6 +279,19 @@ fn first_diagnostic(file: &str) -> subscript_compiler::Diagnostic {
         .into_iter()
         .next()
         .expect("reject entry must produce a diagnostic")
+}
+
+#[test]
+fn this_in_field_initializer_is_s100_without_a_this_binding() {
+    let source = "class InvalidInitializer {\n  tag: i32 = 2;\n  value: i32 = this.tag + 1;\n}\nexport function main(): void {}\n";
+    let diagnostics = check_program(&[SourceFile::new("field-init.ts", source)])
+        .expect_err("this in a field initializer must be rejected");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].pos.line, 3);
+    assert_eq!(
+        diagnostics[0].message,
+        "`this` is only available in constructors and methods"
+    );
 }
 
 #[test]

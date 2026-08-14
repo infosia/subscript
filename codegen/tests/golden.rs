@@ -82,6 +82,28 @@ fn run_dev_corpus_entry(
     run_jit_with_native_libraries(sources, libraries)
 }
 
+#[test]
+fn r27_field_initializer_entries_match_across_tiers() {
+    let accept = corpus::corpus_accept();
+    let mut failures = Vec::new();
+    for id in ["a133-field-init-no-ctor", "a134-field-init-order"] {
+        let sources = corpus::entry_sources(&accept, id);
+        let libraries = native_libraries(&sources).expect("R27 entries have no native dependency");
+        let jit = run_dev_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+        let ship = run_ship_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+        if jit != ship {
+            failures.push(format!(
+                "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
+                String::from_utf8_lossy(&jit),
+                String::from_utf8_lossy(&ship)
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 #[cfg(not(all(windows, target_env = "msvc")))]
 fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
     if sources
@@ -682,11 +704,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // two host-driven entry calls (a128), and R23 wire-mapped literal-union
     // boundary crossings (a129), and R24 bind-generated enum-typedef CEnum
     // crossings (a130), §52 wire aliases in boundary structs (a131), and
-    // full-width integer literal spellings (a132).
+    // full-width integer literal spellings (a132), and field initializer
+    // construction and ordering (a133–a134).
     assert_eq!(
         golden_ids.len(),
-        132,
-        "expected exactly 132 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        134,
+        "expected exactly 134 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -718,8 +741,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          two-mirror golden, the a128 R21 host-owned-state golden, and the a129 \
          R23 wire-enum interop golden, the a130 R24 bind-generated \
          enum-typedef wire-enum golden, the a131 §52 wire-enum \
-         boundary-struct golden, and the a132 R26 full-width integer-literal \
-         golden, found {}",
+         boundary-struct golden, the a132 R26 full-width integer-literal \
+         golden, and the a133–a134 R27 field-initializer goldens, found {}",
         golden_ids.len()
     );
 

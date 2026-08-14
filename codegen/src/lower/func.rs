@@ -5326,6 +5326,20 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.emit_trap_site(site, TrapOperand::Pending)?;
             res.ok_or_else(|| internal("alloc result"))?
         };
+        // Evaluate the constructor arguments before the field initializers
+        // run, keep their ABI values live across the initializers, then call
+        // the constructor after them.
+        let ctor_call = if let Some(ctor) = &class.ctor {
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Call { .. }),
+                internal("constructor call has no HIR call site"),
+            )?;
+            let mut argv = vec![self.ctx_v, this];
+            self.push_args(&mut argv, &ctor.params, args)?;
+            Some((site, argv))
+        } else {
+            None
+        };
         // Declared field initializers, in declaration order.
         for (i, field) in class.fields.iter().enumerate() {
             if let Some(init) = &field.init {
@@ -5354,13 +5368,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.store_val(&fty, this, off, rv)?;
             }
         }
-        if let Some(ctor) = &class.ctor {
-            let site = sites.take_required(
-                |site| matches!(site, hir::TrapSite::Call { .. }),
-                internal("constructor call has no HIR call site"),
-            )?;
-            let mut argv = vec![self.ctx_v, this];
-            self.push_args(&mut argv, &ctor.params, args)?;
+        if let Some((site, argv)) = ctor_call {
             self.call_script(&FnKey::Ctor(cid), &argv, false)?;
             self.emit_trap_site(site, TrapOperand::Pending)?;
         }

@@ -2493,7 +2493,7 @@ impl<'p> Checker<'p> {
                         .find(|f| f.name == key.sym.as_ref())
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
-                    let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
+                    let mut fx = FnCtx::new(Type::Void, false, None);
                     let e = self.check_expr(value, Some(&field_ty), &mut fx);
                     self.require_assignable(
                         &e.ty.clone(),
