@@ -192,6 +192,28 @@ retires no working program.
 
 Accept: `a133`, `a134`. Reject: `r126-this-in-field-init`.
 
+### C10. Class index signatures — accessor sugar
+
+*(R29, 2026-08-15; `compiler.md` §58.)* A reference class can
+declare one index signature, `[index: I]: T` or
+`readonly [index: I]: T`, with `I` = `i32` or `u32`. The class
+must declare `get(index: I): T`, and, when the signature is not
+`readonly`, `set(index: I, value: T): void`. A read `a[i]` checks
+to the same HIR as `a.get(i)`; a statement write `a[i] = v` checks
+to the same HIR as `a.set(i, v)`.
+
+The divergence from JS: an index signature in TS types numeric
+property access, and JS reads the property. subscript has no
+dynamic properties, so the same spelling calls the declared
+accessor. Stock `tsc` accepts every accepted program through the
+declared signature. Narrowings on top of `tsc`: a write through a
+`readonly` signature, compound assignment, increment, decrement,
+the write used as a value, and an index signature on a value
+class all fail at check time.
+
+Accept: `a136`. Reject: `r128-readonly-index-write`,
+`r129-index-signature-no-get`, `r130-index-compound-assign`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different
