@@ -196,7 +196,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
             ast::Expr::Update(u) => self.check_update(u, fx, pos),
             ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
-            ast::Expr::Assign(a) => self.check_assign(a, fx, pos),
+            ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false),
             ast::Expr::Member(m) => self.check_member_read(m, fx),
             ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
             ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
@@ -276,6 +276,9 @@ impl<'p> Checker<'p> {
                     }
                 }
             }
+        }
+        if let ast::Expr::Assign(assign) = root {
+            return self.check_assign(assign, fx, self.pos(root.span()), true);
         }
         self.check_expr(e, None, fx)
     }
@@ -1035,6 +1038,32 @@ impl<'p> Checker<'p> {
 
     fn check_update(&mut self, u: &ast::UpdateExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         let target = self.check_expr(&u.arg, None, fx);
+        if matches!(
+            &target.kind,
+            ExprKind::Call {
+                callee: Callee::Method { recv, name },
+                args,
+            } if name == "get"
+                && args.len() == 1
+                && matches!(&recv.ty, Type::Class(id) if self.classes[id.0].index_signature.is_some())
+        ) {
+            let operator = if u.op == ast::UpdateOp::PlusPlus {
+                "++"
+            } else {
+                "--"
+            };
+            let spelling = if u.prefix {
+                format!("`{operator}a[i]`")
+            } else {
+                format!("`a[i]{operator}`")
+            };
+            self.error(
+                RuleCode::S100,
+                format!("{spelling} is not supported for a class index signature"),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         // Q17: `++`/`--` rebind their target, so `const` bindings are
         // rejected exactly like plain assignment.
         match &target.kind {
@@ -4521,7 +4550,15 @@ impl<'p> Checker<'p> {
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
-                let index = self.check_expr(&c.expr, Some(&Type::I32), fx);
+                let index_context = match &obj.ty {
+                    Type::Class(id) => self.classes[id.0]
+                        .index_signature
+                        .as_ref()
+                        .map(|signature| signature.index_ty.clone())
+                        .unwrap_or(Type::I32),
+                    _ => Type::I32,
+                };
+                let index = self.check_expr(&c.expr, Some(&index_context), fx);
                 self.check_index(obj, index, pos)
             }
             ast::MemberProp::Ident(prop) => {
@@ -4571,17 +4608,48 @@ impl<'p> Checker<'p> {
     }
 
     fn check_index(&mut self, obj: hir::Expr, index: hir::Expr, pos: Pos) -> hir::Expr {
-        if !matches!(index.ty, Type::I32 | Type::Error) {
-            let name = self.type_name(&index.ty);
-            self.error(
-                RuleCode::S100,
-                format!("array indices are `i32`, got `{}`", name),
-                index.pos.clone(),
-            );
+        if let Type::Class(id) = &obj.ty {
+            if let Some(signature) = self.classes[id.0].index_signature.clone() {
+                self.require_assignable(
+                    &index.ty.clone(),
+                    &signature.index_ty,
+                    index.pos.clone(),
+                    "the index",
+                );
+                return hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Method {
+                            recv: Box::new(obj),
+                            name: "get".to_string(),
+                        },
+                        args: vec![index],
+                    },
+                    ty: signature.element_ty,
+                    pos,
+                };
+            }
         }
         let elem = match &obj.ty {
-            Type::Array(t) => (**t).clone(),
+            Type::Array(t) => {
+                if !matches!(index.ty, Type::I32 | Type::Error) {
+                    let name = self.type_name(&index.ty);
+                    self.error(
+                        RuleCode::S100,
+                        format!("array indices are `i32`, got `{}`", name),
+                        index.pos.clone(),
+                    );
+                }
+                (**t).clone()
+            }
             Type::FixedArray(t, n) => {
+                if !matches!(index.ty, Type::I32 | Type::Error) {
+                    let name = self.type_name(&index.ty);
+                    self.error(
+                        RuleCode::S100,
+                        format!("array indices are `i32`, got `{}`", name),
+                        index.pos.clone(),
+                    );
+                }
                 if let ExprKind::Int(k) = index.kind {
                     if k < 0 || k >= i64::from(*n) {
                         self.error(
@@ -4970,7 +5038,13 @@ impl<'p> Checker<'p> {
 
     // ----- assignment -----
 
-    fn check_assign(&mut self, a: &ast::AssignExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    fn check_assign(
+        &mut self,
+        a: &ast::AssignExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        statement_position: bool,
+    ) -> hir::Expr {
         use ast::AssignOp as A;
         let op = match a.op {
             A::Assign => None,
@@ -5002,6 +5076,76 @@ impl<'p> Checker<'p> {
             Some(target_ty.clone())
         };
         let value = self.check_expr(&a.right, value_ctx.as_ref(), fx);
+        let signature_write = match &target.kind {
+            ExprKind::Call {
+                callee: Callee::Method { recv, name },
+                args,
+            } if name == "get" && args.len() == 1 => match &recv.ty {
+                Type::Class(id) => self.classes[id.0]
+                    .index_signature
+                    .clone()
+                    .map(|signature| ((**recv).clone(), args[0].clone(), signature)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((recv, index, signature)) = signature_write {
+            if op.is_some() {
+                let operator = match a.op {
+                    A::AddAssign => "+=",
+                    A::SubAssign => "-=",
+                    A::MulAssign => "*=",
+                    A::DivAssign => "/=",
+                    A::ModAssign => "%=",
+                    A::BitAndAssign => "&=",
+                    A::BitOrAssign => "|=",
+                    A::BitXorAssign => "^=",
+                    A::LShiftAssign => "<<=",
+                    A::RShiftAssign => ">>=",
+                    A::ZeroFillRShiftAssign => ">>>=",
+                    _ => "op=",
+                };
+                self.error(
+                    RuleCode::S100,
+                    format!("`a[i] {operator} v` is not supported for a class index signature"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            if signature.readonly {
+                self.error(
+                    RuleCode::S100,
+                    "`a[i] = v` cannot write through a readonly index signature",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            if !statement_position {
+                self.error(
+                    RuleCode::S100,
+                    "`a[i] = v` cannot be used as a value",
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            self.require_assignable(
+                &value.ty.clone(),
+                &signature.element_ty,
+                value.pos.clone(),
+                "the assignment",
+            );
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Method {
+                        recv: Box::new(recv),
+                        name: "set".to_string(),
+                    },
+                    args: vec![index, value],
+                },
+                ty: Type::Void,
+                pos,
+            };
+        }
         if let Some(bin) = op {
             // Compound assignment is same-type arithmetic on the target.
             if target_ty == Type::F16
@@ -5162,7 +5306,15 @@ impl<'p> Checker<'p> {
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
-                let index = self.check_expr(&c.expr, Some(&Type::I32), fx);
+                let index_context = match &obj.ty {
+                    Type::Class(id) => self.classes[id.0]
+                        .index_signature
+                        .as_ref()
+                        .map(|signature| signature.index_ty.clone())
+                        .unwrap_or(Type::I32),
+                    _ => Type::I32,
+                };
+                let index = self.check_expr(&c.expr, Some(&index_context), fx);
                 self.check_index(obj, index, pos)
             }
             ast::MemberProp::Ident(prop) => {

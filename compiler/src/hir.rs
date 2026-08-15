@@ -144,8 +144,22 @@ pub struct ClassDef {
     pub ctor: Option<Function>,
     /// Methods, in declaration order.
     pub methods: Vec<Function>,
+    /// The class index signature that rewrites indexed access to `get` and `set` calls.
+    pub index_signature: Option<IndexSignature>,
     /// Position of the declaration.
     pub pos: Pos,
+}
+
+/// The accessor types for one class index signature.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct IndexSignature {
+    /// The required index type. This type is `i32` or `u32`.
+    pub index_ty: Type,
+    /// The element type that `get` returns and `set` accepts.
+    pub element_ty: Type,
+    /// True when the signature does not permit indexed writes.
+    pub readonly: bool,
 }
 
 /// One declared field of a class.

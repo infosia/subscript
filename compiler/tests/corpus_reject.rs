@@ -134,6 +134,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r125-i64-literal-underflow.ts", RuleCode::S008, 7),
     ("r126-this-in-field-init.ts", RuleCode::S100, 9),
     ("r127-f32-frombits-f64-arg.ts", RuleCode::S007, 9),
+    ("r128-readonly-index-write.ts", RuleCode::S100, 19),
+    ("r129-index-signature-no-get.ts", RuleCode::S100, 8),
+    ("r130-index-compound-assign.ts", RuleCode::S100, 23),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -255,8 +258,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        123,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, and one R28 entry"
+        126,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, and three R29 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -527,5 +530,58 @@ fn r26_u64_max_shift_amount_is_rejected_at_its_unsigned_value() {
     assert_eq!(
         diagnostics[0].message,
         "literal shift amount 18446744073709551615 is out of range for `u64` width 64"
+    );
+}
+
+#[test]
+fn r29_wrong_index_type_is_s007() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "wrong-index.ts",
+        "class Values {\n  readonly [index: u32]: i32;\n  get(index: u32): i32 { return index as i32; }\n}\nexport function main(): void {\n  const values: Values = new Values();\n  const index: i32 = 0;\n  print(`${values[index]}`);\n}\n",
+    )])
+    .expect_err("an i32 index cannot satisfy a u32 index signature");
+    assert_eq!(diagnostics[0].code, RuleCode::S007);
+    assert_eq!(diagnostics[0].pos.line, 8);
+}
+
+#[test]
+fn r29_value_class_index_signature_is_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "value-index.ts",
+        "@CStruct\nclass Values {\n  readonly [index: u32]: i32;\n  get(index: u32): i32 { return index as i32; }\n}\nexport function main(): void {}\n",
+    )])
+    .expect_err("a value class cannot declare an index signature");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].pos.line, 3);
+}
+
+#[test]
+fn r29_index_write_used_as_value_is_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "value-write.ts",
+        "class Values {\n  [index: u32]: i32;\n  get(index: u32): i32 { return index as i32; }\n  set(index: u32, value: i32): void {}\n}\nexport function main(): void {\n  const values: Values = new Values();\n  const index: u32 = 0;\n  const result: i32 = values[index] = 2;\n  print(`${result}`);\n}\n",
+    )])
+    .expect_err("an indexed write cannot produce a value");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].pos.line, 9);
+    assert!(diagnostics[0].message.contains("`a[i] = v`"));
+}
+
+#[test]
+fn r29_mirror_index_signature_stays_outside_the_surface() {
+    let diagnostics = check_program(&[
+        SourceFile::ambient(
+            "values.generated.d.ts",
+            "declare class Values {\n  readonly [index: u32]: i32;\n}\n",
+        ),
+        SourceFile::new("main.ts", "export function main(): void {}\n"),
+    ])
+    .expect_err("a mirror class cannot ingest an index signature");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].pos.file, "values.generated.d.ts");
+    assert_eq!(diagnostics[0].pos.line, 2);
+    assert_eq!(
+        diagnostics[0].message,
+        "class member form outside the decided surface"
     );
 }

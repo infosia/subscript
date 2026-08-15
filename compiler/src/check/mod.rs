@@ -1012,6 +1012,7 @@ impl<'p> Checker<'p> {
             fields: Vec::new(),
             ctor: None,
             methods: Vec::new(),
+            index_signature: None,
             pos: pos.clone(),
         });
         self.class_sigs.push(ClassSig::default());
@@ -1910,6 +1911,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class) {
         let is_value = self.classes[id.0].is_value;
         let is_descriptor = self.classes[id.0].is_descriptor;
+        let mut index_signature_pos = None;
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
             if is_value {
@@ -2188,6 +2190,79 @@ impl<'p> Checker<'p> {
                     let name = key.sym.to_string();
                     self.class_sigs[id.0].methods.insert(name, sig);
                 }
+                ast::ClassMember::TsIndexSignature(signature) if !self.in_boundary => {
+                    let pos = self.pos(signature.span);
+                    if index_signature_pos.is_some() {
+                        self.error(
+                            RuleCode::S100,
+                            "a class can declare at most one index signature",
+                            pos,
+                        );
+                        continue;
+                    }
+                    index_signature_pos = Some(pos.clone());
+                    if is_value || is_descriptor {
+                        self.error(
+                            RuleCode::S100,
+                            "only reference classes can declare an index signature",
+                            pos.clone(),
+                        );
+                    }
+                    if signature.is_static {
+                        self.error(
+                            RuleCode::S100,
+                            "a class index signature cannot be static",
+                            pos.clone(),
+                        );
+                    }
+                    let index_ty = match signature.params.as_slice() {
+                        [ast::TsFnParam::Ident(binding)] => match &binding.type_ann {
+                            Some(annotation) => self.resolve_type(&annotation.type_ann),
+                            None => {
+                                self.error(
+                                    RuleCode::S100,
+                                    "a class index signature parameter requires a type annotation",
+                                    pos.clone(),
+                                );
+                                Type::Error
+                            }
+                        },
+                        _ => {
+                            self.error(
+                                RuleCode::S100,
+                                "a class index signature requires one identifier parameter",
+                                pos.clone(),
+                            );
+                            Type::Error
+                        }
+                    };
+                    if !matches!(index_ty, Type::I32 | Type::U32 | Type::Error) {
+                        let actual = self.type_name(&index_ty);
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "a class index signature requires an `i32` or `u32` index, got `{actual}`"
+                            ),
+                            pos.clone(),
+                        );
+                    }
+                    let element_ty = match &signature.type_ann {
+                        Some(annotation) => self.resolve_type(&annotation.type_ann),
+                        None => {
+                            self.error(
+                                RuleCode::S100,
+                                "a class index signature requires an element type",
+                                pos.clone(),
+                            );
+                            Type::Error
+                        }
+                    };
+                    self.classes[id.0].index_signature = Some(hir::IndexSignature {
+                        index_ty,
+                        element_ty,
+                        readonly: signature.readonly,
+                    });
+                }
                 ast::ClassMember::Empty(_) => {}
                 other => {
                     let pos = self.pos(other.span());
@@ -2198,6 +2273,63 @@ impl<'p> Checker<'p> {
                     );
                 }
             }
+        }
+        if let Some(pos) = index_signature_pos {
+            self.validate_class_index_accessors(id, pos);
+        }
+    }
+
+    fn validate_class_index_accessors(&mut self, id: ClassId, pos: Pos) {
+        let Some(signature) = self.classes[id.0].index_signature.clone() else {
+            return;
+        };
+        let get_matches = self.class_sigs[id.0]
+            .methods
+            .get("get")
+            .is_some_and(|method| {
+                !method.is_async
+                    && !method.is_generator
+                    && method.params.len() == 1
+                    && !method.params[0].has_default
+                    && method.params[0].ty == signature.index_ty
+                    && method.ret == signature.element_ty
+            });
+        if !get_matches {
+            let index = self.type_name(&signature.index_ty);
+            let element = self.type_name(&signature.element_ty);
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "the index signature requires `get(index: {index}): {element}` with exactly matching types"
+                ),
+                pos.clone(),
+            );
+        }
+        if signature.readonly {
+            return;
+        }
+        let set_matches = self.class_sigs[id.0]
+            .methods
+            .get("set")
+            .is_some_and(|method| {
+                !method.is_async
+                    && !method.is_generator
+                    && method.params.len() == 2
+                    && method.params.iter().all(|parameter| !parameter.has_default)
+                    && method.params[0].ty == signature.index_ty
+                    && method.params[1].ty == signature.element_ty
+                    && method.ret == Type::Void
+            });
+        if !set_matches {
+            let index = self.type_name(&signature.index_ty);
+            let element = self.type_name(&signature.element_ty);
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "the index signature requires `set(index: {index}, value: {element}): void` with exactly matching types"
+                ),
+                pos,
+            );
         }
     }
 
