@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 13, 2026-07-27 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 14, 2026-08-15 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -12,7 +12,8 @@ withdraws §15.7's claim that the `tsc` gate covers reject entries;
 Rev 13, 2026-07-27, follows P24: that static's astral range is gone
 (`compiler.md` §22.1), so §15.1's table is pre-P24 history and §14.3
 no longer claims the loop allocates nothing — §14.3a states the
-astral bound instead).
+astral bound instead; Rev 14, 2026-08-15, adds the §17 R28 binary32
+bit-access contract and corrects §0.1's prelude claim for it).
 Evidence lands in `specs/tracking/p9-stdlib.md` for §1–§12 and in the
 phase's own tracking file thereafter — §15 in
 `specs/tracking/p23-regex.md`. *(The blanket "evidence lands in
@@ -24,8 +25,11 @@ Phase Review found §15 citing a tracking file that did not exist, and
 
 1. **The `tsc` side is the ES2022 standard library.** `tsconfig.json`
    already loads `lib: ["ES2022"]`, so `Math` and `Date` are fully
-   declared for the editor and the `tsc` gate; the prelude declares
-   nothing for them (a redeclaration would collide with the lib). This
+   declared for the editor and the `tsc` gate; the prelude redeclares
+   neither global (a redeclaration would collide with the lib). Where
+   the subset adds surface the lib lacks, the prelude merges members
+   into the lib interface — the `Map`/`Set`/`RegExp` mechanism, and
+   §17's two `Math` members. This
    compiler accepts a **deterministic subset** of the lib API with
    sized-type signatures and rejects out-of-subset members with a clear
    S-code — the same shape as rejecting `any`: `tsc` accepts more than
@@ -75,6 +79,9 @@ C's `__builtin_clz(0)` is undefined and the ship tier must not emit it.
 (Q27). Each is an exact duplicate of a spelling the language already
 has — `a * b` on `i32`, `x as f32` — and under the owner's rule a
 second spelling is not grounds for rejection.
+
+`f32ToBits(value: f64): u32` and `f32FromBits(bits: u32): f64` are
+accepted (R28) — §17.
 
 Rejected members (S-code + reject-corpus entries): variadic
 `max`/`min`/`hypot` beyond two arguments — the language has no
@@ -1860,3 +1867,115 @@ array elements, or lambda captures. `new` on any of the three is
 rejected (the ambient's private constructors already make it
 `tsc`-illegal; the checker rejects independently). Corpus pins and
 diagnostics: `compiler.md` §40.
+
+## 17. R28 — binary32 bit access: `Math.f32ToBits`, `Math.f32FromBits`
+
+Origin: downstream request R28, 2026-08-15, at pin `2029350`. The
+downstream generates encoders for GPU records that interleave `u32`
+and `f32` members at fixed offsets. A script encodes each integer
+width with shifts and masks. No script operation reads or writes the
+bits of a float. An IEEE-754 encoder in script arithmetic needs
+branches for subnormals, infinities, NaN, and round-to-nearest-even.
+The downstream refuses that encoder because no script can check it
+against a reference. The request is binary32 only; WGSL has no f64.
+
+### 17.1 Rule
+
+Two new `Math` members:
+
+    Math.f32ToBits(value: f64): u32
+    Math.f32FromBits(bits: u32): f64
+
+`f32ToBits(value)` narrows `value` to binary32 with the `fround`
+rule, then returns the bit pattern as `u32`. If the narrowed value
+is NaN, the result is `0x7FC00000`. Hardware and Rust casts give a
+NaN result an unspecified payload; the canonical pattern makes the
+result one value on every tier and platform.
+
+`f32FromBits(bits)` returns the binary32 value of `bits`, widened
+to `f64`. The widening is exact: every binary32 value is a binary64
+value. For a NaN pattern, the payload of the returned `f64` is not
+observable in script; the next `f32ToBits` canonicalizes it.
+
+Laws, for every `x: f64` and every `b: u32`:
+
+- `Math.f32ToBits(x) === Math.f32ToBits(Math.fround(x))`.
+- If `x` is not NaN,
+  `Math.f32FromBits(Math.f32ToBits(x)) === Math.fround(x)`.
+- If `b` is not a NaN pattern,
+  `Math.f32ToBits(Math.f32FromBits(b)) === b`.
+  A NaN pattern gives `0x7FC00000`.
+- `Math.fround(Math.f32FromBits(b)) === Math.f32FromBits(b)`.
+
+Neither member traps. Arity errors keep the S014 path; an argument
+of the wrong numeric type keeps the S007 path.
+
+JS has no such members: JS reaches the bits through `Float32Array`
+or `DataView`, and the language has neither. The two names collide
+with no lib member, so `collisions.md` is unchanged. A program that
+calls them does not run under `node`; corpus semantics come from
+IEEE-754, not from a `node` run.
+
+### 17.2 Changes by site
+
+- `prelude/lang.d.ts`: merge the two members into the lib `Math`
+  interface (§0.1 mechanism).
+- `compiler/src/hir.rs`: `MathFn` gains `F32ToBits` and
+  `F32FromBits`, appended last so `ALL` order and `f as usize`
+  indexing stand (35 → 37). `MathFn` gains `symbol()` on the
+  `NumFn` pattern. The 35 existing symbols do not change. The new
+  symbols are `subscript_rt_math_f32_to_bits` and
+  `subscript_rt_math_f32_from_bits`. The `name()` doc no longer
+  claims the member name is the symbol suffix.
+- `compiler/src/check/expr.rs` (`check_math_call`): `F32ToBits`
+  takes `f64` and returns `u32`; `F32FromBits` takes `u32` and
+  returns `f64`.
+- `codegen/src/lower/mod.rs`: import signatures `(ctx, F64) -> I32`
+  and `(ctx, I32) -> F64`; the declare loop uses `symbol()`.
+- `codegen/src/cemit.rs`: the `Callee::Math` call uses `symbol()`;
+  the extern table gains
+  `extern uint32_t subscript_rt_math_f32_to_bits(void* ctx, double x);`
+  and
+  `extern double subscript_rt_math_f32_from_bits(void* ctx, uint32_t bits);`.
+- `codegen/src/jit.rs`: register the two symbols.
+- `runtime/src/math.rs`: `f32_to_bits(x: f64) -> u32` and
+  `f32_from_bits(bits: u32) -> f64`, pure. `runtime/src/ffi.rs`:
+  the two `extern "C"` wrappers over Context.
+- Generated API reference: `MathFn::ALL` drives it; regenerate.
+
+Both tiers call the same runtime symbol (§0.2), so the tiers agree
+by construction.
+
+### 17.3 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: the checker rejects
+`Math.f32ToBits` and `Math.f32FromBits` as unknown members. Record
+the rejection for `a135` and `r127` before the implementation.
+
+- `corpus/accept/a135-f32-bits.ts` + `.expected` (golden from the
+  dev JIT). Pins, printed and byte-exact across both tiers:
+  `f32ToBits(1)` is `1065353216`; `f32ToBits(1.1)` equals
+  `f32ToBits(Math.fround(1.1))` and is `1066192077`;
+  `f32ToBits(-0)` is `2147483648`;
+  `f32ToBits(Number.POSITIVE_INFINITY)` is `2139095040`;
+  `f32ToBits(1e300)` is `2139095040` (overflow saturates to
+  infinity); `f32ToBits(Number.NaN)` is `2143289344`;
+  `f32FromBits(1)` prints the subnormal `2^-149`;
+  `f32ToBits(f32FromBits(1))` is `1` (round trip);
+  `f32ToBits(f32FromBits(2139095041))` is `2143289344` (NaN
+  pattern canonicalizes).
+- `corpus/reject/r127-f32-frombits-f64-arg.ts`: an `f64` argument
+  to `f32FromBits` fails with S007 at the call line.
+- Unit tests in the same commit: runtime `math.rs` pins the
+  canonical NaN, `-0`, the subnormal, the overflow, and the round
+  trip; `ffi.rs` covers both wrappers; a checker test pins the
+  S007; a cemit test asserts the two extern declarations and a
+  `symbol()` call line.
+- Counts: accept single files 133 → 134; accept source files
+  135 → 136; rejects 122 → 123; goldens 134 → 135.
+  `generated-docs/corpus-index.md` and the API reference
+  regenerate byte-exact.
+- Gates: `cargo test --offline --workspace` in both profiles;
+  zero-warning `cargo build --offline --workspace --all-targets`;
+  `cargo fmt --check`; `./node_modules/.bin/tsc -p tsconfig.json`;
+  every pre-existing golden and `.expected` byte-identical.
