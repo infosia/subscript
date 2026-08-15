@@ -11,7 +11,8 @@
 //! `clz32` uses Rust's zero-defined [`u32::leading_zeros`] behind the
 //! runtime boundary; generated C never emits `__builtin_clz`.
 //! `imul` uses [`i32::wrapping_mul`], and `fround` performs the
-//! contract's exact `f64 -> f32 -> f64` conversion.
+//! contract's exact `f64 -> f32 -> f64` conversion. The binary32 bit
+//! accessors canonicalize NaN bit patterns.
 //!
 //! `Math.random` (§2) draws from [`Rng`], a xoshiro256++ generator
 //! seeded by splitmix64 expansion; the state is owned by the Context so
@@ -40,6 +41,23 @@ pub fn imul(a: i32, b: i32) -> i32 {
 #[must_use]
 pub fn fround(x: f64) -> f64 {
     (x as f32) as f64
+}
+
+/// `Math.f32ToBits`: narrow to binary32 and return its canonical bits.
+#[must_use]
+pub fn f32_to_bits(x: f64) -> u32 {
+    let narrowed = x as f32;
+    if narrowed.is_nan() {
+        0x7FC0_0000
+    } else {
+        narrowed.to_bits()
+    }
+}
+
+/// `Math.f32FromBits`: read binary32 bits and widen exactly to binary64.
+#[must_use]
+pub fn f32_from_bits(bits: u32) -> f64 {
+    f32::from_bits(bits) as f64
 }
 
 /// `Math.acos`.
@@ -444,6 +462,18 @@ mod tests {
         assert_eq!(imul(i32::MIN, -1), i32::MIN);
         assert_eq!(fround(1.1), 1.100_000_023_841_858);
         assert_eq!(fround(-0.0).to_bits(), (-0.0_f64).to_bits());
+    }
+
+    #[test]
+    fn binary32_bit_access_pins_nan_zero_subnormal_overflow_and_round_trip() {
+        assert_eq!(f32_to_bits(f64::NAN), 0x7FC0_0000);
+        assert_eq!(f32_to_bits(f32_from_bits(0x7F80_0001)), 0x7FC0_0000);
+        assert_eq!(f32_to_bits(-0.0), 0x8000_0000);
+        assert_eq!(f32_from_bits(1), 2.0_f64.powi(-149));
+        assert_eq!(f32_to_bits(1e300), 0x7F80_0000);
+        for bits in [0, 1, 0x3F80_0000, 0x7F80_0000, 0x8000_0000] {
+            assert_eq!(f32_to_bits(f32_from_bits(bits)), bits);
+        }
     }
 
     #[test]

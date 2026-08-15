@@ -603,25 +603,21 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     use types::{F32, F64, I16, I32, I64, I8};
     // Math intrinsic imports (stdlib.md §1): one opaque symbol per
     // accepted function, in MathFn::ALL order so `f as usize` indexes
-    // the table. `clz32` is `(ctx, u32) -> i32`, `imul` is
-    // `(ctx, i32, i32) -> i32`; all other arguments and results are
-    // f64.
+    // the table. Each match arm supplies the sized runtime signature.
     let mut math_ids: Vec<FuncId> = Vec::with_capacity(hir::MathFn::ALL.len());
     for f in hir::MathFn::ALL {
         let (params, ret) = match f {
             hir::MathFn::Clz32 => (vec![I64, I32], I32),
             hir::MathFn::Imul => (vec![I64, I32, I32], I32),
+            hir::MathFn::F32ToBits => (vec![I64, F64], I32),
+            hir::MathFn::F32FromBits => (vec![I64, I32], F64),
             _ => {
                 let mut params = vec![I64];
                 params.extend(std::iter::repeat_n(F64, f.arity()));
                 (params, F64)
             }
         };
-        math_ids.push(mk(
-            &format!("subscript_rt_math_{}", f.name()),
-            &params,
-            Some(ret),
-        )?);
+        math_ids.push(mk(f.symbol(), &params, Some(ret))?);
     }
     let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
         .try_into()

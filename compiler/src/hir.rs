@@ -671,12 +671,10 @@ impl AmbientFn {
     }
 }
 
-/// `Math` intrinsic functions (stdlib.md §1): ambient-namespace member
-/// calls typed `f64` in and out, lowered by both tiers to the opaque
-/// runtime symbol `subscript_rt_math_<name>` — never the foreign-call path
-/// and never a direct libm emission (stdlib.md §0.2). The constants
-/// (`Math.PI`, …) are not represented here: a constant member read
-/// folds to an [`ExprKind::Float`] literal at check time.
+/// Both tiers lower `Math` intrinsic calls (stdlib.md §1) to opaque
+/// runtime symbols. These calls never use the foreign-call path or emit
+/// direct libm calls (stdlib.md §0.2). The checker folds each constant
+/// member read to an [`ExprKind::Float`] literal at check time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum MathFn {
@@ -751,13 +749,17 @@ pub enum MathFn {
     /// `Math.fround(x)` with an `f64` argument and `f32`-rounded `f64`
     /// result.
     Fround,
+    /// `Math.f32ToBits(value)` with an `f64` argument and `u32` result.
+    F32ToBits,
+    /// `Math.f32FromBits(bits)` with a `u32` argument and `f64` result.
+    F32FromBits,
 }
 
 impl MathFn {
     /// Every accepted `Math` function, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [MathFn; 35] = [
+    pub const ALL: [MathFn; 37] = [
         MathFn::Abs,
         MathFn::Acos,
         MathFn::Acosh,
@@ -793,6 +795,8 @@ impl MathFn {
         MathFn::Clz32,
         MathFn::Imul,
         MathFn::Fround,
+        MathFn::F32ToBits,
+        MathFn::F32FromBits,
     ];
 
     /// Whether the runtime call can leave the Context trapped.
@@ -801,8 +805,7 @@ impl MathFn {
         false
     }
 
-    /// The member name, which is also the runtime symbol suffix
-    /// (`subscript_rt_math_<name>`).
+    /// Returns the source member name.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -841,12 +844,57 @@ impl MathFn {
             MathFn::Clz32 => "clz32",
             MathFn::Imul => "imul",
             MathFn::Fround => "fround",
+            MathFn::F32ToBits => "f32ToBits",
+            MathFn::F32FromBits => "f32FromBits",
+        }
+    }
+
+    /// Returns the opaque runtime symbol shared by both tiers.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            MathFn::Abs => "subscript_rt_math_abs",
+            MathFn::Acos => "subscript_rt_math_acos",
+            MathFn::Acosh => "subscript_rt_math_acosh",
+            MathFn::Asin => "subscript_rt_math_asin",
+            MathFn::Asinh => "subscript_rt_math_asinh",
+            MathFn::Atan => "subscript_rt_math_atan",
+            MathFn::Atanh => "subscript_rt_math_atanh",
+            MathFn::Cbrt => "subscript_rt_math_cbrt",
+            MathFn::Ceil => "subscript_rt_math_ceil",
+            MathFn::Cos => "subscript_rt_math_cos",
+            MathFn::Cosh => "subscript_rt_math_cosh",
+            MathFn::Exp => "subscript_rt_math_exp",
+            MathFn::Expm1 => "subscript_rt_math_expm1",
+            MathFn::Floor => "subscript_rt_math_floor",
+            MathFn::Log => "subscript_rt_math_log",
+            MathFn::Log1p => "subscript_rt_math_log1p",
+            MathFn::Log10 => "subscript_rt_math_log10",
+            MathFn::Log2 => "subscript_rt_math_log2",
+            MathFn::Round => "subscript_rt_math_round",
+            MathFn::Sign => "subscript_rt_math_sign",
+            MathFn::Sin => "subscript_rt_math_sin",
+            MathFn::Sinh => "subscript_rt_math_sinh",
+            MathFn::Sqrt => "subscript_rt_math_sqrt",
+            MathFn::Tan => "subscript_rt_math_tan",
+            MathFn::Tanh => "subscript_rt_math_tanh",
+            MathFn::Trunc => "subscript_rt_math_trunc",
+            MathFn::Atan2 => "subscript_rt_math_atan2",
+            MathFn::Hypot => "subscript_rt_math_hypot",
+            MathFn::Pow => "subscript_rt_math_pow",
+            MathFn::Max => "subscript_rt_math_max",
+            MathFn::Min => "subscript_rt_math_min",
+            MathFn::Random => "subscript_rt_math_random",
+            MathFn::Clz32 => "subscript_rt_math_clz32",
+            MathFn::Imul => "subscript_rt_math_imul",
+            MathFn::Fround => "subscript_rt_math_fround",
+            MathFn::F32ToBits => "subscript_rt_math_f32_to_bits",
+            MathFn::F32FromBits => "subscript_rt_math_f32_from_bits",
         }
     }
 
     /// Number of arguments (exact; the lib's variadic forms are out of
-    /// subset, Q19). `clz32` uses `u32`, `imul` uses `i32`; the rest
-    /// use `f64`.
+    /// subset, Q19).
     #[must_use]
     pub fn arity(self) -> usize {
         match self {
@@ -876,6 +924,12 @@ impl MathFn {
         if self == MathFn::Fround {
             return "fround(value: f64): f64".to_string();
         }
+        if self == MathFn::F32ToBits {
+            return "f32ToBits(value: f64): u32".to_string();
+        }
+        if self == MathFn::F32FromBits {
+            return "f32FromBits(bits: u32): f64".to_string();
+        }
         let params = match self.arity() {
             1 => "value: f64",
             2 => "left: f64, right: f64",
@@ -892,6 +946,8 @@ impl MathFn {
             MathFn::Clz32 => "Counts leading zero bits in a `u32`; zero returns 32.",
             MathFn::Imul => "Multiplies two `i32` values with 32-bit wrapping.",
             MathFn::Fround => "Rounds an `f64` through `f32` precision.",
+            MathFn::F32ToBits => "Returns the canonical binary32 bit pattern of an `f64` value.",
+            MathFn::F32FromBits => "Widens a binary32 bit pattern exactly to `f64`.",
             MathFn::Hypot | MathFn::Max | MathFn::Min => {
                 "Accepts exactly two operands; the ES variadic overload is rejected."
             }
@@ -3238,11 +3294,20 @@ mod tests {
         assert_eq!(MathFn::Clz32.arity(), 1);
         assert_eq!(MathFn::Imul.arity(), 2);
         assert_eq!(MathFn::Fround.arity(), 1);
+        assert_eq!(MathFn::F32ToBits.arity(), 1);
+        assert_eq!(MathFn::F32FromBits.arity(), 1);
         assert_eq!(MathFn::Random.name(), "random");
         assert_eq!(MathFn::Log1p.name(), "log1p");
         assert_eq!(MathFn::Clz32.name(), "clz32");
         assert_eq!(MathFn::Imul.name(), "imul");
         assert_eq!(MathFn::Fround.name(), "fround");
+        assert_eq!(MathFn::F32ToBits.name(), "f32ToBits");
+        assert_eq!(MathFn::F32FromBits.name(), "f32FromBits");
+        assert_eq!(MathFn::F32ToBits.symbol(), "subscript_rt_math_f32_to_bits");
+        assert_eq!(
+            MathFn::F32FromBits.symbol(),
+            "subscript_rt_math_f32_from_bits"
+        );
     }
 
     #[test]

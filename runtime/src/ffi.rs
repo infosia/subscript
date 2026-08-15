@@ -2936,9 +2936,10 @@ pub unsafe extern "C" fn subscript_rt_num_to_precision(
 // Every `subscript_rt_math_*` symbol takes the Context pointer first, so both
 // tiers emit every Math call identically. The f64 subset returns f64;
 // clz32 is `(ctx, u32) -> i32`, imul is `(ctx, i32, i32) -> i32`, and
-// fround is `(ctx, f64) -> f64`. Pure entries ignore `ctx`; only random
-// reads Context state. Both tiers must call these opaque symbols —
-// never a direct libm/builtin operation (stdlib.md §0.2/Q26/Q27).
+// fround is `(ctx, f64) -> f64`. The binary32 bit accessors use `u32`
+// for their bit-pattern side. Pure entries ignore `ctx`; only random
+// reads Context state. Both tiers call these opaque symbols. They never use
+// a direct libm or builtin operation (stdlib.md §0.2/Q26/Q27).
 
 /// Declares the C entry of a pure unary `Math` member: `f(ctx, x)`
 /// forwarding to [`crate::math`].
@@ -3059,6 +3060,20 @@ pub extern "C" fn subscript_rt_math_imul(ctx: *mut Context, a: i32, b: i32) -> i
 pub extern "C" fn subscript_rt_math_fround(ctx: *mut Context, x: f64) -> f64 {
     let _ = ctx;
     crate::math::fround(x)
+}
+
+/// `Math.f32ToBits(value)`: narrow and return canonical binary32 bits.
+#[no_mangle]
+pub extern "C" fn subscript_rt_math_f32_to_bits(ctx: *mut Context, x: f64) -> u32 {
+    let _ = ctx;
+    crate::math::f32_to_bits(x)
+}
+
+/// `Math.f32FromBits(bits)`: widen binary32 bits exactly to binary64.
+#[no_mangle]
+pub extern "C" fn subscript_rt_math_f32_from_bits(ctx: *mut Context, bits: u32) -> f64 {
+    let _ = ctx;
+    crate::math::f32_from_bits(bits)
 }
 
 /// `Math.random()` (stdlib.md §2): the next deterministic draw from the
@@ -6048,6 +6063,14 @@ mod tests {
             subscript_rt_print(p, t);
         }
         assert_eq!(ctx.take_stdout(), b"3.75\ntrue\n");
+    }
+
+    #[test]
+    fn ffi_binary32_bit_access_forwards_both_wrappers() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        assert_eq!(subscript_rt_math_f32_to_bits(p, -0.0), 0x8000_0000);
+        assert_eq!(subscript_rt_math_f32_from_bits(p, 1), 2.0_f64.powi(-149));
     }
 
     #[test]

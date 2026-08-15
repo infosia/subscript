@@ -1121,6 +1121,8 @@ mod tests {
         assert_eq!(math_fn("clz32"), Some(MathFn::Clz32));
         assert_eq!(math_fn("imul"), Some(MathFn::Imul));
         assert_eq!(math_fn("fround"), Some(MathFn::Fround));
+        assert_eq!(math_fn("f32ToBits"), Some(MathFn::F32ToBits));
+        assert_eq!(math_fn("f32FromBits"), Some(MathFn::F32FromBits));
         // Constants are not functions.
         assert_eq!(math_fn("PI"), None);
         // Every declared function round-trips through its name.

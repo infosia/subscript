@@ -2240,8 +2240,8 @@ impl<'p> Checker<'p> {
 
     /// A `Math.<fn>(…)` intrinsic call (stdlib.md §1): exact arity
     /// (Q19 — the lib's variadic `max`/`min`/`hypot` beyond two are out
-    /// of subset). `clz32` takes `u32` and returns `i32`; `imul` takes
-    /// and returns `i32`; every other argument and result is `f64`.
+    /// of subset). The binary32 bit-access members use their sized
+    /// signatures from stdlib.md §17.1.
     fn check_math_call(
         &mut self,
         f: MathFn,
@@ -2263,7 +2263,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             let argument_type = match f {
-                MathFn::Clz32 => "u32",
+                MathFn::Clz32 | MathFn::F32FromBits => "u32",
                 MathFn::Imul => "i32",
                 _ => "f64",
             };
@@ -2282,7 +2282,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let param_ty = match f {
-            MathFn::Clz32 => Type::U32,
+            MathFn::Clz32 | MathFn::F32FromBits => Type::U32,
             MathFn::Imul => Type::I32,
             _ => Type::F64,
         };
@@ -2301,6 +2301,7 @@ impl<'p> Checker<'p> {
             },
             ty: match f {
                 MathFn::Clz32 | MathFn::Imul => Type::I32,
+                MathFn::F32ToBits => Type::U32,
                 _ => Type::F64,
             },
             pos,
@@ -6293,5 +6294,19 @@ impl<'p> Checker<'p> {
             ty,
             pos,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{check_program, RuleCode, SourceFile};
+
+    #[test]
+    fn f32_from_bits_rejects_an_f64_argument_with_s007() {
+        let source = "export function main(): void {\n  const value: f64 = 1.0;\n  print(`${Math.f32FromBits(value)}`);\n}\n";
+        let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
+            .expect_err("f32FromBits rejects an f64 argument");
+        assert_eq!(diagnostics[0].code, RuleCode::S007);
+        assert_eq!(diagnostics[0].pos.line, 3);
     }
 }

@@ -3621,7 +3621,7 @@ impl<'m> Emitter<'m> {
             hir::Callee::Math(f) => {
                 let argv = self.eval_list(args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call = format!("subscript_rt_math_{}(ctx{sep}{argv})", f.name());
+                let call = format!("{}(ctx{sep}{argv})", f.symbol());
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
             // Q25/Q26 Number and parsing intrinsics all call the shared
@@ -7735,6 +7735,8 @@ extern double subscript_rt_math_random(void* ctx);
 extern int32_t subscript_rt_math_clz32(void* ctx, uint32_t x);
 extern int32_t subscript_rt_math_imul(void* ctx, int32_t a, int32_t b);
 extern double subscript_rt_math_fround(void* ctx, double x);
+extern uint32_t subscript_rt_math_f32_to_bits(void* ctx, double x);
+extern double subscript_rt_math_f32_from_bits(void* ctx, uint32_t bits);
 
 /* Date intrinsics (stdlib.md 3): a Date value is its int64_t epoch
  * milliseconds; the calendar arithmetic lives in the runtime so both

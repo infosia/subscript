@@ -560,6 +560,14 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_math_fround",
             ffi::subscript_rt_math_fround as *const u8,
         ),
+        (
+            "subscript_rt_math_f32_to_bits",
+            ffi::subscript_rt_math_f32_to_bits as *const u8,
+        ),
+        (
+            "subscript_rt_math_f32_from_bits",
+            ffi::subscript_rt_math_f32_from_bits as *const u8,
+        ),
         // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
         (
             "subscript_rt_num_is_nan",

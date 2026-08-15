@@ -1,0 +1,9 @@
+one 1065353216
+fround agreement 1066192077 1066192077 true
+negative zero 2147483648
+positive infinity 2139095040
+overflow 2139095040
+nan 2143289344
+subnormal 1.401298464324817e-45
+round trip 1
+nan pattern 2143289344

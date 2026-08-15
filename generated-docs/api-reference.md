@@ -70,6 +70,8 @@
 | `clz32(value: u32): i32` | Counts leading zero bits in a `u32`; zero returns 32. |
 | `imul(left: i32, right: i32): i32` | Multiplies two `i32` values with 32-bit wrapping. |
 | `fround(value: f64): f64` | Rounds an `f64` through `f32` precision. |
+| `f32ToBits(value: f64): u32` | Returns the canonical binary32 bit pattern of an `f64` value. |
+| `f32FromBits(bits: u32): f64` | Widens a binary32 bit pattern exactly to `f64`. |
 
 ### Number
 

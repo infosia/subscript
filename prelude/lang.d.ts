@@ -78,6 +78,12 @@ declare interface Set<T> {
   isDisjointFrom(other: Set<T>): boolean;
 }
 
+// This augmentation adds binary32 bit access to the ES2022 Math surface.
+declare interface Math {
+  f32ToBits(value: f64): u32;
+  f32FromBits(bits: u32): f64;
+}
+
 // P23 augmentation. Stock ES2022 supplies RegExp itself;
 // these scalar capture extents are the only added surface.
 declare interface RegExp {

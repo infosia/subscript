@@ -853,6 +853,23 @@ fn failed_json_result_string_and_reference_payloads_trap_identically() {
 }
 
 #[test]
+fn binary32_bit_access_uses_the_declared_runtime_symbols() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "export function main(): void {\n  const bits: u32 = Math.f32ToBits(1);\n  print(`${Math.f32FromBits(bits)}`);\n}\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emit C").source;
+    assert!(c.contains("extern uint32_t subscript_rt_math_f32_to_bits(void* ctx, double x);"));
+    assert!(c.contains("extern double subscript_rt_math_f32_from_bits(void* ctx, uint32_t bits);"));
+    assert!(c.contains("subscript_rt_math_f32_to_bits(ctx, 1.0)"), "{c}");
+    assert!(
+        c.contains("subscript_rt_math_f32_from_bits(ctx, bits)"),
+        "{c}"
+    );
+}
+
+#[test]
 fn acyclic_json_serializer_emits_no_tracking_operations() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
