@@ -8,6 +8,9 @@
 use crate::diag::Pos;
 use crate::types::{ClassId, EnumId, Type};
 
+/// Names the synchronous disposal hook after the checker lowers `[Symbol.dispose]`.
+pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
+
 /// A checked program: all source files merged into one module.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]

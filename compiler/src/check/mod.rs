@@ -50,6 +50,26 @@ fn type_reference_name(ty: Option<&ast::TsType>) -> Option<&str> {
     Some(ident.sym.as_ref())
 }
 
+fn is_dispose_method_key(key: &ast::PropName) -> bool {
+    let ast::PropName::Computed(computed) = key else {
+        return false;
+    };
+    let mut expression = computed.expr.as_ref();
+    while let ast::Expr::Paren(paren) = expression {
+        expression = &paren.expr;
+    }
+    let ast::Expr::Member(member) = expression else {
+        return false;
+    };
+    let ast::Expr::Ident(symbol) = member.obj.as_ref() else {
+        return false;
+    };
+    let ast::MemberProp::Ident(dispose) = &member.prop else {
+        return false;
+    };
+    symbol.sym.as_ref() == "Symbol" && dispose.sym.as_ref() == "dispose"
+}
+
 /// Extracts the declaration-ordered members of the one program type-alias
 /// form admitted by Q32.
 fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
@@ -232,6 +252,13 @@ pub(crate) struct Scope {
     pub fn_boundary: bool,
 }
 
+#[derive(Clone)]
+struct UsingBinding {
+    name: String,
+    ty: Type,
+    pos: Pos,
+}
+
 /// One function (or lambda) frame.
 #[derive(Debug)]
 pub(crate) struct Frame {
@@ -375,6 +402,8 @@ pub(crate) struct Checker<'p> {
     pub regex_literals: HashMap<(String, u32, u32), String>,
     /// Monotonic suffix for collision-free regex-literal global names.
     pub next_regex_literal_id: usize,
+    /// Monotonic suffix for return locals that preserve values across disposal.
+    pub next_using_return_id: usize,
 }
 
 /// Runs the checker over a parsed program.
@@ -419,6 +448,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         next_for_of_id: 0,
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
+        next_using_return_id: 0,
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record
@@ -914,6 +944,17 @@ impl<'p> Checker<'p> {
             ast::Decl::Var(v) => self.collect_globals(file, v, exported),
             ast::Decl::TsEnum(e) => self.collect_enum(file, e, exported),
             ast::Decl::TsTypeAlias(alias) => self.collect_string_alias(file, alias, exported),
+            ast::Decl::Using(using) => {
+                self.error(
+                    RuleCode::S100,
+                    if using.is_await {
+                        "module-level `await using` is not in the decided surface"
+                    } else {
+                        "module-level `using` is not in the decided surface"
+                    },
+                    self.pos(using.span),
+                );
+            }
             other => {
                 let pos = self.pos(other.span());
                 self.error(
@@ -2129,16 +2170,42 @@ impl<'p> Checker<'p> {
                     self.class_sigs[id.0].ctor = Some(params);
                 }
                 ast::ClassMember::Method(method) => {
-                    let ast::PropName::Ident(key) = &method.key else {
-                        let pos = self.pos(method.span);
-                        self.error(RuleCode::S100, "computed method names are not decided", pos);
-                        continue;
+                    let (name, key_pos, is_dispose) = match &method.key {
+                        ast::PropName::Ident(key) => {
+                            (key.sym.to_string(), self.pos(key.span), false)
+                        }
+                        key if is_dispose_method_key(key) => (
+                            hir::DISPOSE_METHOD_NAME.to_string(),
+                            self.pos(method.span),
+                            true,
+                        ),
+                        _ => {
+                            let pos = self.pos(method.span);
+                            self.error(
+                                RuleCode::S100,
+                                "computed method names are not decided",
+                                pos,
+                            );
+                            continue;
+                        }
                     };
                     if is_descriptor {
                         self.error(
                             RuleCode::S100,
-                            "descriptor classes cannot declare methods",
-                            self.pos(key.span),
+                            if is_dispose {
+                                "descriptor classes cannot declare `[Symbol.dispose]()`"
+                            } else {
+                                "descriptor classes cannot declare methods"
+                            },
+                            key_pos,
+                        );
+                        continue;
+                    }
+                    if is_dispose && is_value {
+                        self.error(
+                            RuleCode::S100,
+                            "value classes cannot declare `[Symbol.dispose]()`",
+                            key_pos,
                         );
                         continue;
                     }
@@ -2146,7 +2213,9 @@ impl<'p> Checker<'p> {
                         let pos = self.pos(method.span);
                         self.error(
                             RuleCode::S100,
-                            if method.function.is_async {
+                            if is_dispose {
+                                "`[Symbol.dispose]()` must be non-static"
+                            } else if method.function.is_async {
                                 "async static methods are not in the decided surface"
                             } else {
                                 "static methods and accessors are not decided"
@@ -2177,6 +2246,14 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
+                    if is_dispose && method.function.is_async {
+                        self.error(
+                            RuleCode::S100,
+                            "`[Symbol.dispose]()` must be synchronous",
+                            key_pos,
+                        );
+                        continue;
+                    }
                     if method.function.is_async && is_value {
                         let pos = self.pos(method.span);
                         self.error(
@@ -2186,8 +2263,15 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    let sig = self.resolve_fn_sig(&method.function, self.pos(key.span));
-                    let name = key.sym.to_string();
+                    let sig = self.resolve_fn_sig(&method.function, key_pos.clone());
+                    if is_dispose && (!sig.params.is_empty() || sig.ret != Type::Void) {
+                        self.error(
+                            RuleCode::S100,
+                            "`[Symbol.dispose]()` takes no parameters and returns `void`",
+                            key_pos,
+                        );
+                        continue;
+                    }
                     self.class_sigs[id.0].methods.insert(name, sig);
                 }
                 ast::ClassMember::TsIndexSignature(signature) if !self.in_boundary => {
@@ -2505,6 +2589,364 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn lower_using_function(&mut self, function: &ast::Function) -> (ast::Function, Vec<Pos>) {
+        let mut lowered = function.clone();
+        let mut bindings = Vec::new();
+        if let Some(body) = &mut lowered.body {
+            self.lower_using_statements(&mut body.stmts, &mut bindings);
+        }
+        (lowered, bindings)
+    }
+
+    fn lower_using_statements(&mut self, statements: &mut [ast::Stmt], bindings: &mut Vec<Pos>) {
+        for statement in statements {
+            match statement {
+                ast::Stmt::Decl(ast::Decl::Using(using)) => {
+                    if using.is_await {
+                        self.error(
+                            RuleCode::S100,
+                            "`await using` is not in the decided surface",
+                            self.pos(using.span),
+                        );
+                    } else {
+                        for declarator in &using.decls {
+                            if let ast::Pat::Ident(binding) = &declarator.name {
+                                bindings.push(self.pos(binding.id.span));
+                            }
+                        }
+                    }
+                    *statement = ast::Stmt::Decl(ast::Decl::Var(Box::new(ast::VarDecl {
+                        span: using.span,
+                        ctxt: Default::default(),
+                        kind: ast::VarDeclKind::Const,
+                        declare: false,
+                        decls: using.decls.clone(),
+                    })));
+                }
+                ast::Stmt::Block(block) => {
+                    self.lower_using_statements(&mut block.stmts, bindings);
+                }
+                ast::Stmt::If(if_statement) => {
+                    self.lower_using_statement(&mut if_statement.cons, bindings);
+                    if let Some(alternate) = &mut if_statement.alt {
+                        self.lower_using_statement(alternate, bindings);
+                    }
+                }
+                ast::Stmt::While(while_statement) => {
+                    self.lower_using_statement(&mut while_statement.body, bindings);
+                }
+                ast::Stmt::For(for_statement) => {
+                    self.lower_using_statement(&mut for_statement.body, bindings);
+                }
+                ast::Stmt::ForOf(for_of) => {
+                    if let ast::ForHead::UsingDecl(using) = &for_of.left {
+                        self.error(
+                            RuleCode::S100,
+                            if using.is_await {
+                                "`await using` in a `for` head is not in the decided surface"
+                            } else {
+                                "`using` in a `for` head is not in the decided surface"
+                            },
+                            self.pos(using.span),
+                        );
+                        for_of.left = ast::ForHead::VarDecl(Box::new(ast::VarDecl {
+                            span: using.span,
+                            ctxt: Default::default(),
+                            kind: ast::VarDeclKind::Const,
+                            declare: false,
+                            decls: using.decls.clone(),
+                        }));
+                    }
+                    self.lower_using_statement(&mut for_of.body, bindings);
+                }
+                ast::Stmt::Switch(switch_statement) => {
+                    for case in &mut switch_statement.cases {
+                        self.lower_using_statements(&mut case.cons, bindings);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn lower_using_statement(&mut self, statement: &mut ast::Stmt, bindings: &mut Vec<Pos>) {
+        self.lower_using_statements(std::slice::from_mut(statement), bindings);
+    }
+
+    fn is_using_position(positions: &[Pos], pos: &Pos) -> bool {
+        positions.iter().any(|candidate| candidate == pos)
+    }
+
+    fn dispose_calls(scopes: &[Vec<UsingBinding>], first_scope: usize) -> Vec<hir::Stmt> {
+        let mut calls = Vec::new();
+        for scope in scopes[first_scope..].iter().rev() {
+            for binding in scope.iter().rev() {
+                calls.push(hir::Stmt::Expr(hir::Expr {
+                    kind: hir::ExprKind::Call {
+                        callee: hir::Callee::Method {
+                            recv: Box::new(hir::Expr {
+                                kind: hir::ExprKind::Local(binding.name.clone()),
+                                ty: binding.ty.clone(),
+                                pos: binding.pos.clone(),
+                            }),
+                            name: hir::DISPOSE_METHOD_NAME.to_string(),
+                        },
+                        args: Vec::new(),
+                    },
+                    ty: Type::Void,
+                    pos: binding.pos.clone(),
+                }));
+            }
+        }
+        calls
+    }
+
+    fn rewrite_using_body(
+        &mut self,
+        body: Vec<hir::Stmt>,
+        positions: &[Pos],
+        ret: &Type,
+    ) -> Vec<hir::Stmt> {
+        if positions.is_empty() {
+            return body;
+        }
+        let mut scopes = Vec::new();
+        self.rewrite_using_scope(body, positions, ret, &mut scopes, None, None)
+    }
+
+    fn rewrite_using_scope(
+        &mut self,
+        statements: Vec<hir::Stmt>,
+        positions: &[Pos],
+        ret: &Type,
+        scopes: &mut Vec<Vec<UsingBinding>>,
+        break_scope: Option<usize>,
+        continue_scope: Option<usize>,
+    ) -> Vec<hir::Stmt> {
+        scopes.push(Vec::new());
+        let mut rewritten = Vec::new();
+        for statement in statements {
+            match statement {
+                hir::Stmt::Let {
+                    name,
+                    ty,
+                    mutable,
+                    init,
+                    pos,
+                } => {
+                    let is_using = Self::is_using_position(positions, &pos);
+                    if is_using && !matches!(ty, Type::Error) {
+                        let valid = match &ty {
+                            Type::Class(id) => {
+                                !self.classes[id.0].is_value
+                                    && !self.classes[id.0].is_descriptor
+                                    && self.class_sigs[id.0]
+                                        .methods
+                                        .contains_key(hir::DISPOSE_METHOD_NAME)
+                            }
+                            _ => false,
+                        };
+                        if !valid {
+                            self.error(
+                                RuleCode::S100,
+                                "a `using` initializer must be a non-null reference class that declares `[Symbol.dispose](): void`; narrow nullable values first",
+                                pos.clone(),
+                            );
+                        }
+                    }
+                    rewritten.push(hir::Stmt::Let {
+                        name: name.clone(),
+                        ty: ty.clone(),
+                        mutable,
+                        init,
+                        pos: pos.clone(),
+                    });
+                    if is_using {
+                        scopes
+                            .last_mut()
+                            .expect("using scope exists")
+                            .push(UsingBinding { name, ty, pos });
+                    }
+                }
+                hir::Stmt::Return { value, pos } => {
+                    if let Some(value) = value {
+                        if !matches!(ret, Type::Void | Type::Error) {
+                            let id = self.next_using_return_id;
+                            self.next_using_return_id += 1;
+                            let name = format!("[[using.return#{id}]]");
+                            rewritten.push(hir::Stmt::Let {
+                                name: name.clone(),
+                                ty: ret.clone(),
+                                mutable: false,
+                                init: value,
+                                pos: pos.clone(),
+                            });
+                            rewritten.extend(Self::dispose_calls(scopes, 0));
+                            rewritten.push(hir::Stmt::Return {
+                                value: Some(hir::Expr {
+                                    kind: hir::ExprKind::Local(name),
+                                    ty: ret.clone(),
+                                    pos: pos.clone(),
+                                }),
+                                pos,
+                            });
+                        } else {
+                            rewritten.extend(Self::dispose_calls(scopes, 0));
+                            rewritten.push(hir::Stmt::Return {
+                                value: Some(value),
+                                pos,
+                            });
+                        }
+                    } else {
+                        rewritten.extend(Self::dispose_calls(scopes, 0));
+                        rewritten.push(hir::Stmt::Return { value: None, pos });
+                    }
+                }
+                hir::Stmt::Break(pos) => {
+                    if let Some(first_scope) = break_scope {
+                        rewritten.extend(Self::dispose_calls(scopes, first_scope));
+                    }
+                    rewritten.push(hir::Stmt::Break(pos));
+                }
+                hir::Stmt::Continue(pos) => {
+                    if let Some(first_scope) = continue_scope {
+                        rewritten.extend(Self::dispose_calls(scopes, first_scope));
+                    }
+                    rewritten.push(hir::Stmt::Continue(pos));
+                }
+                hir::Stmt::Block(body) => {
+                    let body = self.rewrite_using_scope(
+                        body,
+                        positions,
+                        ret,
+                        scopes,
+                        break_scope,
+                        continue_scope,
+                    );
+                    rewritten.push(hir::Stmt::Block(body));
+                }
+                hir::Stmt::If {
+                    cond,
+                    then,
+                    els,
+                    pos,
+                } => {
+                    let then = self.rewrite_using_scope(
+                        then,
+                        positions,
+                        ret,
+                        scopes,
+                        break_scope,
+                        continue_scope,
+                    );
+                    let els = els.map(|body| {
+                        self.rewrite_using_scope(
+                            body,
+                            positions,
+                            ret,
+                            scopes,
+                            break_scope,
+                            continue_scope,
+                        )
+                    });
+                    rewritten.push(hir::Stmt::If {
+                        cond,
+                        then,
+                        els,
+                        pos,
+                    });
+                }
+                hir::Stmt::While { cond, body, pos } => {
+                    let loop_scope = scopes.len();
+                    let body = self.rewrite_using_scope(
+                        body,
+                        positions,
+                        ret,
+                        scopes,
+                        Some(loop_scope),
+                        Some(loop_scope),
+                    );
+                    rewritten.push(hir::Stmt::While { cond, body, pos });
+                }
+                hir::Stmt::For {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    pos,
+                } => {
+                    let loop_scope = scopes.len();
+                    let body = self.rewrite_using_scope(
+                        body,
+                        positions,
+                        ret,
+                        scopes,
+                        Some(loop_scope),
+                        Some(loop_scope),
+                    );
+                    rewritten.push(hir::Stmt::For {
+                        init,
+                        cond,
+                        step,
+                        body,
+                        pos,
+                    });
+                }
+                hir::Stmt::ForOf {
+                    name,
+                    ty,
+                    subject,
+                    kind,
+                    body,
+                    pos,
+                } => {
+                    let loop_scope = scopes.len();
+                    let body = self.rewrite_using_scope(
+                        body,
+                        positions,
+                        ret,
+                        scopes,
+                        Some(loop_scope),
+                        Some(loop_scope),
+                    );
+                    rewritten.push(hir::Stmt::ForOf {
+                        name,
+                        ty,
+                        subject,
+                        kind,
+                        body,
+                        pos,
+                    });
+                }
+                hir::Stmt::Switch { disc, cases, pos } => {
+                    let switch_scope = scopes.len();
+                    let cases = cases
+                        .into_iter()
+                        .map(|case| hir::SwitchCase {
+                            test: case.test,
+                            body: self.rewrite_using_scope(
+                                case.body,
+                                positions,
+                                ret,
+                                scopes,
+                                Some(switch_scope),
+                                continue_scope,
+                            ),
+                            pos: case.pos,
+                        })
+                        .collect();
+                    rewritten.push(hir::Stmt::Switch { disc, cases, pos });
+                }
+                other => rewritten.push(other),
+            }
+        }
+        let scope = scopes.pop().expect("using scope exists");
+        if !scope.is_empty() {
+            rewritten.extend(Self::dispose_calls(std::slice::from_ref(&scope), 0));
+        }
+        rewritten
+    }
+
     /// Checks a function body against its resolved signature and builds
     /// the HIR function. Returns `None` for poisoned signatures.
     pub(crate) fn check_function(
@@ -2516,6 +2958,8 @@ impl<'p> Checker<'p> {
         this_ty: Option<Type>,
         pos: Pos,
     ) -> Option<hir::Function> {
+        let (lowered, using_positions) = self.lower_using_function(f);
+        let f = &lowered;
         let mut fx = FnCtx::new(sig.ret.clone(), sig.is_generator, this_ty);
         fx.frames[0].is_async = sig.is_async;
         if sig.is_generator {
@@ -2539,6 +2983,7 @@ impl<'p> Checker<'p> {
                 Vec::new()
             }
         };
+        let body = self.rewrite_using_body(body, &using_positions, &sig.ret);
         let ret = if sig.is_generator {
             let yield_ty = fx.frames[0].yield_ty.clone().unwrap_or(Type::Void);
             let ret = Type::Generator(Box::new(yield_ty));
@@ -2701,17 +3146,19 @@ impl<'p> Checker<'p> {
                     });
                 }
                 ast::ClassMember::Method(method) => {
-                    let ast::PropName::Ident(key) = &method.key else {
-                        continue;
+                    let (name, pos) = match &method.key {
+                        ast::PropName::Ident(key) => (key.sym.to_string(), self.pos(key.span)),
+                        key if is_dispose_method_key(key) => {
+                            (hir::DISPOSE_METHOD_NAME.to_string(), self.pos(method.span))
+                        }
+                        _ => continue,
                     };
                     if method.is_static || method.kind != ast::MethodKind::Method {
                         continue;
                     }
-                    let name = key.sym.to_string();
                     let Some(sig) = self.class_sigs[id.0].methods.get(&name).cloned() else {
                         continue;
                     };
-                    let pos = self.pos(key.span);
                     if let Some(func) = self.check_function(
                         &method.function,
                         &name,

@@ -178,6 +178,25 @@ fn r30_handle_entry_parameters_match_the_golden_across_tiers() {
     );
 }
 
+#[test]
+fn r31_using_disposal_matches_the_goldens_across_tiers() {
+    let accept = corpus::corpus_accept();
+    for id in ["a138-using-dispose", "a139-using-async"] {
+        let sources = corpus::entry_sources(&accept, id);
+        let libraries = native_libraries(&sources).expect("R31 entries have no native dependency");
+        let golden = corpus::golden_bytes(&accept, id);
+        let jit = run_dev_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+        let ship = run_ship_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+        assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
+        assert_eq!(
+            ship, golden,
+            "{id}: ship-C-AOT output differs from the golden"
+        );
+    }
+}
+
 #[cfg(not(all(windows, target_env = "msvc")))]
 fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
     if sources
@@ -781,11 +800,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // Entry a132 pins full-width integer literal spellings. Entries a133–a134
     // pin field initializer construction and ordering. Entry a135 pins R28
     // binary32 bit access. Entry a136 pins R29 class index signatures. Entry
-    // a137 pins R30 host-called handle and scalar parameters.
+    // a137 pins R30 host-called handle and scalar parameters. Entries
+    // a138–a139 pin R31 synchronous scope-exit disposal.
     assert_eq!(
         golden_ids.len(),
-        137,
-        "expected exactly 137 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        139,
+        "expected exactly 139 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -820,7 +840,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          boundary-struct golden, the a132 R26 full-width integer-literal \
          golden, the a133–a134 R27 field-initializer goldens, the a135 R28 \
          binary32 bit-access golden, the a136 R29 class-index-signature \
-         golden, and the a137 R30 handle-entry-parameter golden, found {}",
+         golden, the a137 R30 handle-entry-parameter golden, and the a138–a139 \
+         R31 using-declaration goldens, found {}",
         golden_ids.len()
     );
 

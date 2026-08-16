@@ -137,6 +137,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r128-readonly-index-write.ts", RuleCode::S100, 19),
     ("r129-index-signature-no-get.ts", RuleCode::S100, 8),
     ("r130-index-compound-assign.ts", RuleCode::S100, 23),
+    ("r131-using-nullable-init.ts", RuleCode::S100, 16),
+    ("r132-await-using.ts", RuleCode::S100, 12),
+    ("r133-using-without-dispose.ts", RuleCode::S100, 10),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -258,8 +261,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        126,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, and three R29 entries"
+        129,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, and three R31 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -584,4 +587,61 @@ fn r29_mirror_index_signature_stays_outside_the_surface() {
         diagnostics[0].message,
         "class member form outside the decided surface"
     );
+}
+
+#[test]
+fn r31_module_level_using_is_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "module-using.ts",
+        "class Resource {\n  [Symbol.dispose](): void {}\n}\nusing resource = new Resource();\nexport function main(): void {}\n",
+    )])
+    .expect_err("module-level using must fail");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert!(diagnostics[0].message.contains("module-level `using`"));
+}
+
+#[test]
+fn r31_for_head_using_is_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "for-using.ts",
+        "class Resource {\n  [Symbol.dispose](): void {}\n}\nexport function main(): void {\n  const resources: Resource[] = [new Resource()];\n  for (using resource of resources) {}\n}\n",
+    )])
+    .expect_err("for-head using must fail");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert!(diagnostics[0].message.contains("`using` in a `for` head"));
+}
+
+#[test]
+fn r31_value_class_dispose_hook_is_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "value-dispose.ts",
+        "@CStruct\nclass Resource {\n  [Symbol.dispose](): void {}\n}\nexport function main(): void {}\n",
+    )])
+    .expect_err("a value class disposal hook must fail");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert!(diagnostics[0].message.contains("value classes"));
+}
+
+#[test]
+fn r31_other_computed_method_name_stays_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "computed-method.ts",
+        "class Resource {\n  [\"dispose\"](): void {}\n}\nexport function main(): void {}\n",
+    )])
+    .expect_err("a non-hook computed method must fail");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(
+        diagnostics[0].message,
+        "computed method names are not decided"
+    );
+}
+
+#[test]
+fn r31_explicit_symbol_dispose_call_stays_s100() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "explicit-dispose.ts",
+        "class Resource {\n  [Symbol.dispose](): void {}\n}\nexport function main(): void {\n  const resource = new Resource();\n  resource[Symbol.dispose]();\n}\n",
+    )])
+    .expect_err("an explicit Symbol.dispose call must fail");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
 }

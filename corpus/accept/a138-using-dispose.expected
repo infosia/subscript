@@ -1,0 +1,13 @@
+body
+dispose:b
+dispose:a
+return:value
+dispose:return
+returned:37
+early:return
+dispose:early:inner
+dispose:early:outer
+iter0
+dispose:loop0
+iter1
+dispose:loop1
