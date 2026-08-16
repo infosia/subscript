@@ -214,6 +214,32 @@ class all fail at check time.
 Accept: `a136`. Reject: `r128-readonly-index-write`,
 `r129-index-signature-no-get`, `r130-index-compound-assign`.
 
+### C11. `using` declarations — no null binding, no dispose on trap
+
+*(R31, 2026-08-16; `compiler.md` §60.)* `using x = expr` binds an
+immutable reference to a class that declares
+`[Symbol.dispose](): void`, and the hook runs at every scope exit
+in reverse declaration order. The exit-order semantics are the TS
+semantics (measured under `node` v24.18.0, exit 0): the return
+expression evaluates first, a loop disposes per iteration, and an
+`async` frame that suspended disposes at completion.
+
+Two divergences from JS, both narrowings or subtractions:
+
+- JS skips disposal for a `null` or `undefined` binding. subscript
+  rejects a nullable initializer at check time (owner decision,
+  2026-08-16): narrow first, then bind.
+- JS runs disposal during throw-unwind. subscript has no
+  exceptions (C6), and a trap does not run dispose (§18.1b, no
+  rollback; owner decision, 2026-08-16).
+
+`await using` is rejected (S100). The explicit spelling
+`x[Symbol.dispose]()` stays rejected; the manual cleanup call is
+an ordinary method the class declares.
+
+Accept: `a138`, `a139`. Reject: `r131-using-nullable-init`,
+`r132-await-using`, `r133-using-without-dispose`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different
