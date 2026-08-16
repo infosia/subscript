@@ -83,8 +83,8 @@ extern "C" {
     fn subByValueI64TripleReport();
     fn subHostOwnedStateCreate();
     fn subHostOwnedStateDestroy();
-    fn subHostOwnedStateBorrow();
-    fn subHostOwnedStateAdvance();
+    fn subHostOwnedStateBorrow() -> *mut std::ffi::c_void;
+    fn subHostOwnedStateAdvance(state: *mut std::ffi::c_void) -> i32;
     fn subHostOwnedStatePreEntry(ctx: *mut std::ffi::c_void);
     fn subHostOwnedStatePostRun(ctx: *mut std::ffi::c_void);
     fn subExternalDeviceIdentity();
@@ -109,6 +109,17 @@ pub fn host_owned_state_pre_entry() {
     // SAFETY: the fixture hook ignores the Context argument and creates its
     // own state. The linked function has the declared C signature.
     unsafe { subHostOwnedStatePreEntry(std::ptr::null_mut()) };
+}
+
+/// Borrows the fixture state, advances it once, and returns its handle.
+#[allow(dead_code)]
+pub fn host_owned_state_borrow_and_advance() -> *mut std::ffi::c_void {
+    // SAFETY: the caller starts the fixture lifecycle first. The fixture owns
+    // the returned state until the paired post-run hook destroys it.
+    let state = unsafe { subHostOwnedStateBorrow() };
+    // SAFETY: `state` is the live handle returned by the fixture.
+    let _ = unsafe { subHostOwnedStateAdvance(state) };
+    state
 }
 
 /// Runs the fixture's ship-tier post-run hook for a dev-tier session.

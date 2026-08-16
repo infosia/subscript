@@ -40,9 +40,10 @@ mod func;
 
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::{types, AbiParam, Endianness, Signature};
+use cranelift_codegen::ir::{types, AbiParam, Endianness, InstBuilder, MemFlags, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Configurable;
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use subscript_compiler::types::MAX_AGGREGATE_BYTES;
 use subscript_compiler::{hir, Pos, StringAliasId, Type};
@@ -60,6 +61,8 @@ pub(crate) enum FnKey {
     Resume(String),
     /// Host ABI wrapper for an exported async function.
     AsyncExport(String),
+    /// Reload-only adapter for one parameterized host export.
+    ReloadExport(String),
     /// Generated standard-runner helper that kicks non-main async exports.
     AsyncRunner,
     /// Constructor of class `usize`.
@@ -216,12 +219,16 @@ impl Default for LowerOptions {
     }
 }
 
-/// One host-callable entry point: an exported `f(): void`.
+/// One host-callable entry point.
 pub(crate) struct EntryPoint {
     /// Script-level name.
     pub name: String,
     /// Lowered function.
     pub id: FuncId,
+    /// Parameter types in declaration order.
+    pub params: Vec<Type>,
+    /// Reload-only uniform argument adapter for a parameterized entry.
+    pub reload_adapter: Option<FuncId>,
     /// Whether this entry is an async root wrapper (Q34).
     pub is_async: bool,
 }
@@ -235,8 +242,7 @@ pub(crate) struct Lowered {
     pub init: FuncId,
     /// Trap position table: `pos_id` -> TS position.
     pub positions: Vec<Pos>,
-    /// Every exported zero-argument `void` function, in declaration
-    /// order (the host-entry surface; `main` is one of them).
+    /// Every host-callable export in declaration order.
     pub entries: Vec<EntryPoint>,
     /// Function-slot table: slot index -> lowered function, `None` for
     /// a slot whose function was never materialized (an env wrapper
@@ -1048,6 +1054,101 @@ fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
     ml.reserve_slot(FnKey::Init);
 }
 
+/// Returns true when `ty` is an opaque handle from an ambient mirror.
+pub(crate) fn is_opaque_handle(module: &hir::Module, ty: &Type) -> bool {
+    let Type::Class(id) = ty else {
+        return false;
+    };
+    module.classes.get(id.0).is_some_and(|class| {
+        !class.is_value
+            && !class.is_descriptor
+            && !class.is_boundary
+            && class.fields.is_empty()
+            && class.ctor.is_none()
+            && class.methods.is_empty()
+            && class.index_signature.is_none()
+    })
+}
+
+/// Returns true when `function` belongs to the host-callable export subset.
+pub(crate) fn is_host_callable_export(module: &hir::Module, function: &hir::Function) -> bool {
+    if !function.exported || function.is_generator || function.ret != Type::Void {
+        return false;
+    }
+    if function.is_async {
+        return function.params.is_empty();
+    }
+    function.params.iter().all(|parameter| {
+        parameter.ty.is_numeric()
+            || parameter.ty == Type::Bool
+            || is_opaque_handle(module, &parameter.ty)
+    })
+}
+
+fn reload_entry_signature(call_conv: CallConv) -> Signature {
+    let mut signature = Signature::new(call_conv);
+    signature.params.push(AbiParam::new(types::I64));
+    signature.params.push(AbiParam::new(types::I64));
+    signature
+}
+
+fn define_reload_entry_adapter<M: Module>(
+    ml: &mut ModLower<'_, M>,
+    function: &hir::Function,
+) -> Result<(), String> {
+    let id = ml.func_id(&FnKey::ReloadExport(function.name.clone()))?;
+    let target = ml.func_id(&FnKey::Free(function.name.clone()))?;
+    let parameter_types = function
+        .params
+        .iter()
+        .map(|parameter| match ml.layouts.repr(&parameter.ty)? {
+            Repr::Scalar(ty) => Ok(ty),
+            other => Err(internal(format!(
+                "host export `{}` has non-scalar parameter representation {other:?}",
+                function.name
+            ))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut context = ml.module.make_context();
+    context.func.signature = reload_entry_signature(ml.call_conv);
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+        let ctx = builder.block_params(block)[0];
+        let values = builder.block_params(block)[1];
+        let mut arguments = Vec::with_capacity(parameter_types.len() + 1);
+        arguments.push(ctx);
+        for (index, ty) in parameter_types.into_iter().enumerate() {
+            let offset = i32::try_from(index.checked_mul(8).ok_or_else(|| {
+                internal(format!(
+                    "host export `{}` argument layout overflows",
+                    function.name
+                ))
+            })?)
+            .map_err(|_| {
+                internal(format!(
+                    "host export `{}` argument layout exceeds i32",
+                    function.name
+                ))
+            })?;
+            arguments.push(builder.ins().load(ty, MemFlags::new(), values, offset));
+        }
+        let target_ref = ml.module.declare_func_in_func(target, builder.func);
+        builder.ins().call(target_ref, &arguments);
+        builder.ins().return_(&[]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+    ml.module
+        .define_function(id, &mut context)
+        .map_err(|error| internal(format!("define reload entry adapter: {error}")))?;
+    ml.module.clear_context(&mut context);
+    Ok(())
+}
+
 /// Lowers a checked program into `module`.
 pub(crate) fn lower_module_with<M: Module>(
     module: &mut M,
@@ -1132,9 +1233,8 @@ pub(crate) fn lower_module_with<M: Module>(
     // Declare every script function up front so bodies can call in any
     // order. Symbol names are index-based (stable and linker-clean for
     // the AOT tier; HIR names may contain `<...>` from monomorphization).
-    // Exported functions get a stable `subscript_export_<name>` symbol with
-    // external linkage: they are the host-entry surface (Q12) and the
-    // AOT entry program resolves them at link time.
+    // Host-callable exports get a stable `subscript_export_<name>` symbol
+    // with external linkage. The AOT entry program resolves them at link time.
     let decl = |ml: &mut ModLower<M>, key: FnKey, sym: String, sig: &Signature, export: bool| {
         let linkage = if export {
             Linkage::Export
@@ -1151,7 +1251,8 @@ pub(crate) fn lower_module_with<M: Module>(
     };
     for (i, f) in hirm.functions.iter().enumerate() {
         let params: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
-        let export = f.exported && !f.is_generator && !f.is_async;
+        let host_callable = is_host_callable_export(hirm, f);
+        let export = host_callable && !f.is_async;
         let sym = if export {
             format!("subscript_export_{}", f.name)
         } else {
@@ -1186,6 +1287,16 @@ pub(crate) fn lower_module_with<M: Module>(
         } else {
             let sig = ml.make_sig(&params, &f.ret, false, false)?;
             decl(&mut ml, FnKey::Free(f.name.clone()), sym, &sig, export)?;
+            if opts.reload && host_callable && !f.params.is_empty() {
+                let adapter_sig = reload_entry_signature(call_conv);
+                decl(
+                    &mut ml,
+                    FnKey::ReloadExport(f.name.clone()),
+                    format!("subscript_reload_export_{i}"),
+                    &adapter_sig,
+                    false,
+                )?;
+            }
         }
     }
     for (ci, c) in hirm.classes.iter().enumerate() {
@@ -1288,6 +1399,9 @@ pub(crate) fn lower_module_with<M: Module>(
             }
         } else {
             define_function(&mut ml, FnKey::Free(f.name.clone()), f, None)?;
+            if opts.reload && is_host_callable_export(hirm, f) && !f.params.is_empty() {
+                define_reload_entry_adapter(&mut ml, f)?;
+            }
         }
     }
     for (ci, c) in hirm.classes.iter().enumerate() {
@@ -1334,7 +1448,7 @@ pub(crate) fn lower_module_with<M: Module>(
     let init = ml.func_id(&FnKey::Init)?;
     let mut entries = Vec::new();
     for f in &hirm.functions {
-        if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
+        if is_host_callable_export(hirm, f) {
             entries.push(EntryPoint {
                 name: f.name.clone(),
                 id: if f.is_async {
@@ -1342,6 +1456,14 @@ pub(crate) fn lower_module_with<M: Module>(
                 } else {
                     ml.func_id(&FnKey::Free(f.name.clone()))?
                 },
+                params: f
+                    .params
+                    .iter()
+                    .map(|parameter| parameter.ty.clone())
+                    .collect(),
+                reload_adapter: (opts.reload && !f.params.is_empty())
+                    .then(|| ml.func_id(&FnKey::ReloadExport(f.name.clone())))
+                    .transpose()?,
                 is_async: f.is_async,
             });
         }

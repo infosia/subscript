@@ -60,7 +60,7 @@ pub use jit::{
 };
 pub use layout::{value_class_layouts, FieldLayout, StructLayout};
 pub use native::NativeLibrary;
-pub use reload::{declaration_hash, DeclarationHash, ReloadError, ReloadSession};
+pub use reload::{declaration_hash, DeclarationHash, EntryArg, ReloadError, ReloadSession};
 
 #[cfg(test)]
 mod tests {

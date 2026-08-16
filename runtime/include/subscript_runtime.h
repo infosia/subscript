@@ -101,8 +101,10 @@ typedef void (*subscript_rt_worker_init)(subscript_rt_context* ctx);
 typedef void (*subscript_rt_worker_entry)(subscript_rt_context* ctx, subscript_rt_worker_inbox* inbox, subscript_rt_worker_outbox* outbox);
 
 /* Every linked program defines subscript_init. A program with an exported main
- * defines subscript_export_main; every other currently supported host export is
- * named `subscript_export_<name>` with the same signature. */
+ * defines subscript_export_main. Each host-callable export is synchronous, returns
+ * void, and takes only sized numerics, booleans, or opaque handles. A zero-argument
+ * void async export is also host-callable. Its symbol is `subscript_export_<name>`
+ * with the same signature. */
 void subscript_init(subscript_rt_context* ctx);
 void subscript_export_main(subscript_rt_context* ctx);
 

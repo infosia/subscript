@@ -91,6 +91,7 @@ use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
 use crate::layout::{is_managed, managed_words, Layouts};
+use crate::lower::is_host_callable_export;
 use crate::trap_sites::{lower_trap_sites, TrapSiteConsumer};
 
 fn checked_shadow_words(left: u32, right: u32) -> Result<u32, String> {
@@ -130,9 +131,8 @@ pub struct CProgram {
 
 /// Emits a C translation unit for a checked HIR module (§11).
 ///
-/// The unit exports `subscript_init(subscript_rt_context* ctx)` and
-/// `subscript_export_<name>(subscript_rt_context* ctx)` for each exported zero-argument
-/// `void` function, imports the
+/// The unit exports `subscript_init(subscript_rt_context* ctx)` and one
+/// `subscript_export_<name>` wrapper for each host-callable export, imports the
 /// runtime's `subscript_rt_*` entry points, and is linked with the runtime
 /// static library and [`crate::AOT_ENTRY_C`].
 ///
@@ -148,7 +148,7 @@ pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
 ///
 /// This has the same output as [`emit_c`], but permits a module with no
 /// exported `main(): void`. The translation unit still defines `subscript_init`
-/// and every zero-argument `void` export as `subscript_export_<name>`; the caller
+/// and every host-callable export as `subscript_export_<name>`; the caller
 /// supplies `main` and chooses which exports to drive.
 ///
 /// # Errors
@@ -1411,7 +1411,7 @@ impl<'m> Emitter<'m> {
 
     fn emit_exports(&mut self, out: &mut String) -> Result<(), String> {
         for f in &self.module.functions {
-            if f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void {
+            if is_host_callable_export(self.module, f) {
                 let export = format!("subscript_export_{}", sanitize(&f.name));
                 if f.is_async {
                     let creator = Emitter::fn_c_name(f);
@@ -1423,9 +1423,18 @@ impl<'m> Emitter<'m> {
                     let _ = writeln!(out, "}}");
                 } else {
                     let cn = Emitter::fn_c_name(f);
+                    let params = self.param_list(&f.params)?;
+                    let separator = if params.is_empty() { "" } else { ", " };
+                    let arguments = f
+                        .params
+                        .iter()
+                        .map(|parameter| sanitize(&parameter.name))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let argument_separator = if arguments.is_empty() { "" } else { ", " };
                     let _ = writeln!(
                         out,
-                        "void {export}(subscript_rt_context* ctx) {{ {cn}(ctx); }}"
+                        "void {export}(subscript_rt_context* ctx{separator}{params}) {{ {cn}(ctx{argument_separator}{arguments}); }}"
                     );
                 }
             }

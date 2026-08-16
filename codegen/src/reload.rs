@@ -59,6 +59,7 @@
 
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::HashMap;
+use std::ffi::c_void;
 
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
@@ -69,7 +70,7 @@ use subscript_compiler::{
 use subscript_runtime::Context;
 
 use crate::jit::{register_runtime, RunError, TrapReport};
-use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
+use crate::lower::{dev_flags, internal, is_opaque_handle, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
 use crate::NativeLibrary;
 
@@ -371,6 +372,138 @@ impl Drop for GlobalBlock {
     }
 }
 
+/// One argument passed from a host to a host-callable script export.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub enum EntryArg {
+    /// An opaque handle borrowed for the duration of the call.
+    Handle(*mut c_void),
+    /// An 8-bit signed integer.
+    I8(i8),
+    /// An 8-bit unsigned integer.
+    U8(u8),
+    /// A 16-bit signed integer.
+    I16(i16),
+    /// A 16-bit unsigned integer.
+    U16(u16),
+    /// A 32-bit signed integer.
+    I32(i32),
+    /// A 32-bit unsigned integer.
+    U32(u32),
+    /// A 64-bit signed integer.
+    I64(i64),
+    /// A 64-bit unsigned integer.
+    U64(u64),
+    /// Raw IEEE 754 binary16 bits.
+    F16(u16),
+    /// A 32-bit IEEE float.
+    F32(f32),
+    /// A 64-bit IEEE float.
+    F64(f64),
+    /// A boolean.
+    Bool(bool),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntryParamKind {
+    Handle,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    F16,
+    F32,
+    F64,
+    Bool,
+}
+
+impl EntryParamKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Handle => "opaque handle",
+            Self::I8 => "i8",
+            Self::U8 => "u8",
+            Self::I16 => "i16",
+            Self::U16 => "u16",
+            Self::I32 => "i32",
+            Self::U32 => "u32",
+            Self::I64 => "i64",
+            Self::U64 => "u64",
+            Self::F16 => "f16",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Bool => "boolean",
+        }
+    }
+}
+
+impl EntryArg {
+    fn kind(self) -> EntryParamKind {
+        match self {
+            Self::Handle(_) => EntryParamKind::Handle,
+            Self::I8(_) => EntryParamKind::I8,
+            Self::U8(_) => EntryParamKind::U8,
+            Self::I16(_) => EntryParamKind::I16,
+            Self::U16(_) => EntryParamKind::U16,
+            Self::I32(_) => EntryParamKind::I32,
+            Self::U32(_) => EntryParamKind::U32,
+            Self::I64(_) => EntryParamKind::I64,
+            Self::U64(_) => EntryParamKind::U64,
+            Self::F16(_) => EntryParamKind::F16,
+            Self::F32(_) => EntryParamKind::F32,
+            Self::F64(_) => EntryParamKind::F64,
+            Self::Bool(_) => EntryParamKind::Bool,
+        }
+    }
+
+    fn value(self) -> EntryValue {
+        match self {
+            Self::Handle(value) => EntryValue { handle: value },
+            Self::I8(value) => EntryValue { i8_: value },
+            Self::U8(value) => EntryValue { u8_: value },
+            Self::I16(value) => EntryValue { i16_: value },
+            Self::U16(value) | Self::F16(value) => EntryValue { u16_: value },
+            Self::I32(value) => EntryValue { i32_: value },
+            Self::U32(value) => EntryValue { u32_: value },
+            Self::I64(value) => EntryValue { i64_: value },
+            Self::U64(value) => EntryValue { u64_: value },
+            Self::F32(value) => EntryValue { f32_: value },
+            Self::F64(value) => EntryValue { f64_: value },
+            Self::Bool(value) => EntryValue {
+                bool_: u8::from(value),
+            },
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+union EntryValue {
+    handle: *mut c_void,
+    i8_: i8,
+    u8_: u8,
+    i16_: i16,
+    u16_: u16,
+    i32_: i32,
+    u32_: u32,
+    i64_: i64,
+    u64_: u64,
+    f32_: f32,
+    f64_: f64,
+    bool_: u8,
+}
+
+#[derive(Clone)]
+struct SessionEntry {
+    code: *const u8,
+    params: Vec<EntryParamKind>,
+    uses_argument_adapter: bool,
+}
+
 /// A live dev-tier program that can have its function bodies swapped.
 ///
 /// Create it from sources, call exported entries from the host, and
@@ -385,7 +518,7 @@ pub struct ReloadSession {
     modules: Vec<JITModule>,
     table: Vec<*const u8>,
     globals: GlobalBlock,
-    entries: HashMap<String, usize>,
+    entries: HashMap<String, SessionEntry>,
     positions: Vec<Pos>,
     decls: DeclarationHash,
     native_libraries: Vec<NativeLibrary>,
@@ -396,7 +529,7 @@ pub struct ReloadSession {
 struct Generation {
     module: JITModule,
     table: Vec<*const u8>,
-    entries: HashMap<String, usize>,
+    entries: HashMap<String, SessionEntry>,
     init_slot: Option<usize>,
     positions: Vec<Pos>,
     globals_size: u32,
@@ -415,6 +548,29 @@ impl Generation {
         // or data escaped this function's caller.
         unsafe { self.module.free_memory() };
     }
+}
+
+fn entry_param_kind(module: &hir::Module, ty: &Type) -> Result<EntryParamKind, String> {
+    Ok(match ty {
+        Type::I8 => EntryParamKind::I8,
+        Type::U8 => EntryParamKind::U8,
+        Type::I16 => EntryParamKind::I16,
+        Type::U16 => EntryParamKind::U16,
+        Type::I32 => EntryParamKind::I32,
+        Type::U32 => EntryParamKind::U32,
+        Type::I64 => EntryParamKind::I64,
+        Type::U64 => EntryParamKind::U64,
+        Type::F16 => EntryParamKind::F16,
+        Type::F32 => EntryParamKind::F32,
+        Type::F64 => EntryParamKind::F64,
+        Type::Bool => EntryParamKind::Bool,
+        other if is_opaque_handle(module, other) => EntryParamKind::Handle,
+        other => {
+            return Err(internal(format!(
+                "host entry has unsupported parameter type {other:?}"
+            )))
+        }
+    })
 }
 
 /// Compiles `hir` in reload mode into a fresh JIT module and resolves
@@ -468,9 +624,21 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
     let init_slot = slot_index(lowered.init, &lowered.slots);
     let mut entries = HashMap::new();
     for e in &lowered.entries {
-        if let Some(i) = slot_index(e.id, &lowered.slots) {
-            entries.insert(e.name.clone(), i);
-        }
+        let id = e.reload_adapter.unwrap_or(e.id);
+        let params = e
+            .params
+            .iter()
+            .map(|parameter| entry_param_kind(hirm, parameter))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(RunError::Internal)?;
+        entries.insert(
+            e.name.clone(),
+            SessionEntry {
+                code: module.get_finalized_function(id),
+                params,
+                uses_argument_adapter: e.reload_adapter.is_some(),
+            },
+        );
     }
     let table: Vec<*const u8> = lowered
         .slots
@@ -500,14 +668,22 @@ fn call_slot(ctx: &mut Context, table: &[*const u8], slot: usize) -> Result<(), 
     if code.is_null() {
         return Err(internal("entry slot holds no code"));
     }
-    type Entry = unsafe extern "C" fn(*mut Context);
+    call_code(ctx, code)
+}
+
+fn prepare_call(ctx: &mut Context) {
     // The host boundary clears the trap record (§8.2): a trap ends the
-    // call, not the session. Context state is untouched by the clear,
-    // so a stale coroutine stays stale and a deleted allocation stays
-    // deleted. Cleared here, with no generated code on the stack, so
-    // the offset-0 flag can only be raised again by this call.
+    // call, not the session. Context state stays unchanged.
     ctx.clear_trap();
     ctx.enter_script();
+}
+
+fn call_code(ctx: &mut Context, code: *const u8) -> Result<(), String> {
+    if code.is_null() {
+        return Err(internal("entry holds no code"));
+    }
+    type Entry = unsafe extern "C" fn(*mut Context);
+    prepare_call(ctx);
     // SAFETY: `code` is finalized JIT code for a function the lowering
     // built with exactly this signature (`(ctx) -> void`, host C
     // calling convention); its module is retained by the session for
@@ -517,6 +693,23 @@ fn call_slot(ctx: &mut Context, table: &[*const u8], slot: usize) -> Result<(), 
     unsafe {
         let f: Entry = std::mem::transmute(code);
         f(&mut *ctx);
+    }
+    ctx.exit_script();
+    Ok(())
+}
+
+fn call_code_with(ctx: &mut Context, code: *const u8, values: &[EntryValue]) -> Result<(), String> {
+    if code.is_null() {
+        return Err(internal("entry holds no code"));
+    }
+    type Entry = unsafe extern "C" fn(*mut Context, *const EntryValue);
+    prepare_call(ctx);
+    // SAFETY: `code` is a finalized reload adapter with the declared
+    // `(ctx, values) -> void` signature. The values match its recorded
+    // parameter signature, and the session retains the adapter's module.
+    unsafe {
+        let function: Entry = std::mem::transmute(code);
+        function(&mut *ctx, values.as_ptr());
     }
     ctx.exit_script();
     Ok(())
@@ -648,12 +841,62 @@ impl ReloadSession {
     /// never killed), [`RunError::Internal`] when no such entry
     /// exists.
     pub fn call_export(&mut self, name: &str) -> Result<(), RunError> {
-        let slot = *self.entries.get(name).ok_or_else(|| {
-            RunError::Internal(internal(format!(
-                "`{name}` is not an exported zero-argument void function"
-            )))
+        let code = self
+            .entries
+            .get(name)
+            .filter(|entry| entry.params.is_empty())
+            .map(|entry| entry.code)
+            .ok_or_else(|| {
+                RunError::Internal(internal(format!(
+                    "`{name}` is not an exported zero-argument void function"
+                )))
+            })?;
+        call_code(&mut self.ctx, code).map_err(RunError::Internal)?;
+        self.check_trap()
+    }
+
+    /// Calls the host-callable export `name` with `args`.
+    ///
+    /// The function validates the name, arity, and every argument kind
+    /// before it runs script code.
+    ///
+    /// # Errors
+    ///
+    /// [`RunError::Trap`] when the call traps. [`RunError::Internal`] when
+    /// the export does not exist or an argument does not match its signature.
+    pub fn call_export_with(&mut self, name: &str, args: &[EntryArg]) -> Result<(), RunError> {
+        let entry = self.entries.get(name).ok_or_else(|| {
+            RunError::Internal(internal(format!("`{name}` is not a host-callable export")))
         })?;
-        call_slot(&mut self.ctx, &self.table, slot).map_err(RunError::Internal)?;
+        if entry.params.len() != args.len() {
+            return Err(RunError::Internal(internal(format!(
+                "`{name}` expects {} argument(s), got {}",
+                entry.params.len(),
+                args.len()
+            ))));
+        }
+        for (index, (expected, actual)) in entry.params.iter().zip(args).enumerate() {
+            let actual_kind = actual.kind();
+            if *expected != actual_kind {
+                return Err(RunError::Internal(internal(format!(
+                    "`{name}` argument {index} expects {}, got {}",
+                    expected.name(),
+                    actual_kind.name()
+                ))));
+            }
+        }
+        let code = entry.code;
+        let uses_argument_adapter = entry.uses_argument_adapter;
+        let values = args
+            .iter()
+            .copied()
+            .map(EntryArg::value)
+            .collect::<Vec<_>>();
+        if uses_argument_adapter {
+            call_code_with(&mut self.ctx, code, &values).map_err(RunError::Internal)?;
+        } else {
+            call_code(&mut self.ctx, code).map_err(RunError::Internal)?;
+        }
         self.check_trap()
     }
 

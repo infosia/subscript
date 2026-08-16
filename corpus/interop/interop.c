@@ -43,6 +43,16 @@
  * enter or exit script mode. */
 typedef struct subscript_rt_context subscript_rt_context;
 
+__attribute__((weak)) void subscript_export_adopt(
+    subscript_rt_context *ctx,
+    SubHostOwnedState state,
+    int32_t tag
+) {
+    (void)ctx;
+    (void)state;
+    (void)tag;
+}
+
 /* Concrete layout behind the opaque SubDevice handle. Callers never see
  * it; they hold the pointer only. */
 struct SubDevice_T {
@@ -111,6 +121,18 @@ void subHostOwnedStatePostRun(subscript_rt_context *ctx) {
     (void)ctx;
     subHostOwnedStateDestroy(subscript_host_owned_state);
     subscript_host_owned_state = NULL;
+}
+
+void subHostOwnedStateAdoptDrive(subscript_rt_context *ctx) {
+    subHostOwnedStatePreEntry(ctx);
+    SubHostOwnedState state = subHostOwnedStateBorrow();
+    (void)subHostOwnedStateAdvance(state);
+    extern void subscript_export_adopt(
+        subscript_rt_context *ctx,
+        SubHostOwnedState state,
+        int32_t tag
+    );
+    subscript_export_adopt(ctx, state, 7);
 }
 
 int32_t subDevicePoll(int32_t attempt) {

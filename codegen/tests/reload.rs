@@ -20,7 +20,7 @@ mod native_fixture;
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
-use subscript_codegen::{run_jit, ReloadError, ReloadSession, RunError};
+use subscript_codegen::{run_jit, EntryArg, ReloadError, ReloadSession, RunError};
 use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
 
@@ -66,6 +66,45 @@ fn entryless_session_calls_named_exports_after_initialization() {
     assert!(trap.is_none());
     let _session = ReloadSession::new_with_native_libraries(&files(ENTRYLESS_V1), &[])
         .expect("entry-less session with native libraries");
+}
+
+const PARAMETER_ENTRY: &str = "\
+let calls: i32 = 0;
+export function take(value: i32): void {
+  calls += value;
+}
+export function report(): void {
+  print(`calls=${calls}`);
+}
+";
+
+#[test]
+fn call_export_with_rejects_wrong_arity_before_script_runs() {
+    let mut session = ReloadSession::new(&files(PARAMETER_ENTRY)).expect("session");
+    assert!(matches!(
+        session.call_export_with("take", &[]),
+        Err(RunError::Internal(_))
+    ));
+    session.call_export("report").expect("report call");
+    assert_eq!(output(&mut session), "calls=0\n");
+}
+
+#[test]
+fn call_export_with_rejects_wrong_kind_before_script_runs() {
+    let mut session = ReloadSession::new(&files(PARAMETER_ENTRY)).expect("session");
+    assert!(matches!(
+        session.call_export_with("take", &[EntryArg::U32(7)]),
+        Err(RunError::Internal(_))
+    ));
+    session.call_export("report").expect("report call");
+    assert_eq!(output(&mut session), "calls=0\n");
+}
+
+#[test]
+fn call_export_keeps_zero_argument_behavior() {
+    let mut session = ReloadSession::new(&files(ENTRYLESS_V1)).expect("session");
+    session.call_export("frame").expect("frame call");
+    assert_eq!(output(&mut session), "frame v1: 41\n");
 }
 
 #[test]
@@ -520,22 +559,36 @@ fn reload_mode_reproduces_every_committed_golden() {
             }
         };
         #[cfg(not(all(windows, target_env = "msvc")))]
-        let host_owned_state = id == "a128-host-owned-state";
+        let host_owned_state = matches!(
+            id.as_str(),
+            "a128-host-owned-state" | "a137-handle-entry-param"
+        );
         #[cfg(not(all(windows, target_env = "msvc")))]
         if host_owned_state {
             native_fixture::host_owned_state_pre_entry();
         }
-        let run = session.call_main().and_then(|()| {
-            for function in &module.functions {
-                if function.exported && function.is_async && function.name != "main" {
-                    session.call_export(&function.name)?;
-                }
-            }
-            while session.async_pending() != 0 {
-                session.async_step()?;
-            }
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        let parameter_entry = if id == "a137-handle-entry-param" {
+            let state = native_fixture::host_owned_state_borrow_and_advance();
+            session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])
+        } else {
             Ok(())
-        });
+        };
+        #[cfg(all(windows, target_env = "msvc"))]
+        let parameter_entry = Ok(());
+        let run = parameter_entry
+            .and_then(|()| session.call_main())
+            .and_then(|()| {
+                for function in &module.functions {
+                    if function.exported && function.is_async && function.name != "main" {
+                        session.call_export(&function.name)?;
+                    }
+                }
+                while session.async_pending() != 0 {
+                    session.async_step()?;
+                }
+                Ok(())
+            });
         #[cfg(not(all(windows, target_env = "msvc")))]
         if host_owned_state {
             native_fixture::host_owned_state_post_run();

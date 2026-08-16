@@ -142,9 +142,15 @@ pub fn render() -> Result<String, String> {
         "/* Every linked program defines subscript_init. A program with an exported main\n",
     );
     out.push_str(
-        " * defines subscript_export_main; every other currently supported host export is\n",
+        " * defines subscript_export_main. Each host-callable export is synchronous, returns\n",
     );
-    out.push_str(" * named `subscript_export_<name>` with the same signature. */\n");
+    out.push_str(
+        " * void, and takes only sized numerics, booleans, or opaque handles. A zero-argument\n",
+    );
+    out.push_str(
+        " * void async export is also host-callable. Its symbol is `subscript_export_<name>`\n",
+    );
+    out.push_str(" * with the same signature. */\n");
     out.push_str(&c_function("subscript_init", &entry)?);
     out.push_str(";\n");
     out.push_str(&c_function("subscript_export_main", &entry)?);

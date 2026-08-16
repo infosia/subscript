@@ -870,6 +870,61 @@ fn binary32_bit_access_uses_the_declared_runtime_symbols() {
 }
 
 #[test]
+fn host_callable_export_emits_handle_and_scalar_parameters() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let files = [
+        SourceFile::ambient(
+            "state.generated.d.ts",
+            "// @subscript-c-header include=\"state.h\"\n\
+             interface HostState {\n\
+             \x20 readonly __sub_handle_HostState: never;\n\
+             }\n",
+        ),
+        SourceFile::new(
+            "test.ts",
+            "export function adopt(state: HostState, tag: i32): void {\n\
+             \x20 if (tag === 0) { print(`${state === state}`); }\n\
+             }\n\
+             export function main(): void {}\n",
+        ),
+    ];
+    let hir = check_program(&files).expect("host export checks cleanly");
+    let c = emit_c(&hir).expect("host export emits C").source;
+    assert!(
+        c.contains(
+            "void subscript_export_adopt(subscript_rt_context* ctx, void* state, int32_t tag) { subscript_fn_adopt(ctx, state, tag); }"
+        ),
+        "parameterized host wrapper is missing:\n{c}"
+    );
+}
+
+#[test]
+fn parameterized_async_export_has_no_host_wrapper() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "async function later(tag: i32): Promise<void> {\n\
+                  \x20 print(`${tag}`);\n\
+                  }\n\
+                  export function main(): void {}\n";
+    let mut hir =
+        check_program(&[SourceFile::new("test.ts", source)]).expect("async function checks");
+    hir.functions
+        .iter_mut()
+        .find(|function| function.name == "later")
+        .expect("later function")
+        .exported = true;
+    let c = emit_c(&hir).expect("async export emits C").source;
+    assert!(c.contains("static void* subscript_fn_later(void* ctx, int32_t tag)"));
+    assert!(
+        !c.contains("subscript_export_later"),
+        "parameterized async export gained a host wrapper:\n{c}"
+    );
+}
+
+#[test]
 fn acyclic_json_serializer_emits_no_tracking_operations() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

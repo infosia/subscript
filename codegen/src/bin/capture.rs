@@ -18,7 +18,9 @@ use std::process::ExitCode;
 
 use subscript_codegen::run_jit;
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
-use subscript_codegen::{run_jit_with_native_libraries, NativeLibrary, ReloadSession, RunError};
+use subscript_codegen::{
+    run_jit_with_native_libraries, EntryArg, NativeLibrary, ReloadSession, RunError,
+};
 use subscript_compiler::SourceFile;
 
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
@@ -87,8 +89,8 @@ extern "C" {
     fn subByValueI64TripleReport();
     fn subHostOwnedStateCreate();
     fn subHostOwnedStateDestroy();
-    fn subHostOwnedStateBorrow();
-    fn subHostOwnedStateAdvance();
+    fn subHostOwnedStateBorrow() -> *mut std::ffi::c_void;
+    fn subHostOwnedStateAdvance(state: *mut std::ffi::c_void) -> i32;
     fn subHostOwnedStatePreEntry(ctx: *mut std::ffi::c_void);
     fn subHostOwnedStatePostRun(ctx: *mut std::ffi::c_void);
     fn subWireModeNext();
@@ -421,6 +423,28 @@ fn capture_host_owned_state(
     run
 }
 
+#[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
+fn capture_handle_entry_param(
+    sources: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
+    // SAFETY: the fixture hook creates the state and owns it until post-run.
+    unsafe { subHostOwnedStatePreEntry(std::ptr::null_mut()) };
+    let run = (|| {
+        // SAFETY: the fixture owns the borrowed state for this run.
+        let state = unsafe { subHostOwnedStateBorrow() };
+        // SAFETY: `state` is the live handle returned by the fixture.
+        let _ = unsafe { subHostOwnedStateAdvance(state) };
+        session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])?;
+        session.call_main()?;
+        Ok(session.take_output())
+    })();
+    // SAFETY: all script calls returned before the paired hook destroys state.
+    unsafe { subHostOwnedStatePostRun(std::ptr::null_mut()) };
+    run
+}
+
 fn main() -> ExitCode {
     let Some(id) = std::env::args().nth(1) else {
         eprintln!("usage: capture <entry-id>   (e.g. capture a22-matrix-propagation)");
@@ -510,10 +534,10 @@ fn main() -> ExitCode {
         #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
         {
             let libraries = [interop_library()];
-            if id == "a128-host-owned-state" {
-                capture_host_owned_state(&sources, &libraries)
-            } else {
-                run_jit_with_native_libraries(&sources, &libraries)
+            match id.as_str() {
+                "a128-host-owned-state" => capture_host_owned_state(&sources, &libraries),
+                "a137-handle-entry-param" => capture_handle_entry_param(&sources, &libraries),
+                _ => run_jit_with_native_libraries(&sources, &libraries),
             }
         }
         #[cfg(not(all(feature = "capture-interop", not(all(windows, target_env = "msvc")))))]
