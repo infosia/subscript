@@ -6153,11 +6153,17 @@ Measurements at the pin, on this host:
 ### 59.2 Changes by site
 
 - `codegen/src/cemit.rs` (`emit_exports`): emit the parameterized
-  wrappers; update the convention comments in the emitted
-  `entry.c`/`program.c` text.
+  wrappers.
+- The host-export convention text lives in
+  `runtime/src/host_header.rs` and reaches the emitted C through
+  the generated `runtime/include/subscript_runtime.h` and
+  `AOT_ENTRY_C` (`codegen/src/aot.rs`). Update the generator;
+  regenerate the header. *(Correction: the contract first
+  attributed this text to `cemit.rs`; the implementer measured
+  the real sites.)*
 - `codegen/src/reload.rs`: the entries table records each
   host-callable export's parameter signature; add `EntryArg` and
-  `call_export_with`.
+  `call_export_with`. `codegen/src/lib.rs` re-exports `EntryArg`.
 - The JIT generation site that fills the entries table records
   the signatures.
 - `codegen/src/bin/capture.rs` and `codegen/tests/golden.rs`:
