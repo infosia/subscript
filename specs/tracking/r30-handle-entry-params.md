@@ -75,3 +75,47 @@ with "is not an exported zero-argument void function".
 - `cargo fmt --check`: exit 0. `tsc` gate: exit 0.
 - Every pre-existing golden, `.expected`, and the interop mirror
   byte-identical; the only new golden is a137's (137 total).
+
+## windows-msvc break, found and fixed 2026-08-17
+
+The first windows-msvc run of R30 failed. Measured at `1f875da`
+with the pinned toolchain, in the dev profile and the release
+profile:
+
+```
+thread 'r30_handle_entry_parameters_match_the_golden_across_tiers'
+panicked at codegen\tests\golden.rs:168:48:
+R30 uses the native fixture
+test result: FAILED. 31 passed; 1 failed
+```
+
+The fixture never builds on windows-msvc (§11c), so
+`native_libraries` returns `None` there. Every other
+fixture-dependent test in `golden.rs` skips on `None`. The R30
+test called `.expect` instead. The golden sweep skipped a137
+correctly, so the sweep stayed green and one test carried the
+whole break.
+
+The `HANDLE_ENTRY_PARAM_ID` branch of `run_dev_corpus_entry` in
+the same commit carries the `#[cfg(not(all(windows, target_env =
+"msvc")))]` guard. The exclusion is missing in one place only:
+the test body.
+
+The fix gives that test the skip pattern of the file. It adds no
+`#[cfg]`, so a host that builds the fixture still runs both tiers
+against the golden.
+
+Gates after the fix, on `x86_64-pc-windows-msvc` at `1f875da`:
+
+- `cargo test --offline --workspace --no-fail-fast`: 55
+  harnesses, 942 passed, 0 failed, 1 ignored, exit 0. The same
+  counts in the release profile.
+- `cargo build --offline --workspace --all-targets`: 0 warnings
+  in each profile.
+- `cargo fmt --check`: exit 0. `tsc` gate: exit 0.
+- Golden sweep: 91 entries compared, 48 skipped, against 139
+  `.expected` files.
+
+This is the fourth instance of the reference-platform class after
+§11c.3, §44.10, and §55. Rule: a test that uses the interop
+fixture must skip on `None`, never expect it.
