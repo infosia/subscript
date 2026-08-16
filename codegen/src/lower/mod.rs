@@ -40,7 +40,9 @@ mod func;
 
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::{types, AbiParam, Endianness, InstBuilder, MemFlags, Signature};
+use cranelift_codegen::ir::{
+    condcodes::IntCC, types, AbiParam, Endianness, InstBuilder, MemFlags, Signature,
+};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Configurable;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -1082,6 +1084,10 @@ pub(crate) fn is_host_callable_export(module: &hir::Module, function: &hir::Func
         parameter.ty.is_numeric()
             || parameter.ty == Type::Bool
             || is_opaque_handle(module, &parameter.ty)
+            || matches!(&parameter.ty, Type::StringAlias(alias) if module
+                .string_aliases
+                .get(alias.0)
+                .is_some_and(|definition| definition.wire_values.is_some()))
     })
 }
 
@@ -1109,6 +1115,29 @@ fn define_reload_entry_adapter<M: Module>(
             ))),
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let wire_validations = function
+        .params
+        .iter()
+        .map(|parameter| {
+            let Type::StringAlias(alias) = &parameter.ty else {
+                return Ok(None);
+            };
+            let definition = ml
+                .hir
+                .string_aliases
+                .get(alias.0)
+                .ok_or_else(|| internal("host entry wire-alias id is out of range"))?;
+            let wire_values = definition
+                .wire_values
+                .clone()
+                .ok_or_else(|| internal("host entry string alias has no wire mapping"))?;
+            let name_len = i64::try_from(definition.name.len())
+                .map_err(|_| internal("host entry wire-alias name length does not fit i64"))?;
+            let name_data = ml.literal_data(definition.name.as_bytes())?;
+            let pos_id = ml.pos_id(&parameter.pos);
+            Ok(Some((name_data, name_len, wire_values, pos_id)))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let mut context = ml.module.make_context();
     context.func.signature = reload_entry_signature(ml.call_conv);
     let mut builder_context = FunctionBuilderContext::new();
@@ -1121,7 +1150,11 @@ fn define_reload_entry_adapter<M: Module>(
         let values = builder.block_params(block)[1];
         let mut arguments = Vec::with_capacity(parameter_types.len() + 1);
         arguments.push(ctx);
-        for (index, ty) in parameter_types.into_iter().enumerate() {
+        for (index, (ty, validation)) in parameter_types
+            .into_iter()
+            .zip(wire_validations)
+            .enumerate()
+        {
             let offset = i32::try_from(index.checked_mul(8).ok_or_else(|| {
                 internal(format!(
                     "host export `{}` argument layout overflows",
@@ -1134,7 +1167,34 @@ fn define_reload_entry_adapter<M: Module>(
                     function.name
                 ))
             })?;
-            arguments.push(builder.ins().load(ty, MemFlags::new(), values, offset));
+            let value = builder.ins().load(ty, MemFlags::new(), values, offset);
+            if let Some((name_data, name_len, wire_values, pos_id)) = validation {
+                let mut valid = builder.ins().iconst(types::I8, 0);
+                for wire_value in wire_values {
+                    let matches =
+                        builder
+                            .ins()
+                            .icmp_imm(IntCC::Equal, value, i64::from(wire_value));
+                    valid = builder.ins().bor(valid, matches);
+                }
+                let accepted = builder.create_block();
+                let rejected = builder.create_block();
+                builder.ins().brif(valid, accepted, &[], rejected, &[]);
+                builder.switch_to_block(rejected);
+                let name_global = ml.module.declare_data_in_func(name_data, builder.func);
+                let name_pointer = builder.ins().symbol_value(types::I64, name_global);
+                let name_len = builder.ins().iconst(types::I64, name_len);
+                let pos_id = builder.ins().iconst(types::I32, i64::from(pos_id));
+                let trap = ml
+                    .module
+                    .declare_func_in_func(ml.rt.trap_wire_enum, builder.func);
+                builder
+                    .ins()
+                    .call(trap, &[ctx, name_pointer, name_len, value, pos_id]);
+                builder.ins().return_(&[]);
+                builder.switch_to_block(accepted);
+            }
+            arguments.push(value);
         }
         let target_ref = ml.module.declare_func_in_func(target, builder.func);
         builder.ins().call(target_ref, &arguments);
@@ -1459,7 +1519,17 @@ pub(crate) fn lower_module_with<M: Module>(
                 params: f
                     .params
                     .iter()
-                    .map(|parameter| parameter.ty.clone())
+                    .map(|parameter| match &parameter.ty {
+                        Type::StringAlias(alias)
+                            if hirm
+                                .string_aliases
+                                .get(alias.0)
+                                .is_some_and(|definition| definition.wire_values.is_some()) =>
+                        {
+                            Type::I32
+                        }
+                        _ => parameter.ty.clone(),
+                    })
                     .collect(),
                 reload_adapter: (opts.reload && !f.params.is_empty())
                     .then(|| ml.func_id(&FnKey::ReloadExport(f.name.clone())))

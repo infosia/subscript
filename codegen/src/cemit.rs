@@ -1410,7 +1410,8 @@ impl<'m> Emitter<'m> {
     }
 
     fn emit_exports(&mut self, out: &mut String) -> Result<(), String> {
-        for f in &self.module.functions {
+        let functions = self.module.functions.clone();
+        for f in &functions {
             if is_host_callable_export(self.module, f) {
                 let export = format!("subscript_export_{}", sanitize(&f.name));
                 if f.is_async {
@@ -1432,10 +1433,38 @@ impl<'m> Emitter<'m> {
                         .collect::<Vec<_>>()
                         .join(", ");
                     let argument_separator = if arguments.is_empty() { "" } else { ", " };
-                    let _ = writeln!(
-                        out,
-                        "void {export}(subscript_rt_context* ctx{separator}{params}) {{ {cn}(ctx{argument_separator}{arguments}); }}"
-                    );
+                    if f.params
+                        .iter()
+                        .any(|parameter| matches!(parameter.ty, Type::StringAlias(_)))
+                    {
+                        let _ = writeln!(
+                            out,
+                            "void {export}(subscript_rt_context* ctx{separator}{params}) {{"
+                        );
+                        self.begin_fn(ThisCtx::None, Type::Void);
+                        for parameter in &f.params {
+                            if let Type::StringAlias(alias) = parameter.ty {
+                                let site = hir::TrapSite::WireEnumValue {
+                                    alias,
+                                    pos: parameter.pos.clone(),
+                                };
+                                self.validate_wire_alias(
+                                    alias,
+                                    &sanitize(&parameter.name),
+                                    &site,
+                                    out,
+                                    1,
+                                )?;
+                            }
+                        }
+                        let _ = writeln!(out, "    {cn}(ctx{argument_separator}{arguments});");
+                        let _ = writeln!(out, "}}");
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            "void {export}(subscript_rt_context* ctx{separator}{params}) {{ {cn}(ctx{argument_separator}{arguments}); }}"
+                        );
+                    }
                 }
             }
         }

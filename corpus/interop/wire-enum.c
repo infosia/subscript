@@ -1,5 +1,35 @@
 #include "wire-enum.h"
 
+typedef struct subscript_rt_context subscript_rt_context;
+
+__attribute__((weak)) void subscript_export_configure(
+    subscript_rt_context *ctx,
+    int32_t mode,
+    int32_t tag
+) {
+    (void)ctx;
+    (void)mode;
+    (void)tag;
+}
+
+void subWireEntryDrive(subscript_rt_context *ctx) {
+    extern void subscript_export_configure(
+        subscript_rt_context *ctx,
+        int32_t mode,
+        int32_t tag
+    );
+    subscript_export_configure(ctx, 23, 5);
+}
+
+void subWireEntryDriveUnknown(subscript_rt_context *ctx) {
+    extern void subscript_export_configure(
+        subscript_rt_context *ctx,
+        int32_t mode,
+        int32_t tag
+    );
+    subscript_export_configure(ctx, 12345, 5);
+}
+
 SubWireModeC subWireModeNext(void) {
     return 23;
 }

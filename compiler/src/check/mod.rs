@@ -828,6 +828,13 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn is_wire_alias(&self, ty: &Type) -> bool {
+        matches!(ty, Type::StringAlias(alias) if self
+            .string_aliases
+            .get(alias.0)
+            .is_some_and(|definition| definition.wire_values.is_some()))
+    }
+
     /// The §52 boundary spellings whose storage is exactly one wire value,
     /// or a zero-copy descriptor of wire-value elements.
     fn supported_wire_alias_boundary_type(ty: &Type) -> bool {
@@ -1750,11 +1757,10 @@ impl<'p> Checker<'p> {
                                 self.pos(f.ident.span),
                             );
                         }
-                        let aliases_boundary = sig
-                            .params
-                            .iter()
-                            .any(|parameter| Self::contains_string_alias(&parameter.ty))
-                            || Self::contains_string_alias(&sig.ret);
+                        let aliases_boundary = sig.params.iter().any(|parameter| {
+                            Self::contains_string_alias(&parameter.ty)
+                                && !self.is_wire_alias(&parameter.ty)
+                        }) || Self::contains_string_alias(&sig.ret);
                         if aliases_boundary {
                             self.error(
                                 RuleCode::S100,

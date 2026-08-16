@@ -94,7 +94,10 @@ fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     ];
     let mut files = Vec::new();
     let uses_external = source.contains("subExternalDevice");
-    let uses_wire_enum = source.contains("subWireMode") || source.contains("subBindTone");
+    let uses_wire_enum = source.contains("subWireMode")
+        || source.contains("SubWireMode")
+        || source.contains("subBindTone")
+        || source.contains("SubBindTone");
     if uses_external || INTEROP_TOKENS.iter().any(|token| source.contains(token)) {
         files.push(interop_mirror());
     }
@@ -178,7 +181,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         "corpus/accept/a19-modules produced warnings: {warnings:?}"
     );
     checked_files += 2;
-    assert_eq!(checked_files, 140, "accept source-file count changed");
+    assert_eq!(checked_files, 141, "accept source-file count changed");
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");

@@ -108,6 +108,34 @@ fn call_export_keeps_zero_argument_behavior() {
 }
 
 #[test]
+fn wire_entry_rejects_unknown_value_before_the_body_runs() {
+    let source = "type WireMode = CEnum<{ \"m0\": 16; \"m1\": 23; \"m2\": -7 }>;\n\
+                  let entered: boolean = false;\n\
+                  export function configure(mode: WireMode): void {\n\
+                  \x20 entered = true;\n\
+                  \x20 print(`${mode}`);\n\
+                  }\n\
+                  export function report(): void { print(`${entered}`); }\n";
+    let mut session = ReloadSession::new(&files(source)).expect("wire-entry session");
+    match session.call_export_with("configure", &[EntryArg::I32(12345)]) {
+        Err(RunError::Trap(report)) => {
+            assert_eq!(report.rule, TrapKind::WireEnumUnknownValue);
+            assert_eq!(
+                report.message,
+                "unknown wire value 12345 for CEnum alias `WireMode`"
+            );
+            assert_eq!(report.pos.line, 3);
+            assert!(report.stdout.is_empty());
+        }
+        other => panic!("expected an unknown wire-value trap, got {other:?}"),
+    }
+    session
+        .call_export("report")
+        .expect("report call after trap");
+    assert_eq!(output(&mut session), "false\n");
+}
+
+#[test]
 fn missing_main_ends_the_call_but_not_the_entryless_session() {
     let mut session = ReloadSession::new(&files(ENTRYLESS_V1)).expect("entry-less session");
     match session.call_main() {
@@ -571,6 +599,8 @@ fn reload_mode_reproduces_every_committed_golden() {
         let parameter_entry = if id == "a137-handle-entry-param" {
             let state = native_fixture::host_owned_state_borrow_and_advance();
             session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])
+        } else if id == "a140-wire-entry-param" {
+            session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])
         } else {
             Ok(())
         };

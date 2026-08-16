@@ -140,6 +140,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r131-using-nullable-init.ts", RuleCode::S100, 16),
     ("r132-await-using.ts", RuleCode::S100, 12),
     ("r133-using-without-dispose.ts", RuleCode::S100, 10),
+    ("r134-plain-alias-entry-param.ts", RuleCode::S100, 9),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -261,8 +262,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        129,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, and three R31 entries"
+        130,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, and one R32 entry"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -276,6 +277,21 @@ fn reject_table_covers_every_corpus_entry() {
     let mut expected: Vec<String> = active.iter().map(|(f, _, _)| f.to_string()).collect();
     expected.sort();
     assert_eq!(entries, expected, "reject corpus and test table disagree");
+}
+
+#[test]
+fn wire_alias_export_return_stays_rejected() {
+    let source = "type WireMode = CEnum<{ \"m0\": 16; \"m1\": 23 }>;\n\
+                  export function current(): WireMode { return \"m1\"; }\n\
+                  export function main(): void {}\n";
+    let diagnostics = check_program(&[SourceFile::new("wire-return.ts", source)])
+        .expect_err("a wire-alias export return must fail");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].pos.line, 2);
+    assert_eq!(
+        diagnostics[0].message,
+        "exported function `current` has a string-literal union alias in its boundary signature"
+    );
 }
 
 fn first_diagnostic(file: &str) -> subscript_compiler::Diagnostic {

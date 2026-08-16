@@ -38,6 +38,8 @@ const HOST_OWNED_STATE_PRE_ENTRY: &str = "subHostOwnedStatePreEntry";
 const HOST_OWNED_STATE_POST_RUN: &str = "subHostOwnedStatePostRun";
 const HANDLE_ENTRY_PARAM_ID: &str = "a137-handle-entry-param";
 const HANDLE_ENTRY_PARAM_PRE_ENTRY: &str = "subHostOwnedStateAdoptDrive";
+const WIRE_ENTRY_PARAM_ID: &str = "a140-wire-entry-param";
+const WIRE_ENTRY_PARAM_PRE_ENTRY: &str = "subWireEntryDrive";
 
 fn host_hooks(id: &str) -> (Option<&'static str>, Option<&'static str>) {
     if id == HOST_OWNED_STATE_ID {
@@ -50,6 +52,8 @@ fn host_hooks(id: &str) -> (Option<&'static str>, Option<&'static str>) {
             Some(HANDLE_ENTRY_PARAM_PRE_ENTRY),
             Some(HOST_OWNED_STATE_POST_RUN),
         )
+    } else if id == WIRE_ENTRY_PARAM_ID {
+        (Some(WIRE_ENTRY_PARAM_PRE_ENTRY), None)
     } else {
         (None, None)
     }
@@ -98,6 +102,13 @@ fn run_dev_corpus_entry(
         })();
         native_fixture::host_owned_state_post_run();
         return run;
+    }
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    if id == WIRE_ENTRY_PARAM_ID {
+        let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
+        session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])?;
+        session.call_main()?;
+        return Ok(session.take_output());
     }
     run_jit_with_native_libraries(sources, libraries)
 }
@@ -182,6 +193,24 @@ fn r30_handle_entry_parameters_match_the_golden_across_tiers() {
 }
 
 #[test]
+fn r32_wire_entry_parameters_match_the_golden_across_tiers() {
+    let accept = corpus::corpus_accept();
+    let id = WIRE_ENTRY_PARAM_ID;
+    let sources = corpus::entry_sources(&accept, id);
+    let libraries = native_libraries(&sources).expect("R32 uses the native fixture");
+    let golden = corpus::golden_bytes(&accept, id);
+    let jit = run_dev_corpus_entry(id, &sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_ship_corpus_entry(id, &sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
+    assert_eq!(
+        ship, golden,
+        "{id}: ship-C-AOT output differs from the golden"
+    );
+}
+
+#[test]
 fn r31_using_disposal_matches_the_goldens_across_tiers() {
     let accept = corpus::corpus_accept();
     for id in ["a138-using-dispose", "a139-using-async"] {
@@ -202,10 +231,11 @@ fn r31_using_disposal_matches_the_goldens_across_tiers() {
 
 #[cfg(not(all(windows, target_env = "msvc")))]
 fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
-    if sources
-        .iter()
-        .any(|source| corpus::references_interop(&source.source))
-    {
+    if sources.iter().any(|source| {
+        corpus::references_interop(&source.source)
+            || source.source.contains("SubWireMode")
+            || source.source.contains("SubBindTone")
+    }) {
         Some(vec![native_fixture::library()])
     } else {
         Some(Vec::new())
@@ -216,10 +246,11 @@ fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<Na
 // it cannot run in this configuration.
 #[cfg(all(windows, target_env = "msvc"))]
 fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
-    if sources
-        .iter()
-        .any(|source| corpus::references_interop(&source.source))
-    {
+    if sources.iter().any(|source| {
+        corpus::references_interop(&source.source)
+            || source.source.contains("SubWireMode")
+            || source.source.contains("SubBindTone")
+    }) {
         None
     } else {
         Some(Vec::new())
@@ -804,11 +835,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // pin field initializer construction and ordering. Entry a135 pins R28
     // binary32 bit access. Entry a136 pins R29 class index signatures. Entry
     // a137 pins R30 host-called handle and scalar parameters. Entries
-    // a138–a139 pin R31 synchronous scope-exit disposal.
+    // a138–a139 pin R31 synchronous scope-exit disposal. Entry a140 pins
+    // R32 host-called wire-mapped alias and scalar parameters.
     assert_eq!(
         golden_ids.len(),
-        139,
-        "expected exactly 139 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        140,
+        "expected exactly 140 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -843,8 +875,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          boundary-struct golden, the a132 R26 full-width integer-literal \
          golden, the a133–a134 R27 field-initializer goldens, the a135 R28 \
          binary32 bit-access golden, the a136 R29 class-index-signature \
-         golden, the a137 R30 handle-entry-parameter golden, and the a138–a139 \
-         R31 using-declaration goldens, found {}",
+         golden, the a137 R30 handle-entry-parameter golden, the a138–a139 \
+         R31 using-declaration goldens, and the a140 R32 wire-entry-parameter golden, found {}",
         golden_ids.len()
     );
 
@@ -926,7 +958,10 @@ fn cranelift_object_aot_still_matches_the_goldens_cross_check() {
     let accept = corpus::corpus_accept();
     let mut failures = Vec::new();
     for id in corpus::golden_ids(&accept) {
-        if matches!(id.as_str(), HOST_OWNED_STATE_ID | HANDLE_ENTRY_PARAM_ID) {
+        if matches!(
+            id.as_str(),
+            HOST_OWNED_STATE_ID | HANDLE_ENTRY_PARAM_ID | WIRE_ENTRY_PARAM_ID
+        ) {
             // The host-driven forms use the ship-C surface. The retired
             // Cranelift-object cross-check has no hook-enabled runner.
             continue;

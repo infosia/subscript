@@ -3,6 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use subscript_codegen::{
+    run_c_aot_with_native_libraries_and_host_hooks, EntryArg, NativeLibrary, ReloadSession,
+    RunError,
+};
 use subscript_compiler::SourceFile;
 
 /// The corpus trap directory.
@@ -91,4 +95,28 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
 pub fn trap_expected(trap: &Path, id: &str) -> Vec<u8> {
     let path = trap.join(format!("{id}.expected"));
     fs::read(&path).unwrap_or_else(|e| panic!("read trap golden {}: {e}", path.display()))
+}
+
+/// Drives the R32 unknown wire value through the dev host-entry surface.
+pub fn run_wire_entry_unknown_dev(
+    sources: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
+    session.call_export_with("configure", &[EntryArg::I32(12345), EntryArg::I32(5)])?;
+    session.call_main()?;
+    Ok(session.take_output())
+}
+
+/// Drives the R32 unknown wire value through the ship host-entry surface.
+pub fn run_wire_entry_unknown_ship(
+    sources: &[SourceFile],
+    libraries: &[NativeLibrary],
+) -> Result<Vec<u8>, RunError> {
+    run_c_aot_with_native_libraries_and_host_hooks(
+        sources,
+        libraries,
+        Some("subWireEntryDriveUnknown"),
+        None,
+    )
 }

@@ -103,6 +103,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10),
         "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10),
         "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12),
+        "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -568,14 +569,14 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 49;
+    let expected_count = 50;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
          coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, t46 \
          callback-userdata coverage, t47 unreachable coverage, t48 wire-enum crossing, and \
-         t49 wire-enum boundary-member coverage), found {}",
+         t49 wire-enum boundary-member coverage, and t50 wire-entry coverage), found {}",
         ids.len()
     );
 
@@ -610,7 +611,16 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             "t22-double-delete-q6" | "t23-use-after-delete-q6"
         );
         let callback_userdata_diagnostic = id == "t46-callback-userdata-freed";
-        let (jit, ship) = if let Some(n) = allocation_failure_count(&id) {
+        let (jit, ship) = if id == "t50-wire-entry-unknown-value" {
+            #[cfg(not(all(windows, target_env = "msvc")))]
+            let libraries = [native_fixture::library()];
+            #[cfg(all(windows, target_env = "msvc"))]
+            let libraries: [subscript_codegen::NativeLibrary; 0] = [];
+            (
+                trap_corpus::run_wire_entry_unknown_dev(&files, &libraries),
+                trap_corpus::run_wire_entry_unknown_ship(&files, &libraries),
+            )
+        } else if let Some(n) = allocation_failure_count(&id) {
             (
                 run_jit_with_alloc_failure(&files, n),
                 run_c_aot_with_alloc_failure(&files, n),
@@ -681,6 +691,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                         Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
                     }
                     "t49-wire-enum-struct-unknown-member" => {
+                        Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
+                    }
+                    "t50-wire-entry-unknown-value" => {
                         Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
                     }
                     _ => None,
@@ -897,6 +910,45 @@ fn host_callable_export_emits_handle_and_scalar_parameters() {
             "void subscript_export_adopt(subscript_rt_context* ctx, void* state, int32_t tag) { subscript_fn_adopt(ctx, state, tag); }"
         ),
         "parameterized host wrapper is missing:\n{c}"
+    );
+}
+
+#[test]
+fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "type WireMode = CEnum<{ \"m0\": 16; \"m1\": 23; \"m2\": -7 }>;\n\
+                  export function configure(mode: WireMode, tag: i32): void {}\n\
+                  export function main(): void {}\n";
+    let hir = check_program(&[SourceFile::new("wire-entry.ts", source)])
+        .expect("wire entry checks cleanly");
+    let program = emit_c(&hir).expect("wire entry emits C");
+    let wrapper = program
+        .source
+        .split("void subscript_export_configure")
+        .nth(1)
+        .expect("wire entry wrapper");
+    let validation = wrapper.find("mode == 16").expect("wire value validation");
+    let trap = wrapper
+        .find("subscript_rt_trap_wire_enum(ctx,")
+        .expect("wire value trap");
+    let call = wrapper
+        .find("subscript_fn_configure(ctx, mode, tag);")
+        .expect("internal entry call");
+    assert!(
+        validation < trap && trap < call,
+        "wire entry wrapper does not validate before calling the entry:\n{wrapper}"
+    );
+    assert!(wrapper.contains("mode == 23") && wrapper.contains("mode == -7"));
+    assert!(wrapper.contains("WireMode"));
+    assert!(wrapper.contains("return;"));
+    assert!(
+        program
+            .positions
+            .iter()
+            .any(|position| position.file == "wire-entry.ts" && position.line == 2),
+        "wire entry trap position does not point at the parameter declaration"
     );
 }
 

@@ -16,11 +16,9 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use subscript_codegen::run_jit;
+use subscript_codegen::{run_jit, EntryArg, ReloadSession, RunError};
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
-use subscript_codegen::{
-    run_jit_with_native_libraries, EntryArg, NativeLibrary, ReloadSession, RunError,
-};
+use subscript_codegen::{run_jit_with_native_libraries, NativeLibrary};
 use subscript_compiler::SourceFile;
 
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
@@ -445,6 +443,13 @@ fn capture_handle_entry_param(
     run
 }
 
+fn capture_wire_entry_param(sources: &[SourceFile]) -> Result<Vec<u8>, RunError> {
+    let mut session = ReloadSession::new(sources)?;
+    session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])?;
+    session.call_main()?;
+    Ok(session.take_output())
+}
+
 fn main() -> ExitCode {
     let Some(id) = std::env::args().nth(1) else {
         eprintln!("usage: capture <entry-id>   (e.g. capture a22-matrix-propagation)");
@@ -530,7 +535,9 @@ fn main() -> ExitCode {
         sources.insert(0, SourceFile::ambient("wire-enum-aliases.d.ts", text));
     }
 
-    let result = if interop {
+    let result = if id == "a140-wire-entry-param" {
+        capture_wire_entry_param(&sources)
+    } else if interop {
         #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
         {
             let libraries = [interop_library()];
