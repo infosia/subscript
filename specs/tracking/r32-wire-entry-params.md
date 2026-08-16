@@ -63,3 +63,10 @@ boundary signature").
 - Every pre-existing golden, `.expected`, header, and mirror
   byte-identical. New: a140's golden (140 total) and t50
   (trap corpus 50).
+
+## windows-msvc exclusion, applied 2026-08-17
+
+The R30 windows-msvc break (`r30-handle-entry-params.md`) defined
+the rule for tests that use the interop fixture. The R32 test
+carried the same `.expect`. This change gives the R32 test the
+file's skip pattern before any windows-msvc run hits it.
