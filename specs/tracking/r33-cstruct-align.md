@@ -78,9 +78,29 @@ No CRITICAL or MAJOR. MINOR, recorded and not fixed:
 - `@CStruct({})` reports "options must contain only the `align`
   key".
 
-## windows-msvc
+## windows-msvc (measured at `c9113e6`)
 
-`_Alignas` under `cl /std:c11` is not measured on this host
-*(docs)*. The next windows-msvc run confirms the cemit test
-`aligned_value_class_emits_alignas_on_the_first_field` and the
-a141 golden.
+MSVC `cl` 19.44.35222 x64, `/std:c11`, on the four C structs the
+`offsetof` proof declares: `Vec3f` 16/16, `Mixed` 32/16 with `p` at
+16, `Mat3x3f` 48/16 with offsets 0/16/32, `Vec2f` 8/8, `Vec3f[4]`
+stride 16. These equal the Apple clang 21 numbers and the layout
+unit test. The `_Alignas` claim is no longer *(docs)*.
+
+`codegen/tests/offsetof_layout.rs` stays excluded on windows-msvc:
+`interop.h` spells `_Float16`, which `cl` rejects in every language
+mode (compiler.md §11c). The numbers above come from a separate
+probe, not from the proof.
+
+Gates on this host at `c9113e6`:
+
+- `cargo test --offline --workspace`: 55 suites, 950 passed, 0
+  failed, 1 ignored. The 17 tests fewer than the clang host are the
+  `offsetof` proof and the interop-fixture entries.
+- `cargo build --offline --workspace --all-targets`: 0 warnings.
+  `cargo fmt --check`: exit 0. `tsc` 5.9.2 gate: exit 0.
+- The golden sweep compared 92 entries and skipped 49. `a141` is in
+  the compared set: the ship tier compiled `_Alignas(16)` with `cl
+  /std:c11`, and dev-JIT, ship-C-AOT, and the golden agree byte for
+  byte.
+- The cemit test `aligned_value_class_emits_alignas_on_the_first_field`
+  passed.
