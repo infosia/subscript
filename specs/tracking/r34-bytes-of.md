@@ -72,7 +72,19 @@ recorded and not fixed: the public free function `padding_ranges`
 rebuilds the layouts per call and has no production consumer;
 `Layouts::padding_ranges` takes the module as a second parameter.
 
-## windows-msvc
+## windows-msvc (measured at `9c6195d`)
 
-Not measured on this host. The next windows-msvc run covers `a142`
-and `t51`.
+- `cargo test --offline --workspace`: 57 suites, 967 passed, 0
+  failed, 1 ignored. The 17 tests fewer than the clang host are the
+  `offsetof` proof and the interop-fixture entries.
+- `cargo build --offline --workspace --all-targets`: 0 warnings.
+  `cargo fmt --check`: exit 0. `tsc` 5.9.2 gate: exit 0.
+- The golden sweep compared 93 entries and skipped 49. `a142` is in
+  the compared set: dev-JIT, ship-C-AOT, and the golden agree byte
+  for byte under MSVC `cl` 19.44.35222, `/std:c11 /O2`. Line 1 is
+  `32`, so `FixedArray<Vec3f, 2>` keeps the 16-byte stride. Line 2
+  ends `0,0,0,0`, so the four padding bytes of the `_Alignas(16)`
+  `Vec3f` are zero. The C11 padding question in the findings above
+  does not reach the output: the emitter zeroes the ranges.
+- `t51` ran on both tiers. The trap suite excludes the interop
+  probes only, and `t51` makes no foreign call.

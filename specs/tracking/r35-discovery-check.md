@@ -67,3 +67,19 @@ had no guard; `emit_c` docs; a duplicated message literal; an empty
 `PoisonedImport` record; two doc sentences. MINOR, recorded and not
 fixed: the dev-lowering guard test sits in `codegen/src/lower/mod.rs`
 and not in `codegen/tests/`.
+
+## windows-msvc (measured at `9c6195d`)
+
+R35 adds no corpus entry and no platform-dependent code. Gates on
+this host:
+
+- `cargo test --offline --workspace`: 57 suites, 967 passed, 0
+  failed, 1 ignored. Both new suites pass:
+  `compiler/tests/discovery_check.rs` (8 tests) and
+  `codegen/tests/discovery_check.rs` (2 tests).
+- `cargo build --offline --workspace --all-targets`: 0 warnings.
+  `cargo fmt --check`: exit 0. `tsc` 5.9.2 gate: exit 0.
+- Guard coverage: `emit_c`, `emit_c_without_main`, the dev-tier
+  lowering, `value_class_layouts`, and `padding_ranges` all reject a
+  discovery HIR. `emit_c_without_main` shares the `Emitter::new`
+  guard; the two layout entries share `reject_discovery_hir`.
