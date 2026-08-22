@@ -2581,6 +2581,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.shape_results(&ret, &res, sret)
             }
             hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos, sites, checked),
+            hir::Callee::ContextBytes { function, ty } => {
+                self.eval_context_bytes(*function, ty, args, pos, checked, dest)
+            }
             hir::Callee::Math(f) => self.eval_math(*f, args, checked),
             hir::Callee::Num(f) => self.eval_num(*f, args, pos, checked),
             hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
@@ -2626,6 +2629,91 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, pos, sites, checked),
             other => Err(internal(format!("callee {other:?}"))),
+        }
+    }
+
+    fn zero_padding(&mut self, destination: Value, ty: &Type) -> Result<(), String> {
+        let ranges = self.ml.layouts.padding_ranges(self.ml.hir, ty)?;
+        for range in ranges {
+            let start = self.addr_off(destination, i64::from(range.start));
+            self.zero_bytes(start, range.end - range.start, 1);
+        }
+        Ok(())
+    }
+
+    fn eval_context_bytes(
+        &mut self,
+        function: hir::ContextBytesFn,
+        ty: &Type,
+        args: &[hir::Expr],
+        pos: &Pos,
+        checked: bool,
+        dest: Option<Value>,
+    ) -> Result<RV, String> {
+        let (size, _) = self.ml.layouts.size_align(ty)?;
+        let size_value = self.iconst(types::I32, i64::from(size));
+        let pos_id = self.pos_id(pos);
+        let pos_value = self.iconst(types::I32, pos_id);
+        match function {
+            hir::ContextBytesFn::BytesOf => {
+                let value = self.eval(args.first().ok_or_else(|| internal("bytesOf arity"))?)?;
+                let source = self.expect_a(value)?;
+                let handle = self
+                    .call_rt(
+                        self.ml.rt.array_from_bytes,
+                        &[self.ctx_v, source, size_value, pos_value],
+                        checked,
+                    )?
+                    .ok_or_else(|| internal("bytesOf result"))?;
+                let data = self
+                    .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
+                    .ok_or_else(|| internal("bytesOf data"))?;
+                self.zero_padding(data, ty)?;
+                Ok(RV::S(handle))
+            }
+            hir::ContextBytesFn::BytesInto => {
+                let value = self.eval(args.first().ok_or_else(|| internal("bytesInto value"))?)?;
+                let source = self.expect_a(value)?;
+                let target_value =
+                    self.eval(args.get(1).ok_or_else(|| internal("bytesInto target"))?)?;
+                let target = self.expect_s(target_value)?;
+                let offset_value =
+                    self.eval(args.get(2).ok_or_else(|| internal("bytesInto offset"))?)?;
+                let offset = self.expect_s(offset_value)?;
+                let range = self
+                    .call_rt(
+                        self.ml.rt.array_byte_range,
+                        &[self.ctx_v, target, offset, size_value, pos_value],
+                        checked,
+                    )?
+                    .ok_or_else(|| internal("bytesInto range"))?;
+                self.copy_bytes(range, source, size, 1);
+                self.zero_padding(range, ty)?;
+                Ok(RV::None)
+            }
+            hir::ContextBytesFn::FromBytes => {
+                let bytes_value =
+                    self.eval(args.first().ok_or_else(|| internal("fromBytes bytes"))?)?;
+                let bytes = self.expect_s(bytes_value)?;
+                let offset_value =
+                    self.eval(args.get(1).ok_or_else(|| internal("fromBytes offset"))?)?;
+                let offset = self.expect_s(offset_value)?;
+                let range = self
+                    .call_rt(
+                        self.ml.rt.array_byte_range,
+                        &[self.ctx_v, bytes, offset, size_value, pos_value],
+                        checked,
+                    )?
+                    .ok_or_else(|| internal("fromBytes range"))?;
+                let output = self
+                    .sret_slot(ty, dest)?
+                    .ok_or_else(|| internal("fromBytes requires aggregate storage"))?;
+                self.copy_bytes(output, range, size, 1);
+                Ok(RV::A(output))
+            }
+            other => Err(internal(format!(
+                "unknown Context byte operation {other:?}"
+            ))),
         }
     }
 

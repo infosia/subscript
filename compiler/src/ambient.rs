@@ -6,7 +6,7 @@
 
 use crate::diag::RuleCode;
 use crate::hir::RegexFn;
-use crate::hir::{AmbientFn, ArrFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
+use crate::hir::{AmbientFn, ArrFn, ContextBytesFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
 use crate::types::Type;
 
 /// One accepted checker-owned API entry rendered by the generated
@@ -645,6 +645,14 @@ pub(crate) fn context_fn(name: &str) -> Option<AmbientFn> {
     })
 }
 
+/// Maps a typed `Context` byte member name to its operation.
+pub(crate) fn context_bytes_fn(name: &str) -> Option<ContextBytesFn> {
+    ContextBytesFn::ALL
+        .iter()
+        .copied()
+        .find(|function| function.name() == name)
+}
+
 /// Parameter types of an ambient function (all return `void`).
 pub(crate) fn ambient_params(f: AmbientFn) -> &'static [Type] {
     match f {
@@ -770,6 +778,13 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             group: "Context",
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
+        });
+    }
+    for function in ContextBytesFn::ALL {
+        out.push(ApiItem {
+            group: "Context",
+            signature: function.api_signature().to_string(),
+            summary: function.api_summary(),
         });
     }
     for c in MATH_CONSTS {
@@ -1257,6 +1272,15 @@ mod tests {
         assert_eq!(ambient_params(AmbientFn::UnsafeDelete), &[Type::Object]);
         assert_eq!(context_fn("collect"), Some(AmbientFn::Collect));
         assert_eq!(context_fn("free"), Some(AmbientFn::UnsafeDelete));
+        assert_eq!(context_bytes_fn("bytesOf"), Some(ContextBytesFn::BytesOf));
+        assert_eq!(
+            context_bytes_fn("bytesInto"),
+            Some(ContextBytesFn::BytesInto)
+        );
+        assert_eq!(
+            context_bytes_fn("fromBytes"),
+            Some(ContextBytesFn::FromBytes)
+        );
         assert_eq!(context_fn("delete"), None);
         assert_eq!(ambient_fn("collect"), None);
         assert_eq!(ambient_fn("free"), None);
@@ -1281,6 +1305,13 @@ mod tests {
                 has(group, f.api_signature()),
                 "ambient {}",
                 f.api_signature()
+            );
+        }
+        for function in ContextBytesFn::ALL {
+            assert!(
+                has("Context", function.api_signature()),
+                "Context.{}",
+                function.name()
             );
         }
         for c in MATH_CONSTS {
@@ -1379,6 +1410,7 @@ mod tests {
 
         let regex_rows = 1 + RegexFn::ALL.len();
         let expected = AmbientFn::ALL.len()
+            + ContextBytesFn::ALL.len()
             + 1
             + 2
             + MATH_CONSTS.len()

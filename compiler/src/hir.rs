@@ -660,6 +660,63 @@ pub enum AmbientFn {
     UnsafeDelete,
 }
 
+/// Typed `Context` storage-byte operations (stdlib.md section 18, R34).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ContextBytesFn {
+    /// `Context.bytesOf<T>(value): u8[]`.
+    BytesOf,
+    /// `Context.bytesInto<T>(value, target, offset): void`.
+    BytesInto,
+    /// `Context.fromBytes<T>(bytes, offset): T`.
+    FromBytes,
+}
+
+impl ContextBytesFn {
+    /// Every typed Context storage-byte operation.
+    pub const ALL: [ContextBytesFn; 3] = [
+        ContextBytesFn::BytesOf,
+        ContextBytesFn::BytesInto,
+        ContextBytesFn::FromBytes,
+    ];
+
+    /// Source member name.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            ContextBytesFn::BytesOf => "bytesOf",
+            ContextBytesFn::BytesInto => "bytesInto",
+            ContextBytesFn::FromBytes => "fromBytes",
+        }
+    }
+
+    /// Source-level subscript signature.
+    #[must_use]
+    pub(crate) fn api_signature(self) -> &'static str {
+        match self {
+            ContextBytesFn::BytesOf => "bytesOf<T>(value: T): u8[]",
+            ContextBytesFn::BytesInto => "bytesInto<T>(value: T, target: u8[], offset: u32): void",
+            ContextBytesFn::FromBytes => "fromBytes<T>(bytes: u8[], offset: u32): T",
+        }
+    }
+
+    /// API-reference summary.
+    #[must_use]
+    pub(crate) fn api_summary(self) -> &'static str {
+        match self {
+            ContextBytesFn::BytesOf => {
+                "Returns a new byte array for eligible value storage and clears all padding bytes."
+            }
+            ContextBytesFn::BytesInto => {
+                "Copies eligible value storage into a byte array and clears all padding bytes."
+            }
+            ContextBytesFn::FromBytes => {
+                "Copies byte-array storage into an eligible value without initialization."
+            }
+        }
+    }
+}
+
 impl AmbientFn {
     /// Every checker-owned ambient function.
     pub const ALL: [AmbientFn; 4] = [
@@ -2671,6 +2728,13 @@ pub enum Callee {
     Foreign(String),
     /// An ambient prelude function.
     Ambient(AmbientFn),
+    /// A typed Context storage-byte operation and its concrete storage type.
+    ContextBytes {
+        /// The storage-byte operation.
+        function: ContextBytesFn,
+        /// The explicit concrete type argument.
+        ty: Type,
+    },
     /// A `Math.<fn>` ambient-namespace intrinsic (stdlib.md §1).
     Math(MathFn),
     /// A `Number` or parsing intrinsic (stdlib.md §11, Q25/Q26).
@@ -2721,6 +2785,7 @@ impl Callee {
         match self {
             Callee::Func(_) | Callee::Value(_) | Callee::Method { .. } | Callee::Foreign(_) => true,
             Callee::Ambient(f) => f.can_trap(),
+            Callee::ContextBytes { .. } => true,
             Callee::Math(f) => f.can_trap(),
             Callee::Num(f) => f.takes_pos_id(),
             Callee::Date(f) => f.can_trap(),

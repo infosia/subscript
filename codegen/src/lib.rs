@@ -58,7 +58,7 @@ pub use jit::{
     run_jit_with_native_libraries, AbnormalTermination, BenchSamples, JitMemoryAccounting,
     RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
 };
-pub use layout::{value_class_layouts, FieldLayout, StructLayout};
+pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
 pub use native::NativeLibrary;
 pub use reload::{declaration_hash, DeclarationHash, EntryArg, ReloadError, ReloadSession};
 
@@ -567,6 +567,17 @@ export function main(): void {
             Err(RunError::Internal(msg)) => assert!(msg.contains("cycle"), "got: {msg}"),
             other => panic!("expected an internal error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn r34_mixed_bytes_clear_padding_on_both_tiers() {
+        let source = "@CStruct({ align: 16 })\nclass Vec3f {\n  x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0;\n  constructor(x: f32, y: f32, z: f32) { this.x = x; this.y = y; this.z = z; }\n}\n@CStruct\nclass Mixed {\n  a: f32 = 0.0; p: Vec3f = new Vec3f(0.0, 0.0, 0.0);\n  constructor(a: f32, p: Vec3f) { this.a = a; this.p = p; }\n}\nexport function main(): void {\n  const mixed: Mixed = new Mixed(1.0, new Vec3f(2.0, 3.0, 4.0));\n  print(Context.bytesOf<Mixed>(mixed).join(\",\"));\n  const source: u8[] = [255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255];\n  const decoded: Mixed = Context.fromBytes<Mixed>(source, 0);\n  print(Context.bytesOf<Mixed>(decoded).join(\",\"));\n}\n";
+        let files = [SourceFile::new("test.ts", source)];
+        let expected = b"0,0,128,63,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,64,0,0,64,64,0,0,128,64,0,0,0,0\n255,255,255,255,0,0,0,0,0,0,0,0,0,0,0,0,255,255,255,255,255,255,255,255,255,255,255,255,0,0,0,0\n";
+        let jit = run_jit(&files).expect("dev Context bytes run");
+        let ship = run_c_aot(&files).expect("ship Context bytes run");
+        assert_eq!(jit, expected);
+        assert_eq!(ship, expected);
     }
 
     #[test]

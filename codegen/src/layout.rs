@@ -14,6 +14,7 @@
 //! a fallback layout.
 
 use cranelift_codegen::ir::types;
+use std::ops::Range;
 use subscript_compiler::hir;
 use subscript_compiler::types::{
     scalar_size_align as compiler_scalar_size_align, MAX_AGGREGATE_BYTES,
@@ -162,6 +163,19 @@ pub fn value_class_layouts(module: &hir::Module) -> Result<Vec<StructLayout>, St
         });
     }
     Ok(out)
+}
+
+/// Returns each padding byte range in the stored representation of `ty`.
+///
+/// A range includes bytes that do not belong to a scalar leaf. Nested value
+/// classes and `FixedArray` elements contribute their internal padding.
+///
+/// # Errors
+///
+/// Returns an internal error when the type layout is invalid.
+pub fn padding_ranges(module: &hir::Module, ty: &Type) -> Result<Vec<Range<u32>>, String> {
+    let layouts = Layouts::build(module)?;
+    layouts.padding_ranges(module, ty)
 }
 
 fn ensure_supported_size(size: u32, context: &str) -> Result<u32, String> {
@@ -375,6 +389,64 @@ impl Layouts {
     pub fn stride(&self, elem: &Type) -> Result<u32, String> {
         let (s, a) = self.size_align(elem)?;
         round_up(s, a)
+    }
+
+    /// Returns each padding range for `ty` from these precomputed layouts.
+    pub(crate) fn padding_ranges(
+        &self,
+        module: &hir::Module,
+        ty: &Type,
+    ) -> Result<Vec<Range<u32>>, String> {
+        let mut ranges = Vec::new();
+        self.collect_padding_ranges(module, ty, 0, &mut ranges)?;
+        Ok(ranges)
+    }
+
+    fn collect_padding_ranges(
+        &self,
+        module: &hir::Module,
+        ty: &Type,
+        base: u32,
+        ranges: &mut Vec<Range<u32>>,
+    ) -> Result<(), String> {
+        match ty {
+            Type::Class(id) if self.class(id.0)?.is_value => {
+                let class = module
+                    .classes
+                    .get(id.0)
+                    .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?;
+                let layout = self.class(id.0)?;
+                let mut cursor = 0u32;
+                for (field, &offset) in class.fields.iter().zip(&layout.field_offsets) {
+                    if cursor < offset {
+                        ranges.push(
+                            checked_add_size(base, cursor, "padding range start")?
+                                ..checked_add_size(base, offset, "padding range end")?,
+                        );
+                    }
+                    let field_base = checked_add_size(base, offset, "padding field base")?;
+                    self.collect_padding_ranges(module, &field.ty, field_base, ranges)?;
+                    let (field_size, _) = self.size_align(&field.ty)?;
+                    cursor = checked_add_size(offset, field_size, "padding field end")?;
+                }
+                if cursor < layout.size {
+                    ranges.push(
+                        checked_add_size(base, cursor, "padding tail start")?
+                            ..checked_add_size(base, layout.size, "padding tail end")?,
+                    );
+                }
+            }
+            Type::FixedArray(element, length) => {
+                let stride = self.stride(element)?;
+                for index in 0..*length {
+                    let offset = checked_mul_size(index, stride, "padding array offset")?;
+                    let element_base = checked_add_size(base, offset, "padding element base")?;
+                    self.collect_padding_ranges(module, element, element_base, ranges)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     /// Byte offset of the `value` field inside `IterResult<T>`
@@ -606,6 +678,28 @@ mod tests {
         let l = layouts.class(0).expect("class 0");
         assert_eq!(l.field_offsets, vec![0, 8, 16]);
         assert_eq!((l.size, l.align), (24, 8));
+    }
+
+    #[test]
+    fn padding_ranges_cover_aligned_nested_values_and_fixed_arrays() {
+        let module = module_of(
+            "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@CStruct\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
+        );
+        let vec3 = Type::Class(subscript_compiler::ClassId(0));
+        let mixed = Type::Class(subscript_compiler::ClassId(1));
+        assert_eq!(
+            padding_ranges(&module, &vec3).expect("Vec3f padding"),
+            vec![12..16]
+        );
+        assert_eq!(
+            padding_ranges(&module, &mixed).expect("Mixed padding"),
+            vec![4..16, 28..32]
+        );
+        assert_eq!(
+            padding_ranges(&module, &Type::FixedArray(Box::new(vec3), 2))
+                .expect("FixedArray padding"),
+            vec![12..16, 28..32]
+        );
     }
 
     #[test]

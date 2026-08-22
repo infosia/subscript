@@ -3326,6 +3326,49 @@ pub unsafe extern "C" fn subscript_rt_array_new(
     unsafe { &mut *ctx }.array_new(elem_size as usize, pos_id)
 }
 
+/// Allocates a byte array and copies a readable byte span into it.
+///
+/// # Safety
+///
+/// Shared contract; `src` is readable for `len` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_from_bytes(
+    ctx: *mut Context,
+    src: *const u8,
+    len: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    let runtime = unsafe { &mut *ctx };
+    if src.is_null() && len > 0 {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    unsafe { runtime.array_from_bytes(src, len as usize, pos_id) }
+}
+
+/// Returns a writable range within a byte array.
+///
+/// This function traps with `IndexOutOfBounds` when the range exceeds the array length.
+///
+/// # Safety
+///
+/// Shared contract; `array` is a live byte-array handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_byte_range(
+    ctx: *mut Context,
+    array: *mut u8,
+    offset: u32,
+    size: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    let runtime = unsafe { &mut *ctx };
+    if array.is_null() || !runtime.require_live_handle(array as usize, pos_id) {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract.
+    unsafe { runtime.array_byte_range(array, offset, size, pos_id) }
+}
+
 /// Array length.
 ///
 /// # Safety
@@ -6152,6 +6195,52 @@ mod tests {
             ctx.trap_record().map(|r| (r.kind, r.pos_id)),
             Some((TrapKind::IndexOutOfBounds, 9))
         );
+    }
+
+    #[test]
+    fn ffi_byte_array_span_and_range_report_exact_storage() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let source = [1u8, 2, 3, 4];
+        // SAFETY: the context and source span are valid.
+        let array =
+            unsafe { subscript_rt_array_from_bytes(p, source.as_ptr(), source.len() as u32, 5) };
+        assert!(!array.is_null());
+        // SAFETY: the array is live and both requested ranges use its byte storage.
+        unsafe {
+            assert_eq!(subscript_rt_array_len(p, array), 4);
+            let range = subscript_rt_array_byte_range(p, array, 1, 2, 6);
+            assert_eq!(std::slice::from_raw_parts(range, 2), &[2, 3]);
+            assert!(subscript_rt_array_byte_range(p, array, 3, 2, 7).is_null());
+        }
+        let report = ctx.trap_record().expect("byte range trap");
+        assert_eq!(report.kind, TrapKind::IndexOutOfBounds);
+        assert_eq!(
+            report.message,
+            "byte range at offset 3 with size 2 exceeds array length 4"
+        );
+        assert_eq!(report.pos_id, 7);
+
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: the null inputs exercise the defensive FFI checks.
+        unsafe {
+            assert!(subscript_rt_array_from_bytes(p, std::ptr::null(), 1, 8).is_null());
+            assert!(subscript_rt_array_byte_range(p, std::ptr::null_mut(), 0, 1, 9).is_null());
+        }
+        assert!(ctx.trap_record().is_none());
+
+        let mut ctx = Context::new();
+        assert!(ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: the context and source span are valid.
+        let array = unsafe { subscript_rt_array_from_bytes(p, source.as_ptr(), 4, 10) };
+        ctx.collect();
+        // SAFETY: this call exercises the mode-enabled stale-handle diagnostic.
+        assert!(unsafe { subscript_rt_array_byte_range(p, array, 0, 1, 11) }.is_null());
+        let report = ctx.trap_record().expect("byte range liveness trap");
+        assert_eq!(report.kind, TrapKind::UseAfterDelete);
+        assert_eq!(report.pos_id, 11);
     }
 
     #[test]

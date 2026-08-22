@@ -3666,6 +3666,11 @@ impl<'m> Emitter<'m> {
             hir::Callee::Foreign(name) => {
                 self.eval_foreign_call(name, args, ret_ty, pos, sites, out, depth, checked)
             }
+            hir::Callee::ContextBytes { function, ty } => {
+                let site = trap_site
+                    .ok_or_else(|| "Context byte operation has no HIR call site".to_string())?;
+                self.eval_context_bytes(*function, ty, args, pos, site, out, depth)
+            }
             // A Math intrinsic (stdlib.md §1) calls its opaque runtime
             // symbol — never a bare libm call, which clang would
             // constant-fold at -O2 (stdlib.md §0.2). Constants never
@@ -3820,6 +3825,113 @@ impl<'m> Emitter<'m> {
                 self.eval_worker_call(*function, args, ret_ty, out, depth, checked)
             }
             other => Err(format!("callee {other:?} is outside the run set's scope")),
+        }
+    }
+
+    fn emit_padding_zero(
+        &self,
+        destination: &str,
+        ty: &Type,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<(), String> {
+        let ind = indent(depth);
+        for range in self.layouts.padding_ranges(self.module, ty)? {
+            let _ = writeln!(
+                out,
+                "{ind}memset((unsigned char*)({destination}) + {}u, 0, {}u);",
+                range.start,
+                range.end - range.start
+            );
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn eval_context_bytes(
+        &mut self,
+        function: hir::ContextBytesFn,
+        ty: &Type,
+        args: &[hir::Expr],
+        pos: &Pos,
+        site: &hir::TrapSite,
+        out: &mut String,
+        depth: usize,
+    ) -> Result<String, String> {
+        let ind = indent(depth);
+        let ctype = self.ctype(ty)?;
+        let size = format!("(uint32_t)sizeof({ctype})");
+        let pos_id = self.pos_id(pos);
+        match function {
+            hir::ContextBytesFn::BytesOf => {
+                let value = self.eval_pinned(
+                    args.first().ok_or_else(|| "bytesOf arity".to_string())?,
+                    out,
+                    depth,
+                )?;
+                let handle = self.fresh_tmp();
+                let _ = writeln!(
+                    out,
+                    "{ind}void* {handle} = subscript_rt_array_from_bytes(ctx, &{value}, {size}, {pos_id}u);"
+                );
+                self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
+                let data = self.fresh_tmp();
+                let _ = writeln!(
+                    out,
+                    "{ind}unsigned char* {data} = (unsigned char*)subscript_rt_array_data(ctx, {handle});"
+                );
+                self.emit_padding_zero(&data, ty, out, depth)?;
+                Ok(handle)
+            }
+            hir::ContextBytesFn::BytesInto => {
+                let value = self.eval_pinned(
+                    args.first().ok_or_else(|| "bytesInto value".to_string())?,
+                    out,
+                    depth,
+                )?;
+                let target = self.eval_pinned(
+                    args.get(1).ok_or_else(|| "bytesInto target".to_string())?,
+                    out,
+                    depth,
+                )?;
+                let offset = self.eval_pinned(
+                    args.get(2).ok_or_else(|| "bytesInto offset".to_string())?,
+                    out,
+                    depth,
+                )?;
+                let range = self.fresh_tmp();
+                let _ = writeln!(
+                    out,
+                    "{ind}void* {range} = subscript_rt_array_byte_range(ctx, {target}, {offset}, {size}, {pos_id}u);"
+                );
+                self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
+                let _ = writeln!(out, "{ind}memcpy({range}, &{value}, {size});");
+                self.emit_padding_zero(&range, ty, out, depth)?;
+                Ok(String::new())
+            }
+            hir::ContextBytesFn::FromBytes => {
+                let bytes = self.eval_pinned(
+                    args.first().ok_or_else(|| "fromBytes bytes".to_string())?,
+                    out,
+                    depth,
+                )?;
+                let offset = self.eval_pinned(
+                    args.get(1).ok_or_else(|| "fromBytes offset".to_string())?,
+                    out,
+                    depth,
+                )?;
+                let range = self.fresh_tmp();
+                let _ = writeln!(
+                    out,
+                    "{ind}void* {range} = subscript_rt_array_byte_range(ctx, {bytes}, {offset}, {size}, {pos_id}u);"
+                );
+                self.emit_trap_site(site, TrapOperand::Pending, out, depth)?;
+                let value = self.fresh_tmp();
+                let _ = writeln!(out, "{ind}{ctype} {value};");
+                let _ = writeln!(out, "{ind}memcpy(&{value}, {range}, {size});");
+                Ok(value)
+            }
+            other => Err(format!("unknown Context byte operation {other:?}")),
         }
     }
 
@@ -7625,6 +7737,8 @@ extern void* subscript_rt_num_to_precision(void* ctx, double value, int32_t digi
 extern uint16_t subscript_rt_f16_from_f64(double v);
 extern double subscript_rt_f16_to_f64(uint16_t bits);
 extern void* subscript_rt_array_new(void* ctx, uint64_t elem_size, uint32_t pos_id);
+extern void* subscript_rt_array_from_bytes(void* ctx, const void* src, uint32_t len, uint32_t pos_id);
+extern void* subscript_rt_array_byte_range(void* ctx, void* array, uint32_t offset, uint32_t size, uint32_t pos_id);
 extern int32_t subscript_rt_array_len(void* ctx, const void* a);
 extern int32_t subscript_rt_array_push(void* ctx, void* a, const void* src, uint32_t pos_id);
 extern void subscript_rt_array_pop(void* ctx, void* a, void* dst, uint32_t pos_id);

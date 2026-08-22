@@ -118,6 +118,8 @@ pub(crate) struct RtFns {
     /// Raw IEEE binary16 bits to exact `f64` (Q23).
     pub f16_to_f64: FuncId,
     pub array_new: FuncId,
+    pub array_from_bytes: FuncId,
+    pub array_byte_range: FuncId,
     pub array_len: FuncId,
     pub array_push: FuncId,
     pub array_pop: FuncId,
@@ -908,6 +910,16 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         f16_from_f64: mk("subscript_rt_f16_from_f64", &[F64], Some(I16))?,
         f16_to_f64: mk("subscript_rt_f16_to_f64", &[I16], Some(F64))?,
         array_new: mk("subscript_rt_array_new", &[I64, I64, I32], Some(I64))?,
+        array_from_bytes: mk(
+            "subscript_rt_array_from_bytes",
+            &[I64, I64, I32, I32],
+            Some(I64),
+        )?,
+        array_byte_range: mk(
+            "subscript_rt_array_byte_range",
+            &[I64, I64, I32, I32, I32],
+            Some(I64),
+        )?,
         array_len: mk("subscript_rt_array_len", &[I64, I64], Some(I32))?,
         array_push: mk("subscript_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,
         array_pop: mk("subscript_rt_array_pop", &[I64, I64, I64, I32], None)?,

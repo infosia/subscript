@@ -2725,6 +2725,65 @@ mod tests {
     }
 
     #[test]
+    fn r34_context_bytes_call_keeps_the_explicit_type_in_hir() {
+        let module = check_one(
+            "@CStruct\nclass Word { value: u32 = 0; }\nexport function main(): void {\n  const word: Word = new Word();\n  const bytes: u8[] = Context.bytesOf<Word>(word);\n  print(`${bytes.length}`);\n}\n",
+        )
+        .expect("Context.bytesOf must check");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+        let hir::Stmt::Let { init, .. } = &main.body[1] else {
+            panic!("expected bytes local");
+        };
+        assert!(matches!(
+            &init.kind,
+            hir::ExprKind::Call {
+                callee: hir::Callee::ContextBytes {
+                    function: hir::ContextBytesFn::BytesOf,
+                    ty: Type::Class(_),
+                },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn r34_boundary_string_field_is_s100_with_the_field_name() {
+        let diagnostics = check_program(&[
+            SourceFile::ambient(
+                "record.d.ts",
+                "declare class Record { label: string; serial: u32; constructor(label: string, serial: u32); }\n",
+            ),
+            SourceFile::new(
+                "test.ts",
+                "export function main(): void {\n  const record: Record = new Record(\"x\", 1);\n  Context.bytesOf<Record>(record);\n}\n",
+            ),
+        ])
+        .expect_err("boundary storage must be rejected");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(
+            diagnostics[0].message,
+            "`Context.bytesOf<T>` cannot use `Record`; field `label` has unsupported type `string` (its storage type is not eligible)"
+        );
+    }
+
+    #[test]
+    fn r34_missing_type_argument_is_s014() {
+        let diagnostics = check_one(
+            "@CStruct\nclass Word { value: u32 = 0; }\nexport function main(): void {\n  const word: Word = new Word();\n  Context.bytesOf(word);\n}\n",
+        )
+        .expect_err("the type argument must be explicit");
+        assert_eq!(diagnostics[0].code, RuleCode::S014);
+        assert_eq!(
+            diagnostics[0].message,
+            "`Context.bytesOf<T>` takes exactly one type argument"
+        );
+    }
+
+    #[test]
     fn same_shaped_classes_do_not_substitute() {
         let err = check_one(
             "class A { x: i32 = 1; }\nclass B { x: i32 = 1; }\nfunction f(a: A): i32 { return a.x; }\nexport function main(): void {\n  const b: B = new B();\n  print(`${f(b)}`);\n}\n",

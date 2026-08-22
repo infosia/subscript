@@ -355,6 +355,14 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             ffi::subscript_rt_array_new as *const u8,
         ),
         (
+            "subscript_rt_array_from_bytes",
+            ffi::subscript_rt_array_from_bytes as *const u8,
+        ),
+        (
+            "subscript_rt_array_byte_range",
+            ffi::subscript_rt_array_byte_range as *const u8,
+        ),
+        (
             "subscript_rt_array_len",
             ffi::subscript_rt_array_len as *const u8,
         ),

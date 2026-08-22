@@ -104,6 +104,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32) {
         "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10),
         "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12),
         "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8),
+        "t51-bytes-into-range" => (TrapKind::IndexOutOfBounds, 18),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -569,14 +570,14 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 50;
+    let expected_count = 51;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
          coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, t46 \
          callback-userdata coverage, t47 unreachable coverage, t48 wire-enum crossing, and \
-         t49 wire-enum boundary-member coverage, and t50 wire-entry coverage), found {}",
+         t49 wire-enum boundary-member coverage, t50 wire-entry coverage, and t51 R34 byte-range coverage), found {}",
         ids.len()
     );
 
@@ -695,6 +696,9 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                     }
                     "t50-wire-entry-unknown-value" => {
                         Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
+                    }
+                    "t51-bytes-into-range" => {
+                        Some("byte range at offset 5 with size 16 exceeds array length 20")
                     }
                     _ => None,
                 };

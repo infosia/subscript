@@ -32,7 +32,7 @@ const MODULES: &str = "A program may import named exports from sibling source fi
 
 const COROUTINES: &str = "A `function*` coroutine yields typed values and is driven explicitly through `Generator<T>.next()` or the accepted `for...of` generator path. Suspension is caller- or host-driven; the language does not schedule coroutine steps implicitly.";
 
-const MEMORY_MODEL: &str = "Reference allocations belong to a `Context`. `Context.free(value)` releases one allocation explicitly; `Context.collect()` performs an explicitly requested reachability collection. No collection runs implicitly. W001 flags unreleased loop allocations, W002 flags straight-line use after `Context.free`, and W003 flags fresh rooted callback userdata registered in a loop.";
+const MEMORY_MODEL: &str = "Reference allocations belong to a `Context`. `Context.free(value)` releases one allocation explicitly; `Context.collect()` performs an explicitly requested reachability collection. No collection runs implicitly. `Context.bytesOf<T>` returns zero-padded storage bytes for eligible `@CStruct` and `FixedArray` values. `bytesInto` writes that form, and `fromBytes` reconstructs storage without initialization. W001 flags unreleased loop allocations, W002 flags straight-line use after `Context.free`, and W003 flags fresh rooted callback userdata registered in a loop.";
 
 struct Feature {
     title: &'static str,
@@ -170,12 +170,16 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a15-manual-lifetime.ts",
             "corpus/accept/a16-explicit-collect.ts",
             "corpus/accept/a90-callback-userdata-rooted.ts",
+            "corpus/accept/a142-bytes-of.ts",
+            "corpus/reject/r138-bytes-of-reference-class.ts",
+            "corpus/reject/r139-bytes-of-string-element.ts",
             "corpus/warn/w01-loop-allocation-unreleased.ts",
             "corpus/warn/w02-use-after-free.ts",
             "corpus/warn/w03-fresh-callback-userdata-loop.ts",
             "corpus/trap/t22-double-delete-q6.ts",
             "corpus/trap/t23-use-after-delete-q6.ts",
             "corpus/trap/t46-callback-userdata-freed.ts",
+            "corpus/trap/t51-bytes-into-range.ts",
         ],
     },
 ];

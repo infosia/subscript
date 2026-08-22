@@ -7,8 +7,8 @@ use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
 use crate::hir::{
-    self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, DateFn, ExprKind, MapFn, MathFn, NumFn,
-    RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
+    self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, ContextBytesFn, DateFn, ExprKind, MapFn,
+    MathFn, NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
 };
 use crate::types::{ClassId, FuncType, Type};
 
@@ -2074,7 +2074,9 @@ impl<'p> Checker<'p> {
         if name == "Context" && self.scope_item(&name).is_none() {
             let detail = if prop == "suspend" {
                 "`Context.suspend` may only appear as the direct call in `await Context.suspend()` (Q34)".to_string()
-            } else if crate::ambient::context_fn(prop).is_some() {
+            } else if crate::ambient::context_fn(prop).is_some()
+                || crate::ambient::context_bytes_fn(prop).is_some()
+            {
                 format!("`Context.{prop}` may only be called, not read as a value (Q6/Q7/Q34)")
             } else {
                 format!("`Context.{prop}` is outside the accepted Context subset (Q6/Q7/Q34)")
@@ -5609,6 +5611,198 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn context_bytes_storage_rejection(
+        &self,
+        ty: &Type,
+        path: Option<&str>,
+        visiting: &mut std::collections::HashSet<ClassId>,
+    ) -> Option<(Option<String>, Type, &'static str)> {
+        if ty.is_numeric() || matches!(ty, Type::Bool | Type::Enum(_) | Type::Error) {
+            return None;
+        }
+        match ty {
+            Type::FixedArray(element, _) => {
+                self.context_bytes_storage_rejection(element, path, visiting)
+            }
+            Type::Class(id) => {
+                let class = self.classes.get(id.0)?;
+                if !class.is_value {
+                    return Some((
+                        path.map(str::to_string),
+                        ty.clone(),
+                        "it is a reference class",
+                    ));
+                }
+                if !visiting.insert(*id) {
+                    return None;
+                }
+                for field in &class.fields {
+                    let nested = path.map_or_else(
+                        || field.name.clone(),
+                        |prefix| format!("{prefix}.{}", field.name),
+                    );
+                    if let Some(rejection) =
+                        self.context_bytes_storage_rejection(&field.ty, Some(&nested), visiting)
+                    {
+                        visiting.remove(id);
+                        return Some(rejection);
+                    }
+                }
+                visiting.remove(id);
+                class.is_boundary.then(|| {
+                    (
+                        path.map(str::to_string),
+                        ty.clone(),
+                        "it is a boundary struct",
+                    )
+                })
+            }
+            other => Some((
+                path.map(str::to_string),
+                other.clone(),
+                "its storage type is not eligible",
+            )),
+        }
+    }
+
+    fn check_context_bytes_call(
+        &mut self,
+        function: ContextBytesFn,
+        call: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        member_pos: Pos,
+    ) -> hir::Expr {
+        let name = function.name();
+        let Some(type_args) = &call.type_args else {
+            self.error(
+                RuleCode::S014,
+                format!("`Context.{name}<T>` takes exactly one type argument"),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        };
+        if type_args.params.len() != 1 {
+            self.error(
+                RuleCode::S014,
+                format!("`Context.{name}<T>` takes exactly one type argument"),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        }
+        let target = self.resolve_type(&type_args.params[0]);
+        if target == Type::Error {
+            return self.err_expr(pos);
+        }
+        let top_level_ok = match &target {
+            Type::FixedArray(..) => true,
+            Type::Class(id) => self.classes.get(id.0).is_some_and(|class| class.is_value),
+            _ => false,
+        };
+        if !top_level_ok {
+            let target_name = self.type_name(&target);
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "`Context.{name}<T>` cannot use `{target_name}`; it is not a @CStruct value class or FixedArray"
+                ),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        }
+        let rejection = self.context_bytes_storage_rejection(
+            &target,
+            None,
+            &mut std::collections::HashSet::new(),
+        );
+        if let Some((field, leaf, reason)) = rejection {
+            let target_name = self.type_name(&target);
+            let detail = field.map_or_else(
+                || {
+                    format!(
+                        "{reason}; unsupported storage type is `{}`",
+                        self.type_name(&leaf)
+                    )
+                },
+                |field| {
+                    format!(
+                        "field `{field}` has unsupported type `{}` ({reason})",
+                        self.type_name(&leaf)
+                    )
+                },
+            );
+            self.error(
+                RuleCode::S100,
+                format!("`Context.{name}<T>` cannot use `{target_name}`; {detail}"),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        }
+
+        let params = match function {
+            ContextBytesFn::BytesOf => vec![target.clone()],
+            ContextBytesFn::BytesInto => {
+                vec![target.clone(), Type::Array(Box::new(Type::U8)), Type::U32]
+            }
+            ContextBytesFn::FromBytes => {
+                vec![Type::Array(Box::new(Type::U8)), Type::U32]
+            }
+        };
+        if call.args.len() != params.len() {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`Context.{name}` expects exactly {} argument(s), got {}",
+                    params.len(),
+                    call.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        let mut args = Vec::with_capacity(params.len());
+        for (argument, expected) in call.args.iter().zip(&params) {
+            if let Some(spread) = argument.spread {
+                let spread_pos = self.pos(spread);
+                self.error(
+                    RuleCode::S014,
+                    "spread arguments require variadic parameters, which the language does not have",
+                    spread_pos.clone(),
+                );
+                return self.err_expr(spread_pos);
+            }
+            let checked = self.check_expr(&argument.expr, Some(expected), fx);
+            if checked.ty != *expected && checked.ty != Type::Error {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "type mismatch: `Context.{name}` expects exactly `{}`, got `{}`",
+                        self.type_name(expected),
+                        self.type_name(&checked.ty)
+                    ),
+                    checked.pos.clone(),
+                );
+            }
+            args.push(checked);
+        }
+        let return_type = match function {
+            ContextBytesFn::BytesOf => Type::Array(Box::new(Type::U8)),
+            ContextBytesFn::BytesInto => Type::Void,
+            ContextBytesFn::FromBytes => target.clone(),
+        };
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::ContextBytes {
+                    function,
+                    ty: target,
+                },
+                args,
+            },
+            ty: return_type,
+            pos,
+        }
+    }
+
     fn check_indirect_call(
         &mut self,
         callee: hir::Expr,
@@ -5703,6 +5897,9 @@ impl<'p> Checker<'p> {
         // `Context.collect()` / `Context.free(value)` (Q6/Q7): ambient
         // namespace calls lower through the existing ambient-call path.
         if self.is_context_namespace(&m.obj, fx) {
+            if let Some(function) = crate::ambient::context_bytes_fn(&name) {
+                return self.check_context_bytes_call(function, c, fx, pos, prop_pos);
+            }
             if let Some(f) = crate::ambient::context_fn(&name) {
                 return self.check_ambient_call(f, c, fx, pos);
             }

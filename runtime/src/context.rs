@@ -2562,6 +2562,81 @@ impl Context {
         p
     }
 
+    /// Allocates a byte array and copies `len` bytes from `src`.
+    ///
+    /// # Safety
+    ///
+    /// `src` must be readable for `len` bytes.
+    pub(crate) unsafe fn array_from_bytes(
+        &mut self,
+        src: *const u8,
+        len: usize,
+        pos_id: u32,
+    ) -> *mut u8 {
+        if len > i32::MAX as usize {
+            self.trap(
+                TrapKind::Internal,
+                "byte-array length exceeds the runtime array limit",
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        }
+        let handle = self.array_new(1, pos_id);
+        if handle.is_null() || len == 0 {
+            return handle;
+        }
+        let data = self.alloc(len, CLASS_ARRAY_DATA, pos_id);
+        if data.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: the new allocation has `len` writable bytes. The caller
+        // guarantees that `src` has `len` readable bytes.
+        unsafe { std::ptr::copy_nonoverlapping(src, data, len) };
+        // SAFETY: `handle` points to the header that `array_new` created.
+        let header = unsafe { &mut *(handle as *mut ArrayHeader) };
+        header.len = len as u64;
+        header.cap = len as u64;
+        header.data = data;
+        handle
+    }
+
+    /// Returns a pointer to `size` bytes at `offset` in the byte array.
+    ///
+    /// If the range exceeds the array length, this function traps with
+    /// `IndexOutOfBounds` and returns null. The comparison uses 64-bit values.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live byte-array payload owned by this context.
+    pub(crate) unsafe fn array_byte_range(
+        &mut self,
+        handle: *mut u8,
+        offset: u32,
+        size: u32,
+        pos_id: u32,
+    ) -> *mut u8 {
+        // SAFETY: the caller guarantees a live array payload.
+        let header = unsafe { &*(handle as *const ArrayHeader) };
+        let end = u64::from(offset) + u64::from(size);
+        if end > header.len {
+            self.trap(
+                TrapKind::IndexOutOfBounds,
+                format!(
+                    "byte range at offset {offset} with size {size} exceeds array length {}",
+                    header.len
+                ),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        }
+        if offset == 0 {
+            header.data
+        } else {
+            // SAFETY: the checked nonzero offset is within initialized storage.
+            unsafe { header.data.add(offset as usize) }
+        }
+    }
+
     /// Array length as `i32`.
     ///
     /// # Safety

@@ -22,6 +22,9 @@
 |---|---|
 | `collect(): void` | Explicitly collects unreachable Context allocations. |
 | `free(value: object): void` | Immediately releases a reference-class allocation. |
+| `bytesOf<T>(value: T): u8[]` | Returns a new byte array for eligible value storage and clears all padding bytes. |
+| `bytesInto<T>(value: T, target: u8[], offset: u32): void` | Copies eligible value storage into a byte array and clears all padding bytes. |
+| `fromBytes<T>(bytes: u8[], offset: u32): T` | Copies byte-array storage into an eligible value without initialization. |
 
 ### Math
 
