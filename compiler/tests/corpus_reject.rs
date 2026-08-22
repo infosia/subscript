@@ -141,6 +141,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r132-await-using.ts", RuleCode::S100, 12),
     ("r133-using-without-dispose.ts", RuleCode::S100, 10),
     ("r134-plain-alias-entry-param.ts", RuleCode::S100, 9),
+    ("r135-cstruct-align-below-natural.ts", RuleCode::S100, 7),
+    ("r136-cstruct-align-not-in-set.ts", RuleCode::S100, 7),
+    ("r137-descriptor-align.ts", RuleCode::S100, 7),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -262,8 +265,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        130,
-        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, and one R32 entry"
+        133,
+        "expected 89 standing reject entries, the seven-entry P23 battery, five R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, and three R33 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -277,6 +280,28 @@ fn reject_table_covers_every_corpus_entry() {
     let mut expected: Vec<String> = active.iter().map(|(f, _, _)| f.to_string()).collect();
     expected.sort();
     assert_eq!(entries, expected, "reject corpus and test table disagree");
+}
+
+#[test]
+fn cstruct_alignment_rejects_unknown_keys_and_second_arguments() {
+    for (name, source, message) in [
+        (
+            "unknown-align-key.ts",
+            "@CStruct({ alignment: 16 })\nclass Value { x: f32 = 0.0; }\nexport function main(): void {}\n",
+            "`@CStruct` options must contain only the `align` key",
+        ),
+        (
+            "second-align-argument.ts",
+            "@CStruct({ align: 16 }, { align: 8 })\nclass Value { x: f32 = 0.0; }\nexport function main(): void {}\n",
+            "`@CStruct` accepts exactly one object-literal argument",
+        ),
+    ] {
+        let diagnostics = check_program(&[SourceFile::new(name, source)])
+            .expect_err("invalid alignment options must fail");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{name}");
+        assert_eq!(diagnostics[0].pos.line, 1, "{name}");
+        assert_eq!(diagnostics[0].message, message, "{name}");
+    }
 }
 
 #[test]

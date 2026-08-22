@@ -807,11 +807,25 @@ impl<'m> Emitter<'m> {
             Type::Class(id) => {
                 let _ = writeln!(out, "typedef struct {name} {{");
                 let class = self.class(*id)?;
+                let alignment = class.alignment_override.as_ref().map(|value| value.value);
                 if class.fields.is_empty() {
-                    let _ = writeln!(out, "    char subscript_opaque;");
+                    if let Some(alignment) = alignment {
+                        let _ = writeln!(out, "    _Alignas({alignment}) char subscript_opaque;");
+                    } else {
+                        let _ = writeln!(out, "    char subscript_opaque;");
+                    }
                 }
-                for field in &class.fields {
-                    let _ = writeln!(out, "    {};", self.field_decl(&field.name, &field.ty)?);
+                for (index, field) in class.fields.iter().enumerate() {
+                    let prefix = if index == 0 {
+                        alignment.map_or_else(String::new, |value| format!("_Alignas({value}) "))
+                    } else {
+                        String::new()
+                    };
+                    let _ = writeln!(
+                        out,
+                        "    {prefix}{};",
+                        self.field_decl(&field.name, &field.ty)?
+                    );
                 }
                 let _ = writeln!(out, "}} {name};");
             }

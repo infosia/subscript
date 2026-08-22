@@ -349,6 +349,20 @@ impl<'a> Validator<'a> {
             align = align.max(field_layout.align);
         }
         if complete {
+            let natural_align = align;
+            if let Some(override_) = &class.alignment_override {
+                if u64::from(override_.value) < natural_align {
+                    self.diagnostics.push(Diagnostic::new(
+                        RuleCode::S100,
+                        format!(
+                            "requested alignment {} is below the natural alignment {} for `{}`",
+                            override_.value, natural_align, class.name
+                        ),
+                        override_.pos.clone(),
+                    ));
+                }
+                align = align.max(u64::from(override_.value));
+            }
             match round_up(size.max(1), align) {
                 Outcome::Layout(layout) => outcome = Outcome::Layout(layout),
                 _ => {

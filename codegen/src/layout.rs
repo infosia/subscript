@@ -114,7 +114,7 @@ pub struct StructLayout {
     pub name: String,
     /// Total size in bytes, rounded up to `align`.
     pub size: u32,
-    /// Alignment in bytes (the maximum field alignment).
+    /// Alignment in bytes after the class-level override.
     pub align: u32,
     /// Fields in declaration (C layout) order.
     pub fields: Vec<FieldLayout>,
@@ -239,6 +239,9 @@ impl<'m> Builder<'m> {
             field_offsets.push(size);
             size = checked_add_size(size, fs, "class field layout")?;
             align = align.max(fa);
+        }
+        if let Some(override_) = &class.alignment_override {
+            align = align.max(override_.value);
         }
         size = round_up(size.max(1), align)?;
         let layout = ClassLayout {
@@ -776,6 +779,27 @@ mod tests {
                     offset: 4
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn value_class_layouts_report_alignment_overrides() {
+        let module = module_of(
+            "@CStruct({ align: 16 })\nclass Vec3f { x: f32; y: f32; z: f32; }\n@CStruct\nclass Mixed { a: f32; p: Vec3f; }\n@CStruct\nclass Mat3x3f { c0: Vec3f; c1: Vec3f; c2: Vec3f; }\nexport function main(): void {}\n",
+        );
+        let layouts = value_class_layouts(&module).expect("layouts");
+        assert_eq!(layouts.len(), 3);
+        assert_eq!((layouts[0].size, layouts[0].align), (16, 16));
+        assert_eq!((layouts[1].size, layouts[1].align), (32, 16));
+        assert_eq!(layouts[1].fields[1].offset, 16);
+        assert_eq!((layouts[2].size, layouts[2].align), (48, 16));
+        assert_eq!(
+            layouts[2]
+                .fields
+                .iter()
+                .map(|field| field.offset)
+                .collect::<Vec<_>>(),
+            vec![0, 16, 32]
         );
     }
 

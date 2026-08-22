@@ -214,6 +214,7 @@ pub(crate) struct GenericClass {
     pub file: usize,
     pub is_value: bool,
     pub is_descriptor: bool,
+    pub alignment_override: Option<hir::AlignmentOverride>,
     pub type_params: Vec<String>,
     pub class: ast::Class,
     pub pos: Pos,
@@ -973,14 +974,86 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn class_decorators(&mut self, class: &ast::Class) -> (bool, bool) {
+    fn cstruct_alignment(call: &ast::CallExpr) -> Result<u32, &'static str> {
+        if call.args.len() != 1 || call.args[0].spread.is_some() {
+            return Err("`@CStruct` accepts exactly one object-literal argument");
+        }
+        let ast::Expr::Object(options) = &*call.args[0].expr else {
+            return Err("`@CStruct` accepts exactly one object-literal argument");
+        };
+        if options.props.len() != 1 {
+            return Err("`@CStruct` options must contain only the `align` key");
+        }
+        let ast::PropOrSpread::Prop(prop) = &options.props[0] else {
+            return Err("`@CStruct` options must contain only the `align` key");
+        };
+        let ast::Prop::KeyValue(property) = &**prop else {
+            return Err("`@CStruct` options must contain only the `align` key");
+        };
+        let is_align = match &property.key {
+            ast::PropName::Ident(key) => key.sym.as_ref() == "align",
+            ast::PropName::Str(key) => key.value.as_str() == "align",
+            _ => false,
+        };
+        if !is_align {
+            return Err("`@CStruct` options must contain only the `align` key");
+        }
+        let ast::Expr::Lit(ast::Lit::Num(number)) = &*property.value else {
+            return Err("`@CStruct` alignment must be an integer literal in {2, 4, 8, 16}");
+        };
+        let value = number.value;
+        if value.fract() != 0.0 || !matches!(value as u32, 2 | 4 | 8 | 16) {
+            return Err("`@CStruct` alignment must be an integer literal in {2, 4, 8, 16}");
+        }
+        Ok(value as u32)
+    }
+
+    fn class_decorators(
+        &mut self,
+        class: &ast::Class,
+    ) -> (bool, bool, Option<hir::AlignmentOverride>) {
         let mut is_value = false;
         let mut is_descriptor = false;
+        let mut alignment_override = None;
         for dec in &class.decorators {
             match &*dec.expr {
                 ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct" => is_value = true,
                 ast::Expr::Ident(id) if id.sym.as_ref() == "Descriptor" => {
                     is_descriptor = true;
+                }
+                ast::Expr::Call(call)
+                    if matches!(
+                        &call.callee,
+                        ast::Callee::Expr(callee)
+                            if matches!(&**callee, ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct")
+                    ) =>
+                {
+                    is_value = true;
+                    match Self::cstruct_alignment(call) {
+                        Ok(value) => {
+                            alignment_override = Some(hir::AlignmentOverride {
+                                value,
+                                pos: self.pos(dec.span),
+                            });
+                        }
+                        Err(message) => {
+                            self.error(RuleCode::S100, message, self.pos(dec.span));
+                        }
+                    }
+                }
+                ast::Expr::Call(call)
+                    if matches!(
+                        &call.callee,
+                        ast::Callee::Expr(callee)
+                            if matches!(&**callee, ast::Expr::Ident(id) if id.sym.as_ref() == "Descriptor")
+                    ) =>
+                {
+                    is_descriptor = true;
+                    self.error(
+                        RuleCode::S100,
+                        "`@Descriptor` does not accept options",
+                        self.pos(dec.span),
+                    );
                 }
                 _ => {
                     let pos = self.pos(dec.span);
@@ -999,13 +1072,13 @@ impl<'p> Checker<'p> {
                 self.pos(class.span),
             );
         }
-        (is_value, is_descriptor)
+        (is_value, is_descriptor, alignment_override)
     }
 
     fn collect_class(&mut self, file: usize, c: &ast::ClassDecl, exported: bool) {
         let name = c.ident.sym.to_string();
         let pos = self.pos(c.ident.span);
-        let (is_value, is_descriptor) = self.class_decorators(&c.class);
+        let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class);
         if let Some(tp) = &c.class.type_params {
             if !is_descriptor {
                 for member in &c.class.body {
@@ -1029,6 +1102,7 @@ impl<'p> Checker<'p> {
                     file,
                     is_value,
                     is_descriptor,
+                    alignment_override,
                     type_params,
                     class: (*c.class).clone(),
                     pos: pos.clone(),
@@ -1036,7 +1110,13 @@ impl<'p> Checker<'p> {
             );
             self.register_scope_item(file, &name, ScopeItem::GenericClass(name.clone()), pos);
         } else {
-            let id = self.new_class(&name, is_value, is_descriptor, pos.clone());
+            let id = self.new_class(
+                &name,
+                is_value,
+                is_descriptor,
+                alignment_override,
+                pos.clone(),
+            );
             self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
         }
         if exported {
@@ -1049,12 +1129,14 @@ impl<'p> Checker<'p> {
         name: &str,
         is_value: bool,
         is_descriptor: bool,
+        alignment_override: Option<hir::AlignmentOverride>,
         pos: Pos,
     ) -> ClassId {
         let id = ClassId(self.classes.len());
         self.classes.push(hir::ClassDef {
             name: name.to_string(),
             is_value,
+            alignment_override,
             is_descriptor,
             is_boundary: false,
             fields: Vec::new(),
@@ -1451,7 +1533,7 @@ impl<'p> Checker<'p> {
     fn collect_handle(&mut self, file: usize, i: &ast::TsInterfaceDecl) {
         let name = i.id.sym.to_string();
         let pos = self.pos(i.id.span);
-        let id = self.new_class(&name, false, false, pos.clone());
+        let id = self.new_class(&name, false, false, None, pos.clone());
         self.handle_classes.insert(id);
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }
@@ -1462,7 +1544,7 @@ impl<'p> Checker<'p> {
     fn collect_boundary_struct(&mut self, file: usize, c: &ast::ClassDecl) {
         let name = c.ident.sym.to_string();
         let pos = self.pos(c.ident.span);
-        let id = self.new_class(&name, true, false, pos.clone());
+        let id = self.new_class(&name, true, false, None, pos.clone());
         self.boundary_classes.insert(id);
         self.classes[id.0].is_boundary = true;
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
@@ -3265,6 +3347,7 @@ impl<'p> Checker<'p> {
             &name,
             template.is_value,
             template.is_descriptor,
+            template.alignment_override,
             template.pos.clone(),
         );
         self.resolve_class_shape(id, &template.class);

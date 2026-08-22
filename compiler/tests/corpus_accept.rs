@@ -159,7 +159,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        139,
+        140,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -198,7 +198,8 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          wire-enum boundary-struct entry, the a132 R26 full-width integer-literal entry, and the \
          a133–a134 R27 field-initializer entries, the a135 R28 binary32 bit-access entry, and the \
          a136 R29 class-index-signature entry, the a137 R30 handle-entry-parameter entry, and the \
-         a138–a139 R31 using-declaration entries, and the a140 R32 wire-entry-parameter entry"
+         a138–a139 R31 using-declaration entries, the a140 R32 wire-entry-parameter entry, and the \
+         a141 R33 CStruct-alignment entry"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
@@ -447,6 +448,20 @@ fn a12_generics_are_monomorphized_in_hir() {
     // Templates never survive monomorphization.
     assert!(module.functions.iter().all(|f| f.name != "identity"));
     assert!(module.classes.iter().all(|c| c.name != "Box"));
+}
+
+#[test]
+fn generic_value_classes_carry_alignment_overrides() {
+    let source = "@CStruct({ align: 16 })\nclass Box<T> { value: T; constructor(value: T) { this.value = value; } }\nexport function main(): void { const integer: Box<i32> = new Box<i32>(1); const float: Box<f64> = new Box<f64>(2.0); print(`${integer.value}:${float.value}`); }\n";
+    let module = subscript_compiler::check_program(&[SourceFile::new("generic-align.ts", source)])
+        .expect("generic aligned classes check clean");
+    for name in ["Box<i32>", "Box<f64>"] {
+        let override_ = find_class(&module, name)
+            .alignment_override
+            .as_ref()
+            .expect("alignment override");
+        assert_eq!(override_.value, 16, "{name}");
+    }
 }
 
 #[test]

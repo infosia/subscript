@@ -37,6 +37,9 @@ declare function CStruct<T extends abstract new (...args: never[]) => object>(
   target: T,
   context: ClassDecoratorContext,
 ): T;
+declare function CStruct(options: { align: 2 | 4 | 8 | 16 }):
+  <T extends abstract new (...args: never[]) => object>(
+    target: T, context: ClassDecoratorContext) => T;
 
 declare function Descriptor<T extends abstract new (...args: never[]) => object>(
   target: T,

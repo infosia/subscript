@@ -883,6 +883,17 @@ fn binary32_bit_access_uses_the_declared_runtime_symbols() {
 }
 
 #[test]
+fn aligned_value_class_emits_alignas_on_the_first_field() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "@CStruct({ align: 16 })\nclass Vec3f { x: f32; y: f32; z: f32; }\nexport function main(): void { const value: Vec3f = new Vec3f(); print(`${value.x}`); }\n";
+    let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
+    let c = emit_c(&hir).expect("emit C").source;
+    assert!(c.contains("    _Alignas(16) float x;"), "{c}");
+}
+
+#[test]
 fn host_callable_export_emits_handle_and_scalar_parameters() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

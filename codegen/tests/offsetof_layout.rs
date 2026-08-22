@@ -486,6 +486,32 @@ class SGPUProbeUnmarkedColorTargetState {
   writeMask: u64;
 }
 
+@CStruct({ align: 16 })
+class Vec3f {
+  x: f32;
+  y: f32;
+  z: f32;
+}
+
+@CStruct
+class Mixed {
+  a: f32;
+  p: Vec3f;
+}
+
+@CStruct
+class Mat3x3f {
+  c0: Vec3f;
+  c1: Vec3f;
+  c2: Vec3f;
+}
+
+@CStruct({ align: 8 })
+class Vec2f {
+  x: f32;
+  y: f32;
+}
+
 export function main(): void {}
 "#;
 
@@ -568,6 +594,10 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
             "SGPUProbeUnmarkedColorTargetState",
             vec!["format", "blend", "writeMask"],
         ),
+        ("Vec3f", vec!["x", "y", "z"]),
+        ("Mixed", vec!["a", "p"]),
+        ("Mat3x3f", vec!["c0", "c1", "c2"]),
+        ("Vec2f", vec!["x", "y"]),
     ]
 }
 
@@ -622,6 +652,12 @@ fn c_truth(structs: &[(&'static str, Vec<&'static str>)]) -> BTreeMap<String, CL
     body.push_str("#include \"interop.h\"\n");
     body.push_str("#include <stddef.h>\n");
     body.push_str("#include <stdio.h>\n");
+    body.push_str(
+        "typedef struct Vec3f { _Alignas(16) float x; float y; float z; } Vec3f;\n\
+         typedef struct Mixed { float a; Vec3f p; } Mixed;\n\
+         typedef struct Mat3x3f { Vec3f c0; Vec3f c1; Vec3f c2; } Mat3x3f;\n\
+         typedef struct Vec2f { _Alignas(8) float x; float y; } Vec2f;\n",
+    );
     body.push_str("int main(void) {\n");
     for (name, fields) in structs {
         // Line: NAME|size|align|field=offset|field=offset...

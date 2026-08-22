@@ -24,7 +24,7 @@ impl Checker<'_> {
         if let Some(&id) = self.class_ids.get(&name) {
             return id;
         }
-        let id = self.new_class(&name, false, false, pos.clone());
+        let id = self.new_class(&name, false, false, None, pos.clone());
         self.classes[id.0].fields = vec![
             hir::Field {
                 name: "ok".to_string(),

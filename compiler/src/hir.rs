@@ -129,6 +129,8 @@ pub struct ClassDef {
     pub name: String,
     /// True for `@CStruct class` (C-layout, copy semantics — C2).
     pub is_value: bool,
+    /// The explicit value-class alignment and its decorator position.
+    pub alignment_override: Option<AlignmentOverride>,
     /// True for a literal-constructible `@Descriptor` reference class
     /// (Q33). Descriptor classes have fields only; object literals lower
     /// through [`ExprKind::DescriptorLit`].
@@ -150,6 +152,16 @@ pub struct ClassDef {
     /// The class index signature that rewrites indexed access to `get` and `set` calls.
     pub index_signature: Option<IndexSignature>,
     /// Position of the declaration.
+    pub pos: Pos,
+}
+
+/// An explicit alignment on an `@CStruct` value class.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AlignmentOverride {
+    /// The requested alignment in bytes.
+    pub value: u32,
+    /// Position of the decorator that requests the alignment.
     pub pos: Pos,
 }
 
