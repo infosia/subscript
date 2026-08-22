@@ -1979,3 +1979,124 @@ the rejection for `a135` and `r127` before the implementation.
   zero-warning `cargo build --offline --workspace --all-targets`;
   `cargo fmt --check`; `./node_modules/.bin/tsc -p tsconfig.json`;
   every pre-existing golden and `.expected` byte-identical.
+
+## 18. R34 — the bytes of a value: `Context.bytesOf`, `bytesInto`, `fromBytes`
+
+Origin: downstream request R34, 2026-08-22, at pin `ba6aa2e`. R33
+(compiler.md §62) made the C layout of a schema class equal its WGSL
+layout. The upload path takes `u8[]`. No construct yields the bytes
+of a value class or of a `FixedArray`, so the downstream generates
+one encoder per schema over `Math.f32ToBits`. This section adds the
+bytes path that R33 exists to enable.
+
+Measurements at the pin, on this host:
+
+1. `Context` is an ambient namespace with `collect`, `free`, and
+   `suspend` (`prelude/lang.d.ts`; `compiler/src/ambient.rs`
+   `context_fn`; `hir::AmbientFn`). A member outside that set fails
+   with S014 "`Context.<name>` is outside the accepted Context
+   subset". `JSON.parse<T>` is the model for an explicit type
+   argument on an ambient call (`compiler/src/check/json.rs`).
+2. A dynamic array is a runtime object: `subscript_rt_array_new(ctx,
+   elem_size, pos_id)`, `subscript_rt_array_len`,
+   `subscript_rt_array_data` (`runtime/src/ffi.rs`). `u8[]` has
+   element size 1.
+3. Both tiers zero a fresh aggregate (`zero_bytes` in
+   `codegen/src/lower/func.rs`; `memset(&_this, 0, sizeof _this)`
+   in `codegen/src/cemit.rs`). C11 does not specify the padding
+   bytes after a struct assignment or a by-value return *(docs)*;
+   clang 21 at `-O2` preserved them in one probe. The rule below does
+   not depend on that.
+4. `codegen/src/layout.rs` holds every field offset, size, and
+   `FixedArray` stride, so the compiler knows every padding byte of
+   a type.
+
+### 18.1 Rule
+
+Three new `Context` members:
+
+    Context.bytesOf<T>(value: T): u8[]
+    Context.bytesInto<T>(value: T, target: u8[], offset: u32): void
+    Context.fromBytes<T>(bytes: u8[], offset: u32): T
+
+1. `T` is explicit, as every generic in subscript. A missing or
+   extra type argument is S014.
+2. `T` is a `@CStruct` value class or a `FixedArray<E, N>`. Every
+   byte of `T`'s storage, transitively through value-class fields
+   and `FixedArray` elements, is a sized numeric, a `boolean`, an
+   enum, or padding. Any other `T` — a scalar alone, a reference
+   class, a `string`, a handle, a nullable, a function, a
+   string-literal alias, a boundary struct or a `FixedArray` with
+   any of those in its storage — is an S100 that names `T` and, for
+   a field, the field.
+3. The argument `value` has type `T` (nominal equality); the arrays
+   are `u8[]`; `offset` is `u32`.
+4. `bytesOf` returns a new `u8[]` of length `sizeof(T)` (the layout
+   size, compiler.md §62 rule 1 included). Field bytes are the
+   storage bytes in memory order (little-endian on every dev
+   target). **Every padding byte is zero.** `bytesInto` writes the
+   same `sizeof(T)` bytes into `target` at `offset`.
+5. `fromBytes` returns a `T` whose storage is the `sizeof(T)` bytes
+   at `offset`, padding included. No constructor and no field
+   initializer (compiler.md §57) runs.
+6. `bytesInto` and `fromBytes` trap (kind 1, `IndexOutOfBounds`)
+   when `offset + sizeof(T)` exceeds the array length. The message
+   names the offset, `sizeof(T)`, and the length. The comparison
+   is exact; it does not overflow.
+7. Both tiers produce the same bytes. The dev tier copies from the
+   aggregate storage (`Repr::Agg { size }`); the ship tier copies
+   with `memcpy` and `sizeof`. Both then zero the padding ranges
+   that the compiler computes from the layout, so the output does
+   not depend on what a C copy did with padding.
+8. Nothing else changes: copy-on-assign, Worker messaging, the
+   value-class whitelist, and the host ABI. No overridden class
+   crosses the host ABI by value; the bytes path is the channel.
+
+### 18.2 Changes by site
+
+- `prelude/lang.d.ts` `namespace Context`: the three declarations.
+- `compiler/src/ambient.rs`, `compiler/src/hir.rs`: the three
+  members as typed intrinsics (an `ExprKind` or an `AmbientFn`
+  extension with a type payload — the coding agent's call); the
+  layout-element check for rule 2.
+- `compiler/src/check/expr.rs`: the call forms with explicit type
+  arguments; the rejections of rules 1–3.
+- `codegen/src/layout.rs`: a public padding-range computation for
+  a type (the ranges of bytes that are not a scalar), shared by
+  both tiers.
+- `codegen/src/lower/func.rs`, `codegen/src/cemit.rs`: the copies,
+  the padding zeroing, the range trap at the call's trap site.
+- `runtime/src/ffi.rs`: only if a new entry point is needed (an
+  array construction from a byte span); the existing
+  `array_new`/`array_push`/`array_data` may suffice.
+
+### 18.3 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: `Context.bytesOf` fails with the
+S014 in item 1 (this host).
+
+1. `corpus/accept/a142-bytes-of.ts` + `.expected`: `Vec3f` with
+   `align: 16`; a `FixedArray<Vec3f, 2>`; prints
+   `bytesOf(array).length` (32); prints all 16 bytes of one element
+   (`1.0, 2.0, 3.0` → `0,0,128,63,0,0,0,64,0,0,64,64,0,0,0,0`);
+   `bytesInto` at an offset into a longer `u8[]` and a byte read at
+   that offset; `fromBytes` round-trip printed through field reads.
+   Golden from the dev JIT; ship byte-identical.
+2. `corpus/reject/r138-bytes-of-reference-class.ts`: `bytesOf<Node>`
+   on a plain class; S100 names `Node`.
+3. `corpus/reject/r139-bytes-of-string-element.ts`:
+   `bytesOf<FixedArray<string, 2>>`; S100.
+4. `corpus/trap/t51-bytes-into-range.ts` + `.expected`: `bytesInto`
+   with `offset + sizeof(T)` past the end; kind 1 on both tiers.
+5. Unit tests in the same commit: a boundary struct with a `string`
+   field (an inline ambient mirror) is S100 with the field name; a
+   missing type argument is S014; `bytesOf` of a `Mixed { a: f32;
+   p: Vec3f }` value is 32 bytes with zero at 4..16 and 28..32 on
+   both tiers (a `fromBytes` from a non-zero-padding source, then
+   `bytesOf`, shows zero padding); the padding-range computation
+   for `Vec3f`, `Mixed`, and `FixedArray<Vec3f, 2>`.
+6. Counts: accept `.ts` 140 → 141; `.expected` 141 → 142; rejects
+   133 → 135; trap corpus 50 → 51. The generated docs regenerate.
+7. Gates: `cargo test --offline --workspace` in both profiles;
+   zero-warning build; `cargo fmt --check`; the `tsc` gate; every
+   pre-existing golden and `.expected` byte-identical.
