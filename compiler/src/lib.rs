@@ -31,6 +31,14 @@ pub use parse::parse_import_specifiers;
 pub use types::{ClassId, EnumId, FuncType, StringAliasId, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
 
+/// Options that control program checking.
+#[non_exhaustive]
+#[derive(Debug, Clone, Default)]
+pub struct CheckOptions {
+    /// Import specifiers to bind as poisoned when absent.
+    pub poison_missing_modules: Vec<String>,
+}
+
 /// One source file of a program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFile {
@@ -83,6 +91,19 @@ impl SourceFile {
 /// Returns the diagnostic list when the program parses with errors or
 /// violates any language rule.
 pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic>> {
+    check_program_with(files, &CheckOptions::default())
+}
+
+/// Checks a program with the specified options.
+///
+/// # Errors
+///
+/// Returns the diagnostic list when the program parses with errors or
+/// violates any language rule.
+pub fn check_program_with(
+    files: &[SourceFile],
+    options: &CheckOptions,
+) -> Result<hir::Module, Vec<Diagnostic>> {
     if files.is_empty() {
         return Err(vec![Diagnostic::new(
             RuleCode::S100,
@@ -92,7 +113,7 @@ pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic
     }
     swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
         let parsed = parse::parse_program(files)?;
-        check::run(&parsed)
+        check::run(&parsed, options)
     })
 }
 

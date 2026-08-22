@@ -476,6 +476,14 @@ impl<'p> Checker<'p> {
         }
 
         match self.scope_item(name) {
+            Some(ScopeItem::Poisoned) => {
+                if let Some(arguments) = &r.type_params {
+                    for argument in &arguments.params {
+                        let _ = self.resolve_type(argument);
+                    }
+                }
+                Type::Error
+            }
             Some(ScopeItem::Class(id)) => {
                 if r.type_params.is_some() {
                     self.error(RuleCode::S100, format!("`{}` is not generic", name), pos);

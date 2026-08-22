@@ -134,11 +134,12 @@ pub struct StructLayout {
 /// returned [`StructLayout`] against `sizeof`/`_Alignof`/`offsetof`
 /// taken from the equivalent C struct via the platform C compiler.
 ///
-/// Returns an internal-error string (never panics) when a layout cannot
-/// be computed — a value-class containment cycle or an out-of-range
-/// class id.
+/// # Errors
+///
+/// Returns an error for a discovery HIR or an invalid value-class layout.
 #[must_use = "the computed layouts are the result to compare against C"]
 pub fn value_class_layouts(module: &hir::Module) -> Result<Vec<StructLayout>, String> {
+    reject_discovery_hir(module)?;
     let layouts = Layouts::build(module)?;
     let mut out = Vec::new();
     for (id, class) in module.classes.iter().enumerate() {
@@ -172,10 +173,21 @@ pub fn value_class_layouts(module: &hir::Module) -> Result<Vec<StructLayout>, St
 ///
 /// # Errors
 ///
-/// Returns an internal error when the type layout is invalid.
+/// Returns an error for a discovery HIR or an invalid type layout.
 pub fn padding_ranges(module: &hir::Module, ty: &Type) -> Result<Vec<Range<u32>>, String> {
+    reject_discovery_hir(module)?;
     let layouts = Layouts::build(module)?;
     layouts.padding_ranges(module, ty)
+}
+
+fn reject_discovery_hir(module: &hir::Module) -> Result<(), String> {
+    if let Some(import) = module.poisoned_imports.first() {
+        return Err(format!(
+            "cannot lay out discovery HIR: poisoned import `{}`",
+            import.module
+        ));
+    }
+    Ok(())
 }
 
 fn ensure_supported_size(size: u32, context: &str) -> Result<u32, String> {

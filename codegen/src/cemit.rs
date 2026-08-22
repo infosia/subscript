@@ -138,8 +138,8 @@ pub struct CProgram {
 ///
 /// # Errors
 ///
-/// Returns an error string when the module uses an HIR construct outside
-/// the run set's scope, or has no exported `main(): void`.
+/// Returns an error for a discovery HIR, an unsupported HIR construct,
+/// or a missing exported `main(): void`.
 pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
     Emitter::new(module)?.emit(true)
 }
@@ -153,8 +153,7 @@ pub fn emit_c(module: &hir::Module) -> Result<CProgram, String> {
 ///
 /// # Errors
 ///
-/// Returns an error string when the module uses an HIR construct outside
-/// the run set's scope.
+/// Returns an error for a discovery HIR or an unsupported HIR construct.
 pub fn emit_c_without_main(module: &hir::Module) -> Result<CProgram, String> {
     Emitter::new(module)?.emit(false)
 }
@@ -326,6 +325,12 @@ struct Emitter<'m> {
 
 impl<'m> Emitter<'m> {
     fn new(module: &'m hir::Module) -> Result<Emitter<'m>, String> {
+        if let Some(import) = module.poisoned_imports.first() {
+            return Err(format!(
+                "cannot emit discovery HIR: poisoned import `{}`",
+                import.module
+            ));
+        }
         Ok(Emitter {
             module,
             layouts: Layouts::build(module)?,

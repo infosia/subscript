@@ -1227,6 +1227,12 @@ pub(crate) fn lower_module_with<M: Module>(
     hirm: &hir::Module,
     opts: LowerOptions,
 ) -> Result<Lowered, String> {
+    if let Some(import) = hirm.poisoned_imports.first() {
+        return Err(format!(
+            "cannot lower discovery HIR: poisoned import `{}`",
+            import.module
+        ));
+    }
     if module.isa().pointer_type() != types::I64 {
         return Err(internal(
             "only 64-bit targets are supported: the runtime ABI assumes 8-byte handles",
@@ -1569,10 +1575,13 @@ pub(crate) fn lower_module_with<M: Module>(
 mod tests {
     use super::{
         aot_flags, boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul,
-        dev_flags, round_up_layout,
+        dev_flags, lower_module_with, round_up_layout, LowerOptions,
     };
     use cranelift_codegen::settings::ProbestackStrategy;
+    use cranelift_jit::{JITBuilder, JITModule};
+    use cranelift_module::default_libcall_names;
     use std::str::FromStr;
+    use subscript_compiler::{check_program_with, CheckOptions, SourceFile};
     use target_lexicon::Triple;
 
     #[test]
@@ -1621,5 +1630,35 @@ mod tests {
         assert!(round_up_layout(u32::MAX, 8, "test layout").is_err());
         assert!(checked_layout_add(i32::MAX as u32, 1, "test layout").is_err());
         assert!(checked_layout_mul(i32::MAX as u32, 8, "test layout").is_err());
+    }
+
+    #[test]
+    fn dev_lowering_rejects_a_discovery_hir() {
+        let source = "import { A_SIZE } from \"./p.typegpu\";\n\
+                      export function main(): void { const size: i32 = A_SIZE; }\n";
+        let mut options = CheckOptions::default();
+        options.poison_missing_modules = vec!["./p.typegpu".to_string()];
+        let hir = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+            .expect("discovery check");
+
+        let isa = cranelift_native::builder()
+            .expect("host ISA")
+            .finish(dev_flags().expect("dev flags"))
+            .expect("ISA flags");
+        let builder = JITBuilder::with_isa(isa, default_libcall_names());
+        let mut module = JITModule::new(builder);
+        let result = lower_module_with(&mut module, &hir, LowerOptions::default());
+
+        // SAFETY: the discovery guard returned before the module received code or data.
+        unsafe { module.free_memory() };
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("discovery HIR must not lower"),
+        };
+
+        assert_eq!(
+            error,
+            "cannot lower discovery HIR: poisoned import `./p.typegpu`"
+        );
     }
 }

@@ -357,7 +357,12 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let Some(ScopeItem::Func(function)) = self.scope_item(&name) else {
+                let item = self.scope_item(&name);
+                if matches!(item, Some(ScopeItem::Poisoned)) {
+                    self.check_poisoned_arguments(&call.args, fx);
+                    return self.err_expr(pos);
+                }
+                let Some(ScopeItem::Func(function)) = item else {
                     self.error(
                         RuleCode::S100,
                         format!("`{name}` is not a directly declared async function"),
@@ -724,6 +729,7 @@ impl<'p> Checker<'p> {
             return expr;
         }
         match self.scope_item(&name) {
+            Some(ScopeItem::Poisoned) => self.err_expr(pos),
             Some(ScopeItem::Global(g)) => {
                 // A mirror flag member (§13.2) folds to its C value here, so
                 // both tiers emit an immediate rather than reading a global.
@@ -2135,6 +2141,7 @@ impl<'p> Checker<'p> {
             return Some(self.err_expr(prop_pos));
         }
         match self.scope_item(&name) {
+            Some(ScopeItem::Poisoned) => Some(self.err_expr(prop_pos)),
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
                 if prop == "prototype" {
                     self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
@@ -2654,7 +2661,12 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let Some(ScopeItem::Func(function)) = self.scope_item(ident.sym.as_ref()) else {
+        let item = self.scope_item(ident.sym.as_ref());
+        if matches!(item, Some(ScopeItem::Poisoned)) {
+            self.check_poisoned_arguments(&c.args, fx);
+            return self.err_expr(pos);
+        }
+        let Some(ScopeItem::Func(function)) = item else {
             self.error(
                 RuleCode::S100,
                 "`Worker.spawn` entry must name a non-generic module-level function directly",
@@ -5282,6 +5294,9 @@ impl<'p> Checker<'p> {
                         };
                     }
                 }
+                if matches!(self.scope_item(&name), Some(ScopeItem::Poisoned)) {
+                    return self.err_expr(ident_pos);
+                }
                 self.error(
                     RuleCode::S100,
                     format!("`{}` is not an assignable binding", name),
@@ -5391,6 +5406,10 @@ impl<'p> Checker<'p> {
             return self.check_indirect_call(callee, c, fx, pos);
         }
         match self.scope_item(&name) {
+            Some(ScopeItem::Poisoned) => {
+                self.check_poisoned_arguments(&c.args, fx);
+                self.err_expr(pos)
+            }
             Some(ScopeItem::Func(f)) => {
                 if c.type_args.is_some() {
                     self.error(
@@ -6213,6 +6232,12 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn check_poisoned_arguments(&mut self, args: &[ast::ExprOrSpread], fx: &mut FnCtx) {
+        for argument in args {
+            let _ = self.check_expr(&argument.expr, None, fx);
+        }
+    }
+
     fn check_args(
         &mut self,
         params: &[ParamSig],
@@ -6380,6 +6405,12 @@ impl<'p> Checker<'p> {
             };
         }
         let class_id = match self.scope_item(&name) {
+            Some(ScopeItem::Poisoned) => {
+                if let Some(arguments) = &n.args {
+                    self.check_poisoned_arguments(arguments, fx);
+                }
+                return self.err_expr(pos);
+            }
             Some(ScopeItem::Class(class_id)) => {
                 if n.type_args.is_some() {
                     self.error(

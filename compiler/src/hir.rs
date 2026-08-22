@@ -3,7 +3,8 @@
 //! Every expression node carries its resolved [`Type`] and a TS [`Pos`].
 //! Generic declarations are monomorphized here: the module contains one
 //! function/class per instantiation (e.g. `identity<i32>`), never a
-//! generic template.
+//! generic template. A discovery HIR can contain [`Type::Error`] and one
+//! or more [`PoisonedImport`] records.
 
 use crate::diag::Pos;
 use crate::types::{ClassId, EnumId, Type};
@@ -15,6 +16,8 @@ pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Module {
+    /// Imports that refer to absent modules during a discovery check.
+    pub poisoned_imports: Vec<PoisonedImport>,
     /// Class definitions (value and reference), indexed by [`ClassId`].
     pub classes: Vec<ClassDef>,
     /// Enum definitions, indexed by [`EnumId`].
@@ -40,6 +43,18 @@ pub struct Module {
     /// Checked top-level non-declaration statements, in source order
     /// (the accept corpus has none; kept for completeness).
     pub top_level: Vec<Stmt>,
+}
+
+/// One import statement of an absent module, accepted during a discovery check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PoisonedImport {
+    /// The specifier as written in the import.
+    pub module: String,
+    /// `(imported, local)` name pairs in source order.
+    pub names: Vec<(String, String)>,
+    /// Source position of the module specifier string.
+    pub pos: Pos,
 }
 
 /// One monomorphized Q35 runtime-to-script worker entry adapter.
@@ -3730,6 +3745,7 @@ mod tests {
     #[test]
     fn module_is_constructible_empty() {
         let m = Module {
+            poisoned_imports: Vec::new(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: Vec::new(),

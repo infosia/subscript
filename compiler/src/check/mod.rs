@@ -23,6 +23,14 @@ use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::provenance;
 use crate::types::{ClassId, EnumId, StringAliasId, Type};
+use crate::CheckOptions;
+
+fn normalize_module_specifier(specifier: &str) -> String {
+    specifier
+        .trim_start_matches("./")
+        .trim_end_matches(".ts")
+        .to_string()
+}
 
 fn module_decl(item: &ast::ModuleItem) -> Option<&ast::Decl> {
     match item {
@@ -223,6 +231,7 @@ pub(crate) struct GenericClass {
 /// What a top-level name refers to inside one file's scope.
 #[derive(Debug, Clone)]
 pub(crate) enum ScopeItem {
+    Poisoned,
     Func(String),
     GenericFunc(String),
     Class(ClassId),
@@ -340,6 +349,8 @@ pub(crate) struct Checker<'p> {
     pub exports: Vec<HashSet<String>>,
     pub exported_fns: HashSet<String>,
     pub top_level: Vec<hir::Stmt>,
+    pub poison_missing_modules: HashSet<String>,
+    pub poisoned_imports: Vec<hir::PoisonedImport>,
     pub cur_file: usize,
     pub subst: HashMap<String, Type>,
     /// Global ambient names contributed by ingested mirror (`.d.ts`)
@@ -408,7 +419,10 @@ pub(crate) struct Checker<'p> {
 }
 
 /// Runs the checker over a parsed program.
-pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> {
+pub(crate) fn run(
+    prog: &ParsedProgram,
+    options: &CheckOptions,
+) -> Result<hir::Module, Vec<Diagnostic>> {
     let mut ck = Checker {
         prog,
         diags: Vec::new(),
@@ -429,6 +443,12 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
         exports: Vec::new(),
         exported_fns: HashSet::new(),
         top_level: Vec::new(),
+        poison_missing_modules: options
+            .poison_missing_modules
+            .iter()
+            .map(|specifier| normalize_module_specifier(specifier))
+            .collect(),
+        poisoned_imports: Vec::new(),
         cur_file: 0,
         subst: HashMap::new(),
         ambient_scope: HashMap::new(),
@@ -508,6 +528,7 @@ pub(crate) fn run(prog: &ParsedProgram) -> Result<hir::Module, Vec<Diagnostic>> 
 
     if ck.diags.is_empty() {
         let mut module = hir::Module {
+            poisoned_imports: ck.poisoned_imports,
             classes: ck.classes,
             enums: ck.enums,
             string_aliases: ck.string_aliases,
@@ -1758,17 +1779,48 @@ impl<'p> Checker<'p> {
                     continue;
                 };
                 let raw = import.src.value.to_string();
-                let stem = raw
-                    .trim_start_matches("./")
-                    .trim_end_matches(".ts")
-                    .to_string();
+                let stem = normalize_module_specifier(&raw);
                 let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
                     let pos = self.pos(import.src.span);
-                    self.error(
-                        RuleCode::S100,
-                        format!("imported module `{}` is not among the program's files", raw),
-                        pos,
-                    );
+                    let missing_message =
+                        format!("imported module `{raw}` is not among the program's files");
+                    if self.poison_missing_modules.contains(&stem) {
+                        if import.specifiers.is_empty() {
+                            self.error(RuleCode::S100, missing_message, pos);
+                            continue;
+                        }
+                        let mut names = Vec::new();
+                        for spec in &import.specifiers {
+                            let ast::ImportSpecifier::Named(named) = spec else {
+                                self.error(
+                                    RuleCode::S100,
+                                    "only named imports are in the decided surface",
+                                    self.pos(spec.span()),
+                                );
+                                continue;
+                            };
+                            let local = named.local.sym.to_string();
+                            let imported = named
+                                .imported
+                                .as_ref()
+                                .map_or_else(|| local.clone(), |name| name.atom().to_string());
+                            additions.push((
+                                local.clone(),
+                                ScopeItem::Poisoned,
+                                self.pos(named.local.span),
+                            ));
+                            names.push((imported, local));
+                        }
+                        if !names.is_empty() {
+                            self.poisoned_imports.push(hir::PoisonedImport {
+                                module: raw,
+                                names,
+                                pos,
+                            });
+                        }
+                    } else {
+                        self.error(RuleCode::S100, missing_message, pos);
+                    }
                     continue;
                 };
                 for spec in &import.specifiers {

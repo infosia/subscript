@@ -131,9 +131,10 @@ pub enum Type {
     /// The value-struct shape `{ done: boolean; value: T }` returned by
     /// `.next()` (C8).
     IterResult(Box<Type>),
-    /// Poison type produced after a diagnostic; assignable everywhere so
-    /// one error does not cascade. Never present in a successful check's
-    /// HIR (success requires zero diagnostics).
+    /// Poison type; assignable everywhere so one error does not cascade.
+    ///
+    /// A discovery HIR (`poisoned_imports` non-empty) can contain this type;
+    /// a HIR with no poisoned import never does.
     Error,
 }
 
