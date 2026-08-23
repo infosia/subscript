@@ -174,7 +174,10 @@ Accept: `a20`, `a93`–`a95`. Reject: `r96`–`r100` (Q34 boundaries;
 *Revised 2026-08-02 (R13):* async instance methods on plain,
 non-generic reference classes join the surface —
 `await recv.m(...)` as a third direct-await form (`compiler.md`
-§37). Accept adds `a110`–`a111`; reject adds `r101`–`r105`.
+§37). Accept adds `a110`–`a111`; reject adds `r101`–`r105`. *Revised 2026-08-23 (R36):* the class can be generic, and
+a generic async function with explicit type arguments is awaitable
+(`compiler.md` §64). Accept adds `a143`; reject adds `r140`;
+`r104` retired.
 
 ### C9. Field initializers — every construction, no `this`
 
@@ -1101,7 +1104,9 @@ Accept: `a138`, `a139`. Reject: `r131-using-nullable-init`,
     *(Revised 2026-08-02, R13: a direct async **method** call in
     await position — `await recv.m(...)` on a plain, non-generic
     reference class — is the third form; `compiler.md` §37. Still
-    not a value; the same immediate-await rule applies.)*
+    not a value; the same immediate-await rule applies. R36,
+    2026-08-23: the class can be generic, and the named function
+    can be a generic instance; `compiler.md` §64.)*
   - **Structure.** Each root invocation of an async export forms a
     single linear chain of Context-owned frames: `await f(...)` runs
     the callee until it suspends, and suspension propagates to the
