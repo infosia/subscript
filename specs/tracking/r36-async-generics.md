@@ -55,7 +55,7 @@ checker rejected an async method on a generic class template (r104,
 
 ## Gates (this host, at `1438b76`)
 
-- `cargo test --offline --workspace`: 59 suites, 990 passed, 0
+- `cargo test --offline --workspace`: 58 suites, 990 passed, 0
   failed, 1 ignored, in both profiles.
 - `cargo build --offline --workspace --all-targets`: 0 warnings.
 - `cargo fmt --check`: exit 0. `tsc` gate: exit 0.
@@ -90,7 +90,8 @@ as every per-instance body error does.
   entries. The suite count is 58, not the 59 the gate list above
   records; the `offsetof` binary runs on both hosts and reports 0
   tests on windows-msvc, so the two hosts hold the same binary
-  count. Correct the clang number at the next run there.
+  count. Corrected: the clang host counts 58 suites at `0c1981c`
+  (the earlier 59 counted one non-result line).
 - `cargo build --offline --workspace --all-targets`: 0 warnings, in
   both profiles.
 - `cargo fmt --check`: exit 0. `tsc` 5.9.2 gate: exit 0.
