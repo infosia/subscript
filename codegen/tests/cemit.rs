@@ -992,6 +992,31 @@ fn parameterized_async_export_has_no_host_wrapper() {
 }
 
 #[test]
+fn generic_async_instance_has_no_host_wrapper() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "export async function go<T>(): Promise<void> {\n\
+                  \x20 await Context.suspend();\n\
+                  }\n\
+                  export async function main(): Promise<void> {\n\
+                  \x20 await go<u32>();\n\
+                  }\n";
+    let hir =
+        check_program(&[SourceFile::new("test.ts", source)]).expect("generic async program checks");
+    let c = emit_c(&hir).expect("generic async program emits C").source;
+
+    assert!(
+        c.contains("subscript_export_main"),
+        "main wrapper is missing:\n{c}"
+    );
+    assert!(
+        !c.contains("subscript_export_go"),
+        "generic instance gained a host wrapper:\n{c}"
+    );
+}
+
+#[test]
 fn acyclic_json_serializer_emits_no_tracking_operations() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

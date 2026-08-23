@@ -841,11 +841,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // a138–a139 pin R31 synchronous scope-exit disposal. Entry a140 pins
     // R32 host-called wire-mapped alias and scalar parameters. Entry a141
     // pins R33 value-class alignment overrides. Entry a142 pins R34
-    // Context storage-byte operations.
+    // Context storage-byte operations. Entry a143 pins R36 async generics.
     assert_eq!(
         golden_ids.len(),
-        142,
-        "expected exactly 142 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        143,
+        "expected exactly 143 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -882,7 +882,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          binary32 bit-access golden, the a136 R29 class-index-signature \
          golden, the a137 R30 handle-entry-parameter golden, the a138–a139 \
          R31 using-declaration goldens, the a140 R32 wire-entry-parameter golden, and the a141 \
-         R33 CStruct-alignment golden, and the a142 R34 Context-storage-byte golden, found {}",
+         R33 CStruct-alignment golden, the a142 R34 Context-storage-byte golden, and the a143 \
+         R36 async-generic golden, found {}",
         golden_ids.len()
     );
 

@@ -1391,12 +1391,6 @@ mod tests {
                 "`@CStruct` value classes",
             ),
             (
-                "class C<T> {\n  async m(value: T): Promise<T> { return value; }\n}\nexport function main(): void {}\n",
-                RuleCode::S100,
-                2,
-                "generic class templates",
-            ),
-            (
                 "class C { async m(): Promise<void> {} }\nexport function main(): void {\n  const c: C = new C();\n  c.m();\n}\n",
                 RuleCode::S013,
                 4,

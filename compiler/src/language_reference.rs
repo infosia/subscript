@@ -24,7 +24,7 @@ const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are 
 
 const DIVERGENCE_FLOW: &str = "`unreachable()` is legal only as a call statement. It marks that path as diverging for return-flow analysis and traps with `unreachable-reached` if execution reaches the call. Returns, `unreachable()`, and recursively exhaustive Q32 switches compose as diverging statements; a switch arm that falls through or breaks does not diverge.";
 
-const Q34_ASYNC: &str = "Q34/R13 has exactly three awaitable forms: `await Context.suspend()`, `await` applied directly to a named async-function call, and `await receiver.method(...)` for an async instance method on a plain non-generic reference class. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.";
+const Q34_ASYNC: &str = "Q34/R13/R36 has exactly three awaitable forms: `await Context.suspend()`, `await` applied directly to a named async-function call, and `await receiver.method(...)` for an async instance method on a plain reference class. The named async function can be generic when the call supplies explicit type arguments. The reference class can be generic. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.";
 
 const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named, module-level synchronous function on an OS thread with a fresh `Context`. Its exact entry shape is `(inbox: Inbox<In>, outbox: Outbox<Out>): void`; entries cannot capture state. Message classes are monomorphized by the `In`/`Out` pair and may contain sized numerics, booleans, enums, string-literal union aliases, value classes, and `FixedArray` values composed recursively from those types. Worker handles and endpoints are context-affine: they cannot be module globals, class fields, array elements, any `Map`/`Set` type argument, or lambda captures, and they can only be created by `Worker.spawn`. Post all independent work before joining when parallel execution matters; `wait` and `poll` return `null` when their channel is empty or closed, and `close` plus `join` provide explicit shutdown.";
 
@@ -121,6 +121,7 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a95-interop-async-await.ts",
             "corpus/accept/a110-async-method-receiver.ts",
             "corpus/accept/a111-interop-async-method-poll.ts",
+            "corpus/accept/a143-async-generic.ts",
             "corpus/reject/r96-new-promise.ts",
             "corpus/reject/r97-promise-combinator.ts",
             "corpus/reject/r98-promise-static.ts",
@@ -129,8 +130,8 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r101-async-static-method.ts",
             "corpus/reject/r102-async-generator-method.ts",
             "corpus/reject/r103-async-cstruct-method.ts",
-            "corpus/reject/r104-async-generic-class-method.ts",
             "corpus/reject/r105-floating-async-method-call.ts",
+            "corpus/reject/r140-async-lambda.ts",
         ],
     },
     Feature {

@@ -347,7 +347,6 @@ pub(crate) struct Checker<'p> {
     pub generic_classes: HashMap<String, GenericClass>,
     pub file_scopes: Vec<HashMap<String, ScopeItem>>,
     pub exports: Vec<HashSet<String>>,
-    pub exported_fns: HashSet<String>,
     pub top_level: Vec<hir::Stmt>,
     pub poison_missing_modules: HashSet<String>,
     pub poisoned_imports: Vec<hir::PoisonedImport>,
@@ -441,7 +440,6 @@ pub(crate) fn run(
         generic_classes: HashMap::new(),
         file_scopes: Vec::new(),
         exports: Vec::new(),
-        exported_fns: HashSet::new(),
         top_level: Vec::new(),
         poison_missing_modules: options
             .poison_missing_modules
@@ -1101,20 +1099,6 @@ impl<'p> Checker<'p> {
         let pos = self.pos(c.ident.span);
         let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class);
         if let Some(tp) = &c.class.type_params {
-            if !is_descriptor {
-                for member in &c.class.body {
-                    let ast::ClassMember::Method(method) = member else {
-                        continue;
-                    };
-                    if method.function.is_async {
-                        self.error(
-                            RuleCode::S100,
-                            "async methods on generic class templates are not in the decided surface",
-                            self.pos(method.span),
-                        );
-                    }
-                }
-            }
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
@@ -1219,7 +1203,6 @@ impl<'p> Checker<'p> {
         }
         if exported {
             self.exports[file].insert(name.clone());
-            self.exported_fns.insert(name);
         }
     }
 
@@ -3352,9 +3335,8 @@ impl<'p> Checker<'p> {
         }
         let sig = self.resolve_fn_sig(&template.function, pos.clone());
         self.fn_sigs.insert(name.clone(), sig.clone());
-        let exported = self.exported_fns.contains(key);
         if let Some(function) =
-            self.check_function(&template.function, &name, exported, &sig, None, pos)
+            self.check_function(&template.function, &name, false, &sig, None, pos)
         {
             self.functions.push(function);
         }

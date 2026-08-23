@@ -362,13 +362,41 @@ impl<'p> Checker<'p> {
                     self.check_poisoned_arguments(&call.args, fx);
                     return self.err_expr(pos);
                 }
-                let Some(ScopeItem::Func(function)) = item else {
-                    self.error(
-                        RuleCode::S100,
-                        format!("`{name}` is not a directly declared async function"),
-                        self.pos(ident.span),
-                    );
-                    return self.err_expr(pos);
+                let (function, checked_name, rejects_type_args) = match item {
+                    Some(ScopeItem::Func(function)) => {
+                        (function, name.clone(), call.type_args.is_some())
+                    }
+                    Some(ScopeItem::GenericFunc(key)) => {
+                        let Some(type_args) = &call.type_args else {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "generic function `{name}` requires explicit type arguments"
+                                ),
+                                self.pos(ident.span),
+                            );
+                            return self.err_expr(pos);
+                        };
+                        let resolved: Vec<Type> = type_args
+                            .params
+                            .iter()
+                            .map(|ty| self.resolve_type(ty))
+                            .collect();
+                        let Some(instance) =
+                            self.instantiate_fn(&key, &resolved, self.pos(ident.span))
+                        else {
+                            return self.err_expr(pos);
+                        };
+                        (instance.clone(), instance, false)
+                    }
+                    _ => {
+                        self.error(
+                            RuleCode::S100,
+                            format!("`{name}` is not a directly declared async function"),
+                            self.pos(ident.span),
+                        );
+                        return self.err_expr(pos);
+                    }
                 };
                 let Some(sig) = self.fn_sigs.get(&function).cloned() else {
                     return self.err_expr(pos);
@@ -376,19 +404,19 @@ impl<'p> Checker<'p> {
                 if !sig.is_async {
                     self.error(
                         RuleCode::S100,
-                        format!("`{name}` is synchronous and cannot be awaited"),
+                        format!("`{checked_name}` is synchronous and cannot be awaited"),
                         self.pos(ident.span),
                     );
                     return self.err_expr(pos);
                 }
-                if call.type_args.is_some() {
+                if rejects_type_args {
                     self.error(
                         RuleCode::S100,
                         format!("`{name}` is not generic"),
                         self.pos(ident.span),
                     );
                 }
-                let args = self.check_args(&sig.params, &call.args, fx, &pos, &name);
+                let args = self.check_args(&sig.params, &call.args, fx, &pos, &checked_name);
                 hir::Expr {
                     kind: ExprKind::AsyncCall {
                         callee: AsyncCallee::Function(function),
