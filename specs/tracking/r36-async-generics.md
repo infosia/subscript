@@ -115,3 +115,20 @@ warning is a style or complexity lint —
 and no `unsafe` lint appears. The R-series commits did not restate
 the baseline, so the drift has no single owner. Record a new
 baseline, or reduce the counts to the old one.
+
+### Baseline recorded (owner decision 2026-08-23)
+
+The new baseline supersedes `p25-header-deprivileging.md` §9. The
+clang host at `d87059f` reports the same counts as windows-msvc:
+
+```text
+$ cargo clippy --offline --workspace --all-targets
+warning: `subscript-compiler` (lib) generated 7 warnings
+warning: `subscript-runtime` (lib) generated 22 warnings
+warning: `subscript-codegen` (lib) generated 29 warnings
+```
+
+Rule: every landing note records these three library counts from
+this command. A count above the baseline is a finding; the note
+names the added lint or restates the baseline with the owner's
+decision.
