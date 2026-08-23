@@ -81,3 +81,36 @@ MINOR, fixed before the implementation commit:
 Noted, not changed: a generic `@CStruct` class with an async method
 reports the r103 S100 once per instantiation at the same position,
 as every per-instance body error does.
+
+## windows-msvc (measured at `ac9436f`)
+
+- `cargo test --offline --workspace`: 58 suites, 973 passed, 0
+  failed, 1 ignored, in both profiles. The 17 tests fewer than the
+  clang host are the `offsetof` proof and the interop-fixture
+  entries. The suite count is 58, not the 59 the gate list above
+  records; the `offsetof` binary runs on both hosts and reports 0
+  tests on windows-msvc, so the two hosts hold the same binary
+  count. Correct the clang number at the next run there.
+- `cargo build --offline --workspace --all-targets`: 0 warnings, in
+  both profiles.
+- `cargo fmt --check`: exit 0. `tsc` 5.9.2 gate: exit 0.
+- The golden sweep compared 94 entries and skipped 49. `a143` is in
+  the compared set: dev-JIT, ship-C-AOT, and the golden agree byte
+  for byte under MSVC `cl` 19.44.35222, `/std:c11 /O2`. The golden
+  shows `tick` once, so rule 5 holds on this host.
+- `compiler/tests/async_generic.rs`: 5 passed.
+
+### Clippy against the recorded baseline
+
+`cargo clippy --offline --workspace --all-targets` exits 0. Library
+counts against the `p25-header-deprivileging.md` §9 baseline:
+`subscript-compiler` 7 (baseline 7), `subscript-runtime` 22
+(baseline 21), `subscript-codegen` 29 (baseline 16). Every added
+warning is a style or complexity lint —
+`clippy::too_many_arguments` (11 of the 13 in `codegen`),
+`match_like_matches_macro`, `useless_conversion`,
+`doc_lazy_continuation`, `type_complexity`, `manual_clamp`,
+`manual_is_multiple_of`, `collapsible_match`. No correctness lint
+and no `unsafe` lint appears. The R-series commits did not restate
+the baseline, so the drift has no single owner. Record a new
+baseline, or reduce the counts to the old one.
