@@ -7566,6 +7566,22 @@ satisfy it.)*
    every body. Both mismatches refused ordinary programs. A unit
    test asserts that the plan's event kinds equal each tier's
    request sequence, for every statement form.
+1g. **Each tier consumes the whole event list, and a short cursor is
+   a compile error.** *(Added 2026-08-26 after the third pass B
+   review, which is the mechanism this arc lacked.)* The cursor is
+   strict on kind but nothing asserted that it reached the end of a
+   coroutine body, so a site the planner reserved for and a tier
+   never spilled was silent. The planner walks every callee kind, so
+   it already reserves for a site no tier closed: the check turns
+   that reservation into an error the compiler reports, and it turns
+   the search for unclosed sites from a review's guesswork into a
+   corpus run. Measured before the check existed: a frame declared
+   `spill0`, `spill1`, and `spill2` while the emitted body wrote
+   only `spill0`, and the two unwritten slots were a foreign call's
+   marshalled arguments, which the ship tier then read as garbage —
+   `probe=4347879728` where `probe=2` is correct, with no
+   diagnostic. Each tier asserts at the end of a coroutine body that
+   the spill cursor and the lambda cursor are both exhausted.
 1e. **Correctness before size.** *(Added 2026-08-26 after the second
    pass B review.)* Rule 1b narrows what the frame holds. A
    narrowing is admissible only when the same traversal that
@@ -7583,7 +7599,16 @@ satisfy it.)*
    two lambda environments of one capture shape, both live across
    suspensions, shared one frame member, so an inner environment
    overwrote an outer one and both tiers printed the inner value
-   twice.
+   twice. *(Widened after the third review.)* The live range
+   is the range of the **local that holds the value**, not of the
+   statement list that contains the literal. Measured: a lambda
+   assigned to an outer local from inside a nested block kept its
+   environment in a C block-local the frame abandons, so both tiers
+   printed a wrong number and disagreed with each other; and a
+   second lambda of one capture shape reused the member of a first
+   that a nested block had assigned to an outer local, so both tiers
+   agreed on a wrong answer, which the differential gate cannot
+   see.
 1c. **A spill slot is a typed frame member.** *(Added 2026-08-26.)*
    The first round emitted one untyped byte array and read it as
    `(*((T*)(void*)(_f->_spill + N)))`. The ship tier compiles with
