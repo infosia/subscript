@@ -7553,6 +7553,37 @@ satisfy it.)*
    36 bytes per statement, in a per-invocation Context allocation.
    The planner reserves where a later sibling can suspend, and it
    reuses a slot whose value is dead.
+1d. **The plan and the two lowerings walk in one order, and a test
+   proves it.** *(Added 2026-08-26 after the second pass B review.)*
+   The ship tier needs the frame layout before it emits the body, so
+   a pre-pass is structural. That pre-pass and each tier's lowering
+   consume one event list through a strict cursor, so any
+   disagreement about order or kind is a hard error at compile time
+   and a wrong slot at run time. Measured: the planner visited a
+   `for` as init, cond, step, body while both tiers lower init,
+   cond, body, step, and it visited a `switch` as discriminant then
+   test-and-body pairs while both tiers emit every test and then
+   every body. Both mismatches refused ordinary programs. A unit
+   test asserts that the plan's event kinds equal each tier's
+   request sequence, for every statement form.
+1e. **Correctness before size.** *(Added 2026-08-26 after the second
+   pass B review.)* Rule 1b narrows what the frame holds. A
+   narrowing is admissible only when the same traversal that
+   assigns slots proves the value dead, and a narrowing that is
+   wrong is a silent wrong answer, not a larger frame. Measured
+   after the first narrowing landed: a lambda captured before a
+   loop and called after a suspension inside it printed `15` then
+   two garbage values on the dev tier and `15` then two zeroes on
+   the ship tier, because the scan walked the loop body once and
+   missed the back edge; and a lambda reached by assignment rather
+   than by `let` got no frame environment at all. When liveness is
+   in doubt, reserve.
+1f. **A slot's live range is the value's, not the statement's.**
+   *(Added 2026-08-26 after the second pass B review.)* Measured:
+   two lambda environments of one capture shape, both live across
+   suspensions, shared one frame member, so an inner environment
+   overwrote an outer one and both tiers printed the inner value
+   twice.
 1c. **A spill slot is a typed frame member.** *(Added 2026-08-26.)*
    The first round emitted one untyped byte array and read it as
    `(*((T*)(void*)(_f->_spill + N)))`. The ship tier compiles with
@@ -7638,7 +7669,7 @@ Pass A:
 
 Pass B:
 
-5. `corpus/accept/a148-suspension-state.ts` + `.expected`: two
+5. `corpus/accept/a149-suspension-state.ts` + `.expected`: two
    `await` expressions in one expression, with prints that pin the
    evaluation order; a capturing lambda created before a suspension
    and called after it, including one that captures a managed value;
