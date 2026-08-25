@@ -881,7 +881,7 @@ fn binary32_bit_access_uses_the_declared_runtime_symbols() {
     assert!(c.contains("extern double subscript_rt_math_f32_from_bits(void* ctx, uint32_t bits);"));
     assert!(c.contains("subscript_rt_math_f32_to_bits(ctx, 1.0)"), "{c}");
     assert!(
-        c.contains("subscript_rt_math_f32_from_bits(ctx, bits)"),
+        c.contains("subscript_rt_math_f32_from_bits(ctx, v_bits)"),
         "{c}"
     );
 }
@@ -945,7 +945,7 @@ fn host_callable_export_emits_handle_and_scalar_parameters() {
     let c = emit_c(&hir).expect("host export emits C").source;
     assert!(
         c.contains(
-            "void subscript_export_adopt(subscript_rt_context* ctx, void* state, int32_t tag) { subscript_fn_adopt(ctx, state, tag); }"
+            "void subscript_export_adopt(subscript_rt_context* ctx, void* v_state, int32_t v_tag) { subscript_fn_adopt(ctx, v_state, v_tag); }"
         ),
         "parameterized host wrapper is missing:\n{c}"
     );
@@ -967,18 +967,18 @@ fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
         .split("void subscript_export_configure")
         .nth(1)
         .expect("wire entry wrapper");
-    let validation = wrapper.find("mode == 16").expect("wire value validation");
+    let validation = wrapper.find("v_mode == 16").expect("wire value validation");
     let trap = wrapper
         .find("subscript_rt_trap_wire_enum(ctx,")
         .expect("wire value trap");
     let call = wrapper
-        .find("subscript_fn_configure(ctx, mode, tag);")
+        .find("subscript_fn_configure(ctx, v_mode, v_tag);")
         .expect("internal entry call");
     assert!(
         validation < trap && trap < call,
         "wire entry wrapper does not validate before calling the entry:\n{wrapper}"
     );
-    assert!(wrapper.contains("mode == 23") && wrapper.contains("mode == -7"));
+    assert!(wrapper.contains("v_mode == 23") && wrapper.contains("v_mode == -7"));
     assert!(wrapper.contains("WireMode"));
     assert!(wrapper.contains("return;"));
     assert!(
@@ -1007,7 +1007,7 @@ fn parameterized_async_export_has_no_host_wrapper() {
         .expect("later function")
         .exported = true;
     let c = emit_c(&hir).expect("async export emits C").source;
-    assert!(c.contains("static void* subscript_fn_later(void* ctx, int32_t tag)"));
+    assert!(c.contains("static void* subscript_fn_later(void* ctx, int32_t v_tag)"));
     assert!(
         !c.contains("subscript_export_later"),
         "parameterized async export gained a host wrapper:\n{c}"
@@ -1103,7 +1103,7 @@ fn string_literal_union_equality_emits_an_integer_compare() {
         .lines()
         .find(|line| line.contains("return") && line.contains("left") && line.contains("right"))
         .unwrap_or_else(|| panic!("alias equality return is missing:\n{c}"));
-    assert_eq!(comparison.trim(), "return (left == right);");
+    assert_eq!(comparison.trim(), "return (v_left == v_right);");
     assert!(
         !comparison.contains("subscript_rt_str_eq"),
         "Q32 equality called string comparison: {comparison}"

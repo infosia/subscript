@@ -857,7 +857,7 @@ impl<'p> Checker<'p> {
                     pos: pos.clone(),
                 },
             ];
-            driven_body.extend(body);
+            driven_body.push(hir::Stmt::Block(body));
             hir::Stmt::While {
                 cond: hir::Expr {
                     kind: ExprKind::Bool(true),
