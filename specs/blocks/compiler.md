@@ -7390,3 +7390,191 @@ with their outputs (this host).
    zero-warning build; `cargo fmt --check`; the `tsc` gate; clippy
    library counts at the 7 / 22 / 29 baseline. The record quotes the
    test count and the wall time.
+
+## 67. Checker scoping, and state that must survive a suspension
+
+Origin: the §66 arc recorded three constructs it could not fix
+(measurements 6e, 6i, 6j), and its reviews found four more defects
+outside its subject. Owner decision 2026-08-25: **all seven land in
+one cycle, in two passes.** One contract, two implementation and
+review passes, because one review does not cover that surface —
+the lesson of §66's own seven rounds.
+
+Pass A is checker semantics: what the language accepts. Pass B is
+lowering: what an accepted program does. The two passes share no
+code and no corpus entry.
+
+Measurements at `a239de7`, on this host. Every one is pre-existing.
+
+Pass A. Each program is one stock `tsc` rejects and this compiler
+accepts, so each breaks invariant 5.
+
+1. A `switch` case reads a name a earlier case declared. Measured:
+   the dev tier prints `case1:1` and the ship tier prints
+   `case1:99`, with no diagnostic. `tsc` reports TS2454. The checker
+   gives each case its own scope; TypeScript gives the whole switch
+   body one scope, and the emitter writes one flat C block.
+2. A function parameter and a body local of one name. Measured: the
+   dev tier prints `7`; the ship tier stops with "redefinition of
+   'v_n'". `tsc` reports TS2300.
+3. Two `const` of one name in one block. Measured: the dev tier
+   prints `2`; the ship tier stops with "redefinition of 'v_n'".
+   `tsc` reports TS2451.
+4. A lambda body declares a name that a nested lambda reads earlier
+   in the same body. Measured: `node` prints `4`; both tiers print
+   `3`. `tsc` accepts, because the read sits inside a closure; a
+   direct read reports TS2448. **The two tiers agree here**, so this
+   one is not a tier divergence. It is a divergence from TypeScript
+   semantics, and it is the only measurement in this section whose
+   fix can change what an accepted program prints.
+
+Pass B. Each program is `tsc`-clean, so each is a valid subscript
+program that does not run correctly.
+
+5. Two `await` expressions in one expression. Measured: the dev
+   tier stops with "internal lowering error: define async resume:
+   Compilation(Verifier(... uses value v27 from non-dominating
+   inst38))"; the ship tier runs and prints a corrupt first value.
+6. A capturing lambda created before a suspension and called after
+   it. Measured: the dev tier prints `15` then `-1927167400`; the
+   ship tier prints `15` then `5`. The correct output is `15` twice.
+   Both tiers are wrong, and they disagree.
+7. `await` inside a `for...of` body. Measured: the dev tier stops
+   with the same verifier error as item 5; the ship tier prints one
+   iteration and stops. `yield` inside a `for...of` body fails the
+   same way.
+8. Two generators of one yield type in one module. Measured: the
+   dev tier prints `1` then `2`; the ship tier refuses to emit,
+   with "ambiguous generator resume target".
+
+Items 5, 6, and 7 are one root cause: **a value that is live across
+a suspension does not live in the coroutine frame.** The Cranelift
+verifier names it exactly — a value defined before the suspension
+is used after it, in a block the definition does not dominate. Item
+8 is a separate defect: `generator_of`
+(`codegen/src/cemit.rs`) recovers the target by searching for the
+one generator whose yield type matches, and its own comment records
+that it cannot recover the creator. The dev tier has no such search:
+it stores the resume address in the frame at creation
+(`codegen/src/lower/func.rs`, `GEN_RESUME_OFF`) and calls through
+it.
+
+### 67.1 Pass A rules — narrow, never diverge
+
+The guiding rule: where this compiler and TypeScript disagree, this
+compiler **rejects**. It never accepts a program and gives it a
+different value. Rejecting more is inside invariant 5; computing a
+different answer is not.
+
+1. A `switch` body is one scope. A declaration in one case is in
+   scope for the whole body, as TypeScript has it. Two declarations
+   of one name in one switch body fail with S100 that names the
+   switch, matching the direction of TS2451.
+2. A read of a name that a **different** case declares fails with
+   S100 at the read. TypeScript rejects the same program through a
+   definite-assignment analysis (TS2454) that this compiler does not
+   have; this rule is narrower and needs no such analysis.
+3. Two declarations of one name in one scope fail with S100 at the
+   second declaration. A function parameter and a body local of one
+   name are two declarations in one scope, because the body opens no
+   scope of its own.
+4. A block-scoped declaration owns its name for the whole block. A
+   read of that name earlier in the same block fails with S100 at
+   the read, whether the read is direct or inside a nested lambda.
+   TypeScript accepts the closure form and rejects the direct form
+   (TS2448); this rule rejects both, so **no accepted program
+   changes its value**. Measurement 4's program becomes a rejection.
+5. Nothing else moves. Every other accepted program keeps its
+   diagnostics and its output.
+6. §66 measurement 6e's note applies: once a switch body is one
+   scope, the emitter's per-case scope restore must go, because a
+   name a case declares is then in scope in a later case.
+
+### 67.2 Pass B rules — the frame holds what outlives a suspension
+
+1. **Every value that is live across a suspension lives in the
+   coroutine frame.** This holds for a temporary inside a composite
+   expression, for a lambda environment, and for the loop state of a
+   `for...of`. Neither tier keeps such a value in a register, on the
+   C stack, or in a frame that the resume abandons.
+2. Two `await` expressions in one expression are legal, and each
+   operand evaluates once, left to right, with the earlier result
+   held in the frame across the later suspension.
+3. A capturing lambda created before a suspension and called after
+   it reads the values it captured. Its environment lives in the
+   frame.
+4. `await` and `yield` inside a `for...of` body are legal. The loop
+   subject, the index, and the bound live in the frame.
+5. The ship tier dispatches a generator resume through the frame, as
+   the dev tier does. `generator_of`'s search by yield type is
+   deleted. Any number of generators of one yield type is legal, and
+   a generator handle passed to a function resumes correctly.
+6. Both tiers agree byte for byte on every program above.
+
+### 67.3 Changes by site
+
+Pass A, `compiler/src/check/`: the `switch` case scope becomes one
+scope for the body (`stmt.rs`); `fx.declare` reports a duplicate in
+one scope (`mod.rs`); a block records its declarations before it
+checks its statements, so a read earlier in the block resolves to
+the later declaration and reports; the lambda body check consults
+that record across the closure boundary. `codegen/src/cemit.rs`
+drops the per-case scope restore (§66 rule 6e).
+
+Pass B, `codegen/src/lower/func.rs` and `codegen/src/cemit.rs`: the
+frame gains a slot for every value live across a suspension, and
+both tiers spill and reload it; the lambda environment of a
+capturing lambda inside a coroutine becomes a frame field; the
+`for...of` loop state becomes frame fields; the ship tier stores the
+resume address in the frame at creation and calls through it, and
+`generator_of` is deleted.
+
+### 67.4 Corpus and gate (pre-registered exit criteria)
+
+Red first, per pass, at the contract pin: the measurements above,
+recorded with their outputs.
+
+Pass A:
+
+1. `corpus/reject/r148-switch-cross-case-read.ts`,
+   `r149-switch-duplicate-declaration.ts`,
+   `r150-parameter-and-local.ts`, `r151-duplicate-const.ts`, and
+   `r152-read-before-declaration.ts` — the last one in the nested
+   lambda form of measurement 4. Each pinned by code and line. None
+   carries a `tsc-clean-standalone` line, because `tsc` rejects the
+   first four; `r152` records that `tsc` accepts the closure form
+   and that this rule is narrower.
+2. `corpus/accept/a147-switch-body-scope.ts` + `.expected`: a
+   `switch` whose cases declare and use distinct names, and one case
+   that declares a name a later case does not read, so the one-scope
+   rule is exercised without a rejection.
+3. **No existing accept entry may move.** If rule 4 rejects one, the
+   round stops and reports it: that is evidence the rule is too
+   broad, not a golden to update.
+4. Counts: rejects 142 → 147; accept `.ts` 145 → 146; `.expected`
+   146 → 147; accept source files 147 → 148.
+
+Pass B:
+
+5. `corpus/accept/a148-suspension-state.ts` + `.expected`: two
+   `await` expressions in one expression, with prints that pin the
+   evaluation order; a capturing lambda created before a suspension
+   and called after it, including one that captures a managed value;
+   `await` inside a `for...of` body and `yield` inside a `for...of`
+   body; and two generators of one yield type, resumed in turn and
+   also passed to a function. Byte-exact across dev JIT, ship C-AOT,
+   and the golden.
+6. Unit tests: the frame layout of a function with a value live
+   across a suspension holds a slot for it; the ship tier emits no
+   search over generators; a generator handle carries its resume
+   address.
+7. Counts: accept `.ts` 146 → 147; `.expected` 147 → 148; accept
+   source files 148 → 149.
+
+Both passes:
+
+8. Gates: `cargo test --offline --workspace` in both profiles;
+   zero-warning build; `cargo fmt --check`; the `tsc` gate; clippy
+   library counts at the 7 / 22 / 29 baseline. Every pre-existing
+   golden and `.expected` byte-identical, the new entries excepted.
+   The record quotes the test count and the wall time.
