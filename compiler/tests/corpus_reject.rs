@@ -153,6 +153,19 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r145-accessor-write-as-value.ts", RuleCode::S100, 22),
     ("r146-accessor-field-name-clash.ts", RuleCode::S100, 10),
     ("r147-static-accessor.ts", RuleCode::S100, 9),
+    ("r148-switch-cross-case-read.ts", RuleCode::S100, 14),
+    ("r149-switch-duplicate-declaration.ts", RuleCode::S100, 14),
+    ("r150-parameter-and-local.ts", RuleCode::S100, 8),
+    ("r151-duplicate-const.ts", RuleCode::S100, 9),
+    ("r152-read-before-declaration.ts", RuleCode::S100, 11),
+    ("r153-switch-cross-case-write.ts", RuleCode::S100, 15),
+    (
+        "r154-namespace-read-before-declaration.ts",
+        RuleCode::S100,
+        9,
+    ),
+    ("r155-class-read-before-declaration.ts", RuleCode::S100, 17),
+    ("r156-class-name-owned-by-a-local.ts", RuleCode::S100, 14),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -274,8 +287,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        142,
-        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, and seven R37 entries"
+        151,
+        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, and nine §67 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -289,6 +302,136 @@ fn reject_table_covers_every_corpus_entry() {
     let mut expected: Vec<String> = active.iter().map(|(f, _, _)| f.to_string()).collect();
     expected.sort();
     assert_eq!(entries, expected, "reject corpus and test table disagree");
+}
+
+#[test]
+fn switch_duplicate_reports_one_diagnostic_that_names_the_switch() {
+    let file = "r149-switch-duplicate-declaration.ts";
+    let source = fs::read_to_string(corpus_dir().join("reject").join(file))
+        .expect("read switch duplicate reject entry");
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("the switch duplicate must fail");
+    assert_eq!(diagnostics.len(), 1, "the duplicate must not cascade");
+    assert!(diagnostics[0].message.contains("switch body"));
+}
+
+#[test]
+fn write_before_declaration_reports_the_assignment() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "write-before.ts",
+        "export function main(): void {\n  value = 1;\n  let value: i32 = 2;\n}\n",
+    )])
+    .expect_err("the write before the declaration must fail");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "`value` is assigned before its declaration in this block"
+    );
+    assert_eq!(diagnostics[0].pos.line, 2);
+}
+
+#[test]
+fn switch_write_before_declaration_names_the_switch_body() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "switch-write-before.ts",
+        "export function main(): void {\n  switch (0) {\n    case 0:\n      value = 1;\n      let value: i32 = 2;\n      break;\n  }\n}\n",
+    )])
+    .expect_err("the switch write before the declaration must fail");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "`value` is assigned before its declaration in this switch body"
+    );
+}
+
+#[test]
+fn class_name_owned_by_a_local_reports_the_shadow() {
+    let file = "r156-class-name-owned-by-a-local.ts";
+    let source = fs::read_to_string(corpus_dir().join("reject").join(file))
+        .expect("read the class-name shadow reject entry");
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("the local class-name owner must fail");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "`Foo` names a local value here, not a class"
+    );
+}
+
+#[test]
+fn cross_case_writes_reject_plain_compound_and_managed_bindings() {
+    let programs = [
+        ("plain.ts", "let value: i32 = 1;", "value = 2;"),
+        ("compound.ts", "let value: i32 = 1;", "value += 2;"),
+        (
+            "managed.ts",
+            "let value: string = \"one\";",
+            "value = \"two\";",
+        ),
+    ];
+    for (file, declaration, assignment) in programs {
+        let source = format!(
+            "export function main(): void {{\n  const selected: i32 = 1;\n  switch (selected) {{\n    case 0:\n      {declaration}\n      break;\n    case 1:\n      {assignment}\n      break;\n    default:\n      break;\n  }}\n}}\n"
+        );
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("the cross-case write must fail");
+        assert_eq!(diagnostics.len(), 1, "{file} must report one error");
+        assert_eq!(
+            diagnostics[0].message,
+            "`value` is assigned in a case that does not declare it"
+        );
+        assert_eq!(diagnostics[0].pos.line, 8);
+    }
+}
+
+#[test]
+fn switch_read_before_declaration_names_the_switch_body() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "switch-read-before.ts",
+        "export function main(): void {\n  switch (0) {\n    case 0:\n      print(`${value}`);\n      let value: i32 = 1;\n      break;\n  }\n}\n",
+    )])
+    .expect_err("the switch read before the declaration must fail");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "`value` is read before its declaration in this switch body"
+    );
+}
+
+#[test]
+fn namespace_and_class_names_are_owned_across_switch_cases() {
+    let programs = [
+        (
+            "switch-math.ts",
+            "export function main(): void {\n  const selected: i32 = 0;\n  switch (selected) {\n    case 0:\n      print(`${Math.abs(-2.5)}`);\n      break;\n    case 1:\n      const Math: i32 = 3;\n      break;\n  }\n}\n",
+            "`Math` is read from a different switch case",
+        ),
+        (
+            "switch-class.ts",
+            "class Foo { value: i32 = 1; }\nexport function main(): void {\n  const selected: i32 = 0;\n  switch (selected) {\n    case 0:\n      const item: Foo = new Foo();\n      print(`${item.value}`);\n      break;\n    case 1:\n      const Foo: i32 = 9;\n      break;\n  }\n}\n",
+            "`Foo` is read from a different switch case",
+        ),
+    ];
+    for (file, source, message) in programs {
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("the cross-case name read must fail");
+        assert_eq!(diagnostics.len(), 1, "{file} must report one error");
+        assert_eq!(diagnostics[0].message, message);
+    }
+}
+
+#[test]
+fn declaration_without_initializer_clears_its_reservation() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "missing-initializer.ts",
+        "export function main(): void {\n  const value: i32 = 1;\n  {\n    let value: i32;\n    print(`${value}`);\n  }\n}\n",
+    )])
+    .expect_err("the declaration without an initializer must fail");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "local declarations require an initializer"
+    );
 }
 
 #[test]

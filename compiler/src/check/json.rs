@@ -69,11 +69,7 @@ impl Checker<'_> {
         if id.sym.as_ref() != "JSON" {
             return false;
         }
-        let locally_shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.vars.contains_key("JSON"));
+        let locally_shadowed = fx.owns_local_name("JSON");
         !locally_shadowed && self.scope_item("JSON").is_none()
     }
 

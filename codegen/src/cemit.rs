@@ -2245,12 +2245,19 @@ impl<'m> Emitter<'m> {
             }
         }
         // Bodies fall through to the next arm unless they break.
+        let managed_base = self.managed_scope.len();
+        let gen_locals_base = self.gen_locals.len();
         self.loops_push_switch(brk.clone());
-        for (i, case) in cases.iter().enumerate() {
+        let result = cases.iter().enumerate().try_for_each(|(i, case)| {
             let _ = writeln!(out, "{ind1}{}: ;", labels[i]);
-            self.emit_block(out, &case.body, depth + 1)?;
-        }
+            case.body
+                .iter()
+                .try_for_each(|statement| self.emit_stmt(out, statement, depth + 1))
+        });
         self.loops_pop();
+        self.managed_scope.truncate(managed_base);
+        self.gen_locals.truncate(gen_locals_base);
+        result?;
         let _ = writeln!(out, "{ind1}{brk}: ;");
         let _ = writeln!(out, "{ind}}}");
         Ok(())
@@ -8554,7 +8561,7 @@ mod tests {
     #[test]
     fn lambda_body_uses_a_nested_c_scope_below_capture_copies() {
         let c = emit(
-            "export function main(): void {\n  const n: i32 = 1;\n  const f: () => i32 = (): i32 => {\n    const g: () => i32 = (): i32 => n;\n    const n: i32 = 2;\n    return g() + n;\n  };\n  print(`${f()}`);\n}\n",
+            "export function main(): void {\n  const n: i32 = 1;\n  const f: () => i32 = (): i32 => {\n    const g: () => i32 = (): i32 => n;\n    {\n      const n: i32 = 2;\n      print(`${n}`);\n    }\n    return g();\n  };\n  print(`${f()}`);\n}\n",
         );
         let signature = "static int32_t subscript_lambda0(void* ctx, void* _env) {";
         let start = c.rfind(signature).expect("lambda definition");
@@ -8563,7 +8570,7 @@ mod tests {
         let local = body.find("int32_t v_n = 2;").expect("body local");
         assert_eq!(
             brace_depth(&body[..local]),
-            brace_depth(&body[..capture]) + 1,
+            brace_depth(&body[..capture]) + 2,
             "{c}"
         );
     }

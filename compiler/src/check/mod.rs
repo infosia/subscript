@@ -260,6 +260,16 @@ pub(crate) struct Local {
 #[derive(Debug, Default)]
 pub(crate) struct Scope {
     pub vars: HashMap<String, Local>,
+    /// Names that declarations later in this scope own.
+    pub pending: HashSet<String>,
+    /// The first case that declares each name in a switch body.
+    pub switch_declarations: HashMap<String, usize>,
+    /// Names that already have a duplicate-declaration diagnostic.
+    pub duplicate_declarations: HashSet<String>,
+    /// The case that the checker currently checks.
+    pub switch_case: Option<usize>,
+    /// True when this scope contains one switch body.
+    pub is_switch: bool,
     pub fn_boundary: bool,
 }
 
@@ -268,6 +278,14 @@ struct UsingBinding {
     name: String,
     ty: Type,
     pos: Pos,
+    active: Option<String>,
+}
+
+struct SwitchUsingStorage {
+    pos: Pos,
+    active: String,
+    storage: String,
+    ty: Type,
 }
 
 /// One function (or lambda) frame.
@@ -312,9 +330,31 @@ impl FnCtx {
         }
     }
 
-    pub(crate) fn declare(&mut self, name: &str, local: Local) {
+    /// Returns true if a local scope owns the name.
+    pub(crate) fn owns_local_name(&self, name: &str) -> bool {
+        self.scopes.iter().rev().any(|scope| {
+            scope.vars.contains_key(name)
+                || scope.pending.contains(name)
+                || scope.switch_declarations.contains_key(name)
+        })
+    }
+
+    /// Declares a local. Returns false if the current scope already contains the name.
+    pub(crate) fn declare(&mut self, name: &str, local: Local) -> bool {
         if let Some(scope) = self.scopes.last_mut() {
+            if scope.vars.contains_key(name) {
+                return false;
+            }
+            scope.pending.remove(name);
             scope.vars.insert(name.to_string(), local);
+        }
+        true
+    }
+
+    /// Removes a declaration reservation after the declaration fails.
+    pub(crate) fn discard_pending(&mut self, name: &str) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.pending.remove(name);
         }
     }
 
@@ -416,6 +456,8 @@ pub(crate) struct Checker<'p> {
     pub next_regex_literal_id: usize,
     /// Monotonic suffix for return locals that preserve values across disposal.
     pub next_using_return_id: usize,
+    /// Monotonic suffix for switch-body disposal storage.
+    pub next_using_switch_id: usize,
 }
 
 /// Runs the checker over a parsed program.
@@ -469,6 +511,7 @@ pub(crate) fn run(
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
         next_using_return_id: 0,
+        next_using_switch_id: 0,
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record
@@ -546,6 +589,45 @@ pub(crate) fn run(
 }
 
 impl<'p> Checker<'p> {
+    /// Reserves the names that declarations own in one statement list.
+    pub(crate) fn reserve_block_declarations(&self, statements: &[ast::Stmt], fx: &mut FnCtx) {
+        let Some(scope) = fx.scopes.last_mut() else {
+            return;
+        };
+        for statement in statements {
+            let ast::Stmt::Decl(ast::Decl::Var(declaration)) = statement else {
+                continue;
+            };
+            if declaration.kind == ast::VarDeclKind::Var {
+                continue;
+            }
+            for declarator in &declaration.decls {
+                if let ast::Pat::Ident(binding) = &declarator.name {
+                    let name = binding.id.sym.to_string();
+                    if !scope.vars.contains_key(&name) {
+                        scope.pending.insert(name);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Declares one local and reports a duplicate in the current scope.
+    pub(crate) fn declare_local(&mut self, name: &str, local: Local, pos: Pos, fx: &mut FnCtx) {
+        let in_switch = fx.scopes.last().is_some_and(|scope| scope.is_switch);
+        if !fx.declare(name, local) {
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.duplicate_declarations.insert(name.to_string());
+            }
+            let message = if in_switch {
+                format!("duplicate declaration of `{name}` in one switch body")
+            } else {
+                format!("duplicate declaration of `{name}` in one scope")
+            };
+            self.error(RuleCode::S100, message, pos);
+        }
+    }
+
     pub(crate) fn error(&mut self, code: RuleCode, message: impl Into<String>, pos: Pos) {
         self.diags.push(Diagnostic::new(code, message, pos));
     }
@@ -3033,7 +3115,7 @@ impl<'p> Checker<'p> {
         let mut calls = Vec::new();
         for scope in scopes[first_scope..].iter().rev() {
             for binding in scope.iter().rev() {
-                calls.push(hir::Stmt::Expr(hir::Expr {
+                let call = hir::Stmt::Expr(hir::Expr {
                     kind: hir::ExprKind::Call {
                         callee: hir::Callee::Method {
                             recv: Box::new(hir::Expr {
@@ -3047,7 +3129,21 @@ impl<'p> Checker<'p> {
                     },
                     ty: Type::Void,
                     pos: binding.pos.clone(),
-                }));
+                });
+                if let Some(active) = &binding.active {
+                    calls.push(hir::Stmt::If {
+                        cond: hir::Expr {
+                            kind: hir::ExprKind::Local(active.clone()),
+                            ty: Type::Bool,
+                            pos: binding.pos.clone(),
+                        },
+                        then: vec![call],
+                        els: None,
+                        pos: binding.pos.clone(),
+                    });
+                } else {
+                    calls.push(call);
+                }
             }
         }
         calls
@@ -3063,7 +3159,7 @@ impl<'p> Checker<'p> {
             return body;
         }
         let mut scopes = Vec::new();
-        self.rewrite_using_scope(body, positions, ret, &mut scopes, None, None)
+        self.rewrite_using_scope(body, positions, ret, &mut scopes, (None, None), (true, &[]))
     }
 
     fn rewrite_using_scope(
@@ -3072,10 +3168,14 @@ impl<'p> Checker<'p> {
         positions: &[Pos],
         ret: &Type,
         scopes: &mut Vec<Vec<UsingBinding>>,
-        break_scope: Option<usize>,
-        continue_scope: Option<usize>,
+        control_scopes: (Option<usize>, Option<usize>),
+        scope_mode: (bool, &[SwitchUsingStorage]),
     ) -> Vec<hir::Stmt> {
-        scopes.push(Vec::new());
+        let (break_scope, continue_scope) = control_scopes;
+        let (open_scope, switch_storage) = scope_mode;
+        if open_scope {
+            scopes.push(Vec::new());
+        }
         let mut rewritten = Vec::new();
         for statement in statements {
             match statement {
@@ -3114,10 +3214,56 @@ impl<'p> Checker<'p> {
                         pos: pos.clone(),
                     });
                     if is_using {
+                        let storage = switch_storage.iter().find(|storage| storage.pos == pos);
+                        let dispose_name = storage
+                            .map(|storage| storage.storage.clone())
+                            .unwrap_or_else(|| name.clone());
+                        let active = storage.map(|storage| storage.active.clone());
                         scopes
                             .last_mut()
                             .expect("using scope exists")
-                            .push(UsingBinding { name, ty, pos });
+                            .push(UsingBinding {
+                                name: dispose_name,
+                                ty: ty.clone(),
+                                pos: pos.clone(),
+                                active,
+                            });
+                        if let Some(storage) = storage {
+                            rewritten.push(hir::Stmt::Expr(hir::Expr {
+                                kind: hir::ExprKind::Assign {
+                                    op: None,
+                                    target: Box::new(hir::Expr {
+                                        kind: hir::ExprKind::Local(storage.storage.clone()),
+                                        ty: ty.clone(),
+                                        pos: pos.clone(),
+                                    }),
+                                    value: Box::new(hir::Expr {
+                                        kind: hir::ExprKind::Local(name),
+                                        ty,
+                                        pos: pos.clone(),
+                                    }),
+                                },
+                                ty: storage.ty.clone(),
+                                pos: pos.clone(),
+                            }));
+                            rewritten.push(hir::Stmt::Expr(hir::Expr {
+                                kind: hir::ExprKind::Assign {
+                                    op: None,
+                                    target: Box::new(hir::Expr {
+                                        kind: hir::ExprKind::Local(storage.active.clone()),
+                                        ty: Type::Bool,
+                                        pos: pos.clone(),
+                                    }),
+                                    value: Box::new(hir::Expr {
+                                        kind: hir::ExprKind::Bool(true),
+                                        ty: Type::Bool,
+                                        pos: pos.clone(),
+                                    }),
+                                },
+                                ty: Type::Bool,
+                                pos,
+                            }));
+                        }
                     }
                 }
                 hir::Stmt::Return { value, pos } => {
@@ -3172,8 +3318,8 @@ impl<'p> Checker<'p> {
                         positions,
                         ret,
                         scopes,
-                        break_scope,
-                        continue_scope,
+                        (break_scope, continue_scope),
+                        (true, switch_storage),
                     );
                     rewritten.push(hir::Stmt::Block(body));
                 }
@@ -3188,8 +3334,8 @@ impl<'p> Checker<'p> {
                         positions,
                         ret,
                         scopes,
-                        break_scope,
-                        continue_scope,
+                        (break_scope, continue_scope),
+                        (true, switch_storage),
                     );
                     let els = els.map(|body| {
                         self.rewrite_using_scope(
@@ -3197,8 +3343,8 @@ impl<'p> Checker<'p> {
                             positions,
                             ret,
                             scopes,
-                            break_scope,
-                            continue_scope,
+                            (break_scope, continue_scope),
+                            (true, switch_storage),
                         )
                     });
                     rewritten.push(hir::Stmt::If {
@@ -3215,8 +3361,8 @@ impl<'p> Checker<'p> {
                         positions,
                         ret,
                         scopes,
-                        Some(loop_scope),
-                        Some(loop_scope),
+                        (Some(loop_scope), Some(loop_scope)),
+                        (true, switch_storage),
                     );
                     rewritten.push(hir::Stmt::While { cond, body, pos });
                 }
@@ -3233,8 +3379,8 @@ impl<'p> Checker<'p> {
                         positions,
                         ret,
                         scopes,
-                        Some(loop_scope),
-                        Some(loop_scope),
+                        (Some(loop_scope), Some(loop_scope)),
+                        (true, switch_storage),
                     );
                     rewritten.push(hir::Stmt::For {
                         init,
@@ -3258,8 +3404,8 @@ impl<'p> Checker<'p> {
                         positions,
                         ret,
                         scopes,
-                        Some(loop_scope),
-                        Some(loop_scope),
+                        (Some(loop_scope), Some(loop_scope)),
+                        (true, switch_storage),
                     );
                     rewritten.push(hir::Stmt::ForOf {
                         name,
@@ -3272,7 +3418,50 @@ impl<'p> Checker<'p> {
                 }
                 hir::Stmt::Switch { disc, cases, pos } => {
                     let switch_scope = scopes.len();
-                    let cases = cases
+                    let mut switch_bindings = Vec::new();
+                    for case in &cases {
+                        for statement in &case.body {
+                            let hir::Stmt::Let { ty, pos, .. } = statement else {
+                                continue;
+                            };
+                            if Self::is_using_position(positions, pos) {
+                                let id = self.next_using_switch_id;
+                                self.next_using_switch_id += 1;
+                                let active = format!("[[using.active#{id}]]");
+                                let storage = format!("[[using.value#{id}]]");
+                                rewritten.push(hir::Stmt::Let {
+                                    name: active.clone(),
+                                    ty: Type::Bool,
+                                    mutable: true,
+                                    init: hir::Expr {
+                                        kind: hir::ExprKind::Bool(false),
+                                        ty: Type::Bool,
+                                        pos: pos.clone(),
+                                    },
+                                    pos: pos.clone(),
+                                });
+                                rewritten.push(hir::Stmt::Let {
+                                    name: storage.clone(),
+                                    ty: ty.clone(),
+                                    mutable: true,
+                                    init: hir::Expr {
+                                        kind: hir::ExprKind::Null,
+                                        ty: ty.clone(),
+                                        pos: pos.clone(),
+                                    },
+                                    pos: pos.clone(),
+                                });
+                                switch_bindings.push(SwitchUsingStorage {
+                                    pos: pos.clone(),
+                                    active,
+                                    storage,
+                                    ty: ty.clone(),
+                                });
+                            }
+                        }
+                    }
+                    scopes.push(Vec::new());
+                    let mut cases = cases
                         .into_iter()
                         .map(|case| hir::SwitchCase {
                             test: case.test,
@@ -3281,20 +3470,28 @@ impl<'p> Checker<'p> {
                                 positions,
                                 ret,
                                 scopes,
-                                Some(switch_scope),
-                                continue_scope,
+                                (Some(switch_scope), continue_scope),
+                                (false, &switch_bindings),
                             ),
                             pos: case.pos,
                         })
-                        .collect();
+                        .collect::<Vec<_>>();
+                    let scope = scopes.pop().unwrap_or_default();
+                    if let Some(last_case) = cases.last_mut() {
+                        last_case
+                            .body
+                            .extend(Self::dispose_calls(std::slice::from_ref(&scope), 0));
+                    }
                     rewritten.push(hir::Stmt::Switch { disc, cases, pos });
                 }
                 other => rewritten.push(other),
             }
         }
-        let scope = scopes.pop().expect("using scope exists");
-        if !scope.is_empty() {
-            rewritten.extend(Self::dispose_calls(std::slice::from_ref(&scope), 0));
+        if open_scope {
+            let scope = scopes.pop().unwrap_or_default();
+            if !scope.is_empty() {
+                rewritten.extend(Self::dispose_calls(std::slice::from_ref(&scope), 0));
+            }
         }
         rewritten
     }
@@ -3324,6 +3521,7 @@ impl<'p> Checker<'p> {
         let params = self.bind_params(f, sig, &mut fx);
         let body = match &f.body {
             Some(block) => {
+                self.reserve_block_declarations(&block.stmts, &mut fx);
                 let mut out = Vec::new();
                 for s in &block.stmts {
                     self.check_stmt(s, &mut fx, &mut out);
@@ -3384,13 +3582,15 @@ impl<'p> Checker<'p> {
                 }
                 _ => None,
             };
-            fx.declare(
+            self.declare_local(
                 &ps.name,
                 Local {
                     ty: ps.ty.clone(),
                     mutable: true,
                     holds_capturing: false,
                 },
+                pos.clone(),
+                fx,
             );
             out.push(hir::Param {
                 name: ps.name.clone(),
@@ -3466,24 +3666,28 @@ impl<'p> Checker<'p> {
                             }
                             _ => None,
                         };
-                        fx.declare(
+                        let param_pos = self.pos(param.span);
+                        self.declare_local(
                             &ps.name,
                             Local {
                                 ty: ps.ty.clone(),
                                 mutable: true,
                                 holds_capturing: false,
                             },
+                            param_pos.clone(),
+                            &mut fx,
                         );
                         hir_params.push(hir::Param {
                             name: ps.name.clone(),
                             ty: ps.ty.clone(),
                             default,
                             foreign_provenance: None,
-                            pos: self.pos(param.span),
+                            pos: param_pos,
                         });
                     }
                     let mut body = Vec::new();
                     if let Some(block) = &ctor.body {
+                        self.reserve_block_declarations(&block.stmts, &mut fx);
                         for s in &block.stmts {
                             self.check_stmt(s, &mut fx, &mut body);
                         }
@@ -3662,12 +3866,83 @@ impl<'p> Checker<'p> {
     /// lambda boundary is a capture: it is recorded on every crossed
     /// lambda frame and must refer to a `const` binding (C5).
     pub(crate) fn lookup_local(&mut self, name: &str, pos: &Pos, fx: &mut FnCtx) -> Option<Local> {
+        self.lookup_local_access(name, pos, fx, true)
+    }
+
+    /// Looks up a local assignment target without a read-before-declaration check.
+    pub(crate) fn lookup_local_for_write(
+        &mut self,
+        name: &str,
+        pos: &Pos,
+        fx: &mut FnCtx,
+    ) -> Option<Local> {
+        self.lookup_local_access(name, pos, fx, false)
+    }
+
+    fn lookup_local_access(
+        &mut self,
+        name: &str,
+        pos: &Pos,
+        fx: &mut FnCtx,
+        for_read: bool,
+    ) -> Option<Local> {
         let mut crossed = 0usize;
         let mut found: Option<(usize, Local)> = None;
         for scope in fx.scopes.iter().rev() {
+            let owns_name = scope.vars.contains_key(name)
+                || scope.pending.contains(name)
+                || scope.switch_declarations.contains_key(name);
+            let scope_name = if scope.is_switch {
+                "this switch body"
+            } else {
+                "this block"
+            };
+            if owns_name && !scope.duplicate_declarations.contains(name) {
+                if let (Some(declaration_case), Some(current_case)) =
+                    (scope.switch_declarations.get(name), scope.switch_case)
+                {
+                    if *declaration_case != current_case {
+                        let message = if for_read {
+                            format!("`{name}` is read from a different switch case")
+                        } else {
+                            format!("`{name}` is assigned in a case that does not declare it")
+                        };
+                        self.error(RuleCode::S100, message, pos.clone());
+                        return Some(Local {
+                            ty: Type::Error,
+                            mutable: true,
+                            holds_capturing: false,
+                        });
+                    }
+                }
+            }
+            if owns_name && for_read && scope.pending.contains(name) {
+                self.error(
+                    RuleCode::S100,
+                    format!("`{name}` is read before its declaration in {scope_name}"),
+                    pos.clone(),
+                );
+                return Some(Local {
+                    ty: Type::Error,
+                    mutable: true,
+                    holds_capturing: false,
+                });
+            }
             if let Some(local) = scope.vars.get(name) {
                 found = Some((crossed, local.clone()));
                 break;
+            }
+            if scope.pending.contains(name) {
+                self.error(
+                    RuleCode::S100,
+                    format!("`{name}` is assigned before its declaration in {scope_name}"),
+                    pos.clone(),
+                );
+                return Some(Local {
+                    ty: Type::Error,
+                    mutable: true,
+                    holds_capturing: false,
+                });
             }
             if scope.fn_boundary {
                 crossed += 1;

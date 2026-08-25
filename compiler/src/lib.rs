@@ -2556,10 +2556,9 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
-        assert!(
-            err[0].message.contains("unknown class"),
-            "message: {}",
-            err[0].message
+        assert_eq!(
+            err[0].message,
+            "`Date` names a local value here, not a class"
         );
         assert_eq!(err[0].pos.line, 3);
     }
@@ -2571,10 +2570,9 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
-        assert!(
-            err[0].message.contains("unknown class"),
-            "message: {}",
-            err[0].message
+        assert_eq!(
+            err[0].message,
+            "`Date` names a local value here, not a class"
         );
         assert_eq!(err[0].pos.line, 4);
     }
@@ -2586,10 +2584,9 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S100);
-        assert!(
-            err[0].message.contains("unknown class"),
-            "message: {}",
-            err[0].message
+        assert_eq!(
+            err[0].message,
+            "`Date` names a local value here, not a class"
         );
         assert_eq!(err[0].pos.line, 2);
     }

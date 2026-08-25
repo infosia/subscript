@@ -344,12 +344,14 @@ impl<'p> Checker<'p> {
         match callee {
             ast::Expr::Ident(ident) => {
                 let name = ident.sym.to_string();
-                if fx
-                    .scopes
-                    .iter()
-                    .rev()
-                    .any(|scope| scope.vars.contains_key(&name))
-                {
+                if fx.owns_local_name(&name) {
+                    let ident_pos = self.pos(ident.span);
+                    if self
+                        .lookup_local(&name, &ident_pos, fx)
+                        .is_some_and(|local| matches!(local.ty, Type::Error))
+                    {
+                        return self.err_expr(pos);
+                    }
                     self.error(
                         RuleCode::S100,
                         "an async awaitable cannot be called through a local value",
@@ -2124,9 +2126,8 @@ impl<'p> Checker<'p> {
             return None;
         };
         let name = id.sym.to_string();
-        // A local binding shadows any type name.
-        let is_local = fx.scopes.iter().rev().any(|s| s.vars.contains_key(&name));
-        if is_local {
+        // A local scope owns the name against each type name.
+        if fx.owns_local_name(&name) {
             return None;
         }
         // `Context.<member>` (Q6/Q7/Q34): function members are intercepted
@@ -2273,7 +2274,7 @@ impl<'p> Checker<'p> {
         if id.sym.as_ref() != "Math" {
             return false;
         }
-        let shadowed = fx.scopes.iter().rev().any(|s| s.vars.contains_key("Math"));
+        let shadowed = fx.owns_local_name("Math");
         !shadowed && self.scope_item("Math").is_none()
     }
 
@@ -2287,11 +2288,7 @@ impl<'p> Checker<'p> {
         if id.sym.as_ref() != "Context" {
             return false;
         }
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|s| s.vars.contains_key("Context"));
+        let shadowed = fx.owns_local_name("Context");
         !shadowed && self.scope_item("Context").is_none()
     }
 
@@ -2408,11 +2405,7 @@ impl<'p> Checker<'p> {
         if id.sym.as_ref() != "Number" {
             return false;
         }
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.vars.contains_key("Number"));
+        let shadowed = fx.owns_local_name("Number");
         !shadowed && self.scope_item("Number").is_none()
     }
 
@@ -2566,40 +2559,28 @@ impl<'p> Checker<'p> {
     /// Consulted by both member access and `new Date(…)` so shadowing
     /// behaves identically in every position.
     fn date_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx.scopes.iter().rev().any(|s| s.vars.contains_key("Date"));
+        let shadowed = fx.owns_local_name("Date");
         !shadowed && self.scope_item("Date").is_none()
     }
 
     /// True when `Map` / `Set` resolves to the ambient generic reference
     /// class rather than a local or program declaration.
     fn assoc_is_ambient(&self, name: &str, fx: &FnCtx) -> bool {
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.vars.contains_key(name));
+        let shadowed = fx.owns_local_name(name);
         !shadowed && self.scope_item(name).is_none()
     }
 
     /// True when `RegExp` resolves to the ambient constructor rather
     /// than a local or program declaration.
     fn regexp_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.vars.contains_key("RegExp"));
+        let shadowed = fx.owns_local_name("RegExp");
         !shadowed && self.scope_item("RegExp").is_none()
     }
 
     /// True when `Worker` resolves to Q35's ambient static namespace rather
     /// than a local or program declaration.
     fn worker_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.vars.contains_key("Worker"));
+        let shadowed = fx.owns_local_name("Worker");
         !shadowed && self.scope_item("Worker").is_none()
     }
 
@@ -2702,12 +2683,14 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         };
-        if fx
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.vars.contains_key(ident.sym.as_ref()))
-        {
+        if fx.owns_local_name(ident.sym.as_ref()) {
+            let ident_pos = self.pos(ident.span);
+            if self
+                .lookup_local(ident.sym.as_ref(), &ident_pos, fx)
+                .is_some_and(|local| matches!(local.ty, Type::Error))
+            {
+                return self.err_expr(pos);
+            }
             self.error(
                 RuleCode::S100,
                 "`Worker.spawn` entry must name a module-level function directly, not a local function value",
@@ -5417,7 +5400,7 @@ impl<'p> Checker<'p> {
             ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
                 let name = binding.id.sym.to_string();
                 let ident_pos = self.pos(binding.id.span);
-                if let Some(local) = self.lookup_local(&name, &ident_pos, fx) {
+                if let Some(local) = self.lookup_local_for_write(&name, &ident_pos, fx) {
                     if !local.mutable {
                         self.error(
                             RuleCode::S100,
@@ -6040,11 +6023,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Promise")
-            && !fx
-                .scopes
-                .iter()
-                .rev()
-                .any(|scope| scope.vars.contains_key("Promise"))
+            && !fx.owns_local_name("Promise")
             && self.scope_item("Promise").is_none()
         {
             self.error(
@@ -6452,6 +6431,19 @@ impl<'p> Checker<'p> {
         };
         let name = id.sym.to_string();
         let ident_pos = self.pos(id.span);
+        if fx.owns_local_name(&name) {
+            if self
+                .lookup_local(&name, &ident_pos, fx)
+                .is_some_and(|local| !matches!(local.ty, Type::Error))
+            {
+                self.error(
+                    RuleCode::S100,
+                    format!("`{name}` names a local value here, not a class"),
+                    ident_pos.clone(),
+                );
+            }
+            return self.err_expr(pos);
+        }
         if name == "Function" {
             self.error(
                 RuleCode::S002,
@@ -6740,21 +6732,24 @@ impl<'p> Checker<'p> {
             this_ty: None,
         });
         fx.scopes.push(Scope {
-            vars: std::collections::HashMap::new(),
             fn_boundary: true,
+            ..Default::default()
         });
         // Lambda bodies start without the enclosing narrowing facts
         // (conservative: the lambda may run later).
         let saved_narrowed = std::mem::take(&mut fx.narrowed);
         let mut hir_params = Vec::new();
-        for p in &params {
-            fx.declare(
+        for (p, pattern) in params.iter().zip(&a.params) {
+            let param_pos = self.pos(pattern.span());
+            self.declare_local(
                 &p.name,
                 Local {
                     ty: p.ty.clone(),
                     mutable: true,
                     holds_capturing: false,
                 },
+                param_pos,
+                fx,
             );
             hir_params.push(hir::Param {
                 name: p.name.clone(),
@@ -6784,6 +6779,7 @@ impl<'p> Checker<'p> {
                 }]
             }
             ast::BlockStmtOrExpr::BlockStmt(block) => {
+                self.reserve_block_declarations(&block.stmts, fx);
                 if ret.is_none() {
                     self.error(
                         RuleCode::S100,

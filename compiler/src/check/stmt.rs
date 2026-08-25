@@ -377,6 +377,7 @@ impl<'p> Checker<'p> {
             }
             ast::Stmt::Block(b) => {
                 fx.scopes.push(Default::default());
+                self.reserve_block_declarations(&b.stmts, fx);
                 let mut inner = Vec::new();
                 let mut terminates = false;
                 for s in &b.stmts {
@@ -454,6 +455,7 @@ impl<'p> Checker<'p> {
                     "local declarations require an initializer",
                     pos.clone(),
                 );
+                fx.discard_pending(&name);
                 continue;
             };
             let init = self.check_expr(init_ast, ann.as_ref(), fx);
@@ -484,13 +486,15 @@ impl<'p> Checker<'p> {
                 },
             };
             let holds_capturing = self.is_capturing_value(&init, fx);
-            fx.declare(
+            self.declare_local(
                 &name,
                 Local {
                     ty: ty.clone(),
                     mutable,
                     holds_capturing,
                 },
+                pos.clone(),
+                fx,
             );
             // A fresh binding invalidates stale narrowing facts rooted
             // at a shadowed name.
@@ -581,6 +585,7 @@ impl<'p> Checker<'p> {
         let mut out = Vec::new();
         let terminates = match s {
             ast::Stmt::Block(b) => {
+                self.reserve_block_declarations(&b.stmts, fx);
                 let mut t = false;
                 for s in &b.stmts {
                     t |= self.check_stmt(s, fx, &mut out);
@@ -769,13 +774,15 @@ impl<'p> Checker<'p> {
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
         fx.scopes.push(Default::default());
-        fx.declare(
+        self.declare_local(
             &name,
             Local {
                 ty: elem_ty.clone(),
                 mutable,
                 holds_capturing: false,
             },
+            binding_pos.clone(),
+            fx,
         );
         let prefix = format!("{name}.");
         fx.narrowed
@@ -1082,8 +1089,36 @@ impl<'p> Checker<'p> {
         let mut alias_labels_valid = true;
         let mut has_default = false;
         fx.switch_depth += 1;
+        fx.scopes.push(super::Scope {
+            is_switch: true,
+            ..Default::default()
+        });
+        for (case_index, case) in sw.cases.iter().enumerate() {
+            self.reserve_block_declarations(&case.cons, fx);
+            if let Some(scope) = fx.scopes.last_mut() {
+                for statement in &case.cons {
+                    let ast::Stmt::Decl(ast::Decl::Var(declaration)) = statement else {
+                        continue;
+                    };
+                    if declaration.kind == ast::VarDeclKind::Var {
+                        continue;
+                    }
+                    for declarator in &declaration.decls {
+                        if let ast::Pat::Ident(binding) = &declarator.name {
+                            scope
+                                .switch_declarations
+                                .entry(binding.id.sym.to_string())
+                                .or_insert(case_index);
+                        }
+                    }
+                }
+            }
+        }
         let mut cases = Vec::new();
-        for case in &sw.cases {
+        for (case_index, case) in sw.cases.iter().enumerate() {
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.switch_case = Some(case_index);
+            }
             let case_pos = self.pos(case.span);
             let test = if let Some(t) = &case.test {
                 let checked = self.check_expr(t, Some(&disc_ty), fx);
@@ -1144,18 +1179,17 @@ impl<'p> Checker<'p> {
                 has_default = true;
                 None
             };
-            fx.scopes.push(Default::default());
             let mut body = Vec::new();
             for s in &case.cons {
                 self.check_stmt(s, fx, &mut body);
             }
-            fx.scopes.pop();
             cases.push(hir::SwitchCase {
                 test,
                 body,
                 pos: case_pos,
             });
         }
+        fx.scopes.pop();
         fx.switch_depth -= 1;
         if let Some((alias_name, members)) = &alias_switch {
             if !has_default && alias_labels_valid && alias_members_seen.len() != members.len() {
