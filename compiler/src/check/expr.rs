@@ -1098,6 +1098,32 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        if let ExprKind::Call {
+            callee: Callee::Method { recv, name },
+            args,
+        } = &target.kind
+        {
+            if args.is_empty()
+                && matches!(&recv.ty, Type::Class(id) if self.class_sigs[id.0].accessors.contains(name))
+            {
+                let operator = if u.op == ast::UpdateOp::PlusPlus {
+                    "++"
+                } else {
+                    "--"
+                };
+                let spelling = if u.prefix {
+                    format!("`{operator}x.{name}`")
+                } else {
+                    format!("`x.{name}{operator}`")
+                };
+                self.error(
+                    RuleCode::S100,
+                    format!("{spelling} is not supported for a class accessor"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+        }
         // Q17: `++`/`--` rebind their target, so `const` bindings are
         // rejected exactly like plain assignment.
         match &target.kind {
@@ -4766,6 +4792,28 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
+                if self.class_sigs[id.0].accessors.contains(name) {
+                    let Some(sig) = self.class_sigs[id.0].methods.get(name) else {
+                        self.error(
+                            RuleCode::S100,
+                            format!("read accessor `{name}` has no checker signature"),
+                            prop_pos.clone(),
+                        );
+                        return self.err_expr(prop_pos);
+                    };
+                    let call_pos = obj.pos.clone();
+                    return hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Method {
+                                recv: Box::new(obj),
+                                name: name.to_string(),
+                            },
+                            args: Vec::new(),
+                        },
+                        ty: sig.ret.clone(),
+                        pos: call_pos,
+                    };
+                }
                 let class_name = self.classes[id.0].name.clone();
                 if for_write {
                     self.error(
@@ -5183,6 +5231,84 @@ impl<'p> Checker<'p> {
                         name: "set".to_string(),
                     },
                     args: vec![index, value],
+                },
+                ty: Type::Void,
+                pos,
+            };
+        }
+        let accessor_write = match &target.kind {
+            ExprKind::Call {
+                callee: Callee::Method { recv, name },
+                args,
+            } if args.is_empty() => match &recv.ty {
+                Type::Class(id) if self.class_sigs[id.0].accessors.contains(name) => {
+                    Some((id, (**recv).clone(), name.clone()))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((id, recv, name)) = accessor_write {
+            let operator = match a.op {
+                A::AddAssign => Some("+="),
+                A::SubAssign => Some("-="),
+                A::MulAssign => Some("*="),
+                A::DivAssign => Some("/="),
+                A::ModAssign => Some("%="),
+                A::BitAndAssign => Some("&="),
+                A::BitOrAssign => Some("|="),
+                A::BitXorAssign => Some("^="),
+                A::LShiftAssign => Some("<<="),
+                A::RShiftAssign => Some(">>="),
+                A::ZeroFillRShiftAssign => Some(">>>="),
+                _ => None,
+            };
+            if let Some(operator) = operator {
+                self.error(
+                    RuleCode::S100,
+                    format!("`x.{name} {operator} v` is not supported for a class accessor"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let write_name = format!("{name}=");
+            let Some(signature) = self.class_sigs[id.0].methods.get(&write_name).cloned() else {
+                self.error(
+                    RuleCode::S100,
+                    format!("`x.{name} = v` cannot write through a read-only accessor"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            };
+            if !statement_position {
+                self.error(
+                    RuleCode::S100,
+                    format!("`x.{name} = v` cannot be used as a value"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let Some(parameter) = signature.params.first() else {
+                self.error(
+                    RuleCode::S100,
+                    format!("write accessor `{name}` has no parameter signature"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            };
+            self.require_assignable(
+                &value.ty.clone(),
+                &parameter.ty,
+                value.pos.clone(),
+                "the assignment",
+            );
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Method {
+                        recv: Box::new(recv),
+                        name: write_name,
+                    },
+                    args: vec![value],
                 },
                 ty: Type::Void,
                 pos,

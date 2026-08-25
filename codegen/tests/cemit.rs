@@ -887,6 +887,29 @@ fn binary32_bit_access_uses_the_declared_runtime_symbols() {
 }
 
 #[test]
+fn accessor_and_underscore_member_emit_distinct_c_symbols() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    let source = "class Escaped {\n  value: i32 = 1;\n  get $(): i32 { return this.value; }\n  set $(value: i32) { this.value = value; }\n  _(): i32 { return 2; }\n}\nexport function main(): void {\n  const escaped: Escaped = new Escaped();\n  escaped.$ = 3;\n  print(`${escaped.$}`);\n  print(`${escaped._()}`);\n}\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let hir = check_program(&files).expect("the escaped accessor program must check");
+    let c = emit_c(&hir).expect("the escaped accessor program must emit C");
+
+    assert!(c.source.contains("subscript_m0__dollar_("), "{}", c.source);
+    assert!(
+        c.source.contains("subscript_m0__dollar__set_("),
+        "{}",
+        c.source
+    );
+    assert!(c.source.contains("subscript_m0__("), "{}", c.source);
+    assert_eq!(
+        run_c_aot(&files).expect("the escaped accessor C must compile and run"),
+        b"3\n2\n"
+    );
+}
+
+#[test]
 fn aligned_value_class_emits_alignas_on_the_first_field() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

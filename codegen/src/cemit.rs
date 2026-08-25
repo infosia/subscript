@@ -81,7 +81,7 @@
 //! entries on both tiers — is the oracle. Should a future entry make
 //! rooting observable, this is where it is added.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use subscript_compiler::hir;
@@ -265,6 +265,56 @@ struct BoundaryPtrWriteback {
     scratch: String,
 }
 
+#[derive(Clone, Default)]
+struct NameTable {
+    names: HashMap<String, String>,
+}
+
+impl NameTable {
+    fn new<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut table = Self::default();
+        let mut used = HashSet::new();
+        for name in names {
+            if table.names.contains_key(name) {
+                continue;
+            }
+            let base = sanitize(name);
+            let mut emitted = base.clone();
+            let mut suffix = 2usize;
+            while used.contains(&emitted) {
+                emitted = format!("{base}_{suffix}");
+                let Some(next_suffix) = suffix.checked_add(1) else {
+                    while used.contains(&emitted) {
+                        emitted.push('_');
+                    }
+                    break;
+                };
+                suffix = next_suffix;
+            }
+            used.insert(emitted.clone());
+            table.names.insert(name.to_string(), emitted);
+        }
+        table
+    }
+
+    fn get(&self, name: &str) -> Option<&str> {
+        self.names.get(name).map(String::as_str)
+    }
+
+    fn require(&self, name: &str, namespace: &str) -> Result<String, String> {
+        self.get(name)
+            .map(str::to_string)
+            .ok_or_else(|| format!("{namespace} name `{name}` has no C identifier"))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum FunctionOwner {
+    Constructor(usize),
+    Method(usize, String),
+    Function(String),
+}
+
 struct Emitter<'m> {
     module: &'m hir::Module,
     /// C-ABI layouts, shared with the CLIF path: used for the exact same
@@ -321,6 +371,18 @@ struct Emitter<'m> {
     /// Foreign C symbols called by the emitted program, in first-use
     /// order.
     foreign_symbols: Vec<String>,
+    /// C names for each class field namespace.
+    field_names: Vec<NameTable>,
+    /// C names for each class method namespace.
+    method_names: Vec<NameTable>,
+    /// C names for the module function namespace.
+    function_names: NameTable,
+    /// C names for the module global namespace.
+    global_names: NameTable,
+    /// C names for each function parameter namespace.
+    parameter_names: HashMap<FunctionOwner, NameTable>,
+    /// C names for parameters of the current function body.
+    current_parameter_names: NameTable,
 }
 
 impl<'m> Emitter<'m> {
@@ -330,6 +392,44 @@ impl<'m> Emitter<'m> {
                 "cannot emit discovery HIR: poisoned import `{}`",
                 import.module
             ));
+        }
+        let field_names = module
+            .classes
+            .iter()
+            .map(|class| NameTable::new(class.fields.iter().map(|field| field.name.as_str())))
+            .collect();
+        let method_names = module
+            .classes
+            .iter()
+            .map(|class| NameTable::new(class.methods.iter().map(|method| method.name.as_str())))
+            .collect();
+        let function_names = NameTable::new(
+            module
+                .functions
+                .iter()
+                .map(|function| function.name.as_str()),
+        );
+        let global_names = NameTable::new(module.globals.iter().map(|global| global.name.as_str()));
+        let mut parameter_names = HashMap::new();
+        for (class_index, class) in module.classes.iter().enumerate() {
+            if let Some(constructor) = &class.ctor {
+                parameter_names.insert(
+                    FunctionOwner::Constructor(class_index),
+                    NameTable::new(constructor.params.iter().map(|param| param.name.as_str())),
+                );
+            }
+            for method in &class.methods {
+                parameter_names.insert(
+                    FunctionOwner::Method(class_index, method.name.clone()),
+                    NameTable::new(method.params.iter().map(|param| param.name.as_str())),
+                );
+            }
+        }
+        for function in &module.functions {
+            parameter_names.insert(
+                FunctionOwner::Function(function.name.clone()),
+                NameTable::new(function.params.iter().map(|param| param.name.as_str())),
+            );
         }
         Ok(Emitter {
             module,
@@ -354,6 +454,12 @@ impl<'m> Emitter<'m> {
             loops: Vec::new(),
             assoc_iters: Vec::new(),
             foreign_symbols: Vec::new(),
+            field_names,
+            method_names,
+            function_names,
+            global_names,
+            parameter_names,
+            current_parameter_names: NameTable::default(),
         })
     }
 
@@ -392,6 +498,35 @@ impl<'m> Emitter<'m> {
     fn class_name(&self, id: ClassId) -> Result<String, String> {
         let c = self.class(id)?;
         Ok(format!("Sub_{}_{}", id.0, sanitize(&c.name)))
+    }
+
+    fn field_c_name(&self, id: ClassId, name: &str) -> Result<String, String> {
+        self.field_names
+            .get(id.0)
+            .ok_or_else(|| format!("class id {} has no field name table", id.0))?
+            .require(name, "field")
+    }
+
+    fn method_c_name(&self, id: ClassId, name: &str) -> Result<String, String> {
+        self.method_names
+            .get(id.0)
+            .ok_or_else(|| format!("class id {} has no method name table", id.0))?
+            .require(name, "method")
+    }
+
+    fn function_c_name(&self, name: &str) -> Result<String, String> {
+        self.function_names.require(name, "function")
+    }
+
+    fn global_c_name(&self, name: &str) -> Result<String, String> {
+        self.global_names.require(name, "global")
+    }
+
+    fn parameters_for(&self, owner: &FunctionOwner) -> Result<NameTable, String> {
+        self.parameter_names
+            .get(owner)
+            .cloned()
+            .ok_or_else(|| format!("function {owner:?} has no parameter name table"))
     }
 
     fn is_value_class(&self, id: ClassId) -> Result<bool, String> {
@@ -525,12 +660,8 @@ impl<'m> Emitter<'m> {
             globals.push_str("    unsigned char subscript_empty;\n");
         } else {
             for g in &self.module.globals {
-                let _ = writeln!(
-                    globals,
-                    "    {} g_{};",
-                    self.ctype(&g.ty)?,
-                    sanitize(&g.name)
-                );
+                let global_name = self.global_c_name(&g.name)?;
+                let _ = writeln!(globals, "    {} g_{global_name};", self.ctype(&g.ty)?,);
             }
         }
         globals.push_str("} SubscriptModuleGlobals;\n");
@@ -579,7 +710,7 @@ impl<'m> Emitter<'m> {
             for m in &c.methods {
                 if m.is_async {
                     let creator = self.async_method_creator_signature(ci, m)?;
-                    let resume = self.async_method_resume_signature(ci, m);
+                    let resume = self.async_method_resume_signature(ci, m)?;
                     let _ = writeln!(self.protos, "{creator};");
                     let _ = writeln!(self.protos, "{resume};");
                 } else {
@@ -829,7 +960,7 @@ impl<'m> Emitter<'m> {
                     let _ = writeln!(
                         out,
                         "    {prefix}{};",
-                        self.field_decl(&field.name, &field.ty)?
+                        self.field_decl(*id, &field.name, &field.ty)?
                     );
                 }
                 let _ = writeln!(out, "}} {name};");
@@ -841,29 +972,38 @@ impl<'m> Emitter<'m> {
 
     /// A `"<type> <name>"` declaration fragment (arrays wrap in their
     /// `FA` struct type, so this is uniform).
-    fn field_decl(&self, name: &str, ty: &Type) -> Result<String, String> {
-        Ok(format!("{} {}", self.ctype(ty)?, sanitize(name)))
+    fn field_decl(&self, id: ClassId, name: &str, ty: &Type) -> Result<String, String> {
+        Ok(format!(
+            "{} {}",
+            self.ctype(ty)?,
+            self.field_c_name(id, name)?
+        ))
     }
 
     // ----- signatures -----
 
-    fn fn_c_name(f: &hir::Function) -> String {
-        format!("subscript_fn_{}", sanitize(&f.name))
+    fn fn_c_name(&self, f: &hir::Function) -> Result<String, String> {
+        Ok(format!("subscript_fn_{}", self.function_c_name(&f.name)?))
     }
 
     /// Parameter list for a plain function/method (aggregates by value).
-    fn param_list(&self, params: &[hir::Param]) -> Result<String, String> {
+    fn param_list(&self, names: &NameTable, params: &[hir::Param]) -> Result<String, String> {
         let mut parts = Vec::with_capacity(params.len());
         for p in params {
-            parts.push(format!("{} {}", self.ctype(&p.ty)?, sanitize(&p.name)));
+            parts.push(format!(
+                "{} {}",
+                self.ctype(&p.ty)?,
+                names.require(&p.name, "parameter")?
+            ));
         }
         Ok(parts.join(", "))
     }
 
     fn fn_signature(&self, f: &hir::Function) -> Result<String, String> {
         let ret = self.ctype(&f.ret)?;
-        let name = Emitter::fn_c_name(f);
-        let params = self.param_list(&f.params)?;
+        let name = self.fn_c_name(f)?;
+        let names = self.parameters_for(&FunctionOwner::Function(f.name.clone()))?;
+        let params = self.param_list(&names, &f.params)?;
         if params.is_empty() {
             Ok(format!("static {ret} {name}(void* ctx)"))
         } else {
@@ -874,7 +1014,8 @@ impl<'m> Emitter<'m> {
     fn ctor_signature(&self, ci: usize, c: &hir::ClassDef) -> Result<String, String> {
         let ctor = c.ctor.as_ref().ok_or("constructor missing")?;
         let cname = self.class_name(ClassId(ci))?;
-        let params = self.param_list(&ctor.params)?;
+        let names = self.parameters_for(&FunctionOwner::Constructor(ci))?;
+        let params = self.param_list(&names, &ctor.params)?;
         let sep = if params.is_empty() { "" } else { ", " };
         if c.is_value {
             Ok(format!(
@@ -890,7 +1031,8 @@ impl<'m> Emitter<'m> {
 
     fn method_signature(&self, ci: usize, m: &hir::Function) -> Result<String, String> {
         let ret = self.ctype(&m.ret)?;
-        let params = self.param_list(&m.params)?;
+        let names = self.parameters_for(&FunctionOwner::Method(ci, m.name.clone()))?;
+        let params = self.param_list(&names, &m.params)?;
         let sep = if params.is_empty() { "" } else { ", " };
         // C2: a value-class receiver is a pointer to the receiver's
         // storage (so a mutating method mutates it), exactly as the CLIF
@@ -902,7 +1044,7 @@ impl<'m> Emitter<'m> {
         };
         Ok(format!(
             "static {ret} subscript_m{ci}_{}(void* ctx, {recv} _this{sep}{params})",
-            sanitize(&m.name)
+            self.method_c_name(ClassId(ci), &m.name)?
         ))
     }
 
@@ -911,32 +1053,37 @@ impl<'m> Emitter<'m> {
         ci: usize,
         method: &hir::Function,
     ) -> Result<String, String> {
-        let params = self.param_list(&method.params)?;
+        let names = self.parameters_for(&FunctionOwner::Method(ci, method.name.clone()))?;
+        let params = self.param_list(&names, &method.params)?;
         let separator = if params.is_empty() { "" } else { ", " };
         Ok(format!(
             "static void* subscript_m{ci}_{}(void* ctx, void* _this{separator}{params})",
-            sanitize(&method.name)
+            self.method_c_name(ClassId(ci), &method.name)?
         ))
     }
 
-    fn async_method_resume_signature(&self, ci: usize, method: &hir::Function) -> String {
-        format!(
+    fn async_method_resume_signature(
+        &self,
+        ci: usize,
+        method: &hir::Function,
+    ) -> Result<String, String> {
+        Ok(format!(
             "static uint8_t subscript_m{ci}_{}_resume(void* ctx, void* _frame, void* _out)",
-            sanitize(&method.name)
-        )
+            self.method_c_name(ClassId(ci), &method.name)?
+        ))
     }
 
     fn gen_creator_signature(&self, f: &hir::Function) -> Result<String, String> {
-        let params = self.param_list(&f.params)?;
+        let names = self.parameters_for(&FunctionOwner::Function(f.name.clone()))?;
+        let params = self.param_list(&names, &f.params)?;
+        let function_name = self.function_c_name(&f.name)?;
         if params.is_empty() {
             Ok(format!(
-                "static void* subscript_fn_{}(void* ctx)",
-                sanitize(&f.name)
+                "static void* subscript_fn_{function_name}(void* ctx)"
             ))
         } else {
             Ok(format!(
-                "static void* subscript_fn_{}(void* ctx, {params})",
-                sanitize(&f.name)
+                "static void* subscript_fn_{function_name}(void* ctx, {params})"
             ))
         }
     }
@@ -945,7 +1092,7 @@ impl<'m> Emitter<'m> {
         let ret = if f.is_async { "uint8_t" } else { "int32_t" };
         Ok(format!(
             "static {ret} subscript_resume_{}(void* ctx, void* _frame, void* _out)",
-            sanitize(&f.name)
+            self.function_c_name(&f.name)?
         ))
     }
 
@@ -972,6 +1119,7 @@ impl<'m> Emitter<'m> {
             } else {
                 Type::Void
             },
+            self.parameters_for(&FunctionOwner::Constructor(ci))?,
         );
         if c.is_value {
             let _ = writeln!(out, "    {cname} _this;");
@@ -983,13 +1131,11 @@ impl<'m> Emitter<'m> {
             if let Some(init) = &field.init {
                 let v = self.eval(init, out, 1)?;
                 if c.is_value {
-                    let _ = writeln!(out, "    _this.{} = {v};", sanitize(&field.name));
+                    let field_name = self.field_c_name(ClassId(ci), &field.name)?;
+                    let _ = writeln!(out, "    _this.{field_name} = {v};");
                 } else {
-                    let _ = writeln!(
-                        out,
-                        "    (({cname}*)_this)->{} = {v};",
-                        sanitize(&field.name)
-                    );
+                    let field_name = self.field_c_name(ClassId(ci), &field.name)?;
+                    let _ = writeln!(out, "    (({cname}*)_this)->{field_name} = {v};");
                 }
             }
         }
@@ -1018,6 +1164,7 @@ impl<'m> Emitter<'m> {
                 ThisCtx::Reference
             },
             m.ret.clone(),
+            self.parameters_for(&FunctionOwner::Method(ci, m.name.clone()))?,
         );
         self.emit_prologue(out, &m.params, &m.body, 1)?;
         self.emit_block(out, &m.body, 1)?;
@@ -1029,7 +1176,11 @@ impl<'m> Emitter<'m> {
     fn emit_function(&mut self, out: &mut String, f: &hir::Function) -> Result<(), String> {
         let sig = self.fn_signature(f)?;
         let _ = writeln!(out, "{sig} {{");
-        self.begin_fn(ThisCtx::None, f.ret.clone());
+        self.begin_fn(
+            ThisCtx::None,
+            f.ret.clone(),
+            self.parameters_for(&FunctionOwner::Function(f.name.clone()))?,
+        );
         self.emit_prologue(out, &f.params, &f.body, 1)?;
         self.emit_block(out, &f.body, 1)?;
         self.emit_exit(out, &f.ret, 1)?;
@@ -1038,7 +1189,7 @@ impl<'m> Emitter<'m> {
     }
 
     /// Resets per-function emitter state.
-    fn begin_fn(&mut self, this: ThisCtx, ret: Type) {
+    fn begin_fn(&mut self, this: ThisCtx, ret: Type, parameter_names: NameTable) {
         self.this = this;
         self.descriptor_this = None;
         self.gen = None;
@@ -1049,6 +1200,7 @@ impl<'m> Emitter<'m> {
         self.shadow_cursor = 0;
         self.has_shadow = false;
         self.current_ret = ret;
+        self.current_parameter_names = parameter_names;
     }
 
     /// Emits the shadow-frame prologue and records parameter types (M1,
@@ -1086,7 +1238,8 @@ impl<'m> Emitter<'m> {
             if w == 0 {
                 continue;
             }
-            let access = self.root_slot_store(out, &p.ty, slot, &sanitize(&p.name), depth)?;
+            let parameter_name = self.current_parameter_names.require(&p.name, "parameter")?;
+            let access = self.root_slot_store(out, &p.ty, slot, &parameter_name, depth)?;
             self.managed_scope.push((p.name.clone(), access));
             slot = checked_shadow_words(slot, w)?;
         }
@@ -1403,7 +1556,7 @@ impl<'m> Emitter<'m> {
 
     fn emit_init(&mut self, out: &mut String) -> Result<(), String> {
         let _ = writeln!(out, "void subscript_init(subscript_rt_context* ctx) {{");
-        self.begin_fn(ThisCtx::None, Type::Void);
+        self.begin_fn(ThisCtx::None, Type::Void, NameTable::default());
         let _ = writeln!(
             out,
             "    if (subscript_rt_globals_init(ctx, sizeof(SubscriptModuleGlobals), _Alignof(SubscriptModuleGlobals)) == (void*)0) return;"
@@ -1411,7 +1564,7 @@ impl<'m> Emitter<'m> {
         let globals: Vec<hir::Global> = self.module.globals.to_vec();
         for g in &globals {
             let v = self.eval(&g.init, out, 1)?;
-            let slot = self.global_ref(&g.name);
+            let slot = self.global_ref(&g.name)?;
             let _ = writeln!(out, "    {slot} = {v};");
             // A managed global (or managed-interior aggregate global) is
             // a permanent collection root (M1): `managed_words` words,
@@ -1432,24 +1585,27 @@ impl<'m> Emitter<'m> {
         let functions = self.module.functions.clone();
         for f in &functions {
             if is_host_callable_export(self.module, f) {
-                let export = format!("subscript_export_{}", sanitize(&f.name));
+                let function_name = self.function_c_name(&f.name)?;
+                let export = format!("subscript_export_{function_name}");
+                let parameter_names =
+                    self.parameters_for(&FunctionOwner::Function(f.name.clone()))?;
                 if f.is_async {
-                    let creator = Emitter::fn_c_name(f);
-                    let resume = format!("subscript_resume_{}", sanitize(&f.name));
+                    let creator = self.fn_c_name(f)?;
+                    let resume = format!("subscript_resume_{function_name}");
                     let _ = writeln!(out, "void {export}(subscript_rt_context* ctx) {{");
                     let _ = writeln!(out, "    void* _frame = {creator}(ctx);");
                     let _ = writeln!(out, "    if (*(const uint32_t*)ctx != 0u) return;");
                     let _ = writeln!(out, "    subscript_rt_async_kick(ctx, _frame, {resume});");
                     let _ = writeln!(out, "}}");
                 } else {
-                    let cn = Emitter::fn_c_name(f);
-                    let params = self.param_list(&f.params)?;
+                    let cn = self.fn_c_name(f)?;
+                    let params = self.param_list(&parameter_names, &f.params)?;
                     let separator = if params.is_empty() { "" } else { ", " };
                     let arguments = f
                         .params
                         .iter()
-                        .map(|parameter| sanitize(&parameter.name))
-                        .collect::<Vec<_>>()
+                        .map(|parameter| parameter_names.require(&parameter.name, "parameter"))
+                        .collect::<Result<Vec<_>, _>>()?
                         .join(", ");
                     let argument_separator = if arguments.is_empty() { "" } else { ", " };
                     if f.params
@@ -1460,7 +1616,7 @@ impl<'m> Emitter<'m> {
                             out,
                             "void {export}(subscript_rt_context* ctx{separator}{params}) {{"
                         );
-                        self.begin_fn(ThisCtx::None, Type::Void);
+                        self.begin_fn(ThisCtx::None, Type::Void, parameter_names.clone());
                         for parameter in &f.params {
                             if let Type::StringAlias(alias) = parameter.ty {
                                 let site = hir::TrapSite::WireEnumValue {
@@ -1469,7 +1625,7 @@ impl<'m> Emitter<'m> {
                                 };
                                 self.validate_wire_alias(
                                     alias,
-                                    &sanitize(&parameter.name),
+                                    &parameter_names.require(&parameter.name, "parameter")?,
                                     &site,
                                     out,
                                     1,
@@ -1498,7 +1654,8 @@ impl<'m> Emitter<'m> {
                 && f.params.is_empty()
                 && f.ret == Type::Void
             {
-                let _ = writeln!(out, "    subscript_export_{}(ctx);", sanitize(&f.name));
+                let function_name = self.function_c_name(&f.name)?;
+                let _ = writeln!(out, "    subscript_export_{function_name}(ctx);");
                 let _ = writeln!(out, "    if (*(const uint32_t*)ctx != 0u) return;");
             }
         }
@@ -2386,11 +2543,14 @@ impl<'m> Emitter<'m> {
         use hir::ExprKind as K;
         match &e.kind {
             K::Local(name) => Ok(self.local_ref(name)),
-            K::Global(name) => Ok(self.global_ref(name)),
+            K::Global(name) => self.global_ref(name),
             K::This => self.current_this_expr(),
             K::Field { obj, name } => {
                 let (base, arrow) = self.field_base(obj, sites, out, depth)?;
-                Ok(format!("{base}{arrow}{}", sanitize(name)))
+                let Type::Class(id) = obj.ty else {
+                    return Err(format!("field place on {:?}", obj.ty));
+                };
+                Ok(format!("{base}{arrow}{}", self.field_c_name(id, name)?))
             }
             K::Index {
                 obj,
@@ -2531,11 +2691,17 @@ impl<'m> Emitter<'m> {
                 return access.clone();
             }
         }
-        sanitize(name)
+        self.current_parameter_names
+            .get(name)
+            .map(str::to_string)
+            .unwrap_or_else(|| sanitize(name))
     }
 
-    fn global_ref(&self, name: &str) -> String {
-        format!("subscript_globals(ctx)->g_{}", sanitize(name))
+    fn global_ref(&self, name: &str) -> Result<String, String> {
+        Ok(format!(
+            "subscript_globals(ctx)->g_{}",
+            self.global_c_name(name)?
+        ))
     }
 
     // ----- expressions -----
@@ -2570,7 +2736,7 @@ impl<'m> Emitter<'m> {
             K::Null => Ok("((void*)0)".to_string()),
             K::This => self.current_this_expr(),
             K::Local(name) => Ok(self.local_ref(name)),
-            K::Global(name) => Ok(self.global_ref(name)),
+            K::Global(name) => self.global_ref(name),
             K::FuncRef(name) => self.func_ref_value(name),
             K::EnumMember { value, .. } => Ok(value.to_string()),
             K::Unary { op, operand } => {
@@ -3184,7 +3350,7 @@ impl<'m> Emitter<'m> {
         match &obj.ty {
             Type::Class(id) if self.is_value_class(*id)? => {
                 let base = self.eval(obj, out, depth)?;
-                Ok(format!("({base}).{}", sanitize(name)))
+                Ok(format!("({base}).{}", self.field_c_name(*id, name)?))
             }
             Type::Class(id) => {
                 let cname = self.class_name(*id)?;
@@ -3194,7 +3360,10 @@ impl<'m> Emitter<'m> {
                     "reference field has no HIR lifetime site",
                 )?;
                 self.emit_trap_site(site, TrapOperand::Value(base.clone()), out, depth)?;
-                Ok(format!("(({cname}*)({base}))->{}", sanitize(name)))
+                Ok(format!(
+                    "(({cname}*)({base}))->{}",
+                    self.field_c_name(*id, name)?
+                ))
             }
             Type::IterResult(_) => {
                 let base = self.eval(obj, out, depth)?;
@@ -3637,7 +3806,8 @@ impl<'m> Emitter<'m> {
                 let f = self.hir_fn(name)?;
                 let argv = self.call_args(&f.params.clone(), args, out, depth)?;
                 let sep = if argv.is_empty() { "" } else { ", " };
-                let call = format!("subscript_fn_{}(ctx{sep}{argv})", sanitize(name));
+                let function_name = self.function_c_name(name)?;
+                let call = format!("subscript_fn_{function_name}(ctx{sep}{argv})");
                 if let Some(site) = trap_site {
                     self.eval_site_checked_call(call, ret_ty, site, out, depth)
                 } else {
@@ -4630,7 +4800,7 @@ impl<'m> Emitter<'m> {
         let signature = format!(
             "static void {name}(subscript_rt_context* ctx, subscript_rt_worker_inbox* inbox, subscript_rt_worker_outbox* outbox)"
         );
-        let target_name = Emitter::fn_c_name(target);
+        let target_name = self.fn_c_name(target)?;
         let _ = writeln!(self.protos, "{signature};");
         let _ = writeln!(
             self.helpers,
@@ -4698,7 +4868,7 @@ impl<'m> Emitter<'m> {
         let class = self.class(cid)?.clone();
         let ind = indent(depth);
         for field in &class.fields {
-            let name = sanitize(&field.name);
+            let name = self.field_c_name(cid, &field.name)?;
             if let Some(target_cid) = self.boundary_struct_ptr_id(&field.ty)? {
                 let target_type = self.class_name(target_cid)?;
                 let cast = self
@@ -5500,7 +5670,7 @@ impl<'m> Emitter<'m> {
         let mut components = Vec::new();
         let mut aggregate_copies = Vec::new();
         for field in &class.fields {
-            let field_name = sanitize(&field.name);
+            let field_name = self.field_c_name(cid, &field.name)?;
             let source_field = format!("({source}).{field_name}");
             match &field.ty {
                 Type::Str => components.push(format!(
@@ -5729,7 +5899,7 @@ impl<'m> Emitter<'m> {
         let ind = indent(depth);
         let _ = writeln!(out, "{ind}if ({} != NULL) {{", writeback.source);
         for field in &class.fields {
-            let name = sanitize(&field.name);
+            let name = self.field_c_name(writeback.cid, &field.name)?;
             if field.ty == Type::Str {
                 let view = self.fresh_tmp();
                 let _ = writeln!(
@@ -5849,17 +6019,16 @@ impl<'m> Emitter<'m> {
                         .map(|f| is_userdata_slot(&f.ty))
                         .unwrap_or(false);
                     let ud2_expr = if has_ud2 {
-                        format!("{t}.{}", sanitize(&fields[i + 2].name))
+                        format!("{t}.{}", self.field_c_name(cid, &fields[i + 2].name)?)
                     } else {
                         "NULL".to_string()
                     };
                     parts.push(format!("({callback_typedef})&subscript_rt_cb_trampoline"));
+                    let callback_name = self.field_c_name(cid, &f.name)?;
+                    let userdata_name = self.field_c_name(cid, &ud1.name)?;
                     parts.push(format!(
                         "subscript_rt_cb_bind(ctx, {t}.{}.code, {t}.{}.env, {t}.{}, {})",
-                        sanitize(&f.name),
-                        sanitize(&f.name),
-                        sanitize(&ud1.name),
-                        ud2_expr
+                        callback_name, callback_name, userdata_name, ud2_expr
                     ));
                     if has_ud2 {
                         // Second userdata C slot → null.
@@ -5878,13 +6047,13 @@ impl<'m> Emitter<'m> {
                     // backing store (zero-copy). The element pointer type is
                     // the C struct field's, so no element-specific cast is
                     // needed (unlike the standalone descriptor).
-                    let fld = sanitize(&f.name);
+                    let fld = self.field_c_name(cid, &f.name)?;
                     parts.push(format!("(size_t)subscript_rt_array_len(ctx, {t}.{fld})"));
                     parts.push(format!("(void*)subscript_rt_array_data(ctx, {t}.{fld})"));
                     i += 1;
                 }
                 _ => {
-                    parts.push(format!("{t}.{}", sanitize(&f.name)));
+                    parts.push(format!("{t}.{}", self.field_c_name(cid, &f.name)?));
                     i += 1;
                 }
             }
@@ -5996,7 +6165,7 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(
                     out,
                     "{ind}{step}.done = subscript_resume_{}(ctx, {g}, &{step}.value);",
-                    sanitize(&creator)
+                    self.function_c_name(&creator)?
                 );
                 if checked {
                     self.emit_trap_check(out, depth)?;
@@ -6046,7 +6215,7 @@ impl<'m> Emitter<'m> {
                 let call = format!(
                     "subscript_m{}_{}(ctx, {recv_c}{sep}{argv})",
                     cid.0,
-                    sanitize(name)
+                    self.method_c_name(cid, name)?
                 );
                 self.eval_call_with_policy(call, ret_ty, checked, out, depth)
             }
@@ -6162,7 +6331,7 @@ impl<'m> Emitter<'m> {
                                 out,
                                 "{}{this}.{} = {value};",
                                 indent(depth),
-                                sanitize(&field.name)
+                                self.field_c_name(class, &field.name)?
                             );
                         }
                     }
@@ -6204,7 +6373,7 @@ impl<'m> Emitter<'m> {
                             out,
                             "{}(({cname}*){this})->{} = {value};",
                             indent(depth),
-                            sanitize(&field.name)
+                            self.field_c_name(class, &field.name)?
                         );
                     }
                 }
@@ -6278,7 +6447,7 @@ impl<'m> Emitter<'m> {
                 out,
                 "{}(({cname}*)({this}))->{} = {value};",
                 indent(depth),
-                sanitize(&field.name)
+                self.field_c_name(class, &field.name)?
             );
         }
         Ok(this)
@@ -6287,7 +6456,7 @@ impl<'m> Emitter<'m> {
     // ----- function values and lambdas -----
 
     fn func_ref_value(&mut self, name: &str) -> Result<String, String> {
-        let wrap = format!("subscript_wrap_{}", sanitize(name));
+        let wrap = format!("subscript_wrap_{}", self.function_c_name(name)?);
         if self.wrappers.insert(wrap.clone()) {
             self.emit_func_wrapper(name, &wrap)?;
         }
@@ -6297,15 +6466,20 @@ impl<'m> Emitter<'m> {
     fn emit_func_wrapper(&mut self, name: &str, wrap: &str) -> Result<(), String> {
         let f = self.hir_fn(name)?.clone();
         let ret = self.ctype(&f.ret)?;
-        let params = self.param_list(&f.params)?;
+        let parameter_names = self.parameters_for(&FunctionOwner::Function(f.name.clone()))?;
+        let params = self.param_list(&parameter_names, &f.params)?;
         let sep = if params.is_empty() { "" } else { ", " };
         let sig = format!("static {ret} {wrap}(void* ctx, void* _env{sep}{params})");
         let _ = writeln!(self.protos, "{sig};");
-        let argv: Vec<String> = f.params.iter().map(|p| sanitize(&p.name)).collect();
+        let argv: Vec<String> = f
+            .params
+            .iter()
+            .map(|param| parameter_names.require(&param.name, "parameter"))
+            .collect::<Result<_, _>>()?;
         let asep = if argv.is_empty() { "" } else { ", " };
         let call = format!(
             "subscript_fn_{}(ctx{asep}{})",
-            sanitize(name),
+            self.function_c_name(name)?,
             argv.join(", ")
         );
         let _ = writeln!(
@@ -6386,7 +6560,8 @@ impl<'m> Emitter<'m> {
         caps: &[(String, Type)],
     ) -> Result<(), String> {
         let retc = self.ctype(ret)?;
-        let params_c = self.param_list(params)?;
+        let parameter_names = NameTable::new(params.iter().map(|param| param.name.as_str()));
+        let params_c = self.param_list(&parameter_names, params)?;
         let sep = if params_c.is_empty() { "" } else { ", " };
         let sig = format!("static {retc} {name}(void* ctx, void* _env{sep}{params_c})");
         let _ = writeln!(self.protos, "{sig};");
@@ -6401,10 +6576,12 @@ impl<'m> Emitter<'m> {
         let saved_cursor = self.shadow_cursor;
         let saved_has = self.has_shadow;
         let saved_ret = self.current_ret.clone();
+        let saved_parameter_names = std::mem::take(&mut self.current_parameter_names);
         self.this = ThisCtx::None;
         self.shadow_cursor = 0;
         self.has_shadow = false;
         self.current_ret = ret.clone();
+        self.current_parameter_names = parameter_names;
 
         let mut fbody = String::new();
         if !caps.is_empty() {
@@ -6439,6 +6616,7 @@ impl<'m> Emitter<'m> {
         self.shadow_cursor = saved_cursor;
         self.has_shadow = saved_has;
         self.current_ret = saved_ret;
+        self.current_parameter_names = saved_parameter_names;
         Ok(())
     }
 
@@ -6508,7 +6686,9 @@ impl<'m> Emitter<'m> {
             Type::Generator(y) => (**y).clone(),
             other => return Err(format!("generator return {other:?}")),
         };
-        let gen_struct = format!("Gen_{}", sanitize(&f.name));
+        let function_name = self.function_c_name(&f.name)?;
+        let parameter_names = self.parameters_for(&FunctionOwner::Function(f.name.clone()))?;
+        let gen_struct = format!("Gen_{function_name}");
 
         // Frame layout: state word, params, then lets in emission order.
         let mut lets: Vec<(&str, &Type)> = Vec::new();
@@ -6520,7 +6700,7 @@ impl<'m> Emitter<'m> {
                 struct_body,
                 "    {} {};",
                 self.ctype(&p.ty)?,
-                sanitize(&p.name)
+                parameter_names.require(&p.name, "parameter")?
             );
         }
         for (i, (_, ty)) in lets.iter().enumerate() {
@@ -6536,7 +6716,7 @@ impl<'m> Emitter<'m> {
         // Creator.
         let creator_sig = self.gen_creator_signature(f)?;
         let _ = writeln!(out, "{creator_sig} {{");
-        self.begin_fn(ThisCtx::None, f.ret.clone());
+        self.begin_fn(ThisCtx::None, f.ret.clone(), parameter_names.clone());
         let sites = f.trap_sites();
         lower_trap_sites(&sites, "generator frame creation", |sites| {
             let site = sites.take_required(
@@ -6557,7 +6737,8 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "    {gen_struct}* _f = ({gen_struct}*)_frame;");
         let _ = writeln!(out, "    _f->_state = 0;");
         for p in &f.params {
-            let _ = writeln!(out, "    _f->{0} = {0};", sanitize(&p.name));
+            let parameter_name = parameter_names.require(&p.name, "parameter")?;
+            let _ = writeln!(out, "    _f->{parameter_name} = {parameter_name};");
         }
         let _ = writeln!(out, "    return _frame;");
         let _ = writeln!(out, "}}\n");
@@ -6578,7 +6759,7 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "    }}");
         let _ = writeln!(out, "    _gstart: ;");
 
-        self.begin_fn(ThisCtx::None, Type::I32);
+        self.begin_fn(ThisCtx::None, Type::I32, parameter_names.clone());
         self.gen = Some(GenState {
             kind: FrameKind::Generator,
             yields: 0,
@@ -6589,8 +6770,9 @@ impl<'m> Emitter<'m> {
             child_fields: Vec::new(),
         });
         for p in &f.params {
+            let parameter_name = parameter_names.require(&p.name, "parameter")?;
             self.gen_locals
-                .push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
+                .push((p.name.clone(), format!("_f->{parameter_name}")));
         }
         self.emit_block(out, &f.body, 1)?;
         // Fell off the end: done.
@@ -6623,9 +6805,17 @@ impl<'m> Emitter<'m> {
         f: &hir::Function,
         class: Option<usize>,
     ) -> Result<(), String> {
+        let owner = match class {
+            Some(class) => FunctionOwner::Method(class, f.name.clone()),
+            None => FunctionOwner::Function(f.name.clone()),
+        };
+        let parameter_names = self.parameters_for(&owner)?;
         let frame_struct = match class {
-            Some(class) => format!("Async_m{class}_{}", sanitize(&f.name)),
-            None => format!("Async_{}", sanitize(&f.name)),
+            Some(class) => format!(
+                "Async_m{class}_{}",
+                self.method_c_name(ClassId(class), &f.name)?
+            ),
+            None => format!("Async_{}", self.function_c_name(&f.name)?),
         };
 
         // Async frames use the same Context-owned allocation class and
@@ -6643,7 +6833,7 @@ impl<'m> Emitter<'m> {
                 struct_body,
                 "    {} {};",
                 self.ctype(&p.ty)?,
-                sanitize(&p.name)
+                parameter_names.require(&p.name, "parameter")?
             );
         }
         for (i, (_, ty)) in lets.iter().enumerate() {
@@ -6668,7 +6858,11 @@ impl<'m> Emitter<'m> {
             None => self.gen_creator_signature(f)?,
         };
         let _ = writeln!(out, "{creator_sig} {{");
-        self.begin_fn(ThisCtx::None, Type::Generator(Box::new(Type::Void)));
+        self.begin_fn(
+            ThisCtx::None,
+            Type::Generator(Box::new(Type::Void)),
+            parameter_names.clone(),
+        );
         let sites = f.trap_sites();
         lower_trap_sites(&sites, "async frame creation", |sites| {
             let site = sites.take_required(
@@ -6692,13 +6886,14 @@ impl<'m> Emitter<'m> {
             let _ = writeln!(out, "    _f->_this = _this;");
         }
         for p in &f.params {
-            let _ = writeln!(out, "    _f->{0} = {0};", sanitize(&p.name));
+            let parameter_name = parameter_names.require(&p.name, "parameter")?;
+            let _ = writeln!(out, "    _f->{parameter_name} = {parameter_name};");
         }
         let _ = writeln!(out, "    return _frame;");
         let _ = writeln!(out, "}}\n");
 
         let resume_sig = match class {
-            Some(class) => self.async_method_resume_signature(class, f),
+            Some(class) => self.async_method_resume_signature(class, f)?,
             None => self.gen_resume_signature(f)?,
         };
         let suspensions = count_yields(&f.body);
@@ -6723,6 +6918,7 @@ impl<'m> Emitter<'m> {
                 ThisCtx::None
             },
             Type::I32,
+            parameter_names.clone(),
         );
         self.gen = Some(GenState {
             kind: FrameKind::Async,
@@ -6734,8 +6930,9 @@ impl<'m> Emitter<'m> {
             child_fields,
         });
         for p in &f.params {
+            let parameter_name = parameter_names.require(&p.name, "parameter")?;
             self.gen_locals
-                .push((p.name.clone(), format!("_f->{}", sanitize(&p.name))));
+                .push((p.name.clone(), format!("_f->{parameter_name}")));
         }
         self.emit_block(out, &f.body, 1)?;
         let _ = writeln!(out, "    _f->_state = {GEN_DONE}; return 1;");
@@ -6797,8 +6994,8 @@ impl<'m> Emitter<'m> {
         let (f, creator, resume, receiver) = match callee {
             hir::AsyncCallee::Function(function) => (
                 self.hir_fn(function)?,
-                format!("subscript_fn_{}", sanitize(function)),
-                format!("subscript_resume_{}", sanitize(function)),
+                format!("subscript_fn_{}", self.function_c_name(function)?),
+                format!("subscript_resume_{}", self.function_c_name(function)?),
                 None,
             ),
             hir::AsyncCallee::Method {
@@ -6807,8 +7004,16 @@ impl<'m> Emitter<'m> {
                 name,
             } => (
                 self.hir_method(class.0, name)?,
-                format!("subscript_m{}_{}", class.0, sanitize(name)),
-                format!("subscript_m{}_{}_resume", class.0, sanitize(name)),
+                format!(
+                    "subscript_m{}_{}",
+                    class.0,
+                    self.method_c_name(*class, name)?
+                ),
+                format!(
+                    "subscript_m{}_{}_resume",
+                    class.0,
+                    self.method_c_name(*class, name)?
+                ),
                 Some(receiver.as_ref()),
             ),
             _ => return Err("unknown async callee kind".to_string()),
@@ -7407,15 +7612,17 @@ fn shift_expr(op: hir::BinOp, ty: &Type, left: &str, right: &str) -> Result<Stri
     ))
 }
 
-/// Sanitizes an HIR identifier (which may carry `<...>` from
-/// monomorphization) into a C identifier fragment.
+/// Converts an HIR identifier into a C identifier fragment.
+/// It escapes `$` and `=`. An HIR identifier can contain `<...>` after
+/// monomorphization, so the fallback arm maps unsupported characters to `_`.
 fn sanitize(name: &str) -> String {
     let mut s = String::with_capacity(name.len());
     for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            s.push(ch);
-        } else {
-            s.push('_');
+        match ch {
+            '$' => s.push_str("_dollar_"),
+            '=' => s.push_str("_set_"),
+            _ if ch.is_ascii_alphanumeric() || ch == '_' => s.push(ch),
+            _ => s.push('_'),
         }
     }
     if is_c_keyword(&s) {
@@ -8068,6 +8275,68 @@ mod tests {
 
     fn emit(src: &str) -> String {
         emit_c(&module_of(src)).expect("emit").source
+    }
+
+    #[test]
+    fn sanitize_escapes_accessor_characters() {
+        assert_eq!(sanitize("$"), "_dollar_");
+        assert_eq!(sanitize("v="), "v_set_");
+        assert_eq!(sanitize("ordinary_name"), "ordinary_name");
+    }
+
+    #[test]
+    fn method_namespace_resolves_a_sanitized_collision() {
+        let module = module_of(
+            "class Value {\n  raw: i32 = 0;\n  get v(): i32 { return this.raw; }\n  set v(value: i32) { this.raw = value; }\n  v_set_(): i32 { return 3; }\n}\n",
+        );
+        let emitter = Emitter::new(&module).expect("emitter");
+        let names = &emitter.method_names[0];
+        assert_eq!(names.get("v"), Some("v"));
+        assert_eq!(names.get("v="), Some("v_set_"));
+        assert_eq!(names.get("v_set_"), Some("v_set__2"));
+    }
+
+    #[test]
+    fn field_namespace_resolves_a_sanitized_collision() {
+        let module = module_of("class Value {\n  $: i32 = 1;\n  _dollar_: i32 = 2;\n}\n");
+        let emitter = Emitter::new(&module).expect("emitter");
+        let names = &emitter.field_names[0];
+        assert_eq!(names.get("$"), Some("_dollar_"));
+        assert_eq!(names.get("_dollar_"), Some("_dollar__2"));
+    }
+
+    #[test]
+    fn function_namespace_resolves_a_sanitized_collision() {
+        let module = module_of(
+            "function $(): void {}\nfunction _dollar_(): void {}\nexport function main(): void {}\n",
+        );
+        let emitter = Emitter::new(&module).expect("emitter");
+        assert_eq!(emitter.function_names.get("$"), Some("_dollar_"));
+        assert_eq!(emitter.function_names.get("_dollar_"), Some("_dollar__2"));
+    }
+
+    #[test]
+    fn global_namespace_resolves_a_sanitized_collision() {
+        let module =
+            module_of("let $: i32 = 1;\nlet _dollar_: i32 = 2;\nexport function main(): void {}\n");
+        let emitter = Emitter::new(&module).expect("emitter");
+        assert_eq!(emitter.global_names.get("$"), Some("_dollar_"));
+        assert_eq!(emitter.global_names.get("_dollar_"), Some("_dollar__2"));
+    }
+
+    #[test]
+    fn parameter_namespace_resolves_a_sanitized_collision() {
+        let module = module_of(
+            "function add($: i32, _dollar_: i32): i32 { return $ + _dollar_; }\nexport function main(): void {}\n",
+        );
+        let emitter = Emitter::new(&module).expect("emitter");
+        let owner = FunctionOwner::Function("add".to_string());
+        let names = emitter
+            .parameter_names
+            .get(&owner)
+            .expect("parameter names");
+        assert_eq!(names.get("$"), Some("_dollar_"));
+        assert_eq!(names.get("_dollar_"), Some("_dollar__2"));
     }
 
     #[test]

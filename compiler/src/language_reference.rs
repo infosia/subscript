@@ -18,6 +18,8 @@ const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`,
 
 const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@CStruct({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
 
+const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Reference classes and `@CStruct` value classes can declare read accessors. Only reference classes can declare write accessors. Compound assignments, updates, value-position writes, static accessors, and mirror accessors are outside the surface.";
+
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member !== undefined` or the inverse arm of `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
 const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return.";
@@ -67,6 +69,20 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r07-value-class-extends.ts",
             "corpus/reject/r135-cstruct-align-below-natural.ts",
             "corpus/reject/r136-cstruct-align-not-in-set.ts",
+        ],
+    },
+    Feature {
+        title: "Named accessors",
+        prose: NAMED_ACCESSORS,
+        corpus: &[
+            "corpus/accept/a144-accessor.ts",
+            "corpus/reject/r141-value-class-write-accessor.ts",
+            "corpus/reject/r142-readonly-accessor-write.ts",
+            "corpus/reject/r143-accessor-compound-assign.ts",
+            "corpus/reject/r144-accessor-increment.ts",
+            "corpus/reject/r145-accessor-write-as-value.ts",
+            "corpus/reject/r146-accessor-field-name-clash.ts",
+            "corpus/reject/r147-static-accessor.ts",
         ],
     },
     Feature {

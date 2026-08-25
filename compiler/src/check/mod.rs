@@ -199,6 +199,7 @@ pub(crate) struct FnSig {
 pub(crate) struct ClassSig {
     pub ctor: Option<Vec<ParamSig>>,
     pub methods: HashMap<String, FnSig>,
+    pub accessors: HashSet<String>,
 }
 
 /// A module-level variable's declared shape.
@@ -2076,6 +2077,7 @@ impl<'p> Checker<'p> {
         let is_value = self.classes[id.0].is_value;
         let is_descriptor = self.classes[id.0].is_descriptor;
         let mut index_signature_pos = None;
+        let mut write_accessors = Vec::new();
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
             if is_value {
@@ -2105,6 +2107,21 @@ impl<'p> Checker<'p> {
                     if prop.is_static {
                         let pos = self.pos(prop.span);
                         self.error(RuleCode::S100, "static fields are not decided", pos);
+                        continue;
+                    }
+                    let name = key.sym.to_string();
+                    if self.class_sigs[id.0].accessors.contains(&name)
+                        || self.class_sigs[id.0]
+                            .methods
+                            .contains_key(&format!("{name}="))
+                    {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "a field and an accessor cannot share the member name `{name}`"
+                            ),
+                            self.pos(key.span),
+                        );
                         continue;
                     }
                     let is_defaulted =
@@ -2317,6 +2334,8 @@ impl<'p> Checker<'p> {
                             RuleCode::S100,
                             if is_dispose {
                                 "descriptor classes cannot declare `[Symbol.dispose]()`"
+                            } else if method.kind != ast::MethodKind::Method {
+                                "descriptor classes cannot declare accessors"
                             } else {
                                 "descriptor classes cannot declare methods"
                             },
@@ -2338,6 +2357,8 @@ impl<'p> Checker<'p> {
                             RuleCode::S100,
                             if is_dispose {
                                 "`[Symbol.dispose]()` must be non-static"
+                            } else if method.kind != ast::MethodKind::Method {
+                                "static accessors are not in the decided surface"
                             } else if method.function.is_async {
                                 "async static methods are not in the decided surface"
                             } else {
@@ -2347,13 +2368,193 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    if method.kind != ast::MethodKind::Method {
+                    if method.kind != ast::MethodKind::Method && self.in_boundary {
                         let pos = self.pos(method.span);
                         self.error(
                             RuleCode::S100,
-                            "static methods and accessors are not decided",
+                            "mirror classes cannot declare accessors",
                             pos,
                         );
+                        continue;
+                    }
+                    if method.kind == ast::MethodKind::Method
+                        && (self.class_sigs[id.0].accessors.contains(&name)
+                            || self.class_sigs[id.0]
+                                .methods
+                                .contains_key(&format!("{name}=")))
+                    {
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "a method and an accessor cannot share the member name `{name}`"
+                            ),
+                            key_pos,
+                        );
+                        continue;
+                    }
+                    if method.kind == ast::MethodKind::Getter {
+                        if self.class_sigs[id.0].accessors.contains(&name) {
+                            self.error(
+                                RuleCode::S100,
+                                format!("two accessors cannot declare the read member `{name}`"),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if self.classes[id.0]
+                            .fields
+                            .iter()
+                            .any(|field| field.name == name)
+                        {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "a field and an accessor cannot share the member name `{name}`"
+                                ),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if self.class_sigs[id.0].methods.contains_key(&name) {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "a method and an accessor cannot share the member name `{name}`"
+                                ),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if !method.function.params.is_empty() {
+                            self.error(
+                                RuleCode::S100,
+                                "a read accessor must declare no parameters",
+                                key_pos.clone(),
+                            );
+                            continue;
+                        }
+                        let Some(return_type) = &method.function.return_type else {
+                            self.error(
+                                RuleCode::S100,
+                                "a read accessor requires an explicit return type",
+                                key_pos,
+                            );
+                            continue;
+                        };
+                        let sig = FnSig {
+                            params: Vec::new(),
+                            ret: self.resolve_type(&return_type.type_ann),
+                            is_generator: false,
+                            is_async: false,
+                            yield_known: true,
+                        };
+                        self.class_sigs[id.0].accessors.insert(name.clone());
+                        self.class_sigs[id.0].methods.insert(name, sig);
+                        continue;
+                    }
+                    if method.kind == ast::MethodKind::Setter {
+                        let write_name = format!("{name}=");
+                        if self.class_sigs[id.0].methods.contains_key(&write_name) {
+                            self.error(
+                                RuleCode::S100,
+                                format!("two accessors cannot declare the write member `{name}`"),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if is_value {
+                            let class_name = self.classes[id.0].name.clone();
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "value class `{class_name}` cannot declare a write accessor"
+                                ),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if self.classes[id.0]
+                            .fields
+                            .iter()
+                            .any(|field| field.name == name)
+                        {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "a field and an accessor cannot share the member name `{name}`"
+                                ),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if self.class_sigs[id.0].methods.contains_key(&name)
+                            && !self.class_sigs[id.0].accessors.contains(&name)
+                        {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "a method and an accessor cannot share the member name `{name}`"
+                                ),
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        if method.function.return_type.is_some() {
+                            self.error(
+                                RuleCode::S100,
+                                "a write accessor cannot declare a return type",
+                                key_pos,
+                            );
+                            continue;
+                        }
+                        let [parameter] = method.function.params.as_slice() else {
+                            self.error(
+                                RuleCode::S100,
+                                "a write accessor must declare exactly one parameter",
+                                key_pos.clone(),
+                            );
+                            continue;
+                        };
+                        let binding = match &parameter.pat {
+                            ast::Pat::Ident(binding) => binding,
+                            ast::Pat::Assign(_) => {
+                                self.error(
+                                    RuleCode::S100,
+                                    "a write accessor parameter cannot have a default",
+                                    key_pos.clone(),
+                                );
+                                continue;
+                            }
+                            _ => {
+                                self.error(
+                                    RuleCode::S100,
+                                    "a write accessor parameter must be an identifier",
+                                    key_pos.clone(),
+                                );
+                                continue;
+                            }
+                        };
+                        let Some(annotation) = &binding.type_ann else {
+                            self.error(
+                                RuleCode::S100,
+                                "a write accessor parameter requires a type annotation",
+                                key_pos.clone(),
+                            );
+                            continue;
+                        };
+                        let sig = FnSig {
+                            params: vec![ParamSig {
+                                name: binding.id.sym.to_string(),
+                                ty: self.resolve_type(&annotation.type_ann),
+                                has_default: false,
+                            }],
+                            ret: Type::Void,
+                            is_generator: false,
+                            is_async: false,
+                            yield_known: true,
+                        };
+                        write_accessors.push((name.clone(), key_pos));
+                        self.class_sigs[id.0].methods.insert(write_name, sig);
                         continue;
                     }
                     if method.function.is_generator {
@@ -2483,6 +2684,34 @@ impl<'p> Checker<'p> {
         }
         if let Some(pos) = index_signature_pos {
             self.validate_class_index_accessors(id, pos);
+        }
+        for (name, pos) in write_accessors {
+            if !self.class_sigs[id.0].accessors.contains(&name) {
+                self.error(
+                    RuleCode::S100,
+                    format!("write accessor `{name}` requires a read accessor with the same name"),
+                    pos,
+                );
+                continue;
+            }
+            let read_type = self.class_sigs[id.0]
+                .methods
+                .get(&name)
+                .map(|signature| signature.ret.clone());
+            let write_type = self.class_sigs[id.0]
+                .methods
+                .get(&format!("{name}="))
+                .and_then(|signature| signature.params.first())
+                .map(|parameter| parameter.ty.clone());
+            if let (Some(read_type), Some(write_type)) = (read_type, write_type) {
+                if read_type != write_type {
+                    self.error(
+                        RuleCode::S100,
+                        format!("the read and write accessors of `{name}` must have the same type"),
+                        pos,
+                    );
+                }
+            }
         }
     }
 
@@ -3180,6 +3409,8 @@ impl<'p> Checker<'p> {
             return;
         }
         let this_ty = Type::Class(id);
+        let mut checked_read_accessors = HashSet::new();
+        let mut checked_write_accessors = HashSet::new();
         for member in &class.body {
             match member {
                 ast::ClassMember::ClassProp(prop) => {
@@ -3269,15 +3500,35 @@ impl<'p> Checker<'p> {
                     });
                 }
                 ast::ClassMember::Method(method) => {
-                    let (name, pos) = match &method.key {
+                    let (mut name, pos) = match &method.key {
                         ast::PropName::Ident(key) => (key.sym.to_string(), self.pos(key.span)),
                         key if is_dispose_method_key(key) => {
                             (hir::DISPOSE_METHOD_NAME.to_string(), self.pos(method.span))
                         }
                         _ => continue,
                     };
-                    if method.is_static || method.kind != ast::MethodKind::Method {
+                    if method.is_static {
                         continue;
+                    }
+                    match method.kind {
+                        ast::MethodKind::Getter => {
+                            if !self.class_sigs[id.0].accessors.contains(&name)
+                                || !checked_read_accessors.insert(name.clone())
+                            {
+                                continue;
+                            }
+                        }
+                        ast::MethodKind::Setter => {
+                            if !checked_write_accessors.insert(name.clone()) {
+                                continue;
+                            }
+                            name.push('=');
+                        }
+                        ast::MethodKind::Method => {
+                            if self.class_sigs[id.0].accessors.contains(&name) {
+                                continue;
+                            }
+                        }
                     }
                     let Some(sig) = self.class_sigs[id.0].methods.get(&name).cloned() else {
                         continue;
