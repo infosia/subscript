@@ -7595,7 +7595,10 @@ Pass A:
    in its header. One accept entry pins rule 1a: a `using` in a case
    that falls through into a second `using`, printing `case0 /
    case1 / dispose:b / dispose:a / end` byte-exact on both tiers.
-6. Counts: rejects 142 → 150; accept `.ts` 145 → 147; `.expected`
+6. *(Added 2026-08-26 after the third pass A review.)* One reject
+   entry for rule 4b: a local that owns a class name, declared
+   before the `new`.
+7. Counts: rejects 142 → 151; accept `.ts` 145 → 147; `.expected`
    146 → 148; accept source files 147 → 149.
 
 Pass B:
