@@ -7514,6 +7514,14 @@ satisfy it.)*
    TypeScript accepts the closure form and rejects the direct form
    (TS2448); this rule rejects both, so **no accepted program
    changes its value**. Measurement 4's program becomes a rejection.
+4b. **A local that owns a class name hides the class from that
+   point.** *(Added 2026-08-26 after the third pass A review, which
+   found the rule already widened this far while 4a described only
+   the read-before-declaration shape.)* `const Foo: i32 = 9` before
+   `new Foo()` fails with S100. Stock `tsc` rejects the same program
+   (TS2351), so the direction is right. The message names the
+   shadow. It must not say the class is unknown, because the class
+   is declared and a local owns its name.
 5. Nothing else moves. Every other accepted program keeps its
    diagnostics and its output.
 6. §66 measurement 6e's note applies: once a switch body is one
