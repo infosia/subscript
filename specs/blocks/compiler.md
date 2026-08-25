@@ -7107,6 +7107,25 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    keys, `Map` values, `Set` values, and string code points — all
    agree across the tiers; the generator-driven form is the eighth
    and the only one that fails.
+6g. *(Fifth review, 2026-08-25. The pairing is now exhaustive.)* The
+   review paired every scope opener in the checker with every block
+   site in the emitter. Checker: `ast::Stmt::Block`, `check_branch`
+   (if-then, if-else, while body, `for` body, `for...of` body), the
+   `for` head, the `for...of` binding, the `switch` case, and the
+   lambda body. Emitter: the function bodies, `if`, `Block`,
+   `while`, the `for` body, the `for...of` body, the `switch` case,
+   the lambda body, and the coroutine resumes. Every pair opens a C
+   block except two: the `switch` case, which measurement 6e records
+   as an owner decision, and the lambda body.
+6h. `emit_lambda_fn` materializes the capture copies and the body's
+   own top-level locals in one C block, while the checker gives the
+   lambda body its own scope and resolves a capture across that
+   boundary. A body local whose name equals a capture is therefore a
+   C redefinition. Measured, `tsc`-clean: a lambda that captures `n`
+   from an enclosing `const n: i32 = 1`, holds an inner lambda
+   reading the capture, and then declares `const n: i32 = 2`, prints
+   `3` on the dev tier, and the C compiler stops with "redefinition
+   of 'v_n'". This is the last unbraced pair of 6g.
 6e. *(Third review, 2026-08-25. Recorded, not fixed here.)* The
    checker gives each `switch` case its own scope; TypeScript gives
    the whole switch body one scope. A program that declares a name
@@ -7317,6 +7336,13 @@ with their outputs (this host).
    a local that shadows the loop binding. The seven fused `for...of`
    kinds were all measured to agree; the generator-driven form is a
    separate lowering and needs its own line in the entry.
+2e. *(Fifth review, 2026-08-25.)* `a146` also holds, outside any
+   coroutine: a lambda body whose top-level local shadows one of the
+   lambda's own captures, which pins measurement 6h; and a shadowed
+   local inside one `switch` case, which item 2b named and item 2c's
+   list left out. A shadow inside one case is expressible and was
+   measured to agree on both tiers; only the cross-case read of
+   measurement 6e is not expressible.
 3. Counts: accept `.ts` 143 → 145; `.expected` 144 → 146; accept
    source files 145 → 147. Rejects do not move. The generated docs
    regenerate.
