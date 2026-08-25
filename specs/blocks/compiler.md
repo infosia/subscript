@@ -7480,6 +7480,16 @@ satisfy it.)*
    scope for the whole body, as TypeScript has it. Two declarations
    of one name in one switch body fail with S100 that names the
    switch, matching the direction of TS2451.
+1a. **The scope owns the disposal.** *(Added 2026-08-26 after the
+   second pass A review.)* A `using` declaration in a case belongs
+   to the switch body, so §60's hook runs at each exit of the switch
+   body, in reverse declaration order across every case. Measured:
+   `using a` in `case 0` falling through into `using b` in `case 1`
+   prints `case0 / case1 / dispose:b / dispose:a / end` under
+   TypeScript (downlevelled to ES2022, `node` v24.18.0), while this
+   compiler printed `case0 / dispose:a / case1 / dispose:b / end` on
+   both tiers. Rule 1 moved the scope and left the disposal site
+   behind, so the round created that inconsistency.
 2. A read of a name that a **different** case declares fails with
    S100 at the read. TypeScript rejects the same program through a
    definite-assignment analysis (TS2454) that this compiler does not
@@ -7491,6 +7501,16 @@ satisfy it.)*
 4. A block-scoped declaration owns its name for the whole block. A
    read of that name earlier in the same block fails with S100 at
    the read, whether the read is direct or inside a nested lambda.
+4a. **Rules 2 and 4 reach every name, not only a local.** *(Added
+   2026-08-26 after the second pass A review.)* A declaration owns
+   its name against an ambient namespace and against a class name
+   too. Measured, each accepted here and rejected by `tsc`:
+   `Math.abs(-2.5)` before `const Math: i32 = 3` printed `2.5:3`
+   (TS2448, TS2454); `new Foo()` before `const Foo: i32 = 9` printed
+   `1:9` (TS2351, TS2448, TS2454); the same two shapes across two
+   switch cases behaved the same. Every site that asks whether a
+   name is shadowed must consult the pending declarations and the
+   switch declarations, not the bound locals alone.
    TypeScript accepts the closure form and rejects the direct form
    (TS2448); this rule rejects both, so **no accepted program
    changes its value**. Measurement 4's program becomes a rejection.
@@ -7569,8 +7589,14 @@ Pass A:
    `counter`" and the ship tier ran. `node` refuses the same program
    with a temporal-dead-zone `ReferenceError`; stock `tsc` accepts
    it, so the entry carries a `tsc-clean-standalone` header.)*
-5. Counts: rejects 142 → 148; accept `.ts` 145 → 146; `.expected`
-   146 → 147; accept source files 147 → 148.
+5. *(Added 2026-08-26 after the second pass A review.)* One reject
+   entry for an ambient-namespace name shadowed by a later
+   declaration, and one for a class name, each with the `tsc` codes
+   in its header. One accept entry pins rule 1a: a `using` in a case
+   that falls through into a second `using`, printing `case0 /
+   case1 / dispose:b / dispose:a / end` byte-exact on both tiers.
+6. Counts: rejects 142 → 150; accept `.ts` 145 → 147; `.expected`
+   146 → 148; accept source files 147 → 149.
 
 Pass B:
 
