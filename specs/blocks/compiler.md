@@ -7101,9 +7101,19 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    block then makes the two tiers disagree with no diagnostic.
    Measured: `case 1` prints `case1:1` on the dev tier and
    `case1:99` on the ship tier. The emitter is not the defect.
-   Which scope rule the language takes is an owner decision, and
-   bracing each case in C is correct under only one of the two
-   answers, so this section changes nothing here.
+   Bracing each case in C is correct under only one of the two
+   scope rules, so this section changes nothing here.
+
+   **Owner decision 2026-08-25: the checker moves to the TypeScript
+   rule — one scope for the whole `switch` body — in its own cycle,
+   after §66 lands.** Two questions that cycle must settle from
+   measurement, not from this note: `tsc` rejects the cross-case
+   read with TS2454, which is a definite-assignment analysis this
+   compiler may not have, so the cycle decides between implementing
+   that analysis and taking a narrower rule that rejects a
+   cross-case read outright; and once the body is one scope, the
+   per-case scope restore in the emitter must go, because a name
+   declared in one case is then legally in scope in a later one.
 7. The emitter's own function-scope identifiers are `ctx`, `_this`,
    `_frame`, `_out`, `_f`, `_t{n}` (`fresh_tmp`), and `_L{n}`
    (`fresh_label`). A coroutine frame struct holds `_state`,
