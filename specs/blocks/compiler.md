@@ -7051,6 +7051,32 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    The lambda, bridge, worker-entry, constructor, and string-alias
    symbols are index-formed. `subscript_opaque` is emitted only for
    a class that declares no field.
+6a. *(Corrected 2026-08-25 after the second phase review. The audit
+   of item 6 read the function symbols and missed the frame **type**
+   names.)* A coroutine frame type is built from a source name by
+   **prefix**: `Async_m{class}_{method}` and `Async_{function}`, and
+   the same two for `Gen_`. They share one C namespace. Measured: a
+   free async function named `m0_x` beside an async method `x` on
+   class index 0 both give `Async_m0_x`, and the C compiler stops
+   with "redefinition of 'Async_m0_x'". Loud.
+6b. A local inside a coroutine body resolves through `gen_locals`,
+   which `local_ref` scans before every other stack. Such a local
+   has no C identifier, so it is a rule 3a local. `emit_for_of`
+   restores `gen_locals`; `emit_block` and `emit_for` do not.
+   Measured, silent: an `async` function with `const s: string =
+   "outer"` and an inner `const s: string = "inner"` prints `inner`
+   then `outer` on the dev tier and `inner` then `inner` on the ship
+   tier.
+6c. An **unmanaged** local that shadows an outer **managed** local
+   of one name does not mask it. `emit_let`'s unmanaged arm records
+   no entry in `managed_scope`, while `emit_for_of_binding` records
+   one for exactly this reason, so the outer entry wins the reverse
+   scan for the rest of the block. Measured: `const s: string =
+   "outer-string"` with an inner `const s: i32 = 5` prints
+   `inner=5` then `outer-string` on the dev tier, and the ship tier
+   stops with "incompatible pointer to integer conversion". The
+   silent form of the same defect needs two types that are both
+   `void*` in C.
 7. The emitter's own function-scope identifiers are `ctx`, `_this`,
    `_frame`, `_out`, `_f`, `_t{n}` (`fresh_tmp`), and `_L{n}`
    (`fresh_label`). A coroutine frame struct holds `_state`,
@@ -7099,19 +7125,35 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    C block scoping then reproduces the shadowing the language
    permits (measurement 8).
 3a. **A local that has no C identifier obeys the same shadowing.**
-   *(Added 2026-08-25 after the phase review; measurement 8a.)* A
-   managed local lives in a shadow-frame slot, so C block scoping
-   cannot apply to it. The emitter's own scope bookkeeping supplies
-   it: `emit_block` records the lengths of `managed_scope` and
-   `local_types` on entry and truncates to them on exit, as
-   `emit_for_of` already does. An inner binding then stops masking
-   the outer one at the end of its block.
+   *(Added 2026-08-25 after the phase review; measurement 8a.
+   Widened after the second review; measurements 6b and 6c.)* A
+   managed local lives in a shadow-frame slot and a coroutine local
+   lives in a frame field, so C block scoping cannot apply to
+   either. The emitter's own scope bookkeeping supplies it. Every
+   site that opens a lexical scope — `emit_block`, `emit_for`, and
+   `emit_for_of` — records the lengths of **all three** name stacks
+   on entry, `managed_scope`, `local_types`, and `gen_locals`, and
+   truncates to them on exit. `shadow_cursor` and the frame let
+   cursor stay monotonic, so no restored scope reads a stale slot.
+3a-i. **Every binding masks a same-named binding from an outer
+   block, whatever its storage.** An unmanaged local records an
+   entry in `managed_scope` beside its C name, as
+   `emit_for_of_binding` already does, so a `string` outside and an
+   `i32` inside resolve to the inner one. Rule 3a's restore is what
+   makes the mask end with its block.
 3b. The lambda environment struct is one namespace and takes one
    table. *(Added 2026-08-25 after the phase review; measurement
    8b.)* The member declaration, the store in the creating frame,
    and the read in the lambda body all read it.
-4. A symbol the emitter derives from a source name by suffix takes
-   its identifier from the table of the name it derives from. The
+4. A symbol the emitter derives from a source name — by suffix or
+   by prefix — takes its identifier from the table of the name it
+   derives from, or drops the source name entirely for an index.
+   *(Widened 2026-08-25 after the second review; measurement 6a. The
+   coroutine frame types `Async_...` and `Gen_...` are
+   prefix-derived and reached the same collision. A frame type takes
+   the index form `Async_m{class}_{method index}`, which matches the
+   dev tier's own convention and removes the source name from the
+   derivation.)* The
    async **method** resume symbol is the only one:
    `{name}_resume` enters the class method table as a synthetic
    entry beside `{name}`, and the §65 rule 10 `_N` logic resolves a
@@ -7186,6 +7228,15 @@ with their outputs (this host).
    `a$b` beside `a_dollar_b`. Byte-exact across dev JIT, ship
    C-AOT, and the golden. This entry is the gate for rules 3a and
    3b; without it the corpus does not see them.
+2b. Widened 2026-08-25 after the second review, because the item 2a
+   list is what missed measurements 6b and 6c. `a146` also holds:
+   the same shadowing inside a generator body and inside an `async`
+   body across a suspension; a shadowed local in a `switch` case
+   and in a `for...of` body; an unmanaged local that shadows an
+   outer managed local of one name, and the reverse; and a free
+   async function named `m0_x` beside an async method `x` on the
+   first class, which pins measurement 6a. Every construct that
+   opens a lexical scope appears at least once.
 3. Counts: accept `.ts` 143 → 145; `.expected` 144 → 146; accept
    source files 145 → 147. Rejects do not move. The generated docs
    regenerate.
