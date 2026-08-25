@@ -7077,6 +7077,33 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    stops with "incompatible pointer to integer conversion". The
    silent form of the same defect needs two types that are both
    `void*` in C.
+6d. *(Third review, 2026-08-25.)* Two emitter defects survive that a
+   scope restore cannot reach, because the emitter opens no C block
+   where the language opens a scope. Both are on `tsc`-clean
+   programs, so both are legal subscript programs that the dev tier
+   runs and the C compiler rejects.
+   - `emit_for_of` emits the loop binding and the body into one C
+     block. A body local that shadows the binding is a redefinition.
+     Measured: `for (const v of xs) { const v: i32 = 100; print(...)
+     }` prints `100` three times on the dev tier, and the C compiler
+     stops with "redefinition of 'v_v'".
+   - `emit_lambda_fn` saves and restores the per-function stacks but
+     not `assoc_iters`, which only `begin_fn` clears and a lambda
+     never calls. A lambda created inside a `Map` or `Set` `for...of`
+     emits the enclosing function's iterator handle in its own
+     `return`. Measured: the dev tier prints `a10` and the C
+     compiler stops with "use of undeclared identifier".
+6e. *(Third review, 2026-08-25. Recorded, not fixed here.)* The
+   checker gives each `switch` case its own scope; TypeScript gives
+   the whole switch body one scope. A program that declares a name
+   in one case and reads it in another is accepted here and rejected
+   by stock `tsc` (TS2454), which breaks invariant 5, and the flat C
+   block then makes the two tiers disagree with no diagnostic.
+   Measured: `case 1` prints `case1:1` on the dev tier and
+   `case1:99` on the ship tier. The emitter is not the defect.
+   Which scope rule the language takes is an owner decision, and
+   bracing each case in C is correct under only one of the two
+   answers, so this section changes nothing here.
 7. The emitter's own function-scope identifiers are `ctx`, `_this`,
    `_frame`, `_out`, `_f`, `_t{n}` (`fresh_tmp`), and `_L{n}`
    (`fresh_label`). A coroutine frame struct holds `_state`,
@@ -7131,9 +7158,10 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    lives in a frame field, so C block scoping cannot apply to
    either. The emitter's own scope bookkeeping supplies it. Every
    site that opens a lexical scope — `emit_block`, `emit_for`, and
-   `emit_for_of` — records the lengths of **all three** name stacks
-   on entry, `managed_scope`, `local_types`, and `gen_locals`, and
-   truncates to them on exit. `shadow_cursor` and the frame let
+   `emit_for_of` — records the lengths of **both** name stacks on
+   entry, `managed_scope` and `gen_locals`, and truncates to them on
+   exit. *(`local_types` was a third stack until the second review
+   found it write-only; it is deleted.)* `shadow_cursor` and the frame let
    cursor stay monotonic, so no restored scope reads a stale slot.
 3a-i. **Every binding masks a same-named binding from an outer
    block, whatever its storage.** An unmanaged local records an
@@ -7237,6 +7265,18 @@ with their outputs (this host).
    async function named `m0_x` beside an async method `x` on the
    first class, which pins measurement 6a. Every construct that
    opens a lexical scope appears at least once.
+2c. *(Third review, 2026-08-25.)* Item 2b's shapes must appear
+   **outside** a coroutine as well. In the entry as first written,
+   the `switch` case and the `for...of` body sat inside a generator,
+   where every local is a frame field — the one storage class that
+   shows neither defect of measurement 6d. `a146` must hold, outside
+   any coroutine: a `for...of` body that declares a local shadowing
+   the loop binding; a `for` **body** declaration, not only a
+   shadowed initializer; a lambda **body** with its own locals,
+   including a lambda created inside a `Map` or `Set` `for...of`; a
+   constructor body, a method body, and an accessor body; and a
+   `using` scope. A construct that no corpus entry can express,
+   because `tsc` rejects it, is named in measurement 6e instead.
 3. Counts: accept `.ts` 143 → 145; `.expected` 144 → 146; accept
    source files 145 → 147. Rejects do not move. The generated docs
    regenerate.
