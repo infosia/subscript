@@ -6911,7 +6911,9 @@ Measurements at the pin, on this host:
     residual. Measured: `get v` / `set v` beside an ordinary method
     `v_set_` runs on the dev tier and stops the C compiler with
     "redefinition of 'subscript_m0_v_set_'" — the divergence of 65
-    item 3, reachable with no `$` at all.)*
+    item 3, reachable with no `$` at all.)* *(§66, 2026-08-25: a table over
+    HIR names does not see an identifier the emitter mints or
+    derives. §66 closes those two cases.)*
 11. Nothing else moves. Fields, methods, and index signatures keep
     their rules. Static methods and method type parameters keep
     their rejections. Mirror ingestion reads no accessor.
@@ -6999,3 +7001,153 @@ ship-tier C error in 65 item 3, both recorded (this host).
     pre-existing golden and `.expected` byte-identical; clippy
     library counts at the 7 / 22 / 29 baseline. The record quotes
     the test count and the wall time.
+
+## 66. Emitted C identifiers — two spaces, never one
+
+Origin: the R37 phase review found one collision between a declared
+member and a symbol the emitter derives by suffix (§65 review note).
+The audit that followed found the same defect class at function
+scope, where it is **silent**. Owner decision 2026-08-25 to close the
+class, not the instance. This is not a downstream request, and no
+language surface moves.
+
+Measurements at `a2228d9`, on this host. Every one is pre-existing;
+§65 introduced none of them.
+
+1. A parameter named `_t0` makes the two tiers disagree with no
+   diagnostic. The program adds `g(i) + _t0` in a loop. The dev tier
+   prints `306`. The ship tier prints `12`. A parameter named `_t1`
+   prints `306` and `8`. The emitted body is:
+
+   ```c
+   static int32_t subscript_fn_f(void* ctx, int32_t _t0) {
+       int32_t total = 0;
+       {   int32_t i = 0;
+           ...
+           {   int32_t _t1 = total;
+               int32_t _t0 = subscript_fn_g(ctx, i);
+               total = ((_t1 + _t0) + _t0);
+   ```
+
+   `fresh_tmp` mints `_t0` inside a nested block. C block scoping
+   makes it shadow the parameter, so the second `_t0` reads the
+   temporary. Two declarations in one scope are a C error; two in
+   nested scopes are silent.
+2. An async method `x` beside a method `x_resume` stops the C
+   compiler: "redefinition of 'subscript_m0_x_resume'". Both are
+   file-scope definitions, so this one is loud. It stays loud when
+   the two signatures are identical.
+3. A method parameter named `_this` stops the C compiler:
+   "redefinition of parameter '_this'".
+4. `ctx` is already safe: `is_c_keyword` holds the C keywords and
+   `ctx`, and a colliding name takes a trailing `_` (`ctx_`,
+   measured). The mechanism exists. The list holds one entry that is
+   not a C keyword.
+5. The dev tier is immune. `codegen/src/lower/mod.rs` names a method
+   `subscript_m{ci}_{mi}` by index. Only the C emitter mangles by
+   name, so every divergence here is one-sided.
+6. Audit of every symbol constructor in `codegen/src/cemit.rs`:
+   `_resume` is the only symbol built from a source name by suffix.
+   The lambda, bridge, worker-entry, constructor, and string-alias
+   symbols are index-formed. `subscript_opaque` is emitted only for
+   a class that declares no field.
+7. The emitter's own function-scope identifiers are `ctx`, `_this`,
+   `_frame`, `_out`, `_f`, `_t{n}` (`fresh_tmp`), and `_L{n}`
+   (`fresh_label`). A coroutine frame struct holds `_state`,
+   `_this`, and `g{i}`.
+8. The language permits shadowing in a nested block (measured: the
+   inner `const x` prints `2`, the outer prints `1`). The emitter
+   reproduces it with C block scoping: `local_ref` maps a name to
+   `sanitize(name)` and tracks no scope. A fix must keep the C name
+   a function of the source name alone.
+
+### 66.1 Rule
+
+1. **Every identifier the C emitter writes belongs to exactly one of
+   two spaces.** Source space holds an identifier derived from an
+   HIR name. Emitter space holds an identifier the emitter mints. No
+   identifier belongs to both.
+2. A function-scope source identifier — a parameter or a local —
+   takes the prefix `v_`. The emitter mints no function-scope
+   identifier that starts with `v_`. This separates the two spaces
+   by construction where a collision is silent.
+3. Within one function, two distinct source names take distinct C
+   identifiers. The emitter holds one table per function over the
+   parameter names and every local name in the body, in declaration
+   order, and appends the smallest free `_N` on a collision, as §65
+   rule 10. Two bindings of one source name keep one C identifier;
+   C block scoping then reproduces the shadowing the language
+   permits (measurement 8).
+4. A symbol the emitter derives from a source name by suffix takes
+   its identifier from the table of the name it derives from. The
+   async resume symbol is the only one: `{name}_resume` enters the
+   class method table, or the module function table, as a synthetic
+   entry beside `{name}`. The §65 rule 10 `_N` logic then resolves a
+   collision with a declared member.
+5. A coroutine frame struct is one namespace. `_state`, `_this`, and
+   `g{i}` are emitter space. A parameter member is source space and
+   takes rule 2's prefix.
+6. Nothing else moves. A file-scope symbol keeps its `subscript_`
+   prefix and its §65 rule 10 table. A class field member keeps its
+   spelling and its §65 table. A module global keeps `g_` and its
+   table. `is_c_keyword` keeps its list and its trailing `_`.
+7. The rule is about emitted C only. No language surface, no
+   diagnostic, and no checker behaviour changes. A source identifier
+   keeps every spelling the language accepts today.
+
+§65 rule 10 gave each C namespace a table over HIR names. This
+section adds the two cases a table over HIR names cannot see: an
+identifier the emitter mints, and an identifier it derives.
+
+### 66.2 Changes by site
+
+- `codegen/src/cemit.rs` `emit_let` and `local_ref`: a local's C
+  name comes from the per-function table of rule 3, with rule 2's
+  prefix. `local_ref` keeps its shadow-frame and generator-frame
+  arms, which name no C identifier of their own.
+- `codegen/src/cemit.rs` `Emitter::new` and the per-function setup:
+  the parameter table of §65 grows to cover the locals. `walk_lets`
+  already collects the body's `let` names for the coroutine frame;
+  the same walk builds the table.
+- `codegen/src/cemit.rs` the coroutine frame emission: a parameter
+  member takes rule 2's prefix, so it cannot collide with `_state`
+  or `g{i}`.
+- `codegen/src/cemit.rs` the method and function tables: an async
+  member adds the synthetic `{name}_resume` entry of rule 4, and the
+  resume signature and every use read the table.
+- No checker, runtime, prelude, or dev-tier change.
+
+### 66.3 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: measurements 1, 2, and 3 recorded
+with their outputs (this host).
+
+1. `corpus/accept/a145-emitted-identifiers.ts` + `.expected`: a
+   program whose parameters and locals are named `_t0`, `_t1`,
+   `_this`, `_frame`, `_out`, `_f`, `_state`, `g0`, `_L0`, and
+   `ctx`, read inside nested blocks and inside a loop so the
+   emitter's temporaries interleave with them; an async method `x`
+   beside a method `x_resume`; an async function `f` beside a
+   function `f_resume`; and an async function whose parameters are
+   named `_state` and `g0`, so the frame struct exercises rule 5.
+   Byte-exact across dev JIT, ship C-AOT, and the golden. The entry
+   is `tsc`-clean, like every accept entry.
+2. Unit tests in the same commit: a parameter and a local carry the
+   rule 2 prefix in emitted C; the emitted C for measurement 1's
+   program holds no declaration that shadows a parameter; the
+   synthetic resume entry resolves against a declared `x_resume`;
+   the per-function table gives distinct names to `a$b` and
+   `a_dollar_b` as two locals; the frame struct of an async function
+   with a parameter named `_state` holds two distinct members.
+3. Counts: accept `.ts` 143 → 144; `.expected` 144 → 145; accept
+   source files 145 → 146. Rejects do not move. The generated docs
+   regenerate.
+4. **Every committed golden and `.expected` stays byte-identical**,
+   `a145` excepted as a new entry. Rule 2 moves emitted C text, not
+   program output. The `codegen/tests/cemit.rs` assertions that pin
+   body text move with it, in the same commit; that is expected, and
+   each move must be a prefix change and nothing else.
+5. Gates: `cargo test --offline --workspace` in both profiles;
+   zero-warning build; `cargo fmt --check`; the `tsc` gate; clippy
+   library counts at the 7 / 22 / 29 baseline. The record quotes the
+   test count and the wall time.
