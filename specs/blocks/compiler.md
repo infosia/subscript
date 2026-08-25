@@ -7126,6 +7126,36 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    reading the capture, and then declares `const n: i32 = 2`, prints
    `3` on the dev tier, and the C compiler stops with "redefinition
    of 'v_n'". This is the last unbraced pair of 6g.
+6i. *(Sixth review, 2026-08-25. Recorded, not fixed here.)* The
+   program of 6h reaches that collision only because name resolution
+   diverges from TypeScript. The checker declares a name when it
+   checks the declaration statement, so a lambda nested inside the
+   body resolves the name outward to the enclosing binding.
+   TypeScript and JavaScript block-scope the body, so the body's own
+   `const` owns every reference in that body. Measured: `node`
+   prints `4` and both subscript tiers print `3`. Stock `tsc`
+   accepts the program, because the read sits inside a nested
+   closure; a direct read reports TS2448. Under a TypeScript-faithful
+   resolver the body binding owns the name, no capture of it is
+   recorded, and the 6h collision cannot arise. The emitter fix
+   stands on its own and is still correct. **Consequence for the
+   corpus: no accept entry pins this shape.** The corpus is the
+   language's executable definition, and a golden here would settle
+   a semantic divergence from TypeScript that no owner decision
+   covers. The emitter unit test pins the C block without pinning a
+   value. Name resolution needs its own request and its own owner
+   decision.
+6j. *(Sixth review, 2026-08-25. Recorded, not fixed here.)* The
+   checker reports no duplicate declaration in one scope. Measured:
+   `function f(n: i32): i32 { const n: i32 = 7; return n; }` prints
+   `7` on the dev tier and stops the C compiler with "redefinition
+   of 'v_n'"; two `const n` in one block, in a constructor, and in a
+   method behave the same; the `async` form reaches an internal
+   lowering error on the dev tier. Stock `tsc` rejects every one
+   (TS2300, TS2451), so none is a valid subscript program under
+   invariant 5. This is the bucket of measurement 6e — a
+   checker-acceptance gap whose fix may move diagnostics — and it
+   belongs to the same follow-up cycle.
 6e. *(Third review, 2026-08-25. Recorded, not fixed here.)* The
    checker gives each `switch` case its own scope; TypeScript gives
    the whole switch body one scope. A program that declares a name
@@ -7336,11 +7366,16 @@ with their outputs (this host).
    a local that shadows the loop binding. The seven fused `for...of`
    kinds were all measured to agree; the generator-driven form is a
    separate lowering and needs its own line in the entry.
-2e. *(Fifth review, 2026-08-25.)* `a146` also holds, outside any
-   coroutine: a lambda body whose top-level local shadows one of the
-   lambda's own captures, which pins measurement 6h; and a shadowed
+2e. *(Fifth review, 2026-08-25; corrected by the sixth,
+   2026-08-25.)* `a146` holds, outside any coroutine, a shadowed
    local inside one `switch` case, which item 2b named and item 2c's
-   list left out. A shadow inside one case is expressible and was
+   list left out. It does **not** hold a lambda body local that
+   shadows one of the lambda's own captures: measurement 6i shows
+   that program's value depends on a name resolution that diverges
+   from TypeScript, so a golden would settle that divergence without
+   a decision. The emitter unit test
+   `lambda_body_uses_a_nested_c_scope_below_capture_copies` pins the
+   C block of measurement 6h instead, with no value. A shadow inside one case is expressible and was
    measured to agree on both tiers; only the cross-case read of
    measurement 6e is not expressible.
 3. Counts: accept `.ts` 143 → 145; `.expected` 144 → 146; accept
