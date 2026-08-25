@@ -7093,6 +7093,20 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
      emits the enclosing function's iterator handle in its own
      `return`. Measured: the dev tier prints `a10` and the C
      compiler stops with "use of undeclared identifier".
+6f. *(Fourth review, 2026-08-25.)* A `for...of` **over a generator**
+   reproduces the first defect of 6d, in the one `for...of` lowering
+   `emit_for_of` never sees. `check_for_of` desugars that form to a
+   `While` whose body holds the step, the break test, the binding,
+   and the loop body in one flat HIR block, so both tiers emit one C
+   block for all of it, while the checker gives the binding one
+   scope and the body another. Measured, `tsc`-clean: `for (const v
+   of numbers()) { const v: i32 = 100; print(...) }` prints
+   `gen-for-of-body:100` twice on the dev tier, and the C compiler
+   stops with "redefinition of 'v_v'". The seven fused `for...of`
+   kinds — array values, array keys, `FixedArray` values, `Map`
+   keys, `Map` values, `Set` values, and string code points — all
+   agree across the tiers; the generator-driven form is the eighth
+   and the only one that fails.
 6e. *(Third review, 2026-08-25. Recorded, not fixed here.)* The
    checker gives each `switch` case its own scope; TypeScript gives
    the whole switch body one scope. A program that declares a name
@@ -7206,9 +7220,16 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    prefix and its §65 rule 10 table. A class field member keeps its
    spelling and its §65 table. A module global keeps `g_` and its
    table. `is_c_keyword` keeps its list and its trailing `_`.
-7. The rule is about emitted C only. No language surface, no
-   diagnostic, and no checker behaviour changes. A source identifier
-   keeps every spelling the language accepts today.
+7. The rule is about emitted C only. No language surface and no
+   diagnostic changes, and a source identifier keeps every spelling
+   the language accepts today. *(Amended 2026-08-25 after the fourth
+   review; measurement 6f.)* One HIR shape changes: `check_for_of`
+   wraps a generator-driven loop body in `hir::Stmt::Block`, so the
+   body is one scope in the HIR as it already is in the checker's
+   own scopes. Both tiers and `rewrite_using_scope` already handle
+   that statement, so `break`, `continue`, `return`, and scope-exit
+   disposal keep their behaviour. No diagnostic and no accepted or
+   rejected program moves.
 
 §65 rule 10 gave each C namespace a table over HIR names. This
 section adds the two cases a table over HIR names cannot see: an
@@ -7230,7 +7251,11 @@ identifier the emitter mints, and an identifier it derives.
 - `codegen/src/cemit.rs` the method and function tables: an async
   member adds the synthetic `{name}_resume` entry of rule 4, and the
   resume signature and every use read the table.
-- No checker, runtime, prelude, or dev-tier change.
+- `compiler/src/check/stmt.rs` (`check_for_of`, the generator
+  branch): the loop body becomes one `hir::Stmt::Block` instead of
+  a flat extend (rule 7, measurement 6f).
+- No runtime, prelude, or dev-tier change, and no other checker
+  change.
 
 ### 66.3 Corpus and gate (pre-registered exit criteria)
 
@@ -7287,6 +7312,11 @@ with their outputs (this host).
    constructor body, a method body, and an accessor body; and a
    `using` scope. A construct that no corpus entry can express,
    because `tsc` rejects it, is named in measurement 6e instead.
+2d. *(Fourth review, 2026-08-25.)* `a146` also holds a `for...of`
+   **over a generator**, outside any coroutine, whose body declares
+   a local that shadows the loop binding. The seven fused `for...of`
+   kinds were all measured to agree; the generator-driven form is a
+   separate lowering and needs its own line in the entry.
 3. Counts: accept `.ts` 143 → 145; `.expected` 144 → 146; accept
    source files 145 → 147. Rejects do not move. The generated docs
    regenerate.
