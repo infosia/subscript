@@ -7466,6 +7466,16 @@ compiler **rejects**. It never accepts a program and gives it a
 different value. Rejecting more is inside invariant 5; computing a
 different answer is not.
 
+*(Clarified 2026-08-26 after the pass A review. Invariant 5 runs one
+way: an accepted program must type-check under stock `tsc`. It does
+not say a `tsc`-clean program must be accepted. This language is a
+subset, and 23 reject entries already carry a
+`tsc-clean-standalone` header. A rule that rejects a `tsc`-clean
+program is therefore ordinary, and its entry records the `tsc`
+verdict in the header. The pass A handoff stated the converse by
+mistake, and the round put the weaker `+=` spelling in the corpus to
+satisfy it.)*
+
 1. A `switch` body is one scope. A declaration in one case is in
    scope for the whole body, as TypeScript has it. Two declarations
    of one name in one switch body fail with S100 that names the
@@ -7551,7 +7561,15 @@ Pass A:
 3. **No existing accept entry may move.** If rule 4 rejects one, the
    round stops and reports it: that is evidence the rule is too
    broad, not a golden to update.
-4. Counts: rejects 142 → 147; accept `.ts` 145 → 146; `.expected`
+4. `corpus/reject/r153-switch-cross-case-write.ts`: a plain
+   assignment to a name a different case declares. *(Added
+   2026-08-26 after the pass A review, which measured that the first
+   round accepted the write and made the tiers disagree: the dev
+   tier stopped with "internal lowering error: unbound local
+   `counter`" and the ship tier ran. `node` refuses the same program
+   with a temporal-dead-zone `ReferenceError`; stock `tsc` accepts
+   it, so the entry carries a `tsc-clean-standalone` header.)*
+5. Counts: rejects 142 → 148; accept `.ts` 145 → 146; `.expected`
    146 → 147; accept source files 147 → 148.
 
 Pass B:
