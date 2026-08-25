@@ -6835,7 +6835,20 @@ Measurements at the pin, on this host:
    write accessor `set name(value: T) { ... }`. Both carry a body.
    A read accessor declares no parameter and an explicit return
    type. A write accessor declares one parameter with an explicit
-   type and no return type.
+   type, no default on that parameter, and no return type. A return
+   type on a write accessor fails with S100; stock `tsc` rejects it
+   too (TS1095). A default on the parameter fails with S100; `tsc`
+   rejects it too (TS1052). *(Amended 2026-08-25 after the phase
+   review: the first text left both spellings unstated, and the
+   implementation accepted a return type, which broke the
+   `tsc`-subset invariant.)*
+1a. The pair shares one type. The read accessor's return type and
+   the write accessor's parameter type must be the same type. A
+   mismatch fails with S100 at the write accessor. Stock `tsc`
+   accepts unrelated types, so this is a narrower pin. *(Added
+   2026-08-25 after the phase review: rule 1 wrote one `T` but
+   nothing enforced it, so the written value took its context from
+   the read accessor's type and a valid write reported S008.)*
 2. A read accessor is legal on a reference class and on a
    `@CStruct` value class. A write accessor is legal on a reference
    class only. A write accessor on a value class fails with S100
@@ -6844,7 +6857,12 @@ Measurements at the pin, on this host:
 3. An accessor adds no member kind and no HIR form. The class
    member namespace holds `name` once: a field, a method, or an
    accessor pair owns it. A second declaration of the name fails
-   with S100 that names both member kinds.
+   with S100 that names both member kinds. A class declares at most
+   one read accessor and at most one write accessor of one name; a
+   second one of either kind fails with S100 that names two
+   accessors. *(Amended 2026-08-25 after the phase review: a second
+   write accessor passed the first text's clash test, overwrote the
+   first signature, and reached an internal lowering error.)*
 4. The pair records as two ordinary methods. The read accessor
    records as the method `name` with no parameters. The write
    accessor records as the method `name=` with one parameter and
@@ -6874,14 +6892,26 @@ Measurements at the pin, on this host:
 9. An accessor on a generic class is legal. The checker checks each
    accessor body at instantiation, as it checks every other member
    body (§64.1 rule 1).
-10. `sanitize` in `codegen/src/cemit.rs` gains two escapes: `$`
-    becomes `_dollar_`, and `=` becomes `_set_`. Every other
-    character keeps today's mapping. A name that holds only
-    `[A-Za-z0-9_]` keeps its current C spelling. Residual, accepted:
-    an escape's text is itself a legal identifier fragment, so
-    `a$b` and `a_dollar_b` still map to one C name. The language
-    does not detect that. `[[Symbol.dispose]]` carries the same
-    residual today.
+10. **Two distinct HIR names that share a C namespace must have
+    distinct C identifiers.** `sanitize` in `codegen/src/cemit.rs`
+    gains two escapes: `$` becomes `_dollar_`, and `=` becomes
+    `_set_`. Every other character keeps today's mapping. An escape
+    is not enough on its own, because a C identifier holds only
+    `[A-Za-z0-9_]`, so every escape text is itself a legal source
+    identifier. The emitter therefore holds one table for each C
+    namespace it names into: the methods of one class, the fields
+    of one class, the module's functions, the module's globals, and
+    the parameters of one function. The first name keeps
+    `sanitize`'s output. A later name whose output is already taken
+    gains the smallest free `_N` suffix, with `N` from 2. The order
+    is the HIR declaration order, so the assignment is
+    deterministic, and a name that does not collide keeps its
+    current C spelling. *(Amended 2026-08-25 after the phase review.
+    The first text defined the escapes alone and accepted the
+    residual. Measured: `get v` / `set v` beside an ordinary method
+    `v_set_` runs on the dev tier and stops the C compiler with
+    "redefinition of 'subscript_m0_v_set_'" — the divergence of 65
+    item 3, reachable with no `$` at all.)*
 11. Nothing else moves. Fields, methods, and index signatures keep
     their rules. Static methods and method type parameters keep
     their rejections. Mirror ingestion reads no accessor.
@@ -6931,7 +6961,10 @@ ship-tier C error in 65 item 3, both recorded (this host).
    class; a `@CStruct` value class with a read accessor; a generic
    class with an accessor over its type parameter, used at two
    types; one class that holds both an accessor named `$` and a
-   member named `_`.
+   member named `_`; and, added 2026-08-25 after the phase review,
+   one class that holds a `get`/`set` pair for `v` beside an
+   ordinary method named `v_set_`, which pins rule 10 on the ship
+   tier.
 2. `corpus/reject/r141-value-class-write-accessor.ts`: S100 at the
    write accessor. `tsc`-clean, recorded in the header.
 3. `corpus/reject/r142-readonly-accessor-write.ts`: S100 at the
@@ -6952,7 +6985,12 @@ ship-tier C error in 65 item 3, both recorded (this host).
    produces identical HIR for `x.name` and for the spelled call of
    the read accessor; `sanitize` maps `$` and `=` to the rule 10
    escapes; the emitted C for a class with `$` and `_` members
-   holds two distinct symbols and compiles.
+   holds two distinct symbols and compiles. Added 2026-08-25 after
+   the phase review: a return type on a write accessor fails; a
+   default on the write accessor parameter fails; a read and a
+   write accessor of different types fail; a second read accessor
+   and a second write accessor each fail; the rule 10 table gives
+   distinct C identifiers in each of the five namespaces.
 10. Counts: accept `.ts` 142 → 143; `.expected` 143 → 144; rejects
     135 → 142; accept source files 144 → 145. The generated docs
     regenerate.

@@ -253,7 +253,9 @@ class only. A read `x.name` checks to the same HIR as a call of the
 read accessor; a statement write `x.name = v` checks to the same
 HIR as a call of the write accessor. The pair records as the
 methods `name` and `name=`, and it owns the name in the class
-member namespace.
+member namespace. A read accessor that returns a value class
+returns a copy, so a write into that copy is dropped, exactly as a
+write into the result of the spelled method call is dropped (C2).
 
 The divergence from JS: JS runs an accessor function on property
 access, and the property is dynamic. subscript has no dynamic
