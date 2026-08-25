@@ -243,6 +243,31 @@ an ordinary method the class declares.
 Accept: `a138`, `a139`. Reject: `r131-using-nullable-init`,
 `r132-await-using`, `r133-using-without-dispose`.
 
+### C12. Named accessors — method sugar
+
+*(R37, 2026-08-25; `compiler.md` §65.)* A class declares
+`get name(): T { ... }` and `set name(value: T) { ... }`, both with
+a body. A read accessor is legal on a reference class and on a
+`@CStruct` value class; a write accessor is legal on a reference
+class only. A read `x.name` checks to the same HIR as a call of the
+read accessor; a statement write `x.name = v` checks to the same
+HIR as a call of the write accessor. The pair records as the
+methods `name` and `name=`, and it owns the name in the class
+member namespace.
+
+The divergence from JS: JS runs an accessor function on property
+access, and the property is dynamic. subscript has no dynamic
+properties, so the same spelling calls the declared method. Stock
+`tsc` accepts every accepted program. Narrowings on top of `tsc`:
+a write through a read-only accessor, compound assignment,
+increment, decrement, the write used as a value, a write accessor
+on a value class, and a static accessor all fail at check time.
+
+Accept: `a144`. Reject: `r141-value-class-write-accessor`,
+`r142-readonly-accessor-write`, `r143-accessor-compound-assign`,
+`r144-accessor-increment`, `r145-accessor-write-as-value`,
+`r146-accessor-field-name-clash`, `r147-static-accessor`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

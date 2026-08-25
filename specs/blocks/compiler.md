@@ -6780,3 +6780,184 @@ recorded (this host, exit 1).
 6. Gates: `cargo test --offline --workspace` in both profiles;
    zero-warning build; `cargo fmt --check`; the `tsc` gate; every
    pre-existing golden and `.expected` byte-identical.
+
+## 65. R37 — a named accessor is method sugar
+
+Origin: downstream request R37, 2026-08-25, at pin `f99d4cb`. The
+downstream compiles typed HIR to WGSL. Its surface reinterprets
+TypeGPU, which reads a binding, an address-space variable, and a
+vector swizzle through a property. subscript has no accessor, so
+the downstream writes a call at 49 authored sites and in 3 library
+classes. §58 already decided this shape for one sugar: the checker
+rewrites the spelling to a call of a declared method, no new HIR
+form exists, and no tier changes. R37 asks for the same treatment
+of a named accessor.
+
+Measurements at the pin, on this host:
+
+1. The four probes reproduce. A `get`/`set` pair reports S100
+   "static methods and accessors are not decided" once per
+   accessor, then S004 and S100 at each use. A read accessor on a
+   `@CStruct` value class reports the same S100. A static method
+   reports the same S100. A method type parameter reports S100
+   "unknown type name `T`". One message covers static members and
+   accessors together.
+2. Mirror ingestion rejects an accessor through that same shared
+   message (`resolve_class_shape` runs for boundary classes). A
+   split is therefore necessary, not optional.
+3. The `$` collision is a live tier divergence, not a latent one.
+   A class that declares methods `$` and `_` runs on the dev tier
+   and prints `1,2`. The ship tier emits two definitions of
+   `subscript_m0__` and the C compiler stops: "redefinition of
+   'subscript_m0__'" (Apple clang). No corpus entry covers it. No
+   identifier in `corpus/`, `examples/`, or `prelude/` holds a `$`
+   today, so a new escape moves no emitted C.
+4. `hir::DISPOSE_METHOD_NAME` is `"[[Symbol.dispose]]"`. A reserved
+   HIR method name that no source identifier can spell is already
+   the practice.
+5. Stock `tsc` 5.9.2 accepts the whole asked accept surface: a
+   `get`/`set` pair, a second accessor on the same class, a read
+   accessor on a `@CStruct` class, an accessor on a generic class,
+   and `$` and `_` members together. It also accepts `x.v += 1`,
+   `x.v++`, the write used as a value, a static accessor, and a
+   write accessor on a value class; each subscript rejection below
+   is therefore a narrower pin. It rejects a write through a
+   read-only accessor (TS2540) and a field that shares an accessor
+   name (TS2300).
+6. `private` fields check today. A synchronous method on a
+   `@CStruct` value class checks and runs.
+7. The reject harness checks one script file and cannot carry a
+   mirror. The mirror rejection is a unit test, as §58.2 did.
+
+### 65.1 Rule
+
+1. A class declares a read accessor `get name(): T { ... }` and a
+   write accessor `set name(value: T) { ... }`. Both carry a body.
+   A read accessor declares no parameter and an explicit return
+   type. A write accessor declares one parameter with an explicit
+   type and no return type.
+2. A read accessor is legal on a reference class and on a
+   `@CStruct` value class. A write accessor is legal on a reference
+   class only. A write accessor on a value class fails with S100
+   that names the value class. A value class copies on assignment,
+   so the write reaches a copy.
+3. An accessor adds no member kind and no HIR form. The class
+   member namespace holds `name` once: a field, a method, or an
+   accessor pair owns it. A second declaration of the name fails
+   with S100 that names both member kinds.
+4. The pair records as two ordinary methods. The read accessor
+   records as the method `name` with no parameters. The write
+   accessor records as the method `name=` with one parameter and
+   the return type `void`. An identifier holds no `=`, so neither
+   name collides with a declared method. *(This is the one
+   divergence from the request, which asks for one method. A class
+   method table holds one signature per name, and both tiers key a
+   method by its name; two signatures under one name collide. The
+   read call HIR is exactly the HIR of `x.name()`, and the write
+   call HIR is exactly the HIR of `x.name=(v)`.)*
+5. A read `x.name` checks to the same HIR as a call of the read
+   accessor. A write `x.name = v` in statement position checks to
+   the same HIR as a call of the write accessor. The value checks
+   against the write accessor's parameter type by ordinary
+   assignability (S007 on a mismatch).
+6. A read accessor without a write accessor is legal. The write
+   spelling then fails with S100 at the assignment. A write
+   accessor without a read accessor fails with S100 at the
+   declaration, because the read spelling has no target.
+7. Rejected spellings, each with S100 and a message that names the
+   spelling: compound assignment `x.name op= v`, increment and
+   decrement on `x.name`, and the write used as a value. §58.1
+   rule 7 rejects the same three for an index signature.
+8. A static accessor keeps its rejection with its own message. The
+   message for a static method keeps today's text. An accessor in
+   a mirror class keeps its rejection with its own message.
+9. An accessor on a generic class is legal. The checker checks each
+   accessor body at instantiation, as it checks every other member
+   body (§64.1 rule 1).
+10. `sanitize` in `codegen/src/cemit.rs` gains two escapes: `$`
+    becomes `_dollar_`, and `=` becomes `_set_`. Every other
+    character keeps today's mapping. A name that holds only
+    `[A-Za-z0-9_]` keeps its current C spelling. Residual, accepted:
+    an escape's text is itself a legal identifier fragment, so
+    `a$b` and `a_dollar_b` still map to one C name. The language
+    does not detect that. `[[Symbol.dispose]]` carries the same
+    residual today.
+11. Nothing else moves. Fields, methods, and index signatures keep
+    their rules. Static methods and method type parameters keep
+    their rejections. Mirror ingestion reads no accessor.
+
+`collisions.md` gains C12: JS runs an accessor on property access;
+subscript calls the declared method.
+
+### 65.2 Changes by site
+
+- `compiler/src/check/mod.rs` (`resolve_class_shape`): the method
+  arm splits the shared message. A static member reports "static
+  methods and accessors are not decided" for a static accessor and
+  keeps its other texts. An accessor in a boundary class reports
+  its own S100. Every other accessor collects: the read accessor
+  under `name`, the write accessor under `name=`. The arm validates
+  the parameter count, the annotations, rule 2, rule 3, and rule 6.
+- `compiler/src/check/mod.rs` (`ClassSig`): one new checker-side
+  field records the accessor names of the class. `hir::ClassDef`
+  gains nothing.
+- `compiler/src/check/mod.rs` (`check_class_body`): the accessor
+  bodies check as method bodies, under the names of rule 4.
+- `compiler/src/check/expr.rs` (`member_on`): a `Type::Class`
+  receiver whose class declares a read accessor `name` rewrites the
+  read to the call, for a read and for a write target alike. The
+  rewrite runs after the field lookup and before the
+  method-as-value error.
+- `compiler/src/check/expr.rs` (`check_assign`): a target that is a
+  no-argument call of an accessor name rewrites the plain write to
+  the write-accessor call. The rule 6 and rule 7 rejections report
+  here.
+- `compiler/src/check/expr.rs` (`check_update`): `x.name++` and
+  `x.name--` report the rule 7 message.
+- `codegen/src/cemit.rs` (`sanitize`): the rule 10 escapes.
+- `compiler/src/language_reference.rs`: one feature entry for the
+  accessor; `generated-docs/` regenerates.
+- No runtime, prelude, or lowering change.
+
+### 65.3 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: the S100 in 65 item 1 and the
+ship-tier C error in 65 item 3, both recorded (this host).
+
+1. `corpus/accept/a144-accessor.ts` + `.expected` (golden from the
+   dev JIT; ship byte-identical): a reference class with a
+   `get`/`set` pair over a private field, read, written, and read
+   inside a template string, plus a second accessor on the same
+   class; a `@CStruct` value class with a read accessor; a generic
+   class with an accessor over its type parameter, used at two
+   types; one class that holds both an accessor named `$` and a
+   member named `_`.
+2. `corpus/reject/r141-value-class-write-accessor.ts`: S100 at the
+   write accessor. `tsc`-clean, recorded in the header.
+3. `corpus/reject/r142-readonly-accessor-write.ts`: S100 at the
+   assignment.
+4. `corpus/reject/r143-accessor-compound-assign.ts`: S100 at the
+   compound write. `tsc`-clean, recorded in the header.
+5. `corpus/reject/r144-accessor-increment.ts`: S100 at the
+   increment. `tsc`-clean, recorded in the header.
+6. `corpus/reject/r145-accessor-write-as-value.ts`: S100 at the
+   write. `tsc`-clean, recorded in the header.
+7. `corpus/reject/r146-accessor-field-name-clash.ts`: S100 at the
+   second declaration.
+8. `corpus/reject/r147-static-accessor.ts`: S100 at the accessor.
+   `tsc`-clean, recorded in the header.
+9. Unit tests in the same commit: an accessor in a mirror class
+   fails with its own S100; a write accessor with no read accessor
+   fails; a wrong-typed written value fails with S007; the checker
+   produces identical HIR for `x.name` and for the spelled call of
+   the read accessor; `sanitize` maps `$` and `=` to the rule 10
+   escapes; the emitted C for a class with `$` and `_` members
+   holds two distinct symbols and compiles.
+10. Counts: accept `.ts` 142 → 143; `.expected` 143 → 144; rejects
+    135 → 142; accept source files 144 → 145. The generated docs
+    regenerate.
+11. Gates: `cargo test --offline --workspace` in both profiles;
+    zero-warning build; `cargo fmt --check`; the `tsc` gate; every
+    pre-existing golden and `.expected` byte-identical; clippy
+    library counts at the 7 / 22 / 29 baseline. The record quotes
+    the test count and the wall time.
