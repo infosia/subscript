@@ -7535,6 +7535,33 @@ satisfy it.)*
    expression, for a lambda environment, and for the loop state of a
    `for...of`. Neither tier keeps such a value in a register, on the
    C stack, or in a frame that the resume abandons.
+1a. *(Added 2026-08-26 after the pass B review, which found rule 1
+   implemented at four sites and measured seven `tsc`-clean shapes
+   that still lose a value.)* "Every value" is the whole rule, not a
+   list. The sites the first round missed, each measured: an array
+   literal whose element suspends; a `new` whose argument suspends;
+   a method receiver evaluated before a suspending argument; an
+   assignment target resolved before a suspending right side; and
+   the pre-read of a compound assignment. `xs[1] += await a()` is
+   the worst of them — the dev tier stops with the verifier error
+   and the ship tier prints `xs=1,2` where `xs=1,5` is correct, with
+   no diagnostic.
+1b. **The frame holds a slot only for a value that is live across a
+   suspension.** *(Added 2026-08-26.)* The first round reserved one
+   slot for every expression node in the body: an async function of
+   100 statements with one `await` emitted a 3636-byte arena, about
+   36 bytes per statement, in a per-invocation Context allocation.
+   The planner reserves where a later sibling can suspend, and it
+   reuses a slot whose value is dead.
+1c. **A spill slot is a typed frame member.** *(Added 2026-08-26.)*
+   The first round emitted one untyped byte array and read it as
+   `(*((T*)(void*)(_f->_spill + N)))`. The ship tier compiles with
+   `-std=c11 -O2` and no `-fno-strict-aliasing`, so reading an
+   `unsigned char[]` object through an incompatible lvalue is
+   undefined (C11 6.5p7). The frame already carries typed members
+   for the `let` declarations; a spill slot takes the same form.
+   That also removes the offset arithmetic and the alignment
+   round-up the two tiers computed differently.
 2. Two `await` expressions in one expression are legal, and each
    operand evaluates once, left to right, with the earlier result
    held in the frame across the later suspension.
@@ -7623,8 +7650,9 @@ Pass B:
    across a suspension holds a slot for it; the ship tier emits no
    search over generators; a generator handle carries its resume
    address.
-7. Counts: accept `.ts` 146 → 147; `.expected` 147 → 148; accept
-   source files 148 → 149.
+7. Counts, restated 2026-08-26 because pass A moved the base twice:
+   accept `.ts` 147 → 148; `.expected` 148 → 149; accept source
+   files 149 → 150; rejects unmoved at 151.
 
 Both passes:
 
