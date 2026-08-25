@@ -7056,10 +7056,30 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    (`fresh_label`). A coroutine frame struct holds `_state`,
    `_this`, and `g{i}`.
 8. The language permits shadowing in a nested block (measured: the
-   inner `const x` prints `2`, the outer prints `1`). The emitter
-   reproduces it with C block scoping: `local_ref` maps a name to
-   `sanitize(name)` and tracks no scope. A fix must keep the C name
-   a function of the source name alone.
+   inner `const x` prints `2`, the outer prints `1`). For a local
+   that becomes a C variable, the emitter reproduces it with C block
+   scoping: `local_ref` maps a name to `sanitize(name)` and tracks
+   no scope. A fix must keep the C name a function of the source
+   name alone.
+8a. *(Corrected 2026-08-25 after the phase review. Measurement 8 was
+   taken on an `i32` local and generalized to every local, which is
+   wrong.)* A **managed** local — a string, a reference class, or an
+   aggregate that holds a handle — has no C identifier. It lives in
+   a shadow-frame slot, and `local_ref` resolves it by a reverse
+   scan of `managed_scope`. `emit_block` saves and restores nothing,
+   so an inner binding masks the outer one for the rest of the
+   function and C block scoping never applies. Measured: `const s:
+   string = "outer"` with an inner `const s: string = "inner"`
+   prints `inner` then `outer` on the dev tier, and `inner` then
+   `inner` on the ship tier, with no diagnostic. A reference-class
+   local prints `2` then `1`, and `2` then `2`. `emit_for_of`
+   already truncates both stacks on exit; `emit_block` does not.
+8b. The lambda environment struct is a C namespace with no table.
+   Its member is `sanitize(capture)` at the declaration, the store,
+   and the read. Measured: a lambda that captures `a$b` and
+   `a_dollar_b` emits `typedef struct { int32_t a_dollar_b; int32_t
+   a_dollar_b; } EnvL0;` and the C compiler stops with "duplicate
+   member". This one is loud.
 
 ### 66.1 Rule
 
@@ -7078,12 +7098,27 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    rule 10. Two bindings of one source name keep one C identifier;
    C block scoping then reproduces the shadowing the language
    permits (measurement 8).
+3a. **A local that has no C identifier obeys the same shadowing.**
+   *(Added 2026-08-25 after the phase review; measurement 8a.)* A
+   managed local lives in a shadow-frame slot, so C block scoping
+   cannot apply to it. The emitter's own scope bookkeeping supplies
+   it: `emit_block` records the lengths of `managed_scope` and
+   `local_types` on entry and truncates to them on exit, as
+   `emit_for_of` already does. An inner binding then stops masking
+   the outer one at the end of its block.
+3b. The lambda environment struct is one namespace and takes one
+   table. *(Added 2026-08-25 after the phase review; measurement
+   8b.)* The member declaration, the store in the creating frame,
+   and the read in the lambda body all read it.
 4. A symbol the emitter derives from a source name by suffix takes
    its identifier from the table of the name it derives from. The
-   async resume symbol is the only one: `{name}_resume` enters the
-   class method table, or the module function table, as a synthetic
-   entry beside `{name}`. The §65 rule 10 `_N` logic then resolves a
-   collision with a declared member.
+   async **method** resume symbol is the only one:
+   `{name}_resume` enters the class method table as a synthetic
+   entry beside `{name}`, and the §65 rule 10 `_N` logic resolves a
+   collision with a declared member. *(Clarified 2026-08-25 after
+   the phase review.)* A free function's resume symbol is
+   prefix-formed, `subscript_resume_{name}`, and no source name can
+   reach that spelling, so it keeps it and takes no synthetic entry.
 5. A coroutine frame struct is one namespace. `_state`, `_this`, and
    `g{i}` are emitter space. A parameter member is source space and
    takes rule 2's prefix.
@@ -7134,13 +7169,25 @@ with their outputs (this host).
    is `tsc`-clean, like every accept entry.
 2. Unit tests in the same commit: a parameter and a local carry the
    rule 2 prefix in emitted C; the emitted C for measurement 1's
-   program holds no declaration that shadows a parameter; the
+   program declares no name that equals a parameter name; the
    synthetic resume entry resolves against a declared `x_resume`;
    the per-function table gives distinct names to `a$b` and
    `a_dollar_b` as two locals; the frame struct of an async function
-   with a parameter named `_state` holds two distinct members.
-3. Counts: accept `.ts` 143 → 144; `.expected` 144 → 145; accept
-   source files 145 → 146. Rejects do not move. The generated docs
+   with a parameter named `_state` holds two distinct members. Added
+   2026-08-25 after the phase review: an environment struct for a
+   lambda that captures `a$b` and `a_dollar_b` holds two distinct
+   members; `emit_block` restores both scope stacks, so a managed
+   local declared in a nested block does not mask the outer one.
+2a. Corpus entries added 2026-08-25 after the phase review, in
+   `corpus/accept/a146-scoped-locals.ts` + `.expected`: a `string`
+   local and a reference-class local, each shadowed in a nested
+   block and read again after it; a shadowed managed local inside a
+   loop body and inside an `if` branch; and a lambda that captures
+   `a$b` beside `a_dollar_b`. Byte-exact across dev JIT, ship
+   C-AOT, and the golden. This entry is the gate for rules 3a and
+   3b; without it the corpus does not see them.
+3. Counts: accept `.ts` 143 → 145; `.expected` 144 → 146; accept
+   source files 145 → 147. Rejects do not move. The generated docs
    regenerate.
 4. **Every committed golden and `.expected` stays byte-identical**,
    `a145` excepted as a new entry. Rule 2 moves emitted C text, not
