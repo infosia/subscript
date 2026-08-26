@@ -110,6 +110,30 @@ naive parallel loop trades 100 s for a flaky suite.
 6. MAJOR findings are fixed in one pass at the end of a step, not in
    a round of their own.
 
+### Owner decision 2026-08-26 — the interpreter's cost stands
+
+The owner accepts the interpreter's test time and asks that it not
+run when it is not needed.
+
+Measured, test execution only, on this host:
+
+    debug   260.05 s -> 261.08 s   (+0.4 %)   lir sweep 4.5 s
+    release 215.46 s -> 326.17 s   (+51 %)    lir sweep 116.4 s
+
+Release is above §68.6 item 6's 20 per cent, and it stands. The cost
+buys the only witness that does not share a tier's assumption
+(CLAUDE.md principle 12), and cutting it means running fewer than
+every entry, which is the thing the sweep is for.
+
+**The measure: the full 97-entry sweep is opt-in.** The debug subset
+runs always, at 4.5 s, and it is what a round iterates against. The
+full sweep runs when this session runs the gate. A skipped sweep
+prints the count it did not run, so a silent skip is not possible —
+the gate reads that line.
+
+The repetition to remove is a round running the whole `lir` suite
+many times while it develops, not the one run inside the gate.
+
 ### The reason round count dominates
 
 §67 pass B needed seven rounds. A round that is 20 per cent faster
