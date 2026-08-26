@@ -8399,6 +8399,17 @@ index, and a bound — which §68.1 item 7 threads across the back edge.
 - `IteratorAdvance` takes cursor, index, and bound, and produces the
   next cursor. The index advances by one, as a separate value.
 
+**The index names a position in the container's own storage, not a
+count of elements visited.** *(Added 2026-08-26. Step 1b reported
+that the protocol could not express `a80`'s `Map` traversal.)* A
+`Map` or a `Set` holds a position that a removal makes inactive.
+`IteratorHasNext` is true while a position at or after the index
+holds a live entry and is below the bound. `IteratorValue` reads that
+position. `IteratorAdvance` produces the cursor and index of the next
+live position. An inactive position is never a body iteration, and
+the protocol needs no edge that skips the body. For an array every
+position is live, so the rule above is the same rule.
+
 **Addresses and provenance.** An address is a value. An address into
 a dynamic array carries the array value it came from, as provenance.
 §68.2 item 9 requires every instruction that can move an array's
@@ -8412,7 +8423,16 @@ performs that check, so the interpreter is the only place it exists.
 block id (§68.2 item 7). **The successor block's parameters are the
 live-in set of the suspension.** When the suspension produces a
 value, that value is the successor's first parameter. The frame holds
-exactly the successor's parameters and nothing else. *(This decides
+exactly the successor's parameters and nothing else.
+
+**`Suspend` carries an argument list, as every other edge does.**
+*(Added 2026-08-26. Step 1b reported that the section decided what
+the frame holds and not how a value reaches it. Reusing a value's id
+as a successor parameter breaks §68.1 item 4, and the edge-transfer
+paragraph named only the three branching terminators.)* The arguments
+bind to the successor's parameters by position, at the moment the
+coroutine resumes. A resume value, where the suspension produces one,
+is the first parameter and has no argument: the resume supplies it. *(This decides
 the case the second step 1 review raised: a resume block had no place
 to carry state other than the resume value.)*
 
@@ -8485,15 +8505,16 @@ LIR carries whatever that section decides.
        subscript   1 2 3     len=4
 
    The array grows on both sides. `node` re-reads the length each
-   step, and this compiler reads the bound once. §68.7.4 states the
-   bound is read once, which records the implementation and not a
-   decision. **Owner decision open.** The two answers are not equal
-   in cost: a live bound re-reads the base and the length every
-   step, and §68.2 item 9 then re-materializes the base address
+   step, and this compiler reads the bound once. **a80 decides this,
+   so no decision is open.** `stdlib.md` §14.3 decided the fused
+   index loop, and a80 decided the mutation rule that follows from
+   it. The work is to give `collisions.md` the entry, under §69. No
+   behaviour moves.
+
+   The cost is worth recording, because it is why the two answers are
+   not interchangeable: a live bound re-reads the base and the length
+   every step, and §68.2 item 9 then re-materializes the base address
    every step, on the loop that `a22-matrix-propagation` measures.
-   `stdlib.md` §14.3 already decided the fused index loop, and a80
-   decided the mutation rule. `collisions.md` gains the entry under
-   §69. No behaviour moves.
 2. **The temporal-dead-zone resolution order** (§66 measurement 6i).
    `node` prints `4` and this compiler prints `3`. No entry of
    `collisions.md` names it. **Owner decision open.**
