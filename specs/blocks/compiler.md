@@ -8435,18 +8435,34 @@ section that owns the construct, and each needs an owner decision.
 LIR carries whatever that section decides.
 
 1. **A container that changes while a `for...of` runs.**
-   `stdlib.md` §14 does not decide it. The implementation reads the
-   bound once at creation: a program that pushes during the loop
-   prints `3,2,4`, which no section states. The decision belongs in
-   `stdlib.md` §14.
+   `stdlib.md` §14 does not decide it. Measured 2026-08-26 on this
+   host, on an array of `1, 2, 3` that pushes `4` on the first step:
+
+       node        1 2 3 4   len=4
+       subscript   1 2 3     len=4
+
+   The array grows on both sides. `node` re-reads the length each
+   step, and this compiler reads the bound once. §68.7.4 states the
+   bound is read once, which records the implementation and not a
+   decision. **Owner decision open.** The two answers are not equal
+   in cost: a live bound re-reads the base and the length every
+   step, and §68.2 item 9 then re-materializes the base address
+   every step, on the loop that `a22-matrix-propagation` measures.
+   `stdlib.md` §14.3 already decided the fused index loop. If the
+   owner keeps the bound, `collisions.md` gains the entry. If the
+   owner takes JavaScript's answer, §68.7.4 changes with it.
 2. **The temporal-dead-zone resolution order** (§66 measurement 6i).
    `node` prints `4` and this compiler prints `3`. No entry of
-   `collisions.md` names it.
-3. **The duplicate-declaration diagnostic** (§66 measurement 6j).
-   Named in §66 and in no collision entry.
-4. **The order of module initialization.** HIR splits global
+   `collisions.md` names it. **Owner decision open.**
+3. **The order of module initialization.** HIR splits global
    initializers from top-level statements, so source order is not
    recoverable. Neither tier emits top-level statements today.
+   **Owner decision open.**
+
+*(§66 measurement 6j, the missing duplicate-declaration diagnostic,
+was on this list and is closed. §67 pass A rejects a duplicate
+declaration, and `corpus/reject/r149`, `r150`, and `r151` pin it at
+S100. Three gaps stay, not four.)*
 
 ## 69. The language definition, checked instead of asserted
 
