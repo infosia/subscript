@@ -371,3 +371,85 @@ statement and is allowed. Every entry outside the debug subset says
 which applies. All 52 release exclusions are interop, worker, or
 host-hook entries that need a facility the interpreter does not have,
 and each names it.
+
+## Step 2 — the dev tier reads LIR
+
+Landed `5807d7b`. `codegen/src/lower/func.rs` holds no `hir::`
+reference and went from 9184 lines to 6688. The transcriber does not
+re-derive evaluation order, control flow, or liveness from a tree,
+because LIR carries them as data. `cemit.rs` stayed on HIR and was
+the reference, per CLAUDE.md principle 11.
+
+### Nine facts LIR did not carry
+
+Each was found by writing a consumer, and each was reported rather
+than guessed. The round stopped eight times and every stop was right.
+
+The entry id and the async roots; a `Suspend`'s arguments and its
+position; a `Return`'s position; a foreign call's array snapshot; an
+embedded field's address provenance; the `Map` iteration protocol;
+and the absence of an entry. Each is now a fact §68.2 item 12's check
+verifies, so a later consumer meets a build failure rather than a
+silent wrong answer.
+
+**The check taught itself.** Its first run reported 153 dropped facts
+in one list — every entry id and every async root — instead of one
+per round. Then step 2 found three facts it did not know to look for.
+§68.2 item 12 now states that limit: the check is as complete as what
+we know a consumer needs, and writing a consumer is what tests it.
+
+### One class bought a check instead of a third fix
+
+Three defects had one shape: LIR carried a trap and the transcriber
+ignored it. The host trap observer stopped firing; the bounds message
+lost its index and length; `t49`'s wire-enum trap was dropped.
+
+CLAUDE.md limits a class to two rounds, so the third bought the
+mechanism. Every LIR function's carried traps are compared against
+what the transcriber consumed, at build time, naming the function,
+the site, the counts, and what is missing or extra. §67 rule 1g is
+the same mechanism, and **step 3 starts with it already in place.**
+
+### What the differential gate could not see
+
+Two defects were not program output, so no golden could hold them.
+
+- The host trap observer stopped firing. The program still trapped
+  and printed the same bytes; the host callback did not run. §18
+  defines that API and a host depends on it. A `jit` unit test caught
+  it.
+- A boundary read of a C struct array read adjacent temporary bytes,
+  because a header was copied to a temporary before it was assigned
+  to a nullable C pointer. One cause, three symptoms: one entity read
+  instead of two, a zeroed second entity, and wrong flags.
+
+**The corpus did not carry the second shape.** All 18 interop entries
+passed. `examples/e09-c-structs-and-slices` and the two-header phase
+gate caught it. The corpus is the executable definition, so a shape
+that reaches a real defect and is absent from it is a gap in the
+definition. The missing shape is a multi-element array of nested
+C-layout structs, with padding and a wide flags field, passed through
+a const descriptor and written back through a mutable one, with the
+second element observed. `a39` covers a simpler single-scalar case.
+An entry is added with step 3.
+
+### The minimum set, widened twice
+
+This session told the round to run targeted tests only and to leave
+the gate to this session. That saved time and left the round blind to
+whatever it did not think to run. Three waves of failures each sat
+one step outside its range: the `codegen` unit tests, then the
+`cemit` trap differential, then the `examples` differential.
+
+The set is now `cargo test -p subscript-codegen` and
+`cargo test -p subscript-examples`, run by the round before it
+reports. The rest — other crates, the release profile, `tsc`, clippy
+— stays with this session.
+
+### Gates at `5807d7b`
+
+Zero warnings. 1067 passed in debug, 1066 in release, no failures.
+The full 97-entry interpreter sweep ran. No committed golden,
+`.expected`, or example output moved. clippy compiler 7, runtime 22,
+codegen **19** — down from 29 because the old HIR consumer went, so
+19 is the new ceiling.
