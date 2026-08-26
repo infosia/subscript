@@ -7658,6 +7658,48 @@ satisfy it.)*
    cursor stopped at 1/2" where `P8=15` is correct. This is the one
    unclosed site that remained after rule 1g landed, and rule 1g
    named it rather than a review finding it.
+1k. **A capturing lambda created inside a coroutine always holds
+   its environment in the frame. No liveness test decides it.**
+   *(Added 2026-08-26 after the fifth pass B review. This rule
+   deletes machinery; it does not add any.)* Rounds 2 to 5 each
+   narrowed the reservation and each narrowing was wrong in a new
+   way. The fifth review measured four more holes in one scan, and
+   two of them are not holes but boundaries: a lambda passed to a
+   coroutine callee is used after the **callee's** suspension, which
+   an intraprocedural scan cannot see; and liveness through a
+   capture is transitive, because a lambda that captures a lambda
+   keeps a pointer to the second environment. Measured, each a wrong
+   answer with no diagnostic and a tier disagreement: a lambda
+   passed to an async callee that suspends before it calls it — the
+   dev tier printed `p6=399051668` and the ship tier printed `p6=0`
+   where `21` is correct, and AddressSanitizer named it
+   `stack-use-after-return`; a lambda whose destination local is
+   declared in a `for` initializer, whose scope the trace closes
+   before the body — `after=-665124504` and `after=0` where `21` is
+   correct; a chained assignment `h1 = h2 = <lambda>`, where the
+   environment takes the outermost target's binding — `h2only=
+   1905131784` and `h2only=0` where `18` is correct; and a lambda
+   reached only through another lambda's captures —
+   `after=-761642027` and `after=1` where `21` is correct. Rule 1e
+   says that a doubtful liveness reserves. Four rounds of evidence
+   say this liveness is always doubtful, so the test goes. Rule 1b's
+   size measurement was taken on expression spill slots, not on
+   lambda environments, and it does not carry here. The liveness
+   narrowing stays for expression spill slots, where the strict
+   cursor of rule 1d proves the trace against both tiers.
+1l. **A statement the lowering skips still consumes its planned
+   events.** *(Added 2026-08-26 after the fifth pass B review.)* The
+   dev tier stops at a terminator and skips the rest of a statement
+   list. The trace walks the skipped statements, so rule 1g's
+   end-of-body check reports events no tier consumed, and the dev
+   tier refuses a program the ship tier compiles and runs.
+   Measured: a `return;` followed by `xs.push(await av(2))` stopped
+   the dev tier with "coroutine spill cursor stopped at 0/1" while
+   the ship tier printed `start`, which is correct, and both tiers
+   printed `start` at the pin. This is a regression that rule 1g
+   introduced. Either the lowering advances every cursor across a
+   skipped statement, or it does not skip. The check must not
+   change which programs compile.
 2. Two `await` expressions in one expression are legal, and each
    operand evaluates once, left to right, with the earlier result
    held in the frame across the later suspension.
@@ -7698,6 +7740,22 @@ satisfy it.)*
    at the pin holds. If a suspension in a later argument makes the
    old order impossible, the round reports the conflict and changes
    nothing; the choice is not the round's.
+7a. **The conflict of rule 7 is real, and it is recorded here rather
+   than decided by a round.** *(Added 2026-08-26 after the fifth
+   pass B review.)* The round did not report the conflict, and it
+   changed the suspending case. Measured on two programs that differ
+   only in whether the third argument suspends: the plain call gives
+   `f2sync=2 len=3` and the suspending call gives `f2suspend=3
+   len=3`, on both tiers. At the pin the suspending program did not
+   run at all, so `3` is a new value, not a restored one. A
+   marshalled array pointer and count cannot survive a suspension,
+   because a collection moves the storage, so the pin's order is
+   unavailable when a later argument suspends. The behaviour stands
+   as measured and a corpus entry pins both twins. **Owner decision
+   open:** whether a foreign call whose later argument suspends is
+   legal at all, or is a compile error, or keeps this order. Until
+   the owner decides, the compiler keeps this order and the entry
+   records that the value is not settled.
 
 ### 67.3 Changes by site
 
@@ -7785,6 +7843,14 @@ Pass B:
    One interop test pins rule 7: a foreign call whose later argument
    grows the array of an earlier one, printing `f2=2`. The record
    quotes the dev-tier and the ship-tier output of each shape.
+10. *(Added 2026-08-26 after the fifth pass B review.)*
+   `a149-suspension-state` grows again: the four rule 1k shapes, the
+   rule 1l unreachable statement after a `return` and after a
+   `break`, and the two rule 7a foreign twins as an interop test
+   pair. The counts of item 7 do not move. Rule 1k removes code, so
+   the record states the frame size of a coroutine that holds one
+   capturing lambda, before and after, and states that no golden
+   moved.
 
 Both passes:
 
