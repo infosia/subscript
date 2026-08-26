@@ -8410,7 +8410,7 @@ The target kind decides the operand roles.
 |---|---|---|
 | `Function` | the declared parameters, in order | a call of the module function. |
 | `Method` | the receiver first, then the parameters | a call of the class method. A value-class receiver is an address; a reference-class receiver is a handle. |
-| `Foreign` | the marshalled arguments, in order | a call across the C ABI. §67.2 rules 7 and 7a hold: an array argument's data pointer and count are read before a later argument runs. |
+| `Foreign` | the marshalled arguments, in order | a call across the C ABI. §67.2 rules 7 and 7a hold: an array argument's data pointer and count are read before a later argument runs. **The call carries that snapshot as operands, taken at the argument's evaluation point.** *(Added 2026-08-26 after step 2. §68.7.3 stated the order and the form could not express it, so a consumer had to re-derive it — which §68.2 item 10 forbids. §68.2 item 12's check verifies the snapshot operands.)* |
 | `Indirect` | the callable first, then the parameters | a call through a value of `Type::Func`. |
 | `Intrinsic` | the family's operands, in order | the operation the module's intrinsic table names. The table, not a positional index into a Rust array, defines it (§68.2 item 11). |
 | `BuiltinMethod` | the receiver first, then the parameters | the standard-library method. `stdlib.md` decides each one. |
