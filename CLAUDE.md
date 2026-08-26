@@ -177,6 +177,27 @@ numbered rules do not apply to them.
 6. **Generated code is never hand-edited.** Fix the generator.
 7. **Exit criteria before implementation.** Every phase's spec names, in
    advance, the measurement that would kill or pass it.
+8. **A form carries every fact its consumers need.** *(Owner,
+   2026-08-26.)* A stage is a total function from its input form to
+   its output. If a consumer needs a fact the form does not carry,
+   the form is wrong. Report it and stop. That report is the wanted
+   outcome, not a failure of the round.
+9. **A check compares two facts that were derived separately.**
+   *(Owner, 2026-08-26.)* A check that reads a record against the
+   expression that wrote it cannot fail. Delete the record, or
+   compare it against the contract of the operation. A test builds
+   the violating form. A test never changes the record that the
+   check reads.
+10. **A corpus entry is Red at the contract pin.** *(Owner,
+   2026-08-26.)* Verify the failure against a binary built from that
+   pin. An entry that never failed before the fix proves nothing.
+11. **Move one consumer at a time.** *(Owner, 2026-08-26.)* During a
+   migration the differential gate guards the step, because the
+   consumer that did not move is the reference.
+12. **The differential gate cannot see a defect that both tiers
+   share.** *(Owner, 2026-08-26.)* A shape where both tiers agree
+   needs a golden, or a hand-checked value. Record every such defect
+   with its measured output.
 
 ## Code conventions
 
