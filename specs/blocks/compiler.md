@@ -8339,6 +8339,47 @@ and `lower/mod.rs` did not.
    on one machine in one session.
    - **Kill criterion: a ship-AOT ratio above 1.75× stops the phase
      and reopens the form of the emitted C.**
+
+     **Measured 2026-08-27, and the criterion is tripped.** Before
+     and after, one machine, one session, `--warmup 60 --timed 15`,
+     every subject's spread inside ±20 per cent, and the C baseline
+     the same on both sides, which is what makes the pair valid.
+
+         subject      before `9bde577`   after §68 step 3
+         C              3.975 ms 1.00x    3.972 ms 1.00x
+         emitted-C      6.099 ms 1.53x   15.928 ms 4.01x
+         dev-JIT      114.151 ms 28.72x 154.661 ms 38.98x
+
+     The ship tier is `emitted-C`; the harness's `ship-AOT` row is
+     the Cranelift AOT that §11 superseded and is a cross-check.
+     `1.53x` before matches §11's post-P19 record exactly, so the
+     pin met this criterion and §68 is the cause.
+
+     **The named risk is what happened.** This item predicted that
+     LIR names many temporaries and that the emitted C would depend
+     on the C compiler to coalesce them. The dominant cost is
+     narrower than that: the innermost loop of `multiply` now takes
+     the address of the locals that hold its two matrix parameters.
+
+         after    v29 = &l0; v30 = &((v29)->d0);
+                  v31 = &(((v30)->a)[v28]); v32 = *(v31);
+         before   ((v_left).elements).a[((v_row * 4) + v_inner)]
+
+     Taking `&` of a 64-byte local forces it to memory for the whole
+     function, so the before shape could stay in registers and the
+     after shape cannot. §68.2 item 9 makes an address a value, and
+     the transcriber spells that value literally.
+
+     `multiply` also declares 62 function-scope locals, one per SSA
+     value, and copies block parameters at every edge. Both are
+     secondary: the label-and-`goto` shape is unchanged from the pin,
+     which measured 1.53x with it.
+
+     **What reopens is the emitted C's form, not LIR.** An address
+     chain consumed only by a load or a store is a member expression
+     in C: `&x`, then `->f`, then `[i]`, then `*` is `x.f.a[i]`. The
+     transcriber chooses the spelling; LIR keeps saying "address
+     value".
    - A ratio between 1.53× and 1.75× is reported to the owner with
      the emitted C of the inner loop, and the owner decides.
    - A dev-JIT ratio above 4× stops the phase.
