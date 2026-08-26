@@ -8163,6 +8163,36 @@ moves a committed golden, the step stops and reports it.
    first attempt at this step passed every gate with a lowering that
    could not terminate a `for...of` and a call check that could not
    fire.)*
+1b. **Write a reference interpreter for LIR.** *(Owner,
+   2026-08-26. Inserted before step 2.)* It runs every corpus entry
+   and its output joins the standing gate: interpreter ≡ dev ≡ ship
+   ≡ golden. Neither tier changes yet.
+
+   The reason: step 1 has no gate that tests LIR, because nothing
+   consumes LIR. Both step 1 reviews found every CRITICAL by
+   reading, and each cost an hour. Each one shows as a wrong output
+   the moment LIR runs — a `for...of` cursor that never advances
+   yields element 0 for ever; a dropped trap site does not trap; a
+   binding read out of storage after a resume reads what the resume
+   abandoned.
+
+   It also gives step 2 a tiebreaker. When a dev tier on LIR
+   disagrees with a ship tier on HIR, the interpreter says which
+   side moved.
+
+   **Boundaries.** The interpreter is not a third execution form,
+   and invariant 3 does not move: the two shipped forms stay dev JIT
+   and ship C AOT. The interpreter is a test oracle and is never
+   shipped. It does not replace the golden; it agrees with it, as
+   the tiers do. It links `runtime/`, so it shares the runtime and
+   finds no runtime defect — it finds lowering and LIR defects,
+   which is where every defect of §66, §67, and §68 step 1 lived.
+   An entry the interpreter cannot run is named in a declared list
+   with its reason. A silent skip is an escape hatch.
+
+   It answers principle 12 as well: written from this section rather
+   than from either tier, it does not share a tier's assumption. The
+   two open defects that both tiers agree on are exactly that shape.
 2. Move the dev tier to LIR. The ship tier stays on HIR. The
    differential gate now compares one LIR consumer against one HIR
    consumer, so it guards this step directly.
