@@ -15,6 +15,8 @@ pub mod diag;
 mod diag_render;
 pub mod hir;
 pub mod language_reference;
+pub mod lir;
+pub mod lir_text;
 pub mod types;
 
 mod ambient;

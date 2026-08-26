@@ -1,0 +1,10126 @@
+//! §68 step 1: every accepted corpus program lowers to verified LIR.
+
+#[allow(dead_code)]
+mod corpus;
+#[cfg(debug_assertions)]
+#[allow(dead_code)]
+#[path = "support/trap_corpus.rs"]
+mod trap_corpus;
+
+use subscript_codegen::interpreter::interpret;
+use subscript_codegen::lir::{lower_module, verify_module};
+use subscript_compiler::lir::{
+    BlockId, ForOfKind, InstructionKind, Module, Operand, Terminator, TrapKind, ValueType,
+};
+use subscript_compiler::lir_text::print_module;
+use subscript_compiler::Type;
+use subscript_compiler::{check_program, SourceFile};
+
+fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
+    let sources = corpus::entry_sources(accept, id);
+    let hir = check_program(&sources)
+        .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
+    lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
+}
+
+/// Corpus programs whose observable result depends on a host facility the
+/// reference interpreter cannot supply. The reason is deliberately repeated
+/// per entry: adding a new program can never inherit a broad silent skip.
+const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
+    (
+        "a25-interop-chain",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a26-interop-array-pair",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a27-interop-string-view",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a28-interop-callback",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a29-interop-handle",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a30-interop-compose",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a31-interop-primitive-slices",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a32-interop-embedded-array",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a33-interop-flags",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a34-interop-bulk-facade",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a35-interop-async",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a36-interop-chained-flags",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a37-interop-struct-return",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a38-interop-out-field",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a39-interop-async-capstone",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a48-interop-narrow-slices",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a89-interop-chain-payload",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a90-callback-userdata-rooted",
+        "registers a callback with the synthetic native interop library",
+    ),
+    (
+        "a95-interop-async-await",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a96-interop-byte-pairs",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a97-interop-string-field-write",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a98-interop-string-field-read",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a99-interop-texture-descriptor-write",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a100-interop-texture-descriptor-read",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a101-interop-handle-array-pair",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a102-interop-nullable-handle-fields",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a103-interop-recursive-compute-pipeline",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a104-interop-recursive-render-pipeline",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a105-interop-recursive-string-pair-elements",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a106-interop-recursive-struct-pointer-members",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a107-interop-handle-parameter-pair",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a108-interop-nullable-handle-parameter",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a109-interop-null-only-boundary-reference",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a111-interop-async-method-poll",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a112-worker-echo",
+        "requires a runtime worker adapter and a second interpreter Context",
+    ),
+    (
+        "a113-worker-parallel",
+        "requires runtime worker adapters and child interpreter Contexts",
+    ),
+    (
+        "a119-interop-handle-beside-arrays",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a120-interop-nested-behind-element-pointer",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a121-interop-unmarked-reach-through",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a122-interop-two-pointer-members",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a123-interop-wide-descriptor",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a124-contextual-conditional",
+        "calls the synthetic native interop library for boundary-handle arms",
+    ),
+    (
+        "a125-conditional-arm-narrowing",
+        "calls the synthetic native interop library for boundary-handle arms",
+    ),
+    (
+        "a126-interop-by-value-packing",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a127-interop-external-type",
+        "calls two synthetic native interop libraries",
+    ),
+    (
+        "a128-host-owned-state",
+        "requires host pre-entry and post-run hooks",
+    ),
+    (
+        "a129-interop-wire-enum",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a130-interop-wire-enum-bind",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a131-interop-wire-enum-struct",
+        "calls the synthetic native interop library",
+    ),
+    (
+        "a137-handle-entry-param",
+        "exported main requires a host-supplied handle",
+    ),
+    (
+        "a140-wire-entry-param",
+        "exported main requires a host-supplied wire value",
+    ),
+    (
+        "a149-suspension-state",
+        "reaches the synthetic native interop library after its suspension checks",
+    ),
+];
+
+const RELEASE_RUNNABLE_COUNT: usize = 97;
+const DEBUG_RUNNABLE_COUNT: usize = 96;
+const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
+    "a22-matrix-propagation",
+    "its purpose is benchmark cost; one million matrix multiplications add no interpreter semantics",
+)];
+
+/// The debug profile checks semantics that Rust debug checks can affect.
+/// Rust checks integer overflow in debug, but Subscript arithmetic always
+/// wraps. The list also checks stateful interpreter protocols in debug.
+///
+/// The interpreter can run `a22-matrix-propagation`, and the release sweep
+/// runs it. Debug omits it because its purpose is benchmark cost. One million
+/// matrix multiplications add cost, but they do not add interpreter semantics.
+/// No other runnable entry is outside this declared debug subset.
+const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
+    (
+        "a01-hello",
+        "exported entry, host output, and string literals",
+    ),
+    (
+        "a02-integer-types",
+        "baseline signed/unsigned arithmetic and explicit numeric conversions",
+    ),
+    (
+        "a03-integer-literals",
+        "contextual integer literals in bindings, calls, and arrays",
+    ),
+    (
+        "a04-value-struct",
+        "value-aggregate field access and copy-on-assignment",
+    ),
+    (
+        "a05-nominal-identity",
+        "nominal identity for same-shape value aggregates",
+    ),
+    (
+        "a06-fixed-array",
+        "fixed-array storage nested in a value aggregate",
+    ),
+    (
+        "a07-slice-pair",
+        "dynamic-array length, indexed reads, loops, and slice parameters",
+    ),
+    (
+        "a08-string-view",
+        "string length, slicing, parameters, and returned handles",
+    ),
+    (
+        "a09-enums",
+        "numeric enum values, parameters, and comparisons",
+    ),
+    (
+        "a10-control-flow",
+        "if, while, for, switch, break, and continue edges",
+    ),
+    (
+        "a11-functions",
+        "direct calls, default parameters, and return values",
+    ),
+    (
+        "a110-async-method-receiver",
+        "method receiver state and roots live across suspension and collection",
+    ),
+    (
+        "a114-lambda-env-recursion",
+        "capturing closure environments across recursive re-entry",
+    ),
+    (
+        "a115-switch-literal-union",
+        "string-alias values and integer-dispatched switch arms",
+    ),
+    (
+        "a116-exhaustive-switch-returns",
+        "exhaustive switch returns and unreachable control-flow construction",
+    ),
+    (
+        "a117-descriptor-literal-nullable-member",
+        "nullable nested descriptor aggregates, defaults, and arrays",
+    ),
+    (
+        "a118-absence-capable-member",
+        "descriptor omission, presence narrowing, and string aliases",
+    ),
+    (
+        "a12-generics-mono",
+        "generic functions and value aggregates at multiple instantiations",
+    ),
+    (
+        "a13-closures-noncapture",
+        "noncapturing function values and indirect calls",
+    ),
+    (
+        "a132-int-literal-64bit",
+        "full-range i64/u64 literals and numeric separators",
+    ),
+    (
+        "a133-field-init-no-ctor",
+        "field initializers for value and reference classes without constructors",
+    ),
+    (
+        "a134-field-init-order",
+        "constructor argument, field initializer, and body evaluation order",
+    ),
+    ("a135-f32-bits", "binary32 bit conversion and canonical NaN"),
+    (
+        "a136-index-signature",
+        "generic class index reads and writes through accessors",
+    ),
+    (
+        "a138-using-dispose",
+        "scope exits and reverse-order synchronous disposal",
+    ),
+    (
+        "a139-using-async",
+        "a disposable binding carried as an SSA live-in across suspension",
+    ),
+    (
+        "a14-closures-capture",
+        "capturing closure creation, storage, and indirect calls",
+    ),
+    (
+        "a141-cstruct-align",
+        "aligned value aggregates, nested copies, and fixed-array stride",
+    ),
+    (
+        "a142-bytes-of",
+        "aligned value aggregates, fixed arrays, padding, and byte-copy intrinsics",
+    ),
+    (
+        "a143-async-generic",
+        "generic async functions and methods at multiple instantiations",
+    ),
+    (
+        "a144-accessor",
+        "read and write accessor calls on reference, value, and generic classes",
+    ),
+    (
+        "a145-emitted-identifiers",
+        "coroutine live values under dense identifier reuse",
+    ),
+    (
+        "a146-scoped-locals",
+        "scoped values across generators, async, for-of, switch, lambdas, and using",
+    ),
+    (
+        "a147-switch-body-scope",
+        "one switch-body scope, distinct declarations, and fallthrough",
+    ),
+    (
+        "a148-switch-using-scope",
+        "resource disposal across switch fallthrough and scope exit",
+    ),
+    (
+        "a15-manual-lifetime",
+        "reference allocation, field access, and explicit free",
+    ),
+    (
+        "a16-explicit-collect",
+        "dropped references and explicit collection",
+    ),
+    (
+        "a17-null-story",
+        "nullable parameters, fields, branches, and narrowed references",
+    ),
+    (
+        "a18-error-handling",
+        "result aggregates and guarded integer division",
+    ),
+    (
+        "a19-modules",
+        "multi-file imports, exported calls, and module initialization",
+    ),
+    (
+        "a20-coroutine-generator",
+        "generator creation, yield, resume, and completion",
+    ),
+    (
+        "a21-methods",
+        "value and reference method receivers and calls",
+    ),
+    (
+        "a23-game-loop",
+        "bounded loops over arrays of value aggregates",
+    ),
+    (
+        "a24-particle-system",
+        "array-of-struct and struct-of-arrays aggregate updates",
+    ),
+    (
+        "a40-math",
+        "Math intrinsics, constants, float edges, and formatting",
+    ),
+    (
+        "a41-math-random",
+        "deterministic Context random-number state",
+    ),
+    (
+        "a42-date",
+        "Date construction, accessors, formatting, arrays, and reference fields",
+    ),
+    (
+        "a43-string",
+        "string search, split, trim, padding, case, and replacement intrinsics",
+    ),
+    (
+        "a44-array",
+        "array equality, search, slice, fill, reverse, and concatenation",
+    ),
+    (
+        "a45-array-fn",
+        "array callbacks, changed element types, folds, and short-circuit traversal",
+    ),
+    (
+        "a46-narrow-numerics",
+        "i8/u8/i16/u16/f16 conversion, wrapping arithmetic, and bitwise operations",
+    ),
+    (
+        "a47-narrow-layout",
+        "mixed-width fields, aggregate layout, and copy-on-assignment",
+    ),
+    (
+        "a49-f16-conversions",
+        "binary16 rounding, overflow, subnormal, NaN, and signed-zero conversions",
+    ),
+    (
+        "a50-narrow-callbacks-shifts",
+        "narrow callback extension and masked shifts at every integer width, including u64 wrap",
+    ),
+    (
+        "a51-map",
+        "map operations, aggregate values, nullable lookup, and collection",
+    ),
+    (
+        "a52-map-order",
+        "map insertion order across overwrite, removal, and reinsertion",
+    ),
+    ("a53-set", "set operations and SameValueZero float keys"),
+    (
+        "a54-map-reference-key",
+        "reference identity for map keys across mutation",
+    ),
+    (
+        "a55-map-set-foreach",
+        "map/set callbacks and callback-owned trap sites",
+    ),
+    (
+        "a56-map-aggregate-foreach",
+        "value-class and fixed-array copy semantics across callbacks",
+    ),
+    (
+        "a57-number",
+        "Number constants and typed numeric predicates",
+    ),
+    (
+        "a58-number-parse",
+        "integer and float parsing, casts, and parse-failure values",
+    ),
+    (
+        "a59-number-to-fixed",
+        "fixed decimal formatting, rounding, signs, and exponent fallback",
+    ),
+    (
+        "a60-string-unicode",
+        "Unicode case conversion and whitespace trimming",
+    ),
+    (
+        "a61-same-value-zero",
+        "NaN and negative-zero equality in arrays, maps, and sets",
+    ),
+    (
+        "a62-number-formatting-clz32",
+        "radix and precision formatting plus zero-defined clz32",
+    ),
+    (
+        "a63-q27-math-number",
+        "overflowing i32 Math.imul and binary32 rounding",
+    ),
+    (
+        "a64-q27-string",
+        "substring, code points, concatenation, positions, and replacement substitutions",
+    ),
+    (
+        "a65-q27-array",
+        "array callbacks and structural mutation operations",
+    ),
+    (
+        "a66-q27-map-set",
+        "Map.groupBy, Set algebra, callbacks, and insertion order",
+    ),
+    (
+        "a67-q27-array-callback-index",
+        "array callback arities and index argument order",
+    ),
+    (
+        "a68-q27-fixed-array-callbacks",
+        "fixed-array callback arities and dynamic result arrays",
+    ),
+    (
+        "a69-json-stringify",
+        "JSON serialization of scalars, arrays, dates, and aggregates",
+    ),
+    (
+        "a70-json-roundtrip",
+        "typed JSON parse and serialization round-trips for aggregates",
+    ),
+    (
+        "a71-json-parse",
+        "typed JSON parse failures, duplicate keys, and numeric ranges",
+    ),
+    (
+        "a72-json-parse-limits",
+        "JSON depth, UTF-8, and f32 representation failures",
+    ),
+    (
+        "a73-p19-divisor-single-eval",
+        "single evaluation of a call-valued integer divisor",
+    ),
+    (
+        "a74-p20-string-array-compound",
+        "string-array indexed compound assignment",
+    ),
+    (
+        "a75-p20-array-compound-expression",
+        "integer-array compound assignment in expression position",
+    ),
+    (
+        "a76-p20-dynamic-value-field-write",
+        "dynamic value-aggregate fields, index side effects, and address provenance",
+    ),
+    (
+        "a77-for-of-containers",
+        "array, fixed-array, map, set, and Unicode iteration cursors",
+    ),
+    (
+        "a78-for-of-views",
+        "array, map, and set key/value iteration views",
+    ),
+    (
+        "a79-for-of-generator",
+        "generator suspension composed with the for-of protocol",
+    ),
+    (
+        "a80-for-of-foreach-mutation",
+        "captured iteration bounds and removal/appending mutation semantics",
+    ),
+    (
+        "a81-array-literal-spread",
+        "array spread from arrays, fixed arrays, maps, sets, and strings",
+    ),
+    (
+        "a82-regex",
+        "regular-expression matches, captures, search, replacement, and split",
+    ),
+    (
+        "a83-regex-review",
+        "regular-expression source, flags, collection roots, and non-BMP behavior",
+    ),
+    (
+        "a84-for-of-bmp",
+        "BMP string iteration with static code-point handles",
+    ),
+    (
+        "a85-for-of-repeated-astral",
+        "repeated astral string iteration and handle interning",
+    ),
+    (
+        "a86-for-of-mixed-unicode",
+        "mixed BMP and astral string iteration representations",
+    ),
+    (
+        "a87-for-of-distinct-astral",
+        "distinct astral code-point handles and iteration order",
+    ),
+    (
+        "a88-astral-intern-collect",
+        "astral string roots across explicit collection",
+    ),
+    (
+        "a91-string-literal-union",
+        "string aliases in parameters, fields, returns, and arrays",
+    ),
+    (
+        "a92-descriptor-literals",
+        "descriptor defaults, nesting, arrays, and member initialization",
+    ),
+    (
+        "a93-async-chain",
+        "nested async calls, suspension propagation, and resume values",
+    ),
+    (
+        "a94-async-two-roots",
+        "standard-runner kick and pump order for multiple async roots",
+    ),
+];
+
+/// Reachable trap semantics kept in the debug profile beside the accepted
+/// subset. Each entry proves both the trap kind/site and trap-stop stdout.
+#[cfg(debug_assertions)]
+const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32)] = &[
+    (
+        "t08-div-zero-expression",
+        "integer division-by-zero check in expression position",
+        "DivisionByZero",
+        10,
+    ),
+    (
+        "t16-array-write-oob",
+        "checked dynamic-array write address and stop-before-write behavior",
+        "index-out-of-bounds",
+        11,
+    ),
+    (
+        "t47-unreachable-reached",
+        "explicit unreachable terminator and trap-stop behavior",
+        "Unreachable",
+        10,
+    ),
+];
+
+#[test]
+fn lir_interpreter_profile_matches_corpus_goldens() {
+    let started = std::time::Instant::now();
+    let accept = corpus::corpus_accept();
+    let entries = corpus::golden_ids(&accept);
+    assert_eq!(
+        INTERPRETER_EXCLUSIONS.len(),
+        52,
+        "the declared host-dependent exclusion count changed"
+    );
+    for (id, reason) in INTERPRETER_EXCLUSIONS {
+        assert!(
+            entries.iter().any(|entry| entry == id),
+            "declared interpreter exclusion {id} has no corpus golden"
+        );
+        assert!(
+            !reason.trim().is_empty(),
+            "declared interpreter exclusion {id} has no reason"
+        );
+    }
+
+    let runnable = entries
+        .iter()
+        .filter(|id| {
+            !INTERPRETER_EXCLUSIONS
+                .iter()
+                .any(|(excluded, _)| excluded == *id)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        runnable.len(),
+        RELEASE_RUNNABLE_COUNT,
+        "release runnable corpus count changed"
+    );
+
+    let selected = if cfg!(debug_assertions) {
+        let mut selected = Vec::with_capacity(DEBUG_INTERPRETER_SUBSET.len());
+        for (id, reason) in DEBUG_INTERPRETER_SUBSET {
+            assert!(!reason.trim().is_empty(), "debug subset {id} has no reason");
+            assert!(
+                runnable.iter().any(|entry| entry.as_str() == *id),
+                "debug subset {id} is not a runnable corpus entry"
+            );
+            assert!(
+                !selected.iter().any(|selected| selected == id),
+                "debug subset contains duplicate {id}"
+            );
+            selected.push(*id);
+        }
+        assert_eq!(
+            selected.len(),
+            DEBUG_RUNNABLE_COUNT,
+            "debug runnable corpus count changed"
+        );
+        for (id, reason) in DEBUG_COST_EXCLUSIONS {
+            assert!(
+                !reason.trim().is_empty(),
+                "debug cost exclusion {id} has no reason"
+            );
+            assert!(
+                runnable.iter().any(|entry| entry.as_str() == *id),
+                "debug cost exclusion {id} is not a runnable corpus entry"
+            );
+        }
+        let outside = runnable
+            .iter()
+            .filter(|id| !selected.iter().any(|selected| selected == &id.as_str()))
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            outside,
+            DEBUG_COST_EXCLUSIONS
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            "only declared cost-purpose entries can be outside the debug subset"
+        );
+        selected
+    } else {
+        runnable.iter().map(|id| id.as_str()).collect()
+    };
+
+    let mut ran = 0usize;
+    let mut matched = 0usize;
+    let mut findings = Vec::new();
+    for id in selected {
+        ran += 1;
+        let module = lower_entry(&accept, id);
+        let golden = corpus::golden_bytes(&accept, id);
+        match interpret(&module) {
+            Ok(output) if output == golden => matched += 1,
+            Ok(output) => findings.push(format!(
+                "{id}: output mismatch\n  interpreter: {:?}\n  golden:      {:?}",
+                String::from_utf8_lossy(&output),
+                String::from_utf8_lossy(&golden)
+            )),
+            Err(error) => findings.push(format!(
+                "{id}: interpreter error: {error}\n  interpreter: {:?}\n  golden:      {:?}",
+                String::from_utf8_lossy(error.output()),
+                String::from_utf8_lossy(&golden)
+            )),
+        }
+    }
+    assert!(
+        findings.is_empty(),
+        "interpreter {profile} corpus: {ran} run, {matched} matched, {} findings, {} declared exclusions\n{}",
+        findings.len(),
+        INTERPRETER_EXCLUSIONS.len(),
+        findings.join("\n"),
+        profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+    );
+    eprintln!(
+        "interpreter {profile} corpus: {ran} run, {matched} matched, {} declared exclusions, {:.3} s",
+        INTERPRETER_EXCLUSIONS.len(),
+        started.elapsed().as_secs_f64(),
+        profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+    );
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn lir_interpreter_debug_subset_traps_at_declared_sites() {
+    let trap = trap_corpus::corpus_trap();
+    let entries = trap_corpus::trap_ids(&trap);
+    for (id, reason, expected_kind, expected_line) in DEBUG_INTERPRETER_TRAPS {
+        assert!(!reason.trim().is_empty(), "debug trap {id} has no reason");
+        assert!(
+            entries.iter().any(|entry| entry == id),
+            "debug trap subset {id} has no trap corpus entry"
+        );
+        let sources = trap_corpus::trap_sources(&trap, id);
+        let hir = check_program(&sources)
+            .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
+        let module =
+            lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
+        let error = interpret(&module).expect_err("debug trap entry must trap");
+        assert_eq!(
+            error.output(),
+            trap_corpus::trap_expected(&trap, id),
+            "{id}: pre-trap stdout differs from the golden"
+        );
+        let subscript_codegen::interpreter::InterpretError::Execution { source, .. } = error else {
+            panic!("{id}: interpreter did not preserve pre-trap execution output");
+        };
+        let subscript_codegen::interpreter::InterpretError::Trap { kind, pos, .. } = *source else {
+            panic!("{id}: interpreter did not report a semantic trap");
+        };
+        assert_eq!(kind, *expected_kind, "{id}: wrong trap kind");
+        assert_eq!(pos.file, format!("{id}.ts"), "{id}: wrong trap file");
+        assert_eq!(pos.line, *expected_line, "{id}: wrong trap line");
+    }
+}
+
+#[test]
+fn suspension_capstone_reaches_its_declared_native_boundary() {
+    let accept = corpus::corpus_accept();
+    let id = "a149-suspension-state";
+    let module = lower_entry(&accept, id);
+    let error = interpret(&module).expect_err("a149 requires the native fixture");
+    assert!(error
+        .to_string()
+        .contains("subDeviceCreate requires a native library"));
+    let golden = corpus::golden_bytes(&accept, id);
+    assert!(golden.starts_with(error.output()));
+    assert!(String::from_utf8_lossy(error.output()).ends_with("machinery:from-bytes=1,2\n"));
+}
+
+fn successors(terminator: &Terminator) -> Vec<BlockId> {
+    match terminator {
+        Terminator::Branch(target) => vec![target.block],
+        Terminator::ConditionalBranch {
+            then_target,
+            else_target,
+            ..
+        } => vec![then_target.block, else_target.block],
+        Terminator::Switch { arms, default, .. } => arms
+            .iter()
+            .map(|arm| arm.target.block)
+            .chain(std::iter::once(default.block))
+            .collect(),
+        Terminator::Suspend { successor, .. } => vec![*successor],
+        Terminator::Return(_) | Terminator::Trap(_) => Vec::new(),
+    }
+}
+
+#[test]
+fn every_corpus_entry_lowers_to_verified_lir() {
+    let accept = corpus::corpus_accept();
+    let entries = corpus::entry_ids(&accept);
+    assert!(!entries.is_empty(), "accept corpus is empty");
+
+    let mut verified_functions = 0_usize;
+    let mut instruction_count = 0_usize;
+    let mut local_traffic = 0_usize;
+    let mut local_count = 0_usize;
+    let mut block_parameters = 0_usize;
+    let mut coroutine_functions = 0_usize;
+    let mut coroutine_local_after_resume = 0_usize;
+    let mut checked_index_addresses = 0_usize;
+    let mut coroutine_creation_allocations = 0_usize;
+    for id in &entries {
+        let lir = lower_entry(&accept, id);
+        verify_module(&lir).unwrap_or_else(|errors| {
+            panic!(
+                "{id}: verifier failed:\n{}",
+                errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        });
+        verified_functions += lir.functions.len();
+        for function in &lir.functions {
+            local_count += function.locals.len();
+            block_parameters += function
+                .blocks
+                .iter()
+                .map(|block| block.parameters.len())
+                .sum::<usize>();
+            for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+                instruction_count += 1;
+                if matches!(
+                    instruction.kind,
+                    InstructionKind::LoadLocal(_)
+                        | InstructionKind::StoreLocal(_)
+                        | InstructionKind::AddressOfLocal(_)
+                ) {
+                    local_traffic += 1;
+                }
+                if matches!(
+                    instruction.kind,
+                    InstructionKind::AddressOfIndex { checked: true }
+                ) {
+                    checked_index_addresses += 1;
+                    assert!(
+                        instruction.traps.iter().any(|trap| matches!(
+                            trap.kind,
+                            TrapKind::IndexRead | TrapKind::IndexWrite
+                        )),
+                        "{id}: checked AddressOfIndex at {} carries no index trap",
+                        instruction.pos
+                    );
+                }
+            }
+            if function.is_generator || function.is_async {
+                assert!(
+                    matches!(
+                        function.creation_traps.as_slice(),
+                        [trap] if trap.kind == TrapKind::Allocation
+                    ),
+                    "{id}: coroutine `{}` does not carry exactly one creation Allocation trap: {:?}",
+                    function.source_name,
+                    function.creation_traps
+                );
+                coroutine_creation_allocations += 1;
+            } else {
+                assert!(
+                    function.creation_traps.is_empty(),
+                    "{id}: ordinary function `{}` carries creation traps",
+                    function.source_name
+                );
+            }
+            let resume_blocks = function
+                .blocks
+                .iter()
+                .filter(|block| {
+                    block
+                        .source_name
+                        .as_deref()
+                        .is_some_and(|name| name.contains("resume"))
+                })
+                .map(|block| block.id)
+                .collect::<Vec<_>>();
+            if !resume_blocks.is_empty() {
+                coroutine_functions += 1;
+                let mut pending = resume_blocks;
+                let mut seen = std::collections::BTreeSet::new();
+                let mut reads_local = false;
+                while let Some(block) = pending.pop() {
+                    if !seen.insert(block) {
+                        continue;
+                    }
+                    let Some(block) = function.blocks.get(block.0 as usize) else {
+                        continue;
+                    };
+                    reads_local |= block.instructions.iter().any(|instruction| {
+                        matches!(instruction.kind, InstructionKind::LoadLocal(_))
+                    });
+                    pending.extend(successors(&block.terminator));
+                }
+                coroutine_local_after_resume += usize::from(reads_local);
+            }
+        }
+    }
+
+    eprintln!(
+        "verified {} LIR functions from {} corpus entries",
+        verified_functions,
+        entries.len()
+    );
+    eprintln!(
+        "storage metrics: instructions={instruction_count}, local_traffic={local_traffic}, locals={local_count}, block_parameters={block_parameters}, coroutine_functions={coroutine_functions}, coroutine_local_after_resume={coroutine_local_after_resume}, coroutine_creation_allocations={coroutine_creation_allocations}, missing_coroutine_creation_allocations=0, checked_index_addresses={checked_index_addresses}, checked_index_addresses_without_traps=0"
+    );
+}
+
+fn lower_source(name: &str, source: &str) -> Module {
+    let hir = check_program(&[SourceFile::new(name, source)]).expect("source checks clean");
+    lower_module(&hir).expect("source lowers to LIR")
+}
+
+const LIR_TEXT_GOLDENS: &str = r###"===== a110-async-method-receiver =====
+module initializer=None
+class c0 "Session" value=false descriptor=false boundary=false align=None @ a110-async-method-receiver.ts:6:7
+  field d0 "state": I32 defaulted=false absence=false foreign=None @ a110-async-method-receiver.ts:7:3
+  method m0 "constructor" -> f0
+  method m1 "sibling" -> f1
+  method m2 "run" -> f2
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a110-async-method-receiver.ts:9:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a110-async-method-receiver.ts:9:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 10, col: 5 } }] @ a110-async-method-receiver.ts:10:10
+    StoreAddress(%1, Integer(1):I32) @ a110-async-method-receiver.ts:10:10
+    -> Return(None)
+fn f1 "sibling" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=true -> I32 entry=b0 @ a110-async-method-receiver.ts:13:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 13, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a110-async-method-receiver.ts:13:9
+  param %1 "delta": Data(I32) kind=Explicit storage=None @ a110-async-method-receiver.ts:13:17
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(I32) name=Some("delta")
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Str) name=None
+  value %10: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Class(ClassId(0))) name=Some("this")
+  b0 Some("entry"):
+    %2: Data(I32) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 14, col: 28 } }] @ a110-async-method-receiver.ts:14:33
+    %3: Data(Str) = Template([Text("sibling:start="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 14, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 14, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 14, col: 11 } }] @ a110-async-method-receiver.ts:14:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a110-async-method-receiver.ts:14:5
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 15, col: 5 } }] @ a110-async-method-receiver.ts:15:10
+    %5: Data(I32) = LoadAddress(%4) @ a110-async-method-receiver.ts:15:10
+    %6: Data(I32) = Binary(Add)(%5, %1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 15, col: 5 } }] @ a110-async-method-receiver.ts:15:10
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 15, col: 5 } }] @ a110-async-method-receiver.ts:15:10
+    StoreAddress(%7, %6) @ a110-async-method-receiver.ts:15:10
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%15: Data(Class(ClassId(0)))) Some("async.resume"):
+    %8: Data(I32) = LoadField(Class(FieldId(0)))(%15) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 17, col: 29 } }] @ a110-async-method-receiver.ts:17:34
+    %9: Data(Str) = Template([Text("sibling:resume="), Operand(0)])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 17, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 17, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 17, col: 11 } }] @ a110-async-method-receiver.ts:17:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a110-async-method-receiver.ts:17:5
+    %10: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%15) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 18, col: 5 } }] @ a110-async-method-receiver.ts:18:10
+    %11: Data(I32) = LoadAddress(%10) @ a110-async-method-receiver.ts:18:10
+    %12: Data(I32) = Binary(Add)(%11, Integer(10):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 18, col: 5 } }] @ a110-async-method-receiver.ts:18:10
+    %13: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%15) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 18, col: 5 } }] @ a110-async-method-receiver.ts:18:10
+    StoreAddress(%13, %12) @ a110-async-method-receiver.ts:18:10
+    %14: Data(I32) = LoadField(Class(FieldId(0)))(%15) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 19, col: 12 } }] @ a110-async-method-receiver.ts:19:17
+    -> Return(Some(Value(ValueId(14))))
+fn f2 "run" kind=Method { class: ClassId(0), method: MethodId(2) } exported=false generator=false async=true -> I32 entry=b0 @ a110-async-method-receiver.ts:22:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 22, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a110-async-method-receiver.ts:22:9
+  param %1 "increment": Data(I32) kind=Explicit storage=None @ a110-async-method-receiver.ts:22:13
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(I32) name=Some("increment")
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  value %13: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  value %16: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(Class(ClassId(0))) name=Some("this")
+  value %19: Data(Class(ClassId(0))) name=Some("this")
+  b0 Some("entry"):
+    %2: Data(I32) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 23, col: 24 } }] @ a110-async-method-receiver.ts:23:29
+    %3: Data(Str) = Template([Text("run:start="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 23, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 23, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 23, col: 11 } }] @ a110-async-method-receiver.ts:23:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a110-async-method-receiver.ts:23:5
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 24, col: 5 } }] @ a110-async-method-receiver.ts:24:10
+    %5: Data(I32) = LoadAddress(%4) @ a110-async-method-receiver.ts:24:10
+    %6: Data(I32) = Binary(Add)(%5, %1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 24, col: 5 } }] @ a110-async-method-receiver.ts:24:10
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 24, col: 5 } }] @ a110-async-method-receiver.ts:24:10
+    StoreAddress(%7, %6) @ a110-async-method-receiver.ts:24:10
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%18: Data(Class(ClassId(0)))) Some("async.resume"):
+    %8: Data(I32) = LoadField(Class(FieldId(0)))(%18) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 26, col: 25 } }] @ a110-async-method-receiver.ts:26:30
+    %9: Data(Str) = Template([Text("run:resume="), Operand(0)])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 26, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 26, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 26, col: 11 } }] @ a110-async-method-receiver.ts:26:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a110-async-method-receiver.ts:26:5
+    %10: Data(I32) = Copy(Integer(3):I32) @ a110-async-method-receiver.ts:27:31
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0))), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(18), ValueId(10)] }, successor: BlockId(2), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(18))], invalidates: [], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 27, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a110-async-method-receiver.ts", line: 27, col: 31 } }] }
+  b2(%11: Data(I32), %19: Data(Class(ClassId(0)))) Some("async-call.resume"):
+    %12: Data(Str) = Template([Text("run:sibling="), Operand(0)])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 28, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 28, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 28, col: 11 } }] @ a110-async-method-receiver.ts:28:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a110-async-method-receiver.ts:28:5
+    %13: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%19) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 29, col: 5 } }] @ a110-async-method-receiver.ts:29:10
+    %14: Data(I32) = LoadAddress(%13) @ a110-async-method-receiver.ts:29:10
+    %15: Data(I32) = Binary(Add)(%14, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 29, col: 5 } }] @ a110-async-method-receiver.ts:29:10
+    %16: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%19) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 29, col: 5 } }] @ a110-async-method-receiver.ts:29:10
+    StoreAddress(%16, %15) @ a110-async-method-receiver.ts:29:10
+    %17: Data(I32) = LoadField(Class(FieldId(0)))(%19) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 30, col: 12 } }] @ a110-async-method-receiver.ts:30:17
+    -> Return(Some(Value(ValueId(17))))
+fn f3 "receiver" kind=Free exported=false generator=false async=false -> Class(ClassId(0)) entry=b0 @ a110-async-method-receiver.ts:34:10
+  value %0: Data(Str) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("receiver:evaluated")() traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 35, col: 9 } }] @ a110-async-method-receiver.ts:35:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a110-async-method-receiver.ts:35:3
+    %1: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 36, col: 10 } }] @ a110-async-method-receiver.ts:36:10
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a110-async-method-receiver.ts", line: 36, col: 10 } }] @ a110-async-method-receiver.ts:36:10
+    -> Return(Some(Value(ValueId(1))))
+fn f4 "argument" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a110-async-method-receiver.ts:39:10
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("argument:evaluated")() traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 40, col: 9 } }] @ a110-async-method-receiver.ts:40:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a110-async-method-receiver.ts:40:3
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a110-async-method-receiver.ts:41:3
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(1) })))
+fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a110-async-method-receiver.ts:45:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 45, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("main:kick")() traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 46, col: 9 } }] @ a110-async-method-receiver.ts:46:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a110-async-method-receiver.ts:46:3
+    %1: Data(Class(ClassId(0))) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(Class(ClassId(0)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a110-async-method-receiver.ts", line: 47, col: 29 } }] @ a110-async-method-receiver.ts:47:29
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: Some(Data(I32)) })() traps=[Trap { kind: Call, pos: Pos { file: "a110-async-method-receiver.ts", line: 47, col: 44 } }] @ a110-async-method-receiver.ts:47:44
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(0))), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(1), ValueId(2)] }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [], invalidates: [], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a110-async-method-receiver.ts", line: 47, col: 29 } }, Trap { kind: Call, pos: Pos { file: "a110-async-method-receiver.ts", line: 47, col: 23 } }] }
+  b1(%3: Data(I32)) Some("async-call.resume"):
+    %4: Data(Str) = Template([Text("main:done="), Operand(0)])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 48, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 48, col: 9 } }] @ a110-async-method-receiver.ts:48:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a110-async-method-receiver.ts:48:3
+    -> Return(None)
+fn f6 "collector" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a110-async-method-receiver.ts:51:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 51, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("collector:collect")() traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 52, col: 9 } }] @ a110-async-method-receiver.ts:52:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a110-async-method-receiver.ts:52:3
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a110-async-method-receiver.ts:53:3
+    %1: Data(Str) = StringLiteral("collector:done")() traps=[Trap { kind: Allocation, pos: Pos { file: "a110-async-method-receiver.ts", line: 54, col: 9 } }] @ a110-async-method-receiver.ts:54:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a110-async-method-receiver.ts:54:3
+    -> Return(None)
+===== a111-interop-async-method-poll =====
+module initializer=None
+class c0 "SubChainHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:41:15
+  field d0 "sType": Enum(EnumId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:42:3
+  field d1 "next": Nullable(Class(ClassId(0))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:43:3
+class c1 "SubChainExtA" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:47:15
+  field d2 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:48:3
+  field d3 "intensity": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:49:3
+  field d4 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:50:3
+class c2 "SubChainExtB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:54:15
+  field d5 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:55:3
+  field d6 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:56:3
+  field d7 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:57:3
+class c3 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:65:15
+  field d8 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:66:3
+  field d9 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:67:3
+  field d10 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:68:3
+class c4 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:72:15
+  field d11 "basis": FixedArray(F32, 16) defaulted=false absence=false foreign=None @ interop.generated.d.ts:73:3
+  field d12 "bone": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:74:3
+  field d13 "weight": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:75:3
+  field d14 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:76:3
+class c5 "SubSample" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:80:15
+  field d15 "a": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:81:3
+  field d16 "b": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:82:3
+  field d17 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:83:3
+  field d18 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:84:3
+class c6 "SubDevice" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:88:11
+class c7 "SubDrawList" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:110:15
+  field d19 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:111:3
+  field d20 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:112:3
+class c8 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:120:15
+  field d21 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:121:3
+  field d22 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
+class c9 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:129:15
+  field d23 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:130:3
+  field d24 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:131:3
+class c10 "SubVec3" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:135:15
+  field d25 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:136:3
+  field d26 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:137:3
+  field d27 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:138:3
+class c11 "SubVec4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:142:15
+  field d28 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:143:3
+  field d29 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:144:3
+  field d30 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:145:3
+  field d31 "w": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:146:3
+class c12 "SubRect" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:150:15
+  field d32 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:151:3
+  field d33 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:152:3
+  field d34 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:153:3
+  field d35 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:154:3
+class c13 "SubRange" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:158:15
+  field d36 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:159:3
+  field d37 "size": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:160:3
+class c14 "SubColor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:164:15
+  field d38 "r": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:165:3
+  field d39 "g": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:166:3
+  field d40 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:167:3
+  field d41 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:168:3
+class c15 "SubTimings" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:172:15
+  field d42 "cpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:173:3
+  field d43 "gpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:174:3
+  field d44 "frame": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:175:3
+class c16 "SubMixed" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:179:15
+  field d45 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:180:3
+  field d46 "id": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:181:3
+  field d47 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:182:3
+  field d48 "ratio": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:183:3
+class c17 "SubPadB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:187:15
+  field d49 "head": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:188:3
+  field d50 "mid": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:189:3
+  field d51 "tail": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:190:3
+class c18 "SubNarrowPacket" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15
+  field d52 "kind": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
+  field d53 "delta": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:196:3
+  field d54 "weight": F16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:197:3
+  field d55 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:198:3
+  field d56 "bias": I8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:199:3
+  field d57 "count": U16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:200:3
+  field d58 "scale": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:201:3
+class c19 "SubExtent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:205:15
+  field d59 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:206:3
+  field d60 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:207:3
+  field d61 "depth": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:208:3
+class c20 "SubImageInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:212:15
+  field d62 "extent": Class(ClassId(19)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:213:3
+  field d63 "mipLevels": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:214:3
+  field d64 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:215:3
+class c21 "SubBounds" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:219:15
+  field d65 "min": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:220:3
+  field d66 "max": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:221:3
+class c22 "SubViewport" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:225:15
+  field d67 "rect": Class(ClassId(12)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:226:3
+  field d68 "depth": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:227:3
+class c23 "SubNodeInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:231:15
+  field d69 "bounds": Class(ClassId(21)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:232:3
+  field d70 "id": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:233:3
+  field d71 "tint": Class(ClassId(14)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:234:3
+class c24 "SubChainExtC" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:238:15
+  field d72 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:239:3
+  field d73 "offset": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:240:3
+  field d74 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:241:3
+class c25 "SubChainExtD" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:245:15
+  field d75 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:246:3
+  field d76 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:247:3
+  field d77 "level": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:248:3
+  field d78 "active": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:249:3
+class c26 "SubEventHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:253:15
+  field d79 "kind": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:254:3
+  field d80 "next": Nullable(Class(ClassId(26))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:255:3
+class c27 "SubEventKey" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:259:15
+  field d81 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:260:3
+  field d82 "code": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:261:3
+  field d83 "pressed": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:262:3
+class c28 "SubEventMove" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:266:15
+  field d84 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:267:3
+  field d85 "dx": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:268:3
+  field d86 "dy": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:269:3
+class c29 "SubPassInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:273:15
+  field d87 "access": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:274:3
+  field d88 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:275:3
+  field d89 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:276:3
+class c30 "SubResourceDesc" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:280:15
+  field d90 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:281:3
+  field d91 "range": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:282:3
+  field d92 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:283:3
+class c31 "SubCommandBuffer" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:287:15
+  field d93 "queue": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:288:3
+  field d94 "commands": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:289:3
+class c32 "SubFuture" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:296:15
+  field d95 "id": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:297:3
+class c33 "SubStats" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:301:15
+  field d96 "submitted": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:302:3
+  field d97 "completed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:303:3
+  field d98 "pending": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:304:3
+class c34 "SubQueryStatus" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:311:15
+  field d99 "future": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:312:3
+  field d100 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:313:3
+class c35 "SubWaitEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:319:15
+  field d101 "future": Class(ClassId(32)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:320:3
+  field d102 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:321:3
+class c36 "SubBoundaryStringRecord" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:331:15
+  field d103 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:332:3
+  field d104 "handle": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:333:3
+  field d105 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:334:3
+  field d106 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:335:3
+  field d107 "generation": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:336:3
+class c37 "SGPUProbeExtent3D" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:349:15
+  field d108 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:350:3
+  field d109 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:351:3
+  field d110 "depthOrArrayLayers": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:352:3
+class c38 "SGPUProbeTextureDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:356:15
+  field d111 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:357:3
+  field d112 "extent": Class(ClassId(37)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:358:3
+  field d113 "viewFormats": Array(Enum(EnumId(1))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:359:3
+  field d114 "format": Enum(EnumId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:360:3
+  field d115 "mipLevelCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:361:3
+  field d116 "sampleCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:362:3
+  field d117 "dimension": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:363:3
+  field d118 "usage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:364:3
+class c39 "SubProbePipelineLayoutDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:371:15
+  field d119 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:372:3
+  field d120 "bindGroupLayouts": Array(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:373:3
+class c40 "SubProbeBindGroupEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:379:15
+  field d121 "binding": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:380:3
+  field d122 "buffer": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:381:3
+  field d123 "sampler": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:382:3
+  field d124 "textureView": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:383:3
+class c41 "SGPUProbeComputeState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:390:15
+  field d125 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:391:3
+  field d126 "workgroupX": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:392:3
+  field d127 "workgroupY": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:393:3
+  field d128 "constantSeed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:394:3
+class c42 "SGPUProbeComputePipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:398:15
+  field d129 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:399:3
+  field d130 "compute": Class(ClassId(41)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:400:3
+  field d131 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:401:3
+class c43 "SGPUProbeVertexAttribute" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:407:15
+  field d132 "shaderLocation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:408:3
+  field d133 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:409:3
+  field d134 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:410:3
+class c44 "SGPUProbeVertexBufferLayout" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:414:15
+  field d135 "arrayStride": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:415:3
+  field d136 "stepMode": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:416:3
+  field d137 "attributes": Array(Class(ClassId(43))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:417:3
+class c45 "SGPUProbeVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:421:15
+  field d138 "moduleId": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:422:3
+  field d139 "buffers": Array(Class(ClassId(44))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:423:3
+class c46 "SGPUProbeRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:427:15
+  field d140 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:428:3
+  field d141 "vertex": Class(ClassId(45)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:429:3
+  field d142 "primitive": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:430:3
+class c47 "SGPUProbeConstantEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:436:15
+  field d143 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:437:3
+  field d144 "value": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:438:3
+class c48 "SGPUProbeProgrammableStage" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:442:15
+  field d145 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:443:3
+  field d146 "stage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:444:3
+class c49 "SGPUProbeBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:450:15
+  field d147 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:451:3
+  field d148 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:452:3
+class c50 "SGPUProbeColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:456:15
+  field d149 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:457:3
+  field d150 "blend": Nullable(Class(ClassId(49))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:458:3
+  field d151 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:459:3
+class c51 "SGPUProbeFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:463:15
+  field d152 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:464:3
+  field d153 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:465:3
+  field d154 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:466:3
+class c52 "SGPUProbeFullRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:470:15
+  field d155 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:471:3
+  field d156 "fragment": Nullable(Class(ClassId(51))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:472:3
+class c53 "SGPUProbeHandleFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:478:15
+  field d157 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:479:3
+  field d158 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:480:3
+  field d159 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:481:3
+  field d160 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:482:3
+class c54 "SGPUProbeHandleRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:486:15
+  field d161 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:487:3
+  field d162 "fragment": Nullable(Class(ClassId(53))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:488:3
+class c55 "SGPUProbeNestedBlendComponent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:494:15
+  field d163 "operation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:495:3
+  field d164 "srcFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:496:3
+  field d165 "dstFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:497:3
+class c56 "SGPUProbeNestedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:501:15
+  field d166 "color": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:502:3
+  field d167 "alpha": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:503:3
+class c57 "SGPUProbeNestedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:507:15
+  field d168 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:508:3
+  field d169 "blend": Nullable(Class(ClassId(56))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:509:3
+  field d170 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:510:3
+class c58 "SGPUProbeNestedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:514:15
+  field d171 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:515:3
+  field d172 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:516:3
+  field d173 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:517:3
+  field d174 "targets": Array(Class(ClassId(57))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:518:3
+class c59 "SGPUProbeNestedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:522:15
+  field d175 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:523:3
+  field d176 "fragment": Nullable(Class(ClassId(58))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:524:3
+class c60 "SGPUProbeUnmarkedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:535:15
+  field d177 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:536:3
+  field d178 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:537:3
+class c61 "SGPUProbeUnmarkedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:541:15
+  field d179 "format": Enum(EnumId(2)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:542:3
+  field d180 "blend": Nullable(Class(ClassId(60))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:543:3
+  field d181 "writeMask": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:544:3
+class c62 "SGPUProbeUnmarkedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:548:15
+  field d182 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:549:3
+  field d183 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:550:3
+  field d184 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:551:3
+  field d185 "targets": Array(Class(ClassId(61))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:552:3
+class c63 "SGPUProbeUnmarkedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:556:15
+  field d186 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:557:3
+  field d187 "fragment": Nullable(Class(ClassId(62))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:558:3
+class c64 "SGPUProbeBreadthNestedState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:564:15
+  field d188 "first": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:565:3
+  field d189 "second": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:566:3
+class c65 "SGPUProbeBreadthDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:570:15
+  field d190 "limits": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:571:3
+  field d191 "biases": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:572:3
+class c66 "SGPUProbeBreadthFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:576:15
+  field d192 "stage": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:577:3
+  field d193 "constants": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:578:3
+class c67 "SGPUProbeBreadthPrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:582:15
+  field d194 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:583:3
+  field d195 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:584:3
+class c68 "SGPUProbeBreadthRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:588:15
+  field d196 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:589:3
+  field d197 "depthStencil": Nullable(Class(ClassId(65))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:590:3
+  field d198 "primitive": Class(ClassId(67)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:591:3
+  field d199 "fragment": Nullable(Class(ClassId(66))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:592:3
+class c69 "SGPUProbeWidePairEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:598:15
+  field d200 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:599:3
+  field d201 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:600:3
+class c70 "SGPUProbeWideVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:604:15
+  field d202 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:605:3
+  field d203 "buffers": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:606:3
+class c71 "SGPUProbeWidePrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:610:15
+  field d204 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:611:3
+  field d205 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:612:3
+class c72 "SGPUProbeWideMultisampleState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:616:15
+  field d206 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:617:3
+  field d207 "mask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:618:3
+  field d208 "alphaToCoverage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:619:3
+class c73 "SGPUProbeWidePayload" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:623:15
+  field d209 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:624:3
+  field d210 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:625:3
+class c74 "SGPUProbeWidePointerElement" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:629:15
+  field d211 "kind": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:630:3
+  field d212 "payload": Nullable(Class(ClassId(73))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:631:3
+class c75 "SGPUProbeWideDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:635:15
+  field d213 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:636:3
+  field d214 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:637:3
+class c76 "SGPUProbeWideFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:641:15
+  field d215 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:642:3
+  field d216 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:643:3
+  field d217 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:644:3
+  field d218 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:645:3
+class c77 "SGPUProbeWideRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:649:15
+  field d219 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:650:3
+  field d220 "layout": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:651:3
+  field d221 "vertex": Class(ClassId(70)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:652:3
+  field d222 "primitive": Class(ClassId(71)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:653:3
+  field d223 "depthStencil": Nullable(Class(ClassId(75))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:654:3
+  field d224 "multisample": Class(ClassId(72)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:655:3
+  field d225 "fragment": Nullable(Class(ClassId(76))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:656:3
+class c78 "SubByValueI32One" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:664:15
+  field d226 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:665:3
+class c79 "SubByValueI32Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:669:15
+  field d227 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:670:3
+  field d228 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:671:3
+class c80 "SubByValueI32Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:675:15
+  field d229 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:676:3
+  field d230 "b": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:677:3
+  field d231 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:678:3
+class c81 "SubByValueI16I16I32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:682:15
+  field d232 "a": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:683:3
+  field d233 "b": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:684:3
+  field d234 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:685:3
+class c82 "SubByValueU8Four" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:689:15
+  field d235 "a": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:690:3
+  field d236 "b": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:691:3
+  field d237 "c": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:692:3
+  field d238 "d": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:693:3
+class c83 "SubByValueI64Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:697:15
+  field d239 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:698:3
+  field d240 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:699:3
+class c84 "SubByValueF32Hfa2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:703:15
+  field d241 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:704:3
+  field d242 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:705:3
+class c85 "SubByValueF32Hfa4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:709:15
+  field d243 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:710:3
+  field d244 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:711:3
+  field d245 "c": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:712:3
+  field d246 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:713:3
+class c86 "SubByValueI32F32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:717:15
+  field d247 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:718:3
+  field d248 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:719:3
+class c87 "SubByValueI32I64" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:723:15
+  field d249 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:724:3
+  field d250 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:725:3
+class c88 "SubByValueI64Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:729:15
+  field d251 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:730:3
+  field d252 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:731:3
+  field d253 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:732:3
+class c89 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:748:11
+class c90 "DevicePoller" value=false descriptor=false boundary=false align=None @ a111-interop-async-method-poll.ts:6:7
+  field d254 "attempt": I32 defaulted=false absence=false foreign=None @ a111-interop-async-method-poll.ts:7:3
+  method m0 "poll" -> f0
+enum e0 "SubChainKind" [("SUB_CHAIN_KIND_BASE", 0), ("SUB_CHAIN_KIND_EXT_A", 1), ("SUB_CHAIN_KIND_EXT_B", 2)] @ interop.generated.d.ts:35:14
+enum e1 "SGPUProbeFormat" [("SGPU_PROBE_FORMAT_RGBA8", 11), ("SGPU_PROBE_FORMAT_BGRA8", 29), ("SGPU_PROBE_FORMAT_DEPTH24", 47)] @ interop.generated.d.ts:343:14
+enum e2 "SGPUProbeUnmarkedTextureFormat" [("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8", 101), ("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8", 202)] @ interop.generated.d.ts:530:14
+foreign x0 "subChainPayloadValue" -> I32 include="interop.h" @ interop.generated.d.ts:61:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:61:39
+foreign x1 "subDeviceCreate" -> Class(ClassId(6)) include="interop.h" @ interop.generated.d.ts:92:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:92:34
+foreign x2 "subDeviceRetain" -> Void include="interop.h" @ interop.generated.d.ts:93:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:93:34
+foreign x3 "subDeviceRelease" -> Void include="interop.h" @ interop.generated.d.ts:94:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:94:35
+foreign x4 "subDeviceSubmit" -> Void include="interop.h" @ interop.generated.d.ts:95:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:95:34
+  param "commands": Array(U32) foreign=Some(Descriptor { aggregate: "SubBufferView", element: "uint32_t", element_const: true }) @ interop.generated.d.ts:95:53
+foreign x5 "subDeviceSetLogger" -> Void include="interop.h" @ interop.generated.d.ts:96:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:96:37
+  param "logger": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:96:56
+foreign x6 "subDeviceSetLabel" -> Void include="interop.h" @ interop.generated.d.ts:97:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:97:36
+  param "label": Str foreign=Some(StringView { aggregate: "SubStringView" }) @ interop.generated.d.ts:97:55
+foreign x7 "subDevicePoll" -> I32 include="interop.h" @ interop.generated.d.ts:98:18
+  param "attempt": I32 foreign=None @ interop.generated.d.ts:98:32
+foreign x8 "subSliceChecksumF32" -> I32 include="interop.h" @ interop.generated.d.ts:99:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:99:38
+foreign x9 "subSliceChecksumI32" -> I32 include="interop.h" @ interop.generated.d.ts:100:18
+  param "data": Array(I32) foreign=Some(Descriptor { aggregate: "SubSliceI32", element: "int32_t", element_const: true }) @ interop.generated.d.ts:100:38
+foreign x10 "subSliceChecksumF64" -> I32 include="interop.h" @ interop.generated.d.ts:101:18
+  param "data": Array(F64) foreign=Some(Descriptor { aggregate: "SubSliceF64", element: "double", element_const: true }) @ interop.generated.d.ts:101:38
+foreign x11 "subSliceChecksumI64" -> I32 include="interop.h" @ interop.generated.d.ts:102:18
+  param "data": Array(I64) foreign=Some(Descriptor { aggregate: "SubSliceI64", element: "int64_t", element_const: true }) @ interop.generated.d.ts:102:38
+foreign x12 "subSliceChecksumU8" -> I32 include="interop.h" @ interop.generated.d.ts:103:18
+  param "data": Array(U8) foreign=Some(Descriptor { aggregate: "SubSliceU8", element: "uint8_t", element_const: true }) @ interop.generated.d.ts:103:37
+foreign x13 "subSliceChecksumI8" -> I32 include="interop.h" @ interop.generated.d.ts:104:18
+  param "data": Array(I8) foreign=Some(Descriptor { aggregate: "SubSliceI8", element: "int8_t", element_const: true }) @ interop.generated.d.ts:104:37
+foreign x14 "subSliceChecksumU16" -> I32 include="interop.h" @ interop.generated.d.ts:105:18
+  param "data": Array(U16) foreign=Some(Descriptor { aggregate: "SubSliceU16", element: "uint16_t", element_const: true }) @ interop.generated.d.ts:105:38
+foreign x15 "subSliceChecksumI16" -> I32 include="interop.h" @ interop.generated.d.ts:106:18
+  param "data": Array(I16) foreign=Some(Descriptor { aggregate: "SubSliceI16", element: "int16_t", element_const: true }) @ interop.generated.d.ts:106:38
+foreign x16 "subSliceChecksumF16" -> I32 include="interop.h" @ interop.generated.d.ts:107:18
+  param "data": Array(F16) foreign=Some(Descriptor { aggregate: "SubSliceF16", element: "SubFloat16", element_const: true }) @ interop.generated.d.ts:107:38
+foreign x17 "subAccessMatches" -> I32 include="interop.h" @ interop.generated.d.ts:108:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:108:35
+  param "required": U64 foreign=None @ interop.generated.d.ts:108:52
+foreign x18 "subDrawListTotal" -> I32 include="interop.h" @ interop.generated.d.ts:116:18
+  param "list": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:116:35
+foreign x19 "subBulkConsume" -> I32 include="interop.h" @ interop.generated.d.ts:117:18
+  param "data": Nullable(Object) foreign=None @ interop.generated.d.ts:117:33
+  param "size": U64 foreign=None @ interop.generated.d.ts:117:54
+foreign x20 "subBulkConsumeF32" -> I32 include="interop.h" @ interop.generated.d.ts:118:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:118:36
+foreign x21 "subDeviceOnComplete" -> Void include="interop.h" @ interop.generated.d.ts:126:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:126:38
+  param "info": Class(ClassId(8)) foreign=None @ interop.generated.d.ts:126:57
+foreign x22 "subDevicePump" -> Void include="interop.h" @ interop.generated.d.ts:127:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:127:32
+foreign x23 "subCommandBufferTotal" -> I32 include="interop.h" @ interop.generated.d.ts:293:18
+  param "buf": Class(ClassId(31)) foreign=None @ interop.generated.d.ts:293:40
+foreign x24 "subStageMatches" -> I32 include="interop.h" @ interop.generated.d.ts:294:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:294:34
+  param "required": U64 foreign=None @ interop.generated.d.ts:294:55
+foreign x25 "subFutureMake" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:308:18
+  param "request": U32 foreign=None @ interop.generated.d.ts:308:32
+foreign x26 "subStatsMake" -> Class(ClassId(33)) include="interop.h" @ interop.generated.d.ts:309:18
+  param "base": U32 foreign=None @ interop.generated.d.ts:309:31
+foreign x27 "subDeviceQuery" -> Void include="interop.h" @ interop.generated.d.ts:317:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:317:33
+  param "request": U32 foreign=None @ interop.generated.d.ts:317:52
+  param "status": Nullable(Class(ClassId(34))) foreign=None @ interop.generated.d.ts:317:66
+foreign x28 "subDeviceKickAsync" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:325:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:325:37
+  param "request": U32 foreign=None @ interop.generated.d.ts:325:56
+  param "info": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:325:70
+foreign x29 "subDeviceWait" -> Void include="interop.h" @ interop.generated.d.ts:326:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:326:32
+  param "waits": Array(Class(ClassId(35))) foreign=Some(Descriptor { aggregate: "SubWaitList", element: "SubWaitEntry", element_const: false }) @ interop.generated.d.ts:326:51
+foreign x30 "subDeviceSumBytes" -> U32 include="interop.h" @ interop.generated.d.ts:327:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: true }) @ interop.generated.d.ts:327:36
+foreign x31 "subDeviceFillBytes" -> Void include="interop.h" @ interop.generated.d.ts:328:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: false }) @ interop.generated.d.ts:328:37
+foreign x32 "subDeviceFillShorts" -> Void include="interop.h" @ interop.generated.d.ts:329:18
+  param "data": Array(U16) foreign=Some(ScalarPair { element: "uint16_t", element_const: false }) @ interop.generated.d.ts:329:38
+foreign x33 "subBoundaryStringCheck" -> U64 include="interop.h" @ interop.generated.d.ts:340:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:340:41
+  param "selector": U32 foreign=None @ interop.generated.d.ts:340:81
+foreign x34 "subBoundaryStringFill" -> Void include="interop.h" @ interop.generated.d.ts:341:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:341:40
+  param "emptyLabel": Bool foreign=None @ interop.generated.d.ts:341:80
+foreign x35 "subProbeTextureDescriptorCheck" -> U64 include="interop.h" @ interop.generated.d.ts:368:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:368:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:368:96
+foreign x36 "subProbeTextureDescriptorFill" -> Void include="interop.h" @ interop.generated.d.ts:369:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:369:48
+foreign x37 "subProbePipelineLayoutCheck" -> U64 include="interop.h" @ interop.generated.d.ts:377:18
+  param "descriptor": Nullable(Class(ClassId(39))) foreign=None @ interop.generated.d.ts:377:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:377:99
+foreign x38 "subProbeBindGroupEntryCheck" -> U32 include="interop.h" @ interop.generated.d.ts:387:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:387:46
+foreign x39 "subProbeBindGroupEntryFill" -> Void include="interop.h" @ interop.generated.d.ts:388:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:388:45
+  param "selected": U32 foreign=None @ interop.generated.d.ts:388:83
+  param "handle": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:388:98
+foreign x40 "subProbeComputePipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:405:18
+  param "descriptor": Nullable(Class(ClassId(42))) foreign=None @ interop.generated.d.ts:405:47
+  param "selector": U32 foreign=None @ interop.generated.d.ts:405:102
+foreign x41 "subProbeRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:434:18
+  param "descriptor": Nullable(Class(ClassId(46))) foreign=None @ interop.generated.d.ts:434:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:434:100
+foreign x42 "subProbeProgrammableStageCheck" -> U64 include="interop.h" @ interop.generated.d.ts:448:18
+  param "stage": Nullable(Class(ClassId(48))) foreign=None @ interop.generated.d.ts:448:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:448:91
+foreign x43 "subProbeFullRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:476:18
+  param "descriptor": Nullable(Class(ClassId(52))) foreign=None @ interop.generated.d.ts:476:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:476:108
+foreign x44 "subProbeFullRenderPipelineWithHandleCheck" -> U64 include="interop.h" @ interop.generated.d.ts:492:18
+  param "descriptor": Nullable(Class(ClassId(54))) foreign=None @ interop.generated.d.ts:492:60
+  param "selector": U32 foreign=None @ interop.generated.d.ts:492:120
+foreign x45 "subProbeFullRenderPipelineWithNestedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:528:18
+  param "descriptor": Nullable(Class(ClassId(59))) foreign=None @ interop.generated.d.ts:528:65
+  param "selector": U32 foreign=None @ interop.generated.d.ts:528:125
+foreign x46 "subProbeFullRenderPipelineWithUnmarkedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:562:18
+  param "descriptor": Nullable(Class(ClassId(63))) foreign=None @ interop.generated.d.ts:562:67
+  param "selector": U32 foreign=None @ interop.generated.d.ts:562:129
+foreign x47 "subProbeBreadthRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:596:18
+  param "descriptor": Nullable(Class(ClassId(68))) foreign=None @ interop.generated.d.ts:596:53
+  param "selector": U32 foreign=None @ interop.generated.d.ts:596:114
+foreign x48 "subProbeWideRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:660:18
+  param "descriptor": Nullable(Class(ClassId(77))) foreign=None @ interop.generated.d.ts:660:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:660:108
+foreign x49 "subProbeQueueSubmitCheck" -> U64 include="interop.h" @ interop.generated.d.ts:661:18
+  param "queue": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:661:43
+  param "commands": Array(Class(ClassId(6))) foreign=Some(ScalarPair { element: "SubDevice", element_const: true }) @ interop.generated.d.ts:661:61
+  param "selector": U32 foreign=None @ interop.generated.d.ts:661:84
+foreign x50 "subProbeSetBindGroupCheck" -> U32 include="interop.h" @ interop.generated.d.ts:662:18
+  param "encoder": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:662:44
+  param "group": Nullable(Class(ClassId(6))) foreign=None @ interop.generated.d.ts:662:64
+foreign x51 "subByValueI32OneReport" -> Void include="interop.h" @ interop.generated.d.ts:736:18
+  param "report": Nullable(Class(ClassId(78))) foreign=None @ interop.generated.d.ts:736:41
+  param "value": Class(ClassId(78)) foreign=None @ interop.generated.d.ts:736:74
+foreign x52 "subByValueI32PairReport" -> Void include="interop.h" @ interop.generated.d.ts:737:18
+  param "report": Nullable(Class(ClassId(79))) foreign=None @ interop.generated.d.ts:737:42
+  param "value": Class(ClassId(79)) foreign=None @ interop.generated.d.ts:737:76
+foreign x53 "subByValueI32TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:738:18
+  param "report": Nullable(Class(ClassId(80))) foreign=None @ interop.generated.d.ts:738:44
+  param "value": Class(ClassId(80)) foreign=None @ interop.generated.d.ts:738:80
+foreign x54 "subByValueI16I16I32Report" -> Void include="interop.h" @ interop.generated.d.ts:739:18
+  param "report": Nullable(Class(ClassId(81))) foreign=None @ interop.generated.d.ts:739:44
+  param "value": Class(ClassId(81)) foreign=None @ interop.generated.d.ts:739:80
+foreign x55 "subByValueU8FourReport" -> Void include="interop.h" @ interop.generated.d.ts:740:18
+  param "report": Nullable(Class(ClassId(82))) foreign=None @ interop.generated.d.ts:740:41
+  param "value": Class(ClassId(82)) foreign=None @ interop.generated.d.ts:740:74
+foreign x56 "subByValueI64PairReport" -> Void include="interop.h" @ interop.generated.d.ts:741:18
+  param "report": Nullable(Class(ClassId(83))) foreign=None @ interop.generated.d.ts:741:42
+  param "value": Class(ClassId(83)) foreign=None @ interop.generated.d.ts:741:76
+foreign x57 "subByValueF32Hfa2Report" -> Void include="interop.h" @ interop.generated.d.ts:742:18
+  param "report": Nullable(Class(ClassId(84))) foreign=None @ interop.generated.d.ts:742:42
+  param "value": Class(ClassId(84)) foreign=None @ interop.generated.d.ts:742:76
+foreign x58 "subByValueF32Hfa4Report" -> Void include="interop.h" @ interop.generated.d.ts:743:18
+  param "report": Nullable(Class(ClassId(85))) foreign=None @ interop.generated.d.ts:743:42
+  param "value": Class(ClassId(85)) foreign=None @ interop.generated.d.ts:743:76
+foreign x59 "subByValueI32F32Report" -> Void include="interop.h" @ interop.generated.d.ts:744:18
+  param "report": Nullable(Class(ClassId(86))) foreign=None @ interop.generated.d.ts:744:41
+  param "value": Class(ClassId(86)) foreign=None @ interop.generated.d.ts:744:74
+foreign x60 "subByValueI32I64Report" -> Void include="interop.h" @ interop.generated.d.ts:745:18
+  param "report": Nullable(Class(ClassId(87))) foreign=None @ interop.generated.d.ts:745:41
+  param "value": Class(ClassId(87)) foreign=None @ interop.generated.d.ts:745:74
+foreign x61 "subByValueI64TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:746:18
+  param "report": Nullable(Class(ClassId(88))) foreign=None @ interop.generated.d.ts:746:44
+  param "value": Class(ClassId(88)) foreign=None @ interop.generated.d.ts:746:80
+foreign x62 "subHostOwnedStateBorrow" -> Class(ClassId(89)) include="interop.h" @ interop.generated.d.ts:752:18
+foreign x63 "subHostOwnedStateAdvance" -> I32 include="interop.h" @ interop.generated.d.ts:753:18
+  param "state": Class(ClassId(89)) foreign=None @ interop.generated.d.ts:753:43
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "poll" kind=Method { class: ClassId(90), method: MethodId(0) } exported=false generator=false async=true -> Void entry=b0 @ a111-interop-async-method-poll.ts:9:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 9, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(90))) kind=Receiver storage=None @ a111-interop-async-method-poll.ts:9:9
+  value %0: Data(Class(ClassId(90))) name=Some("this")
+  value %1: Data(Str) name=None
+  value %2: Data(Class(ClassId(90))) name=None
+  value %3: Data(Class(ClassId(90))) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Bool) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Str) name=None
+  value %15: Data(Class(ClassId(90))) name=Some("this")
+  value %16: Data(Class(ClassId(90))) name=None
+  value %17: Data(Class(ClassId(90))) name=Some("this")
+  b0 Some("entry"):
+    %1: Data(Str) = StringLiteral("method-poll:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 10, col: 11 } }] @ a111-interop-async-method-poll.ts:10:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a111-interop-async-method-poll.ts:10:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(0))] })
+  b1(%2: Data(Class(ClassId(90))), %17: Data(Class(ClassId(90)))) Some("while.cond"):
+    %4: Data(I32) = LoadField(Class(FieldId(254)))(%17) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 11, col: 26 } }] @ a111-interop-async-method-poll.ts:11:31
+    %5: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(7)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 11, col: 12 } }] @ a111-interop-async-method-poll.ts:11:12
+    %6: Data(Bool) = Binary(Eq)(%5, Integer(0):I32) @ a111-interop-async-method-poll.ts:11:12
+    -> ConditionalBranch { condition: Value(ValueId(6)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(2))] } }
+  b2 Some("while.body"):
+    %7: Data(I32) = LoadField(Class(FieldId(254)))(%17) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 12, col: 36 } }] @ a111-interop-async-method-poll.ts:12:41
+    %8: Data(Str) = Template([Text("method-poll:pending="), Operand(0)])(%7) traps=[Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 12, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 12, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 12, col: 13 } }] @ a111-interop-async-method-poll.ts:12:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a111-interop-async-method-poll.ts:12:7
+    %9: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(254)))(%17) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 13, col: 7 } }] @ a111-interop-async-method-poll.ts:13:12
+    %10: Data(I32) = LoadAddress(%9) @ a111-interop-async-method-poll.ts:13:12
+    %11: Data(I32) = Binary(Add)(%10, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 13, col: 7 } }] @ a111-interop-async-method-poll.ts:13:12
+    %12: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(254)))(%17) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 13, col: 7 } }] @ a111-interop-async-method-poll.ts:13:12
+    StoreAddress(%12, %11) @ a111-interop-async-method-poll.ts:13:12
+    -> Suspend { kind: Async, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(17)), Value(ValueId(2))], invalidates: [], traps: [] }
+  b3(%3: Data(Class(ClassId(90)))) Some("while.exit"):
+    %13: Data(I32) = LoadField(Class(FieldId(254)))(%17) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 16, col: 32 } }] @ a111-interop-async-method-poll.ts:16:37
+    %14: Data(Str) = Template([Text("method-poll:ready="), Operand(0)])(%13) traps=[Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 16, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 16, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 16, col: 11 } }] @ a111-interop-async-method-poll.ts:16:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%14) @ a111-interop-async-method-poll.ts:16:5
+    -> Return(None)
+  b4(%15: Data(Class(ClassId(90))), %16: Data(Class(ClassId(90)))) Some("async.resume"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(16)), Value(ValueId(15))] })
+fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a111-interop-async-method-poll.ts:20:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 20, col: 23 } }]
+  value %0: Data(Class(ClassId(90))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(90))) = AllocateClass(ClassId(90))() traps=[Trap { kind: Allocation, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 21, col: 9 } }] @ a111-interop-async-method-poll.ts:21:9
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(254)))(%0) @ a111-interop-async-method-poll.ts:7:3
+    StoreAddress(%1, Integer(0):I32) @ a111-interop-async-method-poll.ts:7:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(90)))], return_type: None }, operands: [ValueId(0)] }, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 21, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a111-interop-async-method-poll.ts", line: 21, col: 3 } }] }
+  b1 Some("async-call.resume"):
+    -> Return(None)
+===== a128-host-owned-state =====
+module initializer=Some(FunctionId(2))
+class c0 "SubChainHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:41:15
+  field d0 "sType": Enum(EnumId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:42:3
+  field d1 "next": Nullable(Class(ClassId(0))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:43:3
+class c1 "SubChainExtA" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:47:15
+  field d2 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:48:3
+  field d3 "intensity": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:49:3
+  field d4 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:50:3
+class c2 "SubChainExtB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:54:15
+  field d5 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:55:3
+  field d6 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:56:3
+  field d7 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:57:3
+class c3 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:65:15
+  field d8 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:66:3
+  field d9 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:67:3
+  field d10 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:68:3
+class c4 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:72:15
+  field d11 "basis": FixedArray(F32, 16) defaulted=false absence=false foreign=None @ interop.generated.d.ts:73:3
+  field d12 "bone": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:74:3
+  field d13 "weight": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:75:3
+  field d14 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:76:3
+class c5 "SubSample" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:80:15
+  field d15 "a": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:81:3
+  field d16 "b": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:82:3
+  field d17 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:83:3
+  field d18 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:84:3
+class c6 "SubDevice" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:88:11
+class c7 "SubDrawList" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:110:15
+  field d19 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:111:3
+  field d20 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:112:3
+class c8 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:120:15
+  field d21 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:121:3
+  field d22 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
+class c9 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:129:15
+  field d23 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:130:3
+  field d24 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:131:3
+class c10 "SubVec3" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:135:15
+  field d25 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:136:3
+  field d26 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:137:3
+  field d27 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:138:3
+class c11 "SubVec4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:142:15
+  field d28 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:143:3
+  field d29 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:144:3
+  field d30 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:145:3
+  field d31 "w": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:146:3
+class c12 "SubRect" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:150:15
+  field d32 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:151:3
+  field d33 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:152:3
+  field d34 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:153:3
+  field d35 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:154:3
+class c13 "SubRange" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:158:15
+  field d36 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:159:3
+  field d37 "size": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:160:3
+class c14 "SubColor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:164:15
+  field d38 "r": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:165:3
+  field d39 "g": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:166:3
+  field d40 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:167:3
+  field d41 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:168:3
+class c15 "SubTimings" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:172:15
+  field d42 "cpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:173:3
+  field d43 "gpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:174:3
+  field d44 "frame": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:175:3
+class c16 "SubMixed" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:179:15
+  field d45 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:180:3
+  field d46 "id": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:181:3
+  field d47 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:182:3
+  field d48 "ratio": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:183:3
+class c17 "SubPadB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:187:15
+  field d49 "head": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:188:3
+  field d50 "mid": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:189:3
+  field d51 "tail": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:190:3
+class c18 "SubNarrowPacket" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15
+  field d52 "kind": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
+  field d53 "delta": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:196:3
+  field d54 "weight": F16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:197:3
+  field d55 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:198:3
+  field d56 "bias": I8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:199:3
+  field d57 "count": U16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:200:3
+  field d58 "scale": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:201:3
+class c19 "SubExtent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:205:15
+  field d59 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:206:3
+  field d60 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:207:3
+  field d61 "depth": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:208:3
+class c20 "SubImageInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:212:15
+  field d62 "extent": Class(ClassId(19)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:213:3
+  field d63 "mipLevels": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:214:3
+  field d64 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:215:3
+class c21 "SubBounds" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:219:15
+  field d65 "min": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:220:3
+  field d66 "max": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:221:3
+class c22 "SubViewport" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:225:15
+  field d67 "rect": Class(ClassId(12)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:226:3
+  field d68 "depth": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:227:3
+class c23 "SubNodeInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:231:15
+  field d69 "bounds": Class(ClassId(21)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:232:3
+  field d70 "id": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:233:3
+  field d71 "tint": Class(ClassId(14)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:234:3
+class c24 "SubChainExtC" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:238:15
+  field d72 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:239:3
+  field d73 "offset": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:240:3
+  field d74 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:241:3
+class c25 "SubChainExtD" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:245:15
+  field d75 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:246:3
+  field d76 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:247:3
+  field d77 "level": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:248:3
+  field d78 "active": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:249:3
+class c26 "SubEventHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:253:15
+  field d79 "kind": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:254:3
+  field d80 "next": Nullable(Class(ClassId(26))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:255:3
+class c27 "SubEventKey" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:259:15
+  field d81 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:260:3
+  field d82 "code": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:261:3
+  field d83 "pressed": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:262:3
+class c28 "SubEventMove" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:266:15
+  field d84 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:267:3
+  field d85 "dx": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:268:3
+  field d86 "dy": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:269:3
+class c29 "SubPassInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:273:15
+  field d87 "access": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:274:3
+  field d88 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:275:3
+  field d89 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:276:3
+class c30 "SubResourceDesc" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:280:15
+  field d90 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:281:3
+  field d91 "range": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:282:3
+  field d92 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:283:3
+class c31 "SubCommandBuffer" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:287:15
+  field d93 "queue": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:288:3
+  field d94 "commands": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:289:3
+class c32 "SubFuture" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:296:15
+  field d95 "id": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:297:3
+class c33 "SubStats" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:301:15
+  field d96 "submitted": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:302:3
+  field d97 "completed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:303:3
+  field d98 "pending": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:304:3
+class c34 "SubQueryStatus" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:311:15
+  field d99 "future": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:312:3
+  field d100 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:313:3
+class c35 "SubWaitEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:319:15
+  field d101 "future": Class(ClassId(32)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:320:3
+  field d102 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:321:3
+class c36 "SubBoundaryStringRecord" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:331:15
+  field d103 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:332:3
+  field d104 "handle": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:333:3
+  field d105 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:334:3
+  field d106 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:335:3
+  field d107 "generation": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:336:3
+class c37 "SGPUProbeExtent3D" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:349:15
+  field d108 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:350:3
+  field d109 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:351:3
+  field d110 "depthOrArrayLayers": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:352:3
+class c38 "SGPUProbeTextureDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:356:15
+  field d111 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:357:3
+  field d112 "extent": Class(ClassId(37)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:358:3
+  field d113 "viewFormats": Array(Enum(EnumId(1))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:359:3
+  field d114 "format": Enum(EnumId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:360:3
+  field d115 "mipLevelCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:361:3
+  field d116 "sampleCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:362:3
+  field d117 "dimension": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:363:3
+  field d118 "usage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:364:3
+class c39 "SubProbePipelineLayoutDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:371:15
+  field d119 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:372:3
+  field d120 "bindGroupLayouts": Array(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:373:3
+class c40 "SubProbeBindGroupEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:379:15
+  field d121 "binding": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:380:3
+  field d122 "buffer": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:381:3
+  field d123 "sampler": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:382:3
+  field d124 "textureView": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:383:3
+class c41 "SGPUProbeComputeState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:390:15
+  field d125 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:391:3
+  field d126 "workgroupX": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:392:3
+  field d127 "workgroupY": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:393:3
+  field d128 "constantSeed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:394:3
+class c42 "SGPUProbeComputePipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:398:15
+  field d129 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:399:3
+  field d130 "compute": Class(ClassId(41)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:400:3
+  field d131 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:401:3
+class c43 "SGPUProbeVertexAttribute" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:407:15
+  field d132 "shaderLocation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:408:3
+  field d133 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:409:3
+  field d134 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:410:3
+class c44 "SGPUProbeVertexBufferLayout" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:414:15
+  field d135 "arrayStride": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:415:3
+  field d136 "stepMode": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:416:3
+  field d137 "attributes": Array(Class(ClassId(43))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:417:3
+class c45 "SGPUProbeVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:421:15
+  field d138 "moduleId": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:422:3
+  field d139 "buffers": Array(Class(ClassId(44))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:423:3
+class c46 "SGPUProbeRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:427:15
+  field d140 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:428:3
+  field d141 "vertex": Class(ClassId(45)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:429:3
+  field d142 "primitive": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:430:3
+class c47 "SGPUProbeConstantEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:436:15
+  field d143 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:437:3
+  field d144 "value": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:438:3
+class c48 "SGPUProbeProgrammableStage" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:442:15
+  field d145 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:443:3
+  field d146 "stage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:444:3
+class c49 "SGPUProbeBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:450:15
+  field d147 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:451:3
+  field d148 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:452:3
+class c50 "SGPUProbeColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:456:15
+  field d149 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:457:3
+  field d150 "blend": Nullable(Class(ClassId(49))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:458:3
+  field d151 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:459:3
+class c51 "SGPUProbeFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:463:15
+  field d152 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:464:3
+  field d153 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:465:3
+  field d154 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:466:3
+class c52 "SGPUProbeFullRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:470:15
+  field d155 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:471:3
+  field d156 "fragment": Nullable(Class(ClassId(51))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:472:3
+class c53 "SGPUProbeHandleFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:478:15
+  field d157 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:479:3
+  field d158 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:480:3
+  field d159 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:481:3
+  field d160 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:482:3
+class c54 "SGPUProbeHandleRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:486:15
+  field d161 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:487:3
+  field d162 "fragment": Nullable(Class(ClassId(53))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:488:3
+class c55 "SGPUProbeNestedBlendComponent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:494:15
+  field d163 "operation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:495:3
+  field d164 "srcFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:496:3
+  field d165 "dstFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:497:3
+class c56 "SGPUProbeNestedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:501:15
+  field d166 "color": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:502:3
+  field d167 "alpha": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:503:3
+class c57 "SGPUProbeNestedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:507:15
+  field d168 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:508:3
+  field d169 "blend": Nullable(Class(ClassId(56))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:509:3
+  field d170 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:510:3
+class c58 "SGPUProbeNestedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:514:15
+  field d171 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:515:3
+  field d172 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:516:3
+  field d173 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:517:3
+  field d174 "targets": Array(Class(ClassId(57))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:518:3
+class c59 "SGPUProbeNestedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:522:15
+  field d175 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:523:3
+  field d176 "fragment": Nullable(Class(ClassId(58))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:524:3
+class c60 "SGPUProbeUnmarkedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:535:15
+  field d177 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:536:3
+  field d178 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:537:3
+class c61 "SGPUProbeUnmarkedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:541:15
+  field d179 "format": Enum(EnumId(2)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:542:3
+  field d180 "blend": Nullable(Class(ClassId(60))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:543:3
+  field d181 "writeMask": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:544:3
+class c62 "SGPUProbeUnmarkedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:548:15
+  field d182 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:549:3
+  field d183 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:550:3
+  field d184 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:551:3
+  field d185 "targets": Array(Class(ClassId(61))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:552:3
+class c63 "SGPUProbeUnmarkedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:556:15
+  field d186 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:557:3
+  field d187 "fragment": Nullable(Class(ClassId(62))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:558:3
+class c64 "SGPUProbeBreadthNestedState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:564:15
+  field d188 "first": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:565:3
+  field d189 "second": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:566:3
+class c65 "SGPUProbeBreadthDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:570:15
+  field d190 "limits": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:571:3
+  field d191 "biases": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:572:3
+class c66 "SGPUProbeBreadthFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:576:15
+  field d192 "stage": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:577:3
+  field d193 "constants": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:578:3
+class c67 "SGPUProbeBreadthPrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:582:15
+  field d194 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:583:3
+  field d195 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:584:3
+class c68 "SGPUProbeBreadthRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:588:15
+  field d196 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:589:3
+  field d197 "depthStencil": Nullable(Class(ClassId(65))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:590:3
+  field d198 "primitive": Class(ClassId(67)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:591:3
+  field d199 "fragment": Nullable(Class(ClassId(66))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:592:3
+class c69 "SGPUProbeWidePairEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:598:15
+  field d200 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:599:3
+  field d201 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:600:3
+class c70 "SGPUProbeWideVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:604:15
+  field d202 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:605:3
+  field d203 "buffers": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:606:3
+class c71 "SGPUProbeWidePrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:610:15
+  field d204 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:611:3
+  field d205 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:612:3
+class c72 "SGPUProbeWideMultisampleState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:616:15
+  field d206 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:617:3
+  field d207 "mask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:618:3
+  field d208 "alphaToCoverage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:619:3
+class c73 "SGPUProbeWidePayload" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:623:15
+  field d209 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:624:3
+  field d210 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:625:3
+class c74 "SGPUProbeWidePointerElement" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:629:15
+  field d211 "kind": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:630:3
+  field d212 "payload": Nullable(Class(ClassId(73))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:631:3
+class c75 "SGPUProbeWideDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:635:15
+  field d213 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:636:3
+  field d214 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:637:3
+class c76 "SGPUProbeWideFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:641:15
+  field d215 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:642:3
+  field d216 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:643:3
+  field d217 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:644:3
+  field d218 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:645:3
+class c77 "SGPUProbeWideRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:649:15
+  field d219 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:650:3
+  field d220 "layout": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:651:3
+  field d221 "vertex": Class(ClassId(70)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:652:3
+  field d222 "primitive": Class(ClassId(71)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:653:3
+  field d223 "depthStencil": Nullable(Class(ClassId(75))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:654:3
+  field d224 "multisample": Class(ClassId(72)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:655:3
+  field d225 "fragment": Nullable(Class(ClassId(76))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:656:3
+class c78 "SubByValueI32One" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:664:15
+  field d226 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:665:3
+class c79 "SubByValueI32Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:669:15
+  field d227 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:670:3
+  field d228 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:671:3
+class c80 "SubByValueI32Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:675:15
+  field d229 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:676:3
+  field d230 "b": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:677:3
+  field d231 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:678:3
+class c81 "SubByValueI16I16I32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:682:15
+  field d232 "a": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:683:3
+  field d233 "b": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:684:3
+  field d234 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:685:3
+class c82 "SubByValueU8Four" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:689:15
+  field d235 "a": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:690:3
+  field d236 "b": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:691:3
+  field d237 "c": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:692:3
+  field d238 "d": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:693:3
+class c83 "SubByValueI64Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:697:15
+  field d239 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:698:3
+  field d240 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:699:3
+class c84 "SubByValueF32Hfa2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:703:15
+  field d241 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:704:3
+  field d242 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:705:3
+class c85 "SubByValueF32Hfa4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:709:15
+  field d243 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:710:3
+  field d244 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:711:3
+  field d245 "c": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:712:3
+  field d246 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:713:3
+class c86 "SubByValueI32F32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:717:15
+  field d247 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:718:3
+  field d248 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:719:3
+class c87 "SubByValueI32I64" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:723:15
+  field d249 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:724:3
+  field d250 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:725:3
+class c88 "SubByValueI64Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:729:15
+  field d251 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:730:3
+  field d252 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:731:3
+  field d253 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:732:3
+class c89 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:748:11
+enum e0 "SubChainKind" [("SUB_CHAIN_KIND_BASE", 0), ("SUB_CHAIN_KIND_EXT_A", 1), ("SUB_CHAIN_KIND_EXT_B", 2)] @ interop.generated.d.ts:35:14
+enum e1 "SGPUProbeFormat" [("SGPU_PROBE_FORMAT_RGBA8", 11), ("SGPU_PROBE_FORMAT_BGRA8", 29), ("SGPU_PROBE_FORMAT_DEPTH24", 47)] @ interop.generated.d.ts:343:14
+enum e2 "SGPUProbeUnmarkedTextureFormat" [("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8", 101), ("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8", 202)] @ interop.generated.d.ts:530:14
+global g0 "borrowed": Nullable(Class(ClassId(89))) mutable=true @ a128-host-owned-state.ts:6:5
+foreign x0 "subChainPayloadValue" -> I32 include="interop.h" @ interop.generated.d.ts:61:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:61:39
+foreign x1 "subDeviceCreate" -> Class(ClassId(6)) include="interop.h" @ interop.generated.d.ts:92:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:92:34
+foreign x2 "subDeviceRetain" -> Void include="interop.h" @ interop.generated.d.ts:93:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:93:34
+foreign x3 "subDeviceRelease" -> Void include="interop.h" @ interop.generated.d.ts:94:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:94:35
+foreign x4 "subDeviceSubmit" -> Void include="interop.h" @ interop.generated.d.ts:95:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:95:34
+  param "commands": Array(U32) foreign=Some(Descriptor { aggregate: "SubBufferView", element: "uint32_t", element_const: true }) @ interop.generated.d.ts:95:53
+foreign x5 "subDeviceSetLogger" -> Void include="interop.h" @ interop.generated.d.ts:96:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:96:37
+  param "logger": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:96:56
+foreign x6 "subDeviceSetLabel" -> Void include="interop.h" @ interop.generated.d.ts:97:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:97:36
+  param "label": Str foreign=Some(StringView { aggregate: "SubStringView" }) @ interop.generated.d.ts:97:55
+foreign x7 "subDevicePoll" -> I32 include="interop.h" @ interop.generated.d.ts:98:18
+  param "attempt": I32 foreign=None @ interop.generated.d.ts:98:32
+foreign x8 "subSliceChecksumF32" -> I32 include="interop.h" @ interop.generated.d.ts:99:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:99:38
+foreign x9 "subSliceChecksumI32" -> I32 include="interop.h" @ interop.generated.d.ts:100:18
+  param "data": Array(I32) foreign=Some(Descriptor { aggregate: "SubSliceI32", element: "int32_t", element_const: true }) @ interop.generated.d.ts:100:38
+foreign x10 "subSliceChecksumF64" -> I32 include="interop.h" @ interop.generated.d.ts:101:18
+  param "data": Array(F64) foreign=Some(Descriptor { aggregate: "SubSliceF64", element: "double", element_const: true }) @ interop.generated.d.ts:101:38
+foreign x11 "subSliceChecksumI64" -> I32 include="interop.h" @ interop.generated.d.ts:102:18
+  param "data": Array(I64) foreign=Some(Descriptor { aggregate: "SubSliceI64", element: "int64_t", element_const: true }) @ interop.generated.d.ts:102:38
+foreign x12 "subSliceChecksumU8" -> I32 include="interop.h" @ interop.generated.d.ts:103:18
+  param "data": Array(U8) foreign=Some(Descriptor { aggregate: "SubSliceU8", element: "uint8_t", element_const: true }) @ interop.generated.d.ts:103:37
+foreign x13 "subSliceChecksumI8" -> I32 include="interop.h" @ interop.generated.d.ts:104:18
+  param "data": Array(I8) foreign=Some(Descriptor { aggregate: "SubSliceI8", element: "int8_t", element_const: true }) @ interop.generated.d.ts:104:37
+foreign x14 "subSliceChecksumU16" -> I32 include="interop.h" @ interop.generated.d.ts:105:18
+  param "data": Array(U16) foreign=Some(Descriptor { aggregate: "SubSliceU16", element: "uint16_t", element_const: true }) @ interop.generated.d.ts:105:38
+foreign x15 "subSliceChecksumI16" -> I32 include="interop.h" @ interop.generated.d.ts:106:18
+  param "data": Array(I16) foreign=Some(Descriptor { aggregate: "SubSliceI16", element: "int16_t", element_const: true }) @ interop.generated.d.ts:106:38
+foreign x16 "subSliceChecksumF16" -> I32 include="interop.h" @ interop.generated.d.ts:107:18
+  param "data": Array(F16) foreign=Some(Descriptor { aggregate: "SubSliceF16", element: "SubFloat16", element_const: true }) @ interop.generated.d.ts:107:38
+foreign x17 "subAccessMatches" -> I32 include="interop.h" @ interop.generated.d.ts:108:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:108:35
+  param "required": U64 foreign=None @ interop.generated.d.ts:108:52
+foreign x18 "subDrawListTotal" -> I32 include="interop.h" @ interop.generated.d.ts:116:18
+  param "list": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:116:35
+foreign x19 "subBulkConsume" -> I32 include="interop.h" @ interop.generated.d.ts:117:18
+  param "data": Nullable(Object) foreign=None @ interop.generated.d.ts:117:33
+  param "size": U64 foreign=None @ interop.generated.d.ts:117:54
+foreign x20 "subBulkConsumeF32" -> I32 include="interop.h" @ interop.generated.d.ts:118:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:118:36
+foreign x21 "subDeviceOnComplete" -> Void include="interop.h" @ interop.generated.d.ts:126:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:126:38
+  param "info": Class(ClassId(8)) foreign=None @ interop.generated.d.ts:126:57
+foreign x22 "subDevicePump" -> Void include="interop.h" @ interop.generated.d.ts:127:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:127:32
+foreign x23 "subCommandBufferTotal" -> I32 include="interop.h" @ interop.generated.d.ts:293:18
+  param "buf": Class(ClassId(31)) foreign=None @ interop.generated.d.ts:293:40
+foreign x24 "subStageMatches" -> I32 include="interop.h" @ interop.generated.d.ts:294:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:294:34
+  param "required": U64 foreign=None @ interop.generated.d.ts:294:55
+foreign x25 "subFutureMake" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:308:18
+  param "request": U32 foreign=None @ interop.generated.d.ts:308:32
+foreign x26 "subStatsMake" -> Class(ClassId(33)) include="interop.h" @ interop.generated.d.ts:309:18
+  param "base": U32 foreign=None @ interop.generated.d.ts:309:31
+foreign x27 "subDeviceQuery" -> Void include="interop.h" @ interop.generated.d.ts:317:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:317:33
+  param "request": U32 foreign=None @ interop.generated.d.ts:317:52
+  param "status": Nullable(Class(ClassId(34))) foreign=None @ interop.generated.d.ts:317:66
+foreign x28 "subDeviceKickAsync" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:325:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:325:37
+  param "request": U32 foreign=None @ interop.generated.d.ts:325:56
+  param "info": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:325:70
+foreign x29 "subDeviceWait" -> Void include="interop.h" @ interop.generated.d.ts:326:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:326:32
+  param "waits": Array(Class(ClassId(35))) foreign=Some(Descriptor { aggregate: "SubWaitList", element: "SubWaitEntry", element_const: false }) @ interop.generated.d.ts:326:51
+foreign x30 "subDeviceSumBytes" -> U32 include="interop.h" @ interop.generated.d.ts:327:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: true }) @ interop.generated.d.ts:327:36
+foreign x31 "subDeviceFillBytes" -> Void include="interop.h" @ interop.generated.d.ts:328:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: false }) @ interop.generated.d.ts:328:37
+foreign x32 "subDeviceFillShorts" -> Void include="interop.h" @ interop.generated.d.ts:329:18
+  param "data": Array(U16) foreign=Some(ScalarPair { element: "uint16_t", element_const: false }) @ interop.generated.d.ts:329:38
+foreign x33 "subBoundaryStringCheck" -> U64 include="interop.h" @ interop.generated.d.ts:340:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:340:41
+  param "selector": U32 foreign=None @ interop.generated.d.ts:340:81
+foreign x34 "subBoundaryStringFill" -> Void include="interop.h" @ interop.generated.d.ts:341:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:341:40
+  param "emptyLabel": Bool foreign=None @ interop.generated.d.ts:341:80
+foreign x35 "subProbeTextureDescriptorCheck" -> U64 include="interop.h" @ interop.generated.d.ts:368:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:368:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:368:96
+foreign x36 "subProbeTextureDescriptorFill" -> Void include="interop.h" @ interop.generated.d.ts:369:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:369:48
+foreign x37 "subProbePipelineLayoutCheck" -> U64 include="interop.h" @ interop.generated.d.ts:377:18
+  param "descriptor": Nullable(Class(ClassId(39))) foreign=None @ interop.generated.d.ts:377:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:377:99
+foreign x38 "subProbeBindGroupEntryCheck" -> U32 include="interop.h" @ interop.generated.d.ts:387:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:387:46
+foreign x39 "subProbeBindGroupEntryFill" -> Void include="interop.h" @ interop.generated.d.ts:388:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:388:45
+  param "selected": U32 foreign=None @ interop.generated.d.ts:388:83
+  param "handle": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:388:98
+foreign x40 "subProbeComputePipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:405:18
+  param "descriptor": Nullable(Class(ClassId(42))) foreign=None @ interop.generated.d.ts:405:47
+  param "selector": U32 foreign=None @ interop.generated.d.ts:405:102
+foreign x41 "subProbeRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:434:18
+  param "descriptor": Nullable(Class(ClassId(46))) foreign=None @ interop.generated.d.ts:434:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:434:100
+foreign x42 "subProbeProgrammableStageCheck" -> U64 include="interop.h" @ interop.generated.d.ts:448:18
+  param "stage": Nullable(Class(ClassId(48))) foreign=None @ interop.generated.d.ts:448:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:448:91
+foreign x43 "subProbeFullRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:476:18
+  param "descriptor": Nullable(Class(ClassId(52))) foreign=None @ interop.generated.d.ts:476:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:476:108
+foreign x44 "subProbeFullRenderPipelineWithHandleCheck" -> U64 include="interop.h" @ interop.generated.d.ts:492:18
+  param "descriptor": Nullable(Class(ClassId(54))) foreign=None @ interop.generated.d.ts:492:60
+  param "selector": U32 foreign=None @ interop.generated.d.ts:492:120
+foreign x45 "subProbeFullRenderPipelineWithNestedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:528:18
+  param "descriptor": Nullable(Class(ClassId(59))) foreign=None @ interop.generated.d.ts:528:65
+  param "selector": U32 foreign=None @ interop.generated.d.ts:528:125
+foreign x46 "subProbeFullRenderPipelineWithUnmarkedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:562:18
+  param "descriptor": Nullable(Class(ClassId(63))) foreign=None @ interop.generated.d.ts:562:67
+  param "selector": U32 foreign=None @ interop.generated.d.ts:562:129
+foreign x47 "subProbeBreadthRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:596:18
+  param "descriptor": Nullable(Class(ClassId(68))) foreign=None @ interop.generated.d.ts:596:53
+  param "selector": U32 foreign=None @ interop.generated.d.ts:596:114
+foreign x48 "subProbeWideRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:660:18
+  param "descriptor": Nullable(Class(ClassId(77))) foreign=None @ interop.generated.d.ts:660:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:660:108
+foreign x49 "subProbeQueueSubmitCheck" -> U64 include="interop.h" @ interop.generated.d.ts:661:18
+  param "queue": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:661:43
+  param "commands": Array(Class(ClassId(6))) foreign=Some(ScalarPair { element: "SubDevice", element_const: true }) @ interop.generated.d.ts:661:61
+  param "selector": U32 foreign=None @ interop.generated.d.ts:661:84
+foreign x50 "subProbeSetBindGroupCheck" -> U32 include="interop.h" @ interop.generated.d.ts:662:18
+  param "encoder": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:662:44
+  param "group": Nullable(Class(ClassId(6))) foreign=None @ interop.generated.d.ts:662:64
+foreign x51 "subByValueI32OneReport" -> Void include="interop.h" @ interop.generated.d.ts:736:18
+  param "report": Nullable(Class(ClassId(78))) foreign=None @ interop.generated.d.ts:736:41
+  param "value": Class(ClassId(78)) foreign=None @ interop.generated.d.ts:736:74
+foreign x52 "subByValueI32PairReport" -> Void include="interop.h" @ interop.generated.d.ts:737:18
+  param "report": Nullable(Class(ClassId(79))) foreign=None @ interop.generated.d.ts:737:42
+  param "value": Class(ClassId(79)) foreign=None @ interop.generated.d.ts:737:76
+foreign x53 "subByValueI32TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:738:18
+  param "report": Nullable(Class(ClassId(80))) foreign=None @ interop.generated.d.ts:738:44
+  param "value": Class(ClassId(80)) foreign=None @ interop.generated.d.ts:738:80
+foreign x54 "subByValueI16I16I32Report" -> Void include="interop.h" @ interop.generated.d.ts:739:18
+  param "report": Nullable(Class(ClassId(81))) foreign=None @ interop.generated.d.ts:739:44
+  param "value": Class(ClassId(81)) foreign=None @ interop.generated.d.ts:739:80
+foreign x55 "subByValueU8FourReport" -> Void include="interop.h" @ interop.generated.d.ts:740:18
+  param "report": Nullable(Class(ClassId(82))) foreign=None @ interop.generated.d.ts:740:41
+  param "value": Class(ClassId(82)) foreign=None @ interop.generated.d.ts:740:74
+foreign x56 "subByValueI64PairReport" -> Void include="interop.h" @ interop.generated.d.ts:741:18
+  param "report": Nullable(Class(ClassId(83))) foreign=None @ interop.generated.d.ts:741:42
+  param "value": Class(ClassId(83)) foreign=None @ interop.generated.d.ts:741:76
+foreign x57 "subByValueF32Hfa2Report" -> Void include="interop.h" @ interop.generated.d.ts:742:18
+  param "report": Nullable(Class(ClassId(84))) foreign=None @ interop.generated.d.ts:742:42
+  param "value": Class(ClassId(84)) foreign=None @ interop.generated.d.ts:742:76
+foreign x58 "subByValueF32Hfa4Report" -> Void include="interop.h" @ interop.generated.d.ts:743:18
+  param "report": Nullable(Class(ClassId(85))) foreign=None @ interop.generated.d.ts:743:42
+  param "value": Class(ClassId(85)) foreign=None @ interop.generated.d.ts:743:76
+foreign x59 "subByValueI32F32Report" -> Void include="interop.h" @ interop.generated.d.ts:744:18
+  param "report": Nullable(Class(ClassId(86))) foreign=None @ interop.generated.d.ts:744:41
+  param "value": Class(ClassId(86)) foreign=None @ interop.generated.d.ts:744:74
+foreign x60 "subByValueI32I64Report" -> Void include="interop.h" @ interop.generated.d.ts:745:18
+  param "report": Nullable(Class(ClassId(87))) foreign=None @ interop.generated.d.ts:745:41
+  param "value": Class(ClassId(87)) foreign=None @ interop.generated.d.ts:745:74
+foreign x61 "subByValueI64TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:746:18
+  param "report": Nullable(Class(ClassId(88))) foreign=None @ interop.generated.d.ts:746:44
+  param "value": Class(ClassId(88)) foreign=None @ interop.generated.d.ts:746:80
+foreign x62 "subHostOwnedStateBorrow" -> Class(ClassId(89)) include="interop.h" @ interop.generated.d.ts:752:18
+foreign x63 "subHostOwnedStateAdvance" -> I32 include="interop.h" @ interop.generated.d.ts:753:18
+  param "state": Class(ClassId(89)) foreign=None @ interop.generated.d.ts:753:43
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a128-host-owned-state.ts:8:17
+  value %0: Data(Class(ClassId(89))) name=None
+  value %1: Data(Nullable(Class(ClassId(89)))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(89))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(62)), parameter_types: [], return_type: Some(Data(Class(ClassId(89)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a128-host-owned-state.ts", line: 9, col: 38 } }] @ a128-host-owned-state.ts:9:38
+    %1: Data(Nullable(Class(ClassId(89)))) = Coerce(%0) @ a128-host-owned-state.ts:10:3
+    StoreGlobal(GlobalId(0))(%1) @ a128-host-owned-state.ts:10:3
+    %2: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(63)), parameter_types: [Data(Class(ClassId(89)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a128-host-owned-state.ts", line: 11, col: 29 } }] @ a128-host-owned-state.ts:11:29
+    %3: Data(Str) = Template([Text("host-state:first="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 11, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 11, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 11, col: 9 } }] @ a128-host-owned-state.ts:11:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a128-host-owned-state.ts:11:3
+    -> Return(None)
+fn f1 "secondEntry" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a128-host-owned-state.ts:14:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 14, col: 23 } }]
+  value %0: Data(Nullable(Class(ClassId(89)))) name=None
+  value %1: Data(Bool) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Nullable(Class(ClassId(89)))) name=None
+  value %4: Data(Class(ClassId(89))) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Nullable(Class(ClassId(89)))) = LoadGlobal(GlobalId(0))() @ a128-host-owned-state.ts:15:7
+    %1: Data(Bool) = Binary(Eq)(%0, Null:Null) @ a128-host-owned-state.ts:15:7
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    %2: Data(Str) = StringLiteral("host-state:missing")() traps=[Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 16, col: 11 } }] @ a128-host-owned-state.ts:16:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a128-host-owned-state.ts:16:5
+    -> Return(None)
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [] })
+  b3 Some("if.join"):
+    %3: Data(Nullable(Class(ClassId(89)))) = LoadGlobal(GlobalId(0))() @ a128-host-owned-state.ts:19:55
+    %4: Data(Class(ClassId(89))) = Coerce(%3) @ a128-host-owned-state.ts:19:55
+    %5: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(63)), parameter_types: [Data(Class(ClassId(89)))], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a128-host-owned-state.ts", line: 19, col: 30 } }] @ a128-host-owned-state.ts:19:30
+    %6: Data(Str) = Template([Text("host-state:second="), Operand(0)])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 19, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 19, col: 9 } }] @ a128-host-owned-state.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a128-host-owned-state.ts:19:3
+    -> Return(None)
+fn f2 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a128-host-owned-state.ts:6:5
+  value %0: Data(Nullable(Class(ClassId(89)))) name=None
+  b0 Some("entry"):
+    %0: Data(Nullable(Class(ClassId(89)))) = Coerce(Null:Null) @ a128-host-owned-state.ts:6:5
+    StoreGlobal(GlobalId(0))(%0) @ a128-host-owned-state.ts:6:5
+    -> Return(None)
+===== a139-using-async =====
+module initializer=None
+class c0 "AsyncResource" value=false descriptor=false boundary=false align=None @ a139-using-async.ts:6:7
+  method m0 "[[Symbol.dispose]]" -> f0
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "[[Symbol.dispose]]" kind=Method { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a139-using-async.ts:7:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a139-using-async.ts:7:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = StringLiteral("dispose:async")() traps=[Trap { kind: Allocation, pos: Pos { file: "a139-using-async.ts", line: 8, col: 11 } }] @ a139-using-async.ts:8:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a139-using-async.ts:8:5
+    -> Return(None)
+fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a139-using-async.ts:12:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a139-using-async.ts", line: 12, col: 23 } }]
+  value %0: Data(Class(ClassId(0))) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a139-using-async.ts", line: 13, col: 20 } }] @ a139-using-async.ts:13:20
+    %1: Data(Str) = StringLiteral("before")() traps=[Trap { kind: Allocation, pos: Pos { file: "a139-using-async.ts", line: 14, col: 9 } }] @ a139-using-async.ts:14:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a139-using-async.ts:14:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%3: Data(Class(ClassId(0)))) Some("async.resume"):
+    %2: Data(Str) = StringLiteral("resumed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a139-using-async.ts", line: 16, col: 9 } }] @ a139-using-async.ts:16:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a139-using-async.ts:16:3
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%3) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a139-using-async.ts", line: 13, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a139-using-async.ts", line: 13, col: 9 } }] @ a139-using-async.ts:13:9
+    -> Return(None)
+===== a143-async-generic =====
+module initializer=None
+class c0 "Vec2" value=true descriptor=false boundary=false align=None @ a143-async-generic.ts:7:7
+  field d0 "x": F32 defaulted=false absence=false foreign=None @ a143-async-generic.ts:8:3
+  field d1 "y": F32 defaulted=false absence=false foreign=None @ a143-async-generic.ts:9:3
+  method m0 "constructor" -> f0
+class c1 "Box<u32>" value=false descriptor=false boundary=false align=None @ a143-async-generic.ts:17:7
+  field d2 "value": U32 defaulted=false absence=false foreign=None @ a143-async-generic.ts:18:3
+  method m1 "constructor" -> f1
+  method m2 "read" -> f2
+class c2 "Box<Vec2>" value=false descriptor=false boundary=false align=None @ a143-async-generic.ts:17:7
+  field d3 "value": Class(ClassId(0)) defaulted=false absence=false foreign=None @ a143-async-generic.ts:18:3
+  method m3 "constructor" -> f3
+  method m4 "read" -> f4
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a143-async-generic.ts:11:3
+  param %0 "this": Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) kind=Receiver storage=None @ a143-async-generic.ts:11:3
+  param %1 "x": Data(F32) kind=Explicit storage=None @ a143-async-generic.ts:11:15
+  param %2 "y": Data(F32) kind=Explicit storage=None @ a143-async-generic.ts:11:23
+  value %0: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=Some("this")
+  value %1: Data(F32) name=Some("x")
+  value %2: Data(F32) name=Some("y")
+  value %3: Address(AddressType { pointee: F32, array_base: None }) name=None
+  value %4: Address(AddressType { pointee: F32, array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: F32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) @ a143-async-generic.ts:12:10
+    StoreAddress(%3, %1) @ a143-async-generic.ts:12:10
+    %4: Address(AddressType { pointee: F32, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) @ a143-async-generic.ts:13:10
+    StoreAddress(%4, %2) @ a143-async-generic.ts:13:10
+    -> Return(None)
+fn f1 "constructor" kind=Constructor { class: ClassId(1), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a143-async-generic.ts:20:3
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a143-async-generic.ts:20:3
+  param %1 "value": Data(U32) kind=Explicit storage=None @ a143-async-generic.ts:20:15
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(U32) name=Some("value")
+  value %2: Address(AddressType { pointee: U32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 21, col: 5 } }] @ a143-async-generic.ts:21:10
+    StoreAddress(%2, %1) @ a143-async-generic.ts:21:10
+    -> Return(None)
+fn f2 "read" kind=Method { class: ClassId(1), method: MethodId(2) } exported=false generator=false async=true -> U32 entry=b0 @ a143-async-generic.ts:24:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 24, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a143-async-generic.ts:24:9
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(U32) name=None
+  value %2: Data(Class(ClassId(1))) name=Some("this")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%2: Data(Class(ClassId(1)))) Some("async.resume"):
+    %1: Data(U32) = LoadField(Class(FieldId(2)))(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 26, col: 12 } }] @ a143-async-generic.ts:26:17
+    -> Return(Some(Value(ValueId(1))))
+fn f3 "constructor" kind=Constructor { class: ClassId(2), method: MethodId(3) } exported=false generator=false async=false -> Void entry=b0 @ a143-async-generic.ts:20:3
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a143-async-generic.ts:20:3
+  param %1 "value": Data(Class(ClassId(0))) kind=Explicit storage=None @ a143-async-generic.ts:20:15
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Class(ClassId(0))) name=Some("value")
+  value %2: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 21, col: 5 } }] @ a143-async-generic.ts:21:10
+    StoreAddress(%2, %1) @ a143-async-generic.ts:21:10
+    -> Return(None)
+fn f4 "read" kind=Method { class: ClassId(2), method: MethodId(4) } exported=false generator=false async=true -> Class(ClassId(0)) entry=b0 @ a143-async-generic.ts:24:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 24, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a143-async-generic.ts:24:9
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(Class(ClassId(2))) name=Some("this")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%2: Data(Class(ClassId(2)))) Some("async.resume"):
+    %1: Data(Class(ClassId(0))) = LoadField(Class(FieldId(3)))(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 26, col: 12 } }] @ a143-async-generic.ts:26:17
+    -> Return(Some(Value(ValueId(1))))
+fn f5 "printVec2" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a143-async-generic.ts:39:10
+  param %0 "value": Data(Class(ClassId(0))) kind=Explicit storage=None @ a143-async-generic.ts:39:20
+  value %0: Data(Class(ClassId(0))) name=Some("value")
+  value %1: Data(F32) name=None
+  value %2: Data(F32) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(F32) = LoadField(Class(FieldId(0)))(%0) @ a143-async-generic.ts:40:18
+    %2: Data(F32) = LoadField(Class(FieldId(1)))(%0) @ a143-async-generic.ts:40:29
+    %3: Data(Str) = Template([Operand(0), Text(","), Operand(1)])(%1, %2) traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 40, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 40, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 40, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 40, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 40, col: 9 } }] @ a143-async-generic.ts:40:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a143-async-generic.ts:40:3
+    -> Return(None)
+fn f6 "first<u32>" kind=Free exported=false generator=false async=true -> U32 entry=b0 @ a143-async-generic.ts:49:34
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 49, col: 34 } }]
+  param %0 "items": Data(Array(U32)) kind=Explicit storage=None @ a143-async-generic.ts:30:25
+  value %0: Data(Array(U32)) name=Some("items")
+  value %1: Address(AddressType { pointee: U32, array_base: Some(ValueId(3)) }) name=None
+  value %2: Data(U32) name=None
+  value %3: Data(Array(U32)) name=Some("items")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [ValueId(0)], traps: [] }
+  b1(%3: Data(Array(U32))) Some("async.resume"):
+    %1: Address(AddressType { pointee: U32, array_base: Some(ValueId(3)) }) = AddressOfIndex { checked: true }(%3, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }, Trap { kind: IndexRead, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }] @ a143-async-generic.ts:32:10
+    %2: Data(U32) = LoadAddress(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }, Trap { kind: IndexRead, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }] @ a143-async-generic.ts:32:10
+    -> Return(Some(Value(ValueId(2))))
+fn f7 "first<Vec2>" kind=Free exported=false generator=false async=true -> Class(ClassId(0)) entry=b0 @ a143-async-generic.ts:56:19
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 56, col: 19 } }]
+  param %0 "items": Data(Array(Class(ClassId(0)))) kind=Explicit storage=None @ a143-async-generic.ts:30:25
+  value %0: Data(Array(Class(ClassId(0)))) name=Some("items")
+  value %1: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(3)) }) name=None
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Data(Array(Class(ClassId(0)))) name=Some("items")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [ValueId(0)], traps: [] }
+  b1(%3: Data(Array(Class(ClassId(0))))) Some("async.resume"):
+    %1: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(3)) }) = AddressOfIndex { checked: true }(%3, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }, Trap { kind: IndexRead, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }] @ a143-async-generic.ts:32:10
+    %2: Data(Class(ClassId(0))) = LoadAddress(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }, Trap { kind: IndexRead, pos: Pos { file: "a143-async-generic.ts", line: 32, col: 10 } }] @ a143-async-generic.ts:32:10
+    -> Return(Some(Value(ValueId(2))))
+fn f8 "tick<u32>" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a143-async-generic.ts:58:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 58, col: 9 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("tick")() traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 36, col: 9 } }] @ a143-async-generic.ts:36:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a143-async-generic.ts:36:3
+    -> Return(None)
+fn f9 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a143-async-generic.ts:43:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 43, col: 23 } }]
+  value %0: Data(Class(ClassId(1))) name=None
+  value %1: Data(U32) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Array(U32)) name=None
+  value %4: Data(U32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Class(ClassId(2))) name=None
+  value %7: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %8: Data(Class(ClassId(0))) name=None
+  value %9: Data(Class(ClassId(0))) name=None
+  value %10: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %13: Data(Class(ClassId(0))) name=None
+  value %14: Data(Array(Class(ClassId(0)))) name=None
+  value %15: Data(Class(ClassId(0))) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 44, col: 31 } }] @ a143-async-generic.ts:44:31
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(1))), Data(U32)], return_type: None })(%0, Integer(7):U32) traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 44, col: 31 } }] @ a143-async-generic.ts:44:31
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(1)))], return_type: Some(Data(U32)) }, operands: [ValueId(0)] }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [], invalidates: [], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 45, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 45, col: 28 } }] }
+  b1(%1: Data(U32)) Some("async-call.resume"):
+    %2: Data(Str) = Template([Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 46, col: 12 } }] @ a143-async-generic.ts:46:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a143-async-generic.ts:46:3
+    %3: Data(Array(U32)) = ArrayLiteral(Integer(11):U32, Integer(12):U32) traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 48, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 48, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 48, col: 31 } }] @ a143-async-generic.ts:48:26
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(Array(U32))], return_type: Some(Data(U32)) }, operands: [ValueId(3)] }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [], invalidates: [ValueId(3)], traps: [Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 49, col: 28 } }] }
+  b2(%4: Data(U32)) Some("async-call.resume"):
+    %5: Data(Str) = Template([Operand(0)])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 50, col: 12 } }] @ a143-async-generic.ts:50:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) invalidates=[ValueId(3)] @ a143-async-generic.ts:50:3
+    %6: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 52, col: 32 } }] @ a143-async-generic.ts:52:32
+    %7: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a143-async-generic.ts:52:46
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(F32), Data(F32)], return_type: None })(%7, FloatBits(1069547520):F32, FloatBits(1075838976):F32) invalidates=[ValueId(3)] traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 52, col: 46 } }] @ a143-async-generic.ts:52:46
+    %8: Data(Class(ClassId(0))) = LoadAddress(%7) @ a143-async-generic.ts:52:46
+    Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(2))), Data(Class(ClassId(0)))], return_type: None })(%6, %8) invalidates=[ValueId(3)] traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 52, col: 32 } }] @ a143-async-generic.ts:52:32
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(4)), parameter_types: [Data(Class(ClassId(2)))], return_type: Some(Data(Class(ClassId(0)))) }, operands: [ValueId(6)] }, successor: BlockId(3), resume_value: Some(ValueId(9)), arguments: [], invalidates: [ValueId(3)], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a143-async-generic.ts", line: 53, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 53, col: 13 } }] }
+  b3(%9: Data(Class(ClassId(0)))) Some("async-call.resume"):
+    Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%9) invalidates=[ValueId(3)] traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 53, col: 3 } }] @ a143-async-generic.ts:53:3
+    %10: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a143-async-generic.ts:55:28
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(F32), Data(F32)], return_type: None })(%10, FloatBits(1080033280):F32, FloatBits(1083179008):F32) invalidates=[ValueId(3)] traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 55, col: 28 } }] @ a143-async-generic.ts:55:28
+    %11: Data(Class(ClassId(0))) = LoadAddress(%10) @ a143-async-generic.ts:55:28
+    %12: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a143-async-generic.ts:55:48
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(F32), Data(F32)], return_type: None })(%12, FloatBits(1085276160):F32, FloatBits(1087373312):F32) invalidates=[ValueId(3)] traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 55, col: 48 } }] @ a143-async-generic.ts:55:48
+    %13: Data(Class(ClassId(0))) = LoadAddress(%12) @ a143-async-generic.ts:55:48
+    %14: Data(Array(Class(ClassId(0)))) = ArrayLiteral(%11, %13) traps=[Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 55, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 55, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a143-async-generic.ts", line: 55, col: 48 } }] @ a143-async-generic.ts:55:27
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Array(Class(ClassId(0))))], return_type: Some(Data(Class(ClassId(0)))) }, operands: [ValueId(14)] }, successor: BlockId(4), resume_value: Some(ValueId(15)), arguments: [], invalidates: [ValueId(3), ValueId(14)], traps: [Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 56, col: 13 } }] }
+  b4(%15: Data(Class(ClassId(0)))) Some("async-call.resume"):
+    Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%15) invalidates=[ValueId(3), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 56, col: 3 } }] @ a143-async-generic.ts:56:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(8)), parameter_types: [], return_type: None }, operands: [] }, successor: BlockId(5), resume_value: None, arguments: [], invalidates: [ValueId(3), ValueId(14)], traps: [Trap { kind: Call, pos: Pos { file: "a143-async-generic.ts", line: 58, col: 3 } }] }
+  b5 Some("async-call.resume"):
+    -> Return(None)
+===== a145-emitted-identifiers =====
+module initializer=None
+class c0 "ResumeCollision" value=false descriptor=false boundary=false align=None @ a145-emitted-identifiers.ts:75:7
+  method m0 "x" -> f0
+  method m1 "x_resume" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "x" kind=Method { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=true -> I32 entry=b0 @ a145-emitted-identifiers.ts:76:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 76, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a145-emitted-identifiers.ts:76:9
+  param %1 "_this": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:76:11
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(I32) name=Some("_this")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=Some("_this")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%3: Data(I32)) Some("async.resume"):
+    %2: Data(I32) = Binary(Add)(%3, Integer(1):I32) @ a145-emitted-identifiers.ts:78:12
+    -> Return(Some(Value(ValueId(2))))
+fn f1 "x_resume" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a145-emitted-identifiers.ts:81:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a145-emitted-identifiers.ts:81:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(40) })))
+fn f2 "temporaryValue" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a145-emitted-identifiers.ts:6:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:6:25
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(100):I32) @ a145-emitted-identifiers.ts:7:10
+    -> Return(Some(Value(ValueId(1))))
+fn f3 "parameterProbe" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a145-emitted-identifiers.ts:10:10
+  param %0 "_t0": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:11:3
+  param %1 "_t1": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:12:3
+  param %2 "_this": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:13:3
+  param %3 "_frame": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:14:3
+  param %4 "_out": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:15:3
+  param %5 "_f": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:16:3
+  param %6 "_state": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:17:3
+  param %7 "g0": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:18:3
+  param %8 "_L0": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:19:3
+  param %9 "ctx": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:20:3
+  value %0: Data(I32) name=Some("_t0")
+  value %1: Data(I32) name=Some("_t1")
+  value %2: Data(I32) name=Some("_this")
+  value %3: Data(I32) name=Some("_frame")
+  value %4: Data(I32) name=Some("_out")
+  value %5: Data(I32) name=Some("_f")
+  value %6: Data(I32) name=Some("_state")
+  value %7: Data(I32) name=Some("g0")
+  value %8: Data(I32) name=Some("_L0")
+  value %9: Data(I32) name=Some("ctx")
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(I32) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(I32) name=None
+  value %29: Data(I32) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(I32) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(I32) name=None
+  value %38: Data(I32) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(I32) name=None
+  value %41: Data(I32) name=None
+  value %42: Data(I32) name=None
+  value %43: Data(I32) name=None
+  value %44: Data(I32) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(Bool) name=None
+  value %47: Data(I32) name=None
+  value %48: Data(I32) name=None
+  value %49: Data(I32) name=None
+  value %50: Data(I32) name=None
+  value %51: Data(I32) name=None
+  value %52: Data(I32) name=None
+  value %53: Data(I32) name=None
+  value %54: Data(I32) name=None
+  value %55: Data(I32) name=None
+  value %56: Data(I32) name=None
+  value %57: Data(I32) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(8)), Value(ValueId(9)), Constant(Constant { ty: I32, kind: Integer(0) }), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%10: Data(I32), %11: Data(I32), %12: Data(I32), %13: Data(I32), %14: Data(I32), %15: Data(I32), %16: Data(I32), %17: Data(I32), %18: Data(I32), %19: Data(I32), %20: Data(I32), %21: Data(I32)) Some("for.cond"):
+    %46: Data(Bool) = Binary(Lt)(%21, Integer(3):I32) @ a145-emitted-identifiers.ts:23:24
+    -> ConditionalBranch { condition: Value(ValueId(46)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(10)), Value(ValueId(11)), Value(ValueId(12)), Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15)), Value(ValueId(16)), Value(ValueId(17)), Value(ValueId(18)), Value(ValueId(19)), Value(ValueId(20)), Value(ValueId(21))] } }
+  b2 Some("for.body"):
+    %47: Data(I32) = Binary(Add)(%10, %11) @ a145-emitted-identifiers.ts:26:9
+    %48: Data(I32) = Binary(Add)(%47, %12) @ a145-emitted-identifiers.ts:26:9
+    %49: Data(I32) = Binary(Add)(%48, %13) @ a145-emitted-identifiers.ts:26:9
+    %50: Data(I32) = Binary(Add)(%49, %14) @ a145-emitted-identifiers.ts:26:9
+    %51: Data(I32) = Binary(Add)(%50, %15) @ a145-emitted-identifiers.ts:26:9
+    %52: Data(I32) = Binary(Add)(%51, %16) @ a145-emitted-identifiers.ts:26:9
+    %53: Data(I32) = Binary(Add)(%52, %17) @ a145-emitted-identifiers.ts:26:9
+    %54: Data(I32) = Binary(Add)(%53, %18) @ a145-emitted-identifiers.ts:26:9
+    %55: Data(I32) = Binary(Add)(%54, %19) @ a145-emitted-identifiers.ts:26:9
+    %56: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%21) traps=[Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 36, col: 9 } }] @ a145-emitted-identifiers.ts:36:9
+    %57: Data(I32) = Binary(Add)(%55, %56) @ a145-emitted-identifiers.ts:26:9
+    %58: Data(I32) = Binary(Add)(%20, %57) @ a145-emitted-identifiers.ts:37:7
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(10)), Value(ValueId(11)), Value(ValueId(12)), Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15)), Value(ValueId(16)), Value(ValueId(17)), Value(ValueId(18)), Value(ValueId(19)), Value(ValueId(58)), Value(ValueId(21))] })
+  b3(%22: Data(I32), %23: Data(I32), %24: Data(I32), %25: Data(I32), %26: Data(I32), %27: Data(I32), %28: Data(I32), %29: Data(I32), %30: Data(I32), %31: Data(I32), %32: Data(I32), %33: Data(I32)) Some("for.step"):
+    %59: Data(I32) = Binary(Add)(%33, Integer(1):I32) @ a145-emitted-identifiers.ts:23:31
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(25)), Value(ValueId(26)), Value(ValueId(27)), Value(ValueId(28)), Value(ValueId(29)), Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(59))] })
+  b4(%34: Data(I32), %35: Data(I32), %36: Data(I32), %37: Data(I32), %38: Data(I32), %39: Data(I32), %40: Data(I32), %41: Data(I32), %42: Data(I32), %43: Data(I32), %44: Data(I32), %45: Data(I32)) Some("for.exit"):
+    -> Return(Some(Value(ValueId(44))))
+fn f4 "localProbe" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a145-emitted-identifiers.ts:43:10
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Bool) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%0: Data(I32), %1: Data(I32)) Some("for.cond"):
+    %6: Data(Bool) = Binary(Lt)(%1, Integer(3):I32) @ a145-emitted-identifiers.ts:55:24
+    -> ConditionalBranch { condition: Value(ValueId(6)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0)), Value(ValueId(1))] } }
+  b2 Some("for.body"):
+    %7: Data(I32) = Binary(Add)(Integer(11):I32, Integer(12):I32) @ a145-emitted-identifiers.ts:58:9
+    %8: Data(I32) = Binary(Add)(%7, Integer(13):I32) @ a145-emitted-identifiers.ts:58:9
+    %9: Data(I32) = Binary(Add)(%8, Integer(14):I32) @ a145-emitted-identifiers.ts:58:9
+    %10: Data(I32) = Binary(Add)(%9, Integer(15):I32) @ a145-emitted-identifiers.ts:58:9
+    %11: Data(I32) = Binary(Add)(%10, Integer(16):I32) @ a145-emitted-identifiers.ts:58:9
+    %12: Data(I32) = Binary(Add)(%11, Integer(17):I32) @ a145-emitted-identifiers.ts:58:9
+    %13: Data(I32) = Binary(Add)(%12, Integer(18):I32) @ a145-emitted-identifiers.ts:58:9
+    %14: Data(I32) = Binary(Add)(%13, Integer(19):I32) @ a145-emitted-identifiers.ts:58:9
+    %15: Data(I32) = Binary(Add)(%14, Integer(20):I32) @ a145-emitted-identifiers.ts:58:9
+    %16: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 68, col: 9 } }] @ a145-emitted-identifiers.ts:68:9
+    %17: Data(I32) = Binary(Add)(%15, %16) @ a145-emitted-identifiers.ts:58:9
+    %18: Data(I32) = Binary(Add)(%0, %17) @ a145-emitted-identifiers.ts:69:7
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(18)), Value(ValueId(1))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("for.step"):
+    %19: Data(I32) = Binary(Add)(%3, Integer(1):I32) @ a145-emitted-identifiers.ts:55:31
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(2)), Value(ValueId(19))] })
+  b4(%4: Data(I32), %5: Data(I32)) Some("for.exit"):
+    -> Return(Some(Value(ValueId(4))))
+fn f5 "f" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a145-emitted-identifiers.ts:86:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 86, col: 16 } }]
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:86:18
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%2: Data(I32)) Some("async.resume"):
+    %1: Data(I32) = Binary(Add)(%2, Integer(1):I32) @ a145-emitted-identifiers.ts:88:10
+    -> Return(Some(Value(ValueId(1))))
+fn f6 "f_resume" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a145-emitted-identifiers.ts:91:10
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(50) })))
+fn f7 "frameProbe" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a145-emitted-identifiers.ts:95:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 95, col: 16 } }]
+  param %0 "_state": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:95:27
+  param %1 "g0": Data(I32) kind=Explicit storage=None @ a145-emitted-identifiers.ts:95:40
+  value %0: Data(I32) name=Some("_state")
+  value %1: Data(I32) name=Some("g0")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=Some("_state")
+  value %4: Data(I32) name=Some("g0")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%3: Data(I32), %4: Data(I32)) Some("async.resume"):
+    %2: Data(I32) = Binary(Add)(%3, %4) @ a145-emitted-identifiers.ts:97:10
+    -> Return(Some(Value(ValueId(2))))
+fn f8 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a145-emitted-identifiers.ts:100:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 100, col: 23 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(Class(ClassId(0))) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Class(ClassId(0))) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32), Data(I32), Data(I32), Data(I32), Data(I32), Data(I32), Data(I32), Data(I32), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32, Integer(2):I32, Integer(3):I32, Integer(4):I32, Integer(5):I32, Integer(6):I32, Integer(7):I32, Integer(8):I32, Integer(9):I32, Integer(10):I32) traps=[Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 101, col: 12 } }] @ a145-emitted-identifiers.ts:101:12
+    %1: Data(Str) = Template([Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 101, col: 12 } }] @ a145-emitted-identifiers.ts:101:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a145-emitted-identifiers.ts:101:3
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: Some(Data(I32)) })() traps=[Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 102, col: 12 } }] @ a145-emitted-identifiers.ts:102:12
+    %3: Data(Str) = Template([Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 102, col: 12 } }] @ a145-emitted-identifiers.ts:102:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a145-emitted-identifiers.ts:102:3
+    %4: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 104, col: 38 } }] @ a145-emitted-identifiers.ts:104:38
+    %5: Data(I32) = Copy(Integer(2):I32) @ a145-emitted-identifiers.ts:105:28
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(4), ValueId(5)] }, successor: BlockId(1), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(4))], invalidates: [], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a145-emitted-identifiers.ts", line: 105, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 105, col: 28 } }] }
+  b1(%6: Data(I32), %17: Data(Class(ClassId(0)))) Some("async-call.resume"):
+    %7: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%17) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 27 } }] @ a145-emitted-identifiers.ts:106:27
+    %8: Data(Str) = Template([Operand(0), Text(","), Operand(1)])(%6, %7) traps=[Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 106, col: 9 } }] @ a145-emitted-identifiers.ts:106:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a145-emitted-identifiers.ts:106:3
+    %9: Data(I32) = Copy(Integer(5):I32) @ a145-emitted-identifiers.ts:108:30
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(9)] }, successor: BlockId(2), resume_value: Some(ValueId(10)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 108, col: 30 } }] }
+  b2(%10: Data(I32)) Some("async-call.resume"):
+    %11: Data(I32) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: Some(Data(I32)) })() traps=[Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 109, col: 29 } }] @ a145-emitted-identifiers.ts:109:29
+    %12: Data(Str) = Template([Operand(0), Text(","), Operand(1)])(%10, %11) traps=[Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 109, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 109, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 109, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 109, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 109, col: 9 } }] @ a145-emitted-identifiers.ts:109:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a145-emitted-identifiers.ts:109:3
+    %13: Data(I32) = Copy(Integer(7):I32) @ a145-emitted-identifiers.ts:111:12
+    %14: Data(I32) = Copy(Integer(8):I32) @ a145-emitted-identifiers.ts:111:12
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(13), ValueId(14)] }, successor: BlockId(3), resume_value: Some(ValueId(15)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a145-emitted-identifiers.ts", line: 111, col: 12 } }] }
+  b3(%15: Data(I32)) Some("async-call.resume"):
+    %16: Data(Str) = Template([Operand(0)])(%15) traps=[Trap { kind: Allocation, pos: Pos { file: "a145-emitted-identifiers.ts", line: 111, col: 12 } }] @ a145-emitted-identifiers.ts:111:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%16) @ a145-emitted-identifiers.ts:111:3
+    -> Return(None)
+===== a146-scoped-locals =====
+module initializer=None
+class c0 "Box" value=false descriptor=false boundary=false align=None @ a146-scoped-locals.ts:6:7
+  field d0 "value": I32 defaulted=false absence=false foreign=None @ a146-scoped-locals.ts:7:3
+  method m0 "constructor" -> f0
+  method m1 "x" -> f1
+class c1 "ScopeBodies" value=false descriptor=false boundary=false align=None @ a146-scoped-locals.ts:19:7
+  field d1 "value": I32 defaulted=false absence=false foreign=None @ a146-scoped-locals.ts:20:3
+  method m2 "constructor" -> f2
+  method m3 "method" -> f3
+  method m4 "accessorValue" -> f4
+class c2 "ScopedResource" value=false descriptor=false boundary=false align=None @ a146-scoped-locals.ts:40:7
+  field d2 "label": Str defaulted=false absence=false foreign=None @ a146-scoped-locals.ts:41:3
+  method m5 "constructor" -> f5
+  method m6 "[[Symbol.dispose]]" -> f6
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:9:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a146-scoped-locals.ts:9:3
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a146-scoped-locals.ts:9:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(I32) name=Some("value")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 10, col: 5 } }] @ a146-scoped-locals.ts:10:10
+    StoreAddress(%2, %1) @ a146-scoped-locals.ts:10:10
+    -> Return(None)
+fn f1 "x" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=true -> I32 entry=b0 @ a146-scoped-locals.ts:13:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 13, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a146-scoped-locals.ts:13:9
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(103) })))
+fn f2 "constructor" kind=Constructor { class: ClassId(1), method: MethodId(2) } exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:22:3
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a146-scoped-locals.ts:22:3
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a146-scoped-locals.ts:22:15
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%1, Integer(1):I32) @ a146-scoped-locals.ts:23:35
+    %3: Data(Str) = Template([Text("constructor-body:"), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 24, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 24, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 24, col: 11 } }] @ a146-scoped-locals.ts:24:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a146-scoped-locals.ts:24:5
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 25, col: 5 } }] @ a146-scoped-locals.ts:25:10
+    StoreAddress(%4, %1) @ a146-scoped-locals.ts:25:10
+    -> Return(None)
+fn f3 "method" kind=Method { class: ClassId(1), method: MethodId(3) } exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:28:3
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a146-scoped-locals.ts:28:3
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = LoadField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 29, col: 30 } }] @ a146-scoped-locals.ts:29:35
+    %2: Data(I32) = Binary(Add)(%1, Integer(2):I32) @ a146-scoped-locals.ts:29:30
+    %3: Data(Str) = Template([Text("method-body:"), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 30, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 30, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 30, col: 11 } }] @ a146-scoped-locals.ts:30:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a146-scoped-locals.ts:30:5
+    -> Return(None)
+fn f4 "accessorValue" kind=Method { class: ClassId(1), method: MethodId(4) } exported=false generator=false async=false -> I32 entry=b0 @ a146-scoped-locals.ts:33:7
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a146-scoped-locals.ts:33:7
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = LoadField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 34, col: 32 } }] @ a146-scoped-locals.ts:34:37
+    %2: Data(I32) = Binary(Add)(%1, Integer(3):I32) @ a146-scoped-locals.ts:34:32
+    %3: Data(Str) = Template([Text("accessor-body:"), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 35, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 35, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 35, col: 11 } }] @ a146-scoped-locals.ts:35:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a146-scoped-locals.ts:35:5
+    -> Return(Some(Value(ValueId(2))))
+fn f5 "constructor" kind=Constructor { class: ClassId(2), method: MethodId(5) } exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:43:3
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a146-scoped-locals.ts:43:3
+  param %1 "label": Data(Str) kind=Explicit storage=None @ a146-scoped-locals.ts:43:15
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Str) name=Some("label")
+  value %2: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 44, col: 5 } }] @ a146-scoped-locals.ts:44:10
+    StoreAddress(%2, %1) @ a146-scoped-locals.ts:44:10
+    -> Return(None)
+fn f6 "[[Symbol.dispose]]" kind=Method { class: ClassId(2), method: MethodId(6) } exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:47:3
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a146-scoped-locals.ts:47:3
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = LoadField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 48, col: 22 } }] @ a146-scoped-locals.ts:48:27
+    %2: Data(Str) = Template([Text("dispose:"), Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 48, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 48, col: 11 } }] @ a146-scoped-locals.ts:48:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a146-scoped-locals.ts:48:5
+    -> Return(None)
+fn f7 "synchronousScopes" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:52:10
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Str) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(Str) name=None
+  value %23: Data(Bool) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(Bool) name=None
+  value %26: Data(Str) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(I32) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(Str) name=None
+  value %32: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(Str) name=None
+  value %35: Data(Str) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(Str) name=None
+  value %39: Data(Array(I32)) name=None
+  value %40: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %41: Data(I32) name=None
+  value %42: Data(I32) name=None
+  value %43: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %44: Data(I32) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(I32) name=None
+  value %47: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %48: Data(I32) name=None
+  value %49: Data(I32) name=None
+  value %50: Data(I32) name=None
+  value %51: Data(Bool) name=None
+  value %52: Data(I32) name=None
+  value %53: Data(Str) name=None
+  value %54: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %55: Data(I32) name=None
+  value %56: Data(Generator(I32)) name=None
+  value %57: Data(I32) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(IterResult(I32)) name=None
+  value %60: Data(Bool) name=None
+  value %61: Data(I32) name=None
+  value %62: Data(I32) name=None
+  value %63: Data(Str) name=None
+  value %64: Data(I32) name=None
+  value %65: Data(I32) name=None
+  value %66: Data(I32) name=None
+  value %67: Data(I32) name=None
+  value %68: Data(I32) name=None
+  value %69: Data(I32) name=None
+  value %70: Data(Bool) name=None
+  value %71: Data(Str) name=None
+  value %72: Data(I32) name=None
+  value %73: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %74: Data(I32) name=None
+  value %75: Data(Str) name=None
+  value %76: Data(Map(Str, I32)) name=None
+  value %77: Data(Str) name=None
+  value %78: Data(Map(Str, I32)) name=None
+  value %79: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(I32) name=None
+  value %82: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %83: Data(I32) name=None
+  value %84: Data(I32) name=None
+  value %85: Data(I32) name=None
+  value %86: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %87: Data(I32) name=None
+  value %88: Data(I32) name=None
+  value %89: Data(I32) name=None
+  value %90: Data(Bool) name=None
+  value %91: Data(Str) name=None
+  value %92: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %93: Data(I32) name=None
+  value %94: Data(Str) name=None
+  value %95: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %96: Data(I32) name=None
+  value %97: Data(Class(ClassId(1))) name=None
+  value %98: Data(I32) name=None
+  value %99: Data(Str) name=None
+  value %100: Data(Str) name=None
+  value %101: Data(Class(ClassId(2))) name=None
+  value %102: Data(Str) name=None
+  value %103: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("string:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 53, col: 24 } }] @ a146-scoped-locals.ts:53:24
+    %1: Data(Str) = StringLiteral("string:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 55, col: 26 } }] @ a146-scoped-locals.ts:55:26
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a146-scoped-locals.ts:56:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a146-scoped-locals.ts:58:3
+    %2: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 60, col: 20 } }] @ a146-scoped-locals.ts:60:20
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(I32)], return_type: None })(%2, Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 60, col: 20 } }] @ a146-scoped-locals.ts:60:20
+    %3: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 62, col: 22 } }] @ a146-scoped-locals.ts:62:22
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(I32)], return_type: None })(%3, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 62, col: 22 } }] @ a146-scoped-locals.ts:62:22
+    %4: Data(I32) = LoadField(Class(FieldId(0)))(%3) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 63, col: 18 } }] @ a146-scoped-locals.ts:63:22
+    %5: Data(Str) = Template([Text("box:"), Operand(0)])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 63, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 63, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 63, col: 11 } }] @ a146-scoped-locals.ts:63:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a146-scoped-locals.ts:63:5
+    %6: Data(I32) = LoadField(Class(FieldId(0)))(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 65, col: 16 } }] @ a146-scoped-locals.ts:65:20
+    %7: Data(Str) = Template([Text("box:"), Operand(0)])(%6) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 65, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 65, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 65, col: 9 } }] @ a146-scoped-locals.ts:65:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) @ a146-scoped-locals.ts:65:3
+    %8: Data(Str) = StringLiteral("loop:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 67, col: 28 } }] @ a146-scoped-locals.ts:67:28
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%9: Data(I32)) Some("while.cond"):
+    %11: Data(Bool) = Binary(Lt)(%9, Integer(2):I32) @ a146-scoped-locals.ts:69:10
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(9))] } }
+  b2 Some("while.body"):
+    %12: Data(Str) = Template([Text("loop:"), Operand(0)])(%9) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 70, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 70, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 70, col: 30 } }] @ a146-scoped-locals.ts:70:30
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a146-scoped-locals.ts:71:5
+    %13: Data(I32) = Binary(Add)(%9, Integer(1):I32) @ a146-scoped-locals.ts:72:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(13))] })
+  b3(%10: Data(I32)) Some("while.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a146-scoped-locals.ts:74:3
+    %14: Data(Str) = StringLiteral("for:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 76, col: 27 } }] @ a146-scoped-locals.ts:76:27
+    %15: Data(Str) = StringLiteral("for:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 78, col: 27 } }] @ a146-scoped-locals.ts:78:27
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(10)), Value(ValueId(15))] })
+  b4(%16: Data(I32), %17: Data(Str)) Some("for.cond"):
+    %22: Data(Str) = StringLiteral("for:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 79, col: 17 } }] @ a146-scoped-locals.ts:79:17
+    %23: Data(Bool) = Binary(Eq)(%17, %22) @ a146-scoped-locals.ts:79:5
+    -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(5), arguments: [] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(16)), Value(ValueId(17))] } }
+  b5 Some("for.body"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) @ a146-scoped-locals.ts:81:5
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(16)), Value(ValueId(17))] })
+  b6(%18: Data(I32), %19: Data(Str)) Some("for.step"):
+    -> Trap(Trap { kind: Unreachable, pos: Pos { file: "a146-scoped-locals.ts", line: 52, col: 10 } })
+  b7(%20: Data(I32), %21: Data(Str)) Some("for.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%14) @ a146-scoped-locals.ts:84:3
+    %24: Data(Str) = StringLiteral("branch:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 86, col: 30 } }] @ a146-scoped-locals.ts:86:30
+    %25: Data(Bool) = Binary(Eq)(%20, Integer(2):I32) @ a146-scoped-locals.ts:87:7
+    -> ConditionalBranch { condition: Value(ValueId(25)), then_target: BlockTarget { block: BlockId(8), arguments: [] }, else_target: BlockTarget { block: BlockId(9), arguments: [] } }
+  b8 Some("if.then"):
+    %26: Data(Str) = StringLiteral("branch:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 88, col: 32 } }] @ a146-scoped-locals.ts:88:32
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%26) @ a146-scoped-locals.ts:89:5
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(20))] })
+  b9 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(20))] })
+  b10(%27: Data(I32)) Some("if.join"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%24) @ a146-scoped-locals.ts:91:3
+    %28: Data(Str) = StringLiteral("switch:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 93, col: 30 } }] @ a146-scoped-locals.ts:93:30
+    -> Switch { value: Constant(Constant { ty: I32, kind: Integer(1) }), arms: [SwitchArm { value: Constant { ty: I32, kind: Integer(1) }, target: BlockTarget { block: BlockId(12), arguments: [Value(ValueId(27))] } }], default: BlockTarget { block: BlockId(11), arguments: [Value(ValueId(27))] } }
+  b11(%29: Data(I32)) Some("switch.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) @ a146-scoped-locals.ts:100:3
+    %32: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(13))(Integer(12):I32, Integer(34):I32) @ a146-scoped-locals.ts:104:31
+    %33: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%32) traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 105, col: 19 } }] @ a146-scoped-locals.ts:105:19
+    %34: Data(Str) = Template([Text("lambda:"), Operand(0)])(%33) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 105, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 105, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 105, col: 9 } }] @ a146-scoped-locals.ts:105:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%34) @ a146-scoped-locals.ts:105:3
+    %35: Data(Str) = StringLiteral("storage:outer-managed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 107, col: 27 } }] @ a146-scoped-locals.ts:107:27
+    %36: Data(Str) = Template([Text("storage:inner-unmanaged:"), Operand(0)])(Integer(5):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 110, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 110, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 110, col: 11 } }] @ a146-scoped-locals.ts:110:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%36) @ a146-scoped-locals.ts:110:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%35) @ a146-scoped-locals.ts:112:3
+    %37: Data(Str) = StringLiteral("storage:inner-managed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 116, col: 36 } }] @ a146-scoped-locals.ts:116:36
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%37) @ a146-scoped-locals.ts:117:5
+    %38: Data(Str) = Template([Text("storage:outer-unmanaged:"), Operand(0)])(Integer(7):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 119, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 119, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 119, col: 9 } }] @ a146-scoped-locals.ts:119:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%38) @ a146-scoped-locals.ts:119:3
+    %39: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 32 } }] @ a146-scoped-locals.ts:121:25
+    %40: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%39) @ a146-scoped-locals.ts:122:3
+    %41: Data(I32) = IteratorBound(%40) @ a146-scoped-locals.ts:122:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(29)), Value(ValueId(40)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(41))] })
+  b12(%30: Data(I32)) Some("switch.case.0"):
+    %31: Data(Str) = StringLiteral("switch:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 96, col: 34 } }] @ a146-scoped-locals.ts:96:34
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%31) @ a146-scoped-locals.ts:97:7
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [Value(ValueId(30))] })
+  b13(%42: Data(I32), %43: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %44: Data(I32), %45: Data(I32)) Some("for-of.cond"):
+    %51: Data(Bool) = IteratorHasNext(%43, %44, %45) @ a146-scoped-locals.ts:122:3
+    -> ConditionalBranch { condition: Value(ValueId(51)), then_target: BlockTarget { block: BlockId(14), arguments: [] }, else_target: BlockTarget { block: BlockId(16), arguments: [Value(ValueId(42))] } }
+  b14 Some("for-of.body"):
+    %52: Data(I32) = IteratorValue(%43, %44, %45) @ a146-scoped-locals.ts:122:3
+    %53: Data(Str) = Template([Text("for-of-body:"), Operand(0)])(Integer(100):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 124, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 124, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 124, col: 11 } }] @ a146-scoped-locals.ts:124:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%53) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:124:5
+    -> Branch(BlockTarget { block: BlockId(15), arguments: [Value(ValueId(42)), Value(ValueId(43)), Value(ValueId(44)), Value(ValueId(45))] })
+  b15(%46: Data(I32), %47: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %48: Data(I32), %49: Data(I32)) Some("for-of.step"):
+    %54: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%47, %48, %49) @ a146-scoped-locals.ts:122:3
+    %55: Data(I32) = Binary(Add)(%48, Integer(1):I32) @ a146-scoped-locals.ts:122:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(46)), Value(ValueId(54)), Value(ValueId(55)), Value(ValueId(49))] })
+  b16(%50: Data(I32)) Some("for-of.exit"):
+    %56: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 127, col: 32 } }] @ a146-scoped-locals.ts:127:32
+    -> Branch(BlockTarget { block: BlockId(17), arguments: [Value(ValueId(50))] })
+  b17(%57: Data(I32)) Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(18), arguments: [] }, else_target: BlockTarget { block: BlockId(19), arguments: [Value(ValueId(57))] } }
+  b18 Some("while.body"):
+    %59: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%56) invalidates=[ValueId(39)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 127, col: 32 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a146-scoped-locals.ts", line: 127, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 127, col: 3 } }] @ a146-scoped-locals.ts:127:3
+    %60: Data(Bool) = LoadField(IterDone)(%59) @ a146-scoped-locals.ts:127:3
+    -> ConditionalBranch { condition: Value(ValueId(60)), then_target: BlockTarget { block: BlockId(20), arguments: [] }, else_target: BlockTarget { block: BlockId(21), arguments: [] } }
+  b19(%58: Data(I32)) Some("while.exit"):
+    -> Branch(BlockTarget { block: BlockId(23), arguments: [Value(ValueId(58)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b20 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(57))] })
+  b21 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(57))] })
+  b22(%61: Data(I32)) Some("if.join"):
+    %62: Data(I32) = LoadField(IterValue)(%59) @ a146-scoped-locals.ts:127:14
+    %63: Data(Str) = Template([Text("gen-for-of-body:"), Operand(0)])(Integer(100):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 129, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 129, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 129, col: 11 } }] @ a146-scoped-locals.ts:129:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%63) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:129:5
+    -> Branch(BlockTarget { block: BlockId(17), arguments: [Value(ValueId(61))] })
+  b23(%64: Data(I32), %65: Data(I32)) Some("for.cond"):
+    %70: Data(Bool) = Binary(Lt)(%65, Integer(1):I32) @ a146-scoped-locals.ts:132:32
+    -> ConditionalBranch { condition: Value(ValueId(70)), then_target: BlockTarget { block: BlockId(24), arguments: [] }, else_target: BlockTarget { block: BlockId(26), arguments: [Value(ValueId(64)), Value(ValueId(65))] } }
+  b24 Some("for.body"):
+    %71: Data(Str) = Template([Text("for-body:"), Operand(0)])(Integer(200):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 134, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 134, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 134, col: 11 } }] @ a146-scoped-locals.ts:134:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%71) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:134:5
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(64)), Value(ValueId(65))] })
+  b25(%66: Data(I32), %67: Data(I32)) Some("for.step"):
+    %72: Data(I32) = Binary(Add)(%67, Integer(1):I32) @ a146-scoped-locals.ts:132:47
+    -> Branch(BlockTarget { block: BlockId(23), arguments: [Value(ValueId(66)), Value(ValueId(72))] })
+  b26(%68: Data(I32), %69: Data(I32)) Some("for.exit"):
+    %73: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(14))() @ a146-scoped-locals.ts:137:34
+    %74: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%73) invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 141, col: 24 } }] @ a146-scoped-locals.ts:141:24
+    %75: Data(Str) = Template([Text("lambda-body:"), Operand(0)])(%74) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 141, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 141, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 141, col: 9 } }] @ a146-scoped-locals.ts:141:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%75) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:141:3
+    %76: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(Str, I32))) })() invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 143, col: 33 } }] @ a146-scoped-locals.ts:143:33
+    %77: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 144, col: 11 } }] @ a146-scoped-locals.ts:144:11
+    %78: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, I32)), Data(Str), Data(I32)], return_type: Some(Data(Map(Str, I32))) })(%76, %77, Integer(1):I32) invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 144, col: 3 } }] @ a146-scoped-locals.ts:144:3
+    %79: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorCreate(MapKeys)(%76) @ a146-scoped-locals.ts:145:3
+    %80: Data(I32) = IteratorBound(%79) @ a146-scoped-locals.ts:145:3
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(68)), Value(ValueId(79)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(80))] })
+  b27(%81: Data(I32), %82: Iterator(IteratorType { kind: MapKeys, element: Str }), %83: Data(I32), %84: Data(I32)) Some("for-of.cond"):
+    %90: Data(Bool) = IteratorHasNext(%82, %83, %84) @ a146-scoped-locals.ts:145:3
+    -> ConditionalBranch { condition: Value(ValueId(90)), then_target: BlockTarget { block: BlockId(28), arguments: [] }, else_target: BlockTarget { block: BlockId(30), arguments: [Value(ValueId(81))] } }
+  b28 Some("for-of.body"):
+    %91: Data(Str) = IteratorValue(%82, %83, %84) @ a146-scoped-locals.ts:145:3
+    %92: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(15))() @ a146-scoped-locals.ts:146:29
+    %93: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%92) invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 150, col: 31 } }] @ a146-scoped-locals.ts:150:31
+    %94: Data(Str) = Template([Text("map-lambda:"), Operand(0), Operand(1)])(%91, %93) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 150, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 150, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 150, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 150, col: 11 } }] @ a146-scoped-locals.ts:150:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%94) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:150:5
+    -> Branch(BlockTarget { block: BlockId(29), arguments: [Value(ValueId(81)), Value(ValueId(82)), Value(ValueId(83)), Value(ValueId(84))] })
+  b29(%85: Data(I32), %86: Iterator(IteratorType { kind: MapKeys, element: Str }), %87: Data(I32), %88: Data(I32)) Some("for-of.step"):
+    %95: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorAdvance(%86, %87, %88) @ a146-scoped-locals.ts:145:3
+    %96: Data(I32) = Binary(Add)(%87, Integer(1):I32) @ a146-scoped-locals.ts:145:3
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(85)), Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(88))] })
+  b30(%89: Data(I32)) Some("for-of.exit"):
+    %97: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 153, col: 31 } }] @ a146-scoped-locals.ts:153:31
+    Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(1))), Data(I32)], return_type: None })(%97, Integer(10):I32) invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 153, col: 31 } }] @ a146-scoped-locals.ts:153:31
+    Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(1)))], return_type: None })(%97) invalidates=[ValueId(39)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 154, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 154, col: 3 } }] @ a146-scoped-locals.ts:154:3
+    %98: Data(I32) = Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Data(Class(ClassId(1)))], return_type: Some(Data(I32)) })(%97) invalidates=[ValueId(39)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 155, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 155, col: 28 } }] @ a146-scoped-locals.ts:155:28
+    %99: Data(Str) = Template([Text("accessor-result:"), Operand(0)])(%98) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 155, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 155, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 155, col: 9 } }] @ a146-scoped-locals.ts:155:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%99) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:155:3
+    %100: Data(Str) = StringLiteral("using:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 157, col: 29 } }] @ a146-scoped-locals.ts:157:29
+    %101: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 159, col: 22 } }] @ a146-scoped-locals.ts:159:22
+    %102: Data(Str) = StringLiteral("using")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 159, col: 41 } }] @ a146-scoped-locals.ts:159:41
+    Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%101, %102) invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 159, col: 22 } }] @ a146-scoped-locals.ts:159:22
+    %103: Data(Str) = StringLiteral("using:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 160, col: 31 } }] @ a146-scoped-locals.ts:160:31
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%103) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:161:5
+    Call(CallTarget { kind: Method(MethodId(6)), parameter_types: [Data(Class(ClassId(2)))], return_type: None })(%101) invalidates=[ValueId(39)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 159, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 159, col: 11 } }] @ a146-scoped-locals.ts:159:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%100) invalidates=[ValueId(39)] @ a146-scoped-locals.ts:163:3
+    -> Return(None)
+fn f8 "generatorScopes" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a146-scoped-locals.ts:166:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 166, col: 11 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Array(I32)) name=None
+  value %6: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %7: Data(I32) name=None
+  value %8: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Bool) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Str) name=None
+  value %17: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(Str) name=None
+  value %23: Data(Str) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(Bool) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("generator-block:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 167, col: 29 } }] @ a146-scoped-locals.ts:167:29
+    %1: Data(Str) = StringLiteral("generator-block:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 169, col: 31 } }] @ a146-scoped-locals.ts:169:31
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a146-scoped-locals.ts:170:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a146-scoped-locals.ts:172:3
+    %2: Data(Str) = StringLiteral("generator-switch:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 174, col: 30 } }] @ a146-scoped-locals.ts:174:30
+    -> Switch { value: Constant(Constant { ty: I32, kind: Integer(1) }), arms: [SwitchArm { value: Constant { ty: I32, kind: Integer(1) }, target: BlockTarget { block: BlockId(2), arguments: [] } }], default: BlockTarget { block: BlockId(1), arguments: [] } }
+  b1 Some("switch.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a146-scoped-locals.ts:181:3
+    %4: Data(Str) = StringLiteral("generator-for-of:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 183, col: 29 } }] @ a146-scoped-locals.ts:183:29
+    %5: Data(Array(I32)) = ArrayLiteral(Integer(1):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 184, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 184, col: 24 } }] @ a146-scoped-locals.ts:184:23
+    %6: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%5) @ a146-scoped-locals.ts:184:3
+    %7: Data(I32) = IteratorBound(%6) @ a146-scoped-locals.ts:184:3
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(7))] })
+  b2 Some("switch.case.0"):
+    %3: Data(Str) = StringLiteral("generator-switch:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 177, col: 34 } }] @ a146-scoped-locals.ts:177:34
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a146-scoped-locals.ts:178:7
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b3(%8: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %9: Data(I32), %10: Data(I32)) Some("for-of.cond"):
+    %14: Data(Bool) = IteratorHasNext(%8, %9, %10) @ a146-scoped-locals.ts:184:3
+    -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [] } }
+  b4 Some("for-of.body"):
+    %15: Data(I32) = IteratorValue(%8, %9, %10) @ a146-scoped-locals.ts:184:3
+    %16: Data(Str) = Template([Text("generator-for-of:inner:"), Operand(0)])(%15) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 186, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 186, col: 59 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 186, col: 33 } }] @ a146-scoped-locals.ts:186:33
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%16) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:187:7
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:189:5
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(8)), Value(ValueId(9)), Value(ValueId(10))] })
+  b5(%11: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %12: Data(I32), %13: Data(I32)) Some("for-of.step"):
+    %17: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%11, %12, %13) @ a146-scoped-locals.ts:184:3
+    %18: Data(I32) = Binary(Add)(%12, Integer(1):I32) @ a146-scoped-locals.ts:184:3
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(17)), Value(ValueId(18)), Value(ValueId(13))] })
+  b6 Some("for-of.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:191:3
+    %19: Data(Str) = StringLiteral("generator-for:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 193, col: 27 } }] @ a146-scoped-locals.ts:193:27
+    %20: Data(Str) = StringLiteral("generator-for:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 195, col: 27 } }] @ a146-scoped-locals.ts:195:27
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(20))] })
+  b7(%21: Data(Str)) Some("for.cond"):
+    %24: Data(Str) = StringLiteral("generator-for:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 196, col: 17 } }] @ a146-scoped-locals.ts:196:17
+    %25: Data(Bool) = Binary(Eq)(%21, %24) @ a146-scoped-locals.ts:196:5
+    -> ConditionalBranch { condition: Value(ValueId(25)), then_target: BlockTarget { block: BlockId(8), arguments: [] }, else_target: BlockTarget { block: BlockId(10), arguments: [Value(ValueId(21))] } }
+  b8 Some("for.body"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%21) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:198:5
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(21))] })
+  b9(%22: Data(Str)) Some("for.step"):
+    -> Trap(Trap { kind: Unreachable, pos: Pos { file: "a146-scoped-locals.ts", line: 166, col: 11 } })
+  b10(%23: Data(Str)) Some("for.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%19) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:201:3
+    %26: Data(I32) = Copy(Integer(1):I32) @ a146-scoped-locals.ts:202:3
+    -> Suspend { kind: Yield(Some(ValueId(26))), successor: BlockId(11), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b11 Some("yield.resume"):
+    %27: Data(I32) = Copy(Integer(2):I32) @ a146-scoped-locals.ts:203:3
+    -> Suspend { kind: Yield(Some(ValueId(27))), successor: BlockId(12), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b12 Some("yield.resume"):
+    -> Return(None)
+fn f9 "asyncScopes" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a146-scoped-locals.ts:206:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 206, col: 16 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("async:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 207, col: 24 } }] @ a146-scoped-locals.ts:207:24
+    %1: Data(Str) = StringLiteral("async:inner")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 209, col: 26 } }] @ a146-scoped-locals.ts:209:26
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a146-scoped-locals.ts:210:5
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%2: Data(Str)) Some("async.resume"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a146-scoped-locals.ts:213:3
+    -> Return(None)
+fn f10 "m0_x" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a146-scoped-locals.ts:216:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 216, col: 16 } }]
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(200) })))
+fn f11 "runGeneratorScopes" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a146-scoped-locals.ts:221:10
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(IterResult(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 222, col: 37 } }] @ a146-scoped-locals.ts:222:37
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a146-scoped-locals.ts", line: 223, col: 3 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a146-scoped-locals.ts", line: 223, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 223, col: 3 } }] @ a146-scoped-locals.ts:223:3
+    -> Return(None)
+fn f12 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a146-scoped-locals.ts:226:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 226, col: 23 } }]
+  b0 Some("entry"):
+    Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 227, col: 3 } }] @ a146-scoped-locals.ts:227:3
+    Call(CallTarget { kind: Function(FunctionId(11)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 228, col: 3 } }] @ a146-scoped-locals.ts:228:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(9)), parameter_types: [], return_type: None }, operands: [] }, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 229, col: 3 } }] }
+  b1 Some("async-call.resume"):
+    -> Return(None)
+fn f13 "<lambda a146-scoped-locals.ts:104:31>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a146-scoped-locals.ts:104:31
+  param %0 "a$b": Data(I32) kind=Capture storage=None @ a146-scoped-locals.ts:104:31
+  param %1 "a_dollar_b": Data(I32) kind=Capture storage=None @ a146-scoped-locals.ts:104:31
+  value %0: Data(I32) name=Some("a$b")
+  value %1: Data(I32) name=Some("a_dollar_b")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a146-scoped-locals.ts:104:42
+    -> Return(Some(Value(ValueId(2))))
+fn f14 "<lambda a146-scoped-locals.ts:137:34>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a146-scoped-locals.ts:137:34
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(9) })))
+fn f15 "<lambda a146-scoped-locals.ts:146:29>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a146-scoped-locals.ts:146:29
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(10) })))
+===== a147-switch-body-scope =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a147-switch-body-scope.ts:5:17
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    -> Switch { value: Constant(Constant { ty: I32, kind: Integer(2) }), arms: [SwitchArm { value: Constant { ty: I32, kind: Integer(0) }, target: BlockTarget { block: BlockId(2), arguments: [] } }, SwitchArm { value: Constant { ty: I32, kind: Integer(1) }, target: BlockTarget { block: BlockId(3), arguments: [] } }, SwitchArm { value: Constant { ty: I32, kind: Integer(2) }, target: BlockTarget { block: BlockId(4), arguments: [] } }], default: BlockTarget { block: BlockId(5), arguments: [] } }
+  b1 Some("switch.exit"):
+    -> Return(None)
+  b2 Some("switch.case.0"):
+    %0: Data(Str) = StringLiteral("case0")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 9, col: 32 } }] @ a147-switch-body-scope.ts:9:32
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a147-switch-body-scope.ts:10:7
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b3 Some("switch.case.1"):
+    %1: Data(Str) = StringLiteral("case1")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 13, col: 31 } }] @ a147-switch-body-scope.ts:13:31
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a147-switch-body-scope.ts:14:7
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b4 Some("switch.case.2"):
+    %2: Data(Str) = StringLiteral("case2")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 17, col: 39 } }] @ a147-switch-body-scope.ts:17:39
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a147-switch-body-scope.ts:18:7
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [] })
+  b5 Some("switch.case.3"):
+    %3: Data(Str) = StringLiteral("default")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 20, col: 35 } }] @ a147-switch-body-scope.ts:20:35
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a147-switch-body-scope.ts:21:7
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+===== a148-switch-using-scope =====
+module initializer=None
+class c0 "Resource" value=false descriptor=false boundary=false align=None @ a148-switch-using-scope.ts:6:7
+  field d0 "label": Str defaulted=false absence=false foreign=None @ a148-switch-using-scope.ts:7:3
+  method m0 "constructor" -> f0
+  method m1 "[[Symbol.dispose]]" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a148-switch-using-scope.ts:9:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a148-switch-using-scope.ts:9:3
+  param %1 "label": Data(Str) kind=Explicit storage=None @ a148-switch-using-scope.ts:9:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Str) name=Some("label")
+  value %2: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a148-switch-using-scope.ts", line: 10, col: 5 } }] @ a148-switch-using-scope.ts:10:10
+    StoreAddress(%2, %1) @ a148-switch-using-scope.ts:10:10
+    -> Return(None)
+fn f1 "[[Symbol.dispose]]" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a148-switch-using-scope.ts:13:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a148-switch-using-scope.ts:13:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a148-switch-using-scope.ts", line: 14, col: 22 } }] @ a148-switch-using-scope.ts:14:27
+    %2: Data(Str) = Template([Text("dispose:"), Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 14, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 14, col: 11 } }] @ a148-switch-using-scope.ts:14:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a148-switch-using-scope.ts:14:5
+    -> Return(None)
+fn f2 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a148-switch-using-scope.ts:18:17
+  value %0: Data(Bool) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(Class(ClassId(0))) name=None
+  value %6: Data(Bool) name=None
+  value %7: Data(Class(ClassId(0))) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(Class(ClassId(0))) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(Class(ClassId(0))) name=None
+  value %14: Data(Bool) name=None
+  value %15: Data(Class(ClassId(0))) name=None
+  value %16: Data(Class(ClassId(0))) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Class(ClassId(0))) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(Bool) name=None
+  value %23: Data(Class(ClassId(0))) name=None
+  value %24: Data(Bool) name=None
+  value %25: Data(Class(ClassId(0))) name=None
+  value %26: Data(Bool) name=None
+  value %27: Data(Class(ClassId(0))) name=None
+  value %28: Data(Bool) name=None
+  value %29: Data(Class(ClassId(0))) name=None
+  value %30: Data(Bool) name=None
+  value %31: Data(Class(ClassId(0))) name=None
+  value %32: Data(Bool) name=None
+  value %33: Data(Class(ClassId(0))) name=None
+  value %34: Data(Bool) name=None
+  value %35: Data(Class(ClassId(0))) name=None
+  value %36: Data(Bool) name=None
+  value %37: Data(Class(ClassId(0))) name=None
+  value %38: Data(Str) name=None
+  b0 Some("entry"):
+    -> Switch { value: Constant(Constant { ty: I32, kind: Integer(0) }), arms: [SwitchArm { value: Constant { ty: I32, kind: Integer(0) }, target: BlockTarget { block: BlockId(2), arguments: [Constant(Constant { ty: Bool, kind: Boolean(false) }), Constant(Constant { ty: Class(ClassId(0)), kind: Null }), Constant(Constant { ty: Bool, kind: Boolean(false) }), Constant(Constant { ty: Class(ClassId(0)), kind: Null })] } }, SwitchArm { value: Constant { ty: I32, kind: Integer(1) }, target: BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: Bool, kind: Boolean(false) }), Constant(Constant { ty: Class(ClassId(0)), kind: Null }), Constant(Constant { ty: Bool, kind: Boolean(false) }), Constant(Constant { ty: Class(ClassId(0)), kind: Null })] } }], default: BlockTarget { block: BlockId(4), arguments: [Constant(Constant { ty: Bool, kind: Boolean(false) }), Constant(Constant { ty: Class(ClassId(0)), kind: Null }), Constant(Constant { ty: Bool, kind: Boolean(false) }), Constant(Constant { ty: Class(ClassId(0)), kind: Null })] } }
+  b1(%0: Data(Bool), %1: Data(Class(ClassId(0))), %2: Data(Bool), %3: Data(Class(ClassId(0)))) Some("switch.exit"):
+    %38: Data(Str) = StringLiteral("end")() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 31, col: 9 } }] @ a148-switch-using-scope.ts:31:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%38) @ a148-switch-using-scope.ts:31:3
+    -> Return(None)
+  b2(%4: Data(Bool), %5: Data(Class(ClassId(0))), %6: Data(Bool), %7: Data(Class(ClassId(0)))) Some("switch.case.0"):
+    %16: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 17 } }] @ a148-switch-using-scope.ts:22:17
+    %17: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 30 } }] @ a148-switch-using-scope.ts:22:30
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Str)], return_type: None })(%16, %17) traps=[Trap { kind: Call, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 17 } }] @ a148-switch-using-scope.ts:22:17
+    %18: Data(Str) = StringLiteral("case0")() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 23, col: 13 } }] @ a148-switch-using-scope.ts:23:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%18) @ a148-switch-using-scope.ts:23:7
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: Bool, kind: Boolean(true) }), Value(ValueId(16)), Value(ValueId(6)), Value(ValueId(7))] })
+  b3(%8: Data(Bool), %9: Data(Class(ClassId(0))), %10: Data(Bool), %11: Data(Class(ClassId(0)))) Some("switch.case.1"):
+    %19: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 17 } }] @ a148-switch-using-scope.ts:25:17
+    %20: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 30 } }] @ a148-switch-using-scope.ts:25:30
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Str)], return_type: None })(%19, %20) traps=[Trap { kind: Call, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 17 } }] @ a148-switch-using-scope.ts:25:17
+    %21: Data(Str) = StringLiteral("case1")() traps=[Trap { kind: Allocation, pos: Pos { file: "a148-switch-using-scope.ts", line: 26, col: 13 } }] @ a148-switch-using-scope.ts:26:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%21) @ a148-switch-using-scope.ts:26:7
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(5), arguments: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [] } }
+  b4(%12: Data(Bool), %13: Data(Class(ClassId(0))), %14: Data(Bool), %15: Data(Class(ClassId(0)))) Some("switch.case.2"):
+    -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(11), arguments: [] }, else_target: BlockTarget { block: BlockId(12), arguments: [] } }
+  b5 Some("if.then"):
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%19) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 13 } }] @ a148-switch-using-scope.ts:25:13
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(8)), Value(ValueId(9)), Constant(Constant { ty: Bool, kind: Boolean(true) }), Value(ValueId(19))] })
+  b6 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(8)), Value(ValueId(9)), Constant(Constant { ty: Bool, kind: Boolean(true) }), Value(ValueId(19))] })
+  b7(%22: Data(Bool), %23: Data(Class(ClassId(0))), %24: Data(Bool), %25: Data(Class(ClassId(0)))) Some("if.join"):
+    -> ConditionalBranch { condition: Value(ValueId(22)), then_target: BlockTarget { block: BlockId(8), arguments: [] }, else_target: BlockTarget { block: BlockId(9), arguments: [] } }
+  b8 Some("if.then"):
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%23) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 13 } }] @ a148-switch-using-scope.ts:22:13
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(25))] })
+  b9 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(25))] })
+  b10(%26: Data(Bool), %27: Data(Class(ClassId(0))), %28: Data(Bool), %29: Data(Class(ClassId(0)))) Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(26)), Value(ValueId(27)), Value(ValueId(28)), Value(ValueId(29))] })
+  b11 Some("if.then"):
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%15) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a148-switch-using-scope.ts", line: 25, col: 13 } }] @ a148-switch-using-scope.ts:25:13
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(12)), Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+  b12 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(12)), Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+  b13(%30: Data(Bool), %31: Data(Class(ClassId(0))), %32: Data(Bool), %33: Data(Class(ClassId(0)))) Some("if.join"):
+    -> ConditionalBranch { condition: Value(ValueId(30)), then_target: BlockTarget { block: BlockId(14), arguments: [] }, else_target: BlockTarget { block: BlockId(15), arguments: [] } }
+  b14 Some("if.then"):
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%31) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a148-switch-using-scope.ts", line: 22, col: 13 } }] @ a148-switch-using-scope.ts:22:13
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(33))] })
+  b15 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(33))] })
+  b16(%34: Data(Bool), %35: Data(Class(ClassId(0))), %36: Data(Bool), %37: Data(Class(ClassId(0)))) Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(34)), Value(ValueId(35)), Value(ValueId(36)), Value(ValueId(37))] })
+===== a149-suspension-state =====
+module initializer=Some(FunctionId(73))
+class c0 "SubChainHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:41:15
+  field d0 "sType": Enum(EnumId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:42:3
+  field d1 "next": Nullable(Class(ClassId(0))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:43:3
+class c1 "SubChainExtA" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:47:15
+  field d2 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:48:3
+  field d3 "intensity": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:49:3
+  field d4 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:50:3
+class c2 "SubChainExtB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:54:15
+  field d5 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:55:3
+  field d6 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:56:3
+  field d7 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:57:3
+class c3 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:65:15
+  field d8 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:66:3
+  field d9 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:67:3
+  field d10 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:68:3
+class c4 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:72:15
+  field d11 "basis": FixedArray(F32, 16) defaulted=false absence=false foreign=None @ interop.generated.d.ts:73:3
+  field d12 "bone": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:74:3
+  field d13 "weight": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:75:3
+  field d14 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:76:3
+class c5 "SubSample" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:80:15
+  field d15 "a": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:81:3
+  field d16 "b": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:82:3
+  field d17 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:83:3
+  field d18 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:84:3
+class c6 "SubDevice" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:88:11
+class c7 "SubDrawList" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:110:15
+  field d19 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:111:3
+  field d20 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:112:3
+class c8 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:120:15
+  field d21 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:121:3
+  field d22 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
+class c9 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:129:15
+  field d23 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:130:3
+  field d24 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:131:3
+class c10 "SubVec3" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:135:15
+  field d25 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:136:3
+  field d26 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:137:3
+  field d27 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:138:3
+class c11 "SubVec4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:142:15
+  field d28 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:143:3
+  field d29 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:144:3
+  field d30 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:145:3
+  field d31 "w": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:146:3
+class c12 "SubRect" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:150:15
+  field d32 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:151:3
+  field d33 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:152:3
+  field d34 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:153:3
+  field d35 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:154:3
+class c13 "SubRange" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:158:15
+  field d36 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:159:3
+  field d37 "size": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:160:3
+class c14 "SubColor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:164:15
+  field d38 "r": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:165:3
+  field d39 "g": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:166:3
+  field d40 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:167:3
+  field d41 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:168:3
+class c15 "SubTimings" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:172:15
+  field d42 "cpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:173:3
+  field d43 "gpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:174:3
+  field d44 "frame": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:175:3
+class c16 "SubMixed" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:179:15
+  field d45 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:180:3
+  field d46 "id": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:181:3
+  field d47 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:182:3
+  field d48 "ratio": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:183:3
+class c17 "SubPadB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:187:15
+  field d49 "head": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:188:3
+  field d50 "mid": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:189:3
+  field d51 "tail": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:190:3
+class c18 "SubNarrowPacket" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15
+  field d52 "kind": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
+  field d53 "delta": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:196:3
+  field d54 "weight": F16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:197:3
+  field d55 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:198:3
+  field d56 "bias": I8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:199:3
+  field d57 "count": U16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:200:3
+  field d58 "scale": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:201:3
+class c19 "SubExtent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:205:15
+  field d59 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:206:3
+  field d60 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:207:3
+  field d61 "depth": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:208:3
+class c20 "SubImageInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:212:15
+  field d62 "extent": Class(ClassId(19)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:213:3
+  field d63 "mipLevels": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:214:3
+  field d64 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:215:3
+class c21 "SubBounds" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:219:15
+  field d65 "min": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:220:3
+  field d66 "max": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:221:3
+class c22 "SubViewport" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:225:15
+  field d67 "rect": Class(ClassId(12)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:226:3
+  field d68 "depth": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:227:3
+class c23 "SubNodeInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:231:15
+  field d69 "bounds": Class(ClassId(21)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:232:3
+  field d70 "id": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:233:3
+  field d71 "tint": Class(ClassId(14)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:234:3
+class c24 "SubChainExtC" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:238:15
+  field d72 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:239:3
+  field d73 "offset": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:240:3
+  field d74 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:241:3
+class c25 "SubChainExtD" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:245:15
+  field d75 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:246:3
+  field d76 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:247:3
+  field d77 "level": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:248:3
+  field d78 "active": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:249:3
+class c26 "SubEventHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:253:15
+  field d79 "kind": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:254:3
+  field d80 "next": Nullable(Class(ClassId(26))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:255:3
+class c27 "SubEventKey" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:259:15
+  field d81 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:260:3
+  field d82 "code": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:261:3
+  field d83 "pressed": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:262:3
+class c28 "SubEventMove" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:266:15
+  field d84 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:267:3
+  field d85 "dx": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:268:3
+  field d86 "dy": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:269:3
+class c29 "SubPassInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:273:15
+  field d87 "access": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:274:3
+  field d88 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:275:3
+  field d89 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:276:3
+class c30 "SubResourceDesc" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:280:15
+  field d90 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:281:3
+  field d91 "range": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:282:3
+  field d92 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:283:3
+class c31 "SubCommandBuffer" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:287:15
+  field d93 "queue": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:288:3
+  field d94 "commands": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:289:3
+class c32 "SubFuture" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:296:15
+  field d95 "id": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:297:3
+class c33 "SubStats" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:301:15
+  field d96 "submitted": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:302:3
+  field d97 "completed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:303:3
+  field d98 "pending": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:304:3
+class c34 "SubQueryStatus" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:311:15
+  field d99 "future": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:312:3
+  field d100 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:313:3
+class c35 "SubWaitEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:319:15
+  field d101 "future": Class(ClassId(32)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:320:3
+  field d102 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:321:3
+class c36 "SubBoundaryStringRecord" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:331:15
+  field d103 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:332:3
+  field d104 "handle": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:333:3
+  field d105 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:334:3
+  field d106 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:335:3
+  field d107 "generation": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:336:3
+class c37 "SGPUProbeExtent3D" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:349:15
+  field d108 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:350:3
+  field d109 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:351:3
+  field d110 "depthOrArrayLayers": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:352:3
+class c38 "SGPUProbeTextureDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:356:15
+  field d111 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:357:3
+  field d112 "extent": Class(ClassId(37)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:358:3
+  field d113 "viewFormats": Array(Enum(EnumId(1))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:359:3
+  field d114 "format": Enum(EnumId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:360:3
+  field d115 "mipLevelCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:361:3
+  field d116 "sampleCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:362:3
+  field d117 "dimension": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:363:3
+  field d118 "usage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:364:3
+class c39 "SubProbePipelineLayoutDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:371:15
+  field d119 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:372:3
+  field d120 "bindGroupLayouts": Array(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:373:3
+class c40 "SubProbeBindGroupEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:379:15
+  field d121 "binding": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:380:3
+  field d122 "buffer": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:381:3
+  field d123 "sampler": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:382:3
+  field d124 "textureView": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:383:3
+class c41 "SGPUProbeComputeState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:390:15
+  field d125 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:391:3
+  field d126 "workgroupX": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:392:3
+  field d127 "workgroupY": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:393:3
+  field d128 "constantSeed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:394:3
+class c42 "SGPUProbeComputePipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:398:15
+  field d129 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:399:3
+  field d130 "compute": Class(ClassId(41)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:400:3
+  field d131 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:401:3
+class c43 "SGPUProbeVertexAttribute" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:407:15
+  field d132 "shaderLocation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:408:3
+  field d133 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:409:3
+  field d134 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:410:3
+class c44 "SGPUProbeVertexBufferLayout" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:414:15
+  field d135 "arrayStride": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:415:3
+  field d136 "stepMode": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:416:3
+  field d137 "attributes": Array(Class(ClassId(43))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:417:3
+class c45 "SGPUProbeVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:421:15
+  field d138 "moduleId": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:422:3
+  field d139 "buffers": Array(Class(ClassId(44))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:423:3
+class c46 "SGPUProbeRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:427:15
+  field d140 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:428:3
+  field d141 "vertex": Class(ClassId(45)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:429:3
+  field d142 "primitive": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:430:3
+class c47 "SGPUProbeConstantEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:436:15
+  field d143 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:437:3
+  field d144 "value": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:438:3
+class c48 "SGPUProbeProgrammableStage" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:442:15
+  field d145 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:443:3
+  field d146 "stage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:444:3
+class c49 "SGPUProbeBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:450:15
+  field d147 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:451:3
+  field d148 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:452:3
+class c50 "SGPUProbeColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:456:15
+  field d149 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:457:3
+  field d150 "blend": Nullable(Class(ClassId(49))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:458:3
+  field d151 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:459:3
+class c51 "SGPUProbeFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:463:15
+  field d152 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:464:3
+  field d153 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:465:3
+  field d154 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:466:3
+class c52 "SGPUProbeFullRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:470:15
+  field d155 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:471:3
+  field d156 "fragment": Nullable(Class(ClassId(51))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:472:3
+class c53 "SGPUProbeHandleFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:478:15
+  field d157 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:479:3
+  field d158 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:480:3
+  field d159 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:481:3
+  field d160 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:482:3
+class c54 "SGPUProbeHandleRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:486:15
+  field d161 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:487:3
+  field d162 "fragment": Nullable(Class(ClassId(53))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:488:3
+class c55 "SGPUProbeNestedBlendComponent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:494:15
+  field d163 "operation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:495:3
+  field d164 "srcFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:496:3
+  field d165 "dstFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:497:3
+class c56 "SGPUProbeNestedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:501:15
+  field d166 "color": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:502:3
+  field d167 "alpha": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:503:3
+class c57 "SGPUProbeNestedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:507:15
+  field d168 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:508:3
+  field d169 "blend": Nullable(Class(ClassId(56))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:509:3
+  field d170 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:510:3
+class c58 "SGPUProbeNestedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:514:15
+  field d171 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:515:3
+  field d172 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:516:3
+  field d173 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:517:3
+  field d174 "targets": Array(Class(ClassId(57))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:518:3
+class c59 "SGPUProbeNestedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:522:15
+  field d175 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:523:3
+  field d176 "fragment": Nullable(Class(ClassId(58))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:524:3
+class c60 "SGPUProbeUnmarkedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:535:15
+  field d177 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:536:3
+  field d178 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:537:3
+class c61 "SGPUProbeUnmarkedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:541:15
+  field d179 "format": Enum(EnumId(2)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:542:3
+  field d180 "blend": Nullable(Class(ClassId(60))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:543:3
+  field d181 "writeMask": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:544:3
+class c62 "SGPUProbeUnmarkedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:548:15
+  field d182 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:549:3
+  field d183 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:550:3
+  field d184 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:551:3
+  field d185 "targets": Array(Class(ClassId(61))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:552:3
+class c63 "SGPUProbeUnmarkedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:556:15
+  field d186 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:557:3
+  field d187 "fragment": Nullable(Class(ClassId(62))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:558:3
+class c64 "SGPUProbeBreadthNestedState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:564:15
+  field d188 "first": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:565:3
+  field d189 "second": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:566:3
+class c65 "SGPUProbeBreadthDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:570:15
+  field d190 "limits": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:571:3
+  field d191 "biases": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:572:3
+class c66 "SGPUProbeBreadthFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:576:15
+  field d192 "stage": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:577:3
+  field d193 "constants": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:578:3
+class c67 "SGPUProbeBreadthPrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:582:15
+  field d194 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:583:3
+  field d195 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:584:3
+class c68 "SGPUProbeBreadthRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:588:15
+  field d196 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:589:3
+  field d197 "depthStencil": Nullable(Class(ClassId(65))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:590:3
+  field d198 "primitive": Class(ClassId(67)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:591:3
+  field d199 "fragment": Nullable(Class(ClassId(66))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:592:3
+class c69 "SGPUProbeWidePairEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:598:15
+  field d200 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:599:3
+  field d201 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:600:3
+class c70 "SGPUProbeWideVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:604:15
+  field d202 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:605:3
+  field d203 "buffers": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:606:3
+class c71 "SGPUProbeWidePrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:610:15
+  field d204 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:611:3
+  field d205 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:612:3
+class c72 "SGPUProbeWideMultisampleState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:616:15
+  field d206 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:617:3
+  field d207 "mask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:618:3
+  field d208 "alphaToCoverage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:619:3
+class c73 "SGPUProbeWidePayload" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:623:15
+  field d209 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:624:3
+  field d210 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:625:3
+class c74 "SGPUProbeWidePointerElement" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:629:15
+  field d211 "kind": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:630:3
+  field d212 "payload": Nullable(Class(ClassId(73))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:631:3
+class c75 "SGPUProbeWideDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:635:15
+  field d213 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:636:3
+  field d214 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:637:3
+class c76 "SGPUProbeWideFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:641:15
+  field d215 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:642:3
+  field d216 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:643:3
+  field d217 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:644:3
+  field d218 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:645:3
+class c77 "SGPUProbeWideRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:649:15
+  field d219 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:650:3
+  field d220 "layout": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:651:3
+  field d221 "vertex": Class(ClassId(70)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:652:3
+  field d222 "primitive": Class(ClassId(71)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:653:3
+  field d223 "depthStencil": Nullable(Class(ClassId(75))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:654:3
+  field d224 "multisample": Class(ClassId(72)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:655:3
+  field d225 "fragment": Nullable(Class(ClassId(76))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:656:3
+class c78 "SubByValueI32One" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:664:15
+  field d226 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:665:3
+class c79 "SubByValueI32Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:669:15
+  field d227 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:670:3
+  field d228 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:671:3
+class c80 "SubByValueI32Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:675:15
+  field d229 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:676:3
+  field d230 "b": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:677:3
+  field d231 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:678:3
+class c81 "SubByValueI16I16I32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:682:15
+  field d232 "a": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:683:3
+  field d233 "b": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:684:3
+  field d234 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:685:3
+class c82 "SubByValueU8Four" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:689:15
+  field d235 "a": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:690:3
+  field d236 "b": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:691:3
+  field d237 "c": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:692:3
+  field d238 "d": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:693:3
+class c83 "SubByValueI64Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:697:15
+  field d239 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:698:3
+  field d240 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:699:3
+class c84 "SubByValueF32Hfa2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:703:15
+  field d241 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:704:3
+  field d242 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:705:3
+class c85 "SubByValueF32Hfa4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:709:15
+  field d243 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:710:3
+  field d244 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:711:3
+  field d245 "c": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:712:3
+  field d246 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:713:3
+class c86 "SubByValueI32F32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:717:15
+  field d247 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:718:3
+  field d248 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:719:3
+class c87 "SubByValueI32I64" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:723:15
+  field d249 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:724:3
+  field d250 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:725:3
+class c88 "SubByValueI64Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:729:15
+  field d251 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:730:3
+  field d252 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:731:3
+  field d253 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:732:3
+class c89 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:748:11
+class c90 "SuspensionBox" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:45:7
+  field d254 "value": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:46:3
+  method m0 "constructor" -> f0
+  method m1 "add" -> f1
+class c91 "SuspensionPair" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:57:7
+  field d255 "left": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:58:3
+  field d256 "right": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:59:3
+  method m2 "constructor" -> f2
+class c92 "SuspensionCell" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:67:7
+  field d257 "value": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:68:3
+class c93 "MachineryValue" value=true descriptor=false boundary=false align=None @ a149-suspension-state.ts:72:7
+  field d258 "first": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:73:3
+  field d259 "second": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:74:3
+  method m3 "constructor" -> f3
+class c94 "OperandValue" value=true descriptor=false boundary=false align=None @ a149-suspension-state.ts:83:7
+  field d260 "a": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:84:3
+  field d261 "b": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:85:3
+  method m4 "constructor" -> f4
+class c95 "OperandHolder" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:93:7
+  field d262 "value": Class(ClassId(94)) defaulted=false absence=false foreign=None @ a149-suspension-state.ts:94:3
+  field d263 "fixed": FixedArray(I32, 2) defaulted=false absence=false foreign=None @ a149-suspension-state.ts:95:3
+  method m5 "constructor" -> f5
+class c96 "OperandPair" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:103:7
+  field d264 "value": Class(ClassId(94)) defaulted=false absence=false foreign=None @ a149-suspension-state.ts:104:3
+  field d265 "key": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:105:3
+  method m6 "constructor" -> f6
+class c97 "MachineryDescriptor" value=false descriptor=true boundary=false align=None @ a149-suspension-state.ts:130:7
+  field d266 "first": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:131:3
+  field d267 "second": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:132:3
+  field d268 "fallback": I32 defaulted=true absence=false foreign=None @ a149-suspension-state.ts:133:3
+class c98 "DeclaredBox" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:217:7
+  field d269 "value": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:218:3
+class c99 "AsyncMachine" value=false descriptor=false boundary=false align=None @ a149-suspension-state.ts:221:7
+  field d270 "base": I32 defaulted=false absence=false foreign=None @ a149-suspension-state.ts:222:3
+  method m7 "constructor" -> f7
+  method m8 "step" -> f8
+enum e0 "SubChainKind" [("SUB_CHAIN_KIND_BASE", 0), ("SUB_CHAIN_KIND_EXT_A", 1), ("SUB_CHAIN_KIND_EXT_B", 2)] @ interop.generated.d.ts:35:14
+enum e1 "SGPUProbeFormat" [("SGPU_PROBE_FORMAT_RGBA8", 11), ("SGPU_PROBE_FORMAT_BGRA8", 29), ("SGPU_PROBE_FORMAT_DEPTH24", 47)] @ interop.generated.d.ts:343:14
+enum e2 "SGPUProbeUnmarkedTextureFormat" [("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8", 101), ("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8", 202)] @ interop.generated.d.ts:530:14
+global g0 "leftCalls": I32 mutable=true @ a149-suspension-state.ts:6:5
+global g1 "rightCalls": I32 mutable=true @ a149-suspension-state.ts:7:5
+global g2 "operandIndirect": Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 }) mutable=false @ a149-suspension-state.ts:127:7
+foreign x0 "subChainPayloadValue" -> I32 include="interop.h" @ interop.generated.d.ts:61:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:61:39
+foreign x1 "subDeviceCreate" -> Class(ClassId(6)) include="interop.h" @ interop.generated.d.ts:92:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:92:34
+foreign x2 "subDeviceRetain" -> Void include="interop.h" @ interop.generated.d.ts:93:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:93:34
+foreign x3 "subDeviceRelease" -> Void include="interop.h" @ interop.generated.d.ts:94:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:94:35
+foreign x4 "subDeviceSubmit" -> Void include="interop.h" @ interop.generated.d.ts:95:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:95:34
+  param "commands": Array(U32) foreign=Some(Descriptor { aggregate: "SubBufferView", element: "uint32_t", element_const: true }) @ interop.generated.d.ts:95:53
+foreign x5 "subDeviceSetLogger" -> Void include="interop.h" @ interop.generated.d.ts:96:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:96:37
+  param "logger": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:96:56
+foreign x6 "subDeviceSetLabel" -> Void include="interop.h" @ interop.generated.d.ts:97:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:97:36
+  param "label": Str foreign=Some(StringView { aggregate: "SubStringView" }) @ interop.generated.d.ts:97:55
+foreign x7 "subDevicePoll" -> I32 include="interop.h" @ interop.generated.d.ts:98:18
+  param "attempt": I32 foreign=None @ interop.generated.d.ts:98:32
+foreign x8 "subSliceChecksumF32" -> I32 include="interop.h" @ interop.generated.d.ts:99:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:99:38
+foreign x9 "subSliceChecksumI32" -> I32 include="interop.h" @ interop.generated.d.ts:100:18
+  param "data": Array(I32) foreign=Some(Descriptor { aggregate: "SubSliceI32", element: "int32_t", element_const: true }) @ interop.generated.d.ts:100:38
+foreign x10 "subSliceChecksumF64" -> I32 include="interop.h" @ interop.generated.d.ts:101:18
+  param "data": Array(F64) foreign=Some(Descriptor { aggregate: "SubSliceF64", element: "double", element_const: true }) @ interop.generated.d.ts:101:38
+foreign x11 "subSliceChecksumI64" -> I32 include="interop.h" @ interop.generated.d.ts:102:18
+  param "data": Array(I64) foreign=Some(Descriptor { aggregate: "SubSliceI64", element: "int64_t", element_const: true }) @ interop.generated.d.ts:102:38
+foreign x12 "subSliceChecksumU8" -> I32 include="interop.h" @ interop.generated.d.ts:103:18
+  param "data": Array(U8) foreign=Some(Descriptor { aggregate: "SubSliceU8", element: "uint8_t", element_const: true }) @ interop.generated.d.ts:103:37
+foreign x13 "subSliceChecksumI8" -> I32 include="interop.h" @ interop.generated.d.ts:104:18
+  param "data": Array(I8) foreign=Some(Descriptor { aggregate: "SubSliceI8", element: "int8_t", element_const: true }) @ interop.generated.d.ts:104:37
+foreign x14 "subSliceChecksumU16" -> I32 include="interop.h" @ interop.generated.d.ts:105:18
+  param "data": Array(U16) foreign=Some(Descriptor { aggregate: "SubSliceU16", element: "uint16_t", element_const: true }) @ interop.generated.d.ts:105:38
+foreign x15 "subSliceChecksumI16" -> I32 include="interop.h" @ interop.generated.d.ts:106:18
+  param "data": Array(I16) foreign=Some(Descriptor { aggregate: "SubSliceI16", element: "int16_t", element_const: true }) @ interop.generated.d.ts:106:38
+foreign x16 "subSliceChecksumF16" -> I32 include="interop.h" @ interop.generated.d.ts:107:18
+  param "data": Array(F16) foreign=Some(Descriptor { aggregate: "SubSliceF16", element: "SubFloat16", element_const: true }) @ interop.generated.d.ts:107:38
+foreign x17 "subAccessMatches" -> I32 include="interop.h" @ interop.generated.d.ts:108:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:108:35
+  param "required": U64 foreign=None @ interop.generated.d.ts:108:52
+foreign x18 "subDrawListTotal" -> I32 include="interop.h" @ interop.generated.d.ts:116:18
+  param "list": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:116:35
+foreign x19 "subBulkConsume" -> I32 include="interop.h" @ interop.generated.d.ts:117:18
+  param "data": Nullable(Object) foreign=None @ interop.generated.d.ts:117:33
+  param "size": U64 foreign=None @ interop.generated.d.ts:117:54
+foreign x20 "subBulkConsumeF32" -> I32 include="interop.h" @ interop.generated.d.ts:118:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:118:36
+foreign x21 "subDeviceOnComplete" -> Void include="interop.h" @ interop.generated.d.ts:126:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:126:38
+  param "info": Class(ClassId(8)) foreign=None @ interop.generated.d.ts:126:57
+foreign x22 "subDevicePump" -> Void include="interop.h" @ interop.generated.d.ts:127:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:127:32
+foreign x23 "subCommandBufferTotal" -> I32 include="interop.h" @ interop.generated.d.ts:293:18
+  param "buf": Class(ClassId(31)) foreign=None @ interop.generated.d.ts:293:40
+foreign x24 "subStageMatches" -> I32 include="interop.h" @ interop.generated.d.ts:294:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:294:34
+  param "required": U64 foreign=None @ interop.generated.d.ts:294:55
+foreign x25 "subFutureMake" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:308:18
+  param "request": U32 foreign=None @ interop.generated.d.ts:308:32
+foreign x26 "subStatsMake" -> Class(ClassId(33)) include="interop.h" @ interop.generated.d.ts:309:18
+  param "base": U32 foreign=None @ interop.generated.d.ts:309:31
+foreign x27 "subDeviceQuery" -> Void include="interop.h" @ interop.generated.d.ts:317:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:317:33
+  param "request": U32 foreign=None @ interop.generated.d.ts:317:52
+  param "status": Nullable(Class(ClassId(34))) foreign=None @ interop.generated.d.ts:317:66
+foreign x28 "subDeviceKickAsync" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:325:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:325:37
+  param "request": U32 foreign=None @ interop.generated.d.ts:325:56
+  param "info": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:325:70
+foreign x29 "subDeviceWait" -> Void include="interop.h" @ interop.generated.d.ts:326:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:326:32
+  param "waits": Array(Class(ClassId(35))) foreign=Some(Descriptor { aggregate: "SubWaitList", element: "SubWaitEntry", element_const: false }) @ interop.generated.d.ts:326:51
+foreign x30 "subDeviceSumBytes" -> U32 include="interop.h" @ interop.generated.d.ts:327:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: true }) @ interop.generated.d.ts:327:36
+foreign x31 "subDeviceFillBytes" -> Void include="interop.h" @ interop.generated.d.ts:328:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: false }) @ interop.generated.d.ts:328:37
+foreign x32 "subDeviceFillShorts" -> Void include="interop.h" @ interop.generated.d.ts:329:18
+  param "data": Array(U16) foreign=Some(ScalarPair { element: "uint16_t", element_const: false }) @ interop.generated.d.ts:329:38
+foreign x33 "subBoundaryStringCheck" -> U64 include="interop.h" @ interop.generated.d.ts:340:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:340:41
+  param "selector": U32 foreign=None @ interop.generated.d.ts:340:81
+foreign x34 "subBoundaryStringFill" -> Void include="interop.h" @ interop.generated.d.ts:341:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:341:40
+  param "emptyLabel": Bool foreign=None @ interop.generated.d.ts:341:80
+foreign x35 "subProbeTextureDescriptorCheck" -> U64 include="interop.h" @ interop.generated.d.ts:368:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:368:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:368:96
+foreign x36 "subProbeTextureDescriptorFill" -> Void include="interop.h" @ interop.generated.d.ts:369:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:369:48
+foreign x37 "subProbePipelineLayoutCheck" -> U64 include="interop.h" @ interop.generated.d.ts:377:18
+  param "descriptor": Nullable(Class(ClassId(39))) foreign=None @ interop.generated.d.ts:377:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:377:99
+foreign x38 "subProbeBindGroupEntryCheck" -> U32 include="interop.h" @ interop.generated.d.ts:387:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:387:46
+foreign x39 "subProbeBindGroupEntryFill" -> Void include="interop.h" @ interop.generated.d.ts:388:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:388:45
+  param "selected": U32 foreign=None @ interop.generated.d.ts:388:83
+  param "handle": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:388:98
+foreign x40 "subProbeComputePipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:405:18
+  param "descriptor": Nullable(Class(ClassId(42))) foreign=None @ interop.generated.d.ts:405:47
+  param "selector": U32 foreign=None @ interop.generated.d.ts:405:102
+foreign x41 "subProbeRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:434:18
+  param "descriptor": Nullable(Class(ClassId(46))) foreign=None @ interop.generated.d.ts:434:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:434:100
+foreign x42 "subProbeProgrammableStageCheck" -> U64 include="interop.h" @ interop.generated.d.ts:448:18
+  param "stage": Nullable(Class(ClassId(48))) foreign=None @ interop.generated.d.ts:448:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:448:91
+foreign x43 "subProbeFullRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:476:18
+  param "descriptor": Nullable(Class(ClassId(52))) foreign=None @ interop.generated.d.ts:476:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:476:108
+foreign x44 "subProbeFullRenderPipelineWithHandleCheck" -> U64 include="interop.h" @ interop.generated.d.ts:492:18
+  param "descriptor": Nullable(Class(ClassId(54))) foreign=None @ interop.generated.d.ts:492:60
+  param "selector": U32 foreign=None @ interop.generated.d.ts:492:120
+foreign x45 "subProbeFullRenderPipelineWithNestedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:528:18
+  param "descriptor": Nullable(Class(ClassId(59))) foreign=None @ interop.generated.d.ts:528:65
+  param "selector": U32 foreign=None @ interop.generated.d.ts:528:125
+foreign x46 "subProbeFullRenderPipelineWithUnmarkedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:562:18
+  param "descriptor": Nullable(Class(ClassId(63))) foreign=None @ interop.generated.d.ts:562:67
+  param "selector": U32 foreign=None @ interop.generated.d.ts:562:129
+foreign x47 "subProbeBreadthRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:596:18
+  param "descriptor": Nullable(Class(ClassId(68))) foreign=None @ interop.generated.d.ts:596:53
+  param "selector": U32 foreign=None @ interop.generated.d.ts:596:114
+foreign x48 "subProbeWideRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:660:18
+  param "descriptor": Nullable(Class(ClassId(77))) foreign=None @ interop.generated.d.ts:660:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:660:108
+foreign x49 "subProbeQueueSubmitCheck" -> U64 include="interop.h" @ interop.generated.d.ts:661:18
+  param "queue": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:661:43
+  param "commands": Array(Class(ClassId(6))) foreign=Some(ScalarPair { element: "SubDevice", element_const: true }) @ interop.generated.d.ts:661:61
+  param "selector": U32 foreign=None @ interop.generated.d.ts:661:84
+foreign x50 "subProbeSetBindGroupCheck" -> U32 include="interop.h" @ interop.generated.d.ts:662:18
+  param "encoder": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:662:44
+  param "group": Nullable(Class(ClassId(6))) foreign=None @ interop.generated.d.ts:662:64
+foreign x51 "subByValueI32OneReport" -> Void include="interop.h" @ interop.generated.d.ts:736:18
+  param "report": Nullable(Class(ClassId(78))) foreign=None @ interop.generated.d.ts:736:41
+  param "value": Class(ClassId(78)) foreign=None @ interop.generated.d.ts:736:74
+foreign x52 "subByValueI32PairReport" -> Void include="interop.h" @ interop.generated.d.ts:737:18
+  param "report": Nullable(Class(ClassId(79))) foreign=None @ interop.generated.d.ts:737:42
+  param "value": Class(ClassId(79)) foreign=None @ interop.generated.d.ts:737:76
+foreign x53 "subByValueI32TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:738:18
+  param "report": Nullable(Class(ClassId(80))) foreign=None @ interop.generated.d.ts:738:44
+  param "value": Class(ClassId(80)) foreign=None @ interop.generated.d.ts:738:80
+foreign x54 "subByValueI16I16I32Report" -> Void include="interop.h" @ interop.generated.d.ts:739:18
+  param "report": Nullable(Class(ClassId(81))) foreign=None @ interop.generated.d.ts:739:44
+  param "value": Class(ClassId(81)) foreign=None @ interop.generated.d.ts:739:80
+foreign x55 "subByValueU8FourReport" -> Void include="interop.h" @ interop.generated.d.ts:740:18
+  param "report": Nullable(Class(ClassId(82))) foreign=None @ interop.generated.d.ts:740:41
+  param "value": Class(ClassId(82)) foreign=None @ interop.generated.d.ts:740:74
+foreign x56 "subByValueI64PairReport" -> Void include="interop.h" @ interop.generated.d.ts:741:18
+  param "report": Nullable(Class(ClassId(83))) foreign=None @ interop.generated.d.ts:741:42
+  param "value": Class(ClassId(83)) foreign=None @ interop.generated.d.ts:741:76
+foreign x57 "subByValueF32Hfa2Report" -> Void include="interop.h" @ interop.generated.d.ts:742:18
+  param "report": Nullable(Class(ClassId(84))) foreign=None @ interop.generated.d.ts:742:42
+  param "value": Class(ClassId(84)) foreign=None @ interop.generated.d.ts:742:76
+foreign x58 "subByValueF32Hfa4Report" -> Void include="interop.h" @ interop.generated.d.ts:743:18
+  param "report": Nullable(Class(ClassId(85))) foreign=None @ interop.generated.d.ts:743:42
+  param "value": Class(ClassId(85)) foreign=None @ interop.generated.d.ts:743:76
+foreign x59 "subByValueI32F32Report" -> Void include="interop.h" @ interop.generated.d.ts:744:18
+  param "report": Nullable(Class(ClassId(86))) foreign=None @ interop.generated.d.ts:744:41
+  param "value": Class(ClassId(86)) foreign=None @ interop.generated.d.ts:744:74
+foreign x60 "subByValueI32I64Report" -> Void include="interop.h" @ interop.generated.d.ts:745:18
+  param "report": Nullable(Class(ClassId(87))) foreign=None @ interop.generated.d.ts:745:41
+  param "value": Class(ClassId(87)) foreign=None @ interop.generated.d.ts:745:74
+foreign x61 "subByValueI64TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:746:18
+  param "report": Nullable(Class(ClassId(88))) foreign=None @ interop.generated.d.ts:746:44
+  param "value": Class(ClassId(88)) foreign=None @ interop.generated.d.ts:746:80
+foreign x62 "subHostOwnedStateBorrow" -> Class(ClassId(89)) include="interop.h" @ interop.generated.d.ts:752:18
+foreign x63 "subHostOwnedStateAdvance" -> I32 include="interop.h" @ interop.generated.d.ts:753:18
+  param "state": Class(ClassId(89)) foreign=None @ interop.generated.d.ts:753:43
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(90), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:48:3
+  param %0 "this": Data(Class(ClassId(90))) kind=Receiver storage=None @ a149-suspension-state.ts:48:3
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:48:15
+  value %0: Data(Class(ClassId(90))) name=Some("this")
+  value %1: Data(I32) name=Some("value")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(254)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 49, col: 5 } }] @ a149-suspension-state.ts:49:10
+    StoreAddress(%2, %1) @ a149-suspension-state.ts:49:10
+    -> Return(None)
+fn f1 "add" kind=Method { class: ClassId(90), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:52:3
+  param %0 "this": Data(Class(ClassId(90))) kind=Receiver storage=None @ a149-suspension-state.ts:52:3
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:52:7
+  value %0: Data(Class(ClassId(90))) name=Some("this")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = LoadField(Class(FieldId(254)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 53, col: 12 } }] @ a149-suspension-state.ts:53:17
+    %3: Data(I32) = Binary(Add)(%2, %1) @ a149-suspension-state.ts:53:12
+    -> Return(Some(Value(ValueId(3))))
+fn f2 "constructor" kind=Constructor { class: ClassId(91), method: MethodId(2) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:61:3
+  param %0 "this": Data(Class(ClassId(91))) kind=Receiver storage=None @ a149-suspension-state.ts:61:3
+  param %1 "left": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:61:15
+  param %2 "right": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:61:26
+  value %0: Data(Class(ClassId(91))) name=Some("this")
+  value %1: Data(I32) name=Some("left")
+  value %2: Data(I32) name=Some("right")
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(255)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 62, col: 5 } }] @ a149-suspension-state.ts:62:10
+    StoreAddress(%3, %1) @ a149-suspension-state.ts:62:10
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(256)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 63, col: 5 } }] @ a149-suspension-state.ts:63:10
+    StoreAddress(%4, %2) @ a149-suspension-state.ts:63:10
+    -> Return(None)
+fn f3 "constructor" kind=Constructor { class: ClassId(93), method: MethodId(3) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:76:3
+  param %0 "this": Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) kind=Receiver storage=None @ a149-suspension-state.ts:76:3
+  param %1 "first": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:76:15
+  param %2 "second": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:76:27
+  value %0: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=Some("this")
+  value %1: Data(I32) name=Some("first")
+  value %2: Data(I32) name=Some("second")
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(258)))(%0) @ a149-suspension-state.ts:77:10
+    StoreAddress(%3, %1) @ a149-suspension-state.ts:77:10
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(259)))(%0) @ a149-suspension-state.ts:78:10
+    StoreAddress(%4, %2) @ a149-suspension-state.ts:78:10
+    -> Return(None)
+fn f4 "constructor" kind=Constructor { class: ClassId(94), method: MethodId(4) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:87:3
+  param %0 "this": Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) kind=Receiver storage=None @ a149-suspension-state.ts:87:3
+  param %1 "a": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:87:15
+  param %2 "b": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:87:23
+  value %0: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=Some("this")
+  value %1: Data(I32) name=Some("a")
+  value %2: Data(I32) name=Some("b")
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(260)))(%0) @ a149-suspension-state.ts:88:10
+    StoreAddress(%3, %1) @ a149-suspension-state.ts:88:10
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(261)))(%0) @ a149-suspension-state.ts:89:10
+    StoreAddress(%4, %2) @ a149-suspension-state.ts:89:10
+    -> Return(None)
+fn f5 "constructor" kind=Constructor { class: ClassId(95), method: MethodId(5) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:97:3
+  param %0 "this": Data(Class(ClassId(95))) kind=Receiver storage=None @ a149-suspension-state.ts:97:3
+  param %1 "value": Data(Class(ClassId(94))) kind=Explicit storage=None @ a149-suspension-state.ts:97:15
+  value %0: Data(Class(ClassId(95))) name=Some("this")
+  value %1: Data(Class(ClassId(94))) name=Some("value")
+  value %2: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %3: Data(FixedArray(I32, 2)) name=None
+  value %4: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AddressOfField(Class(FieldId(262)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 98, col: 5 } }] @ a149-suspension-state.ts:98:10
+    StoreAddress(%2, %1) @ a149-suspension-state.ts:98:10
+    %3: Data(FixedArray(I32, 2)) = ArrayLiteral(Integer(1):I32, Integer(2):I32) @ a149-suspension-state.ts:99:18
+    %4: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfField(Class(FieldId(263)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 99, col: 5 } }] @ a149-suspension-state.ts:99:10
+    StoreAddress(%4, %3) @ a149-suspension-state.ts:99:10
+    -> Return(None)
+fn f6 "constructor" kind=Constructor { class: ClassId(96), method: MethodId(6) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:107:3
+  param %0 "this": Data(Class(ClassId(96))) kind=Receiver storage=None @ a149-suspension-state.ts:107:3
+  param %1 "value": Data(Class(ClassId(94))) kind=Explicit storage=None @ a149-suspension-state.ts:107:15
+  param %2 "key": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:107:36
+  value %0: Data(Class(ClassId(96))) name=Some("this")
+  value %1: Data(Class(ClassId(94))) name=Some("value")
+  value %2: Data(I32) name=Some("key")
+  value %3: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AddressOfField(Class(FieldId(264)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 108, col: 5 } }] @ a149-suspension-state.ts:108:10
+    StoreAddress(%3, %1) @ a149-suspension-state.ts:108:10
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(265)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 109, col: 5 } }] @ a149-suspension-state.ts:109:10
+    StoreAddress(%4, %2) @ a149-suspension-state.ts:109:10
+    -> Return(None)
+fn f7 "constructor" kind=Constructor { class: ClassId(99), method: MethodId(7) } exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:224:3
+  param %0 "this": Data(Class(ClassId(99))) kind=Receiver storage=None @ a149-suspension-state.ts:224:3
+  param %1 "base": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:224:15
+  value %0: Data(Class(ClassId(99))) name=Some("this")
+  value %1: Data(I32) name=Some("base")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(270)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 225, col: 5 } }] @ a149-suspension-state.ts:225:10
+    StoreAddress(%2, %1) @ a149-suspension-state.ts:225:10
+    -> Return(None)
+fn f8 "step" kind=Method { class: ClassId(99), method: MethodId(8) } exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:228:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 228, col: 9 } }]
+  param %0 "this": Data(Class(ClassId(99))) kind=Receiver storage=None @ a149-suspension-state.ts:228:9
+  param %1 "delta": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:228:14
+  value %0: Data(Class(ClassId(99))) name=Some("this")
+  value %1: Data(I32) name=Some("delta")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Class(ClassId(99))) name=Some("this")
+  value %5: Data(I32) name=Some("delta")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%4: Data(Class(ClassId(99))), %5: Data(I32)) Some("async.resume"):
+    %2: Data(I32) = LoadField(Class(FieldId(270)))(%4) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 230, col: 12 } }] @ a149-suspension-state.ts:230:17
+    %3: Data(I32) = Binary(Add)(%2, %5) @ a149-suspension-state.ts:230:12
+    -> Return(Some(Value(ValueId(3))))
+fn f9 "left" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:9:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 9, col: 16 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = LoadGlobal(GlobalId(0))() @ a149-suspension-state.ts:10:3
+    %1: Data(I32) = Binary(Add)(%0, Integer(1):I32) @ a149-suspension-state.ts:10:3
+    StoreGlobal(GlobalId(0))(%1) @ a149-suspension-state.ts:10:3
+    %2: Data(I32) = LoadGlobal(GlobalId(0))() @ a149-suspension-state.ts:11:28
+    %3: Data(Str) = Template([Text("await:left:call="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 11, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 11, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 11, col: 9 } }] @ a149-suspension-state.ts:11:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a149-suspension-state.ts:11:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %4: Data(I32) = LoadGlobal(GlobalId(0))() @ a149-suspension-state.ts:13:30
+    %5: Data(Str) = Template([Text("await:left:return="), Operand(0)])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 13, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 13, col: 9 } }] @ a149-suspension-state.ts:13:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a149-suspension-state.ts:13:3
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(11) })))
+fn f10 "right" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:17:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 17, col: 16 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = LoadGlobal(GlobalId(1))() @ a149-suspension-state.ts:18:3
+    %1: Data(I32) = Binary(Add)(%0, Integer(1):I32) @ a149-suspension-state.ts:18:3
+    StoreGlobal(GlobalId(1))(%1) @ a149-suspension-state.ts:18:3
+    %2: Data(I32) = LoadGlobal(GlobalId(1))() @ a149-suspension-state.ts:19:29
+    %3: Data(Str) = Template([Text("await:right:call="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 19, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 19, col: 9 } }] @ a149-suspension-state.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a149-suspension-state.ts:19:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %4: Data(I32) = LoadGlobal(GlobalId(1))() @ a149-suspension-state.ts:21:31
+    %5: Data(Str) = Template([Text("await:right:return="), Operand(0)])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 21, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 21, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 21, col: 9 } }] @ a149-suspension-state.ts:21:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a149-suspension-state.ts:21:3
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(22) })))
+fn f11 "doubled" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a149-suspension-state.ts:25:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 25, col: 11 } }]
+  param %0 "values": Data(Array(I32)) kind=Explicit storage=None @ a149-suspension-state.ts:25:19
+  value %0: Data(Array(I32)) name=Some("values")
+  value %1: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Array(I32)) name=None
+  value %4: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Array(I32)) name=None
+  value %8: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Array(I32)) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Array(I32)) name=None
+  value %18: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%0) @ a149-suspension-state.ts:26:3
+    %2: Data(I32) = IteratorBound(%1) @ a149-suspension-state.ts:26:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(2))] })
+  b1(%3: Data(Array(I32)), %4: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %5: Data(I32), %6: Data(I32)) Some("for-of.cond"):
+    %12: Data(Bool) = IteratorHasNext(%4, %5, %6) @ a149-suspension-state.ts:26:3
+    -> ConditionalBranch { condition: Value(ValueId(12)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(3))] } }
+  b2 Some("for-of.body"):
+    %13: Data(I32) = IteratorValue(%4, %5, %6) @ a149-suspension-state.ts:26:3
+    %14: Data(I32) = Binary(Mul)(%13, Integer(2):I32) @ a149-suspension-state.ts:27:11
+    -> Suspend { kind: Yield(Some(ValueId(14))), successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(3)), Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6))], invalidates: [], traps: [] }
+  b3(%7: Data(Array(I32)), %8: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %9: Data(I32), %10: Data(I32)) Some("for-of.step"):
+    %15: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%8, %9, %10) @ a149-suspension-state.ts:26:3
+    %16: Data(I32) = Binary(Add)(%9, Integer(1):I32) @ a149-suspension-state.ts:26:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(7)), Value(ValueId(15)), Value(ValueId(16)), Value(ValueId(10))] })
+  b4(%11: Data(Array(I32))) Some("for-of.exit"):
+    -> Return(None)
+  b5(%17: Data(Array(I32)), %18: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %19: Data(I32), %20: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(17)), Value(ValueId(18)), Value(ValueId(19)), Value(ValueId(20))] })
+fn f12 "odd" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a149-suspension-state.ts:31:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 31, col: 11 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:32:3
+    -> Suspend { kind: Yield(Some(ValueId(0))), successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    %1: Data(I32) = Copy(Integer(3):I32) @ a149-suspension-state.ts:33:3
+    -> Suspend { kind: Yield(Some(ValueId(1))), successor: BlockId(2), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b2 Some("yield.resume"):
+    -> Return(None)
+fn f13 "even" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a149-suspension-state.ts:36:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 36, col: 11 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:37:3
+    -> Suspend { kind: Yield(Some(ValueId(0))), successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    %1: Data(I32) = Copy(Integer(4):I32) @ a149-suspension-state.ts:38:3
+    -> Suspend { kind: Yield(Some(ValueId(1))), successor: BlockId(2), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b2 Some("yield.resume"):
+    -> Return(None)
+fn f14 "resume" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:41:10
+  param %0 "generator": Data(Generator(I32)) kind=Explicit storage=None @ a149-suspension-state.ts:41:17
+  value %0: Data(Generator(I32)) name=Some("generator")
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 42, col: 10 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a149-suspension-state.ts", line: 42, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 42, col: 10 } }] @ a149-suspension-state.ts:42:10
+    %2: Data(I32) = LoadField(IterValue)(%1) @ a149-suspension-state.ts:42:27
+    -> Return(Some(Value(ValueId(2))))
+fn f15 "operandSink" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:113:10
+  param %0 "value": Data(Class(ClassId(94))) kind=Explicit storage=None @ a149-suspension-state.ts:113:22
+  param %1 "key": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:113:43
+  value %0: Data(Class(ClassId(94))) name=Some("value")
+  value %1: Data(I32) name=Some("key")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = LoadField(Class(FieldId(260)))(%0) @ a149-suspension-state.ts:114:16
+    %3: Data(I32) = LoadField(Class(FieldId(261)))(%0) @ a149-suspension-state.ts:114:26
+    %4: Data(I32) = Binary(Add)(%2, %3) @ a149-suspension-state.ts:114:10
+    %5: Data(I32) = Binary(Add)(%4, %1) @ a149-suspension-state.ts:114:10
+    -> Return(Some(Value(ValueId(5))))
+fn f16 "operandFixedSink" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:117:10
+  param %0 "fixed": Data(FixedArray(I32, 2)) kind=Explicit storage=Some(LocalId(0)) @ a149-suspension-state.ts:117:27
+  param %1 "key": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:117:54
+  local l0 "fixed": Data(FixedArray(I32, 2)) mutable=true @ a149-suspension-state.ts:117:27
+  value %0: Data(FixedArray(I32, 2)) name=Some("fixed")
+  value %1: Data(I32) name=Some("key")
+  value %2: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  b0 Some("entry"):
+    StoreLocal(LocalId(0))(%0) @ a149-suspension-state.ts:117:27
+    %2: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a149-suspension-state.ts:118:10
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%2, Integer(0):I32) @ a149-suspension-state.ts:118:10
+    %4: Data(I32) = LoadAddress(%3) @ a149-suspension-state.ts:118:10
+    %5: Data(I32) = Binary(Mul)(%4, Integer(10):I32) @ a149-suspension-state.ts:118:10
+    %6: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a149-suspension-state.ts:118:26
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%6, Integer(1):I32) @ a149-suspension-state.ts:118:26
+    %8: Data(I32) = LoadAddress(%7) @ a149-suspension-state.ts:118:26
+    %9: Data(I32) = Binary(Add)(%5, %8) @ a149-suspension-state.ts:118:10
+    %10: Data(I32) = Binary(Add)(%9, %1) @ a149-suspension-state.ts:118:10
+    -> Return(Some(Value(ValueId(10))))
+fn f17 "operandBump" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:121:10
+  param %0 "holder": Data(Class(ClassId(95))) kind=Explicit storage=None @ a149-suspension-state.ts:121:22
+  value %0: Data(Class(ClassId(95))) name=Some("holder")
+  value %1: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %2: Data(Class(ClassId(94))) name=None
+  value %3: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %4: Data(FixedArray(I32, 2)) name=None
+  value %5: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:122:18
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%1, Integer(99):I32, Integer(99):I32) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 122, col: 18 } }] @ a149-suspension-state.ts:122:18
+    %2: Data(Class(ClassId(94))) = LoadAddress(%1) @ a149-suspension-state.ts:122:18
+    %3: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AddressOfField(Class(FieldId(262)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 122, col: 3 } }] @ a149-suspension-state.ts:122:10
+    StoreAddress(%3, %2) @ a149-suspension-state.ts:122:10
+    %4: Data(FixedArray(I32, 2)) = ArrayLiteral(Integer(7):I32, Integer(8):I32) @ a149-suspension-state.ts:123:18
+    %5: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfField(Class(FieldId(263)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 123, col: 3 } }] @ a149-suspension-state.ts:123:10
+    StoreAddress(%5, %4) @ a149-suspension-state.ts:123:10
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(1) })))
+fn f18 "makeBox" kind=Free exported=false generator=false async=false -> Class(ClassId(90)) entry=b0 @ a149-suspension-state.ts:136:10
+  value %0: Data(Str) name=None
+  value %1: Data(Class(ClassId(90))) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("method:receiver")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 137, col: 9 } }] @ a149-suspension-state.ts:137:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:137:3
+    %1: Data(Class(ClassId(90))) = AllocateClass(ClassId(90))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 138, col: 10 } }] @ a149-suspension-state.ts:138:10
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(90))), Data(I32)], return_type: None })(%1, Integer(8):I32) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 138, col: 10 } }] @ a149-suspension-state.ts:138:10
+    -> Return(Some(Value(ValueId(1))))
+fn f19 "makeArray" kind=Free exported=false generator=false async=false -> Array(I32) entry=b0 @ a149-suspension-state.ts:141:10
+  value %0: Data(Str) name=None
+  value %1: Data(Array(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("index:base")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 142, col: 9 } }] @ a149-suspension-state.ts:142:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:142:3
+    %1: Data(Array(I32)) = ArrayLiteral(Integer(10):I32, Integer(20):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 143, col: 10 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 143, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 143, col: 15 } }] @ a149-suspension-state.ts:143:10
+    -> Return(Some(Value(ValueId(1))))
+fn f20 "compositeA" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:146:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 146, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("composite:a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 147, col: 9 } }] @ a149-suspension-state.ts:147:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:147:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(4) })))
+fn f21 "compositeB" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:152:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 152, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("composite:b")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 153, col: 9 } }] @ a149-suspension-state.ts:153:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:153:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(7) })))
+fn f22 "assignedValue" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:158:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 158, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("assign:value")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 159, col: 9 } }] @ a149-suspension-state.ts:159:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:159:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(5) })))
+fn f23 "indexValue" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:164:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 164, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("index:key")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 165, col: 9 } }] @ a149-suspension-state.ts:165:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:165:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(1) })))
+fn f24 "compoundValue" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:170:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 170, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("compound:value")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 171, col: 9 } }] @ a149-suspension-state.ts:171:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:171:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(3) })))
+fn f25 "machineryValue" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:176:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 176, col: 16 } }]
+  param %0 "label": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:176:31
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:176:46
+  value %0: Data(Str) name=Some("label")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("machinery:"), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 177, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 177, col: 9 } }] @ a149-suspension-state.ts:177:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a149-suspension-state.ts:177:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%3: Data(I32)) Some("async.resume"):
+    -> Return(Some(Value(ValueId(3))))
+fn f26 "machineryText" kind=Free exported=false generator=false async=true -> Str entry=b0 @ a149-suspension-state.ts:182:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 182, col: 16 } }]
+  param %0 "label": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:182:30
+  param %1 "value": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:182:45
+  value %0: Data(Str) name=Some("label")
+  value %1: Data(Str) name=Some("value")
+  value %2: Data(Str) name=None
+  value %3: Data(Str) name=Some("value")
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("machinery:"), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 183, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 183, col: 9 } }] @ a149-suspension-state.ts:183:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a149-suspension-state.ts:183:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%3: Data(Str)) Some("async.resume"):
+    -> Return(Some(Value(ValueId(3))))
+fn f27 "machineryArray" kind=Free exported=false generator=false async=true -> Array(I32) entry=b0 @ a149-suspension-state.ts:188:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 188, col: 16 } }]
+  param %0 "label": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:188:31
+  value %0: Data(Str) name=Some("label")
+  value %1: Data(Str) name=None
+  value %2: Data(Array(I32)) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("machinery:"), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 189, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 189, col: 9 } }] @ a149-suspension-state.ts:189:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a149-suspension-state.ts:189:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %2: Data(Array(I32)) = ArrayLiteral(Integer(4):I32, Integer(5):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 191, col: 10 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 191, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 191, col: 14 } }] @ a149-suspension-state.ts:191:10
+    -> Return(Some(Value(ValueId(2))))
+fn f28 "machinerySide" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:194:10
+  param %0 "label": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:194:24
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:194:39
+  value %0: Data(Str) name=Some("label")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("machinery:"), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 195, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 195, col: 9 } }] @ a149-suspension-state.ts:195:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a149-suspension-state.ts:195:3
+    -> Return(Some(Value(ValueId(1))))
+fn f29 "machinerySideValue" kind=Free exported=false generator=false async=false -> Class(ClassId(93)) entry=b0 @ a149-suspension-state.ts:199:10
+  param %0 "label": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:199:29
+  value %0: Data(Str) name=Some("label")
+  value %1: Data(Str) name=None
+  value %2: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=None
+  value %3: Data(Class(ClassId(93))) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("machinery:"), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 200, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 200, col: 9 } }] @ a149-suspension-state.ts:200:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a149-suspension-state.ts:200:3
+    %2: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) = AllocateClass(ClassId(93))() @ a149-suspension-state.ts:201:10
+    Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Address(AddressType { pointee: Class(ClassId(93)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%2, Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 201, col: 10 } }] @ a149-suspension-state.ts:201:10
+    %3: Data(Class(ClassId(93))) = LoadAddress(%2) @ a149-suspension-state.ts:201:10
+    -> Return(Some(Value(ValueId(3))))
+fn f30 "machinerySideBytes" kind=Free exported=false generator=false async=false -> Array(U8) entry=b0 @ a149-suspension-state.ts:204:10
+  param %0 "label": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:204:29
+  param %1 "value": Data(Array(U8)) kind=Explicit storage=None @ a149-suspension-state.ts:204:44
+  value %0: Data(Str) name=Some("label")
+  value %1: Data(Array(U8)) name=Some("value")
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("machinery:"), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 205, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 205, col: 9 } }] @ a149-suspension-state.ts:205:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) invalidates=[ValueId(1)] @ a149-suspension-state.ts:205:3
+    -> Return(Some(Value(ValueId(1))))
+fn f31 "makeMachineryValue" kind=Free exported=false generator=false async=false -> Class(ClassId(93)) entry=b0 @ a149-suspension-state.ts:209:10
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:209:29
+  param %1 "second": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:209:41
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("second")
+  value %2: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=None
+  value %3: Data(Class(ClassId(93))) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) = AllocateClass(ClassId(93))() @ a149-suspension-state.ts:210:10
+    Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Address(AddressType { pointee: Class(ClassId(93)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%2, %0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 210, col: 10 } }] @ a149-suspension-state.ts:210:10
+    %3: Data(Class(ClassId(93))) = LoadAddress(%2) @ a149-suspension-state.ts:210:10
+    -> Return(Some(Value(ValueId(3))))
+fn f32 "makeMachineryFixed" kind=Free exported=false generator=false async=false -> FixedArray(I32, 2) entry=b0 @ a149-suspension-state.ts:213:10
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:213:29
+  param %1 "second": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:213:41
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("second")
+  value %2: Data(FixedArray(I32, 2)) name=None
+  b0 Some("entry"):
+    %2: Data(FixedArray(I32, 2)) = ArrayLiteral(%0, %1) @ a149-suspension-state.ts:214:10
+    -> Return(Some(Value(ValueId(2))))
+fn f33 "roundFiveValue" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:234:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 234, col: 16 } }]
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:234:31
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%1: Data(I32)) Some("async.resume"):
+    -> Return(Some(Value(ValueId(1))))
+fn f34 "roundFiveIncrement" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:239:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 239, col: 16 } }]
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:239:35
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%2: Data(I32)) Some("async.resume"):
+    %1: Data(I32) = Binary(Add)(%2, Integer(1):I32) @ a149-suspension-state.ts:241:10
+    -> Return(Some(Value(ValueId(1))))
+fn f35 "roundFiveNullable" kind=Free exported=false generator=false async=true -> Nullable(Class(ClassId(98))) entry=b0 @ a149-suspension-state.ts:244:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 244, col: 16 } }]
+  value %0: Data(Nullable(Class(ClassId(98)))) name=None
+  b0 Some("entry"):
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %0: Data(Nullable(Class(ClassId(98)))) = Coerce(Null:Null) @ a149-suspension-state.ts:246:3
+    -> Return(Some(Value(ValueId(0))))
+fn f36 "takeDeclared" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:249:10
+  param %0 "_box": Data(Nullable(Class(ClassId(98)))) kind=Explicit storage=None @ a149-suspension-state.ts:249:23
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:249:49
+  value %0: Data(Nullable(Class(ClassId(98)))) name=Some("_box")
+  value %1: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    -> Return(Some(Value(ValueId(1))))
+fn f37 "applyCaptured" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:253:10
+  param %0 "callback": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a149-suspension-state.ts:253:24
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:253:45
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("callback")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 254, col: 10 } }] @ a149-suspension-state.ts:254:10
+    %3: Data(I32) = Binary(Add)(%2, %1) @ a149-suspension-state.ts:254:10
+    -> Return(Some(Value(ValueId(3))))
+fn f38 "applyAfterSuspension" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a149-suspension-state.ts:257:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 257, col: 16 } }]
+  param %0 "callback": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a149-suspension-state.ts:258:3
+  param %1 "tag": Data(Str) kind=Explicit storage=None @ a149-suspension-state.ts:259:3
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("callback")
+  value %1: Data(Str) name=Some("tag")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Func(FuncType { params: [], ret: I32 })) name=Some("callback")
+  value %6: Data(Str) name=Some("tag")
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("rule1k:apply:before:"), Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 261, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 261, col: 9 } }] @ a149-suspension-state.ts:261:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a149-suspension-state.ts:261:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%5: Data(Func(FuncType { params: [], ret: I32 })), %6: Data(Str)) Some("async.resume"):
+    %3: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%5) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 263, col: 22 } }] @ a149-suspension-state.ts:263:22
+    %4: Data(Str) = Template([Text("rule1k:apply:after:"), Operand(0), Text("="), Operand(1)])(%6, %3) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 264, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 264, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 264, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 264, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 264, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 264, col: 9 } }] @ a149-suspension-state.ts:264:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a149-suspension-state.ts:264:3
+    -> Return(Some(Value(ValueId(3))))
+fn f39 "callCaptureAfterYield" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a149-suspension-state.ts:268:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 268, col: 11 } }]
+  param %0 "callback": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a149-suspension-state.ts:268:33
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("callback")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=Some("callback")
+  b0 Some("entry"):
+    %1: Data(I32) = Copy(Integer(0):I32) @ a149-suspension-state.ts:269:3
+    -> Suspend { kind: Yield(Some(ValueId(1))), successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%3: Data(Func(FuncType { params: [], ret: I32 }))) Some("yield.resume"):
+    %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%3) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 270, col: 9 } }] @ a149-suspension-state.ts:270:9
+    -> Suspend { kind: Yield(Some(ValueId(2))), successor: BlockId(2), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b2 Some("yield.resume"):
+    -> Return(None)
+fn f40 "unreachableAfterReturnCall" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a149-suspension-state.ts:273:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 273, col: 16 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Array(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("rule1l:return-call:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 274, col: 9 } }] @ a149-suspension-state.ts:274:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:274:3
+    %1: Data(Array(I32)) = ArrayLiteral(Integer(1):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 275, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 275, col: 26 } }] @ a149-suspension-state.ts:275:25
+    -> Return(None)
+fn f41 "unreachableSide" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:280:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:280:26
+  value %0: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    -> Return(Some(Value(ValueId(0))))
+fn f42 "unreachableAfterReturnTemplate" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a149-suspension-state.ts:284:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 284, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("rule1l:return-template:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 285, col: 9 } }] @ a149-suspension-state.ts:285:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:285:3
+    -> Return(None)
+fn f43 "unreachableAfterBreak" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a149-suspension-state.ts:290:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 290, col: 16 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("rule1l:break:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 291, col: 9 } }] @ a149-suspension-state.ts:291:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a149-suspension-state.ts:291:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b1 Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [] } }
+  b2 Some("while.body"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [] })
+  b3 Some("while.exit"):
+    %1: Data(Str) = StringLiteral("rule1l:break:end")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 299, col: 9 } }] @ a149-suspension-state.ts:299:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a149-suspension-state.ts:299:3
+    -> Return(None)
+fn f44 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a149-suspension-state.ts:302:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 302, col: 23 } }]
+  local l0 "intrinsicFixed": Data(FixedArray(I32, 3)) mutable=false @ a149-suspension-state.ts:396:9
+  local l1 "aggregateFixed": Data(FixedArray(I32, 2)) mutable=false @ a149-suspension-state.ts:502:9
+  local l2 "nullableFixed": Data(FixedArray(Nullable(Class(ClassId(98))), 2)) mutable=false @ a149-suspension-state.ts:572:9
+  local l3 "operandLiteral": Data(FixedArray(Class(ClassId(94)), 2)) mutable=false @ a149-suspension-state.ts:671:9
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Array(I32)) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(Class(ClassId(90))) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(Class(ClassId(91))) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(Array(I32)) name=None
+  value %23: Data(I32) name=None
+  value %24: Address(AddressType { pointee: I32, array_base: Some(ValueId(623)) }) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(Str) name=None
+  value %27: Data(Class(ClassId(92))) name=None
+  value %28: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %29: Data(I32) name=None
+  value %30: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(Str) name=None
+  value %33: Data(Array(I32)) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(Str) name=None
+  value %39: Data(Array(I32)) name=None
+  value %40: Address(AddressType { pointee: I32, array_base: Some(ValueId(39)) }) name=None
+  value %41: Data(I32) name=None
+  value %42: Data(I32) name=None
+  value %43: Data(I32) name=None
+  value %44: Address(AddressType { pointee: I32, array_base: Some(ValueId(626)) }) name=None
+  value %45: Data(Str) name=None
+  value %46: Data(Str) name=None
+  value %47: Data(Str) name=None
+  value %48: Data(Array(I32)) name=None
+  value %49: Data(Class(ClassId(92))) name=None
+  value %50: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %51: Data(I32) name=None
+  value %52: Data(I32) name=None
+  value %53: Data(I32) name=None
+  value %54: Data(Bool) name=None
+  value %55: Data(Str) name=None
+  value %56: Data(I32) name=None
+  value %57: Data(I32) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(I32) name=None
+  value %60: Data(Str) name=None
+  value %61: Data(I32) name=None
+  value %62: Data(I32) name=None
+  value %63: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %64: Data(Str) name=None
+  value %65: Data(Str) name=None
+  value %66: Data(I32) name=None
+  value %67: Data(Str) name=None
+  value %68: Data(Str) name=None
+  value %69: Data(I32) name=None
+  value %70: Data(I32) name=None
+  value %71: Data(Str) name=None
+  value %72: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %73: Data(I32) name=None
+  value %74: Data(I32) name=None
+  value %75: Data(I32) name=None
+  value %76: Data(I32) name=None
+  value %77: Data(I32) name=None
+  value %78: Data(I32) name=None
+  value %79: Data(Bool) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(Str) name=None
+  value %82: Data(I32) name=None
+  value %83: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %84: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %85: Data(I32) name=None
+  value %86: Data(Str) name=None
+  value %87: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %88: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %89: Data(I32) name=None
+  value %90: Data(Str) name=None
+  value %91: Data(I32) name=None
+  value %92: Data(Str) name=None
+  value %93: Data(Map(I32, Str)) name=None
+  value %94: Data(Str) name=None
+  value %95: Data(I32) name=None
+  value %96: Data(I32) name=None
+  value %97: Data(Str) name=None
+  value %98: Data(Map(I32, Str)) name=None
+  value %99: Data(Str) name=None
+  value %100: Data(Str) name=None
+  value %101: Data(Str) name=None
+  value %102: Data(Set(I32)) name=None
+  value %103: Data(Str) name=None
+  value %104: Data(I32) name=None
+  value %105: Data(I32) name=None
+  value %106: Data(Set(I32)) name=None
+  value %107: Data(Bool) name=None
+  value %108: Data(Str) name=None
+  value %109: Data(Set(I32)) name=None
+  value %110: Data(Set(I32)) name=None
+  value %111: Data(Str) name=None
+  value %112: Data(I32) name=None
+  value %113: Data(I32) name=None
+  value %114: Data(Bool) name=None
+  value %115: Data(Str) name=None
+  value %116: Data(Array(I32)) name=None
+  value %117: Data(Str) name=None
+  value %118: Data(I32) name=None
+  value %119: Data(I32) name=None
+  value %120: Data(I32) name=None
+  value %121: Data(Str) name=None
+  value %122: Data(Str) name=None
+  value %123: Data(Str) name=None
+  value %124: Data(I32) name=None
+  value %125: Data(I32) name=None
+  value %126: Data(Str) name=None
+  value %127: Data(Str) name=None
+  value %128: Data(Str) name=None
+  value %129: Data(I32) name=None
+  value %130: Data(I32) name=None
+  value %131: Data(F64) name=None
+  value %132: Data(Str) name=None
+  value %133: Data(I32) name=None
+  value %134: Data(I32) name=None
+  value %135: Data(F64) name=None
+  value %136: Data(F64) name=None
+  value %137: Data(Str) name=None
+  value %138: Data(Map(I32, Str)) name=None
+  value %139: Data(Str) name=None
+  value %140: Data(Map(I32, Str)) name=None
+  value %141: Data(Str) name=None
+  value %142: Data(I32) name=None
+  value %143: Data(I32) name=None
+  value %144: Data(Str) name=None
+  value %145: Data(Str) name=None
+  value %146: Data(Str) name=None
+  value %147: Data(Str) name=None
+  value %148: Data(Str) name=None
+  value %149: Data(Str) name=None
+  value %150: Data(I32) name=None
+  value %151: Data(I32) name=None
+  value %152: Data(Str) name=None
+  value %153: Data(I32) name=None
+  value %154: Data(I32) name=None
+  value %155: Data(FixedArray(I32, 3)) name=None
+  value %156: Address(AddressType { pointee: FixedArray(I32, 3), array_base: None }) name=None
+  value %157: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %158: Data(I32) name=None
+  value %159: Address(AddressType { pointee: FixedArray(I32, 3), array_base: None }) name=None
+  value %160: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %161: Data(I32) name=None
+  value %162: Address(AddressType { pointee: FixedArray(I32, 3), array_base: None }) name=None
+  value %163: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %164: Data(I32) name=None
+  value %165: Data(Str) name=None
+  value %166: Data(Str) name=None
+  value %167: Data(I32) name=None
+  value %168: Data(I32) name=None
+  value %169: Data(I32) name=None
+  value %170: Data(I32) name=None
+  value %171: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %172: Data(I32) name=None
+  value %173: Data(I32) name=None
+  value %174: Data(I32) name=None
+  value %175: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %176: Data(I32) name=None
+  value %177: Data(I32) name=None
+  value %178: Data(I32) name=None
+  value %179: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %180: Data(I32) name=None
+  value %181: Data(I32) name=None
+  value %182: Data(I32) name=None
+  value %183: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %184: Data(Str) name=None
+  value %185: Data(I32) name=None
+  value %186: Data(I32) name=None
+  value %187: Data(Bool) name=None
+  value %188: Data(I32) name=None
+  value %189: Data(I32) name=None
+  value %190: Data(I32) name=None
+  value %191: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %192: Data(Str) name=None
+  value %193: Data(I32) name=None
+  value %194: Data(I32) name=None
+  value %195: Data(Bool) name=None
+  value %196: Data(Str) name=None
+  value %197: Data(Str) name=None
+  value %198: Data(Str) name=None
+  value %199: Data(Array(I32)) name=None
+  value %200: Data(Str) name=None
+  value %201: Data(I32) name=None
+  value %202: Data(I32) name=None
+  value %203: Data(Array(I32)) name=None
+  value %204: Data(Str) name=None
+  value %205: Data(Str) name=None
+  value %206: Data(Str) name=None
+  value %207: Data(Str) name=None
+  value %208: Data(I32) name=None
+  value %209: Data(I32) name=None
+  value %210: Data(Array(I32)) name=None
+  value %211: Data(Str) name=None
+  value %212: Data(Str) name=None
+  value %213: Data(Str) name=None
+  value %214: Data(Str) name=None
+  value %215: Data(Array(I32)) name=None
+  value %216: Data(Array(I32)) name=None
+  value %217: Data(Str) name=None
+  value %218: Data(Str) name=None
+  value %219: Data(Str) name=None
+  value %220: Data(Str) name=None
+  value %221: Data(Array(I32)) name=None
+  value %222: Data(Array(I32)) name=None
+  value %223: Data(Str) name=None
+  value %224: Data(Str) name=None
+  value %225: Data(Str) name=None
+  value %226: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=None
+  value %227: Data(Str) name=None
+  value %228: Data(I32) name=None
+  value %229: Data(I32) name=None
+  value %230: Data(Class(ClassId(93))) name=None
+  value %231: Data(Array(U8)) name=None
+  value %232: Data(I32) name=None
+  value %233: Data(Str) name=None
+  value %234: Data(Array(U8)) name=None
+  value %235: Data(Str) name=None
+  value %236: Data(Class(ClassId(93))) name=None
+  value %237: Data(Str) name=None
+  value %238: Data(I32) name=None
+  value %239: Data(I32) name=None
+  value %240: Data(U32) name=None
+  value %241: Data(Class(ClassId(93))) name=None
+  value %242: Data(I32) name=None
+  value %243: Data(I32) name=None
+  value %244: Data(Str) name=None
+  value %245: Data(Str) name=None
+  value %246: Data(Array(U8)) name=None
+  value %247: Data(Str) name=None
+  value %248: Data(I32) name=None
+  value %249: Data(I32) name=None
+  value %250: Data(U32) name=None
+  value %251: Data(Class(ClassId(93))) name=None
+  value %252: Data(I32) name=None
+  value %253: Data(I32) name=None
+  value %254: Data(Str) name=None
+  value %255: Data(Nullable(Class(ClassId(0)))) name=None
+  value %256: Data(Class(ClassId(6))) name=None
+  value %257: Data(Nullable(Class(ClassId(0)))) name=None
+  value %258: Data(Class(ClassId(6))) name=None
+  value %259: Data(Nullable(Class(ClassId(0)))) name=None
+  value %260: Data(Class(ClassId(6))) name=None
+  value %261: Data(Array(Class(ClassId(6)))) name=None
+  value %262: Data(Str) name=None
+  value %263: Data(I32) name=None
+  value %264: Data(I32) name=None
+  value %265: Data(U32) name=None
+  value %266: Data(U64) name=None
+  value %267: Data(Str) name=None
+  value %268: Data(Class(ClassId(97))) name=None
+  value %269: Data(Str) name=None
+  value %270: Data(I32) name=None
+  value %271: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %272: Data(Str) name=None
+  value %273: Data(I32) name=None
+  value %274: Data(I32) name=None
+  value %275: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %276: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %277: Data(I32) name=None
+  value %278: Data(I32) name=None
+  value %279: Data(I32) name=None
+  value %280: Data(Str) name=None
+  value %281: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=None
+  value %282: Data(Str) name=None
+  value %283: Data(I32) name=None
+  value %284: Data(I32) name=None
+  value %285: Data(Class(ClassId(93))) name=None
+  value %286: Data(I32) name=None
+  value %287: Data(I32) name=None
+  value %288: Data(Str) name=None
+  value %289: Data(Str) name=None
+  value %290: Data(I32) name=None
+  value %291: Data(I32) name=None
+  value %292: Data(Class(ClassId(93))) name=None
+  value %293: Data(I32) name=None
+  value %294: Data(I32) name=None
+  value %295: Data(Str) name=None
+  value %296: Data(Str) name=None
+  value %297: Data(I32) name=None
+  value %298: Data(I32) name=None
+  value %299: Data(FixedArray(I32, 2)) name=None
+  value %300: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %301: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %302: Data(I32) name=None
+  value %303: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %304: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %305: Data(I32) name=None
+  value %306: Data(Str) name=None
+  value %307: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %308: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %309: Data(I32) name=None
+  value %310: Data(I32) name=None
+  value %311: Data(I32) name=None
+  value %312: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %313: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %314: Data(I32) name=None
+  value %315: Data(Str) name=None
+  value %316: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %317: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %318: Data(I32) name=None
+  value %319: Data(Str) name=None
+  value %320: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %321: Data(I32) name=None
+  value %322: Data(I32) name=None
+  value %323: Data(I32) name=None
+  value %324: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %325: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %326: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %327: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %328: Data(I32) name=None
+  value %329: Data(I32) name=None
+  value %330: Data(I32) name=None
+  value %331: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %332: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %333: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %334: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %335: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %336: Data(I32) name=None
+  value %337: Data(Str) name=None
+  value %338: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %339: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %340: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %341: Data(I32) name=None
+  value %342: Data(I32) name=None
+  value %343: Data(Str) name=None
+  value %344: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %345: Data(I32) name=None
+  value %346: Data(Str) name=None
+  value %347: Data(I32) name=None
+  value %348: Data(I32) name=None
+  value %349: Data(I32) name=None
+  value %350: Data(Str) name=None
+  value %351: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %352: Data(I32) name=None
+  value %353: Data(Str) name=None
+  value %354: Data(I32) name=None
+  value %355: Data(I32) name=None
+  value %356: Data(I32) name=None
+  value %357: Data(Str) name=None
+  value %358: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %359: Data(I32) name=None
+  value %360: Data(I32) name=None
+  value %361: Data(I32) name=None
+  value %362: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %363: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %364: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %365: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %366: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %367: Data(I32) name=None
+  value %368: Data(I32) name=None
+  value %369: Data(I32) name=None
+  value %370: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %371: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %372: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %373: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %374: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %375: Data(I32) name=None
+  value %376: Data(I32) name=None
+  value %377: Data(I32) name=None
+  value %378: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %379: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %380: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %381: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %382: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %383: Data(I32) name=None
+  value %384: Data(I32) name=None
+  value %385: Data(Bool) name=None
+  value %386: Data(I32) name=None
+  value %387: Data(Str) name=None
+  value %388: Data(Str) name=None
+  value %389: Data(Nullable(Class(ClassId(98)))) name=None
+  value %390: Data(I32) name=None
+  value %391: Data(I32) name=None
+  value %392: Data(I32) name=None
+  value %393: Data(Str) name=None
+  value %394: Data(Nullable(Class(ClassId(98)))) name=None
+  value %395: Data(Nullable(Class(ClassId(98)))) name=None
+  value %396: Data(FixedArray(Nullable(Class(ClassId(98))), 2)) name=None
+  value %397: Address(AddressType { pointee: FixedArray(Nullable(Class(ClassId(98))), 2), array_base: None }) name=None
+  value %398: Address(AddressType { pointee: Nullable(Class(ClassId(98))), array_base: None }) name=None
+  value %399: Data(Nullable(Class(ClassId(98)))) name=None
+  value %400: Data(Bool) name=None
+  value %401: Address(AddressType { pointee: FixedArray(Nullable(Class(ClassId(98))), 2), array_base: None }) name=None
+  value %402: Address(AddressType { pointee: Nullable(Class(ClassId(98))), array_base: None }) name=None
+  value %403: Data(Nullable(Class(ClassId(98)))) name=None
+  value %404: Data(Bool) name=None
+  value %405: Data(Str) name=None
+  value %406: Data(Class(ClassId(99))) name=None
+  value %407: Data(I32) name=None
+  value %408: Data(I32) name=None
+  value %409: Data(I32) name=None
+  value %410: Data(Str) name=None
+  value %411: Data(I32) name=None
+  value %412: Data(I32) name=None
+  value %413: Data(I32) name=None
+  value %414: Data(Str) name=None
+  value %415: Data(Str) name=None
+  value %416: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %417: Data(Func(FuncType { params: [], ret: Str })) name=None
+  value %418: Data(I32) name=None
+  value %419: Data(Str) name=None
+  value %420: Data(Str) name=None
+  value %421: Data(I32) name=None
+  value %422: Data(Str) name=None
+  value %423: Data(Str) name=None
+  value %424: Data(Array(I32)) name=None
+  value %425: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %426: Data(I32) name=None
+  value %427: Data(I32) name=None
+  value %428: Data(I32) name=None
+  value %429: Data(I32) name=None
+  value %430: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %431: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %432: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %433: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %434: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %435: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %436: Data(I32) name=None
+  value %437: Data(I32) name=None
+  value %438: Data(I32) name=None
+  value %439: Data(I32) name=None
+  value %440: Data(I32) name=None
+  value %441: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %442: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %443: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %444: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %445: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %446: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %447: Data(I32) name=None
+  value %448: Data(I32) name=None
+  value %449: Data(I32) name=None
+  value %450: Data(I32) name=None
+  value %451: Data(I32) name=None
+  value %452: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %453: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %454: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %455: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %456: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %457: Data(Bool) name=None
+  value %458: Data(I32) name=None
+  value %459: Data(Str) name=None
+  value %460: Data(Str) name=None
+  value %461: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %462: Data(I32) name=None
+  value %463: Data(Array(I32)) name=None
+  value %464: Data(Generator(I32)) name=None
+  value %465: Data(I32) name=None
+  value %466: Data(I32) name=None
+  value %467: Data(I32) name=None
+  value %468: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %469: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %470: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %471: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %472: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %473: Data(I32) name=None
+  value %474: Data(I32) name=None
+  value %475: Data(I32) name=None
+  value %476: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %477: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %478: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %479: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %480: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %481: Data(IterResult(I32)) name=None
+  value %482: Data(Bool) name=None
+  value %483: Data(I32) name=None
+  value %484: Data(I32) name=None
+  value %485: Data(I32) name=None
+  value %486: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %487: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %488: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %489: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %490: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %491: Data(I32) name=None
+  value %492: Data(Str) name=None
+  value %493: Data(Generator(I32)) name=None
+  value %494: Data(Generator(I32)) name=None
+  value %495: Data(IterResult(I32)) name=None
+  value %496: Data(I32) name=None
+  value %497: Data(IterResult(I32)) name=None
+  value %498: Data(I32) name=None
+  value %499: Data(Str) name=None
+  value %500: Data(I32) name=None
+  value %501: Data(I32) name=None
+  value %502: Data(Str) name=None
+  value %503: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %504: Data(I32) name=None
+  value %505: Data(Str) name=None
+  value %506: Data(Str) name=None
+  value %507: Data(I32) name=None
+  value %508: Data(Str) name=None
+  value %509: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %510: Data(Str) name=None
+  value %511: Data(I32) name=None
+  value %512: Data(Str) name=None
+  value %513: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %514: Data(Generator(I32)) name=None
+  value %515: Data(IterResult(I32)) name=None
+  value %516: Data(I32) name=None
+  value %517: Data(Str) name=None
+  value %518: Data(IterResult(I32)) name=None
+  value %519: Data(I32) name=None
+  value %520: Data(Str) name=None
+  value %521: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %522: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %523: Data(I32) name=None
+  value %524: Data(Str) name=None
+  value %525: Data(I32) name=None
+  value %526: Data(Str) name=None
+  value %527: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %528: Data(I32) name=None
+  value %529: Data(I32) name=None
+  value %530: Data(I32) name=None
+  value %531: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %532: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %533: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %534: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %535: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %536: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %537: Data(I32) name=None
+  value %538: Data(I32) name=None
+  value %539: Data(I32) name=None
+  value %540: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %541: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %542: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %543: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %544: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %545: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %546: Data(I32) name=None
+  value %547: Data(I32) name=None
+  value %548: Data(I32) name=None
+  value %549: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %550: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %551: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %552: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %553: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %554: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %555: Data(I32) name=None
+  value %556: Data(Str) name=None
+  value %557: Data(I32) name=None
+  value %558: Data(Str) name=None
+  value %559: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %560: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %561: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %562: Data(I32) name=None
+  value %563: Data(Str) name=None
+  value %564: Data(I32) name=None
+  value %565: Data(Str) name=None
+  value %566: Data(Class(ClassId(95))) name=None
+  value %567: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %568: Data(Class(ClassId(94))) name=None
+  value %569: Data(Class(ClassId(94))) name=None
+  value %570: Data(I32) name=None
+  value %571: Data(I32) name=None
+  value %572: Data(Str) name=None
+  value %573: Data(Class(ClassId(95))) name=None
+  value %574: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %575: Data(Class(ClassId(94))) name=None
+  value %576: Data(FixedArray(I32, 2)) name=None
+  value %577: Data(I32) name=None
+  value %578: Data(I32) name=None
+  value %579: Data(Str) name=None
+  value %580: Data(Class(ClassId(95))) name=None
+  value %581: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %582: Data(Class(ClassId(94))) name=None
+  value %583: Data(Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 })) name=None
+  value %584: Data(Class(ClassId(94))) name=None
+  value %585: Data(I32) name=None
+  value %586: Data(I32) name=None
+  value %587: Data(Str) name=None
+  value %588: Data(Class(ClassId(95))) name=None
+  value %589: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %590: Data(Class(ClassId(94))) name=None
+  value %591: Data(Class(ClassId(96))) name=None
+  value %592: Data(Class(ClassId(94))) name=None
+  value %593: Data(I32) name=None
+  value %594: Data(Class(ClassId(94))) name=None
+  value %595: Data(I32) name=None
+  value %596: Data(Class(ClassId(94))) name=None
+  value %597: Data(I32) name=None
+  value %598: Data(I32) name=None
+  value %599: Data(Str) name=None
+  value %600: Data(Class(ClassId(95))) name=None
+  value %601: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %602: Data(Class(ClassId(94))) name=None
+  value %603: Data(Class(ClassId(94))) name=None
+  value %604: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %605: Data(I32) name=None
+  value %606: Data(Class(ClassId(94))) name=None
+  value %607: Data(FixedArray(Class(ClassId(94)), 2)) name=None
+  value %608: Address(AddressType { pointee: FixedArray(Class(ClassId(94)), 2), array_base: None }) name=None
+  value %609: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %610: Data(Class(ClassId(94))) name=None
+  value %611: Data(I32) name=None
+  value %612: Address(AddressType { pointee: FixedArray(Class(ClassId(94)), 2), array_base: None }) name=None
+  value %613: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) name=None
+  value %614: Data(Class(ClassId(94))) name=None
+  value %615: Data(I32) name=None
+  value %616: Data(Str) name=None
+  value %617: Data(I32) name=None
+  value %618: Data(I32) name=None
+  value %619: Data(Class(ClassId(90))) name=None
+  value %620: Data(Class(ClassId(91))) name=None
+  value %621: Data(Class(ClassId(91))) name=None
+  value %622: Data(I32) name=None
+  value %623: Data(Array(I32)) name=None
+  value %624: Data(Class(ClassId(92))) name=None
+  value %625: Data(Array(I32)) name=None
+  value %626: Data(Array(I32)) name=None
+  value %627: Data(I32) name=None
+  value %628: Data(Array(I32)) name=None
+  value %629: Data(Class(ClassId(92))) name=None
+  value %630: Data(I32) name=None
+  value %631: Data(Array(I32)) name=None
+  value %632: Data(Class(ClassId(92))) name=None
+  value %633: Data(I32) name=None
+  value %634: Data(I32) name=None
+  value %635: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %636: Data(I32) name=None
+  value %637: Data(I32) name=None
+  value %638: Data(I32) name=None
+  value %639: Data(I32) name=None
+  value %640: Data(I32) name=None
+  value %641: Data(I32) name=None
+  value %642: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %643: Data(I32) name=None
+  value %644: Data(I32) name=None
+  value %645: Data(I32) name=None
+  value %646: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %647: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %648: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %649: Data(I32) name=None
+  value %650: Data(I32) name=None
+  value %651: Data(I32) name=None
+  value %652: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %653: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %654: Data(I32) name=None
+  value %655: Data(I32) name=None
+  value %656: Data(I32) name=None
+  value %657: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %658: Data(Map(I32, Str)) name=None
+  value %659: Data(I32) name=None
+  value %660: Data(I32) name=None
+  value %661: Data(I32) name=None
+  value %662: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %663: Data(Set(I32)) name=None
+  value %664: Data(I32) name=None
+  value %665: Data(I32) name=None
+  value %666: Data(I32) name=None
+  value %667: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %668: Data(Set(I32)) name=None
+  value %669: Data(I32) name=None
+  value %670: Data(I32) name=None
+  value %671: Data(I32) name=None
+  value %672: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %673: Data(Array(I32)) name=None
+  value %674: Data(I32) name=None
+  value %675: Data(I32) name=None
+  value %676: Data(I32) name=None
+  value %677: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %678: Data(Str) name=None
+  value %679: Data(I32) name=None
+  value %680: Data(I32) name=None
+  value %681: Data(I32) name=None
+  value %682: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %683: Data(I32) name=None
+  value %684: Data(I32) name=None
+  value %685: Data(I32) name=None
+  value %686: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %687: Data(F64) name=None
+  value %688: Data(I32) name=None
+  value %689: Data(I32) name=None
+  value %690: Data(I32) name=None
+  value %691: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %692: Data(Map(I32, Str)) name=None
+  value %693: Data(I32) name=None
+  value %694: Data(I32) name=None
+  value %695: Data(I32) name=None
+  value %696: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %697: Data(Map(I32, Str)) name=None
+  value %698: Data(I32) name=None
+  value %699: Data(I32) name=None
+  value %700: Data(I32) name=None
+  value %701: Data(I32) name=None
+  value %702: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %703: Data(I32) name=None
+  value %704: Data(I32) name=None
+  value %705: Data(I32) name=None
+  value %706: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %707: Data(I32) name=None
+  value %708: Data(I32) name=None
+  value %709: Data(I32) name=None
+  value %710: Data(I32) name=None
+  value %711: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %712: Data(I32) name=None
+  value %713: Data(I32) name=None
+  value %714: Data(I32) name=None
+  value %715: Data(I32) name=None
+  value %716: Data(I32) name=None
+  value %717: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %718: Data(I32) name=None
+  value %719: Data(I32) name=None
+  value %720: Data(I32) name=None
+  value %721: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %722: Data(Array(I32)) name=None
+  value %723: Data(I32) name=None
+  value %724: Data(I32) name=None
+  value %725: Data(I32) name=None
+  value %726: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %727: Data(Array(I32)) name=None
+  value %728: Data(I32) name=None
+  value %729: Data(I32) name=None
+  value %730: Data(I32) name=None
+  value %731: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %732: Data(Array(I32)) name=None
+  value %733: Data(I32) name=None
+  value %734: Data(I32) name=None
+  value %735: Data(I32) name=None
+  value %736: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %737: Data(Array(I32)) name=None
+  value %738: Data(I32) name=None
+  value %739: Data(I32) name=None
+  value %740: Data(I32) name=None
+  value %741: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %742: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=None
+  value %743: Data(I32) name=None
+  value %744: Data(I32) name=None
+  value %745: Data(I32) name=None
+  value %746: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %747: Data(Array(U8)) name=None
+  value %748: Data(Class(ClassId(93))) name=None
+  value %749: Data(I32) name=None
+  value %750: Data(I32) name=None
+  value %751: Data(I32) name=None
+  value %752: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %753: Data(Array(U8)) name=None
+  value %754: Data(I32) name=None
+  value %755: Data(I32) name=None
+  value %756: Data(I32) name=None
+  value %757: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %758: Data(Class(ClassId(6))) name=None
+  value %759: Data(Class(ClassId(6))) name=None
+  value %760: Data(Class(ClassId(6))) name=None
+  value %761: Data(Array(Class(ClassId(6)))) name=None
+  value %762: Data(I32) name=None
+  value %763: Data(I32) name=None
+  value %764: Data(I32) name=None
+  value %765: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %766: Data(Class(ClassId(97))) name=None
+  value %767: Data(I32) name=None
+  value %768: Data(I32) name=None
+  value %769: Data(I32) name=None
+  value %770: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %771: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) name=None
+  value %772: Data(I32) name=None
+  value %773: Data(I32) name=None
+  value %774: Data(I32) name=None
+  value %775: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %776: Data(I32) name=None
+  value %777: Data(I32) name=None
+  value %778: Data(I32) name=None
+  value %779: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %780: Data(I32) name=None
+  value %781: Data(I32) name=None
+  value %782: Data(I32) name=None
+  value %783: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %784: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %785: Data(I32) name=None
+  value %786: Data(I32) name=None
+  value %787: Data(I32) name=None
+  value %788: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %789: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %790: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %791: Data(I32) name=None
+  value %792: Data(I32) name=None
+  value %793: Data(I32) name=None
+  value %794: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %795: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %796: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %797: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %798: Data(I32) name=None
+  value %799: Data(I32) name=None
+  value %800: Data(I32) name=None
+  value %801: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %802: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %803: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %804: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %805: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %806: Data(I32) name=None
+  value %807: Data(I32) name=None
+  value %808: Data(I32) name=None
+  value %809: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %810: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %811: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %812: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %813: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %814: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %815: Data(I32) name=None
+  value %816: Data(I32) name=None
+  value %817: Data(I32) name=None
+  value %818: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %819: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %820: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %821: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %822: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %823: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %824: Data(I32) name=None
+  value %825: Data(I32) name=None
+  value %826: Data(I32) name=None
+  value %827: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %828: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %829: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %830: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %831: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %832: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %833: Data(I32) name=None
+  value %834: Data(I32) name=None
+  value %835: Data(I32) name=None
+  value %836: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %837: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %838: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %839: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %840: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %841: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %842: Data(I32) name=None
+  value %843: Data(I32) name=None
+  value %844: Data(I32) name=None
+  value %845: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %846: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %847: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %848: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %849: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %850: Data(Nullable(Class(ClassId(98)))) name=None
+  value %851: Data(I32) name=None
+  value %852: Data(I32) name=None
+  value %853: Data(I32) name=None
+  value %854: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %855: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %856: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %857: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %858: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %859: Data(Nullable(Class(ClassId(98)))) name=None
+  value %860: Data(I32) name=None
+  value %861: Data(I32) name=None
+  value %862: Data(I32) name=None
+  value %863: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %864: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %865: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %866: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %867: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %868: Data(Class(ClassId(99))) name=None
+  value %869: Data(I32) name=None
+  value %870: Data(I32) name=None
+  value %871: Data(I32) name=None
+  value %872: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %873: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %874: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %875: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %876: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %877: Data(I32) name=None
+  value %878: Data(I32) name=None
+  value %879: Data(I32) name=None
+  value %880: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %881: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %882: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %883: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %884: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %885: Data(I32) name=None
+  value %886: Data(I32) name=None
+  value %887: Data(I32) name=None
+  value %888: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %889: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %890: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %891: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %892: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %893: Data(I32) name=None
+  value %894: Data(I32) name=None
+  value %895: Data(I32) name=None
+  value %896: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %897: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %898: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %899: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %900: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %901: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %902: Data(Func(FuncType { params: [], ret: Str })) name=None
+  value %903: Data(I32) name=None
+  value %904: Data(I32) name=None
+  value %905: Data(I32) name=None
+  value %906: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %907: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %908: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %909: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %910: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %911: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %912: Data(I32) name=None
+  value %913: Data(I32) name=None
+  value %914: Data(I32) name=None
+  value %915: Data(I32) name=None
+  value %916: Data(I32) name=None
+  value %917: Data(I32) name=None
+  value %918: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %919: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %920: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %921: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %922: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %923: Data(I32) name=None
+  value %924: Data(I32) name=None
+  value %925: Data(I32) name=None
+  value %926: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %927: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %928: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %929: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %930: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %931: Data(I32) name=None
+  value %932: Data(I32) name=None
+  value %933: Data(I32) name=None
+  value %934: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %935: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %936: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %937: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %938: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %939: Data(Generator(I32)) name=None
+  value %940: Data(I32) name=None
+  value %941: Data(I32) name=None
+  value %942: Data(I32) name=None
+  value %943: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %944: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %945: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %946: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %947: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %948: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %949: Data(I32) name=None
+  value %950: Data(I32) name=None
+  value %951: Data(I32) name=None
+  value %952: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %953: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %954: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %955: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %956: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %957: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %958: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %959: Data(Array(I32)) name=None
+  value %960: Data(Class(ClassId(92))) name=None
+  value %961: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(9)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(1), resume_value: Some(ValueId(0)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 25 } }] }
+  b1(%0: Data(I32)) Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(2), resume_value: Some(ValueId(1)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 41 } }] }
+  b2(%1: Data(I32), %617: Data(I32)) Some("async-call.resume"):
+    %2: Data(Str) = Template([Text("await:result="), Operand(0), Text(","), Operand(1)])(%617, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 303, col: 9 } }] @ a149-suspension-state.ts:303:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a149-suspension-state.ts:303:3
+    %3: Data(I32) = LoadGlobal(GlobalId(0))() @ a149-suspension-state.ts:304:24
+    %4: Data(I32) = LoadGlobal(GlobalId(1))() @ a149-suspension-state.ts:304:37
+    %5: Data(Str) = Template([Text("await:calls="), Operand(0), Text(","), Operand(1)])(%3, %4) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 304, col: 9 } }] @ a149-suspension-state.ts:304:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a149-suspension-state.ts:304:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(20)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 306, col: 27 } }] }
+  b3(%6: Data(I32)) Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(21)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(4), resume_value: Some(ValueId(7)), arguments: [Value(ValueId(6))], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 306, col: 50 } }] }
+  b4(%7: Data(I32), %618: Data(I32)) Some("async-call.resume"):
+    %8: Data(Array(I32)) = ArrayLiteral(%618, Integer(9):I32, %7) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 306, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 306, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 306, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 306, col: 50 } }] @ a149-suspension-state.ts:306:26
+    %9: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 307, col: 31 } }] @ a149-suspension-state.ts:307:31
+    %10: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%8, %9) invalidates=[ValueId(8)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 307, col: 18 } }] @ a149-suspension-state.ts:307:18
+    %11: Data(Str) = Template([Text("array="), Operand(0)])(%10) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 307, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 307, col: 9 } }] @ a149-suspension-state.ts:307:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%11) invalidates=[ValueId(8)] @ a149-suspension-state.ts:307:3
+    %12: Data(Class(ClassId(90))) = Call(CallTarget { kind: Function(FunctionId(18)), parameter_types: [], return_type: Some(Data(Class(ClassId(90)))) })() invalidates=[ValueId(8)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 19 } }] @ a149-suspension-state.ts:308:19
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(20)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(5), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(12))], invalidates: [ValueId(8)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 33 } }] }
+  b5(%13: Data(I32), %619: Data(Class(ClassId(90)))) Some("async-call.resume"):
+    %14: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(90))), Data(I32)], return_type: Some(Data(I32)) })(%619, %13) invalidates=[ValueId(8)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 19 } }] @ a149-suspension-state.ts:308:19
+    %15: Data(Str) = Template([Text("method="), Operand(0)])(%14) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 308, col: 9 } }] @ a149-suspension-state.ts:308:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) invalidates=[ValueId(8)] @ a149-suspension-state.ts:308:3
+    %16: Data(Class(ClassId(91))) = AllocateClass(ClassId(91))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 309, col: 16 } }] @ a149-suspension-state.ts:309:16
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(20)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(6), resume_value: Some(ValueId(17)), arguments: [Value(ValueId(16))], invalidates: [ValueId(8)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 309, col: 35 } }] }
+  b6(%17: Data(I32), %620: Data(Class(ClassId(91)))) Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(21)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(7), resume_value: Some(ValueId(18)), arguments: [Value(ValueId(620)), Value(ValueId(17))], invalidates: [ValueId(8)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 309, col: 55 } }] }
+  b7(%18: Data(I32), %621: Data(Class(ClassId(91))), %622: Data(I32)) Some("async-call.resume"):
+    Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(91))), Data(I32), Data(I32)], return_type: None })(%621, %622, %18) invalidates=[ValueId(8)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 309, col: 16 } }] @ a149-suspension-state.ts:309:16
+    %19: Data(I32) = LoadField(Class(FieldId(255)))(%621) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 16 } }] @ a149-suspension-state.ts:310:21
+    %20: Data(I32) = LoadField(Class(FieldId(256)))(%621) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 29 } }] @ a149-suspension-state.ts:310:34
+    %21: Data(Str) = Template([Text("new="), Operand(0), Text(","), Operand(1)])(%19, %20) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 310, col: 9 } }] @ a149-suspension-state.ts:310:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%21) invalidates=[ValueId(8)] @ a149-suspension-state.ts:310:3
+    %22: Data(Array(I32)) = Call(CallTarget { kind: Function(FunctionId(19)), parameter_types: [], return_type: Some(Data(Array(I32))) })() invalidates=[ValueId(8), ValueId(22)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 18 } }] @ a149-suspension-state.ts:311:18
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(23)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(8), resume_value: Some(ValueId(23)), arguments: [Value(ValueId(22))], invalidates: [ValueId(8), ValueId(22)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 30 } }] }
+  b8(%23: Data(I32), %623: Data(Array(I32))) Some("async-call.resume"):
+    %24: Address(AddressType { pointee: I32, array_base: Some(ValueId(623)) }) = AddressOfIndex { checked: true }(%623, %23) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 18 } }, Trap { kind: IndexRead, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 18 } }] @ a149-suspension-state.ts:311:18
+    %25: Data(I32) = LoadAddress(%24) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 18 } }, Trap { kind: IndexRead, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 18 } }] @ a149-suspension-state.ts:311:18
+    %26: Data(Str) = Template([Text("index="), Operand(0)])(%25) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 311, col: 9 } }] @ a149-suspension-state.ts:311:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%26) invalidates=[ValueId(8), ValueId(623)] @ a149-suspension-state.ts:311:3
+    %27: Data(Class(ClassId(92))) = AllocateClass(ClassId(92))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 312, col: 16 } }] @ a149-suspension-state.ts:312:16
+    %28: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(257)))(%27) @ a149-suspension-state.ts:68:3
+    StoreAddress(%28, Integer(1):I32) @ a149-suspension-state.ts:68:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(22)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(9), resume_value: Some(ValueId(29)), arguments: [Value(ValueId(27))], invalidates: [ValueId(8), ValueId(623)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 313, col: 16 } }] }
+  b9(%29: Data(I32), %624: Data(Class(ClassId(92)))) Some("async-call.resume"):
+    %30: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(257)))(%624) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 313, col: 3 } }] @ a149-suspension-state.ts:313:8
+    StoreAddress(%30, %29) @ a149-suspension-state.ts:313:8
+    %31: Data(I32) = LoadField(Class(FieldId(257)))(%624) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 314, col: 18 } }] @ a149-suspension-state.ts:314:23
+    %32: Data(Str) = Template([Text("field="), Operand(0)])(%31) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 314, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 314, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 314, col: 9 } }] @ a149-suspension-state.ts:314:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%32) invalidates=[ValueId(8), ValueId(623)] @ a149-suspension-state.ts:314:3
+    %33: Data(Array(I32)) = ArrayLiteral(Integer(1):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 315, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 315, col: 26 } }] @ a149-suspension-state.ts:315:25
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(22)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(10), resume_value: Some(ValueId(34)), arguments: [Value(ValueId(33))], invalidates: [ValueId(8), ValueId(623), ValueId(33)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 316, col: 15 } }] }
+  b10(%34: Data(I32), %625: Data(Array(I32))) Some("async-call.resume"):
+    %35: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%625, %34) invalidates=[ValueId(8), ValueId(623), ValueId(625)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 316, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 316, col: 3 } }] @ a149-suspension-state.ts:316:3
+    %36: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 317, col: 29 } }] @ a149-suspension-state.ts:317:29
+    %37: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%625, %36) invalidates=[ValueId(8), ValueId(623), ValueId(625)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 317, col: 17 } }] @ a149-suspension-state.ts:317:17
+    %38: Data(Str) = Template([Text("push="), Operand(0)])(%37) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 317, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 317, col: 9 } }] @ a149-suspension-state.ts:317:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%38) invalidates=[ValueId(8), ValueId(623), ValueId(625)] @ a149-suspension-state.ts:317:3
+    %39: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 318, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 318, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 318, col: 31 } }] @ a149-suspension-state.ts:318:27
+    %40: Address(AddressType { pointee: I32, array_base: Some(ValueId(39)) }) = AddressOfIndex { checked: true }(%39, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }, Trap { kind: IndexRead, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }, Trap { kind: IndexWrite, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }] @ a149-suspension-state.ts:319:3
+    %41: Data(I32) = LoadAddress(%40) @ a149-suspension-state.ts:319:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(24)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(11), resume_value: Some(ValueId(42)), arguments: [Value(ValueId(39)), Value(ValueId(41))], invalidates: [ValueId(8), ValueId(623), ValueId(625), ValueId(39)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 18 } }] }
+  b11(%42: Data(I32), %626: Data(Array(I32)), %627: Data(I32)) Some("async-call.resume"):
+    %43: Data(I32) = Binary(Add)(%627, %42) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }, Trap { kind: IndexRead, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }, Trap { kind: IndexWrite, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }] @ a149-suspension-state.ts:319:3
+    %44: Address(AddressType { pointee: I32, array_base: Some(ValueId(626)) }) = AddressOfIndex { checked: true }(%626, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }, Trap { kind: IndexRead, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }, Trap { kind: IndexWrite, pos: Pos { file: "a149-suspension-state.ts", line: 319, col: 3 } }] @ a149-suspension-state.ts:319:3
+    StoreAddress(%44, %43) @ a149-suspension-state.ts:319:3
+    %45: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 320, col: 35 } }] @ a149-suspension-state.ts:320:35
+    %46: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%626, %45) invalidates=[ValueId(8), ValueId(623), ValueId(625), ValueId(626)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 320, col: 21 } }] @ a149-suspension-state.ts:320:21
+    %47: Data(Str) = Template([Text("compound="), Operand(0)])(%46) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 320, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 320, col: 9 } }] @ a149-suspension-state.ts:320:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%47) invalidates=[ValueId(8), ValueId(623), ValueId(625), ValueId(626)] @ a149-suspension-state.ts:320:3
+    %48: Data(Array(I32)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 323, col: 34 } }] @ a149-suspension-state.ts:323:34
+    %49: Data(Class(ClassId(92))) = AllocateClass(ClassId(92))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 324, col: 25 } }] @ a149-suspension-state.ts:324:25
+    %50: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(257)))(%49) @ a149-suspension-state.ts:68:3
+    StoreAddress(%50, Integer(1):I32) @ a149-suspension-state.ts:68:3
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(48)), Value(ValueId(49))] })
+  b12(%51: Data(I32), %959: Data(Array(I32)), %960: Data(Class(ClassId(92)))) Some("for.cond"):
+    %54: Data(Bool) = Binary(Lt)(%51, Integer(2):I32) @ a149-suspension-state.ts:327:5
+    -> ConditionalBranch { condition: Value(ValueId(54)), then_target: BlockTarget { block: BlockId(13), arguments: [] }, else_target: BlockTarget { block: BlockId(15), arguments: [Value(ValueId(51))] } }
+  b13 Some("for.body"):
+    %55: Data(Str) = StringLiteral("body")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 330, col: 47 } }] @ a149-suspension-state.ts:330:47
+    %56: Data(I32) = Copy(Integer(7):I32) @ a149-suspension-state.ts:330:26
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(55), ValueId(56)] }, successor: BlockId(16), resume_value: Some(ValueId(57)), arguments: [Value(ValueId(959)), Value(ValueId(960)), Value(ValueId(51))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(959)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 330, col: 26 } }] }
+  b14(%52: Data(I32)) Some("for.step"):
+    %60: Data(Str) = StringLiteral("step")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 328, col: 48 } }] @ a149-suspension-state.ts:328:48
+    %61: Data(I32) = Copy(Integer(5):I32) @ a149-suspension-state.ts:328:27
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(60), ValueId(61)] }, successor: BlockId(17), resume_value: Some(ValueId(62)), arguments: [Value(ValueId(628)), Value(ValueId(629)), Value(ValueId(52))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(628)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 328, col: 27 } }] }
+  b15(%53: Data(I32)) Some("for.exit"):
+    %64: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 47 } }] @ a149-suspension-state.ts:333:47
+    %65: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%959, %64) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(959)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 26 } }] @ a149-suspension-state.ts:333:26
+    %66: Data(I32) = LoadField(Class(FieldId(257)))(%960) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 55 } }] @ a149-suspension-state.ts:333:69
+    %67: Data(Str) = Template([Text("machinery:for="), Operand(0), Text(":"), Operand(1)])(%65, %66) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 69 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 333, col: 9 } }] @ a149-suspension-state.ts:333:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%67) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(959)] @ a149-suspension-state.ts:333:3
+    %68: Data(Str) = StringLiteral("local")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 336, col: 40 } }] @ a149-suspension-state.ts:336:40
+    %69: Data(I32) = Copy(Integer(5):I32) @ a149-suspension-state.ts:336:19
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(68), ValueId(69)] }, successor: BlockId(18), resume_value: Some(ValueId(70)), arguments: [Value(ValueId(53))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(959)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 336, col: 19 } }] }
+  b16(%57: Data(I32), %628: Data(Array(I32)), %629: Data(Class(ClassId(92))), %630: Data(I32)) Some("async-call.resume"):
+    %58: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%628, %57) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(628)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 330, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 330, col: 5 } }] @ a149-suspension-state.ts:330:5
+    %59: Data(I32) = Binary(Add)(%630, Integer(1):I32) @ a149-suspension-state.ts:331:22
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(59))] })
+  b17(%62: Data(I32), %631: Data(Array(I32)), %632: Data(Class(ClassId(92))), %633: Data(I32)) Some("async-call.resume"):
+    %63: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(257)))(%632) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 328, col: 5 } }] @ a149-suspension-state.ts:328:19
+    StoreAddress(%63, %62) @ a149-suspension-state.ts:328:19
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(633)), Value(ValueId(631)), Value(ValueId(632))] })
+  b18(%70: Data(I32), %634: Data(I32)) Some("async-call.resume"):
+    %71: Data(Str) = Template([Text("machinery:local="), Operand(0)])(%70) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 337, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 337, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 337, col: 9 } }] @ a149-suspension-state.ts:337:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%71) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(959)] @ a149-suspension-state.ts:337:3
+    %72: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(45))(Integer(3):I32) @ a149-suspension-state.ts:340:22
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(634)), Value(ValueId(70)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(72))] })
+  b19(%73: Data(I32), %74: Data(I32), %75: Data(I32), %961: Data(Func(FuncType { params: [], ret: I32 }))) Some("while.cond"):
+    %79: Data(Bool) = Binary(Lt)(%75, Integer(3):I32) @ a149-suspension-state.ts:342:10
+    -> ConditionalBranch { condition: Value(ValueId(79)), then_target: BlockTarget { block: BlockId(20), arguments: [] }, else_target: BlockTarget { block: BlockId(21), arguments: [Value(ValueId(73)), Value(ValueId(74)), Value(ValueId(75))] } }
+  b20 Some("while.body"):
+    %80: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%961) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 343, col: 29 } }] @ a149-suspension-state.ts:343:29
+    %81: Data(Str) = Template([Text("machinery:loop="), Operand(0)])(%80) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 343, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 343, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 343, col: 11 } }] @ a149-suspension-state.ts:343:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%81) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:343:5
+    -> Suspend { kind: Async, successor: BlockId(22), resume_value: None, arguments: [Value(ValueId(961)), Value(ValueId(73)), Value(ValueId(74)), Value(ValueId(75))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [] }
+  b21(%76: Data(I32), %77: Data(I32), %78: Data(I32)) Some("while.exit"):
+    %83: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(46))() @ a149-suspension-state.ts:349:24
+    %84: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(47))(Integer(3):I32) @ a149-suspension-state.ts:350:20
+    -> Suspend { kind: Async, successor: BlockId(23), resume_value: None, arguments: [Value(ValueId(76)), Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(84))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [] }
+  b22(%635: Data(Func(FuncType { params: [], ret: I32 })), %636: Data(I32), %637: Data(I32), %638: Data(I32)) Some("async.resume"):
+    %82: Data(I32) = Binary(Add)(%638, Integer(1):I32) @ a149-suspension-state.ts:345:17
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(636)), Value(ValueId(637)), Value(ValueId(82)), Value(ValueId(635))] })
+  b23(%639: Data(I32), %640: Data(I32), %641: Data(I32), %642: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %85: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%642) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 352, col: 31 } }] @ a149-suspension-state.ts:352:31
+    %86: Data(Str) = Template([Text("machinery:assigned="), Operand(0)])(%85) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 352, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 352, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 352, col: 9 } }] @ a149-suspension-state.ts:352:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%86) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:352:3
+    %87: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(48))(Integer(3):I32) @ a149-suspension-state.ts:355:23
+    %88: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(49))(Integer(50):I32) @ a149-suspension-state.ts:358:25
+    -> Suspend { kind: Async, successor: BlockId(24), resume_value: None, arguments: [Value(ValueId(639)), Value(ValueId(640)), Value(ValueId(641)), Value(ValueId(642)), Value(ValueId(87)), Value(ValueId(88))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [] }
+  b24(%643: Data(I32), %644: Data(I32), %645: Data(I32), %646: Data(Func(FuncType { params: [], ret: I32 })), %647: Data(Func(FuncType { params: [], ret: I32 })), %648: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %89: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%648) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 360, col: 30 } }] @ a149-suspension-state.ts:360:30
+    %90: Data(Str) = Template([Text("machinery:inner="), Operand(0)])(%89) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 360, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 360, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 360, col: 11 } }] @ a149-suspension-state.ts:360:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%90) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:360:5
+    -> Suspend { kind: Async, successor: BlockId(25), resume_value: None, arguments: [Value(ValueId(643)), Value(ValueId(644)), Value(ValueId(645)), Value(ValueId(646)), Value(ValueId(647))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [] }
+  b25(%649: Data(I32), %650: Data(I32), %651: Data(I32), %652: Data(Func(FuncType { params: [], ret: I32 })), %653: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %91: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%653) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 363, col: 28 } }] @ a149-suspension-state.ts:363:28
+    %92: Data(Str) = Template([Text("machinery:outer="), Operand(0)])(%91) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 363, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 363, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 363, col: 9 } }] @ a149-suspension-state.ts:363:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%92) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:363:3
+    %93: Data(Map(I32, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(I32, Str))) })() invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 365, col: 24 } }] @ a149-suspension-state.ts:365:24
+    %94: Data(Str) = StringLiteral("map-set")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 366, col: 41 } }] @ a149-suspension-state.ts:366:41
+    %95: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:366:20
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(94), ValueId(95)] }, successor: BlockId(26), resume_value: Some(ValueId(96)), arguments: [Value(ValueId(649)), Value(ValueId(650)), Value(ValueId(651)), Value(ValueId(652)), Value(ValueId(93))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 366, col: 20 } }] }
+  b26(%96: Data(I32), %654: Data(I32), %655: Data(I32), %656: Data(I32), %657: Data(Func(FuncType { params: [], ret: I32 })), %658: Data(Map(I32, Str))) Some("async-call.resume"):
+    %97: Data(Str) = StringLiteral("one")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 366, col: 56 } }] @ a149-suspension-state.ts:366:56
+    %98: Data(Map(I32, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(I32, Str)), Data(I32), Data(Str)], return_type: Some(Data(Map(I32, Str))) })(%658, %96, %97) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 366, col: 3 } }] @ a149-suspension-state.ts:366:3
+    %99: Data(Str) = StringLiteral("missing")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 367, col: 52 } }] @ a149-suspension-state.ts:367:52
+    %100: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(I32, Str)), Data(I32), Data(Str)], return_type: Some(Data(Str)) })(%658, Integer(1):I32, %99) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:367:30
+    %101: Data(Str) = Template([Text("machinery:map-set="), Operand(0)])(%100) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 367, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 367, col: 9 } }] @ a149-suspension-state.ts:367:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%101) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:367:3
+    %102: Data(Set(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Set(I32))) })() invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 369, col: 27 } }] @ a149-suspension-state.ts:369:27
+    %103: Data(Str) = StringLiteral("set-add")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 370, col: 44 } }] @ a149-suspension-state.ts:370:44
+    %104: Data(I32) = Copy(Integer(5):I32) @ a149-suspension-state.ts:370:23
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(103), ValueId(104)] }, successor: BlockId(27), resume_value: Some(ValueId(105)), arguments: [Value(ValueId(654)), Value(ValueId(655)), Value(ValueId(656)), Value(ValueId(657)), Value(ValueId(102))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 370, col: 23 } }] }
+  b27(%105: Data(I32), %659: Data(I32), %660: Data(I32), %661: Data(I32), %662: Data(Func(FuncType { params: [], ret: I32 })), %663: Data(Set(I32))) Some("async-call.resume"):
+    %106: Data(Set(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Set(I32)), Data(I32)], return_type: Some(Data(Set(I32))) })(%663, %105) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 370, col: 3 } }] @ a149-suspension-state.ts:370:3
+    %107: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Set(I32)), Data(I32)], return_type: Some(Data(Bool)) })(%663, Integer(5):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:371:30
+    %108: Data(Str) = Template([Text("machinery:set-add="), Operand(0)])(%107) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 371, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 371, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 371, col: 9 } }] @ a149-suspension-state.ts:371:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%108) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:371:3
+    %109: Data(Set(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Set(I32))) })() invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 373, col: 27 } }] @ a149-suspension-state.ts:373:27
+    %110: Data(Set(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Set(I32)), Data(I32)], return_type: Some(Data(Set(I32))) })(%109, Integer(1):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 374, col: 3 } }] @ a149-suspension-state.ts:374:3
+    %111: Data(Str) = StringLiteral("set-has")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 375, col: 71 } }] @ a149-suspension-state.ts:375:71
+    %112: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:375:50
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(111), ValueId(112)] }, successor: BlockId(28), resume_value: Some(ValueId(113)), arguments: [Value(ValueId(659)), Value(ValueId(660)), Value(ValueId(661)), Value(ValueId(662)), Value(ValueId(109))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 375, col: 50 } }] }
+  b28(%113: Data(I32), %664: Data(I32), %665: Data(I32), %666: Data(I32), %667: Data(Func(FuncType { params: [], ret: I32 })), %668: Data(Set(I32))) Some("async-call.resume"):
+    %114: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Set(I32)), Data(I32)], return_type: Some(Data(Bool)) })(%668, %113) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:375:30
+    %115: Data(Str) = Template([Text("machinery:set-has="), Operand(0)])(%114) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 375, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 375, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 375, col: 9 } }] @ a149-suspension-state.ts:375:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%115) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48)] @ a149-suspension-state.ts:375:3
+    %116: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 377, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 377, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 377, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 377, col: 40 } }] @ a149-suspension-state.ts:377:33
+    %117: Data(Str) = StringLiteral("index-of")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 378, col: 75 } }] @ a149-suspension-state.ts:378:75
+    %118: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:378:54
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(117), ValueId(118)] }, successor: BlockId(29), resume_value: Some(ValueId(119)), arguments: [Value(ValueId(664)), Value(ValueId(665)), Value(ValueId(666)), Value(ValueId(667)), Value(ValueId(116))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 378, col: 54 } }] }
+  b29(%119: Data(I32), %669: Data(I32), %670: Data(I32), %671: Data(I32), %672: Data(Func(FuncType { params: [], ret: I32 })), %673: Data(Array(I32))) Some("async-call.resume"):
+    %120: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%673, %119) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:378:31
+    %121: Data(Str) = Template([Text("machinery:index-of="), Operand(0)])(%120) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 378, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 378, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 378, col: 9 } }] @ a149-suspension-state.ts:378:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%121) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:378:3
+    %122: Data(Str) = StringLiteral("hello")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 379, col: 32 } }] @ a149-suspension-state.ts:379:32
+    %123: Data(Str) = StringLiteral("str-slice")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 379, col: 67 } }] @ a149-suspension-state.ts:379:67
+    %124: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:379:46
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(123), ValueId(124)] }, successor: BlockId(30), resume_value: Some(ValueId(125)), arguments: [Value(ValueId(669)), Value(ValueId(670)), Value(ValueId(671)), Value(ValueId(672)), Value(ValueId(122))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 379, col: 46 } }] }
+  b30(%125: Data(I32), %674: Data(I32), %675: Data(I32), %676: Data(I32), %677: Data(Func(FuncType { params: [], ret: I32 })), %678: Data(Str)) Some("async-call.resume"):
+    %126: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: String, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str), Data(I32), Data(I32)], return_type: Some(Data(Str)) })(%678, %125, Integer(3):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 379, col: 32 } }] @ a149-suspension-state.ts:379:32
+    %127: Data(Str) = Template([Text("machinery:str-slice="), Operand(0)])(%126) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 379, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 379, col: 9 } }] @ a149-suspension-state.ts:379:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%127) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:379:3
+    %128: Data(Str) = StringLiteral("math-left")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 382, col: 29 } }] @ a149-suspension-state.ts:382:29
+    %129: Data(I32) = Copy(Integer(3):I32) @ a149-suspension-state.ts:382:8
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(128), ValueId(129)] }, successor: BlockId(31), resume_value: Some(ValueId(130)), arguments: [Value(ValueId(674)), Value(ValueId(675)), Value(ValueId(676)), Value(ValueId(677))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 382, col: 8 } }] }
+  b31(%130: Data(I32), %679: Data(I32), %680: Data(I32), %681: Data(I32), %682: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %131: Data(F64) = Cast(%130) @ a149-suspension-state.ts:382:7
+    %132: Data(Str) = StringLiteral("math-right")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 383, col: 29 } }] @ a149-suspension-state.ts:383:29
+    %133: Data(I32) = Copy(Integer(9):I32) @ a149-suspension-state.ts:383:8
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(132), ValueId(133)] }, successor: BlockId(32), resume_value: Some(ValueId(134)), arguments: [Value(ValueId(679)), Value(ValueId(680)), Value(ValueId(681)), Value(ValueId(682)), Value(ValueId(131))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 383, col: 8 } }] }
+  b32(%134: Data(I32), %683: Data(I32), %684: Data(I32), %685: Data(I32), %686: Data(Func(FuncType { params: [], ret: I32 })), %687: Data(F64)) Some("async-call.resume"):
+    %135: Data(F64) = Cast(%134) @ a149-suspension-state.ts:383:7
+    %136: Data(F64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Math, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(F64), Data(F64)], return_type: Some(Data(F64)) })(%687, %135) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:381:27
+    %137: Data(Str) = Template([Text("machinery:math-max="), Operand(0)])(%136) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 381, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 381, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 381, col: 5 } }] @ a149-suspension-state.ts:381:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%137) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:380:3
+    %138: Data(Map(I32, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(I32, Str))) })() invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 387, col: 26 } }] @ a149-suspension-state.ts:387:26
+    %139: Data(Str) = StringLiteral("one")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 388, col: 25 } }] @ a149-suspension-state.ts:388:25
+    %140: Data(Map(I32, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(I32, Str)), Data(I32), Data(Str)], return_type: Some(Data(Map(I32, Str))) })(%138, Integer(1):I32, %139) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 388, col: 3 } }] @ a149-suspension-state.ts:388:3
+    %141: Data(Str) = StringLiteral("map-get-key")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 391, col: 28 } }] @ a149-suspension-state.ts:391:28
+    %142: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:391:7
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(141), ValueId(142)] }, successor: BlockId(33), resume_value: Some(ValueId(143)), arguments: [Value(ValueId(683)), Value(ValueId(684)), Value(ValueId(685)), Value(ValueId(686)), Value(ValueId(138))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 391, col: 7 } }] }
+  b33(%143: Data(I32), %688: Data(I32), %689: Data(I32), %690: Data(I32), %691: Data(Func(FuncType { params: [], ret: I32 })), %692: Data(Map(I32, Str))) Some("async-call.resume"):
+    %144: Data(Str) = StringLiteral("map-get-default")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 392, col: 27 } }] @ a149-suspension-state.ts:392:27
+    %145: Data(Str) = StringLiteral("missing")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 392, col: 46 } }] @ a149-suspension-state.ts:392:46
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(26)), parameter_types: [Data(Str), Data(Str)], return_type: Some(Data(Str)) }, operands: [ValueId(144), ValueId(145)] }, successor: BlockId(34), resume_value: Some(ValueId(146)), arguments: [Value(ValueId(688)), Value(ValueId(689)), Value(ValueId(690)), Value(ValueId(691)), Value(ValueId(692)), Value(ValueId(143))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 392, col: 7 } }] }
+  b34(%146: Data(Str), %693: Data(I32), %694: Data(I32), %695: Data(I32), %696: Data(Func(FuncType { params: [], ret: I32 })), %697: Data(Map(I32, Str)), %698: Data(I32)) Some("async-call.resume"):
+    %147: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(I32, Str)), Data(I32), Data(Str)], return_type: Some(Data(Str)) })(%697, %698, %146) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:390:29
+    %148: Data(Str) = Template([Text("machinery:map-get-or="), Operand(0)])(%147) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 390, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 390, col: 5 } }] @ a149-suspension-state.ts:390:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%148) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:389:3
+    %149: Data(Str) = StringLiteral("fixed-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 397, col: 26 } }] @ a149-suspension-state.ts:397:26
+    %150: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:397:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(149), ValueId(150)] }, successor: BlockId(35), resume_value: Some(ValueId(151)), arguments: [Value(ValueId(693)), Value(ValueId(694)), Value(ValueId(695)), Value(ValueId(696))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 397, col: 5 } }] }
+  b35(%151: Data(I32), %699: Data(I32), %700: Data(I32), %701: Data(I32), %702: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %152: Data(Str) = StringLiteral("fixed-last")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 399, col: 26 } }] @ a149-suspension-state.ts:399:26
+    %153: Data(I32) = Copy(Integer(3):I32) @ a149-suspension-state.ts:399:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(152), ValueId(153)] }, successor: BlockId(36), resume_value: Some(ValueId(154)), arguments: [Value(ValueId(699)), Value(ValueId(700)), Value(ValueId(701)), Value(ValueId(702)), Value(ValueId(151))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 399, col: 5 } }] }
+  b36(%154: Data(I32), %703: Data(I32), %704: Data(I32), %705: Data(I32), %706: Data(Func(FuncType { params: [], ret: I32 })), %707: Data(I32)) Some("async-call.resume"):
+    %155: Data(FixedArray(I32, 3)) = ArrayLiteral(%707, Integer(2):I32, %154) @ a149-suspension-state.ts:396:46
+    StoreLocal(LocalId(0))(%155) @ a149-suspension-state.ts:396:9
+    %156: Address(AddressType { pointee: FixedArray(I32, 3), array_base: None }) = AddressOfLocal(LocalId(0))() @ a149-suspension-state.ts:402:24
+    %157: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%156, Integer(0):I32) @ a149-suspension-state.ts:402:24
+    %158: Data(I32) = LoadAddress(%157) @ a149-suspension-state.ts:402:24
+    %159: Address(AddressType { pointee: FixedArray(I32, 3), array_base: None }) = AddressOfLocal(LocalId(0))() @ a149-suspension-state.ts:402:45
+    %160: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%159, Integer(1):I32) @ a149-suspension-state.ts:402:45
+    %161: Data(I32) = LoadAddress(%160) @ a149-suspension-state.ts:402:45
+    %162: Address(AddressType { pointee: FixedArray(I32, 3), array_base: None }) = AddressOfLocal(LocalId(0))() @ a149-suspension-state.ts:402:66
+    %163: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%162, Integer(2):I32) @ a149-suspension-state.ts:402:66
+    %164: Data(I32) = LoadAddress(%163) @ a149-suspension-state.ts:402:66
+    %165: Data(Str) = Template([Text("machinery:fixed="), Operand(0), Text(","), Operand(1), Text(","), Operand(2)])(%158, %161, %164) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 66 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 402, col: 5 } }] @ a149-suspension-state.ts:402:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%165) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:401:3
+    %166: Data(Str) = StringLiteral("switch-disc")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 405, col: 25 } }] @ a149-suspension-state.ts:405:25
+    %167: Data(I32) = Call(CallTarget { kind: Function(FunctionId(28)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) })(%166, Integer(2):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 405, col: 11 } }] @ a149-suspension-state.ts:405:11
+    %184: Data(Str) = StringLiteral("switch-test-1")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 406, col: 31 } }] @ a149-suspension-state.ts:406:31
+    %185: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:406:10
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(184), ValueId(185)] }, successor: BlockId(41), resume_value: Some(ValueId(186)), arguments: [Value(ValueId(703)), Value(ValueId(704)), Value(ValueId(705)), Value(ValueId(706)), Value(ValueId(167))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 406, col: 10 } }] }
+  b37(%168: Data(I32), %169: Data(I32), %170: Data(I32), %171: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.exit"):
+    %199: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 416, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 416, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 416, col: 35 } }] @ a149-suspension-state.ts:416:31
+    %200: Data(Str) = StringLiteral("spread-tail")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 420, col: 26 } }] @ a149-suspension-state.ts:420:26
+    %201: Data(I32) = Copy(Integer(9):I32) @ a149-suspension-state.ts:420:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(200), ValueId(201)] }, successor: BlockId(44), resume_value: Some(ValueId(202)), arguments: [Value(ValueId(168)), Value(ValueId(169)), Value(ValueId(170)), Value(ValueId(171)), Value(ValueId(199))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(199)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 420, col: 5 } }] }
+  b38(%172: Data(I32), %173: Data(I32), %174: Data(I32), %175: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.case.0"):
+    %196: Data(Str) = StringLiteral("machinery:switch=one")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 407, col: 13 } }] @ a149-suspension-state.ts:407:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%196) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:407:7
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(172)), Value(ValueId(173)), Value(ValueId(174)), Value(ValueId(175))] })
+  b39(%176: Data(I32), %177: Data(I32), %178: Data(I32), %179: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.case.1"):
+    %197: Data(Str) = StringLiteral("machinery:switch=two")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 410, col: 13 } }] @ a149-suspension-state.ts:410:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%197) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:410:7
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(176)), Value(ValueId(177)), Value(ValueId(178)), Value(ValueId(179))] })
+  b40(%180: Data(I32), %181: Data(I32), %182: Data(I32), %183: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.case.2"):
+    %198: Data(Str) = StringLiteral("machinery:switch=default")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 413, col: 13 } }] @ a149-suspension-state.ts:413:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%198) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)] @ a149-suspension-state.ts:413:7
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(180)), Value(ValueId(181)), Value(ValueId(182)), Value(ValueId(183))] })
+  b41(%186: Data(I32), %708: Data(I32), %709: Data(I32), %710: Data(I32), %711: Data(Func(FuncType { params: [], ret: I32 })), %712: Data(I32)) Some("async-call.resume"):
+    %187: Data(Bool) = Binary(Eq)(%712, %186) @ a149-suspension-state.ts:406:10
+    -> ConditionalBranch { condition: Value(ValueId(187)), then_target: BlockTarget { block: BlockId(38), arguments: [Value(ValueId(708)), Value(ValueId(709)), Value(ValueId(710)), Value(ValueId(711))] }, else_target: BlockTarget { block: BlockId(42), arguments: [Value(ValueId(708)), Value(ValueId(709)), Value(ValueId(710)), Value(ValueId(711))] } }
+  b42(%188: Data(I32), %189: Data(I32), %190: Data(I32), %191: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.test.1"):
+    %192: Data(Str) = StringLiteral("switch-test-2")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 409, col: 31 } }] @ a149-suspension-state.ts:409:31
+    %193: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:409:10
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(192), ValueId(193)] }, successor: BlockId(43), resume_value: Some(ValueId(194)), arguments: [Value(ValueId(712)), Value(ValueId(188)), Value(ValueId(189)), Value(ValueId(190)), Value(ValueId(191))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 409, col: 10 } }] }
+  b43(%194: Data(I32), %713: Data(I32), %714: Data(I32), %715: Data(I32), %716: Data(I32), %717: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %195: Data(Bool) = Binary(Eq)(%713, %194) @ a149-suspension-state.ts:409:10
+    -> ConditionalBranch { condition: Value(ValueId(195)), then_target: BlockTarget { block: BlockId(39), arguments: [Value(ValueId(714)), Value(ValueId(715)), Value(ValueId(716)), Value(ValueId(717))] }, else_target: BlockTarget { block: BlockId(40), arguments: [Value(ValueId(714)), Value(ValueId(715)), Value(ValueId(716)), Value(ValueId(717))] } }
+  b44(%202: Data(I32), %718: Data(I32), %719: Data(I32), %720: Data(I32), %721: Data(Func(FuncType { params: [], ret: I32 })), %722: Data(Array(I32))) Some("async-call.resume"):
+    %203: Data(Array(I32)) = ArraySpreadLiteral([None, Some(Array), None])(Integer(0):I32, %722, %202) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 417, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 418, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 419, col: 8 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 420, col: 5 } }] @ a149-suspension-state.ts:417:29
+    %204: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 422, col: 50 } }] @ a149-suspension-state.ts:422:50
+    %205: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%203, %204) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(722), ValueId(203)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 422, col: 34 } }] @ a149-suspension-state.ts:422:34
+    %206: Data(Str) = Template([Text("machinery:spread-tail="), Operand(0)])(%205) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 422, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 422, col: 9 } }] @ a149-suspension-state.ts:422:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%206) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(722), ValueId(203)] @ a149-suspension-state.ts:422:3
+    %207: Data(Str) = StringLiteral("spread-head")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 424, col: 26 } }] @ a149-suspension-state.ts:424:26
+    %208: Data(I32) = Copy(Integer(9):I32) @ a149-suspension-state.ts:424:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(207), ValueId(208)] }, successor: BlockId(45), resume_value: Some(ValueId(209)), arguments: [Value(ValueId(718)), Value(ValueId(719)), Value(ValueId(720)), Value(ValueId(721)), Value(ValueId(722))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(722), ValueId(203)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 424, col: 5 } }] }
+  b45(%209: Data(I32), %723: Data(I32), %724: Data(I32), %725: Data(I32), %726: Data(Func(FuncType { params: [], ret: I32 })), %727: Data(Array(I32))) Some("async-call.resume"):
+    %210: Data(Array(I32)) = ArraySpreadLiteral([None, Some(Array)])(%209, %727) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 423, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 424, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 425, col: 8 } }] @ a149-suspension-state.ts:423:29
+    %211: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 427, col: 50 } }] @ a149-suspension-state.ts:427:50
+    %212: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%210, %211) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(727), ValueId(203), ValueId(210)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 427, col: 34 } }] @ a149-suspension-state.ts:427:34
+    %213: Data(Str) = Template([Text("machinery:spread-head="), Operand(0)])(%212) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 427, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 427, col: 9 } }] @ a149-suspension-state.ts:427:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%213) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(727), ValueId(203), ValueId(210)] @ a149-suspension-state.ts:427:3
+    %214: Data(Str) = StringLiteral("spread-await-only")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 429, col: 30 } }] @ a149-suspension-state.ts:429:30
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(27)), parameter_types: [Data(Str)], return_type: Some(Data(Array(I32))) }, operands: [ValueId(214)] }, successor: BlockId(46), resume_value: Some(ValueId(215)), arguments: [Value(ValueId(723)), Value(ValueId(724)), Value(ValueId(725)), Value(ValueId(726)), Value(ValueId(727))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(727), ValueId(203), ValueId(210), ValueId(215)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 429, col: 9 } }] }
+  b46(%215: Data(Array(I32)), %728: Data(I32), %729: Data(I32), %730: Data(I32), %731: Data(Func(FuncType { params: [], ret: I32 })), %732: Data(Array(I32))) Some("async-call.resume"):
+    %216: Data(Array(I32)) = ArraySpreadLiteral([Some(Array), None])(%215, Integer(1):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 428, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 429, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 430, col: 5 } }] @ a149-suspension-state.ts:428:34
+    %217: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 432, col: 61 } }] @ a149-suspension-state.ts:432:61
+    %218: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%216, %217) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(732), ValueId(203), ValueId(210), ValueId(215), ValueId(216)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 432, col: 40 } }] @ a149-suspension-state.ts:432:40
+    %219: Data(Str) = Template([Text("machinery:spread-await-only="), Operand(0)])(%218) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 432, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 432, col: 9 } }] @ a149-suspension-state.ts:432:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%219) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(732), ValueId(203), ValueId(210), ValueId(215), ValueId(216)] @ a149-suspension-state.ts:432:3
+    %220: Data(Str) = StringLiteral("spread-await-after")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 435, col: 30 } }] @ a149-suspension-state.ts:435:30
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(27)), parameter_types: [Data(Str)], return_type: Some(Data(Array(I32))) }, operands: [ValueId(220)] }, successor: BlockId(47), resume_value: Some(ValueId(221)), arguments: [Value(ValueId(728)), Value(ValueId(729)), Value(ValueId(730)), Value(ValueId(731)), Value(ValueId(732))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(732), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 435, col: 9 } }] }
+  b47(%221: Data(Array(I32)), %733: Data(I32), %734: Data(I32), %735: Data(I32), %736: Data(Func(FuncType { params: [], ret: I32 })), %737: Data(Array(I32))) Some("async-call.resume"):
+    %222: Data(Array(I32)) = ArraySpreadLiteral([Some(Array), Some(Array)])(%737, %221) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 433, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 434, col: 8 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 435, col: 9 } }] @ a149-suspension-state.ts:433:35
+    %223: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 437, col: 63 } }] @ a149-suspension-state.ts:437:63
+    %224: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%222, %223) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 437, col: 41 } }] @ a149-suspension-state.ts:437:41
+    %225: Data(Str) = Template([Text("machinery:spread-await-after="), Operand(0)])(%224) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 437, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 437, col: 9 } }] @ a149-suspension-state.ts:437:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%225) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222)] @ a149-suspension-state.ts:437:3
+    %226: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) = AllocateClass(ClassId(93))() @ a149-suspension-state.ts:439:40
+    %227: Data(Str) = StringLiteral("bytes-of-second")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 441, col: 26 } }] @ a149-suspension-state.ts:441:26
+    %228: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:441:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(227), ValueId(228)] }, successor: BlockId(48), resume_value: Some(ValueId(229)), arguments: [Value(ValueId(733)), Value(ValueId(734)), Value(ValueId(735)), Value(ValueId(736)), Value(ValueId(226))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 441, col: 5 } }] }
+  b48(%229: Data(I32), %738: Data(I32), %739: Data(I32), %740: Data(I32), %741: Data(Func(FuncType { params: [], ret: I32 })), %742: Address(AddressType { pointee: Class(ClassId(93)), array_base: None })) Some("async-call.resume"):
+    Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Address(AddressType { pointee: Class(ClassId(93)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%742, Integer(1):I32, %229) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 439, col: 40 } }] @ a149-suspension-state.ts:439:40
+    %230: Data(Class(ClassId(93))) = LoadAddress(%742) @ a149-suspension-state.ts:439:40
+    %231: Data(Array(U8)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: ContextBytes, operation: 0, type_argument: Some(Class(ClassId(93))), worker_entry: None }), parameter_types: [Data(Class(ClassId(93)))], return_type: Some(Data(Array(U8))) })(%230) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 443, col: 31 } }] @ a149-suspension-state.ts:443:31
+    %232: Data(I32) = Length(%231) @ a149-suspension-state.ts:444:45
+    %233: Data(Str) = Template([Text("machinery:bytes-of="), Operand(0)])(%232) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 444, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 444, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 444, col: 9 } }] @ a149-suspension-state.ts:444:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%233) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231)] @ a149-suspension-state.ts:444:3
+    %234: Data(Array(U8)) = ArrayLiteral(Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8, Integer(0):U8) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 446, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 8 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 447, col: 50 } }] @ a149-suspension-state.ts:446:29
+    %235: Data(Str) = StringLiteral("bytes-into-value")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 450, col: 24 } }] @ a149-suspension-state.ts:450:24
+    %236: Data(Class(ClassId(93))) = Call(CallTarget { kind: Function(FunctionId(29)), parameter_types: [Data(Str)], return_type: Some(Data(Class(ClassId(93)))) })(%235) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 450, col: 5 } }] @ a149-suspension-state.ts:450:5
+    %237: Data(Str) = StringLiteral("bytes-into-offset")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 452, col: 27 } }] @ a149-suspension-state.ts:452:27
+    %238: Data(I32) = Copy(Integer(8):I32) @ a149-suspension-state.ts:452:6
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(237), ValueId(238)] }, successor: BlockId(49), resume_value: Some(ValueId(239)), arguments: [Value(ValueId(738)), Value(ValueId(739)), Value(ValueId(740)), Value(ValueId(741)), Value(ValueId(234)), Value(ValueId(236))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 452, col: 6 } }] }
+  b49(%239: Data(I32), %743: Data(I32), %744: Data(I32), %745: Data(I32), %746: Data(Func(FuncType { params: [], ret: I32 })), %747: Data(Array(U8)), %748: Data(Class(ClassId(93)))) Some("async-call.resume"):
+    %240: Data(U32) = Cast(%239) @ a149-suspension-state.ts:452:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: ContextBytes, operation: 1, type_argument: Some(Class(ClassId(93))), worker_entry: None }), parameter_types: [Data(Class(ClassId(93))), Data(Array(U8)), Data(U32)], return_type: None })(%748, %747, %240) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 449, col: 3 } }] @ a149-suspension-state.ts:449:3
+    %241: Data(Class(ClassId(93))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: ContextBytes, operation: 2, type_argument: Some(Class(ClassId(93))), worker_entry: None }), parameter_types: [Data(Array(U8)), Data(U32)], return_type: Some(Data(Class(ClassId(93)))) })(%747, Integer(8):U32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 454, col: 42 } }] @ a149-suspension-state.ts:454:42
+    %242: Data(I32) = LoadField(Class(FieldId(258)))(%241) @ a149-suspension-state.ts:459:44
+    %243: Data(I32) = LoadField(Class(FieldId(259)))(%241) @ a149-suspension-state.ts:459:68
+    %244: Data(Str) = Template([Text("machinery:bytes-into="), Operand(0), Text(","), Operand(1)])(%242, %243) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 68 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 459, col: 5 } }] @ a149-suspension-state.ts:459:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%244) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747)] @ a149-suspension-state.ts:458:3
+    %245: Data(Str) = StringLiteral("from-bytes-source")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 463, col: 24 } }] @ a149-suspension-state.ts:463:24
+    %246: Data(Array(U8)) = Call(CallTarget { kind: Function(FunctionId(30)), parameter_types: [Data(Str), Data(Array(U8))], return_type: Some(Data(Array(U8))) })(%245, %747) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(246)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 463, col: 5 } }] @ a149-suspension-state.ts:463:5
+    %247: Data(Str) = StringLiteral("from-bytes-offset")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 464, col: 27 } }] @ a149-suspension-state.ts:464:27
+    %248: Data(I32) = Copy(Integer(8):I32) @ a149-suspension-state.ts:464:6
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(247), ValueId(248)] }, successor: BlockId(50), resume_value: Some(ValueId(249)), arguments: [Value(ValueId(743)), Value(ValueId(744)), Value(ValueId(745)), Value(ValueId(746)), Value(ValueId(246))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(246)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 464, col: 6 } }] }
+  b50(%249: Data(I32), %749: Data(I32), %750: Data(I32), %751: Data(I32), %752: Data(Func(FuncType { params: [], ret: I32 })), %753: Data(Array(U8))) Some("async-call.resume"):
+    %250: Data(U32) = Cast(%249) @ a149-suspension-state.ts:464:5
+    %251: Data(Class(ClassId(93))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: ContextBytes, operation: 2, type_argument: Some(Class(ClassId(93))), worker_entry: None }), parameter_types: [Data(Array(U8)), Data(U32)], return_type: Some(Data(Class(ClassId(93)))) })(%753, %250) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 462, col: 42 } }] @ a149-suspension-state.ts:462:42
+    %252: Data(I32) = LoadField(Class(FieldId(258)))(%251) @ a149-suspension-state.ts:466:48
+    %253: Data(I32) = LoadField(Class(FieldId(259)))(%251) @ a149-suspension-state.ts:466:72
+    %254: Data(Str) = Template([Text("machinery:from-bytes="), Operand(0), Text(","), Operand(1)])(%252, %253) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 48 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 72 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 466, col: 9 } }] @ a149-suspension-state.ts:466:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%254) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753)] @ a149-suspension-state.ts:466:3
+    %255: Data(Nullable(Class(ClassId(0)))) = Coerce(Null:Null) @ interop.generated.d.ts:92:34
+    %256: Data(Class(ClassId(6))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(1)), parameter_types: [Data(Nullable(Class(ClassId(0))))], return_type: Some(Data(Class(ClassId(6)))) })(%255) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 468, col: 35 } }] @ a149-suspension-state.ts:468:35
+    %257: Data(Nullable(Class(ClassId(0)))) = Coerce(Null:Null) @ interop.generated.d.ts:92:34
+    %258: Data(Class(ClassId(6))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(1)), parameter_types: [Data(Nullable(Class(ClassId(0))))], return_type: Some(Data(Class(ClassId(6)))) })(%257) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 469, col: 35 } }] @ a149-suspension-state.ts:469:35
+    %259: Data(Nullable(Class(ClassId(0)))) = Coerce(Null:Null) @ interop.generated.d.ts:92:34
+    %260: Data(Class(ClassId(6))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(1)), parameter_types: [Data(Nullable(Class(ClassId(0))))], return_type: Some(Data(Class(ClassId(6)))) })(%259) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 470, col: 36 } }] @ a149-suspension-state.ts:470:36
+    %261: Data(Array(Class(ClassId(6)))) = ArrayLiteral(%258, %260) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 471, col: 40 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 471, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 471, col: 55 } }] @ a149-suspension-state.ts:471:40
+    %262: Data(Str) = StringLiteral("foreign-selector")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 475, col: 27 } }] @ a149-suspension-state.ts:475:27
+    %263: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:475:6
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(262), ValueId(263)] }, successor: BlockId(51), resume_value: Some(ValueId(264)), arguments: [Value(ValueId(749)), Value(ValueId(750)), Value(ValueId(751)), Value(ValueId(752)), Value(ValueId(256)), Value(ValueId(258)), Value(ValueId(260)), Value(ValueId(261))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(261)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 475, col: 6 } }] }
+  b51(%264: Data(I32), %754: Data(I32), %755: Data(I32), %756: Data(I32), %757: Data(Func(FuncType { params: [], ret: I32 })), %758: Data(Class(ClassId(6))), %759: Data(Class(ClassId(6))), %760: Data(Class(ClassId(6))), %761: Data(Array(Class(ClassId(6))))) Some("async-call.resume"):
+    %265: Data(U32) = Cast(%264) @ a149-suspension-state.ts:475:5
+    %266: Data(U64) = Call(CallTarget { kind: Foreign(ForeignFunctionId(49)), parameter_types: [Data(Class(ClassId(6))), Data(Array(Class(ClassId(6)))), Data(U32)], return_type: Some(Data(U64)) })(%758, %761, %265) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 472, col: 29 } }] @ a149-suspension-state.ts:472:29
+    %267: Data(Str) = Template([Text("machinery:foreign="), Operand(0)])(%266) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 477, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 477, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 477, col: 9 } }] @ a149-suspension-state.ts:477:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%267) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:477:3
+    Call(CallTarget { kind: Foreign(ForeignFunctionId(3)), parameter_types: [Data(Class(ClassId(6)))], return_type: None })(%758) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 478, col: 3 } }] @ a149-suspension-state.ts:478:3
+    Call(CallTarget { kind: Foreign(ForeignFunctionId(3)), parameter_types: [Data(Class(ClassId(6)))], return_type: None })(%759) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 479, col: 3 } }] @ a149-suspension-state.ts:479:3
+    Call(CallTarget { kind: Foreign(ForeignFunctionId(3)), parameter_types: [Data(Class(ClassId(6)))], return_type: None })(%760) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 480, col: 3 } }] @ a149-suspension-state.ts:480:3
+    %268: Data(Class(ClassId(97))) = AllocateClass(ClassId(97))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 482, col: 48 } }] @ a149-suspension-state.ts:482:48
+    %269: Data(Str) = StringLiteral("descriptor-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 483, col: 26 } }] @ a149-suspension-state.ts:483:26
+    %270: Data(I32) = Call(CallTarget { kind: Function(FunctionId(28)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) })(%269, Integer(1):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 483, col: 12 } }] @ a149-suspension-state.ts:483:12
+    %271: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(266)))(%268) @ a149-suspension-state.ts:131:3
+    StoreAddress(%271, %270) @ a149-suspension-state.ts:131:3
+    %272: Data(Str) = StringLiteral("descriptor-second")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 484, col: 34 } }] @ a149-suspension-state.ts:484:34
+    %273: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:484:13
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(272), ValueId(273)] }, successor: BlockId(52), resume_value: Some(ValueId(274)), arguments: [Value(ValueId(754)), Value(ValueId(755)), Value(ValueId(756)), Value(ValueId(757)), Value(ValueId(268))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 484, col: 13 } }] }
+  b52(%274: Data(I32), %762: Data(I32), %763: Data(I32), %764: Data(I32), %765: Data(Func(FuncType { params: [], ret: I32 })), %766: Data(Class(ClassId(97)))) Some("async-call.resume"):
+    %275: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(267)))(%766) @ a149-suspension-state.ts:132:3
+    StoreAddress(%275, %274) @ a149-suspension-state.ts:132:3
+    %276: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(268)))(%766) @ a149-suspension-state.ts:133:3
+    StoreAddress(%276, Integer(7):I32) @ a149-suspension-state.ts:133:3
+    %277: Data(I32) = LoadField(Class(FieldId(266)))(%766) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 29 } }] @ a149-suspension-state.ts:487:45
+    %278: Data(I32) = LoadField(Class(FieldId(267)))(%766) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 54 } }] @ a149-suspension-state.ts:487:70
+    %279: Data(I32) = LoadField(Class(FieldId(268)))(%766) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 80 } }] @ a149-suspension-state.ts:487:96
+    %280: Data(Str) = Template([Text("machinery:descriptor="), Operand(0), Text(","), Operand(1), Text(","), Operand(2)])(%277, %278, %279) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 70 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 96 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 487, col: 5 } }] @ a149-suspension-state.ts:487:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%280) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:486:3
+    %281: Address(AddressType { pointee: Class(ClassId(93)), array_base: None }) = AllocateClass(ClassId(93))() @ a149-suspension-state.ts:490:40
+    %282: Data(Str) = StringLiteral("aggregate-new")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 492, col: 26 } }] @ a149-suspension-state.ts:492:26
+    %283: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:492:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(282), ValueId(283)] }, successor: BlockId(53), resume_value: Some(ValueId(284)), arguments: [Value(ValueId(762)), Value(ValueId(763)), Value(ValueId(764)), Value(ValueId(765)), Value(ValueId(281))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 492, col: 5 } }] }
+  b53(%284: Data(I32), %767: Data(I32), %768: Data(I32), %769: Data(I32), %770: Data(Func(FuncType { params: [], ret: I32 })), %771: Address(AddressType { pointee: Class(ClassId(93)), array_base: None })) Some("async-call.resume"):
+    Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Address(AddressType { pointee: Class(ClassId(93)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%771, Integer(1):I32, %284) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 490, col: 40 } }] @ a149-suspension-state.ts:490:40
+    %285: Data(Class(ClassId(93))) = LoadAddress(%771) @ a149-suspension-state.ts:490:40
+    %286: Data(I32) = LoadField(Class(FieldId(258)))(%285) @ a149-suspension-state.ts:494:49
+    %287: Data(I32) = LoadField(Class(FieldId(259)))(%285) @ a149-suspension-state.ts:494:71
+    %288: Data(Str) = Template([Text("machinery:aggregate-new="), Operand(0), Text(","), Operand(1)])(%286, %287) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 49 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 71 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 494, col: 9 } }] @ a149-suspension-state.ts:494:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%288) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:494:3
+    %289: Data(Str) = StringLiteral("aggregate-call")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 497, col: 26 } }] @ a149-suspension-state.ts:497:26
+    %290: Data(I32) = Copy(Integer(4):I32) @ a149-suspension-state.ts:497:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(289), ValueId(290)] }, successor: BlockId(54), resume_value: Some(ValueId(291)), arguments: [Value(ValueId(767)), Value(ValueId(768)), Value(ValueId(769)), Value(ValueId(770))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 497, col: 5 } }] }
+  b54(%291: Data(I32), %772: Data(I32), %773: Data(I32), %774: Data(I32), %775: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %292: Data(Class(ClassId(93))) = Call(CallTarget { kind: Function(FunctionId(31)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Class(ClassId(93)))) })(Integer(3):I32, %291) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 495, col: 41 } }] @ a149-suspension-state.ts:495:41
+    %293: Data(I32) = LoadField(Class(FieldId(258)))(%292) @ a149-suspension-state.ts:500:47
+    %294: Data(I32) = LoadField(Class(FieldId(259)))(%292) @ a149-suspension-state.ts:500:70
+    %295: Data(Str) = Template([Text("machinery:aggregate-call="), Operand(0), Text(","), Operand(1)])(%293, %294) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 70 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 500, col: 5 } }] @ a149-suspension-state.ts:500:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%295) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:499:3
+    %296: Data(Str) = StringLiteral("aggregate-fixed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 504, col: 26 } }] @ a149-suspension-state.ts:504:26
+    %297: Data(I32) = Copy(Integer(6):I32) @ a149-suspension-state.ts:504:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(296), ValueId(297)] }, successor: BlockId(55), resume_value: Some(ValueId(298)), arguments: [Value(ValueId(772)), Value(ValueId(773)), Value(ValueId(774)), Value(ValueId(775))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 504, col: 5 } }] }
+  b55(%298: Data(I32), %776: Data(I32), %777: Data(I32), %778: Data(I32), %779: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %299: Data(FixedArray(I32, 2)) = Call(CallTarget { kind: Function(FunctionId(32)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(FixedArray(I32, 2))) })(Integer(5):I32, %298) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 502, col: 46 } }] @ a149-suspension-state.ts:502:46
+    StoreLocal(LocalId(1))(%299) @ a149-suspension-state.ts:502:9
+    %300: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a149-suspension-state.ts:506:38
+    %301: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%300, Integer(0):I32) @ a149-suspension-state.ts:506:38
+    %302: Data(I32) = LoadAddress(%301) @ a149-suspension-state.ts:506:38
+    %303: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a149-suspension-state.ts:506:59
+    %304: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%303, Integer(1):I32) @ a149-suspension-state.ts:506:59
+    %305: Data(I32) = LoadAddress(%304) @ a149-suspension-state.ts:506:59
+    %306: Data(Str) = Template([Text("machinery:aggregate-fixed="), Operand(0), Text(","), Operand(1)])(%302, %305) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 59 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 506, col: 9 } }] @ a149-suspension-state.ts:506:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%306) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:506:3
+    %307: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(50))() @ a149-suspension-state.ts:508:22
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(56), arguments: [] }, else_target: BlockTarget { block: BlockId(57), arguments: [] } }
+  b56 Some("if.then"):
+    %308: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(51))(Integer(7):I32) @ a149-suspension-state.ts:511:20
+    -> Branch(BlockTarget { block: BlockId(58), arguments: [Value(ValueId(776)), Value(ValueId(777)), Value(ValueId(778)), Value(ValueId(779)), Value(ValueId(308))] })
+  b57 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(58), arguments: [Value(ValueId(776)), Value(ValueId(777)), Value(ValueId(778)), Value(ValueId(779)), Value(ValueId(307))] })
+  b58(%309: Data(I32), %310: Data(I32), %311: Data(I32), %312: Data(Func(FuncType { params: [], ret: I32 })), %313: Data(Func(FuncType { params: [], ret: I32 }))) Some("if.join"):
+    -> Suspend { kind: Async, successor: BlockId(59), resume_value: None, arguments: [Value(ValueId(309)), Value(ValueId(310)), Value(ValueId(311)), Value(ValueId(312)), Value(ValueId(313))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [] }
+  b59(%780: Data(I32), %781: Data(I32), %782: Data(I32), %783: Data(Func(FuncType { params: [], ret: I32 })), %784: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %314: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%784) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 514, col: 32 } }] @ a149-suspension-state.ts:514:32
+    %315: Data(Str) = Template([Text("machinery:lambda-if="), Operand(0)])(%314) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 514, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 514, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 514, col: 9 } }] @ a149-suspension-state.ts:514:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%315) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:514:3
+    %316: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(52))() @ a149-suspension-state.ts:516:25
+    %317: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(53))(Integer(9):I32) @ a149-suspension-state.ts:519:23
+    -> Suspend { kind: Async, successor: BlockId(60), resume_value: None, arguments: [Value(ValueId(780)), Value(ValueId(781)), Value(ValueId(782)), Value(ValueId(783)), Value(ValueId(784)), Value(ValueId(317))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [] }
+  b60(%785: Data(I32), %786: Data(I32), %787: Data(I32), %788: Data(Func(FuncType { params: [], ret: I32 })), %789: Data(Func(FuncType { params: [], ret: I32 })), %790: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %318: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%790) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 522, col: 35 } }] @ a149-suspension-state.ts:522:35
+    %319: Data(Str) = Template([Text("machinery:lambda-block="), Operand(0)])(%318) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 522, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 522, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 522, col: 9 } }] @ a149-suspension-state.ts:522:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%319) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:522:3
+    %320: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(54))() @ a149-suspension-state.ts:524:26
+    -> Switch { value: Constant(Constant { ty: I32, kind: Integer(1) }), arms: [SwitchArm { value: Constant { ty: I32, kind: Integer(1) }, target: BlockTarget { block: BlockId(62), arguments: [Value(ValueId(785)), Value(ValueId(786)), Value(ValueId(787)), Value(ValueId(788)), Value(ValueId(789)), Value(ValueId(790)), Value(ValueId(320))] } }], default: BlockTarget { block: BlockId(61), arguments: [Value(ValueId(785)), Value(ValueId(786)), Value(ValueId(787)), Value(ValueId(788)), Value(ValueId(789)), Value(ValueId(790)), Value(ValueId(320))] } }
+  b61(%321: Data(I32), %322: Data(I32), %323: Data(I32), %324: Data(Func(FuncType { params: [], ret: I32 })), %325: Data(Func(FuncType { params: [], ret: I32 })), %326: Data(Func(FuncType { params: [], ret: I32 })), %327: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.exit"):
+    -> Suspend { kind: Async, successor: BlockId(63), resume_value: None, arguments: [Value(ValueId(321)), Value(ValueId(322)), Value(ValueId(323)), Value(ValueId(324)), Value(ValueId(325)), Value(ValueId(326)), Value(ValueId(327))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [] }
+  b62(%328: Data(I32), %329: Data(I32), %330: Data(I32), %331: Data(Func(FuncType { params: [], ret: I32 })), %332: Data(Func(FuncType { params: [], ret: I32 })), %333: Data(Func(FuncType { params: [], ret: I32 })), %334: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.case.0"):
+    %335: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(55))(Integer(6):I32) @ a149-suspension-state.ts:528:26
+    -> Branch(BlockTarget { block: BlockId(61), arguments: [Value(ValueId(328)), Value(ValueId(329)), Value(ValueId(330)), Value(ValueId(331)), Value(ValueId(332)), Value(ValueId(333)), Value(ValueId(335))] })
+  b63(%791: Data(I32), %792: Data(I32), %793: Data(I32), %794: Data(Func(FuncType { params: [], ret: I32 })), %795: Data(Func(FuncType { params: [], ret: I32 })), %796: Data(Func(FuncType { params: [], ret: I32 })), %797: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %336: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%797) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 533, col: 36 } }] @ a149-suspension-state.ts:533:36
+    %337: Data(Str) = Template([Text("machinery:lambda-switch="), Operand(0)])(%336) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 533, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 533, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 533, col: 9 } }] @ a149-suspension-state.ts:533:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%337) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:533:3
+    %338: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(56))() @ a149-suspension-state.ts:535:20
+    %339: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(57))(Integer(2):I32) @ a149-suspension-state.ts:538:18
+    -> Suspend { kind: Async, successor: BlockId(64), resume_value: None, arguments: [Value(ValueId(791)), Value(ValueId(792)), Value(ValueId(793)), Value(ValueId(794)), Value(ValueId(795)), Value(ValueId(796)), Value(ValueId(797)), Value(ValueId(339))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [] }
+  b64(%798: Data(I32), %799: Data(I32), %800: Data(I32), %801: Data(Func(FuncType { params: [], ret: I32 })), %802: Data(Func(FuncType { params: [], ret: I32 })), %803: Data(Func(FuncType { params: [], ret: I32 })), %804: Data(Func(FuncType { params: [], ret: I32 })), %805: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %340: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(58))(Integer(30):I32) @ a149-suspension-state.ts:543:27
+    -> Suspend { kind: Async, successor: BlockId(65), resume_value: None, arguments: [Value(ValueId(798)), Value(ValueId(799)), Value(ValueId(800)), Value(ValueId(801)), Value(ValueId(802)), Value(ValueId(803)), Value(ValueId(804)), Value(ValueId(805)), Value(ValueId(340))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [] }
+  b65(%806: Data(I32), %807: Data(I32), %808: Data(I32), %809: Data(Func(FuncType { params: [], ret: I32 })), %810: Data(Func(FuncType { params: [], ret: I32 })), %811: Data(Func(FuncType { params: [], ret: I32 })), %812: Data(Func(FuncType { params: [], ret: I32 })), %813: Data(Func(FuncType { params: [], ret: I32 })), %814: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %341: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%813) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 37 } }] @ a149-suspension-state.ts:545:37
+    %342: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%814) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 53 } }] @ a149-suspension-state.ts:545:53
+    %343: Data(Str) = Template([Text("machinery:lambda-reuse="), Operand(0), Text(","), Operand(1)])(%341, %342) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 53 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 545, col: 11 } }] @ a149-suspension-state.ts:545:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%343) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:545:5
+    %344: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(59))(Integer(7):I32) @ a149-suspension-state.ts:549:28
+    %345: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%344, Integer(3):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 550, col: 23 } }] @ a149-suspension-state.ts:550:23
+    %346: Data(Str) = Template([Text("s02control="), Operand(0)])(%345) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 550, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 550, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 550, col: 9 } }] @ a149-suspension-state.ts:550:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%346) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:550:3
+    %347: Data(I32) = Copy(Integer(3):I32) @ a149-suspension-state.ts:551:33
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(347)] }, successor: BlockId(66), resume_value: Some(ValueId(348)), arguments: [Value(ValueId(806)), Value(ValueId(807)), Value(ValueId(808)), Value(ValueId(809)), Value(ValueId(810)), Value(ValueId(811)), Value(ValueId(812)), Value(ValueId(813)), Value(ValueId(344))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 551, col: 33 } }] }
+  b66(%348: Data(I32), %815: Data(I32), %816: Data(I32), %817: Data(I32), %818: Data(Func(FuncType { params: [], ret: I32 })), %819: Data(Func(FuncType { params: [], ret: I32 })), %820: Data(Func(FuncType { params: [], ret: I32 })), %821: Data(Func(FuncType { params: [], ret: I32 })), %822: Data(Func(FuncType { params: [], ret: I32 })), %823: Data(Func(FuncType { params: [I32], ret: I32 }))) Some("async-call.resume"):
+    %349: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%823, %348) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 551, col: 16 } }] @ a149-suspension-state.ts:551:16
+    %350: Data(Str) = Template([Text("s02="), Operand(0)])(%349) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 551, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 551, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 551, col: 9 } }] @ a149-suspension-state.ts:551:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%350) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:551:3
+    %351: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(60))(Integer(7):I32) @ a149-suspension-state.ts:554:30
+    %352: Data(I32) = Call(CallTarget { kind: Function(FunctionId(37)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%351, Integer(1):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 555, col: 23 } }] @ a149-suspension-state.ts:555:23
+    %353: Data(Str) = Template([Text("x01control="), Operand(0)])(%352) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 555, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 555, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 555, col: 9 } }] @ a149-suspension-state.ts:555:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%353) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:555:3
+    %354: Data(I32) = Copy(Integer(1):I32) @ a149-suspension-state.ts:557:46
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(354)] }, successor: BlockId(67), resume_value: Some(ValueId(355)), arguments: [Value(ValueId(815)), Value(ValueId(816)), Value(ValueId(817)), Value(ValueId(818)), Value(ValueId(819)), Value(ValueId(820)), Value(ValueId(821)), Value(ValueId(822)), Value(ValueId(351))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 557, col: 46 } }] }
+  b67(%355: Data(I32), %824: Data(I32), %825: Data(I32), %826: Data(I32), %827: Data(Func(FuncType { params: [], ret: I32 })), %828: Data(Func(FuncType { params: [], ret: I32 })), %829: Data(Func(FuncType { params: [], ret: I32 })), %830: Data(Func(FuncType { params: [], ret: I32 })), %831: Data(Func(FuncType { params: [], ret: I32 })), %832: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %356: Data(I32) = Call(CallTarget { kind: Function(FunctionId(37)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%832, %355) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 557, col: 12 } }] @ a149-suspension-state.ts:557:12
+    %357: Data(Str) = Template([Text("x01="), Operand(0)])(%356) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 557, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 557, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 557, col: 5 } }] @ a149-suspension-state.ts:557:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%357) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:556:3
+    %358: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(61))(Integer(3):I32) @ a149-suspension-state.ts:561:25
+    %383: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:566:10
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(383)] }, successor: BlockId(71), resume_value: Some(ValueId(384)), arguments: [Value(ValueId(824)), Value(ValueId(825)), Value(ValueId(826)), Value(ValueId(827)), Value(ValueId(828)), Value(ValueId(829)), Value(ValueId(830)), Value(ValueId(831)), Value(ValueId(358))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 566, col: 10 } }] }
+  b68(%359: Data(I32), %360: Data(I32), %361: Data(I32), %362: Data(Func(FuncType { params: [], ret: I32 })), %363: Data(Func(FuncType { params: [], ret: I32 })), %364: Data(Func(FuncType { params: [], ret: I32 })), %365: Data(Func(FuncType { params: [], ret: I32 })), %366: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.exit"):
+    %389: Data(Nullable(Class(ClassId(98)))) = Coerce(Null:Null) @ a149-suspension-state.ts:249:23
+    %390: Data(I32) = Copy(Integer(3):I32) @ a149-suspension-state.ts:571:34
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(390)] }, successor: BlockId(72), resume_value: Some(ValueId(391)), arguments: [Value(ValueId(359)), Value(ValueId(360)), Value(ValueId(361)), Value(ValueId(362)), Value(ValueId(363)), Value(ValueId(364)), Value(ValueId(365)), Value(ValueId(366)), Value(ValueId(389))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 571, col: 34 } }] }
+  b69(%367: Data(I32), %368: Data(I32), %369: Data(I32), %370: Data(Func(FuncType { params: [], ret: I32 })), %371: Data(Func(FuncType { params: [], ret: I32 })), %372: Data(Func(FuncType { params: [], ret: I32 })), %373: Data(Func(FuncType { params: [], ret: I32 })), %374: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.case.0"):
+    %386: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%841) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 564, col: 19 } }] @ a149-suspension-state.ts:564:19
+    %387: Data(Str) = Template([Text("P2="), Operand(0)])(%386) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 564, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 564, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 564, col: 13 } }] @ a149-suspension-state.ts:564:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%387) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:564:7
+    -> Branch(BlockTarget { block: BlockId(68), arguments: [Value(ValueId(367)), Value(ValueId(368)), Value(ValueId(369)), Value(ValueId(370)), Value(ValueId(371)), Value(ValueId(372)), Value(ValueId(373)), Value(ValueId(374))] })
+  b70(%375: Data(I32), %376: Data(I32), %377: Data(I32), %378: Data(Func(FuncType { params: [], ret: I32 })), %379: Data(Func(FuncType { params: [], ret: I32 })), %380: Data(Func(FuncType { params: [], ret: I32 })), %381: Data(Func(FuncType { params: [], ret: I32 })), %382: Data(Func(FuncType { params: [], ret: I32 }))) Some("switch.case.1"):
+    %388: Data(Str) = StringLiteral("P2=two")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 567, col: 13 } }] @ a149-suspension-state.ts:567:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%388) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:567:7
+    -> Branch(BlockTarget { block: BlockId(68), arguments: [Value(ValueId(375)), Value(ValueId(376)), Value(ValueId(377)), Value(ValueId(378)), Value(ValueId(379)), Value(ValueId(380)), Value(ValueId(381)), Value(ValueId(382))] })
+  b71(%384: Data(I32), %833: Data(I32), %834: Data(I32), %835: Data(I32), %836: Data(Func(FuncType { params: [], ret: I32 })), %837: Data(Func(FuncType { params: [], ret: I32 })), %838: Data(Func(FuncType { params: [], ret: I32 })), %839: Data(Func(FuncType { params: [], ret: I32 })), %840: Data(Func(FuncType { params: [], ret: I32 })), %841: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %385: Data(Bool) = Binary(Eq)(Integer(9):I32, %384) @ a149-suspension-state.ts:566:10
+    -> ConditionalBranch { condition: Value(ValueId(385)), then_target: BlockTarget { block: BlockId(70), arguments: [Value(ValueId(833)), Value(ValueId(834)), Value(ValueId(835)), Value(ValueId(836)), Value(ValueId(837)), Value(ValueId(838)), Value(ValueId(839)), Value(ValueId(840))] }, else_target: BlockTarget { block: BlockId(69), arguments: [Value(ValueId(833)), Value(ValueId(834)), Value(ValueId(835)), Value(ValueId(836)), Value(ValueId(837)), Value(ValueId(838)), Value(ValueId(839)), Value(ValueId(840))] } }
+  b72(%391: Data(I32), %842: Data(I32), %843: Data(I32), %844: Data(I32), %845: Data(Func(FuncType { params: [], ret: I32 })), %846: Data(Func(FuncType { params: [], ret: I32 })), %847: Data(Func(FuncType { params: [], ret: I32 })), %848: Data(Func(FuncType { params: [], ret: I32 })), %849: Data(Func(FuncType { params: [], ret: I32 })), %850: Data(Nullable(Class(ClassId(98))))) Some("async-call.resume"):
+    %392: Data(I32) = Call(CallTarget { kind: Function(FunctionId(36)), parameter_types: [Data(Nullable(Class(ClassId(98)))), Data(I32)], return_type: Some(Data(I32)) })(%850, %391) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 571, col: 15 } }] @ a149-suspension-state.ts:571:15
+    %393: Data(Str) = Template([Text("P1="), Operand(0)])(%392) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 571, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 571, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 571, col: 9 } }] @ a149-suspension-state.ts:571:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%393) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:571:3
+    %394: Data(Nullable(Class(ClassId(98)))) = Coerce(Null:Null) @ a149-suspension-state.ts:573:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(35)), parameter_types: [], return_type: Some(Data(Nullable(Class(ClassId(98))))) }, operands: [] }, successor: BlockId(73), resume_value: Some(ValueId(395)), arguments: [Value(ValueId(842)), Value(ValueId(843)), Value(ValueId(844)), Value(ValueId(845)), Value(ValueId(846)), Value(ValueId(847)), Value(ValueId(848)), Value(ValueId(849)), Value(ValueId(394))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 574, col: 5 } }] }
+  b73(%395: Data(Nullable(Class(ClassId(98)))), %851: Data(I32), %852: Data(I32), %853: Data(I32), %854: Data(Func(FuncType { params: [], ret: I32 })), %855: Data(Func(FuncType { params: [], ret: I32 })), %856: Data(Func(FuncType { params: [], ret: I32 })), %857: Data(Func(FuncType { params: [], ret: I32 })), %858: Data(Func(FuncType { params: [], ret: I32 })), %859: Data(Nullable(Class(ClassId(98))))) Some("async-call.resume"):
+    %396: Data(FixedArray(Nullable(Class(ClassId(98))), 2)) = ArrayLiteral(%859, %395) @ a149-suspension-state.ts:572:60
+    StoreLocal(LocalId(2))(%396) @ a149-suspension-state.ts:572:9
+    %397: Address(AddressType { pointee: FixedArray(Nullable(Class(ClassId(98))), 2), array_base: None }) = AddressOfLocal(LocalId(2))() @ a149-suspension-state.ts:577:16
+    %398: Address(AddressType { pointee: Nullable(Class(ClassId(98))), array_base: None }) = AddressOfIndex { checked: false }(%397, Integer(0):I32) @ a149-suspension-state.ts:577:16
+    %399: Data(Nullable(Class(ClassId(98)))) = LoadAddress(%398) @ a149-suspension-state.ts:577:16
+    %400: Data(Bool) = Binary(Eq)(%399, Null:Null) @ a149-suspension-state.ts:577:16
+    %401: Address(AddressType { pointee: FixedArray(Nullable(Class(ClassId(98))), 2), array_base: None }) = AddressOfLocal(LocalId(2))() @ a149-suspension-state.ts:577:45
+    %402: Address(AddressType { pointee: Nullable(Class(ClassId(98))), array_base: None }) = AddressOfIndex { checked: false }(%401, Integer(1):I32) @ a149-suspension-state.ts:577:45
+    %403: Data(Nullable(Class(ClassId(98)))) = LoadAddress(%402) @ a149-suspension-state.ts:577:45
+    %404: Data(Bool) = Binary(Eq)(%403, Null:Null) @ a149-suspension-state.ts:577:45
+    %405: Data(Str) = Template([Text("P1fixed="), Operand(0), Text(","), Operand(1)])(%400, %404) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 577, col: 5 } }] @ a149-suspension-state.ts:577:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%405) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:576:3
+    %406: Data(Class(ClassId(99))) = AllocateClass(ClassId(99))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 580, col: 24 } }] @ a149-suspension-state.ts:580:24
+    Call(CallTarget { kind: Method(MethodId(7)), parameter_types: [Data(Class(ClassId(99))), Data(I32)], return_type: None })(%406, Integer(10):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 580, col: 24 } }] @ a149-suspension-state.ts:580:24
+    %407: Data(I32) = Copy(Integer(5):I32) @ a149-suspension-state.ts:581:39
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(407)] }, successor: BlockId(74), resume_value: Some(ValueId(408)), arguments: [Value(ValueId(851)), Value(ValueId(852)), Value(ValueId(853)), Value(ValueId(854)), Value(ValueId(855)), Value(ValueId(856)), Value(ValueId(857)), Value(ValueId(858)), Value(ValueId(406))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 581, col: 39 } }] }
+  b74(%408: Data(I32), %860: Data(I32), %861: Data(I32), %862: Data(I32), %863: Data(Func(FuncType { params: [], ret: I32 })), %864: Data(Func(FuncType { params: [], ret: I32 })), %865: Data(Func(FuncType { params: [], ret: I32 })), %866: Data(Func(FuncType { params: [], ret: I32 })), %867: Data(Func(FuncType { params: [], ret: I32 })), %868: Data(Class(ClassId(99)))) Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(8)), parameter_types: [Data(Class(ClassId(99))), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(868), ValueId(408)] }, successor: BlockId(75), resume_value: Some(ValueId(409)), arguments: [Value(ValueId(860)), Value(ValueId(861)), Value(ValueId(862)), Value(ValueId(863)), Value(ValueId(864)), Value(ValueId(865)), Value(ValueId(866)), Value(ValueId(867))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 581, col: 21 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 581, col: 15 } }] }
+  b75(%409: Data(I32), %869: Data(I32), %870: Data(I32), %871: Data(I32), %872: Data(Func(FuncType { params: [], ret: I32 })), %873: Data(Func(FuncType { params: [], ret: I32 })), %874: Data(Func(FuncType { params: [], ret: I32 })), %875: Data(Func(FuncType { params: [], ret: I32 })), %876: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %410: Data(Str) = Template([Text("P8="), Operand(0)])(%409) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 581, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 581, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 581, col: 9 } }] @ a149-suspension-state.ts:581:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%410) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:581:3
+    %411: Data(I32) = Copy(Integer(2):I32) @ a149-suspension-state.ts:582:41
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(411)] }, successor: BlockId(76), resume_value: Some(ValueId(412)), arguments: [Value(ValueId(869)), Value(ValueId(870)), Value(ValueId(871)), Value(ValueId(872)), Value(ValueId(873)), Value(ValueId(874)), Value(ValueId(875)), Value(ValueId(876))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 582, col: 41 } }] }
+  b76(%412: Data(I32), %877: Data(I32), %878: Data(I32), %879: Data(I32), %880: Data(Func(FuncType { params: [], ret: I32 })), %881: Data(Func(FuncType { params: [], ret: I32 })), %882: Data(Func(FuncType { params: [], ret: I32 })), %883: Data(Func(FuncType { params: [], ret: I32 })), %884: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(34)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(412)] }, successor: BlockId(77), resume_value: Some(ValueId(413)), arguments: [Value(ValueId(877)), Value(ValueId(878)), Value(ValueId(879)), Value(ValueId(880)), Value(ValueId(881)), Value(ValueId(882)), Value(ValueId(883)), Value(ValueId(884))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 582, col: 16 } }] }
+  b77(%413: Data(I32), %885: Data(I32), %886: Data(I32), %887: Data(I32), %888: Data(Func(FuncType { params: [], ret: I32 })), %889: Data(Func(FuncType { params: [], ret: I32 })), %890: Data(Func(FuncType { params: [], ret: I32 })), %891: Data(Func(FuncType { params: [], ret: I32 })), %892: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %414: Data(Str) = Template([Text("s01="), Operand(0)])(%413) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 582, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 582, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 582, col: 9 } }] @ a149-suspension-state.ts:582:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%414) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:582:3
+    %415: Data(Str) = StringLiteral("managed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 585, col: 24 } }] @ a149-suspension-state.ts:585:24
+    %416: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(62))(Integer(3):I32) @ a149-suspension-state.ts:586:18
+    %417: Data(Func(FuncType { params: [], ret: Str })) = MakeClosure(FunctionId(63))(%415, Integer(3):I32) @ a149-suspension-state.ts:587:19
+    %418: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%416) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 26 } }] @ a149-suspension-state.ts:588:26
+    %419: Data(Str) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: Str }))], return_type: Some(Data(Str)) })(%417) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 38 } }] @ a149-suspension-state.ts:588:38
+    %420: Data(Str) = Template([Text("lambda:before="), Operand(0), Text(":"), Operand(1)])(%418, %419) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 588, col: 9 } }] @ a149-suspension-state.ts:588:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%420) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:588:3
+    -> Suspend { kind: Async, successor: BlockId(78), resume_value: None, arguments: [Value(ValueId(885)), Value(ValueId(886)), Value(ValueId(887)), Value(ValueId(888)), Value(ValueId(889)), Value(ValueId(890)), Value(ValueId(891)), Value(ValueId(892)), Value(ValueId(416)), Value(ValueId(417))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)], traps: [] }
+  b78(%893: Data(I32), %894: Data(I32), %895: Data(I32), %896: Data(Func(FuncType { params: [], ret: I32 })), %897: Data(Func(FuncType { params: [], ret: I32 })), %898: Data(Func(FuncType { params: [], ret: I32 })), %899: Data(Func(FuncType { params: [], ret: I32 })), %900: Data(Func(FuncType { params: [], ret: I32 })), %901: Data(Func(FuncType { params: [], ret: I32 })), %902: Data(Func(FuncType { params: [], ret: Str }))) Some("async.resume"):
+    %421: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%901) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 25 } }] @ a149-suspension-state.ts:590:25
+    %422: Data(Str) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: Str }))], return_type: Some(Data(Str)) })(%902) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 37 } }] @ a149-suspension-state.ts:590:37
+    %423: Data(Str) = Template([Text("lambda:after="), Operand(0), Text(":"), Operand(1)])(%421, %422) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }] @ a149-suspension-state.ts:590:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%423) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(673), ValueId(737), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(747), ValueId(753), ValueId(761)] @ a149-suspension-state.ts:590:3
+    %424: Data(Array(I32)) = ArrayLiteral(Integer(2):I32, Integer(4):I32, Integer(6):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 30 } }] @ a149-suspension-state.ts:592:23
+    %425: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%424) @ a149-suspension-state.ts:592:3
+    %426: Data(I32) = IteratorBound(%425) @ a149-suspension-state.ts:592:3
+    -> Branch(BlockTarget { block: BlockId(79), arguments: [Value(ValueId(893)), Value(ValueId(894)), Value(ValueId(895)), Value(ValueId(896)), Value(ValueId(897)), Value(ValueId(898)), Value(ValueId(899)), Value(ValueId(900)), Value(ValueId(425)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(426))] })
+  b79(%427: Data(I32), %428: Data(I32), %429: Data(I32), %430: Data(Func(FuncType { params: [], ret: I32 })), %431: Data(Func(FuncType { params: [], ret: I32 })), %432: Data(Func(FuncType { params: [], ret: I32 })), %433: Data(Func(FuncType { params: [], ret: I32 })), %434: Data(Func(FuncType { params: [], ret: I32 })), %435: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %436: Data(I32), %437: Data(I32)) Some("for-of.cond"):
+    %457: Data(Bool) = IteratorHasNext(%435, %436, %437) @ a149-suspension-state.ts:592:3
+    -> ConditionalBranch { condition: Value(ValueId(457)), then_target: BlockTarget { block: BlockId(80), arguments: [] }, else_target: BlockTarget { block: BlockId(82), arguments: [Value(ValueId(427)), Value(ValueId(428)), Value(ValueId(429)), Value(ValueId(430)), Value(ValueId(431)), Value(ValueId(432)), Value(ValueId(433)), Value(ValueId(434))] } }
+  b80 Some("for-of.body"):
+    %458: Data(I32) = IteratorValue(%435, %436, %437) @ a149-suspension-state.ts:592:3
+    %459: Data(Str) = Template([Text("await-for:before="), Operand(0)])(%458) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 593, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 593, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 593, col: 11 } }] @ a149-suspension-state.ts:593:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%459) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424)] @ a149-suspension-state.ts:593:5
+    -> Suspend { kind: Async, successor: BlockId(83), resume_value: None, arguments: [Value(ValueId(427)), Value(ValueId(428)), Value(ValueId(429)), Value(ValueId(430)), Value(ValueId(431)), Value(ValueId(432)), Value(ValueId(433)), Value(ValueId(434)), Value(ValueId(435)), Value(ValueId(436)), Value(ValueId(437)), Value(ValueId(458))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424)], traps: [] }
+  b81(%438: Data(I32), %439: Data(I32), %440: Data(I32), %441: Data(Func(FuncType { params: [], ret: I32 })), %442: Data(Func(FuncType { params: [], ret: I32 })), %443: Data(Func(FuncType { params: [], ret: I32 })), %444: Data(Func(FuncType { params: [], ret: I32 })), %445: Data(Func(FuncType { params: [], ret: I32 })), %446: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %447: Data(I32), %448: Data(I32)) Some("for-of.step"):
+    %461: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%446, %447, %448) @ a149-suspension-state.ts:592:3
+    %462: Data(I32) = Binary(Add)(%447, Integer(1):I32) @ a149-suspension-state.ts:592:3
+    -> Branch(BlockTarget { block: BlockId(79), arguments: [Value(ValueId(438)), Value(ValueId(439)), Value(ValueId(440)), Value(ValueId(441)), Value(ValueId(442)), Value(ValueId(443)), Value(ValueId(444)), Value(ValueId(445)), Value(ValueId(461)), Value(ValueId(462)), Value(ValueId(448))] })
+  b82(%449: Data(I32), %450: Data(I32), %451: Data(I32), %452: Data(Func(FuncType { params: [], ret: I32 })), %453: Data(Func(FuncType { params: [], ret: I32 })), %454: Data(Func(FuncType { params: [], ret: I32 })), %455: Data(Func(FuncType { params: [], ret: I32 })), %456: Data(Func(FuncType { params: [], ret: I32 }))) Some("for-of.exit"):
+    %463: Data(Array(I32)) = ArrayLiteral(Integer(5):I32, Integer(6):I32, Integer(7):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 38 } }] @ a149-suspension-state.ts:598:31
+    %464: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(11)), parameter_types: [Data(Array(I32))], return_type: Some(Data(Generator(I32))) })(%463) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 23 } }] @ a149-suspension-state.ts:598:23
+    -> Branch(BlockTarget { block: BlockId(84), arguments: [Value(ValueId(449)), Value(ValueId(450)), Value(ValueId(451)), Value(ValueId(452)), Value(ValueId(453)), Value(ValueId(454)), Value(ValueId(455)), Value(ValueId(456))] })
+  b83(%903: Data(I32), %904: Data(I32), %905: Data(I32), %906: Data(Func(FuncType { params: [], ret: I32 })), %907: Data(Func(FuncType { params: [], ret: I32 })), %908: Data(Func(FuncType { params: [], ret: I32 })), %909: Data(Func(FuncType { params: [], ret: I32 })), %910: Data(Func(FuncType { params: [], ret: I32 })), %911: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %912: Data(I32), %913: Data(I32), %914: Data(I32)) Some("async.resume"):
+    %460: Data(Str) = Template([Text("await-for:after="), Operand(0)])(%914) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 595, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 595, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 595, col: 11 } }] @ a149-suspension-state.ts:595:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%460) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424)] @ a149-suspension-state.ts:595:5
+    -> Branch(BlockTarget { block: BlockId(81), arguments: [Value(ValueId(903)), Value(ValueId(904)), Value(ValueId(905)), Value(ValueId(906)), Value(ValueId(907)), Value(ValueId(908)), Value(ValueId(909)), Value(ValueId(910)), Value(ValueId(911)), Value(ValueId(912)), Value(ValueId(913))] })
+  b84(%465: Data(I32), %466: Data(I32), %467: Data(I32), %468: Data(Func(FuncType { params: [], ret: I32 })), %469: Data(Func(FuncType { params: [], ret: I32 })), %470: Data(Func(FuncType { params: [], ret: I32 })), %471: Data(Func(FuncType { params: [], ret: I32 })), %472: Data(Func(FuncType { params: [], ret: I32 }))) Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(85), arguments: [] }, else_target: BlockTarget { block: BlockId(86), arguments: [Value(ValueId(465)), Value(ValueId(466)), Value(ValueId(467)), Value(ValueId(468)), Value(ValueId(469)), Value(ValueId(470)), Value(ValueId(471)), Value(ValueId(472))] } }
+  b85 Some("while.body"):
+    %481: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%464) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 23 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 598, col: 3 } }] @ a149-suspension-state.ts:598:3
+    %482: Data(Bool) = LoadField(IterDone)(%481) @ a149-suspension-state.ts:598:3
+    -> ConditionalBranch { condition: Value(ValueId(482)), then_target: BlockTarget { block: BlockId(87), arguments: [] }, else_target: BlockTarget { block: BlockId(88), arguments: [] } }
+  b86(%473: Data(I32), %474: Data(I32), %475: Data(I32), %476: Data(Func(FuncType { params: [], ret: I32 })), %477: Data(Func(FuncType { params: [], ret: I32 })), %478: Data(Func(FuncType { params: [], ret: I32 })), %479: Data(Func(FuncType { params: [], ret: I32 })), %480: Data(Func(FuncType { params: [], ret: I32 }))) Some("while.exit"):
+    %493: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(12)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 602, col: 16 } }] @ a149-suspension-state.ts:602:16
+    %494: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(13)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 603, col: 17 } }] @ a149-suspension-state.ts:603:17
+    %495: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%493) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 28 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 28 } }] @ a149-suspension-state.ts:604:28
+    %496: Data(I32) = LoadField(IterValue)(%495) @ a149-suspension-state.ts:604:40
+    %497: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%494) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 49 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 49 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 49 } }] @ a149-suspension-state.ts:604:49
+    %498: Data(I32) = LoadField(IterValue)(%497) @ a149-suspension-state.ts:604:62
+    %499: Data(Str) = Template([Text("generators:turn="), Operand(0), Text(","), Operand(1)])(%496, %498) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 40 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 62 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 604, col: 9 } }] @ a149-suspension-state.ts:604:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%499) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:604:3
+    %500: Data(I32) = Call(CallTarget { kind: Function(FunctionId(14)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%493) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 32 } }] @ a149-suspension-state.ts:605:32
+    %501: Data(I32) = Call(CallTarget { kind: Function(FunctionId(14)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%494) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 48 } }] @ a149-suspension-state.ts:605:48
+    %502: Data(Str) = Template([Text("generators:function="), Operand(0), Text(","), Operand(1)])(%500, %501) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 48 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 605, col: 9 } }] @ a149-suspension-state.ts:605:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%502) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:605:3
+    %503: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(64))(Integer(7):I32) @ a149-suspension-state.ts:608:25
+    %504: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%503) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 609, col: 27 } }] @ a149-suspension-state.ts:609:27
+    %505: Data(Str) = Template([Text("rule1k:control="), Operand(0)])(%504) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 609, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 609, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 609, col: 9 } }] @ a149-suspension-state.ts:609:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%505) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:609:3
+    %506: Data(Str) = StringLiteral("named")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 611, col: 60 } }] @ a149-suspension-state.ts:611:60
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(38)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 })), Data(Str)], return_type: Some(Data(I32)) }, operands: [ValueId(503), ValueId(506)] }, successor: BlockId(90), resume_value: Some(ValueId(507)), arguments: [Value(ValueId(473)), Value(ValueId(474)), Value(ValueId(475)), Value(ValueId(476)), Value(ValueId(477)), Value(ValueId(478)), Value(ValueId(479)), Value(ValueId(480))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 611, col: 18 } }] }
+  b87 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(86), arguments: [Value(ValueId(465)), Value(ValueId(466)), Value(ValueId(467)), Value(ValueId(468)), Value(ValueId(469)), Value(ValueId(470)), Value(ValueId(471)), Value(ValueId(472))] })
+  b88 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(89), arguments: [Value(ValueId(465)), Value(ValueId(466)), Value(ValueId(467)), Value(ValueId(468)), Value(ValueId(469)), Value(ValueId(470)), Value(ValueId(471)), Value(ValueId(472))] })
+  b89(%483: Data(I32), %484: Data(I32), %485: Data(I32), %486: Data(Func(FuncType { params: [], ret: I32 })), %487: Data(Func(FuncType { params: [], ret: I32 })), %488: Data(Func(FuncType { params: [], ret: I32 })), %489: Data(Func(FuncType { params: [], ret: I32 })), %490: Data(Func(FuncType { params: [], ret: I32 }))) Some("if.join"):
+    %491: Data(I32) = LoadField(IterValue)(%481) @ a149-suspension-state.ts:598:14
+    %492: Data(Str) = Template([Text("yield-for:value="), Operand(0)])(%491) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 599, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 599, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 599, col: 11 } }] @ a149-suspension-state.ts:599:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%492) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:599:5
+    -> Branch(BlockTarget { block: BlockId(84), arguments: [Value(ValueId(483)), Value(ValueId(484)), Value(ValueId(485)), Value(ValueId(486)), Value(ValueId(487)), Value(ValueId(488)), Value(ValueId(489)), Value(ValueId(490))] })
+  b90(%507: Data(I32), %915: Data(I32), %916: Data(I32), %917: Data(I32), %918: Data(Func(FuncType { params: [], ret: I32 })), %919: Data(Func(FuncType { params: [], ret: I32 })), %920: Data(Func(FuncType { params: [], ret: I32 })), %921: Data(Func(FuncType { params: [], ret: I32 })), %922: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %508: Data(Str) = Template([Text("rule1k:p6="), Operand(0)])(%507) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 611, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 611, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 611, col: 5 } }] @ a149-suspension-state.ts:611:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%508) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:610:3
+    %509: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(65))(Integer(7):I32) @ a149-suspension-state.ts:615:7
+    %510: Data(Str) = StringLiteral("inline")() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 616, col: 7 } }] @ a149-suspension-state.ts:616:7
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(38)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 })), Data(Str)], return_type: Some(Data(I32)) }, operands: [ValueId(509), ValueId(510)] }, successor: BlockId(91), resume_value: Some(ValueId(511)), arguments: [Value(ValueId(915)), Value(ValueId(916)), Value(ValueId(917)), Value(ValueId(918)), Value(ValueId(919)), Value(ValueId(920)), Value(ValueId(921)), Value(ValueId(922))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 614, col: 19 } }] }
+  b91(%511: Data(I32), %923: Data(I32), %924: Data(I32), %925: Data(I32), %926: Data(Func(FuncType { params: [], ret: I32 })), %927: Data(Func(FuncType { params: [], ret: I32 })), %928: Data(Func(FuncType { params: [], ret: I32 })), %929: Data(Func(FuncType { params: [], ret: I32 })), %930: Data(Func(FuncType { params: [], ret: I32 }))) Some("async-call.resume"):
+    %512: Data(Str) = Template([Text("rule1k:p6b="), Operand(0)])(%511) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 614, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 614, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 614, col: 5 } }] @ a149-suspension-state.ts:614:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%512) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:613:3
+    %513: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(66))(Integer(7):I32) @ a149-suspension-state.ts:621:28
+    %514: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(39)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(Generator(I32))) })(%513) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 622, col: 29 } }] @ a149-suspension-state.ts:622:29
+    %515: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%514) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 623, col: 22 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a149-suspension-state.ts", line: 623, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 623, col: 22 } }] @ a149-suspension-state.ts:623:22
+    %516: Data(I32) = LoadField(IterValue)(%515) @ a149-suspension-state.ts:623:47
+    %517: Data(Str) = Template([Text("rule1k:g1="), Operand(0)])(%516) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 623, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 623, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 623, col: 9 } }] @ a149-suspension-state.ts:623:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%517) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:623:3
+    -> Suspend { kind: Async, successor: BlockId(92), resume_value: None, arguments: [Value(ValueId(923)), Value(ValueId(924)), Value(ValueId(925)), Value(ValueId(926)), Value(ValueId(927)), Value(ValueId(928)), Value(ValueId(929)), Value(ValueId(930)), Value(ValueId(514))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [] }
+  b92(%931: Data(I32), %932: Data(I32), %933: Data(I32), %934: Data(Func(FuncType { params: [], ret: I32 })), %935: Data(Func(FuncType { params: [], ret: I32 })), %936: Data(Func(FuncType { params: [], ret: I32 })), %937: Data(Func(FuncType { params: [], ret: I32 })), %938: Data(Func(FuncType { params: [], ret: I32 })), %939: Data(Generator(I32))) Some("async.resume"):
+    %518: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%939) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 625, col: 22 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a149-suspension-state.ts", line: 625, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 625, col: 22 } }] @ a149-suspension-state.ts:625:22
+    %519: Data(I32) = LoadField(IterValue)(%518) @ a149-suspension-state.ts:625:47
+    %520: Data(Str) = Template([Text("rule1k:g2="), Operand(0)])(%519) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 625, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 625, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 625, col: 9 } }] @ a149-suspension-state.ts:625:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%520) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:625:3
+    %521: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(67))(Integer(4):I32) @ a149-suspension-state.ts:628:27
+    %522: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(68))(%521) @ a149-suspension-state.ts:629:27
+    %523: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%522) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 630, col: 37 } }] @ a149-suspension-state.ts:630:37
+    %524: Data(Str) = Template([Text("rule1k:transitive:before="), Operand(0)])(%523) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 630, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 630, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 630, col: 9 } }] @ a149-suspension-state.ts:630:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%524) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:630:3
+    -> Suspend { kind: Async, successor: BlockId(93), resume_value: None, arguments: [Value(ValueId(931)), Value(ValueId(932)), Value(ValueId(933)), Value(ValueId(934)), Value(ValueId(935)), Value(ValueId(936)), Value(ValueId(937)), Value(ValueId(938)), Value(ValueId(522))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [] }
+  b93(%940: Data(I32), %941: Data(I32), %942: Data(I32), %943: Data(Func(FuncType { params: [], ret: I32 })), %944: Data(Func(FuncType { params: [], ret: I32 })), %945: Data(Func(FuncType { params: [], ret: I32 })), %946: Data(Func(FuncType { params: [], ret: I32 })), %947: Data(Func(FuncType { params: [], ret: I32 })), %948: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %525: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%948) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 632, col: 36 } }] @ a149-suspension-state.ts:632:36
+    %526: Data(Str) = Template([Text("rule1k:transitive:after="), Operand(0)])(%525) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 632, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 632, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 632, col: 9 } }] @ a149-suspension-state.ts:632:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%526) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:632:3
+    %527: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(69))(Integer(7):I32) @ a149-suspension-state.ts:635:33
+    -> Branch(BlockTarget { block: BlockId(94), arguments: [Value(ValueId(940)), Value(ValueId(941)), Value(ValueId(942)), Value(ValueId(943)), Value(ValueId(944)), Value(ValueId(945)), Value(ValueId(946)), Value(ValueId(947)), Value(ValueId(527))] })
+  b94(%528: Data(I32), %529: Data(I32), %530: Data(I32), %531: Data(Func(FuncType { params: [], ret: I32 })), %532: Data(Func(FuncType { params: [], ret: I32 })), %533: Data(Func(FuncType { params: [], ret: I32 })), %534: Data(Func(FuncType { params: [], ret: I32 })), %535: Data(Func(FuncType { params: [], ret: I32 })), %536: Data(Func(FuncType { params: [], ret: I32 }))) Some("for.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(95), arguments: [] }, else_target: BlockTarget { block: BlockId(97), arguments: [Value(ValueId(528)), Value(ValueId(529)), Value(ValueId(530)), Value(ValueId(531)), Value(ValueId(532)), Value(ValueId(533)), Value(ValueId(534)), Value(ValueId(535)), Value(ValueId(536))] } }
+  b95 Some("for.body"):
+    %555: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%536) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 636, col: 40 } }] @ a149-suspension-state.ts:636:40
+    %556: Data(Str) = Template([Text("rule1k:initializer:before="), Operand(0)])(%555) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 636, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 636, col: 40 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 636, col: 11 } }] @ a149-suspension-state.ts:636:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%556) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:636:5
+    -> Suspend { kind: Async, successor: BlockId(98), resume_value: None, arguments: [Value(ValueId(528)), Value(ValueId(529)), Value(ValueId(530)), Value(ValueId(531)), Value(ValueId(532)), Value(ValueId(533)), Value(ValueId(534)), Value(ValueId(535)), Value(ValueId(536))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [] }
+  b96(%537: Data(I32), %538: Data(I32), %539: Data(I32), %540: Data(Func(FuncType { params: [], ret: I32 })), %541: Data(Func(FuncType { params: [], ret: I32 })), %542: Data(Func(FuncType { params: [], ret: I32 })), %543: Data(Func(FuncType { params: [], ret: I32 })), %544: Data(Func(FuncType { params: [], ret: I32 })), %545: Data(Func(FuncType { params: [], ret: I32 }))) Some("for.step"):
+    -> Trap(Trap { kind: Unreachable, pos: Pos { file: "a149-suspension-state.ts", line: 302, col: 23 } })
+  b97(%546: Data(I32), %547: Data(I32), %548: Data(I32), %549: Data(Func(FuncType { params: [], ret: I32 })), %550: Data(Func(FuncType { params: [], ret: I32 })), %551: Data(Func(FuncType { params: [], ret: I32 })), %552: Data(Func(FuncType { params: [], ret: I32 })), %553: Data(Func(FuncType { params: [], ret: I32 })), %554: Data(Func(FuncType { params: [], ret: I32 }))) Some("for.exit"):
+    %559: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(70))() @ a149-suspension-state.ts:642:20
+    %560: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(71))() @ a149-suspension-state.ts:643:21
+    %561: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(72))(Integer(9):I32) @ a149-suspension-state.ts:645:30
+    %562: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%561) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 646, col: 33 } }] @ a149-suspension-state.ts:646:33
+    %563: Data(Str) = Template([Text("rule1k:chain:control="), Operand(0)])(%562) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 646, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 646, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 646, col: 9 } }] @ a149-suspension-state.ts:646:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%563) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:646:3
+    -> Suspend { kind: Async, successor: BlockId(99), resume_value: None, arguments: [Value(ValueId(561))], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [] }
+  b98(%949: Data(I32), %950: Data(I32), %951: Data(I32), %952: Data(Func(FuncType { params: [], ret: I32 })), %953: Data(Func(FuncType { params: [], ret: I32 })), %954: Data(Func(FuncType { params: [], ret: I32 })), %955: Data(Func(FuncType { params: [], ret: I32 })), %956: Data(Func(FuncType { params: [], ret: I32 })), %957: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %557: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%957) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 638, col: 39 } }] @ a149-suspension-state.ts:638:39
+    %558: Data(Str) = Template([Text("rule1k:initializer:after="), Operand(0)])(%557) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 638, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 638, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 638, col: 11 } }] @ a149-suspension-state.ts:638:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%558) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:638:5
+    -> Branch(BlockTarget { block: BlockId(97), arguments: [Value(ValueId(949)), Value(ValueId(950)), Value(ValueId(951)), Value(ValueId(952)), Value(ValueId(953)), Value(ValueId(954)), Value(ValueId(955)), Value(ValueId(956)), Value(ValueId(957))] })
+  b99(%958: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %564: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%958) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 648, col: 31 } }] @ a149-suspension-state.ts:648:31
+    %565: Data(Str) = Template([Text("rule1k:chain:after="), Operand(0)])(%564) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 648, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 648, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 648, col: 9 } }] @ a149-suspension-state.ts:648:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%565) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:648:3
+    %566: Data(Class(ClassId(95))) = AllocateClass(ClassId(95))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 650, col: 29 } }] @ a149-suspension-state.ts:650:29
+    %567: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:650:47
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%567, Integer(10):I32, Integer(20):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 650, col: 47 } }] @ a149-suspension-state.ts:650:47
+    %568: Data(Class(ClassId(94))) = LoadAddress(%567) @ a149-suspension-state.ts:650:47
+    Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(95))), Data(Class(ClassId(94)))], return_type: None })(%566, %568) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 650, col: 29 } }] @ a149-suspension-state.ts:650:29
+    %569: Data(Class(ClassId(94))) = LoadField(Class(FieldId(262)))(%566) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 652, col: 25 } }] @ a149-suspension-state.ts:652:43
+    %570: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Class(ClassId(95)))], return_type: Some(Data(I32)) })(%566) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 652, col: 50 } }] @ a149-suspension-state.ts:652:50
+    %571: Data(I32) = Call(CallTarget { kind: Function(FunctionId(15)), parameter_types: [Data(Class(ClassId(94))), Data(I32)], return_type: Some(Data(I32)) })(%569, %570) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 652, col: 13 } }] @ a149-suspension-state.ts:652:13
+    %572: Data(Str) = Template([Text("call="), Operand(0)])(%571) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 652, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 652, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 652, col: 5 } }] @ a149-suspension-state.ts:652:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%572) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:651:3
+    %573: Data(Class(ClassId(95))) = AllocateClass(ClassId(95))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 654, col: 30 } }] @ a149-suspension-state.ts:654:30
+    %574: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:654:48
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%574, Integer(10):I32, Integer(20):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 654, col: 48 } }] @ a149-suspension-state.ts:654:48
+    %575: Data(Class(ClassId(94))) = LoadAddress(%574) @ a149-suspension-state.ts:654:48
+    Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(95))), Data(Class(ClassId(94)))], return_type: None })(%573, %575) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 654, col: 30 } }] @ a149-suspension-state.ts:654:30
+    %576: Data(FixedArray(I32, 2)) = LoadField(Class(FieldId(263)))(%573) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 656, col: 31 } }] @ a149-suspension-state.ts:656:50
+    %577: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Class(ClassId(95)))], return_type: Some(Data(I32)) })(%573) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 656, col: 57 } }] @ a149-suspension-state.ts:656:57
+    %578: Data(I32) = Call(CallTarget { kind: Function(FunctionId(16)), parameter_types: [Data(FixedArray(I32, 2)), Data(I32)], return_type: Some(Data(I32)) })(%576, %577) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 656, col: 14 } }] @ a149-suspension-state.ts:656:14
+    %579: Data(Str) = Template([Text("fixed="), Operand(0)])(%578) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 656, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 656, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 656, col: 5 } }] @ a149-suspension-state.ts:656:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%579) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:655:3
+    %580: Data(Class(ClassId(95))) = AllocateClass(ClassId(95))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 658, col: 33 } }] @ a149-suspension-state.ts:658:33
+    %581: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:658:51
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%581, Integer(10):I32, Integer(20):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 658, col: 51 } }] @ a149-suspension-state.ts:658:51
+    %582: Data(Class(ClassId(94))) = LoadAddress(%581) @ a149-suspension-state.ts:658:51
+    Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(95))), Data(Class(ClassId(94)))], return_type: None })(%580, %582) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 658, col: 33 } }] @ a149-suspension-state.ts:658:33
+    %583: Data(Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 })) = LoadGlobal(GlobalId(2))() @ a149-suspension-state.ts:660:17
+    %584: Data(Class(ClassId(94))) = LoadField(Class(FieldId(262)))(%580) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 660, col: 33 } }] @ a149-suspension-state.ts:660:55
+    %585: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Class(ClassId(95)))], return_type: Some(Data(I32)) })(%580) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 660, col: 62 } }] @ a149-suspension-state.ts:660:62
+    %586: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 })), Data(Class(ClassId(94))), Data(I32)], return_type: Some(Data(I32)) })(%583, %584, %585) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 660, col: 17 } }] @ a149-suspension-state.ts:660:17
+    %587: Data(Str) = Template([Text("indirect="), Operand(0)])(%586) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 660, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 660, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 660, col: 5 } }] @ a149-suspension-state.ts:660:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%587) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:659:3
+    %588: Data(Class(ClassId(95))) = AllocateClass(ClassId(95))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 662, col: 29 } }] @ a149-suspension-state.ts:662:29
+    %589: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:662:47
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%589, Integer(10):I32, Integer(20):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 662, col: 47 } }] @ a149-suspension-state.ts:662:47
+    %590: Data(Class(ClassId(94))) = LoadAddress(%589) @ a149-suspension-state.ts:662:47
+    Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(95))), Data(Class(ClassId(94)))], return_type: None })(%588, %590) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 662, col: 29 } }] @ a149-suspension-state.ts:662:29
+    %591: Data(Class(ClassId(96))) = AllocateClass(ClassId(96))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 663, col: 23 } }] @ a149-suspension-state.ts:663:23
+    %592: Data(Class(ClassId(94))) = LoadField(Class(FieldId(262)))(%588) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 664, col: 5 } }] @ a149-suspension-state.ts:664:23
+    %593: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Class(ClassId(95)))], return_type: Some(Data(I32)) })(%588) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 665, col: 5 } }] @ a149-suspension-state.ts:665:5
+    Call(CallTarget { kind: Method(MethodId(6)), parameter_types: [Data(Class(ClassId(96))), Data(Class(ClassId(94))), Data(I32)], return_type: None })(%591, %592, %593) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 663, col: 23 } }] @ a149-suspension-state.ts:663:23
+    %594: Data(Class(ClassId(94))) = LoadField(Class(FieldId(264)))(%591) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 13 } }] @ a149-suspension-state.ts:668:25
+    %595: Data(I32) = LoadField(Class(FieldId(260)))(%594) @ a149-suspension-state.ts:668:31
+    %596: Data(Class(ClassId(94))) = LoadField(Class(FieldId(264)))(%591) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 36 } }] @ a149-suspension-state.ts:668:48
+    %597: Data(I32) = LoadField(Class(FieldId(261)))(%596) @ a149-suspension-state.ts:668:54
+    %598: Data(I32) = LoadField(Class(FieldId(265)))(%591) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 59 } }] @ a149-suspension-state.ts:668:71
+    %599: Data(Str) = Template([Text("ctor="), Operand(0), Text(","), Operand(1), Text(","), Operand(2)])(%595, %597, %598) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 54 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 71 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 668, col: 5 } }] @ a149-suspension-state.ts:668:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%599) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:667:3
+    %600: Data(Class(ClassId(95))) = AllocateClass(ClassId(95))() traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 670, col: 32 } }] @ a149-suspension-state.ts:670:32
+    %601: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:670:50
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%601, Integer(10):I32, Integer(20):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 670, col: 50 } }] @ a149-suspension-state.ts:670:50
+    %602: Data(Class(ClassId(94))) = LoadAddress(%601) @ a149-suspension-state.ts:670:50
+    Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(95))), Data(Class(ClassId(94)))], return_type: None })(%600, %602) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 670, col: 32 } }] @ a149-suspension-state.ts:670:32
+    %603: Data(Class(ClassId(94))) = LoadField(Class(FieldId(262)))(%600) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a149-suspension-state.ts", line: 672, col: 5 } }] @ a149-suspension-state.ts:672:26
+    %604: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AllocateClass(ClassId(94))() @ a149-suspension-state.ts:673:5
+    %605: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Class(ClassId(95)))], return_type: Some(Data(I32)) })(%600) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 673, col: 22 } }] @ a149-suspension-state.ts:673:22
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Address(AddressType { pointee: Class(ClassId(94)), array_base: None }), Data(I32), Data(I32)], return_type: None })(%604, %605, Integer(0):I32) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 673, col: 5 } }] @ a149-suspension-state.ts:673:5
+    %606: Data(Class(ClassId(94))) = LoadAddress(%604) @ a149-suspension-state.ts:673:5
+    %607: Data(FixedArray(Class(ClassId(94)), 2)) = ArrayLiteral(%603, %606) @ a149-suspension-state.ts:671:55
+    StoreLocal(LocalId(3))(%607) @ a149-suspension-state.ts:671:9
+    %608: Address(AddressType { pointee: FixedArray(Class(ClassId(94)), 2), array_base: None }) = AddressOfLocal(LocalId(3))() @ a149-suspension-state.ts:675:16
+    %609: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AddressOfIndex { checked: false }(%608, Integer(0):I32) @ a149-suspension-state.ts:675:16
+    %610: Data(Class(ClassId(94))) = LoadAddress(%609) @ a149-suspension-state.ts:675:16
+    %611: Data(I32) = LoadField(Class(FieldId(260)))(%610) @ a149-suspension-state.ts:675:34
+    %612: Address(AddressType { pointee: FixedArray(Class(ClassId(94)), 2), array_base: None }) = AddressOfLocal(LocalId(3))() @ a149-suspension-state.ts:675:39
+    %613: Address(AddressType { pointee: Class(ClassId(94)), array_base: None }) = AddressOfIndex { checked: false }(%612, Integer(0):I32) @ a149-suspension-state.ts:675:39
+    %614: Data(Class(ClassId(94))) = LoadAddress(%613) @ a149-suspension-state.ts:675:39
+    %615: Data(I32) = LoadField(Class(FieldId(261)))(%614) @ a149-suspension-state.ts:675:57
+    %616: Data(Str) = Template([Text("lit="), Operand(0), Text(","), Operand(1)])(%611, %615) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 57 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 675, col: 9 } }] @ a149-suspension-state.ts:675:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%616) invalidates=[ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)] @ a149-suspension-state.ts:675:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(40)), parameter_types: [], return_type: None }, operands: [] }, successor: BlockId(100), resume_value: None, arguments: [], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 677, col: 3 } }] }
+  b100 Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(42)), parameter_types: [], return_type: None }, operands: [] }, successor: BlockId(101), resume_value: None, arguments: [], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 678, col: 3 } }] }
+  b101 Some("async-call.resume"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(43)), parameter_types: [], return_type: None }, operands: [] }, successor: BlockId(102), resume_value: None, arguments: [], invalidates: [ValueId(8), ValueId(22), ValueId(33), ValueId(39), ValueId(48), ValueId(116), ValueId(199), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(234), ValueId(246), ValueId(261), ValueId(424), ValueId(463)], traps: [Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 679, col: 3 } }] }
+  b102 Some("async-call.resume"):
+    -> Return(None)
+fn f45 "<lambda a149-suspension-state.ts:340:22>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:340:22
+  param %0 "loopFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:340:22
+  value %0: Data(I32) name=Some("loopFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(5):I32) @ a149-suspension-state.ts:340:33
+    -> Return(Some(Value(ValueId(1))))
+fn f46 "<lambda a149-suspension-state.ts:349:24>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:349:24
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f47 "<lambda a149-suspension-state.ts:350:20>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:350:20
+  param %0 "assignedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:350:20
+  value %0: Data(I32) name=Some("assignedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a149-suspension-state.ts:350:31
+    -> Return(Some(Value(ValueId(1))))
+fn f48 "<lambda a149-suspension-state.ts:355:23>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:355:23
+  param %0 "sharedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:355:23
+  value %0: Data(I32) name=Some("sharedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a149-suspension-state.ts:355:34
+    -> Return(Some(Value(ValueId(1))))
+fn f49 "<lambda a149-suspension-state.ts:358:25>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:358:25
+  param %0 "sharedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:358:25
+  value %0: Data(I32) name=Some("sharedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a149-suspension-state.ts:358:36
+    -> Return(Some(Value(ValueId(1))))
+fn f50 "<lambda a149-suspension-state.ts:508:22>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:508:22
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f51 "<lambda a149-suspension-state.ts:511:20>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:511:20
+  param %0 "nestedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:511:20
+  value %0: Data(I32) name=Some("nestedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(3):I32) @ a149-suspension-state.ts:511:31
+    -> Return(Some(Value(ValueId(1))))
+fn f52 "<lambda a149-suspension-state.ts:516:25>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:516:25
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f53 "<lambda a149-suspension-state.ts:519:23>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:519:23
+  param %0 "nestedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:519:23
+  value %0: Data(I32) name=Some("nestedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(5):I32) @ a149-suspension-state.ts:519:34
+    -> Return(Some(Value(ValueId(1))))
+fn f54 "<lambda a149-suspension-state.ts:524:26>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:524:26
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f55 "<lambda a149-suspension-state.ts:528:26>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:528:26
+  param %0 "nestedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:528:26
+  value %0: Data(I32) name=Some("nestedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(4):I32) @ a149-suspension-state.ts:528:37
+    -> Return(Some(Value(ValueId(1))))
+fn f56 "<lambda a149-suspension-state.ts:535:20>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:535:20
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f57 "<lambda a149-suspension-state.ts:538:18>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:538:18
+  param %0 "nestedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:538:18
+  value %0: Data(I32) name=Some("nestedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a149-suspension-state.ts:538:29
+    -> Return(Some(Value(ValueId(1))))
+fn f58 "<lambda a149-suspension-state.ts:543:27>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:543:27
+  param %0 "nestedFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:543:27
+  value %0: Data(I32) name=Some("nestedFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a149-suspension-state.ts:543:38
+    -> Return(Some(Value(ValueId(1))))
+fn f59 "<lambda a149-suspension-state.ts:549:28>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:549:28
+  param %0 "calleeFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:549:28
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a149-suspension-state.ts:549:28
+  value %0: Data(I32) name=Some("calleeFactor")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a149-suspension-state.ts:549:49
+    -> Return(Some(Value(ValueId(2))))
+fn f60 "<lambda a149-suspension-state.ts:554:30>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:554:30
+  param %0 "argumentFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:554:30
+  value %0: Data(I32) name=Some("argumentFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a149-suspension-state.ts:554:41
+    -> Return(Some(Value(ValueId(1))))
+fn f61 "<lambda a149-suspension-state.ts:561:25>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:561:25
+  param %0 "defaultFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:561:25
+  value %0: Data(I32) name=Some("defaultFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(5):I32) @ a149-suspension-state.ts:561:36
+    -> Return(Some(Value(ValueId(1))))
+fn f62 "<lambda a149-suspension-state.ts:586:18>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:586:18
+  param %0 "factor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:586:18
+  value %0: Data(I32) name=Some("factor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(5):I32) @ a149-suspension-state.ts:586:29
+    -> Return(Some(Value(ValueId(1))))
+fn f63 "<lambda a149-suspension-state.ts:587:19>" kind=Lambda exported=false generator=false async=false -> Str entry=b0 @ a149-suspension-state.ts:587:19
+  param %0 "text": Data(Str) kind=Capture storage=None @ a149-suspension-state.ts:587:19
+  param %1 "factor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:587:19
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(I32) name=Some("factor")
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 587, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 587, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 587, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 587, col: 33 } }] @ a149-suspension-state.ts:587:33
+    -> Return(Some(Value(ValueId(2))))
+fn f64 "<lambda a149-suspension-state.ts:608:25>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:608:25
+  param %0 "remoteFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:608:25
+  value %0: Data(I32) name=Some("remoteFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(3):I32) @ a149-suspension-state.ts:608:36
+    -> Return(Some(Value(ValueId(1))))
+fn f65 "<lambda a149-suspension-state.ts:615:7>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:615:7
+  param %0 "remoteFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:615:7
+  value %0: Data(I32) name=Some("remoteFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(5):I32) @ a149-suspension-state.ts:615:18
+    -> Return(Some(Value(ValueId(1))))
+fn f66 "<lambda a149-suspension-state.ts:621:28>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:621:28
+  param %0 "generatorFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:621:28
+  value %0: Data(I32) name=Some("generatorFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(3):I32) @ a149-suspension-state.ts:621:39
+    -> Return(Some(Value(ValueId(1))))
+fn f67 "<lambda a149-suspension-state.ts:628:27>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:628:27
+  param %0 "transitiveFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:628:27
+  value %0: Data(I32) name=Some("transitiveFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(5):I32) @ a149-suspension-state.ts:628:38
+    -> Return(Some(Value(ValueId(1))))
+fn f68 "<lambda a149-suspension-state.ts:629:27>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:629:27
+  param %0 "transitiveInner": Data(Func(FuncType { params: [], ret: I32 })) kind=Capture storage=None @ a149-suspension-state.ts:629:27
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("transitiveInner")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a149-suspension-state.ts", line: 629, col: 38 } }] @ a149-suspension-state.ts:629:38
+    %2: Data(I32) = Binary(Add)(%1, Integer(1):I32) @ a149-suspension-state.ts:629:38
+    -> Return(Some(Value(ValueId(2))))
+fn f69 "<lambda a149-suspension-state.ts:635:33>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:635:33
+  param %0 "initializerFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:635:33
+  value %0: Data(I32) name=Some("initializerFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(3):I32) @ a149-suspension-state.ts:635:44
+    -> Return(Some(Value(ValueId(1))))
+fn f70 "<lambda a149-suspension-state.ts:642:20>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:642:20
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f71 "<lambda a149-suspension-state.ts:643:21>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:643:21
+  b0 Some("entry"):
+    -> Return(Some(Constant(Constant { ty: I32, kind: Integer(0) })))
+fn f72 "<lambda a149-suspension-state.ts:645:30>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a149-suspension-state.ts:645:30
+  param %0 "chainFactor": Data(I32) kind=Capture storage=None @ a149-suspension-state.ts:645:30
+  value %0: Data(I32) name=Some("chainFactor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a149-suspension-state.ts:645:41
+    -> Return(Some(Value(ValueId(1))))
+fn f73 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a149-suspension-state.ts:6:5
+  value %0: Data(Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 })) name=None
+  b0 Some("entry"):
+    StoreGlobal(GlobalId(0))(Integer(0):I32) @ a149-suspension-state.ts:6:5
+    StoreGlobal(GlobalId(1))(Integer(0):I32) @ a149-suspension-state.ts:7:5
+    %0: Data(Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 })) = FunctionRef(FunctionId(15))() @ a149-suspension-state.ts:127:65
+    StoreGlobal(GlobalId(2))(%0) @ a149-suspension-state.ts:127:7
+    -> Return(None)
+===== a20-coroutine-generator =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "sequence" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a20-coroutine-generator.ts:6:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a20-coroutine-generator.ts", line: 6, col: 11 } }]
+  param %0 "limit": Data(I32) kind=Explicit storage=None @ a20-coroutine-generator.ts:6:20
+  value %0: Data(I32) name=Some("limit")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(1) })] })
+  b1(%1: Data(I32), %2: Data(I32)) Some("for.cond"):
+    %7: Data(Bool) = Binary(Le)(%2, %1) @ a20-coroutine-generator.ts:7:28
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(1)), Value(ValueId(2))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(2))), successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(1)), Value(ValueId(2))], invalidates: [], traps: [] }
+  b3(%3: Data(I32), %4: Data(I32)) Some("for.step"):
+    %8: Data(I32) = Binary(Add)(%4, Integer(1):I32) @ a20-coroutine-generator.ts:7:44
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(3)), Value(ValueId(8))] })
+  b4(%5: Data(I32), %6: Data(I32)) Some("for.exit"):
+    -> Return(None)
+  b5(%9: Data(I32), %10: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(9)), Value(ValueId(10))] })
+fn f1 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a20-coroutine-generator.ts:12:17
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(IterResult(I32)) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a20-coroutine-generator.ts", line: 13, col: 21 } }] @ a20-coroutine-generator.ts:13:21
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%1: Data(I32)) Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(1))] } }
+  b2 Some("while.body"):
+    %3: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a20-coroutine-generator.ts", line: 16, col: 18 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a20-coroutine-generator.ts", line: 16, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a20-coroutine-generator.ts", line: 16, col: 18 } }] @ a20-coroutine-generator.ts:16:18
+    %4: Data(Bool) = LoadField(IterDone)(%3) @ a20-coroutine-generator.ts:17:14
+    -> ConditionalBranch { condition: Value(ValueId(4)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
+  b3(%2: Data(I32)) Some("while.exit"):
+    %8: Data(Str) = Template([Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a20-coroutine-generator.ts", line: 22, col: 12 } }] @ a20-coroutine-generator.ts:22:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a20-coroutine-generator.ts:22:3
+    -> Return(None)
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(1))] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(1))] })
+  b6(%5: Data(I32)) Some("if.join"):
+    %6: Data(I32) = LoadField(IterValue)(%3) @ a20-coroutine-generator.ts:20:19
+    %7: Data(I32) = Binary(Add)(%5, %6) @ a20-coroutine-generator.ts:20:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(7))] })
+===== a79-for-of-generator =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "values" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a79-for-of-generator.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 7, col: 11 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Copy(Integer(3):I32) @ a79-for-of-generator.ts:8:3
+    -> Suspend { kind: Yield(Some(ValueId(0))), successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    %1: Data(I32) = Copy(Integer(5):I32) @ a79-for-of-generator.ts:9:3
+    -> Suspend { kind: Yield(Some(ValueId(1))), successor: BlockId(2), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b2 Some("yield.resume"):
+    %2: Data(I32) = Copy(Integer(8):I32) @ a79-for-of-generator.ts:10:3
+    -> Suspend { kind: Yield(Some(ValueId(2))), successor: BlockId(3), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b3 Some("yield.resume"):
+    -> Return(None)
+fn f1 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a79-for-of-generator.ts:13:17
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Generator(I32)) name=None
+  value %6: Data(IterResult(I32)) name=None
+  value %7: Data(IterResult(I32)) name=None
+  value %8: Data(IterResult(I32)) name=None
+  value %9: Data(Bool) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(IterResult(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() traps=[Trap { kind: Call, pos: Pos { file: "a79-for-of-generator.ts", line: 14, col: 23 } }] @ a79-for-of-generator.ts:14:23
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b1 Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [] } }
+  b2 Some("while.body"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a79-for-of-generator.ts", line: 14, col: 23 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a79-for-of-generator.ts", line: 14, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a79-for-of-generator.ts", line: 14, col: 3 } }] @ a79-for-of-generator.ts:14:3
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a79-for-of-generator.ts:14:3
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
+  b3 Some("while.exit"):
+    %5: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() traps=[Trap { kind: Call, pos: Pos { file: "a79-for-of-generator.ts", line: 18, col: 37 } }] @ a79-for-of-generator.ts:18:37
+    %6: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%5) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a79-for-of-generator.ts", line: 19, col: 14 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a79-for-of-generator.ts", line: 19, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a79-for-of-generator.ts", line: 19, col: 14 } }] @ a79-for-of-generator.ts:19:14
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(6))] })
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [] })
+  b6 Some("if.join"):
+    %3: Data(I32) = LoadField(IterValue)(%1) @ a79-for-of-generator.ts:14:14
+    %4: Data(Str) = Template([Text("for-of:"), Operand(0)])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 15, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 15, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 15, col: 11 } }] @ a79-for-of-generator.ts:15:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a79-for-of-generator.ts:15:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b7(%7: Data(IterResult(I32))) Some("while.cond"):
+    %9: Data(Bool) = LoadField(IterDone)(%7) @ a79-for-of-generator.ts:20:16
+    %10: Data(Bool) = Unary(Not)(%9) @ a79-for-of-generator.ts:20:10
+    -> ConditionalBranch { condition: Value(ValueId(10)), then_target: BlockTarget { block: BlockId(8), arguments: [] }, else_target: BlockTarget { block: BlockId(9), arguments: [Value(ValueId(7))] } }
+  b8 Some("while.body"):
+    %11: Data(I32) = LoadField(IterValue)(%7) @ a79-for-of-generator.ts:21:26
+    %12: Data(Str) = Template([Text("manual:"), Operand(0)])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 21, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 21, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a79-for-of-generator.ts", line: 21, col: 11 } }] @ a79-for-of-generator.ts:21:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a79-for-of-generator.ts:21:5
+    %13: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%5) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a79-for-of-generator.ts", line: 22, col: 12 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a79-for-of-generator.ts", line: 22, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a79-for-of-generator.ts", line: 22, col: 12 } }] @ a79-for-of-generator.ts:22:12
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(13))] })
+  b9(%8: Data(IterResult(I32))) Some("while.exit"):
+    -> Return(None)
+===== a93-async-chain =====
+module initializer=Some(FunctionId(3))
+global g0 "polls": I32 mutable=true @ a93-async-chain.ts:6:5
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "leaf" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a93-async-chain.ts:8:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 8, col: 16 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("leaf:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 9, col: 9 } }] @ a93-async-chain.ts:9:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a93-async-chain.ts:9:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b1 Some("while.cond"):
+    %1: Data(I32) = LoadGlobal(GlobalId(0))() @ a93-async-chain.ts:10:10
+    %2: Data(Bool) = Binary(Lt)(%1, Integer(2):I32) @ a93-async-chain.ts:10:10
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [] } }
+  b2 Some("while.body"):
+    %3: Data(I32) = LoadGlobal(GlobalId(0))() @ a93-async-chain.ts:11:24
+    %4: Data(Str) = Template([Text("leaf:poll="), Operand(0)])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 11, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 11, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 11, col: 11 } }] @ a93-async-chain.ts:11:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a93-async-chain.ts:11:5
+    %5: Data(I32) = LoadGlobal(GlobalId(0))() @ a93-async-chain.ts:12:5
+    %6: Data(I32) = Binary(Add)(%5, Integer(1):I32) @ a93-async-chain.ts:12:5
+    StoreGlobal(GlobalId(0))(%6) @ a93-async-chain.ts:12:5
+    -> Suspend { kind: Async, successor: BlockId(4), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b3 Some("while.exit"):
+    %9: Data(I32) = LoadGlobal(GlobalId(0))() @ a93-async-chain.ts:16:22
+    %10: Data(Str) = Template([Text("leaf:done="), Operand(0)])(%9) traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 16, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 16, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 16, col: 9 } }] @ a93-async-chain.ts:16:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%10) @ a93-async-chain.ts:16:3
+    %11: Data(I32) = LoadGlobal(GlobalId(0))() @ a93-async-chain.ts:17:10
+    %12: Data(I32) = Binary(Add)(%11, Integer(10):I32) @ a93-async-chain.ts:17:10
+    -> Return(Some(Value(ValueId(12))))
+  b4 Some("async.resume"):
+    %7: Data(I32) = LoadGlobal(GlobalId(0))() @ a93-async-chain.ts:14:26
+    %8: Data(Str) = Template([Text("leaf:resume="), Operand(0)])(%7) traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 14, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 14, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 14, col: 11 } }] @ a93-async-chain.ts:14:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a93-async-chain.ts:14:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+fn f1 "middle" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a93-async-chain.ts:20:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 20, col: 16 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("middle:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 21, col: 9 } }] @ a93-async-chain.ts:21:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a93-async-chain.ts:21:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(0)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a93-async-chain.ts", line: 22, col: 22 } }] }
+  b1(%1: Data(I32)) Some("async-call.resume"):
+    %2: Data(Str) = Template([Text("middle:value="), Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 23, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 23, col: 9 } }] @ a93-async-chain.ts:23:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a93-async-chain.ts:23:3
+    %3: Data(I32) = Binary(Add)(%1, Integer(20):I32) @ a93-async-chain.ts:24:10
+    -> Return(Some(Value(ValueId(3))))
+fn f2 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a93-async-chain.ts:27:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 27, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("main:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 28, col: 9 } }] @ a93-async-chain.ts:28:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a93-async-chain.ts:28:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a93-async-chain.ts", line: 29, col: 22 } }] }
+  b1(%1: Data(I32)) Some("async-call.resume"):
+    %2: Data(Str) = Template([Text("main:value="), Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 30, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a93-async-chain.ts", line: 30, col: 9 } }] @ a93-async-chain.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a93-async-chain.ts:30:3
+    -> Return(None)
+fn f3 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a93-async-chain.ts:6:5
+  b0 Some("entry"):
+    StoreGlobal(GlobalId(0))(Integer(0):I32) @ a93-async-chain.ts:6:5
+    -> Return(None)
+===== a94-async-two-roots =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a94-async-two-roots.ts:6:17
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("main:sync")() traps=[Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 7, col: 9 } }] @ a94-async-two-roots.ts:7:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a94-async-two-roots.ts:7:3
+    -> Return(None)
+fn f1 "first" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a94-async-two-roots.ts:10:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 10, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("first:kick")() traps=[Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 11, col: 9 } }] @ a94-async-two-roots.ts:11:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a94-async-two-roots.ts:11:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %1: Data(Str) = StringLiteral("first:step-1")() traps=[Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 13, col: 9 } }] @ a94-async-two-roots.ts:13:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a94-async-two-roots.ts:13:3
+    -> Suspend { kind: Async, successor: BlockId(2), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b2 Some("async.resume"):
+    %2: Data(Str) = StringLiteral("first:done")() traps=[Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 15, col: 9 } }] @ a94-async-two-roots.ts:15:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a94-async-two-roots.ts:15:3
+    -> Return(None)
+fn f2 "second" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a94-async-two-roots.ts:18:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 18, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("second:kick")() traps=[Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 19, col: 9 } }] @ a94-async-two-roots.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a94-async-two-roots.ts:19:3
+    -> Suspend { kind: Async, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %1: Data(Str) = StringLiteral("second:done")() traps=[Trap { kind: Allocation, pos: Pos { file: "a94-async-two-roots.ts", line: 21, col: 9 } }] @ a94-async-two-roots.ts:21:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a94-async-two-roots.ts:21:3
+    -> Return(None)
+===== a95-interop-async-await =====
+module initializer=None
+class c0 "SubChainHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:41:15
+  field d0 "sType": Enum(EnumId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:42:3
+  field d1 "next": Nullable(Class(ClassId(0))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:43:3
+class c1 "SubChainExtA" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:47:15
+  field d2 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:48:3
+  field d3 "intensity": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:49:3
+  field d4 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:50:3
+class c2 "SubChainExtB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:54:15
+  field d5 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:55:3
+  field d6 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:56:3
+  field d7 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:57:3
+class c3 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:65:15
+  field d8 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:66:3
+  field d9 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:67:3
+  field d10 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:68:3
+class c4 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:72:15
+  field d11 "basis": FixedArray(F32, 16) defaulted=false absence=false foreign=None @ interop.generated.d.ts:73:3
+  field d12 "bone": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:74:3
+  field d13 "weight": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:75:3
+  field d14 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:76:3
+class c5 "SubSample" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:80:15
+  field d15 "a": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:81:3
+  field d16 "b": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:82:3
+  field d17 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:83:3
+  field d18 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:84:3
+class c6 "SubDevice" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:88:11
+class c7 "SubDrawList" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:110:15
+  field d19 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:111:3
+  field d20 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:112:3
+class c8 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:120:15
+  field d21 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:121:3
+  field d22 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
+class c9 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:129:15
+  field d23 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:130:3
+  field d24 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:131:3
+class c10 "SubVec3" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:135:15
+  field d25 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:136:3
+  field d26 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:137:3
+  field d27 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:138:3
+class c11 "SubVec4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:142:15
+  field d28 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:143:3
+  field d29 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:144:3
+  field d30 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:145:3
+  field d31 "w": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:146:3
+class c12 "SubRect" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:150:15
+  field d32 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:151:3
+  field d33 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:152:3
+  field d34 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:153:3
+  field d35 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:154:3
+class c13 "SubRange" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:158:15
+  field d36 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:159:3
+  field d37 "size": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:160:3
+class c14 "SubColor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:164:15
+  field d38 "r": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:165:3
+  field d39 "g": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:166:3
+  field d40 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:167:3
+  field d41 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:168:3
+class c15 "SubTimings" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:172:15
+  field d42 "cpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:173:3
+  field d43 "gpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:174:3
+  field d44 "frame": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:175:3
+class c16 "SubMixed" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:179:15
+  field d45 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:180:3
+  field d46 "id": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:181:3
+  field d47 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:182:3
+  field d48 "ratio": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:183:3
+class c17 "SubPadB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:187:15
+  field d49 "head": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:188:3
+  field d50 "mid": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:189:3
+  field d51 "tail": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:190:3
+class c18 "SubNarrowPacket" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15
+  field d52 "kind": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
+  field d53 "delta": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:196:3
+  field d54 "weight": F16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:197:3
+  field d55 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:198:3
+  field d56 "bias": I8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:199:3
+  field d57 "count": U16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:200:3
+  field d58 "scale": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:201:3
+class c19 "SubExtent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:205:15
+  field d59 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:206:3
+  field d60 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:207:3
+  field d61 "depth": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:208:3
+class c20 "SubImageInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:212:15
+  field d62 "extent": Class(ClassId(19)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:213:3
+  field d63 "mipLevels": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:214:3
+  field d64 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:215:3
+class c21 "SubBounds" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:219:15
+  field d65 "min": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:220:3
+  field d66 "max": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:221:3
+class c22 "SubViewport" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:225:15
+  field d67 "rect": Class(ClassId(12)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:226:3
+  field d68 "depth": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:227:3
+class c23 "SubNodeInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:231:15
+  field d69 "bounds": Class(ClassId(21)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:232:3
+  field d70 "id": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:233:3
+  field d71 "tint": Class(ClassId(14)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:234:3
+class c24 "SubChainExtC" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:238:15
+  field d72 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:239:3
+  field d73 "offset": Class(ClassId(10)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:240:3
+  field d74 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:241:3
+class c25 "SubChainExtD" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:245:15
+  field d75 "header": Class(ClassId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:246:3
+  field d76 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:247:3
+  field d77 "level": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:248:3
+  field d78 "active": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:249:3
+class c26 "SubEventHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:253:15
+  field d79 "kind": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:254:3
+  field d80 "next": Nullable(Class(ClassId(26))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:255:3
+class c27 "SubEventKey" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:259:15
+  field d81 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:260:3
+  field d82 "code": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:261:3
+  field d83 "pressed": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:262:3
+class c28 "SubEventMove" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:266:15
+  field d84 "header": Class(ClassId(26)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:267:3
+  field d85 "dx": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:268:3
+  field d86 "dy": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:269:3
+class c29 "SubPassInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:273:15
+  field d87 "access": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:274:3
+  field d88 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:275:3
+  field d89 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:276:3
+class c30 "SubResourceDesc" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:280:15
+  field d90 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:281:3
+  field d91 "range": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:282:3
+  field d92 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:283:3
+class c31 "SubCommandBuffer" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:287:15
+  field d93 "queue": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:288:3
+  field d94 "commands": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:289:3
+class c32 "SubFuture" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:296:15
+  field d95 "id": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:297:3
+class c33 "SubStats" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:301:15
+  field d96 "submitted": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:302:3
+  field d97 "completed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:303:3
+  field d98 "pending": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:304:3
+class c34 "SubQueryStatus" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:311:15
+  field d99 "future": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:312:3
+  field d100 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:313:3
+class c35 "SubWaitEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:319:15
+  field d101 "future": Class(ClassId(32)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:320:3
+  field d102 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:321:3
+class c36 "SubBoundaryStringRecord" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:331:15
+  field d103 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:332:3
+  field d104 "handle": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:333:3
+  field d105 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:334:3
+  field d106 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:335:3
+  field d107 "generation": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:336:3
+class c37 "SGPUProbeExtent3D" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:349:15
+  field d108 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:350:3
+  field d109 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:351:3
+  field d110 "depthOrArrayLayers": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:352:3
+class c38 "SGPUProbeTextureDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:356:15
+  field d111 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:357:3
+  field d112 "extent": Class(ClassId(37)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:358:3
+  field d113 "viewFormats": Array(Enum(EnumId(1))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:359:3
+  field d114 "format": Enum(EnumId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:360:3
+  field d115 "mipLevelCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:361:3
+  field d116 "sampleCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:362:3
+  field d117 "dimension": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:363:3
+  field d118 "usage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:364:3
+class c39 "SubProbePipelineLayoutDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:371:15
+  field d119 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:372:3
+  field d120 "bindGroupLayouts": Array(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:373:3
+class c40 "SubProbeBindGroupEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:379:15
+  field d121 "binding": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:380:3
+  field d122 "buffer": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:381:3
+  field d123 "sampler": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:382:3
+  field d124 "textureView": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:383:3
+class c41 "SGPUProbeComputeState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:390:15
+  field d125 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:391:3
+  field d126 "workgroupX": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:392:3
+  field d127 "workgroupY": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:393:3
+  field d128 "constantSeed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:394:3
+class c42 "SGPUProbeComputePipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:398:15
+  field d129 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:399:3
+  field d130 "compute": Class(ClassId(41)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:400:3
+  field d131 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:401:3
+class c43 "SGPUProbeVertexAttribute" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:407:15
+  field d132 "shaderLocation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:408:3
+  field d133 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:409:3
+  field d134 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:410:3
+class c44 "SGPUProbeVertexBufferLayout" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:414:15
+  field d135 "arrayStride": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:415:3
+  field d136 "stepMode": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:416:3
+  field d137 "attributes": Array(Class(ClassId(43))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:417:3
+class c45 "SGPUProbeVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:421:15
+  field d138 "moduleId": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:422:3
+  field d139 "buffers": Array(Class(ClassId(44))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:423:3
+class c46 "SGPUProbeRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:427:15
+  field d140 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:428:3
+  field d141 "vertex": Class(ClassId(45)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:429:3
+  field d142 "primitive": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:430:3
+class c47 "SGPUProbeConstantEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:436:15
+  field d143 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:437:3
+  field d144 "value": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:438:3
+class c48 "SGPUProbeProgrammableStage" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:442:15
+  field d145 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:443:3
+  field d146 "stage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:444:3
+class c49 "SGPUProbeBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:450:15
+  field d147 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:451:3
+  field d148 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:452:3
+class c50 "SGPUProbeColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:456:15
+  field d149 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:457:3
+  field d150 "blend": Nullable(Class(ClassId(49))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:458:3
+  field d151 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:459:3
+class c51 "SGPUProbeFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:463:15
+  field d152 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:464:3
+  field d153 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:465:3
+  field d154 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:466:3
+class c52 "SGPUProbeFullRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:470:15
+  field d155 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:471:3
+  field d156 "fragment": Nullable(Class(ClassId(51))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:472:3
+class c53 "SGPUProbeHandleFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:478:15
+  field d157 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:479:3
+  field d158 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:480:3
+  field d159 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:481:3
+  field d160 "targets": Array(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:482:3
+class c54 "SGPUProbeHandleRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:486:15
+  field d161 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:487:3
+  field d162 "fragment": Nullable(Class(ClassId(53))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:488:3
+class c55 "SGPUProbeNestedBlendComponent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:494:15
+  field d163 "operation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:495:3
+  field d164 "srcFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:496:3
+  field d165 "dstFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:497:3
+class c56 "SGPUProbeNestedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:501:15
+  field d166 "color": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:502:3
+  field d167 "alpha": Class(ClassId(55)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:503:3
+class c57 "SGPUProbeNestedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:507:15
+  field d168 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:508:3
+  field d169 "blend": Nullable(Class(ClassId(56))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:509:3
+  field d170 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:510:3
+class c58 "SGPUProbeNestedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:514:15
+  field d171 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:515:3
+  field d172 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:516:3
+  field d173 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:517:3
+  field d174 "targets": Array(Class(ClassId(57))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:518:3
+class c59 "SGPUProbeNestedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:522:15
+  field d175 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:523:3
+  field d176 "fragment": Nullable(Class(ClassId(58))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:524:3
+class c60 "SGPUProbeUnmarkedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:535:15
+  field d177 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:536:3
+  field d178 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:537:3
+class c61 "SGPUProbeUnmarkedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:541:15
+  field d179 "format": Enum(EnumId(2)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:542:3
+  field d180 "blend": Nullable(Class(ClassId(60))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:543:3
+  field d181 "writeMask": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:544:3
+class c62 "SGPUProbeUnmarkedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:548:15
+  field d182 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:549:3
+  field d183 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:550:3
+  field d184 "constants": Array(Class(ClassId(47))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:551:3
+  field d185 "targets": Array(Class(ClassId(61))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:552:3
+class c63 "SGPUProbeUnmarkedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:556:15
+  field d186 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:557:3
+  field d187 "fragment": Nullable(Class(ClassId(62))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:558:3
+class c64 "SGPUProbeBreadthNestedState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:564:15
+  field d188 "first": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:565:3
+  field d189 "second": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:566:3
+class c65 "SGPUProbeBreadthDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:570:15
+  field d190 "limits": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:571:3
+  field d191 "biases": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:572:3
+class c66 "SGPUProbeBreadthFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:576:15
+  field d192 "stage": Class(ClassId(64)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:577:3
+  field d193 "constants": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:578:3
+class c67 "SGPUProbeBreadthPrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:582:15
+  field d194 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:583:3
+  field d195 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:584:3
+class c68 "SGPUProbeBreadthRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:588:15
+  field d196 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:589:3
+  field d197 "depthStencil": Nullable(Class(ClassId(65))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:590:3
+  field d198 "primitive": Class(ClassId(67)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:591:3
+  field d199 "fragment": Nullable(Class(ClassId(66))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:592:3
+class c69 "SGPUProbeWidePairEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:598:15
+  field d200 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:599:3
+  field d201 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:600:3
+class c70 "SGPUProbeWideVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:604:15
+  field d202 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:605:3
+  field d203 "buffers": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:606:3
+class c71 "SGPUProbeWidePrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:610:15
+  field d204 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:611:3
+  field d205 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:612:3
+class c72 "SGPUProbeWideMultisampleState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:616:15
+  field d206 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:617:3
+  field d207 "mask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:618:3
+  field d208 "alphaToCoverage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:619:3
+class c73 "SGPUProbeWidePayload" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:623:15
+  field d209 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:624:3
+  field d210 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:625:3
+class c74 "SGPUProbeWidePointerElement" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:629:15
+  field d211 "kind": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:630:3
+  field d212 "payload": Nullable(Class(ClassId(73))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:631:3
+class c75 "SGPUProbeWideDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:635:15
+  field d213 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:636:3
+  field d214 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:637:3
+class c76 "SGPUProbeWideFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:641:15
+  field d215 "module": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:642:3
+  field d216 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:643:3
+  field d217 "constants": Array(Class(ClassId(69))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:644:3
+  field d218 "elements": Array(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:645:3
+class c77 "SGPUProbeWideRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:649:15
+  field d219 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:650:3
+  field d220 "layout": Nullable(Class(ClassId(6))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:651:3
+  field d221 "vertex": Class(ClassId(70)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:652:3
+  field d222 "primitive": Class(ClassId(71)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:653:3
+  field d223 "depthStencil": Nullable(Class(ClassId(75))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:654:3
+  field d224 "multisample": Class(ClassId(72)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:655:3
+  field d225 "fragment": Nullable(Class(ClassId(76))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:656:3
+class c78 "SubByValueI32One" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:664:15
+  field d226 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:665:3
+class c79 "SubByValueI32Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:669:15
+  field d227 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:670:3
+  field d228 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:671:3
+class c80 "SubByValueI32Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:675:15
+  field d229 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:676:3
+  field d230 "b": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:677:3
+  field d231 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:678:3
+class c81 "SubByValueI16I16I32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:682:15
+  field d232 "a": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:683:3
+  field d233 "b": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:684:3
+  field d234 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:685:3
+class c82 "SubByValueU8Four" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:689:15
+  field d235 "a": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:690:3
+  field d236 "b": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:691:3
+  field d237 "c": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:692:3
+  field d238 "d": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:693:3
+class c83 "SubByValueI64Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:697:15
+  field d239 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:698:3
+  field d240 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:699:3
+class c84 "SubByValueF32Hfa2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:703:15
+  field d241 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:704:3
+  field d242 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:705:3
+class c85 "SubByValueF32Hfa4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:709:15
+  field d243 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:710:3
+  field d244 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:711:3
+  field d245 "c": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:712:3
+  field d246 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:713:3
+class c86 "SubByValueI32F32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:717:15
+  field d247 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:718:3
+  field d248 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:719:3
+class c87 "SubByValueI32I64" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:723:15
+  field d249 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:724:3
+  field d250 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:725:3
+class c88 "SubByValueI64Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:729:15
+  field d251 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:730:3
+  field d252 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:731:3
+  field d253 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:732:3
+class c89 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:748:11
+enum e0 "SubChainKind" [("SUB_CHAIN_KIND_BASE", 0), ("SUB_CHAIN_KIND_EXT_A", 1), ("SUB_CHAIN_KIND_EXT_B", 2)] @ interop.generated.d.ts:35:14
+enum e1 "SGPUProbeFormat" [("SGPU_PROBE_FORMAT_RGBA8", 11), ("SGPU_PROBE_FORMAT_BGRA8", 29), ("SGPU_PROBE_FORMAT_DEPTH24", 47)] @ interop.generated.d.ts:343:14
+enum e2 "SGPUProbeUnmarkedTextureFormat" [("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8", 101), ("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8", 202)] @ interop.generated.d.ts:530:14
+foreign x0 "subChainPayloadValue" -> I32 include="interop.h" @ interop.generated.d.ts:61:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:61:39
+foreign x1 "subDeviceCreate" -> Class(ClassId(6)) include="interop.h" @ interop.generated.d.ts:92:18
+  param "chain": Nullable(Class(ClassId(0))) foreign=None @ interop.generated.d.ts:92:34
+foreign x2 "subDeviceRetain" -> Void include="interop.h" @ interop.generated.d.ts:93:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:93:34
+foreign x3 "subDeviceRelease" -> Void include="interop.h" @ interop.generated.d.ts:94:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:94:35
+foreign x4 "subDeviceSubmit" -> Void include="interop.h" @ interop.generated.d.ts:95:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:95:34
+  param "commands": Array(U32) foreign=Some(Descriptor { aggregate: "SubBufferView", element: "uint32_t", element_const: true }) @ interop.generated.d.ts:95:53
+foreign x5 "subDeviceSetLogger" -> Void include="interop.h" @ interop.generated.d.ts:96:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:96:37
+  param "logger": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:96:56
+foreign x6 "subDeviceSetLabel" -> Void include="interop.h" @ interop.generated.d.ts:97:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:97:36
+  param "label": Str foreign=Some(StringView { aggregate: "SubStringView" }) @ interop.generated.d.ts:97:55
+foreign x7 "subDevicePoll" -> I32 include="interop.h" @ interop.generated.d.ts:98:18
+  param "attempt": I32 foreign=None @ interop.generated.d.ts:98:32
+foreign x8 "subSliceChecksumF32" -> I32 include="interop.h" @ interop.generated.d.ts:99:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:99:38
+foreign x9 "subSliceChecksumI32" -> I32 include="interop.h" @ interop.generated.d.ts:100:18
+  param "data": Array(I32) foreign=Some(Descriptor { aggregate: "SubSliceI32", element: "int32_t", element_const: true }) @ interop.generated.d.ts:100:38
+foreign x10 "subSliceChecksumF64" -> I32 include="interop.h" @ interop.generated.d.ts:101:18
+  param "data": Array(F64) foreign=Some(Descriptor { aggregate: "SubSliceF64", element: "double", element_const: true }) @ interop.generated.d.ts:101:38
+foreign x11 "subSliceChecksumI64" -> I32 include="interop.h" @ interop.generated.d.ts:102:18
+  param "data": Array(I64) foreign=Some(Descriptor { aggregate: "SubSliceI64", element: "int64_t", element_const: true }) @ interop.generated.d.ts:102:38
+foreign x12 "subSliceChecksumU8" -> I32 include="interop.h" @ interop.generated.d.ts:103:18
+  param "data": Array(U8) foreign=Some(Descriptor { aggregate: "SubSliceU8", element: "uint8_t", element_const: true }) @ interop.generated.d.ts:103:37
+foreign x13 "subSliceChecksumI8" -> I32 include="interop.h" @ interop.generated.d.ts:104:18
+  param "data": Array(I8) foreign=Some(Descriptor { aggregate: "SubSliceI8", element: "int8_t", element_const: true }) @ interop.generated.d.ts:104:37
+foreign x14 "subSliceChecksumU16" -> I32 include="interop.h" @ interop.generated.d.ts:105:18
+  param "data": Array(U16) foreign=Some(Descriptor { aggregate: "SubSliceU16", element: "uint16_t", element_const: true }) @ interop.generated.d.ts:105:38
+foreign x15 "subSliceChecksumI16" -> I32 include="interop.h" @ interop.generated.d.ts:106:18
+  param "data": Array(I16) foreign=Some(Descriptor { aggregate: "SubSliceI16", element: "int16_t", element_const: true }) @ interop.generated.d.ts:106:38
+foreign x16 "subSliceChecksumF16" -> I32 include="interop.h" @ interop.generated.d.ts:107:18
+  param "data": Array(F16) foreign=Some(Descriptor { aggregate: "SubSliceF16", element: "SubFloat16", element_const: true }) @ interop.generated.d.ts:107:38
+foreign x17 "subAccessMatches" -> I32 include="interop.h" @ interop.generated.d.ts:108:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:108:35
+  param "required": U64 foreign=None @ interop.generated.d.ts:108:52
+foreign x18 "subDrawListTotal" -> I32 include="interop.h" @ interop.generated.d.ts:116:18
+  param "list": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:116:35
+foreign x19 "subBulkConsume" -> I32 include="interop.h" @ interop.generated.d.ts:117:18
+  param "data": Nullable(Object) foreign=None @ interop.generated.d.ts:117:33
+  param "size": U64 foreign=None @ interop.generated.d.ts:117:54
+foreign x20 "subBulkConsumeF32" -> I32 include="interop.h" @ interop.generated.d.ts:118:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:118:36
+foreign x21 "subDeviceOnComplete" -> Void include="interop.h" @ interop.generated.d.ts:126:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:126:38
+  param "info": Class(ClassId(8)) foreign=None @ interop.generated.d.ts:126:57
+foreign x22 "subDevicePump" -> Void include="interop.h" @ interop.generated.d.ts:127:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:127:32
+foreign x23 "subCommandBufferTotal" -> I32 include="interop.h" @ interop.generated.d.ts:293:18
+  param "buf": Class(ClassId(31)) foreign=None @ interop.generated.d.ts:293:40
+foreign x24 "subStageMatches" -> I32 include="interop.h" @ interop.generated.d.ts:294:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:294:34
+  param "required": U64 foreign=None @ interop.generated.d.ts:294:55
+foreign x25 "subFutureMake" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:308:18
+  param "request": U32 foreign=None @ interop.generated.d.ts:308:32
+foreign x26 "subStatsMake" -> Class(ClassId(33)) include="interop.h" @ interop.generated.d.ts:309:18
+  param "base": U32 foreign=None @ interop.generated.d.ts:309:31
+foreign x27 "subDeviceQuery" -> Void include="interop.h" @ interop.generated.d.ts:317:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:317:33
+  param "request": U32 foreign=None @ interop.generated.d.ts:317:52
+  param "status": Nullable(Class(ClassId(34))) foreign=None @ interop.generated.d.ts:317:66
+foreign x28 "subDeviceKickAsync" -> Class(ClassId(32)) include="interop.h" @ interop.generated.d.ts:325:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:325:37
+  param "request": U32 foreign=None @ interop.generated.d.ts:325:56
+  param "info": Class(ClassId(3)) foreign=None @ interop.generated.d.ts:325:70
+foreign x29 "subDeviceWait" -> Void include="interop.h" @ interop.generated.d.ts:326:18
+  param "device": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:326:32
+  param "waits": Array(Class(ClassId(35))) foreign=Some(Descriptor { aggregate: "SubWaitList", element: "SubWaitEntry", element_const: false }) @ interop.generated.d.ts:326:51
+foreign x30 "subDeviceSumBytes" -> U32 include="interop.h" @ interop.generated.d.ts:327:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: true }) @ interop.generated.d.ts:327:36
+foreign x31 "subDeviceFillBytes" -> Void include="interop.h" @ interop.generated.d.ts:328:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: false }) @ interop.generated.d.ts:328:37
+foreign x32 "subDeviceFillShorts" -> Void include="interop.h" @ interop.generated.d.ts:329:18
+  param "data": Array(U16) foreign=Some(ScalarPair { element: "uint16_t", element_const: false }) @ interop.generated.d.ts:329:38
+foreign x33 "subBoundaryStringCheck" -> U64 include="interop.h" @ interop.generated.d.ts:340:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:340:41
+  param "selector": U32 foreign=None @ interop.generated.d.ts:340:81
+foreign x34 "subBoundaryStringFill" -> Void include="interop.h" @ interop.generated.d.ts:341:18
+  param "record": Nullable(Class(ClassId(36))) foreign=None @ interop.generated.d.ts:341:40
+  param "emptyLabel": Bool foreign=None @ interop.generated.d.ts:341:80
+foreign x35 "subProbeTextureDescriptorCheck" -> U64 include="interop.h" @ interop.generated.d.ts:368:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:368:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:368:96
+foreign x36 "subProbeTextureDescriptorFill" -> Void include="interop.h" @ interop.generated.d.ts:369:18
+  param "descriptor": Nullable(Class(ClassId(38))) foreign=None @ interop.generated.d.ts:369:48
+foreign x37 "subProbePipelineLayoutCheck" -> U64 include="interop.h" @ interop.generated.d.ts:377:18
+  param "descriptor": Nullable(Class(ClassId(39))) foreign=None @ interop.generated.d.ts:377:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:377:99
+foreign x38 "subProbeBindGroupEntryCheck" -> U32 include="interop.h" @ interop.generated.d.ts:387:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:387:46
+foreign x39 "subProbeBindGroupEntryFill" -> Void include="interop.h" @ interop.generated.d.ts:388:18
+  param "entry": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:388:45
+  param "selected": U32 foreign=None @ interop.generated.d.ts:388:83
+  param "handle": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:388:98
+foreign x40 "subProbeComputePipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:405:18
+  param "descriptor": Nullable(Class(ClassId(42))) foreign=None @ interop.generated.d.ts:405:47
+  param "selector": U32 foreign=None @ interop.generated.d.ts:405:102
+foreign x41 "subProbeRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:434:18
+  param "descriptor": Nullable(Class(ClassId(46))) foreign=None @ interop.generated.d.ts:434:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:434:100
+foreign x42 "subProbeProgrammableStageCheck" -> U64 include="interop.h" @ interop.generated.d.ts:448:18
+  param "stage": Nullable(Class(ClassId(48))) foreign=None @ interop.generated.d.ts:448:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:448:91
+foreign x43 "subProbeFullRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:476:18
+  param "descriptor": Nullable(Class(ClassId(52))) foreign=None @ interop.generated.d.ts:476:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:476:108
+foreign x44 "subProbeFullRenderPipelineWithHandleCheck" -> U64 include="interop.h" @ interop.generated.d.ts:492:18
+  param "descriptor": Nullable(Class(ClassId(54))) foreign=None @ interop.generated.d.ts:492:60
+  param "selector": U32 foreign=None @ interop.generated.d.ts:492:120
+foreign x45 "subProbeFullRenderPipelineWithNestedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:528:18
+  param "descriptor": Nullable(Class(ClassId(59))) foreign=None @ interop.generated.d.ts:528:65
+  param "selector": U32 foreign=None @ interop.generated.d.ts:528:125
+foreign x46 "subProbeFullRenderPipelineWithUnmarkedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:562:18
+  param "descriptor": Nullable(Class(ClassId(63))) foreign=None @ interop.generated.d.ts:562:67
+  param "selector": U32 foreign=None @ interop.generated.d.ts:562:129
+foreign x47 "subProbeBreadthRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:596:18
+  param "descriptor": Nullable(Class(ClassId(68))) foreign=None @ interop.generated.d.ts:596:53
+  param "selector": U32 foreign=None @ interop.generated.d.ts:596:114
+foreign x48 "subProbeWideRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:660:18
+  param "descriptor": Nullable(Class(ClassId(77))) foreign=None @ interop.generated.d.ts:660:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:660:108
+foreign x49 "subProbeQueueSubmitCheck" -> U64 include="interop.h" @ interop.generated.d.ts:661:18
+  param "queue": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:661:43
+  param "commands": Array(Class(ClassId(6))) foreign=Some(ScalarPair { element: "SubDevice", element_const: true }) @ interop.generated.d.ts:661:61
+  param "selector": U32 foreign=None @ interop.generated.d.ts:661:84
+foreign x50 "subProbeSetBindGroupCheck" -> U32 include="interop.h" @ interop.generated.d.ts:662:18
+  param "encoder": Class(ClassId(6)) foreign=None @ interop.generated.d.ts:662:44
+  param "group": Nullable(Class(ClassId(6))) foreign=None @ interop.generated.d.ts:662:64
+foreign x51 "subByValueI32OneReport" -> Void include="interop.h" @ interop.generated.d.ts:736:18
+  param "report": Nullable(Class(ClassId(78))) foreign=None @ interop.generated.d.ts:736:41
+  param "value": Class(ClassId(78)) foreign=None @ interop.generated.d.ts:736:74
+foreign x52 "subByValueI32PairReport" -> Void include="interop.h" @ interop.generated.d.ts:737:18
+  param "report": Nullable(Class(ClassId(79))) foreign=None @ interop.generated.d.ts:737:42
+  param "value": Class(ClassId(79)) foreign=None @ interop.generated.d.ts:737:76
+foreign x53 "subByValueI32TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:738:18
+  param "report": Nullable(Class(ClassId(80))) foreign=None @ interop.generated.d.ts:738:44
+  param "value": Class(ClassId(80)) foreign=None @ interop.generated.d.ts:738:80
+foreign x54 "subByValueI16I16I32Report" -> Void include="interop.h" @ interop.generated.d.ts:739:18
+  param "report": Nullable(Class(ClassId(81))) foreign=None @ interop.generated.d.ts:739:44
+  param "value": Class(ClassId(81)) foreign=None @ interop.generated.d.ts:739:80
+foreign x55 "subByValueU8FourReport" -> Void include="interop.h" @ interop.generated.d.ts:740:18
+  param "report": Nullable(Class(ClassId(82))) foreign=None @ interop.generated.d.ts:740:41
+  param "value": Class(ClassId(82)) foreign=None @ interop.generated.d.ts:740:74
+foreign x56 "subByValueI64PairReport" -> Void include="interop.h" @ interop.generated.d.ts:741:18
+  param "report": Nullable(Class(ClassId(83))) foreign=None @ interop.generated.d.ts:741:42
+  param "value": Class(ClassId(83)) foreign=None @ interop.generated.d.ts:741:76
+foreign x57 "subByValueF32Hfa2Report" -> Void include="interop.h" @ interop.generated.d.ts:742:18
+  param "report": Nullable(Class(ClassId(84))) foreign=None @ interop.generated.d.ts:742:42
+  param "value": Class(ClassId(84)) foreign=None @ interop.generated.d.ts:742:76
+foreign x58 "subByValueF32Hfa4Report" -> Void include="interop.h" @ interop.generated.d.ts:743:18
+  param "report": Nullable(Class(ClassId(85))) foreign=None @ interop.generated.d.ts:743:42
+  param "value": Class(ClassId(85)) foreign=None @ interop.generated.d.ts:743:76
+foreign x59 "subByValueI32F32Report" -> Void include="interop.h" @ interop.generated.d.ts:744:18
+  param "report": Nullable(Class(ClassId(86))) foreign=None @ interop.generated.d.ts:744:41
+  param "value": Class(ClassId(86)) foreign=None @ interop.generated.d.ts:744:74
+foreign x60 "subByValueI32I64Report" -> Void include="interop.h" @ interop.generated.d.ts:745:18
+  param "report": Nullable(Class(ClassId(87))) foreign=None @ interop.generated.d.ts:745:41
+  param "value": Class(ClassId(87)) foreign=None @ interop.generated.d.ts:745:74
+foreign x61 "subByValueI64TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:746:18
+  param "report": Nullable(Class(ClassId(88))) foreign=None @ interop.generated.d.ts:746:44
+  param "value": Class(ClassId(88)) foreign=None @ interop.generated.d.ts:746:80
+foreign x62 "subHostOwnedStateBorrow" -> Class(ClassId(89)) include="interop.h" @ interop.generated.d.ts:752:18
+foreign x63 "subHostOwnedStateAdvance" -> I32 include="interop.h" @ interop.generated.d.ts:753:18
+  param "state": Class(ClassId(89)) foreign=None @ interop.generated.d.ts:753:43
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a95-interop-async-await.ts:6:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 6, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("poll:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 8, col: 9 } }] @ a95-interop-async-await.ts:8:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a95-interop-async-await.ts:8:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%1: Data(I32)) Some("while.cond"):
+    %3: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(7)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a95-interop-async-await.ts", line: 9, col: 10 } }] @ a95-interop-async-await.ts:9:10
+    %4: Data(Bool) = Binary(Eq)(%3, Integer(0):I32) @ a95-interop-async-await.ts:9:10
+    -> ConditionalBranch { condition: Value(ValueId(4)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(1))] } }
+  b2 Some("while.body"):
+    %5: Data(Str) = Template([Text("poll:pending="), Operand(0)])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 10, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 10, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 10, col: 11 } }] @ a95-interop-async-await.ts:10:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a95-interop-async-await.ts:10:5
+    %6: Data(I32) = Binary(Add)(%1, Integer(1):I32) @ a95-interop-async-await.ts:11:5
+    -> Suspend { kind: Async, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(6))], invalidates: [], traps: [] }
+  b3(%2: Data(I32)) Some("while.exit"):
+    %7: Data(Str) = Template([Text("poll:ready="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 14, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 14, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a95-interop-async-await.ts", line: 14, col: 9 } }] @ a95-interop-async-await.ts:14:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) @ a95-interop-async-await.ts:14:3
+    -> Return(None)
+  b4(%8: Data(I32)) Some("async.resume"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(8))] })
+"###;
+
+#[test]
+fn coroutine_and_measurement_lir_text_matches_goldens() {
+    let accept = corpus::corpus_accept();
+    let mut actual = String::new();
+    for id in corpus::entry_ids(&accept) {
+        let lir = lower_entry(&accept, &id);
+        if lir
+            .functions
+            .iter()
+            .any(|function| function.is_generator || function.is_async)
+            || matches!(
+                id.as_str(),
+                "a145-emitted-identifiers"
+                    | "a147-switch-body-scope"
+                    | "a148-switch-using-scope"
+                    | "a149-suspension-state"
+            )
+        {
+            actual.push_str("===== ");
+            actual.push_str(&id);
+            actual.push_str(" =====\n");
+            actual.push_str(&print_module(&lir));
+        }
+    }
+    if std::env::var_os("SUBSCRIPT_CAPTURE_LIR_GOLDENS").is_some() {
+        std::fs::write("/tmp/subscript-lir-goldens.txt", actual).expect("write captured LIR text");
+        return;
+    }
+    if actual != LIR_TEXT_GOLDENS {
+        let line = actual
+            .lines()
+            .zip(LIR_TEXT_GOLDENS.lines())
+            .position(|(actual, expected)| actual != expected)
+            .map_or_else(
+                || actual.lines().count().min(LIR_TEXT_GOLDENS.lines().count()) + 1,
+                |index| index + 1,
+            );
+        panic!(
+            "LIR text golden differs at line {line} (actual {} bytes, expected {} bytes); rerun with SUBSCRIPT_CAPTURE_LIR_GOLDENS=1 to inspect",
+            actual.len(),
+            LIR_TEXT_GOLDENS.len()
+        );
+    }
+}
+
+#[test]
+fn place_bases_keep_their_own_trap_sites() {
+    let lir = lower_source(
+        "place-chain.ts",
+        r#"
+@CStruct class V { x: i32; constructor(x: i32) { this.x = x; } }
+function idx(): i32 { return 5; }
+export function write(): void {
+  const a: V[] = [new V(1), new V(2)];
+  a[idx()].x = 9;
+}
+export function read(): i32 {
+  const a: V[] = [new V(1), new V(2)];
+  return a[idx()].x;
+}
+"#,
+    );
+    verify_module(&lir).expect("place-chain LIR verifies");
+    let sites = lir
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| {
+            matches!(
+                instruction.kind,
+                InstructionKind::AddressOfIndex { checked: true }
+            )
+        })
+        .map(|instruction| {
+            instruction
+                .traps
+                .iter()
+                .map(|trap| trap.kind.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(sites.len(), 2, "one checked place-base index per function");
+    assert!(sites.iter().all(|traps| {
+        traps.contains(&TrapKind::IndexRead) && traps.contains(&TrapKind::DevOnlyLifetime)
+    }));
+}
+
+#[test]
+fn value_class_array_receiver_signature_ignores_address_provenance() {
+    let lir = lower_source(
+        "array-receiver.ts",
+        r#"
+@CStruct class Cell { v: i32 = 0; bump(): void { this.v = this.v + 1; } }
+export function main(): void {
+  const a: Cell[] = [new Cell()];
+  a[0].bump();
+  print(`${a[0].v}`);
+}
+"#,
+    );
+    verify_module(&lir).expect("array-element value receiver verifies");
+}
+
+#[test]
+fn value_class_rvalue_receivers_materialize_temporary_addresses() {
+    let lir = lower_source(
+        "rvalue-receiver.ts",
+        r#"
+@CStruct class V { x: i32 = 0; get(): i32 { return this.x; } }
+function mk(): V { return new V(); }
+export function main(): void {
+  const a: V = new V();
+  const b: V = new V();
+  print(`${mk().get()}`);
+  print(`${(true ? a : b).get()}`);
+}
+"#,
+    );
+    verify_module(&lir).expect("rvalue receiver LIR verifies");
+    let temporary_addresses = lir
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| instruction.kind == InstructionKind::AddressOfValue)
+        .count();
+    assert_eq!(temporary_addresses, 2);
+}
+
+#[test]
+fn async_binding_crosses_resume_as_an_ssa_value() {
+    let accept = corpus::corpus_accept();
+    let lir = lower_entry(&accept, "a139-using-async");
+    let main = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("a139 main function");
+    assert!(main.locals.is_empty());
+    assert!(main
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .all(|instruction| !matches!(
+            instruction.kind,
+            InstructionKind::LoadLocal(_)
+                | InstructionKind::StoreLocal(_)
+                | InstructionKind::AddressOfLocal(_)
+        )));
+    let resource = main.blocks[0]
+        .instructions
+        .iter()
+        .find_map(|instruction| {
+            matches!(instruction.kind, InstructionKind::AllocateClass(_))
+                .then_some(instruction.result)
+                .flatten()
+        })
+        .expect("resource value");
+    let resume = main
+        .blocks
+        .iter()
+        .find(|block| block.source_name.as_deref() == Some("async.resume"))
+        .expect("async resume block");
+    let suspend = main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            Terminator::Suspend {
+                successor,
+                resume_value,
+                arguments,
+                ..
+            } if *successor == resume.id => Some((resume_value, arguments)),
+            _ => None,
+        })
+        .expect("suspend edge to async resume");
+    let parameter_offset = usize::from(suspend.0.is_some());
+    assert_eq!(
+        suspend.1.len(),
+        resume.parameters.len() - parameter_offset,
+        "the frame is exactly the explicit suspension live-in arguments"
+    );
+    let resource_argument = suspend
+        .1
+        .iter()
+        .position(|argument| argument == &Operand::Value(resource))
+        .expect("resource is passed across the suspension");
+    let resumed_resource = resume.parameters[parameter_offset + resource_argument];
+    assert_ne!(
+        resumed_resource, resource,
+        "resume defines a fresh SSA value"
+    );
+    assert!(resume.instructions.iter().any(|instruction| {
+        matches!(instruction.kind, InstructionKind::Call(_))
+            && instruction
+                .operands
+                .contains(&Operand::Value(resumed_resource))
+    }));
+}
+
+#[test]
+fn array_for_of_carries_and_advances_traversal_state() {
+    let accept = corpus::corpus_accept();
+    let lir = lower_entry(&accept, "a77-for-of-containers");
+    let main = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("a77 main function");
+    let header = main
+        .blocks
+        .iter()
+        .find(|block| {
+            block.source_name.as_deref() == Some("for-of.cond")
+                && block.instructions.iter().any(|instruction| {
+                    instruction.operands.first().is_some_and(|operand| {
+                        matches!(
+                            operand,
+                            Operand::Value(value)
+                                if matches!(
+                                    &main.values[value.0 as usize].ty,
+                                    ValueType::Iterator(iterator)
+                                        if iterator.kind == ForOfKind::ArrayValues
+                                )
+                        )
+                    })
+                })
+        })
+        .expect("array for-of header");
+    let state_types = header
+        .parameters
+        .iter()
+        .map(|value| &main.values[value.0 as usize].ty)
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        state_types.as_slice(),
+        [
+            ValueType::Iterator(_),
+            ValueType::Data(Type::I32),
+            ValueType::Data(Type::I32)
+        ]
+    ));
+    let step = main
+        .blocks
+        .iter()
+        .find(|block| {
+            block.source_name.as_deref() == Some("for-of.step")
+                && block
+                    .instructions
+                    .iter()
+                    .any(|instruction| instruction.kind == InstructionKind::IteratorAdvance)
+        })
+        .expect("array for-of step");
+    let advanced = step
+        .instructions
+        .iter()
+        .find(|instruction| instruction.kind == InstructionKind::IteratorAdvance)
+        .and_then(|instruction| instruction.result)
+        .expect("advanced cursor value");
+    let Terminator::Branch(back_edge) = &step.terminator else {
+        panic!("array for-of step must end in a back edge");
+    };
+    assert_eq!(back_edge.block, header.id);
+    assert!(back_edge.arguments.contains(&Operand::Value(advanced)));
+    assert!(main
+        .locals
+        .iter()
+        .all(|local| local.source_name != "<for-of cursor>"));
+}

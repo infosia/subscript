@@ -123,7 +123,7 @@ pub(crate) fn references_interop(src: &str) -> bool {
 }
 
 /// Every entry id present in `accept`, single- and multi-file.
-fn entry_ids(accept: &Path) -> Vec<String> {
+pub fn entry_ids(accept: &Path) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     for e in fs::read_dir(accept).expect("read corpus/accept").flatten() {
         let name = e.file_name().to_string_lossy().into_owned();

@@ -34,8 +34,10 @@
 mod aot;
 mod cemit;
 mod emit_files;
+pub mod interpreter;
 mod jit;
 mod layout;
+pub mod lir;
 mod lower;
 mod native;
 mod reload;
