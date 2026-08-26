@@ -8066,6 +8066,17 @@ The interface is not the subject. This section moves no part of it.
    named. Delete the restatement. Derive what an operation requires
    from the operation, and compare that against the values table.
 
+10. **The module names its entry and its async roots by id.**
+   *(Added 2026-08-26 after step 2 stopped.)* A consumer runs a
+   program, so it needs to know which function starts it, and §26.3's
+   standard runner needs every exported zero-parameter async
+   function. Neither is derivable from the form today, and the
+   interpreter compensated by matching a `source_name` against
+   `"main"` — which item 5 forbids, and which this session did not
+   catch when it accepted the interpreter. The module carries the
+   entry `FunctionId` and the ordered list of async root
+   `FunctionId`s.
+
 ### 68.2 The rules the form makes true
 
 6. **Liveness is one fixed-point over the graph.** The analysis
