@@ -8343,9 +8343,39 @@ and `lower/mod.rs` did not.
      the emitted C of the inner loop, and the owner decides.
    - A dev-JIT ratio above 4× stops the phase.
 5. **Line count.** The round reports the line count of
-   `codegen/src/` before and after. This section predicts a
+   `codegen/src/` before and after. This section predicted a
    decrease. An increase is evidence that the split is wrong, and
    the round reports it with the measurement.
+
+   **Measured after step 3, and the prediction did not hold.**
+   `codegen/src/` went from 30352 lines to 36195, an increase of
+   5843.
+
+       the two consumers   18951 -> 13345   (-5606, 30 per cent)
+         lower/func.rs      9184 ->  7085
+         cemit.rs           9767 ->  6260
+       deleted             suspension.rs 871, trap_sites.rs 102
+       added               lir.rs 7095, interpreter.rs 5129
+
+   The consumers shrank as predicted. The lowering, the verifier,
+   and the fact check cost about what the consumers saved, so the
+   migration is flat, not down. The interpreter is 5129 of the
+   increase; it is a test oracle the owner added at step 1b, after
+   this item was written, and it is not part of the migration.
+
+   **The prediction's premise was wrong, and the split is not.**
+   The premise was that removing duplicate walks dominates. What
+   dominates is making implicit knowledge explicit. The three walks
+   were short because each re-derived, ad hoc, only what it needed;
+   one lowering must state all of it once, and the verifier and the
+   fact check had no counterpart at all before this section.
+
+   So this item stops being a pass-or-fail gate and becomes a
+   measurement with a reading. Judge the split on the consumers'
+   size, which fell 30 per cent, on the duplicate walks being gone —
+   `count_yields`, `walk_lets`, and `count_async_calls` existed once
+   per tier — and on the count of facts that were implicit and are
+   now checked, which is ten.
 6. **Build and suite time.** The verifier runs in every build. The
    round records the debug and release suite wall time before and
    after. An increase above 20% goes to the owner with the
