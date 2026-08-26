@@ -8351,11 +8351,11 @@ operations, and §2's Q14 formatting for interpolation.
 | `Coerce` | value | an implicit widening the checker inserted. It never loses a value. A conversion that loses a value is a `Cast`. |
 | `AllocateClass` | none | a new instance, fields at their zero. The `Allocation` trap fires on failure. |
 | `AddressOfValue` | value | the address of a temporary that holds the value. The temporary lives as long as the address (§68.2 item 8). |
-| `AddressOfField` | base address or handle | the address of the named field. |
+| `AddressOfField` | base address or handle | the address of the named field. A field of an aggregate **value** has no address; `LoadField` reads it. An address exists only where the base has one. |
 | `AddressOfIndex` | base, index | the address of the element. `checked` states that a bounds trap site is present; the site, not the flag, raises it (§68.1 item 8). |
 | `LoadAddress` | address | the value at the address. |
 | `StoreAddress` | address, value | the value is written at the address. No result. |
-| `LoadField` | base handle | the field's value, read from a reference-class instance. |
+| `LoadField` | base handle, or an aggregate value | the field's value. The base is a reference-class handle, or a value that holds an aggregate: a value class, a `FixedArray`, or a built-in aggregate such as the generator's iteration result. *(Corrected 2026-08-26 after step 1b. The row named only the reference-class path, and 23 of the interpreter's 30 findings were the value path.)* |
 | `Length` | container | the element count of an array, and the **byte** length of a string (Q5, `stdlib.md` §14). |
 | `ArrayLiteral` | one per element, in order | a new array of the elements. |
 | `ArraySpreadLiteral` | one per part, in order | a new array; a spread part contributes its elements in order (`stdlib.md` §14). |
@@ -8387,8 +8387,13 @@ index, and a bound — which §68.1 item 7 threads across the back edge.
 - `IteratorCreate(kind)` takes the subject and produces the cursor.
 - `IteratorBound` takes the cursor and produces the bound, **once, at
   creation**.
-- `IteratorHasNext` takes cursor, index, and bound, and is true while
-  the index is below the bound.
+- `IteratorHasNext` takes cursor, index, and bound. It is true while
+  the index is below the bound **and** below the container's current
+  element count. *(Corrected 2026-08-26 after step 1b, which trapped
+  on `a80`.)* `corpus/accept/a80-for-of-foreach-mutation` decides
+  this: "appends do not extend and removals shorten". The bound is
+  captured, so an append does not extend the traversal; the current
+  count is read, so a removal ends it early.
 - `IteratorValue` takes cursor, index, and bound, and produces the
   element that `stdlib.md` §14 names for the kind.
 - `IteratorAdvance` takes cursor, index, and bound, and produces the
@@ -8428,15 +8433,53 @@ a swap across an edge is well defined.
 | `Trap` | the program ends through the observer of §18, with the named kind and position. |
 | `Suspend` | see §68.7.4. |
 
+#### 68.7.5a What step 1b measured
+
+*(Added 2026-08-26.)* The interpreter ran 98 corpus entries, matched
+68 against the golden, and reported 30 disagreements. 51 entries are
+declared exclusions, almost all of them interop entries that need the
+synthetic native library.
+
+Every disagreement fell into four groups, and each group is one
+cause:
+
+1. **23 entries: a field of an aggregate value.** §68.7.2's field
+   rows named only the reference-class path. Corrected above.
+2. **5 entries: a suspension's successor did not declare the values
+   used after it.** §68.7.4 decides that the successor's block
+   parameters are the live-in set and that the frame holds those and
+   nothing else. The lowering does not build the successor that way,
+   so the interpreter, following this section, discarded the values.
+   **This blocks step 2.** Both tiers work today because both read
+   HIR; a dev tier that reads LIR loses the state. The second step 1
+   review predicted this as its M7, from reading. The interpreter
+   measured it, on `a110`, `a139`, `a143`, `a145`, and `a149`.
+3. **1 entry: the iteration contract contradicted `a80`.** Corrected
+   above.
+4. **1 entry: the standard runner.** §26.3 requires the runner to
+   invoke every exported zero-parameter async function; the
+   interpreter invoked `main` only. That is an incompleteness of the
+   interpreter, not of LIR.
+
+Groups 1 and 3 are defects in this section. Group 2 is a defect in
+the lowering, and it is the one no gate could see, because nothing
+consumed LIR.
+
 #### 68.7.6 Language gaps this exercise found
 
 These are gaps in the **language**, not in LIR. Each belongs to the
 section that owns the construct, and each needs an owner decision.
 LIR carries whatever that section decides.
 
-1. **A container that changes while a `for...of` runs.**
-   `stdlib.md` §14 does not decide it. Measured 2026-08-26 on this
-   host, on an array of `1, 2, 3` that pushes `4` on the first step:
+1. **A container that changes while a `for...of` runs.** *(Corrected
+   2026-08-26 after step 1b. This entry said the language had not
+   decided it. The language had:
+   `corpus/accept/a80-for-of-foreach-mutation` states "appends do not
+   extend and removals shorten" and pins both. The corpus is the
+   executable definition, so this is a **decided divergence with no
+   collision entry**, not an open decision. It belongs to §69, not to
+   the owner's queue.)* Measured 2026-08-26 on this host, on an array
+   of `1, 2, 3` that pushes `4` on the first step:
 
        node        1 2 3 4   len=4
        subscript   1 2 3     len=4
@@ -8448,9 +8491,9 @@ LIR carries whatever that section decides.
    in cost: a live bound re-reads the base and the length every
    step, and §68.2 item 9 then re-materializes the base address
    every step, on the loop that `a22-matrix-propagation` measures.
-   `stdlib.md` §14.3 already decided the fused index loop. If the
-   owner keeps the bound, `collisions.md` gains the entry. If the
-   owner takes JavaScript's answer, §68.7.4 changes with it.
+   `stdlib.md` §14.3 already decided the fused index loop, and a80
+   decided the mutation rule. `collisions.md` gains the entry under
+   §69. No behaviour moves.
 2. **The temporal-dead-zone resolution order** (§66 measurement 6i).
    `node` prints `4` and this compiler prints `3`. No entry of
    `collisions.md` names it. **Owner decision open.**
