@@ -39,6 +39,7 @@ mod layout;
 mod lower;
 mod native;
 mod reload;
+mod suspension;
 mod trap_sites;
 
 pub use aot::{

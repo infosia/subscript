@@ -33,9 +33,12 @@ use subscript_compiler::{hir, ClassId, Pos, Type};
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::layout::{has_managed_interior, is_managed, is_unsigned, managed_words, Repr};
+use crate::layout::{has_managed_interior, is_managed, is_unsigned, managed_words, Layouts, Repr};
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
+};
+use crate::suspension::{
+    prepares_call_operands, spill_kind, spill_plan, suspends_expr, SpillEvent, SpillKind,
 };
 use crate::trap_sites::{lower_trap_sites, TrapSiteConsumer};
 
@@ -124,6 +127,13 @@ struct Binding {
     storage: Storage,
 }
 
+/// A value that uses the coroutine frame when it must survive a suspension.
+#[derive(Debug, Clone)]
+enum SavedValue {
+    Direct(RV),
+    Frame { offset: u32, ty: Type },
+}
+
 /// An assignable location.
 ///
 /// Dynamic-array elements stay *unresolved* (`ArrayElem`) until the
@@ -137,7 +147,25 @@ enum Place {
     Mem(Value, i32),
     ArrayElem {
         handle: Value,
+        handle_ty: Type,
         index: Value,
+        index_ty: Type,
+        read_site: Option<hir::TrapSite>,
+        write_site: hir::TrapSite,
+    },
+}
+
+enum SavedPlace {
+    Direct(Place),
+    Mem {
+        address: SavedValue,
+        offset: i32,
+    },
+    ArrayElem {
+        handle: SavedValue,
+        handle_ty: Type,
+        index: SavedValue,
+        index_ty: Type,
         read_site: Option<hir::TrapSite>,
         write_site: hir::TrapSite,
     },
@@ -158,6 +186,9 @@ struct GenCtx {
     next_let: usize,
     child_offsets: Vec<u32>,
     next_child: usize,
+    spill_offsets: Vec<u32>,
+    spill_events: Vec<SpillEvent>,
+    spill_cursor: usize,
     kind: FrameKind,
 }
 
@@ -876,6 +907,121 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.b.ins().stack_addr(types::I64, slot, 0)
     }
 
+    fn next_spill_offset(&mut self, kind: &SpillKind) -> Result<u32, String> {
+        #[cfg(test)]
+        crate::suspension::record_spill_request(kind);
+        let g = self
+            .genc
+            .as_mut()
+            .ok_or_else(|| internal("frame spill outside a coroutine"))?;
+        let event = g
+            .spill_events
+            .get(g.spill_cursor)
+            .ok_or_else(|| internal("coroutine spill event cursor exhausted"))?;
+        if &event.kind != kind {
+            return Err(internal(format!(
+                "coroutine spill event mismatch: planned {:?}, lowered {kind:?}",
+                event.kind
+            )));
+        }
+        g.spill_cursor += 1;
+        g.spill_offsets
+            .get(event.slot)
+            .copied()
+            .ok_or_else(|| internal("coroutine spill slot is out of range"))
+    }
+
+    fn ensure_coroutine_plan_consumed(&self) -> Result<(), String> {
+        let g = self
+            .genc
+            .as_ref()
+            .ok_or_else(|| internal("coroutine plan check outside a coroutine"))?;
+        if g.spill_cursor != g.spill_events.len() {
+            let remaining: Vec<_> = g.spill_events[g.spill_cursor..]
+                .iter()
+                .map(|event| event.kind.clone())
+                .collect();
+            return Err(internal(format!(
+                "coroutine spill cursor stopped at {}/{}; unconsumed events: {remaining:?}",
+                g.spill_cursor,
+                g.spill_events.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn save_typed_value(&mut self, value: RV, ty: &Type, save: bool) -> Result<SavedValue, String> {
+        if !save {
+            return Ok(SavedValue::Direct(value));
+        }
+        let offset = self.next_spill_offset(&SpillKind::Value(ty.clone()))?;
+        let frame = self
+            .genc
+            .as_ref()
+            .map(|gen| gen.frame)
+            .ok_or_else(|| internal("saved value outside a coroutine"))?;
+        self.store_val(ty, frame, offset as i32, value)?;
+        Ok(SavedValue::Frame {
+            offset,
+            ty: ty.clone(),
+        })
+    }
+
+    fn save_expr_value(
+        &mut self,
+        value: RV,
+        expr: &hir::Expr,
+        save: bool,
+    ) -> Result<SavedValue, String> {
+        let SpillKind::Value(ty) = spill_kind(expr) else {
+            unreachable!("an expression spill always has a value kind")
+        };
+        self.save_typed_value(value, &ty, save)
+    }
+
+    fn save_address(&mut self, value: Value, save: bool) -> Result<SavedValue, String> {
+        if !save {
+            return Ok(SavedValue::Direct(RV::S(value)));
+        }
+        let offset = self.next_spill_offset(&SpillKind::Address)?;
+        let frame = self
+            .genc
+            .as_ref()
+            .map(|gen| gen.frame)
+            .ok_or_else(|| internal("saved address outside a coroutine"))?;
+        self.b.ins().store(flags(), value, frame, offset as i32);
+        Ok(SavedValue::Frame {
+            offset,
+            ty: Type::U64,
+        })
+    }
+
+    fn load_saved(&mut self, value: &SavedValue) -> Result<RV, String> {
+        match value {
+            SavedValue::Direct(value) => Ok(*value),
+            SavedValue::Frame { offset, ty } => {
+                let frame = self
+                    .genc
+                    .as_ref()
+                    .map(|gen| gen.frame)
+                    .ok_or_else(|| internal("saved value outside a coroutine"))?;
+                self.load_val(ty, frame, *offset as i32)
+            }
+        }
+    }
+
+    fn store_saved(&mut self, saved: &SavedValue, value: RV) -> Result<(), String> {
+        let SavedValue::Frame { offset, ty } = saved else {
+            return Err(internal("store to a direct saved value"));
+        };
+        let frame = self
+            .genc
+            .as_ref()
+            .map(|gen| gen.frame)
+            .ok_or_else(|| internal("saved value outside a coroutine"))?;
+        self.store_val(ty, frame, *offset as i32, value)
+    }
+
     fn copy_bytes(&mut self, dest: Value, src: Value, size: u32, align: u32) {
         let config = self.ml.module.isa().frontend_config();
         // Plain flags: the helper widens its accesses beyond the
@@ -1380,8 +1526,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let place = self.place_of_binding(&binding)?;
         match place {
             Place::Mem(addr, off) if matches!(self.ml.layouts.repr(ty)?, Repr::Agg { .. }) => {
-                let dest = self.addr_off(addr, i64::from(off));
-                self.eval_agg_into(init, dest, ty)?;
+                match &init.kind {
+                    hir::ExprKind::ArrayLit(elems) if matches!(ty, Type::FixedArray(..)) => {
+                        self.array_lit_into(ty, elems, addr, off)?;
+                    }
+                    _ if self.genc.is_some() && suspends_expr(init) => {
+                        let value = self.eval(init)?;
+                        let source = self.expect_a(value)?;
+                        let dest = self.addr_off(addr, i64::from(off));
+                        let (size, align) = self.ml.layouts.size_align(ty)?;
+                        self.copy_bytes(dest, source, size, align);
+                    }
+                    _ => {
+                        let dest = self.addr_off(addr, i64::from(off));
+                        self.eval_agg_into(init, dest, ty)?;
+                    }
+                }
             }
             _ => {
                 let rv = self.eval(init)?;
@@ -1739,9 +1899,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         // String operations.
         if operand_ty == Type::Str {
             let l = self.eval(left)?;
-            let l = self.expect_s(l)?;
+            let saved_left =
+                self.save_expr_value(l, left, self.genc.is_some() && suspends_expr(right))?;
             let r = self.eval(right)?;
             let r = self.expect_s(r)?;
+            let l = self.load_saved(&saved_left)?;
+            let l = self.expect_s(l)?;
             return match op {
                 B::Add => {
                     let site = sites.take_required(
@@ -1770,9 +1933,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
 
         let l = self.eval(left)?;
-        let l = self.expect_s(l)?;
+        let saved_left =
+            self.save_expr_value(l, left, self.genc.is_some() && suspends_expr(right))?;
         let r = self.eval(right)?;
         let r = self.expect_s(r)?;
+        let l = self.load_saved(&saved_left)?;
+        let l = self.expect_s(l)?;
         if operand_ty == Type::F16 {
             let lw = self
                 .call_rt(self.ml.rt.f16_to_f64, &[l], false)?
@@ -2208,9 +2374,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         match &obj.ty {
             Type::FixedArray(elem, n) => {
                 let rv = self.eval(obj)?;
-                let base = self.expect_a(rv)?;
+                let saved_obj =
+                    self.save_expr_value(rv, obj, self.genc.is_some() && suspends_expr(index))?;
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
+                let loaded_obj = self.load_saved(&saved_obj)?;
+                let base = self.expect_a(loaded_obj)?;
                 // HIR already made the proof-based elision decision.
                 if let Some(site) = sites.take(|site| {
                     matches!(
@@ -2232,7 +2401,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             Type::Array(elem) => {
                 let rv = self.eval(obj)?;
-                let h = self.expect_s(rv)?;
+                let saved_obj =
+                    self.save_expr_value(rv, obj, self.genc.is_some() && suspends_expr(index))?;
+                let loaded_obj = self.load_saved(&saved_obj)?;
+                let h = self.expect_s(loaded_obj)?;
                 while let Some(site) =
                     sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                 {
@@ -2240,6 +2412,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 }
                 let idx_rv = self.eval(index)?;
                 let idx = self.expect_s(idx_rv)?;
+                let loaded_obj = self.load_saved(&saved_obj)?;
+                let h = self.expect_s(loaded_obj)?;
                 let site = sites.take_required(
                     |site| matches!(site, hir::TrapSite::IndexRead { .. }),
                     internal("dynamic index has no HIR read site"),
@@ -2277,7 +2451,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     // moment of the access, after the assigned value
                     // has been evaluated (growth-safe).
                     let rv = self.eval(obj)?;
-                    let handle = self.expect_s(rv)?;
+                    let saved_obj =
+                        self.save_expr_value(rv, obj, self.genc.is_some() && suspends_expr(index))?;
+                    let loaded_obj = self.load_saved(&saved_obj)?;
+                    let handle = self.expect_s(loaded_obj)?;
                     while let Some(site) =
                         sites.take(|site| matches!(site, hir::TrapSite::DevOnlyLifetime { .. }))
                     {
@@ -2285,6 +2462,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     }
                     let idx_rv = self.eval(index)?;
                     let idx = self.expect_s(idx_rv)?;
+                    let loaded_obj = self.load_saved(&saved_obj)?;
+                    let handle = self.expect_s(loaded_obj)?;
                     let read_site = sites
                         .take(|site| matches!(site, hir::TrapSite::IndexRead { .. }))
                         .cloned();
@@ -2295,18 +2474,103 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     return Ok((
                         Place::ArrayElem {
                             handle,
+                            handle_ty: obj.ty.clone(),
                             index: idx,
+                            index_ty: index.ty.clone(),
                             read_site,
                             write_site,
                         },
                         (**elem).clone(),
                     ));
                 }
-                let (addr, elem_ty) = self.index_addr(obj, index, sites)?;
-                Ok((Place::Mem(addr, 0), elem_ty))
+                if let Type::FixedArray(elem, count) = &obj.ty {
+                    let rv = self.eval(obj)?;
+                    let base = self.expect_a(rv)?;
+                    let saved_base =
+                        self.save_address(base, self.genc.is_some() && suspends_expr(index))?;
+                    let idx_rv = self.eval(index)?;
+                    let idx = self.expect_s(idx_rv)?;
+                    if let Some(site) = sites.take(|site| {
+                        matches!(
+                            site,
+                            hir::TrapSite::IndexRead { .. } | hir::TrapSite::IndexWrite { .. }
+                        )
+                    }) {
+                        let ok =
+                            self.b
+                                .ins()
+                                .icmp_imm(IntCC::UnsignedLessThan, idx, i64::from(*count));
+                        self.emit_trap_site(site, TrapOperand::Condition(ok))?;
+                    }
+                    let loaded_base = self.load_saved(&saved_base)?;
+                    let base = self.expect_s(loaded_base)?;
+                    let stride = self.ml.layouts.stride(elem)?;
+                    let idx64 = self.b.ins().uextend(types::I64, idx);
+                    let scaled = self.b.ins().imul_imm(idx64, i64::from(stride));
+                    let addr = self.b.ins().iadd(base, scaled);
+                    return Ok((Place::Mem(addr, 0), (**elem).clone()));
+                }
+                Err(internal(format!("assignment target index on {:?}", obj.ty)))
             }
             other => Err(internal(format!("assignment target {other:?}"))),
         }
+    }
+
+    fn save_place(&mut self, place: Place, save: bool) -> Result<SavedPlace, String> {
+        if !save {
+            return Ok(SavedPlace::Direct(place));
+        }
+        Ok(match place {
+            Place::Mem(address, offset) => SavedPlace::Mem {
+                address: self.save_address(address, true)?,
+                offset,
+            },
+            Place::ArrayElem {
+                handle,
+                handle_ty,
+                index,
+                index_ty,
+                read_site,
+                write_site,
+            } => SavedPlace::ArrayElem {
+                handle: self.save_typed_value(RV::S(handle), &handle_ty, true)?,
+                handle_ty,
+                index: self.save_typed_value(RV::S(index), &index_ty, true)?,
+                index_ty,
+                read_site,
+                write_site,
+            },
+            other => SavedPlace::Direct(other),
+        })
+    }
+
+    fn load_saved_place(&mut self, place: &SavedPlace) -> Result<Place, String> {
+        Ok(match place {
+            SavedPlace::Direct(place) => place.clone(),
+            SavedPlace::Mem { address, offset } => {
+                let loaded = self.load_saved(address)?;
+                Place::Mem(self.expect_s(loaded)?, *offset)
+            }
+            SavedPlace::ArrayElem {
+                handle,
+                handle_ty,
+                index,
+                index_ty,
+                read_site,
+                write_site,
+            } => {
+                let loaded_handle = self.load_saved(handle)?;
+                let loaded_index = self.load_saved(index)?;
+                Place::ArrayElem {
+                    handle: self.expect_s(loaded_handle)?,
+                    handle_ty: handle_ty.clone(),
+                    index: self.expect_s(loaded_index)?,
+                    index_ty: index_ty.clone(),
+                    read_site: read_site.clone(),
+                    write_site: write_site.clone(),
+                }
+            }
+        })
     }
 
     fn eval_assign(
@@ -2318,6 +2582,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
         let (place, ty) = self.place(target, sites)?;
+        let value_suspends = self.genc.is_some() && suspends_expr(value);
+        let place_suspends = value_suspends && !matches!(target.kind, hir::ExprKind::Local(_));
         match op {
             None => {
                 // §10.2: when the target is an aggregate at a stable
@@ -2328,25 +2594,32 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 // observable copy semantics are unchanged: a plain
                 // `b = a` still copies (the fallback path), and only a
                 // freshly produced aggregate is written in place.
-                if matches!(self.ml.layouts.repr(&ty)?, Repr::Agg { .. }) {
+                if !value_suspends && matches!(self.ml.layouts.repr(&ty)?, Repr::Agg { .. }) {
                     if let Place::Mem(addr, off) = place {
                         let dest = self.addr_off(addr, i64::from(off));
                         self.eval_agg_into(value, dest, &ty)?;
                         return Ok(RV::A(dest));
                     }
                 }
+                let place = self.save_place(place, place_suspends)?;
                 let rv = self.eval(value)?;
                 // Copy semantics for aggregates: the write below copies
                 // bytes into the target's own storage (C2).
+                let place = self.load_saved_place(&place)?;
                 self.write_place(place, &ty, rv)?;
                 Ok(rv)
             }
             Some(bin) => {
-                let cur = self.read_place(place.clone(), &ty)?;
-                let cur_v = self.expect_s(cur)?;
+                let place = self.save_place(place, place_suspends)?;
+                let current_place = self.load_saved_place(&place)?;
+                let cur = self.read_place(current_place, &ty)?;
+                let cur = self.save_expr_value(cur, target, value_suspends)?;
                 let rhs = self.eval(value)?;
                 let rhs_v = self.expect_s(rhs)?;
+                let loaded_cur = self.load_saved(&cur)?;
+                let cur_v = self.expect_s(loaded_cur)?;
                 let combined = self.apply_binop(bin, &ty, cur_v, rhs_v, pos, sites)?;
+                let place = self.load_saved_place(&place)?;
                 self.write_place(place, &ty, RV::S(combined))?;
                 Ok(RV::S(combined))
             }
@@ -2495,17 +2768,37 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         params: &[hir::Param],
         args: &[hir::Expr],
     ) -> Result<(), String> {
+        let mut evaluated = Vec::with_capacity(params.len());
         for (i, p) in params.iter().enumerate() {
-            let rv = if let Some(a) = args.get(i) {
-                self.eval(a)?
+            let expression = if let Some(arg) = args.get(i) {
+                arg
             } else {
-                let d = p
-                    .default
+                p.default
                     .as_ref()
-                    .ok_or_else(|| internal(format!("missing argument `{}`", p.name)))?;
-                self.eval(d)?
+                    .ok_or_else(|| internal(format!("missing argument `{}`", p.name)))?
             };
-            self.push_one_arg(out, &p.ty, rv)?;
+            let value = self.eval(expression)?;
+            let later_suspends = params.iter().enumerate().skip(i + 1).any(|(index, param)| {
+                args.get(index)
+                    .or(param.default.as_ref())
+                    .is_some_and(suspends_expr)
+            });
+            if self.genc.is_some() && later_suspends {
+                let saved = self.save_expr_value(value, expression, true)?;
+                evaluated.push((p.ty.clone(), Some(saved), Vec::new()));
+            } else {
+                let mut values = Vec::new();
+                self.push_one_arg(&mut values, &p.ty, value)?;
+                evaluated.push((p.ty.clone(), None, values));
+            }
+        }
+        for (ty, saved, values) in evaluated {
+            if let Some(saved) = saved {
+                let value = self.load_saved(&saved)?;
+                self.push_one_arg(out, &ty, value)?;
+            } else {
+                out.extend(values);
+            }
         }
         Ok(())
     }
@@ -2546,6 +2839,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         })
     }
 
+    fn eval_intrinsic_operands(&mut self, args: &[hir::Expr]) -> Result<Vec<RV>, String> {
+        let mut saved = Vec::with_capacity(args.len());
+        for (index, argument) in args.iter().enumerate() {
+            let value = self.eval(argument)?;
+            let later_suspends = self.genc.is_some() && args[index + 1..].iter().any(suspends_expr);
+            saved.push(self.save_expr_value(value, argument, later_suspends)?);
+        }
+        saved.iter().map(|value| self.load_saved(value)).collect()
+    }
+
     fn eval_call(
         &mut self,
         callee: &hir::Callee,
@@ -2558,6 +2861,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let checked = sites
             .take(|site| matches!(site, hir::TrapSite::Call { .. }))
             .is_some();
+        let prepared = if prepares_call_operands(callee, args) {
+            Some(self.eval_intrinsic_operands(args)?)
+        } else {
+            None
+        };
+        let prepared_operands = prepared.as_deref().unwrap_or(&[]);
         match callee {
             hir::Callee::Func(name) => {
                 let f = self.ml.hir_fn(name)?;
@@ -2570,51 +2879,77 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         *res.first().ok_or_else(|| internal("creator result"))?,
                     ));
                 }
-                let mut argv = vec![self.ctx_v];
+                let mut arg_values = Vec::new();
+                self.push_args(&mut arg_values, &f.params, args)?;
                 let sret = self.sret_slot(&f.ret, dest)?;
+                let mut argv = vec![self.ctx_v];
                 if let Some(s) = sret {
                     argv.push(s);
                 }
-                self.push_args(&mut argv, &f.params, args)?;
+                argv.extend(arg_values);
                 let ret = f.ret.clone();
                 let res = self.call_script(&FnKey::Free(name.clone()), &argv, checked)?;
                 self.shape_results(&ret, &res, sret)
             }
-            hir::Callee::Ambient(a) => self.eval_ambient(*a, args, pos, sites, checked),
-            hir::Callee::ContextBytes { function, ty } => {
-                self.eval_context_bytes(*function, ty, args, pos, checked, dest)
+            hir::Callee::Ambient(a) => {
+                self.eval_ambient(*a, args, prepared_operands, pos, sites, checked)
             }
-            hir::Callee::Math(f) => self.eval_math(*f, args, checked),
-            hir::Callee::Num(f) => self.eval_num(*f, args, pos, checked),
-            hir::Callee::Date(f) => self.eval_date(*f, args, pos, checked),
-            hir::Callee::Json(f) => self.eval_json(*f, args, pos, checked),
-            hir::Callee::Str(f) => self.eval_str(*f, args, pos, checked),
-            hir::Callee::Regex(f) => self.eval_regex(*f, args, pos, checked),
-            hir::Callee::Arr(f) => self.eval_arr(*f, args, ret_ty, pos, checked),
-            hir::Callee::Map(f) => self.eval_map(*f, args, ret_ty, pos, checked),
-            hir::Callee::Set(f) => self.eval_set(*f, args, ret_ty, pos, checked),
-            hir::Callee::Worker(f) => self.eval_worker(*f, args, checked),
+            hir::Callee::ContextBytes { function, ty } => {
+                self.eval_context_bytes(*function, ty, prepared_operands, pos, checked, dest)
+            }
+            hir::Callee::Math(f) => self.eval_math(*f, args, prepared_operands, checked),
+            hir::Callee::Num(f) => self.eval_num(*f, args, prepared_operands, pos, checked),
+            hir::Callee::Date(f) => self.eval_date(*f, args, prepared_operands, pos, checked),
+            hir::Callee::Json(f) => self.eval_json(*f, args, prepared_operands, pos, checked),
+            hir::Callee::Str(f) => self.eval_str(*f, args, prepared_operands, pos, checked),
+            hir::Callee::Regex(f) => self.eval_regex(*f, args, prepared_operands, pos, checked),
+            hir::Callee::Arr(f) => self.eval_arr(*f, args, prepared_operands, ret_ty, pos, checked),
+            hir::Callee::Map(f) => self.eval_map(*f, args, prepared_operands, ret_ty, pos, checked),
+            hir::Callee::Set(f) => self.eval_set(*f, args, prepared_operands, ret_ty, pos, checked),
+            hir::Callee::Worker(f) => self.eval_worker(*f, args, prepared_operands, checked),
             hir::Callee::Value(v) => {
                 let ft = match &v.ty {
                     Type::Func(ft) => (**ft).clone(),
                     other => return Err(internal(format!("call of {other:?}"))),
                 };
                 let rv = self.eval(v)?;
-                let (code, env) = self.expect_p(rv)?;
-                let mut argv = vec![self.ctx_v, env];
-                let sret = self.sret_slot(&ft.ret, dest)?;
-                if let Some(s) = sret {
-                    argv.push(s);
-                }
+                let args_suspend = self.genc.is_some() && args.iter().any(suspends_expr);
+                let saved_function = self.save_expr_value(rv, v, args_suspend)?;
                 // Function-typed values have no defaults: arity is the
                 // full parameter list.
                 if args.len() != ft.params.len() {
                     return Err(internal(format!("indirect call arity at {pos}")));
                 }
-                for (t, a) in ft.params.iter().zip(args) {
-                    let rv = self.eval(a)?;
-                    self.push_one_arg(&mut argv, t, rv)?;
+                let mut evaluated = Vec::with_capacity(args.len());
+                for (index, (ty, argument)) in ft.params.iter().zip(args).enumerate() {
+                    let value = self.eval(argument)?;
+                    let later_suspends = args[index + 1..].iter().any(suspends_expr);
+                    if self.genc.is_some() && later_suspends {
+                        let saved = self.save_expr_value(value, argument, true)?;
+                        evaluated.push((ty, Some(saved), Vec::new()));
+                    } else {
+                        let mut values = Vec::new();
+                        self.push_one_arg(&mut values, ty, value)?;
+                        evaluated.push((ty, None, values));
+                    }
                 }
+                let sret = self.sret_slot(&ft.ret, dest)?;
+                let mut arg_values = Vec::new();
+                for (ty, saved, values) in evaluated {
+                    if let Some(saved) = saved {
+                        let value = self.load_saved(&saved)?;
+                        self.push_one_arg(&mut arg_values, ty, value)?;
+                    } else {
+                        arg_values.extend(values);
+                    }
+                }
+                let function = self.load_saved(&saved_function)?;
+                let (code, env) = self.expect_p(function)?;
+                let mut argv = vec![self.ctx_v, env];
+                if let Some(s) = sret {
+                    argv.push(s);
+                }
+                argv.extend(arg_values);
                 let sig = self.ml.make_sig(&ft.params, &ft.ret, true, false)?;
                 let sigref = self.b.import_signature(sig);
                 let inst = self.b.ins().call_indirect(sigref, code, &argv);
@@ -2627,7 +2962,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             hir::Callee::Method { recv, name } => {
                 self.eval_method(recv, name, args, ret_ty, pos, sites, dest, checked)
             }
-            hir::Callee::Foreign(name) => self.eval_foreign_call(name, args, pos, sites, checked),
+            hir::Callee::Foreign(name) => {
+                self.eval_foreign_call(name, args, prepared.as_deref(), pos, sites, checked)
+            }
             other => Err(internal(format!("callee {other:?}"))),
         }
     }
@@ -2645,7 +2982,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         function: hir::ContextBytesFn,
         ty: &Type,
-        args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         checked: bool,
         dest: Option<Value>,
@@ -2656,7 +2993,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let pos_value = self.iconst(types::I32, pos_id);
         match function {
             hir::ContextBytesFn::BytesOf => {
-                let value = self.eval(args.first().ok_or_else(|| internal("bytesOf arity"))?)?;
+                let value = *operands
+                    .first()
+                    .ok_or_else(|| internal("bytesOf operand"))?;
                 let source = self.expect_a(value)?;
                 let handle = self
                     .call_rt(
@@ -2672,13 +3011,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::S(handle))
             }
             hir::ContextBytesFn::BytesInto => {
-                let value = self.eval(args.first().ok_or_else(|| internal("bytesInto value"))?)?;
+                let value = *operands
+                    .first()
+                    .ok_or_else(|| internal("bytesInto value operand"))?;
                 let source = self.expect_a(value)?;
-                let target_value =
-                    self.eval(args.get(1).ok_or_else(|| internal("bytesInto target"))?)?;
+                let target_value = *operands
+                    .get(1)
+                    .ok_or_else(|| internal("bytesInto target operand"))?;
                 let target = self.expect_s(target_value)?;
-                let offset_value =
-                    self.eval(args.get(2).ok_or_else(|| internal("bytesInto offset"))?)?;
+                let offset_value = *operands
+                    .get(2)
+                    .ok_or_else(|| internal("bytesInto offset operand"))?;
                 let offset = self.expect_s(offset_value)?;
                 let range = self
                     .call_rt(
@@ -2692,11 +3035,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             hir::ContextBytesFn::FromBytes => {
-                let bytes_value =
-                    self.eval(args.first().ok_or_else(|| internal("fromBytes bytes"))?)?;
+                let bytes_value = *operands
+                    .first()
+                    .ok_or_else(|| internal("fromBytes bytes operand"))?;
                 let bytes = self.expect_s(bytes_value)?;
-                let offset_value =
-                    self.eval(args.get(1).ok_or_else(|| internal("fromBytes offset"))?)?;
+                let offset_value = *operands
+                    .get(1)
+                    .ok_or_else(|| internal("fromBytes offset operand"))?;
                 let offset = self.expect_s(offset_value)?;
                 let range = self
                     .call_rt(
@@ -2722,6 +3067,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         function: hir::WorkerFn,
         args: &[hir::Expr],
+        operands: &[RV],
         checked: bool,
     ) -> Result<RV, String> {
         use hir::WorkerFn as W;
@@ -2770,9 +3116,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
         let mut values = Vec::with_capacity(expected + 1);
         values.push(self.ctx_v);
-        for argument in args {
-            let value = self.eval(argument)?;
-            values.push(self.expect_s(value)?);
+        for value in operands {
+            values.push(self.expect_s(*value)?);
         }
         let runtime = match function {
             W::Post => self.ml.rt.worker_post,
@@ -2805,6 +3150,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         name: &str,
         args: &[hir::Expr],
+        operands: Option<&[RV]>,
         pos: &Pos,
         sites: &mut TrapSiteConsumer<'_>,
         checked: bool,
@@ -2842,8 +3188,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             None
         };
         let mut boundary_writebacks = Vec::new();
-        for (parameter, a) in params.iter().zip(args) {
-            let rv = self.eval(a)?;
+        for (index, (parameter, argument)) in params.iter().zip(args).enumerate() {
+            let rv = if let Some(operands) = operands {
+                *operands
+                    .get(index)
+                    .ok_or_else(|| internal("prepared foreign operand table is short"))?
+            } else {
+                self.eval(argument)?
+            };
             self.marshal_foreign_arg(
                 parameter,
                 rv,
@@ -4429,15 +4781,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::MathFn,
         args: &[hir::Expr],
+        operands: &[RV],
         checked: bool,
     ) -> Result<RV, String> {
         if args.len() != f.arity() {
             return Err(internal(format!("Math.{} arity", f.name())));
         }
         let mut argv = vec![self.ctx_v];
-        for a in args {
-            let rv = self.eval(a)?;
-            argv.push(self.expect_s(rv)?);
+        for value in operands {
+            argv.push(self.expect_s(*value)?);
         }
         let res = self.call_rt(self.ml.rt.math[f as usize], &argv, checked)?;
         res.map(RV::S)
@@ -4451,6 +4803,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::NumFn,
         args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         checked: bool,
     ) -> Result<RV, String> {
@@ -4469,9 +4822,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Err(internal(format!("{} arity", f.name())));
         }
         let mut argv = vec![self.ctx_v];
-        for arg in args {
-            let value = self.eval(arg)?;
-            argv.push(self.expect_s(value)?);
+        for value in operands {
+            argv.push(self.expect_s(*value)?);
         }
         if f.takes_pos_id() {
             let pid = self.pos_id(pos);
@@ -4495,6 +4847,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::JsonFn,
         args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         checked: bool,
     ) -> Result<RV, String> {
@@ -4529,9 +4882,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Err(internal(format!("JSON {} arity", f.symbol())));
         }
         let mut argv = vec![self.ctx_v];
-        for arg in args {
-            let value = self.eval(arg)?;
-            argv.push(self.expect_s(value)?);
+        for value in operands {
+            argv.push(self.expect_s(*value)?);
         }
         let pid = self.pos_id(pos);
         argv.push(self.iconst(types::I32, pid));
@@ -4569,17 +4921,21 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::DateFn,
         args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         checked: bool,
     ) -> Result<RV, String> {
         use hir::DateFn as D;
-        let scalar_arg = |this: &mut Self, e: &hir::Expr| -> Result<Value, String> {
-            let rv = this.eval(e)?;
-            this.expect_s(rv)
+        let scalar_arg = |this: &Self, index: usize| -> Result<Value, String> {
+            let value = operands
+                .get(index)
+                .copied()
+                .ok_or_else(|| internal("Date arity"))?;
+            this.expect_s(value)
         };
         match f {
             D::New => {
-                let ms = scalar_arg(self, args.first().ok_or_else(|| internal("Date arity"))?)?;
+                let ms = scalar_arg(self, 0)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
                 let res = self.call_rt(self.ml.rt.date_new, &[self.ctx_v, ms, pos_v], checked)?;
@@ -4590,8 +4946,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     return Err(internal("Date.UTC arity (checker normalizes to 7)"));
                 }
                 let mut argv = vec![self.ctx_v];
-                for a in args {
-                    argv.push(scalar_arg(self, a)?);
+                for index in 0..args.len() {
+                    argv.push(scalar_arg(self, index)?);
                 }
                 let pid = self.pos_id(pos);
                 argv.push(self.iconst(types::I32, pid));
@@ -4603,11 +4959,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 res.map(RV::S).ok_or_else(|| internal("Date.now result"))
             }
             D::ToIso => {
-                let ms = scalar_arg(
-                    self,
-                    args.first()
-                        .ok_or_else(|| internal("toISOString receiver"))?,
-                )?;
+                let ms = scalar_arg(self, 0)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
                 let res =
@@ -4618,11 +4970,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let code = accessor
                     .field_code()
                     .ok_or_else(|| internal(format!("Date intrinsic {accessor:?}")))?;
-                let ms = scalar_arg(
-                    self,
-                    args.first()
-                        .ok_or_else(|| internal("Date accessor receiver"))?,
-                )?;
+                let ms = scalar_arg(self, 0)?;
                 let field = self.iconst(types::I32, i64::from(code));
                 let res = self.call_rt(self.ml.rt.date_get, &[self.ctx_v, ms, field], checked)?;
                 res.map(RV::S)
@@ -4642,6 +4990,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::StrFn,
         args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         checked: bool,
     ) -> Result<RV, String> {
@@ -4649,9 +4998,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             return Err(internal(format!("{} arity (checker normalizes)", f.name())));
         }
         let mut argv = vec![self.ctx_v];
-        for a in args {
-            let rv = self.eval(a)?;
-            argv.push(self.expect_s(rv)?);
+        for value in operands {
+            argv.push(self.expect_s(*value)?);
         }
         if f.takes_pos_id() {
             let pid = self.pos_id(pos);
@@ -4669,6 +5017,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         function: hir::RegexFn,
         args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         checked: bool,
     ) -> Result<RV, String> {
@@ -4688,9 +5037,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             )));
         }
         let mut argv = vec![self.ctx_v];
-        for arg in args {
-            let value = self.eval(arg)?;
-            argv.push(self.expect_s(value)?);
+        for value in operands {
+            argv.push(self.expect_s(*value)?);
         }
         if function.can_trap() {
             let pos_id = self.pos_id(pos);
@@ -4718,6 +5066,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::ArrFn,
         args: &[hir::Expr],
+        operands: &[RV],
         ret_ty: &Type,
         pos: &Pos,
         checked: bool,
@@ -4731,7 +5080,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             Type::FixedArray(e, n) => ((**e).clone(), Some(*n)),
             other => return Err(internal(format!("array method on {other:?}"))),
         };
-        let rv = self.eval(recv)?;
+        let rv = *operands
+            .first()
+            .ok_or_else(|| internal("array method receiver operand"))?;
         let h = if fixed_len.is_some() {
             self.expect_a(rv)?
         } else {
@@ -4746,6 +5097,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let arg_at = |i: usize| -> Result<&hir::Expr, String> {
             args.get(i)
                 .ok_or_else(|| internal(format!("{} arity (checker normalizes)", f.name())))
+        };
+        let value_at = |i: usize| -> Result<RV, String> {
+            operands
+                .get(i)
+                .copied()
+                .ok_or_else(|| internal(format!("{} operand", f.name())))
         };
         let callback_indexed = |callback: &hir::Expr| -> Result<bool, String> {
             let indexed_arity = f
@@ -4766,7 +5123,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         match f {
             A::IndexOf | A::LastIndexOf | A::Includes => {
                 let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
-                let x = self.eval(arg_at(1)?)?;
+                let x = value_at(1)?;
                 let ptr = self.materialize(x, &elem)?;
                 let kv = self.iconst(types::I32, i64::from(kind.code()));
                 let res = self.call_rt(rt, &[self.ctx_v, h, ptr, kv], checked)?;
@@ -4779,7 +5136,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             A::Join => {
                 let kind = crate::layout::arr_fmt_kind(&elem)?;
-                let sep = self.eval(arg_at(1)?)?;
+                let sep = value_at(1)?;
                 let sep = self.expect_s(sep)?;
                 let kv = self.iconst(types::I32, i64::from(kind.code()));
                 let pid = self.pos_id(pos);
@@ -4788,9 +5145,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 res.map(RV::S).ok_or_else(|| internal("join result"))
             }
             A::Slice => {
-                let start = self.eval(arg_at(1)?)?;
+                let start = value_at(1)?;
                 let start = self.expect_s(start)?;
-                let end = self.eval(arg_at(2)?)?;
+                let end = value_at(2)?;
                 let end = self.expect_s(end)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
@@ -4798,11 +5155,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 res.map(RV::S).ok_or_else(|| internal("slice result"))
             }
             A::Fill => {
-                let x = self.eval(arg_at(1)?)?;
+                let x = value_at(1)?;
                 let ptr = self.materialize(x, &elem)?;
-                let start = self.eval(arg_at(2)?)?;
+                let start = value_at(2)?;
                 let start = self.expect_s(start)?;
-                let end = self.eval(arg_at(3)?)?;
+                let end = value_at(3)?;
                 let end = self.expect_s(end)?;
                 self.call_rt(rt, &[self.ctx_v, h, ptr, start, end], checked)?;
                 // In place: the expression's value is the receiver.
@@ -4813,7 +5170,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::S(h))
             }
             A::Concat => {
-                let other = self.eval(arg_at(1)?)?;
+                let other = value_at(1)?;
                 let other = self.expect_s(other)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
@@ -4821,9 +5178,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 res.map(RV::S).ok_or_else(|| internal("concat result"))
             }
             A::Splice => {
-                let start = self.eval(arg_at(1)?)?;
+                let start = value_at(1)?;
                 let start = self.expect_s(start)?;
-                let delete_count = self.eval(arg_at(2)?)?;
+                let delete_count = value_at(2)?;
                 let delete_count = self.expect_s(delete_count)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
@@ -4840,7 +5197,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.load_val(&elem, dst, 0)
             }
             A::Unshift => {
-                let x = self.eval(arg_at(1)?)?;
+                let x = value_at(1)?;
                 let ptr = self.materialize(x, &elem)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
@@ -4848,11 +5205,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 res.map(RV::S).ok_or_else(|| internal("unshift result"))
             }
             A::CopyWithin => {
-                let target = self.eval(arg_at(1)?)?;
+                let target = value_at(1)?;
                 let target = self.expect_s(target)?;
-                let start = self.eval(arg_at(2)?)?;
+                let start = value_at(2)?;
                 let start = self.expect_s(start)?;
-                let end = self.eval(arg_at(3)?)?;
+                let end = value_at(3)?;
                 let end = self.expect_s(end)?;
                 self.call_rt(rt, &[self.ctx_v, h, target, start, end], checked)?;
                 Ok(RV::S(h))
@@ -4861,7 +5218,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
                 let callback = arg_at(1)?;
                 let indexed = callback_indexed(callback)?;
-                let cb = self.eval(callback)?;
+                let cb = value_at(1)?;
                 let (code, env) = self.expect_p(cb)?;
                 let kv = self.iconst(types::I32, i64::from(kind.code()));
                 let mut argv = vec![self.ctx_v, h];
@@ -4888,7 +5245,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             A::Sort => {
                 let kind = crate::layout::arr_elem_kind(self.ml.hir, &elem)?;
-                let cb = self.eval(arg_at(1)?)?;
+                arg_at(1)?;
+                let cb = value_at(1)?;
                 let (code, env) = self.expect_p(cb)?;
                 let kv = self.iconst(types::I32, i64::from(kind.code()));
                 self.call_rt(rt, &[self.ctx_v, h, code, env, kv], checked)?;
@@ -4904,7 +5262,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let ret_stride = self.ml.layouts.stride(&ret_elem)?;
                 let callback = arg_at(1)?;
                 let indexed = callback_indexed(callback)?;
-                let cb = self.eval(callback)?;
+                let cb = value_at(1)?;
                 let (code, env) = self.expect_p(cb)?;
                 let ekv = self.iconst(types::I32, i64::from(elem_kind.code()));
                 let rkv = self.iconst(types::I32, i64::from(ret_kind.code()));
@@ -4928,10 +5286,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let acc_stride = self.ml.layouts.stride(ret_ty)?;
                 let callback = arg_at(1)?;
                 let indexed = callback_indexed(callback)?;
-                let cb = self.eval(callback)?;
+                let cb = value_at(1)?;
                 let (code, env) = self.expect_p(cb)?;
                 // The accumulator travels in/out through a caller slot.
-                let init = self.eval(arg_at(2)?)?;
+                arg_at(2)?;
+                let init = value_at(2)?;
                 let slot = self.materialize(init, ret_ty)?;
                 let ekv = self.iconst(types::I32, i64::from(elem_kind.code()));
                 let akv = self.iconst(types::I32, i64::from(acc_kind.code()));
@@ -4958,6 +5317,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::MapFn,
         args: &[hir::Expr],
+        operands: &[RV],
         ret_ty: &Type,
         pos: &Pos,
         checked: bool,
@@ -4973,14 +5333,17 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 },
                 other => return Err(internal(format!("Map.groupBy shape {other:?}"))),
             };
-            let items_expr = args.first().ok_or_else(|| internal("Map.groupBy items"))?;
-            let items_rv = self.eval(items_expr)?;
+            args.first().ok_or_else(|| internal("Map.groupBy items"))?;
+            let items_rv = *operands
+                .first()
+                .ok_or_else(|| internal("Map.groupBy items operand"))?;
             let items = self.expect_s(items_rv)?;
             self.live_check(items, pos)?;
-            let callback = self.eval(
-                args.get(1)
-                    .ok_or_else(|| internal("Map.groupBy callback"))?,
-            )?;
+            args.get(1)
+                .ok_or_else(|| internal("Map.groupBy callback"))?;
+            let callback = *operands
+                .get(1)
+                .ok_or_else(|| internal("Map.groupBy callback operand"))?;
             let (code, env) = self.expect_p(callback)?;
             let bridge_id = define_group_bridge(self.ml, &elem, &key)?;
             let bridge_ref = self.ml.module.declare_func_in_func(bridge_id, self.b.func);
@@ -5031,15 +5394,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .map(RV::S)
                 .ok_or_else(|| internal("Map constructor result"));
         }
-        let recv = args
-            .first()
+        args.first()
             .ok_or_else(|| internal("Map operation receiver"))?;
-        let recv_rv = self.eval(recv)?;
+        let recv_rv = *operands
+            .first()
+            .ok_or_else(|| internal("Map operation receiver operand"))?;
         let handle = self.expect_s(recv_rv)?;
         self.live_check(handle, pos)?;
         let arg = |index: usize| {
             args.get(index)
                 .ok_or_else(|| internal(format!("Map.{} arity", f.name())))
+        };
+        let value_at = |index: usize| {
+            operands
+                .get(index)
+                .copied()
+                .ok_or_else(|| internal(format!("Map.{} operand", f.name())))
         };
         match f {
             F::Size => {
@@ -5047,7 +5417,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 result.map(RV::S).ok_or_else(|| internal("Map.size result"))
             }
             F::Get => {
-                let key_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let key_rv = value_at(1)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
                 let (size, align) = self.ml.layouts.size_align(&value)?;
                 let out = self.temp_slot(size.max(8), align.max(8));
@@ -5056,9 +5427,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.load_val(&value, out, 0)
             }
             F::GetOr => {
-                let key_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let key_rv = value_at(1)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
-                let fallback_rv = self.eval(arg(2)?)?;
+                arg(2)?;
+                let fallback_rv = value_at(2)?;
                 let fallback = self.materialize(fallback_rv, &value)?;
                 let (size, align) = self.ml.layouts.size_align(&value)?;
                 let out = self.temp_slot(size.max(8), align.max(8));
@@ -5072,9 +5445,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 self.load_val(&value, out, 0)
             }
             F::Set => {
-                let key_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let key_rv = value_at(1)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
-                let value_rv = self.eval(arg(2)?)?;
+                arg(2)?;
+                let value_rv = value_at(2)?;
                 let value_ptr = self.materialize(value_rv, &value)?;
                 let pos_id = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, i64::from(pos_id));
@@ -5086,7 +5461,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::S(handle))
             }
             F::Has | F::Delete => {
-                let key_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let key_rv = value_at(1)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
                 let result = self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
                 let result = result.ok_or_else(|| internal(format!("Map.{} result", f.name())))?;
@@ -5097,7 +5473,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             F::ForEach => {
-                let callback = self.eval(arg(1)?)?;
+                arg(1)?;
+                let callback = value_at(1)?;
                 let (code, env) = self.expect_p(callback)?;
                 let bridge_id = define_assoc_bridge(self.ml, &key, Some(&value))?;
                 let bridge_ref = self.ml.module.declare_func_in_func(bridge_id, self.b.func);
@@ -5116,6 +5493,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         f: hir::SetFn,
         args: &[hir::Expr],
+        operands: &[RV],
         ret_ty: &Type,
         pos: &Pos,
         checked: bool,
@@ -5147,15 +5525,22 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 .map(RV::S)
                 .ok_or_else(|| internal("Set constructor result"));
         }
-        let recv = args
-            .first()
+        args.first()
             .ok_or_else(|| internal("Set operation receiver"))?;
-        let recv_rv = self.eval(recv)?;
+        let recv_rv = *operands
+            .first()
+            .ok_or_else(|| internal("Set operation receiver operand"))?;
         let handle = self.expect_s(recv_rv)?;
         self.live_check(handle, pos)?;
         let arg = |index: usize| {
             args.get(index)
                 .ok_or_else(|| internal(format!("Set.{} arity", f.name())))
+        };
+        let value_at = |index: usize| {
+            operands
+                .get(index)
+                .copied()
+                .ok_or_else(|| internal(format!("Set.{} operand", f.name())))
         };
         match f {
             F::Size => {
@@ -5163,7 +5548,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 result.map(RV::S).ok_or_else(|| internal("Set.size result"))
             }
             F::Add => {
-                let key_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let key_rv = value_at(1)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
                 let pos_id = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, i64::from(pos_id));
@@ -5171,7 +5557,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::S(handle))
             }
             F::Has | F::Delete => {
-                let key_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let key_rv = value_at(1)?;
                 let key_ptr = self.materialize(key_rv, &key)?;
                 let result = self.call_rt(rt, &[self.ctx_v, handle, key_ptr], checked)?;
                 let result = result.ok_or_else(|| internal(format!("Set.{} result", f.name())))?;
@@ -5182,7 +5569,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             F::ForEach => {
-                let callback = self.eval(arg(1)?)?;
+                arg(1)?;
+                let callback = value_at(1)?;
                 let (code, env) = self.expect_p(callback)?;
                 let bridge_id = define_assoc_bridge(self.ml, &key, None)?;
                 let bridge_ref = self.ml.module.declare_func_in_func(bridge_id, self.b.func);
@@ -5191,7 +5579,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             F::Union | F::Intersection | F::Difference | F::SymmetricDifference => {
-                let other_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let other_rv = value_at(1)?;
                 let other = self.expect_s(other_rv)?;
                 self.live_check(other, pos)?;
                 let pos_id = self.pos_id(pos);
@@ -5202,7 +5591,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal(format!("Set.{} result", f.name())))
             }
             F::IsSubsetOf | F::IsSupersetOf | F::IsDisjointFrom => {
-                let other_rv = self.eval(arg(1)?)?;
+                arg(1)?;
+                let other_rv = value_at(1)?;
                 let other = self.expect_s(other_rv)?;
                 self.live_check(other, pos)?;
                 let result = self.call_rt(rt, &[self.ctx_v, handle, other], false)?;
@@ -5218,14 +5608,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         &mut self,
         a: hir::AmbientFn,
         args: &[hir::Expr],
+        operands: &[RV],
         pos: &Pos,
         sites: &mut TrapSiteConsumer<'_>,
         checked: bool,
     ) -> Result<RV, String> {
         match a {
             hir::AmbientFn::Print => {
-                let arg = args.first().ok_or_else(|| internal("print arity"))?;
-                let rv = self.eval(arg)?;
+                args.first().ok_or_else(|| internal("print arity"))?;
+                let rv = *operands.first().ok_or_else(|| internal("print operand"))?;
                 let h = self.expect_s(rv)?;
                 self.call_rt(self.ml.rt.print, &[self.ctx_v, h], checked)?;
                 Ok(RV::None)
@@ -5243,8 +5634,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Ok(RV::None)
             }
             hir::AmbientFn::UnsafeDelete => {
-                let arg = args.first().ok_or_else(|| internal("Context.free arity"))?;
-                let rv = self.eval(arg)?;
+                args.first().ok_or_else(|| internal("Context.free arity"))?;
+                let rv = *operands
+                    .first()
+                    .ok_or_else(|| internal("Context.free operand"))?;
                 let ptr = self.expect_s(rv)?;
                 let pid = self.pos_id(pos);
                 let pos_v = self.iconst(types::I32, pid);
@@ -5280,11 +5673,15 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 {
                     self.emit_trap_site(site, TrapOperand::Value(h))?;
                 }
+                let receiver_suspends = self.genc.is_some() && args.iter().any(suspends_expr);
+                let saved_h = self.save_expr_value(RV::S(h), recv, receiver_suspends)?;
                 match name {
                     "push" => {
                         let arg = args.first().ok_or_else(|| internal("push arity"))?;
                         let v = self.eval(arg)?;
                         let src = self.materialize(v, &elem)?;
+                        let loaded_h = self.load_saved(&saved_h)?;
+                        let h = self.expect_s(loaded_h)?;
                         let pid = self.pos_id(pos);
                         let pos_v = self.iconst(types::I32, pid);
                         let res = self.call_rt(
@@ -5360,13 +5757,34 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     other => return Err(internal(format!("receiver {other:?}"))),
                 };
                 let m = self.ml.hir_method(cid.0, name)?;
-                let mut argv = vec![self.ctx_v];
+                let receiver_suspends = self.genc.is_some() && args.iter().any(suspends_expr);
+                let receiver_is_address = self.ml.layouts.class(cid.0)?.is_value
+                    && matches!(
+                        recv.kind,
+                        hir::ExprKind::Local(_)
+                            | hir::ExprKind::Global(_)
+                            | hir::ExprKind::Field { .. }
+                            | hir::ExprKind::Index { .. }
+                            | hir::ExprKind::This
+                    );
+                let saved_this = if receiver_is_address {
+                    self.save_address(this, receiver_suspends)?
+                } else {
+                    self.save_expr_value(rv, recv, receiver_suspends)?
+                };
+                let mut arg_values = Vec::new();
+                self.push_args(&mut arg_values, &m.params, args)?;
                 let sret = self.sret_slot(&m.ret, dest)?;
+                let mut argv = vec![self.ctx_v];
                 if let Some(s) = sret {
                     argv.push(s);
                 }
+                let this = match self.load_saved(&saved_this)? {
+                    RV::A(address) | RV::S(address) => address,
+                    other => return Err(internal(format!("saved receiver {other:?}"))),
+                };
                 argv.push(this);
-                self.push_args(&mut argv, &m.params, args)?;
+                argv.extend(arg_values);
                 let ret = m.ret.clone();
                 let res =
                     self.call_script(&FnKey::Method(cid.0, name.to_string()), &argv, checked)?;
@@ -5394,13 +5812,30 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .get(cid)
             .ok_or_else(|| internal("class id out of range"))?;
         let layout = self.ml.layouts.class(cid)?.clone();
-        let this = if layout.is_value {
-            let slot = match dest {
-                Some(d) => d,
-                None => self.temp_slot(layout.size, layout.align),
-            };
-            self.zero_bytes(slot, layout.size, layout.align);
-            slot
+        let args_suspend = self.genc.is_some() && args.iter().any(suspends_expr);
+        let class_ty = Type::Class(ClassId(cid));
+        let saved_this = if layout.is_value {
+            if args_suspend {
+                let offset = self.next_spill_offset(&SpillKind::Value(class_ty.clone()))?;
+                let frame = self
+                    .genc
+                    .as_ref()
+                    .map(|gen| gen.frame)
+                    .ok_or_else(|| internal("new target outside a coroutine"))?;
+                let slot = self.addr_off(frame, i64::from(offset));
+                self.zero_bytes(slot, layout.size, layout.align);
+                SavedValue::Frame {
+                    offset,
+                    ty: class_ty.clone(),
+                }
+            } else {
+                let slot = match dest {
+                    Some(d) => d,
+                    None => self.temp_slot(layout.size, layout.align),
+                };
+                self.zero_bytes(slot, layout.size, layout.align);
+                SavedValue::Direct(RV::A(slot))
+            }
         } else {
             let site = sites.take_required(
                 |site| matches!(site, hir::TrapSite::Allocation { .. }),
@@ -5412,7 +5847,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let pos_v = self.iconst(types::I32, pid);
             let res = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], false)?;
             self.emit_trap_site(site, TrapOperand::Pending)?;
-            res.ok_or_else(|| internal("alloc result"))?
+            let this = res.ok_or_else(|| internal("alloc result"))?;
+            self.save_typed_value(RV::S(this), &class_ty, args_suspend)?
         };
         // Evaluate the constructor arguments before the field initializers
         // run, keep their ABI values live across the initializers, then call
@@ -5422,8 +5858,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 |site| matches!(site, hir::TrapSite::Call { .. }),
                 internal("constructor call has no HIR call site"),
             )?;
+            let mut argsv = Vec::new();
+            self.push_args(&mut argsv, &ctor.params, args)?;
+            let this = match self.load_saved(&saved_this)? {
+                RV::A(address) | RV::S(address) => address,
+                other => return Err(internal(format!("new target {other:?}"))),
+            };
             let mut argv = vec![self.ctx_v, this];
-            self.push_args(&mut argv, &ctor.params, args)?;
+            argv.extend(argsv);
             Some((site, argv))
         } else {
             None
@@ -5432,6 +5874,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         for (i, field) in class.fields.iter().enumerate() {
             if let Some(init) = &field.init {
                 let rv = self.eval(init)?;
+                let this = match self.load_saved(&saved_this)? {
+                    RV::A(address) | RV::S(address) => address,
+                    other => return Err(internal(format!("new target {other:?}"))),
+                };
                 let off = layout.field_offsets[i] as i32;
                 self.store_val(&field.ty, this, off, rv)?;
             }
@@ -5453,6 +5899,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 let off = layout.field_offsets[i] as i32;
                 let fty = field.ty.clone();
                 let rv = self.eval(&args[i])?;
+                let later_suspends = self.genc.is_some() && args[i + 1..].iter().any(suspends_expr);
+                let saved = self.save_expr_value(rv, &args[i], later_suspends)?;
+                let rv = self.load_saved(&saved)?;
+                let this = match self.load_saved(&saved_this)? {
+                    RV::A(address) | RV::S(address) => address,
+                    other => return Err(internal(format!("new target {other:?}"))),
+                };
                 self.store_val(&fty, this, off, rv)?;
             }
         }
@@ -5460,10 +5913,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             self.call_script(&FnKey::Ctor(cid), &argv, false)?;
             self.emit_trap_site(site, TrapOperand::Pending)?;
         }
+        let result = self.load_saved(&saved_this)?;
         Ok(if layout.is_value {
-            RV::A(this)
+            let source = self.expect_a(result)?;
+            if let Some(dest) = dest {
+                if source != dest {
+                    self.copy_bytes(dest, source, layout.size, layout.align);
+                }
+                RV::A(dest)
+            } else {
+                RV::A(source)
+            }
         } else {
-            RV::S(this)
+            result
         })
     }
 
@@ -5509,6 +5971,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let result = self.call_rt(self.ml.rt.alloc, &[self.ctx_v, size, class_v, pos_v], false)?;
         self.emit_trap_site(site, TrapOperand::Pending)?;
         let this = result.ok_or_else(|| internal("descriptor allocation result"))?;
+        let fields_suspend = self.genc.is_some()
+            && fields.iter().zip(&class.fields).any(|(slot, field)| {
+                slot.as_ref()
+                    .or(field.init.as_ref())
+                    .is_some_and(suspends_expr)
+            });
+        let descriptor_saved =
+            self.save_typed_value(RV::S(this), &Type::Class(ClassId(cid)), fields_suspend)?;
 
         for (index, (slot, field)) in fields.iter().zip(&class.fields).enumerate() {
             let value = match slot {
@@ -5526,17 +5996,21 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                             field.name
                         ))
                     })?;
-                    let saved_this = self.this_v;
-                    self.this_v = Some((this, cid));
+                    let previous_this = self.this_v;
+                    let loaded = self.load_saved(&descriptor_saved)?;
+                    let descriptor = self.expect_s(loaded)?;
+                    self.this_v = Some((descriptor, cid));
                     let evaluated = self.eval(default);
-                    self.this_v = saved_this;
+                    self.this_v = previous_this;
                     evaluated?
                 }
             };
             let offset = layout.field_offsets[index] as i32;
+            let loaded = self.load_saved(&descriptor_saved)?;
+            let this = self.expect_s(loaded)?;
             self.store_val(&field.ty, this, offset, value)?;
         }
-        Ok(RV::S(this))
+        self.load_saved(&descriptor_saved)
     }
 
     /// Allocates a zeroed reference-class payload without running source
@@ -5588,6 +6062,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     self.call_rt(self.ml.rt.array_new, &[self.ctx_v, stride_v, pos_v], false)?;
                 self.emit_trap_site(site, TrapOperand::Pending)?;
                 let h = res.ok_or_else(|| internal("array_new result"))?;
+                let elems_suspend = self.genc.is_some() && elems.iter().any(suspends_expr);
+                let saved_h = self.save_typed_value(RV::S(h), ty, elems_suspend)?;
                 for e in elems {
                     let site = sites.take_required(
                         |site| matches!(site, hir::TrapSite::Allocation { .. }),
@@ -5600,18 +6076,46 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     };
                     let rv = self.eval(e)?;
                     let src = self.materialize(rv, elem)?;
+                    let loaded_h = self.load_saved(&saved_h)?;
+                    let h = self.expect_s(loaded_h)?;
                     let pid = self.pos_id(pos);
                     let pos_v = self.iconst(types::I32, pid);
                     self.call_rt(self.ml.rt.array_push, &[self.ctx_v, h, src, pos_v], false)?;
                     self.emit_trap_site(site, TrapOperand::Pending)?;
                 }
-                Ok(RV::S(h))
+                self.load_saved(&saved_h)
             }
             Type::FixedArray(..) => {
                 let (size, align) = self.ml.layouts.size_align(ty)?;
-                let slot = self.temp_slot(size, align);
-                self.array_lit_into(ty, elems, slot)?;
-                Ok(RV::A(slot))
+                let Type::FixedArray(elem, _) = ty else {
+                    return Err(internal("fixed-array literal type"));
+                };
+                let mut values = Vec::with_capacity(elems.len());
+                for (index, expression) in elems.iter().enumerate() {
+                    let value = self.eval(expression)?;
+                    let later_suspends =
+                        self.genc.is_some() && elems[index + 1..].iter().any(suspends_expr);
+                    let saved = self.save_expr_value(value, expression, later_suspends)?;
+                    let saved = match saved {
+                        SavedValue::Direct(RV::A(source)) => {
+                            SavedValue::Direct(RV::A(self.copy_to_temp(source, &expression.ty)?))
+                        }
+                        other => other,
+                    };
+                    values.push(saved);
+                }
+                let dest = self.temp_slot(size, align);
+                let stride = self.ml.layouts.stride(elem)?;
+                for (index, value) in values.iter().enumerate() {
+                    let value = self.load_saved(value)?;
+                    let index = u32::try_from(index)
+                        .map_err(|_| internal("FixedArray literal index does not fit in u32"))?;
+                    let offset = checked_layout_mul(index, stride, "FixedArray literal offset")?;
+                    let offset = i32::try_from(offset)
+                        .map_err(|_| internal("FixedArray literal offset does not fit in i32"))?;
+                    self.store_val(elem, dest, offset, value)?;
+                }
+                Ok(RV::A(dest))
             }
             other => Err(internal(format!("array literal of {other:?}"))),
         }
@@ -5641,6 +6145,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             .call_rt(self.ml.rt.array_new, &[self.ctx_v, stride_v, pid], false)?
             .ok_or_else(|| internal("array spread literal handle"))?;
         self.emit_trap_site(initial, TrapOperand::Pending)?;
+        let elems_suspend =
+            self.genc.is_some() && elems.iter().any(|elem| suspends_expr(&elem.expr));
+        let saved_handle = self.save_typed_value(RV::S(handle), ty, elems_suspend)?;
 
         for elem in elems {
             let site = sites.take_required(
@@ -5650,12 +6157,14 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             let hir::TrapSite::Allocation { pos } = site else {
                 return Err(internal("array spread element site kind"));
             };
-            let pos_id = self.pos_id(pos);
-            let pid = self.iconst(types::I32, pos_id);
             match elem.spread {
                 None => {
                     let value = self.eval(&elem.expr)?;
                     let src = self.materialize(value, elem_ty)?;
+                    let loaded_handle = self.load_saved(&saved_handle)?;
+                    let handle = self.expect_s(loaded_handle)?;
+                    let pos_id = self.pos_id(pos);
+                    let pid = self.iconst(types::I32, pos_id);
                     self.call_rt(
                         self.ml.rt.array_push,
                         &[self.ctx_v, handle, src, pid],
@@ -5665,6 +6174,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Some(hir::SpreadKind::Array) => {
                     let value = self.eval(&elem.expr)?;
                     let source = self.expect_s(value)?;
+                    let loaded_handle = self.load_saved(&saved_handle)?;
+                    let handle = self.expect_s(loaded_handle)?;
+                    let pos_id = self.pos_id(pos);
+                    let pid = self.iconst(types::I32, pos_id);
                     self.call_rt(
                         self.ml.rt.array_spread_array,
                         &[self.ctx_v, handle, source, pid],
@@ -5678,6 +6191,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                         return Err(internal("fixed spread source type"));
                     };
                     let count = self.iconst(types::I64, i64::from(*count));
+                    let loaded_handle = self.load_saved(&saved_handle)?;
+                    let handle = self.expect_s(loaded_handle)?;
+                    let pos_id = self.pos_id(pos);
+                    let pid = self.iconst(types::I32, pos_id);
                     self.call_rt(
                         self.ml.rt.array_spread_fixed,
                         &[self.ctx_v, handle, source, count, pid],
@@ -5687,6 +6204,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Some(hir::SpreadKind::MapKeys | hir::SpreadKind::SetValues) => {
                     let value = self.eval(&elem.expr)?;
                     let source = self.expect_s(value)?;
+                    let loaded_handle = self.load_saved(&saved_handle)?;
+                    let handle = self.expect_s(loaded_handle)?;
+                    let pos_id = self.pos_id(pos);
+                    let pid = self.iconst(types::I32, pos_id);
                     self.call_rt(
                         self.ml.rt.array_spread_assoc,
                         &[self.ctx_v, handle, source, pid],
@@ -5696,6 +6217,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Some(hir::SpreadKind::StringCodePoints) => {
                     let value = self.eval(&elem.expr)?;
                     let source = self.expect_s(value)?;
+                    let loaded_handle = self.load_saved(&saved_handle)?;
+                    let handle = self.expect_s(loaded_handle)?;
+                    let pos_id = self.pos_id(pos);
+                    let pid = self.iconst(types::I32, pos_id);
                     self.call_rt(
                         self.ml.rt.array_spread_string,
                         &[self.ctx_v, handle, source, pid],
@@ -5708,7 +6233,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             }
             self.emit_trap_site(site, TrapOperand::Pending)?;
         }
-        Ok(RV::S(handle))
+        self.load_saved(&saved_handle)
     }
 
     /// Stores a `FixedArray` literal's elements straight into `dest`
@@ -5719,20 +6244,38 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         ty: &Type,
         elems: &[hir::Expr],
         dest: Value,
+        dest_offset: i32,
     ) -> Result<(), String> {
         let elem = match ty {
             Type::FixedArray(elem, _) => elem,
             other => return Err(internal(format!("fixed-array literal into {other:?}"))),
         };
         let stride = self.ml.layouts.stride(elem)?;
-        for (i, e) in elems.iter().enumerate() {
-            let rv = self.eval(e)?;
+        let mut values = Vec::with_capacity(elems.len());
+        for (index, expression) in elems.iter().enumerate() {
+            let value = self.eval(expression)?;
+            let later_suspends =
+                self.genc.is_some() && elems[index + 1..].iter().any(suspends_expr);
+            let saved = self.save_expr_value(value, expression, later_suspends)?;
+            let saved = match saved {
+                SavedValue::Direct(RV::A(source)) => {
+                    SavedValue::Direct(RV::A(self.copy_to_temp(source, &expression.ty)?))
+                }
+                other => other,
+            };
+            values.push(saved);
+        }
+        for (i, value) in values.iter().enumerate() {
+            let value = self.load_saved(value)?;
             let index = u32::try_from(i)
                 .map_err(|_| internal("FixedArray literal index does not fit in u32"))?;
             let offset = checked_layout_mul(index, stride, "FixedArray literal offset")?;
             let offset = i32::try_from(offset)
                 .map_err(|_| internal("FixedArray literal offset does not fit in i32"))?;
-            self.store_val(elem, dest, offset, rv)?;
+            let offset = dest_offset
+                .checked_add(offset)
+                .ok_or_else(|| internal("FixedArray literal destination offset overflow"))?;
+            self.store_val(elem, dest, offset, value)?;
         }
         Ok(())
     }
@@ -5786,7 +6329,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 })
             }
             K::ArrayLit(elems) if matches!(ty, Type::FixedArray(..)) => {
-                self.array_lit_into(ty, elems, dest)
+                self.array_lit_into(ty, elems, dest, 0)
             }
             _ => {
                 let rv = self.eval(e)?;
@@ -5798,65 +6341,83 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         }
     }
 
+    fn eval_template_part(
+        &mut self,
+        part: &hir::TplPart,
+        sites: &mut TrapSiteConsumer<'_>,
+    ) -> Result<Value, String> {
+        match part {
+            hir::TplPart::Text(text) => {
+                let site = sites.take_required(
+                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                    internal("template text has no HIR allocation site"),
+                )?;
+                self.string_literal(text.as_bytes(), site)
+            }
+            hir::TplPart::Expr(expr) => {
+                let value = self.eval(expr)?;
+                let site = if expr.ty == Type::Str {
+                    None
+                } else {
+                    Some(sites.take_required(
+                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                        internal("template formatting has no HIR allocation site"),
+                    )?)
+                };
+                self.format_value(value, &expr.ty, site)
+            }
+            other => Err(internal(format!("template part {other:?}"))),
+        }
+    }
+
     fn eval_template(
         &mut self,
         parts: &[hir::TplPart],
         sites: &mut TrapSiteConsumer<'_>,
     ) -> Result<RV, String> {
-        let mut acc: Option<Value> = None;
-        for part in parts {
-            let h = match part {
-                hir::TplPart::Text(t) => {
-                    let site = sites.take_required(
-                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                        internal("template text has no HIR allocation site"),
-                    )?;
-                    self.string_literal(t.as_bytes(), site)?
-                }
-                hir::TplPart::Expr(e) => {
-                    let rv = self.eval(e)?;
-                    let site = if e.ty == Type::Str {
-                        None
-                    } else {
-                        Some(sites.take_required(
-                            |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                            internal("template formatting has no HIR allocation site"),
-                        )?)
-                    };
-                    self.format_value(rv, &e.ty, site)?
-                }
-                other => return Err(internal(format!("template part {other:?}"))),
-            };
-            acc = Some(match acc {
-                None => h,
-                Some(prev) => {
-                    let site = sites.take_required(
-                        |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                        internal("template concat has no HIR allocation site"),
-                    )?;
-                    let hir::TrapSite::Allocation { pos } = site else {
-                        return Err(internal("template concat has a non-allocation HIR site"));
-                    };
-                    let pid = self.pos_id(pos);
-                    let pos_v = self.iconst(types::I32, pid);
-                    let res =
-                        self.call_rt(self.ml.rt.str_concat, &[self.ctx_v, prev, h, pos_v], false)?;
-                    self.emit_trap_site(site, TrapOperand::Pending)?;
-                    res.ok_or_else(|| internal("concat result"))?
-                }
-            });
-        }
-        let result = match acc {
-            Some(h) => h,
-            None => {
-                let site = sites.take_required(
-                    |site| matches!(site, hir::TrapSite::Allocation { .. }),
-                    internal("empty template has no HIR allocation site"),
-                )?;
-                self.string_literal(b"", site)?
-            }
+        let Some((first, rest)) = parts.split_first() else {
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                internal("empty template has no HIR allocation site"),
+            )?;
+            return Ok(RV::S(self.string_literal(b"", site)?));
         };
-        Ok(RV::S(result))
+        let first = self.eval_template_part(first, sites)?;
+        let later_suspends = rest
+            .iter()
+            .any(|part| matches!(part, hir::TplPart::Expr(expr) if suspends_expr(expr)));
+        let mut acc = self.save_typed_value(
+            RV::S(first),
+            &Type::Str,
+            self.genc.is_some() && later_suspends,
+        )?;
+        for part in rest {
+            let piece = self.eval_template_part(part, sites)?;
+            let loaded_acc = self.load_saved(&acc)?;
+            let prev = self.expect_s(loaded_acc)?;
+            let site = sites.take_required(
+                |site| matches!(site, hir::TrapSite::Allocation { .. }),
+                internal("template concat has no HIR allocation site"),
+            )?;
+            let hir::TrapSite::Allocation { pos } = site else {
+                return Err(internal("template concat has a non-allocation HIR site"));
+            };
+            let pid = self.pos_id(pos);
+            let pos_v = self.iconst(types::I32, pid);
+            let result = self
+                .call_rt(
+                    self.ml.rt.str_concat,
+                    &[self.ctx_v, prev, piece, pos_v],
+                    false,
+                )?
+                .ok_or_else(|| internal("concat result"))?;
+            self.emit_trap_site(site, TrapOperand::Pending)?;
+            match &acc {
+                SavedValue::Direct(_) => acc = SavedValue::Direct(RV::S(result)),
+                SavedValue::Frame { .. } => self.store_saved(&acc, RV::S(result))?,
+            }
+        }
+        self.load_saved(&acc)
     }
 
     /// Q14 formatting of one interpolated value into a string handle.
@@ -5968,11 +6529,26 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             off = checked_layout_add(off, s, "closure environment layout")?;
             env_align = env_align.max(a);
         }
+        let frame_environment = !captures.is_empty() && self.genc.is_some();
         let env = if captures.is_empty() {
             self.iconst(types::I64, 0)
         } else {
             let size = round_up_layout(off.max(1), env_align, "final closure environment layout")?;
-            let slot = self.temp_slot(size, env_align);
+            let slot = if frame_environment {
+                let fields = captures
+                    .iter()
+                    .map(|capture| (capture.name.clone(), capture.ty.clone()))
+                    .collect();
+                let offset = self.next_spill_offset(&SpillKind::LambdaEnv(fields))?;
+                let frame = self
+                    .genc
+                    .as_ref()
+                    .map(|gen| gen.frame)
+                    .ok_or_else(|| internal("lambda environment outside a coroutine"))?;
+                self.addr_off(frame, i64::from(offset))
+            } else {
+                self.temp_slot(size, env_align)
+            };
             for (name, ty, at) in &cap_info {
                 let binding = self.lookup(name)?;
                 let rv = self.read_binding(&binding)?;
@@ -6089,8 +6665,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         };
         let (parent, _, resume_block, state) = self.next_suspend_site()?;
 
-        let mut argv = vec![self.ctx_v];
-        if let hir::AsyncCallee::Method { receiver, .. } = callee {
+        let args_suspend = args.iter().any(suspends_expr);
+        let saved_receiver = if let hir::AsyncCallee::Method { receiver, .. } = callee {
             let value = self.eval(receiver)?;
             let this = self.expect_s(value)?;
             while let Some(site) =
@@ -6098,13 +6674,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             {
                 self.emit_trap_site(site, TrapOperand::Value(this))?;
             }
-            // The receiver is evaluated before the explicit arguments. Root
-            // it in the parent frame's reserved child slot while those
-            // arguments run; the creator result replaces it below.
+            // The child field is part of the managed frame root set. Keep
+            // the receiver there while ordinary arguments run too: they may
+            // collect even when they do not suspend. A suspending argument
+            // additionally needs the typed spill consumed below.
             self.b.ins().store(flags(), this, parent, child_off as i32);
-            argv.push(this);
+            Some(self.save_expr_value(RV::S(this), receiver, args_suspend)?)
+        } else {
+            None
+        };
+        let mut explicit_args = Vec::new();
+        self.push_args(&mut explicit_args, &function.params, args)?;
+        let mut argv = vec![self.ctx_v];
+        if let Some(receiver) = &saved_receiver {
+            let receiver = self.load_saved(receiver)?;
+            argv.push(self.expect_s(receiver)?);
         }
-        self.push_args(&mut argv, &function.params, args)?;
+        argv.extend(explicit_args);
         let checked = sites
             .take(|site| matches!(site, hir::TrapSite::Call { .. }))
             .is_some();
@@ -6174,10 +6760,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             if self.term {
                 // Statically unreachable code after a terminator; the
                 // checker allows it, the lowering skips it. The
-                // generator pre-passes assigned frame offsets and
-                // resume blocks over *all* `let`s and `yield`s, so
-                // both cursors must account for the skipped ones: the
-                // offset cursor advances, and each skipped yield's
+                // coroutine pre-passes frame offsets, spill events, and
+                // resume blocks over *all* statements, so their cursors
+                // must account for the skipped suffix. Each skipped yield's
                 // resume block (still referenced by the dispatch
                 // chain, but unreachable) is filled with a plain
                 // `done` return so the function stays well-formed.
@@ -6187,6 +6772,10 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     let skipped_yields = count_yields(&stmts[i..]);
                     if let Some(g) = self.genc.as_mut() {
                         g.next_let += rest.len();
+                    }
+                    let skipped = spill_plan(self.ml.hir, &self.ml.layouts, &stmts[i..])?;
+                    for event in skipped.events {
+                        self.next_spill_offset(&event.kind)?;
                     }
                     for _ in 0..skipped_yields {
                         let blk = {
@@ -6372,7 +6961,12 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
             } => self.lower_for_of(name, ty, subject, *kind, body, pos),
             hir::Stmt::Switch { disc, cases, .. } => {
                 let d = self.eval(disc)?;
-                let d = self.expect_s(d)?;
+                let tests_suspend = self.genc.is_some()
+                    && cases
+                        .iter()
+                        .filter_map(|case| case.test.as_ref())
+                        .any(suspends_expr);
+                let saved_d = self.save_expr_value(d, disc, tests_suspend)?;
                 let exit = self.b.create_block();
                 let body_blocks: Vec<Block> = cases.iter().map(|_| self.b.create_block()).collect();
                 let default_idx = cases.iter().position(|c| c.test.is_none());
@@ -6383,6 +6977,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     if let Some(test) = &case.test {
                         let t = self.eval(test)?;
                         let t = self.expect_s(t)?;
+                        let d = self.load_saved(&saved_d)?;
+                        let d = self.expect_s(d)?;
                         let eq = self.b.ins().icmp(IntCC::Equal, d, t);
                         let next = self.b.create_block();
                         self.b.ins().brif(eq, body_blocks[i], &[], next, &[]);
@@ -6457,28 +7053,36 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
 
         self.scope_push();
         let subject_rv = self.eval(subject)?;
+        let suspends = count_yields(body) != 0;
+        let saved_subject = self.save_expr_value(subject_rv, subject, suspends)?;
+        let subject_rv = self.load_saved(&saved_subject)?;
         let binding = self.declare_loop_local(name, ty)?;
         let index_var = self.b.declare_var(types::I64);
         let zero = self.iconst(types::I64, 0);
         self.b.def_var(index_var, zero);
+        let saved_index = if suspends {
+            Some(self.save_typed_value(RV::S(zero), &Type::U64, true)?)
+        } else {
+            None
+        };
 
         let mut assoc_handle = None;
-        let (subject_scalar, subject_addr, bound) = match kind {
+        let bound = match kind {
             K::ArrayValues | K::ArrayKeys => {
                 let handle = self.expect_s(subject_rv)?;
                 let n = self
                     .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
                     .ok_or_else(|| internal("array for-of length"))?;
                 let n = self.b.ins().uextend(types::I64, n);
-                (Some(handle), None, n)
+                n
             }
             K::FixedArrayValues => {
-                let addr = self.expect_a(subject_rv)?;
+                self.expect_a(subject_rv)?;
                 let Type::FixedArray(_, n) = &subject.ty else {
                     return Err(internal("fixed-array for-of subject type"));
                 };
                 let n = self.iconst(types::I64, i64::from(*n));
-                (None, Some(addr), n)
+                n
             }
             K::MapKeys | K::MapValues | K::SetValues => {
                 let handle = self.expect_s(subject_rv)?;
@@ -6493,7 +7097,7 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .ok_or_else(|| internal("associative for-of bound"))?;
                 assoc_handle = Some(handle);
                 self.assoc_iters.push(handle);
-                (Some(handle), None, n)
+                n
             }
             K::StringCodePoints => {
                 let handle = self.expect_s(subject_rv)?;
@@ -6501,10 +7105,11 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                     .call_rt(self.ml.rt.str_len, &[self.ctx_v, handle], false)?
                     .ok_or_else(|| internal("string for-of byte length"))?;
                 let n = self.b.ins().uextend(types::I64, n);
-                (Some(handle), None, n)
+                n
             }
             other => return Err(internal(format!("unknown ForOfKind {other:?}"))),
         };
+        let saved_bound = self.save_typed_value(RV::S(bound), &Type::U64, suspends)?;
 
         let hdr = self.b.create_block();
         let visit = self.b.create_block();
@@ -6513,10 +7118,19 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let exit = self.b.create_block();
         self.b.ins().jump(hdr, &[]);
         self.b.switch_to_block(hdr);
-        let index = self.b.use_var(index_var);
+        let index = match &saved_index {
+            Some(saved) => {
+                let value = self.load_saved(saved)?;
+                self.expect_s(value)?
+            }
+            None => self.b.use_var(index_var),
+        };
+        let bound_value = self.load_saved(&saved_bound)?;
+        let bound = self.expect_s(bound_value)?;
         let below_snapshot = self.b.ins().icmp(IntCC::UnsignedLessThan, index, bound);
         let condition = if matches!(kind, K::ArrayValues | K::ArrayKeys) {
-            let handle = subject_scalar.ok_or_else(|| internal("array for-of handle"))?;
+            let subject_value = self.load_saved(&saved_subject)?;
+            let handle = self.expect_s(subject_value)?;
             let current = self
                 .call_rt(self.ml.rt.array_len, &[self.ctx_v, handle], false)?
                 .ok_or_else(|| internal("array for-of current length"))?;
@@ -6529,6 +7143,13 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.b.ins().brif(condition, visit, &[], exit, &[]);
 
         self.b.switch_to_block(visit);
+        let index = match &saved_index {
+            Some(saved) => {
+                let value = self.load_saved(saved)?;
+                self.expect_s(value)?
+            }
+            None => self.b.use_var(index_var),
+        };
         let mut next_index = None;
         let value = match kind {
             K::ArrayKeys => {
@@ -6536,7 +7157,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Some(RV::S(narrowed))
             }
             K::ArrayValues => {
-                let handle = subject_scalar.ok_or_else(|| internal("array for-of handle"))?;
+                let subject_value = self.load_saved(&saved_subject)?;
+                let handle = self.expect_s(subject_value)?;
                 let data = self
                     .call_rt(self.ml.rt.array_data, &[self.ctx_v, handle], false)?
                     .ok_or_else(|| internal("array for-of data"))?;
@@ -6546,14 +7168,16 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Some(self.load_val(ty, addr, 0)?)
             }
             K::FixedArrayValues => {
-                let base = subject_addr.ok_or_else(|| internal("fixed-array for-of base"))?;
+                let subject_value = self.load_saved(&saved_subject)?;
+                let base = self.expect_a(subject_value)?;
                 let stride = self.ml.layouts.stride(ty)?;
                 let offset = self.b.ins().imul_imm(index, i64::from(stride));
                 let addr = self.b.ins().iadd(base, offset);
                 Some(self.load_val(ty, addr, 0)?)
             }
             K::MapKeys | K::MapValues | K::SetValues => {
-                let handle = subject_scalar.ok_or_else(|| internal("assoc for-of handle"))?;
+                let subject_value = self.load_saved(&saved_subject)?;
+                let handle = self.expect_s(subject_value)?;
                 let (size, align) = self.ml.layouts.size_align(ty)?;
                 let slot = self.temp_slot(size.max(1), align.max(1));
                 let select_value = self.iconst(types::I32, i64::from(kind == K::MapValues));
@@ -6572,7 +7196,8 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
                 Some(loaded)
             }
             K::StringCodePoints => {
-                let handle = subject_scalar.ok_or_else(|| internal("string for-of handle"))?;
+                let subject_value = self.load_saved(&saved_subject)?;
+                let handle = self.expect_s(subject_value)?;
                 let index32 = self.b.ins().ireduce(types::I32, index);
                 let next_slot = self.temp_slot(4, 4);
                 let pos_id = self.pos_id(pos);
@@ -6598,6 +7223,9 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         let value = value.ok_or_else(|| internal("for-of visit value"))?;
         let place = self.place_of_binding(&binding)?;
         self.write_place(place, ty, value)?;
+        if let (Some(saved), Some(next)) = (&saved_index, next_index) {
+            self.store_saved(saved, RV::S(next))?;
+        }
         self.loops.push(LoopCtx {
             brk: exit,
             cont: Some(step_blk),
@@ -6612,12 +7240,23 @@ impl<'f, 'm, 'a, M: Module> Body<'f, 'm, 'a, M> {
         self.term = false;
 
         self.b.switch_to_block(step_blk);
-        let next = next_index.unwrap_or_else(|| self.b.ins().iadd_imm(index, 1));
-        self.b.def_var(index_var, next);
+        if let Some(saved) = &saved_index {
+            if kind != K::StringCodePoints {
+                let current_value = self.load_saved(saved)?;
+                let current = self.expect_s(current_value)?;
+                let next = self.b.ins().iadd_imm(current, 1);
+                self.store_saved(saved, RV::S(next))?;
+            }
+        } else {
+            let next = next_index.unwrap_or_else(|| self.b.ins().iadd_imm(index, 1));
+            self.b.def_var(index_var, next);
+        }
         self.b.ins().jump(hdr, &[]);
 
         self.b.switch_to_block(exit);
-        if let Some(handle) = assoc_handle {
+        if assoc_handle.is_some() {
+            let subject_value = self.load_saved(&saved_subject)?;
+            let handle = self.expect_s(subject_value)?;
             self.call_rt(self.ml.rt.assoc_iter_end, &[self.ctx_v, handle], false)?;
             self.assoc_iters.pop();
         }
@@ -7294,11 +7933,55 @@ pub(crate) fn wrapper_for<M: Module>(
 /// method receiver, parameter/local storage, then one child-frame pointer for
 /// each direct awaited call. R13 requires the receiver to be the first payload
 /// slot.
+struct CoroutineFrameLayout {
+    receiver_offset: Option<u32>,
+    param_offsets: Vec<u32>,
+    let_offsets: Vec<u32>,
+    child_offsets: Vec<u32>,
+    spill_offsets: Vec<u32>,
+    spill_events: Vec<SpillEvent>,
+    size: u32,
+}
+
+fn spill_kind_size_align(layouts: &Layouts, kind: &SpillKind) -> Result<(u32, u32), String> {
+    match kind {
+        SpillKind::Value(ty) => layouts.size_align(ty),
+        SpillKind::Address => Ok((8, 8)),
+        SpillKind::LambdaEnv(captures) => {
+            let mut size = 0u32;
+            let mut max_align = 1u32;
+            for (_, ty) in captures {
+                let (field_size, field_align) = layouts.size_align(ty)?;
+                size = round_up_layout(size, field_align.max(1), "lambda spill field layout")?;
+                size = checked_layout_add(size, field_size.max(1), "lambda spill field layout")?;
+                max_align = max_align.max(field_align.max(1));
+            }
+            size = round_up_layout(size.max(1), max_align, "lambda spill final layout")?;
+            Ok((size, max_align))
+        }
+    }
+}
+
+fn append_spill_layout(
+    layouts: &Layouts,
+    slots: &[SpillKind],
+    mut offset: u32,
+) -> Result<(Vec<u32>, u32), String> {
+    let mut offsets = Vec::with_capacity(slots.len());
+    for kind in slots {
+        let (size, align) = spill_kind_size_align(layouts, kind)?;
+        offset = round_up_layout(offset, align.max(1), "coroutine spill member")?;
+        offsets.push(offset);
+        offset = checked_layout_add(offset, size.max(1), "coroutine spill member")?;
+    }
+    Ok((offsets, offset))
+}
+
 fn generator_frame<M: Module>(
     ml: &ModLower<M>,
     f: &hir::Function,
     receiver: Option<&Type>,
-) -> Result<(Option<u32>, Vec<u32>, Vec<u32>, Vec<u32>, u32), String> {
+) -> Result<CoroutineFrameLayout, String> {
     let mut off = GEN_PAYLOAD_OFF;
     let receiver_offset = if let Some(receiver) = receiver {
         let (size, align) = ml.layouts.size_align(receiver)?;
@@ -7331,14 +8014,19 @@ fn generator_frame<M: Module>(
         child_offsets.push(off);
         off = checked_layout_add(off, 8, "async child-frame layout")?;
     }
+    let spill = spill_plan(ml.hir, &ml.layouts, &f.body)?;
+    let (spill_offsets, spill_end) = append_spill_layout(&ml.layouts, &spill.slots, off)?;
+    off = spill_end;
     let size = round_up_layout(off, 8, "final generator frame layout")?;
-    Ok((
+    Ok(CoroutineFrameLayout {
         receiver_offset,
         param_offsets,
         let_offsets,
         child_offsets,
+        spill_offsets,
+        spill_events: spill.events,
         size,
-    ))
+    })
 }
 
 /// Defines the creator and resume functions of a `function*` (C8).
@@ -7346,7 +8034,13 @@ pub(crate) fn define_generator<M: Module>(
     ml: &mut ModLower<M>,
     f: &hir::Function,
 ) -> Result<(), String> {
-    let (_, param_offsets, let_offsets, child_offsets, frame_size) = generator_frame(ml, f, None)?;
+    let frame_layout = generator_frame(ml, f, None)?;
+    let param_offsets = frame_layout.param_offsets.clone();
+    let let_offsets = frame_layout.let_offsets.clone();
+    let child_offsets = frame_layout.child_offsets.clone();
+    let spill_offsets = frame_layout.spill_offsets.clone();
+    let spill_events = frame_layout.spill_events.clone();
+    let frame_size = frame_layout.size;
     let yield_ty = match &f.ret {
         Type::Generator(y) => (**y).clone(),
         other => return Err(internal(format!("generator return {other:?}"))),
@@ -7521,6 +8215,9 @@ pub(crate) fn define_generator<M: Module>(
                     next_let: 0,
                     child_offsets,
                     next_child: 0,
+                    spill_offsets,
+                    spill_events,
+                    spill_cursor: 0,
                     kind: FrameKind::Generator,
                 }),
                 term: false,
@@ -7536,6 +8233,7 @@ pub(crate) fn define_generator<M: Module>(
                 );
             }
             body.lower_stmts(&f.body)?;
+            body.ensure_coroutine_plan_consumed()?;
             body.finish()?;
         }
         ensure_explicit_frame_supported(&cctx.func, "generator resume")?;
@@ -7591,8 +8289,14 @@ fn define_async_with<M: Module>(
     resume_key: FnKey,
 ) -> Result<(), String> {
     let receiver_ty = class.map(|class| Type::Class(ClassId(class)));
-    let (receiver_offset, param_offsets, let_offsets, child_offsets, frame_size) =
-        generator_frame(ml, f, receiver_ty.as_ref())?;
+    let frame_layout = generator_frame(ml, f, receiver_ty.as_ref())?;
+    let receiver_offset = frame_layout.receiver_offset;
+    let param_offsets = frame_layout.param_offsets.clone();
+    let let_offsets = frame_layout.let_offsets.clone();
+    let child_offsets = frame_layout.child_offsets.clone();
+    let spill_offsets = frame_layout.spill_offsets.clone();
+    let spill_events = frame_layout.spill_events.clone();
+    let frame_size = frame_layout.size;
     let creator_id = ml.func_id(&creator_key)?;
     let resume_id = ml.func_id(&resume_key)?;
 
@@ -7778,6 +8482,9 @@ fn define_async_with<M: Module>(
                     next_let: 0,
                     child_offsets,
                     next_child: 0,
+                    spill_offsets,
+                    spill_events,
+                    spill_cursor: 0,
                     kind: FrameKind::Async,
                 }),
                 term: false,
@@ -7792,6 +8499,7 @@ fn define_async_with<M: Module>(
                 );
             }
             body.lower_stmts(&f.body)?;
+            body.ensure_coroutine_plan_consumed()?;
             body.finish()?;
         }
         ensure_explicit_frame_supported(&cctx.func, "async resume")?;
@@ -8048,6 +8756,50 @@ pub(crate) fn define_worker_entry<M: Module>(
         .map_err(|error| internal(format!("define worker entry adapter: {error}")))?;
     ml.module.clear_context(&mut cctx);
     Ok(())
+}
+
+#[cfg(test)]
+mod coroutine_frame_tests {
+    use super::append_spill_layout;
+    use crate::layout::Layouts;
+    use crate::suspension::spill_plan;
+    use subscript_compiler::{check_program, SourceFile};
+
+    fn spill_offsets(source: &str) -> Vec<u32> {
+        let module =
+            check_program(&[SourceFile::new("frame.ts", source)]).expect("clean coroutine source");
+        let function = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+        let layouts = Layouts::build(&module).expect("layouts");
+        let plan = spill_plan(&module, &layouts, &function.body).expect("spill plan");
+        append_spill_layout(&layouts, &plan.slots, 16)
+            .expect("dev frame spill layout")
+            .0
+    }
+
+    #[test]
+    fn dev_frame_layout_holds_only_a_value_that_crosses_a_suspension() {
+        let live = spill_offsets(
+            "async function first(): Promise<i32> { return 1; }\n\
+             async function second(): Promise<i32> { return 2; }\n\
+             export async function main(): Promise<void> {\n\
+               const values: FixedArray<i32, 2> = [await first(), await second()];\n\
+               print(`${values.length}`);\n\
+             }\n",
+        );
+        assert_eq!(live, vec![16], "the first result has a dev frame member");
+
+        let dead = spill_offsets(
+            "export async function main(): Promise<void> {\n\
+               1 + 2;\n\
+               await Context.suspend();\n\
+             }\n",
+        );
+        assert!(dead.is_empty(), "a dead result has no dev frame member");
+    }
 }
 
 #[cfg(test)]

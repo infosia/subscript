@@ -847,10 +847,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // Entry a146 pins §66 managed scopes and lambda capture names.
     // Entry a147 pins §67 switch body scope.
     // Entry a148 pins §67 switch-body disposal order.
+    // Entry a149 pins §67 suspension state.
     assert_eq!(
         golden_ids.len(),
-        148,
-        "expected exactly 148 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        149,
+        "expected exactly 149 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -889,8 +890,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          R31 using-declaration goldens, the a140 R32 wire-entry-parameter golden, and the a141 \
          R33 CStruct-alignment golden, the a142 R34 Context-storage-byte golden, and the a143 \
          R36 async-generic golden, the a144 R37 named-accessor golden, the a145 §66 \
-         emitted-identifier golden, the a146 §66 scoped-local golden, and the a147–a148 §67 \
-         switch-body-scope goldens, found {}",
+         emitted-identifier golden, the a146 §66 scoped-local golden, the a147–a148 §67 \
+         switch-body-scope goldens, and the a149 §67 suspension-state golden, found {}",
         golden_ids.len()
     );
 
