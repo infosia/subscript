@@ -329,6 +329,64 @@ impl Function {
             Vec::new()
         }
     }
+
+    /// Fault points owned by the host-entry adapter for this function.
+    ///
+    /// A wire-mapped string alias enters the adapter as its integer wire
+    /// value. The adapter validates that value before it calls the script
+    /// function. Other function-level and expression-level sites are returned
+    /// by [`Function::trap_sites`] and [`Expr::trap_sites`].
+    #[must_use]
+    pub fn host_entry_trap_sites(&self, module: &Module) -> Option<Vec<TrapSite>> {
+        if !self.exported
+            || self.is_generator
+            || self.ret != Type::Void
+            || (self.is_async && !self.params.is_empty())
+        {
+            return None;
+        }
+        let parameter_is_supported = |parameter: &Param| {
+            parameter.ty.is_numeric()
+                || parameter.ty == Type::Bool
+                || matches!(&parameter.ty, Type::Class(id) if module
+                .classes
+                .get(id.0)
+                .is_some_and(|class| {
+                    !class.is_value
+                        && !class.is_descriptor
+                        && !class.is_boundary
+                        && class.fields.is_empty()
+                        && class.ctor.is_none()
+                        && class.methods.is_empty()
+                        && class.index_signature.is_none()
+                }))
+                || matches!(&parameter.ty, Type::StringAlias(alias) if module
+                    .string_aliases
+                    .get(alias.0)
+                    .is_some_and(|definition| definition.wire_values.is_some()))
+        };
+        if !self.params.iter().all(parameter_is_supported) {
+            return None;
+        }
+        Some(
+            self.params
+                .iter()
+                .filter_map(|parameter| {
+                    let Type::StringAlias(alias) = &parameter.ty else {
+                        return None;
+                    };
+                    module
+                        .string_aliases
+                        .get(alias.0)
+                        .and_then(|definition| definition.wire_values.as_ref())
+                        .map(|_| TrapSite::WireEnumValue {
+                            alias: *alias,
+                            pos: parameter.pos.clone(),
+                        })
+                })
+                .collect(),
+        )
+    }
 }
 
 /// One function parameter.
@@ -3380,6 +3438,51 @@ mod tests {
         };
         assert_eq!(e.ty, Type::I32);
         assert_eq!(e.pos.line, 1);
+    }
+
+    #[test]
+    fn host_entry_trap_sites_name_each_wire_parameter() {
+        let parameter_pos = Pos::new("wire-entry.ts", 3, 27);
+        let function = Function {
+            name: "configure".to_string(),
+            exported: true,
+            is_generator: false,
+            is_async: false,
+            params: vec![Param {
+                name: "mode".to_string(),
+                ty: Type::StringAlias(crate::types::StringAliasId(0)),
+                default: None,
+                foreign_provenance: None,
+                pos: parameter_pos.clone(),
+            }],
+            ret: Type::Void,
+            body: Vec::new(),
+            pos: Pos::new("wire-entry.ts", 3, 1),
+        };
+        let module = Module {
+            poisoned_imports: Vec::new(),
+            classes: Vec::new(),
+            enums: Vec::new(),
+            string_aliases: vec![StringAliasDef {
+                name: "WireMode".to_string(),
+                members: vec!["m0".to_string()],
+                wire_values: Some(vec![16]),
+                pos: Pos::new("wire-entry.ts", 1, 1),
+            }],
+            globals: Vec::new(),
+            functions: vec![function.clone()],
+            worker_entries: Vec::new(),
+            foreign_fns: Vec::new(),
+            foreign_mirrors: Vec::new(),
+            top_level: Vec::new(),
+        };
+        assert_eq!(
+            function.host_entry_trap_sites(&module),
+            Some(vec![TrapSite::WireEnumValue {
+                alias: crate::types::StringAliasId(0),
+                pos: parameter_pos,
+            }])
+        );
     }
 
     #[test]

@@ -41,8 +41,6 @@ pub mod lir;
 mod lower;
 mod native;
 mod reload;
-mod suspension;
-mod trap_sites;
 
 pub use aot::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_object,
@@ -53,7 +51,7 @@ pub use aot::{
     AotObject, CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
     WINDOWS_SYSTEM_LIBRARIES,
 };
-pub use cemit::{emit_c, emit_c_without_main, CProgram};
+pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
@@ -62,6 +60,44 @@ pub use jit::{
     RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
+
+/// Lowers checked HIR to verified LIR and emits ship-tier C.
+///
+/// # Errors
+///
+/// Returns an error for discovery HIR, invalid LIR, unsupported target
+/// transcription, or a missing exported `main(): void`.
+pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
+    reject_discovery_hir_for_c(module)?;
+    let lir = lir::lower_module(module)
+        .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
+    cemit::emit_lir_c(&lir, true)
+}
+
+/// Lowers checked HIR to verified LIR and emits host-owned ship-tier C.
+///
+/// This variant permits an entryless module.
+///
+/// # Errors
+///
+/// Returns an error for discovery HIR, invalid LIR, or unsupported target
+/// transcription.
+pub fn emit_c_without_main(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
+    reject_discovery_hir_for_c(module)?;
+    let lir = lir::lower_module(module)
+        .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
+    cemit::emit_lir_c(&lir, false)
+}
+
+fn reject_discovery_hir_for_c(module: &subscript_compiler::hir::Module) -> Result<(), String> {
+    if let Some(import) = module.poisoned_imports.first() {
+        return Err(format!(
+            "cannot emit discovery HIR: poisoned import `{}`",
+            import.module
+        ));
+    }
+    Ok(())
+}
 pub use native::NativeLibrary;
 pub use reload::{declaration_hash, DeclarationHash, EntryArg, ReloadError, ReloadSession};
 

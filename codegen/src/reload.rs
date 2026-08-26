@@ -70,7 +70,7 @@ use subscript_compiler::{
 use subscript_runtime::Context;
 
 use crate::jit::{register_runtime, RunError, TrapReport};
-use crate::lower::{dev_flags, internal, is_opaque_handle, lower_module_with, LowerOptions};
+use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
 use crate::NativeLibrary;
 
@@ -570,6 +570,21 @@ fn entry_param_kind(module: &hir::Module, ty: &Type) -> Result<EntryParamKind, S
                 "host entry has unsupported parameter type {other:?}"
             )))
         }
+    })
+}
+
+fn is_opaque_handle(module: &hir::Module, ty: &Type) -> bool {
+    let Type::Class(id) = ty else {
+        return false;
+    };
+    module.classes.get(id.0).is_some_and(|class| {
+        !class.is_value
+            && !class.is_descriptor
+            && !class.is_boundary
+            && class.fields.is_empty()
+            && class.ctor.is_none()
+            && class.methods.is_empty()
+            && class.index_signature.is_none()
     })
 }
 

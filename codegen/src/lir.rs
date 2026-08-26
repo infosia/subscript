@@ -8,8 +8,6 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
-use crate::suspension::suspends_expr;
-
 /// A construct or inconsistent checked fact that cannot be represented in
 /// LIR without guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,6 +149,7 @@ struct FunctionInput {
     is_generator: bool,
     is_async: bool,
     creation_traps: Vec<hir::TrapSite>,
+    host_entry_traps: Option<Vec<hir::TrapSite>>,
     params: Vec<hir::Param>,
     ret: Type,
     body: Vec<hir::Stmt>,
@@ -166,6 +165,7 @@ impl From<hir::Function> for FunctionInput {
             is_generator: function.is_generator,
             is_async: function.is_async,
             creation_traps,
+            host_entry_traps: None,
             params: function.params,
             ret: function.ret,
             body: function.body,
@@ -368,6 +368,7 @@ impl<'a> Lowering<'a> {
                 is_generator: false,
                 is_async: false,
                 creation_traps: Vec::new(),
+                host_entry_traps: None,
                 params: Vec::new(),
                 ret: Type::Void,
                 body: self.hir.top_level.clone(),
@@ -694,7 +695,12 @@ impl<'a> Lowering<'a> {
         receiver: Option<ClassId>,
         captures: Vec<hir::Capture>,
     ) -> Result<(), LowerError> {
-        self.lower_function_input(id, function.into(), kind, receiver, captures)
+        let host_entry_traps = (kind == l::FunctionKind::Free)
+            .then(|| function.host_entry_trap_sites(self.hir))
+            .flatten();
+        let mut input = FunctionInput::from(function);
+        input.host_entry_traps = host_entry_traps;
+        self.lower_function_input(id, input, kind, receiver, captures)
     }
 
     fn lower_function_input(
@@ -1260,6 +1266,69 @@ enum PreparedBase {
     Place(Box<PreparedPlace>),
 }
 
+fn collect_place_traps(place: &PreparedPlace, traps: &mut Vec<l::Trap>) {
+    traps.extend(place.traps.iter().cloned());
+    let base = match &place.kind {
+        PreparedPlaceKind::Field { base, .. } | PreparedPlaceKind::Index { base, .. } => base,
+        PreparedPlaceKind::ExistingAddress(..)
+        | PreparedPlaceKind::Local(..)
+        | PreparedPlaceKind::Global(..) => return,
+    };
+    if let PreparedBase::Place(base) = base {
+        collect_place_traps(base, traps);
+    }
+}
+
+fn prepare_place_after_checked_read(place: &mut PreparedPlace) {
+    place.traps.clear();
+    let base = match &mut place.kind {
+        PreparedPlaceKind::Index { base, checked, .. } => {
+            *checked = false;
+            base
+        }
+        PreparedPlaceKind::Field { base, .. } => base,
+        PreparedPlaceKind::ExistingAddress(..)
+        | PreparedPlaceKind::Local(..)
+        | PreparedPlaceKind::Global(..) => return,
+    };
+    if let PreparedBase::Place(base) = base {
+        prepare_place_after_checked_read(base);
+    }
+}
+
+fn prepare_direct_index_store(place: &mut PreparedPlace, assignment_traps: &[l::Trap]) {
+    let PreparedPlaceKind::Index { base, checked, .. } = &mut place.kind else {
+        return;
+    };
+    if let PreparedBase::Place(base) = base {
+        prepare_place_after_checked_read(base);
+    }
+    place.traps = assignment_traps
+        .iter()
+        .filter(|trap| trap.kind == l::TrapKind::IndexWrite)
+        .cloned()
+        .collect();
+    if place.traps.is_empty() {
+        *checked = false;
+    }
+}
+
+fn prepare_direct_index_assignment(place: &mut PreparedPlace, assignment_traps: &[l::Trap]) {
+    if !matches!(place.kind, PreparedPlaceKind::Index { .. }) {
+        return;
+    }
+    place.traps = assignment_traps
+        .iter()
+        .filter(|trap| {
+            matches!(
+                trap.kind,
+                l::TrapKind::DevOnlyLifetime | l::TrapKind::IndexWrite
+            )
+        })
+        .cloned()
+        .collect();
+}
+
 struct FunctionBuilder<'a, 'm> {
     lowering: &'a mut Lowering<'m>,
     function: FunctionInput,
@@ -1373,10 +1442,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         for block in &mut self.blocks {
             if block.terminator.is_none() {
-                block.terminator = Some(l::Terminator::Trap(l::Trap {
-                    kind: l::TrapKind::Unreachable,
+                block.terminator = Some(l::Terminator::Unreachable {
                     pos: self.function.pos.clone(),
-                }));
+                });
             }
         }
         let mut function = l::Function {
@@ -1387,6 +1455,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             is_generator: self.function.is_generator,
             is_async: self.function.is_async,
             creation_traps: convert_traps(&self.function.creation_traps),
+            host_entry_traps: self.function.host_entry_traps.as_deref().map(convert_traps),
             parameters: self.parameters,
             return_type: self.function.ret,
             locals: self.locals,
@@ -2206,10 +2275,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             matches!(disc.ty, Type::StringAlias(_)) && cases.iter().all(|case| case.test.is_some());
         let no_match = if exhaustive_alias {
             let block = self.new_block(Vec::new(), Some("switch.exhaustive".to_string()));
-            self.blocks[block.0 as usize].terminator = Some(l::Terminator::Trap(l::Trap {
-                kind: l::TrapKind::Unreachable,
-                pos: pos.clone(),
-            }));
+            self.blocks[block.0 as usize].terminator =
+                Some(l::Terminator::Unreachable { pos: pos.clone() });
             block
         } else {
             exit
@@ -2843,21 +2910,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.write_binding(binding, result.clone(), &target_expr.pos, Vec::new())?;
             return Ok(result);
         }
-        let mut place = self.prepare_place_with_traps(target_expr, Some(Vec::new()))?;
+        let mut place = self.prepare_place(target_expr)?;
+        let direct_index = matches!(place.kind, PreparedPlaceKind::Index { .. });
         let old = if op.is_some() {
-            let mut read_place = place.clone();
-            read_place.traps = traps
-                .iter()
-                .filter(|trap| {
-                    matches!(
-                        trap.kind,
-                        l::TrapKind::DevOnlyLifetime | l::TrapKind::IndexRead
-                    )
-                })
-                .cloned()
-                .collect();
-            Some(self.load_place(&read_place, &target_expr.pos)?)
+            let old = self.load_place(&place, &target_expr.pos)?;
+            if direct_index {
+                prepare_direct_index_store(&mut place, &traps);
+            } else {
+                prepare_place_after_checked_read(&mut place);
+            }
+            Some(old)
         } else {
+            if direct_index {
+                prepare_direct_index_assignment(&mut place, &traps);
+            }
             None
         };
         let value = self.require_expr(value_expr)?;
@@ -2874,14 +2940,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             value
         };
-        place.traps = traps
-            .iter()
-            .filter(|trap| {
-                matches!(trap.kind, l::TrapKind::IndexWrite)
-                    || (op.is_none() && trap.kind == l::TrapKind::DevOnlyLifetime)
-            })
-            .cloned()
-            .collect();
         self.store_place(&place, result.clone(), &target_expr.pos)?;
         Ok(result)
     }
@@ -3359,7 +3417,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone());
                     let later_suspends = args
                         .get(index + 1..)
-                        .is_some_and(|later| later.iter().any(suspends_expr));
+                        .is_some_and(|later| later.iter().any(hir_expr_suspends));
                     if later_suspends {
                         delayed_array_snapshots.push((index, value, (**element).clone(), pos));
                         operand_groups.push(Vec::new());
@@ -3716,6 +3774,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             is_generator: false,
             is_async: false,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             params: params.to_vec(),
             ret: ret.clone(),
             body: body.to_vec(),
@@ -3885,7 +3944,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expr: &hir::Expr,
         traps: Option<Vec<l::Trap>>,
     ) -> Result<PreparedPlace, LowerError> {
-        let traps = traps.unwrap_or_else(|| convert_traps(&expr.trap_sites(self.lowering.hir)));
+        let mut traps = traps.unwrap_or_else(|| convert_traps(&expr.trap_sites(self.lowering.hir)));
         let kind = match &expr.kind {
             hir::ExprKind::Local(name) => {
                 let binding = self.lookup_binding(name, &expr.pos)?;
@@ -3954,6 +4013,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ));
             }
         };
+        let mut nested = Vec::new();
+        let base = match &kind {
+            PreparedPlaceKind::Field { base, .. } | PreparedPlaceKind::Index { base, .. } => {
+                Some(base)
+            }
+            PreparedPlaceKind::ExistingAddress(..)
+            | PreparedPlaceKind::Local(..)
+            | PreparedPlaceKind::Global(..) => None,
+        };
+        if let Some(PreparedBase::Place(base)) = base {
+            collect_place_traps(base, &mut nested);
+        }
+        for nested_trap in nested {
+            if let Some(index) = traps.iter().position(|trap| *trap == nested_trap) {
+                traps.remove(index);
+            }
+        }
         Ok(PreparedPlace { kind, traps })
     }
 
@@ -4295,6 +4371,49 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             pos.clone(),
         )?
         .ok_or_else(|| self.error(pos, "implicit coercion produced no value"))
+    }
+}
+
+fn hir_expr_suspends(expr: &hir::Expr) -> bool {
+    use hir::ExprKind as K;
+    match &expr.kind {
+        K::Yield(_) | K::AsyncSuspend | K::AsyncCall { .. } => true,
+        K::Unary { operand, .. }
+        | K::Cast(operand)
+        | K::Field { obj: operand, .. }
+        | K::JsonResultValue(operand)
+        | K::Length(operand) => hir_expr_suspends(operand),
+        K::Binary { left, right, .. }
+        | K::Assign {
+            target: left,
+            value: right,
+            ..
+        }
+        | K::Index {
+            obj: left,
+            index: right,
+            ..
+        } => hir_expr_suspends(left) || hir_expr_suspends(right),
+        K::Call { callee, args } => {
+            let callee_suspends = match callee {
+                hir::Callee::Value(value) => hir_expr_suspends(value),
+                hir::Callee::Method { recv, .. } => hir_expr_suspends(recv),
+                _ => false,
+            };
+            callee_suspends || args.iter().any(hir_expr_suspends)
+        }
+        K::New { args, .. } | K::ArrayLit(args) => args.iter().any(hir_expr_suspends),
+        K::DescriptorLit { fields, .. } => fields.iter().flatten().any(hir_expr_suspends),
+        K::ArraySpreadLit(elements) => elements
+            .iter()
+            .any(|element| hir_expr_suspends(&element.expr)),
+        K::Template(parts) => parts
+            .iter()
+            .any(|part| matches!(part, hir::TplPart::Expr(expr) if hir_expr_suspends(expr))),
+        K::Cond { cond, then, els } => {
+            hir_expr_suspends(cond) || hir_expr_suspends(then) || hir_expr_suspends(els)
+        }
+        _ => false,
     }
 }
 
@@ -4889,7 +5008,7 @@ fn replace_terminator_uses(
                 }
             }
         }
-        l::Terminator::Trap(_) => {}
+        l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
     }
 }
 
@@ -4919,7 +5038,10 @@ fn append_normal_edge_argument(
             }
             append(default);
         }
-        l::Terminator::Return { .. } | l::Terminator::Trap(_) | l::Terminator::Suspend { .. } => {}
+        l::Terminator::Return { .. }
+        | l::Terminator::Unreachable { .. }
+        | l::Terminator::Trap(_)
+        | l::Terminator::Suspend { .. } => {}
     }
 }
 
@@ -5885,7 +6007,7 @@ fn verify_terminator_types(
                 format!("block {} return type is invalid", block.id.0),
             )),
         },
-        l::Terminator::Trap(_) => {}
+        l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
         l::Terminator::Suspend {
             kind,
             successor,
@@ -6240,7 +6362,9 @@ fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
             .chain(std::iter::once(default.block))
             .collect(),
         l::Terminator::Suspend { successor, .. } => vec![*successor],
-        l::Terminator::Return { .. } | l::Terminator::Trap(_) => Vec::new(),
+        l::Terminator::Return { .. }
+        | l::Terminator::Unreachable { .. }
+        | l::Terminator::Trap(_) => Vec::new(),
     }
 }
 
@@ -6294,7 +6418,7 @@ fn terminator_values(terminator: &l::Terminator) -> Vec<l::ValueId> {
                 }
             }
         }
-        l::Terminator::Trap(_) => {}
+        l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
     }
     values
 }
@@ -6409,6 +6533,7 @@ mod verifier_tests {
             is_generator: false,
             is_async: false,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             parameters: vec![l::Parameter {
                 storage: Some(l::LocalId(0)),
                 value: l::ValueId(0),
@@ -6501,6 +6626,7 @@ mod verifier_tests {
             is_generator: false,
             is_async: false,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             parameters: vec![l::Parameter {
                 storage: None,
                 value: l::ValueId(0),
@@ -6536,6 +6662,7 @@ mod verifier_tests {
             is_generator: false,
             is_async: false,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             parameters: Vec::new(),
             return_type: Type::Void,
             locals: Vec::new(),
@@ -6662,6 +6789,7 @@ mod verifier_tests {
             is_generator: false,
             is_async: false,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             parameters,
             return_type: Type::Void,
             locals: Vec::new(),

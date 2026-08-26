@@ -782,6 +782,11 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
         for trap in &function.creation_traps {
             *actual.entry(lir_trap_key(trap)).or_default() += 1;
         }
+        if let Some(traps) = &function.host_entry_traps {
+            for trap in traps {
+                *actual.entry(lir_trap_key(trap)).or_default() += 1;
+            }
+        }
         for block in &function.blocks {
             for instruction in &block.instructions {
                 for trap in &instruction.traps {
@@ -802,32 +807,241 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
         }
     }
 
-    let mut expected_nodes = Vec::new();
-    walk_module_expressions(hir, &mut |expr| {
-        let sites = expr.trap_sites(hir);
-        if !sites.is_empty() {
-            expected_nodes.push(sites);
-        }
+    let mut expected = BTreeMap::<TrapKey, usize>::new();
+    walk_execution_root_expressions(hir, &mut |expr| {
+        collect_trap_expression(expr, hir, &mut expected);
     });
     for function in all_declared_functions(hir) {
-        let sites = function.trap_sites();
-        if !sites.is_empty() {
-            expected_nodes.push(sites);
+        for site in function.trap_sites() {
+            *expected.entry(hir_trap_key(&site)).or_default() += 1;
+        }
+        if let Some(sites) = function.host_entry_trap_sites(hir) {
+            for site in sites {
+                *expected.entry(hir_trap_key(&site)).or_default() += 1;
+            }
         }
     }
-    for sites in expected_nodes {
-        let mut node_counts = BTreeMap::<TrapKey, usize>::new();
-        for site in sites {
-            *node_counts.entry(hir_trap_key(&site)).or_default() += 1;
+
+    let keys = expected
+        .keys()
+        .chain(actual.keys())
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    for key in keys {
+        let required = expected.get(&key).copied().unwrap_or(0);
+        let carried = actual.get(&key).copied().unwrap_or(0);
+        if carried != required {
+            findings.push(format!(
+                "{}:{}:{}: trap {:?} carries {carried} site(s); HIR requires {required}",
+                key.file, key.line, key.col, key.kind
+            ));
         }
-        for (key, required) in node_counts {
-            let carried = actual.get(&key).copied().unwrap_or(0);
-            if carried < required {
-                findings.push(format!(
-                    "{}:{}:{}: trap {:?} carries {carried} site(s); HIR expression/function requires {required}",
-                    key.file, key.line, key.col, key.kind
-                ));
+    }
+
+    let hir_free_functions = hir.functions.iter();
+    let lir_free_functions = lir
+        .functions
+        .iter()
+        .filter(|function| function.kind == l::FunctionKind::Free);
+    for (expected_function, actual_function) in hir_free_functions.zip(lir_free_functions) {
+        let expected_attachment = expected_function.host_entry_trap_sites(hir).is_some();
+        let actual_attachment = actual_function.host_entry_traps.is_some();
+        if expected_attachment != actual_attachment {
+            findings.push(format!(
+                "{}: host-entry trap attachment is {actual_attachment}; HIR requires {expected_attachment}",
+                expected_function.pos
+            ));
+        }
+    }
+}
+
+fn collect_trap_expression(
+    expression: &hir::Expr,
+    hir: &hir::Module,
+    expected: &mut BTreeMap<TrapKey, usize>,
+) {
+    let mut nodes = Vec::new();
+    walk_expr(expression, &mut |node| nodes.push(node));
+    for node in nodes {
+        for site in node.trap_sites(hir) {
+            *expected.entry(hir_trap_key(&site)).or_default() += 1;
+        }
+        match &node.kind {
+            hir::ExprKind::DescriptorLit { class, fields } => {
+                if let Some(definition) = hir.classes.get(class.0) {
+                    for (slot, field) in fields.iter().zip(&definition.fields) {
+                        if slot.is_none() && !field.is_absence_capable {
+                            if let Some(default) = &field.init {
+                                collect_trap_expression(default, hir, expected);
+                            }
+                        }
+                    }
+                }
             }
+            hir::ExprKind::New { class, args } => {
+                if let Some(definition) = hir.classes.get(class.0) {
+                    for field in &definition.fields {
+                        if let Some(initializer) = &field.init {
+                            collect_trap_expression(initializer, hir, expected);
+                        }
+                    }
+                    if let Some(constructor) = &definition.ctor {
+                        collect_missing_parameter_defaults(
+                            &constructor.params,
+                            args.len(),
+                            hir,
+                            expected,
+                        );
+                    }
+                }
+            }
+            hir::ExprKind::Call { callee, args } => {
+                let parameters = match callee {
+                    hir::Callee::Func(name) => hir
+                        .functions
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| function.params.as_slice()),
+                    hir::Callee::Foreign(name) => hir
+                        .foreign_fns
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| function.params.as_slice()),
+                    hir::Callee::Method { recv, name } => match &recv.ty {
+                        subscript_compiler::Type::Class(class) => hir
+                            .classes
+                            .get(class.0)
+                            .and_then(|definition| {
+                                definition
+                                    .methods
+                                    .iter()
+                                    .find(|method| method.name == *name)
+                            })
+                            .map(|function| function.params.as_slice()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(parameters) = parameters {
+                    collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
+                }
+            }
+            hir::ExprKind::AsyncCall { callee, args } => {
+                let parameters = match callee {
+                    hir::AsyncCallee::Function(name) => hir
+                        .functions
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| function.params.as_slice()),
+                    hir::AsyncCallee::Method { class, name, .. } => hir
+                        .classes
+                        .get(class.0)
+                        .and_then(|definition| {
+                            definition
+                                .methods
+                                .iter()
+                                .find(|method| method.name == *name)
+                        })
+                        .map(|function| function.params.as_slice()),
+                    _ => None,
+                };
+                if let Some(parameters) = parameters {
+                    collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_missing_parameter_defaults(
+    parameters: &[hir::Param],
+    supplied: usize,
+    hir: &hir::Module,
+    expected: &mut BTreeMap<TrapKey, usize>,
+) {
+    for parameter in parameters.iter().skip(supplied) {
+        if let Some(default) = &parameter.default {
+            collect_trap_expression(default, hir, expected);
+        }
+    }
+}
+
+fn walk_execution_root_expressions<'a>(
+    hir: &'a hir::Module,
+    visit: &mut impl FnMut(&'a hir::Expr),
+) {
+    for global in &hir.globals {
+        visit(&global.init);
+    }
+    for function in all_declared_functions(hir) {
+        walk_statement_expression_roots(&function.body, visit);
+    }
+    walk_statement_expression_roots(&hir.top_level, visit);
+}
+
+fn walk_statement_expression_roots<'a>(
+    statements: &'a [hir::Stmt],
+    visit: &mut impl FnMut(&'a hir::Expr),
+) {
+    for statement in statements {
+        match statement {
+            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => visit(init),
+            hir::Stmt::Return { value, .. } => {
+                if let Some(value) = value {
+                    visit(value);
+                }
+            }
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
+                visit(cond);
+                walk_statement_expression_roots(then, visit);
+                if let Some(els) = els {
+                    walk_statement_expression_roots(els, visit);
+                }
+            }
+            hir::Stmt::While { cond, body, .. } => {
+                visit(cond);
+                walk_statement_expression_roots(body, visit);
+            }
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                if let Some(init) = init {
+                    walk_statement_expression_roots(std::slice::from_ref(init), visit);
+                }
+                if let Some(cond) = cond {
+                    visit(cond);
+                }
+                walk_statement_expression_roots(body, visit);
+                if let Some(step) = step {
+                    visit(step);
+                }
+            }
+            hir::Stmt::ForOf { subject, body, .. } => {
+                visit(subject);
+                walk_statement_expression_roots(body, visit);
+            }
+            hir::Stmt::Switch { disc, cases, .. } => {
+                visit(disc);
+                for case in cases {
+                    if let Some(test) = &case.test {
+                        visit(test);
+                    }
+                    walk_statement_expression_roots(&case.body, visit);
+                }
+            }
+            hir::Stmt::Block(body) => walk_statement_expression_roots(body, visit),
+            hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
+            _ => {}
+        }
+        if stops_statement_sequence(statement) {
+            break;
         }
     }
 }

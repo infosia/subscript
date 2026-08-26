@@ -16,6 +16,7 @@
 use cranelift_codegen::ir::types;
 use std::ops::Range;
 use subscript_compiler::hir;
+use subscript_compiler::lir;
 use subscript_compiler::types::{
     scalar_size_align as compiler_scalar_size_align, MAX_AGGREGATE_BYTES,
 };
@@ -36,33 +37,6 @@ pub(crate) enum Repr {
     /// A by-value aggregate handled through a pointer to storage:
     /// value classes, `FixedArray`, coroutine step results.
     Agg { size: u32, align: u32 },
-}
-
-/// The [`hir::ArrElemKind`] of array element type `ty` under `module`'s
-/// class table (stdlib.md §9): the tag both tiers pass to the
-/// `subscript_rt_arr_*` entries, computed from the one shared compiler
-/// mapping so the tiers cannot disagree. An error for a type the
-/// checker should have rejected (value classes, function values).
-pub(crate) fn arr_elem_kind(module: &hir::Module, ty: &Type) -> Result<hir::ArrElemKind, String> {
-    hir::ArrElemKind::of(ty, &|id| {
-        module.classes.get(id.0).is_some_and(|c| c.is_value)
-    })
-    .ok_or_else(|| internal(format!("array element type {ty:?} has no marshaling kind")))
-}
-
-/// The [`hir::ArrFmtKind`] of a `join` element type (stdlib.md §9).
-pub(crate) fn arr_fmt_kind(ty: &Type) -> Result<hir::ArrFmtKind, String> {
-    hir::ArrFmtKind::of(ty)
-        .ok_or_else(|| internal(format!("array element type {ty:?} has no Q14 format kind")))
-}
-
-/// The [`hir::AssocKeyKind`] of a `Map` / `Set` key under the module's
-/// class table (stdlib.md §10, Q24).
-pub(crate) fn assoc_key_kind(module: &hir::Module, ty: &Type) -> Result<hir::AssocKeyKind, String> {
-    hir::AssocKeyKind::of(ty, &|id| {
-        module.classes.get(id.0).is_some_and(|class| class.is_value)
-    })
-    .ok_or_else(|| internal(format!("Map/Set key type {ty:?} has no Q24 key kind")))
 }
 
 /// Layout of one class.
@@ -233,8 +207,15 @@ fn round_up(value: u32, align: u32) -> Result<u32, String> {
 /// Build-time state: memoized class layouts plus an in-progress set
 /// for cycle detection (a value class containing itself, directly or
 /// transitively, has no finite layout).
+struct ClassShape {
+    name: String,
+    is_value: bool,
+    alignment: Option<u32>,
+    fields: Vec<Type>,
+}
+
 struct Builder<'m> {
-    module: &'m hir::Module,
+    classes: &'m [ClassShape],
     slots: Vec<Option<ClassLayout>>,
     visiting: Vec<bool>,
 }
@@ -245,7 +226,6 @@ impl<'m> Builder<'m> {
             return Ok(l);
         }
         let class = self
-            .module
             .classes
             .get(id)
             .ok_or_else(|| internal(format!("class id {id} out of range")))?;
@@ -260,14 +240,14 @@ impl<'m> Builder<'m> {
         let mut align = 1u32;
         let mut field_offsets = Vec::with_capacity(class.fields.len());
         for field in &class.fields {
-            let (fs, fa) = self.size_align(&field.ty)?;
+            let (fs, fa) = self.size_align(field)?;
             size = round_up(size, fa)?;
             field_offsets.push(size);
             size = checked_add_size(size, fs, "class field layout")?;
             align = align.max(fa);
         }
-        if let Some(override_) = &class.alignment_override {
-            align = align.max(override_.value);
+        if let Some(override_) = class.alignment {
+            align = align.max(override_);
         }
         size = round_up(size.max(1), align)?;
         let layout = ClassLayout {
@@ -285,7 +265,6 @@ impl<'m> Builder<'m> {
         Ok(match ty {
             Type::Class(id) => {
                 let is_value = self
-                    .module
                     .classes
                     .get(id.0)
                     .map(|c| c.is_value)
@@ -324,9 +303,41 @@ impl Layouts {
     /// value class may be declared after the class embedding it);
     /// containment cycles are an error.
     pub fn build(module: &hir::Module) -> Result<Layouts, String> {
-        let n = module.classes.len();
+        let classes = module
+            .classes
+            .iter()
+            .map(|class| ClassShape {
+                name: class.name.clone(),
+                is_value: class.is_value,
+                alignment: class
+                    .alignment_override
+                    .as_ref()
+                    .map(|alignment| alignment.value),
+                fields: class.fields.iter().map(|field| field.ty.clone()).collect(),
+            })
+            .collect::<Vec<_>>();
+        Self::build_shapes(&classes)
+    }
+
+    /// Computes layouts from the checked class table carried by LIR.
+    pub fn build_lir(module: &lir::Module) -> Result<Layouts, String> {
+        let classes = module
+            .classes
+            .iter()
+            .map(|class| ClassShape {
+                name: class.source_name.clone(),
+                is_value: class.is_value,
+                alignment: class.alignment,
+                fields: class.fields.iter().map(|field| field.ty.clone()).collect(),
+            })
+            .collect::<Vec<_>>();
+        Self::build_shapes(&classes)
+    }
+
+    fn build_shapes(shapes: &[ClassShape]) -> Result<Layouts, String> {
+        let n = shapes.len();
         let mut b = Builder {
-            module,
+            classes: shapes,
             slots: vec![None; n],
             visiting: vec![false; n],
         };
@@ -342,7 +353,7 @@ impl Layouts {
         let mut managed_visiting = vec![false; n];
         for id in 0..n {
             managed_interior[id] = class_contains_managed(
-                module,
+                shapes,
                 id,
                 &mut managed_interior,
                 &mut managed_known,
@@ -558,7 +569,7 @@ pub(crate) fn has_managed_interior(layouts: &Layouts, ty: &Type) -> Result<bool,
 /// ordinary reference classes are managed handles themselves, while value
 /// classes recursively expose their stored fields to the collector.
 fn class_contains_managed(
-    module: &hir::Module,
+    classes: &[ClassShape],
     id: usize,
     memo: &mut [bool],
     known: &mut [bool],
@@ -573,8 +584,7 @@ fn class_contains_managed(
             .copied()
             .ok_or_else(|| internal(format!("class id {id} out of range")));
     }
-    let class = module
-        .classes
+    let class = classes
         .get(id)
         .ok_or_else(|| internal(format!("class id {id} out of range")))?;
     if !class.is_value {
@@ -591,7 +601,7 @@ fn class_contains_managed(
     visiting[id] = true;
     let mut contains = false;
     for field in &class.fields {
-        if type_contains_managed(module, &field.ty, memo, known, visiting)? {
+        if type_contains_managed(classes, field, memo, known, visiting)? {
             contains = true;
             break;
         }
@@ -603,7 +613,7 @@ fn class_contains_managed(
 }
 
 fn type_contains_managed(
-    module: &hir::Module,
+    classes: &[ClassShape],
     ty: &Type,
     memo: &mut [bool],
     known: &mut [bool],
@@ -621,18 +631,17 @@ fn type_contains_managed(
             // A nullable value-class slot is a borrowed C struct pointer,
             // not an embedded copy of the pointed-to record.
             Type::Class(id) => {
-                !module
-                    .classes
+                !classes
                     .get(id.0)
                     .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?
                     .is_value
             }
             Type::Func(_) => true,
-            other => type_contains_managed(module, other, memo, known, visiting)?,
+            other => type_contains_managed(classes, other, memo, known, visiting)?,
         },
-        Type::Class(id) => class_contains_managed(module, id.0, memo, known, visiting)?,
-        Type::FixedArray(elem, _) => type_contains_managed(module, elem, memo, known, visiting)?,
-        Type::IterResult(value) => type_contains_managed(module, value, memo, known, visiting)?,
+        Type::Class(id) => class_contains_managed(classes, id.0, memo, known, visiting)?,
+        Type::FixedArray(elem, _) => type_contains_managed(classes, elem, memo, known, visiting)?,
+        Type::IterResult(value) => type_contains_managed(classes, value, memo, known, visiting)?,
         _ => false,
     })
 }

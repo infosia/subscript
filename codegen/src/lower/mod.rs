@@ -47,8 +47,14 @@ use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Configurable;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
+use subscript_compiler::hir as front_end;
 use subscript_compiler::types::MAX_AGGREGATE_BYTES;
-use subscript_compiler::{hir, lir, Pos, StringAliasId, Type};
+use subscript_compiler::{lir, Pos, StringAliasId, Type};
+
+use front_end::{
+    ArrFn, JsonFn, MapFn, MathFn, Module as HirModule, NumFn, RegexFn, SetFn, StrFn, StrParam,
+    StrRet,
+};
 
 use crate::layout::{Layouts, Repr};
 
@@ -143,11 +149,11 @@ pub(crate) struct RtFns {
     pub cb_bind: FuncId,
     pub cb_trampoline: FuncId,
     /// `subscript_rt_math_*` imports (stdlib.md §1), indexed by
-    /// `hir::MathFn as usize` (the [`hir::MathFn::ALL`] order).
-    pub math: [FuncId; hir::MathFn::ALL.len()],
+    /// `MathFn as usize` (the [`MathFn::ALL`] order).
+    pub math: [FuncId; MathFn::ALL.len()],
     /// `subscript_rt_num_*` imports (stdlib.md §11, Q25/Q26), indexed by
-    /// [`hir::NumFn::ALL`] discriminant order.
-    pub num: [FuncId; hir::NumFn::ALL.len()],
+    /// [`NumFn::ALL`] discriminant order.
+    pub num: [FuncId; NumFn::ALL.len()],
     /// `subscript_rt_date_utc` (stdlib.md §3): 7 `i32` components + pos id → i64.
     pub date_utc: FuncId,
     /// `subscript_rt_date_new`: ms + pos id → range-checked ms.
@@ -159,29 +165,29 @@ pub(crate) struct RtFns {
     /// `subscript_rt_date_to_iso`: (ms, pos id) → string handle.
     pub date_to_iso: FuncId,
     /// Checker-generated JSON serializer leaves (stdlib.md §13), indexed
-    /// by [`hir::JsonFn::ALL`] discriminant order.
-    pub json: [FuncId; hir::JsonFn::ALL.len()],
+    /// by [`JsonFn::ALL`] discriminant order.
+    pub json: [FuncId; JsonFn::ALL.len()],
     /// `subscript_rt_str_*` method imports (stdlib.md §8), indexed by
-    /// `hir::StrFn as usize` (the [`hir::StrFn::ALL`] order). Each
+    /// `StrFn as usize` (the [`StrFn::ALL`] order). Each
     /// signature is `(ctx, recv, params…[, pos_id])` per
-    /// [`hir::StrFn::params`] / [`hir::StrFn::takes_pos_id`].
-    pub str_ops: [FuncId; hir::StrFn::ALL.len()],
+    /// [`StrFn::params`] / [`StrFn::takes_pos_id`].
+    pub str_ops: [FuncId; StrFn::ALL.len()],
     /// `subscript_rt_regex_*` imports (stdlib.md §15).
-    pub regex_ops: [FuncId; hir::RegexFn::ALL.len()],
+    pub regex_ops: [FuncId; RegexFn::ALL.len()],
     /// `subscript_rt_arr_*` method imports (stdlib.md §9), indexed by
-    /// `hir::ArrFn as usize` (the [`hir::ArrFn::ALL`] order). Each
+    /// `ArrFn as usize` (the [`ArrFn::ALL`] order). Each
     /// signature starts `(ctx, recv, …)`; element values travel by
     /// pointer, callbacks as `(code, env)`, kind tags as `u32`.
-    pub arr_ops: [FuncId; hir::ArrFn::ALL.len()],
+    pub arr_ops: [FuncId; ArrFn::ALL.len()],
     /// Q27 `FixedArray<T, N>` callback-family imports. Unsupported
     /// `ArrFn` variants have no fixed-buffer entry.
-    pub fixed_arr_ops: [Option<FuncId>; hir::ArrFn::ALL.len()],
+    pub fixed_arr_ops: [Option<FuncId>; ArrFn::ALL.len()],
     /// `subscript_rt_map_*` imports (stdlib.md §10), indexed by
-    /// [`hir::MapFn::ALL`] discriminant order.
-    pub map_ops: [FuncId; hir::MapFn::ALL.len()],
+    /// [`MapFn::ALL`] discriminant order.
+    pub map_ops: [FuncId; MapFn::ALL.len()],
     /// `subscript_rt_set_*` imports (stdlib.md §10), indexed by
-    /// [`hir::SetFn::ALL`] discriminant order.
-    pub set_ops: [FuncId; hir::SetFn::ALL.len()],
+    /// [`SetFn::ALL`] discriminant order.
+    pub set_ops: [FuncId; SetFn::ALL.len()],
     pub worker_spawn: FuncId,
     pub worker_post: FuncId,
     pub worker_poll: FuncId,
@@ -294,7 +300,6 @@ pub(crate) enum GlobalSlot {
 /// Shared lowering state across all functions of one module.
 pub(crate) struct ModLower<'a, M: Module> {
     pub module: &'a mut M,
-    pub hir: &'a hir::Module,
     pub lir: &'a lir::Module,
     pub layouts: Layouts,
     pub rt: RtFns,
@@ -302,7 +307,6 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub fns: HashMap<FnKey, FuncId>,
     pub fn_slot: HashMap<FnKey, u32>,
     pub slots: Vec<Option<FuncId>>,
-    pub fn_index: HashMap<String, usize>,
     pub str_data: HashMap<Vec<u8>, DataId>,
     /// Per-Q32-alias tables of `(member bytes pointer, byte length)`.
     pub string_alias_tables: HashMap<StringAliasId, DataId>,
@@ -478,7 +482,7 @@ impl<'a, M: Module> ModLower<'a, M> {
             return Ok(id);
         }
         let members = self
-            .hir
+            .lir
             .string_aliases
             .get(alias_id.0)
             .ok_or_else(|| internal(format!("string alias id {} is out of range", alias_id.0)))?
@@ -606,13 +610,13 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     // Math intrinsic imports (stdlib.md §1): one opaque symbol per
     // accepted function, in MathFn::ALL order so `f as usize` indexes
     // the table. Each match arm supplies the sized runtime signature.
-    let mut math_ids: Vec<FuncId> = Vec::with_capacity(hir::MathFn::ALL.len());
-    for f in hir::MathFn::ALL {
+    let mut math_ids: Vec<FuncId> = Vec::with_capacity(MathFn::ALL.len());
+    for f in MathFn::ALL {
         let (params, ret) = match f {
-            hir::MathFn::Clz32 => (vec![I64, I32], I32),
-            hir::MathFn::Imul => (vec![I64, I32, I32], I32),
-            hir::MathFn::F32ToBits => (vec![I64, F64], I32),
-            hir::MathFn::F32FromBits => (vec![I64, I32], F64),
+            MathFn::Clz32 => (vec![I64, I32], I32),
+            MathFn::Imul => (vec![I64, I32, I32], I32),
+            MathFn::F32ToBits => (vec![I64, F64], I32),
+            MathFn::F32FromBits => (vec![I64, I32], F64),
             _ => {
                 let mut params = vec![I64];
                 params.extend(std::iter::repeat_n(F64, f.arity()));
@@ -621,14 +625,14 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         math_ids.push(mk(f.symbol(), &params, Some(ret))?);
     }
-    let math: [FuncId; hir::MathFn::ALL.len()] = math_ids
+    let math: [FuncId; MathFn::ALL.len()] = math_ids
         .try_into()
         .map_err(|_| internal("math import table size"))?;
     // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
     // Every import starts with Context and is opaque to both tiers.
-    let mut num_ids: Vec<FuncId> = Vec::with_capacity(hir::NumFn::ALL.len());
-    for f in hir::NumFn::ALL {
-        use hir::NumFn as N;
+    let mut num_ids: Vec<FuncId> = Vec::with_capacity(NumFn::ALL.len());
+    for f in NumFn::ALL {
+        use NumFn as N;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             N::IsNaN | N::IsFinite | N::IsInteger | N::IsSafeInteger => (&[I64, F64], Some(I32)),
             N::ParseInt => (&[I64, I64, I32, I32], Some(F64)),
@@ -642,14 +646,14 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         num_ids.push(mk(f.symbol(), params, ret)?);
     }
-    let num: [FuncId; hir::NumFn::ALL.len()] = num_ids
+    let num: [FuncId; NumFn::ALL.len()] = num_ids
         .try_into()
         .map_err(|_| internal("Number import table size"))?;
     // JSON builder leaves (stdlib.md §13). The checker emits a typed
     // serializer graph; these are its only runtime-specific operations.
-    let mut json_ids: Vec<FuncId> = Vec::with_capacity(hir::JsonFn::ALL.len());
-    for f in hir::JsonFn::ALL {
-        use hir::JsonFn as J;
+    let mut json_ids: Vec<FuncId> = Vec::with_capacity(JsonFn::ALL.len());
+    for f in JsonFn::ALL {
+        use JsonFn as J;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             J::Begin | J::BeginTracked => (&[I64, I32], Some(I64)),
             J::Finish => (&[I64, I64, I32], Some(I64)),
@@ -677,7 +681,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         json_ids.push(mk(f.symbol(), params, ret)?);
     }
-    let json: [FuncId; hir::JsonFn::ALL.len()] = json_ids
+    let json: [FuncId; JsonFn::ALL.len()] = json_ids
         .try_into()
         .map_err(|_| internal("JSON import table size"))?;
     // String method imports (stdlib.md §8): one opaque symbol per
@@ -685,13 +689,13 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     // order so `f as usize` indexes the table. The signature is built
     // from the StrFn tables the checker normalized against, so the two
     // sides cannot drift independently.
-    let mut str_ids: Vec<FuncId> = Vec::with_capacity(hir::StrFn::ALL.len());
-    for f in hir::StrFn::ALL {
+    let mut str_ids: Vec<FuncId> = Vec::with_capacity(StrFn::ALL.len());
+    for f in StrFn::ALL {
         let mut params = vec![I64, I64]; // ctx, receiver handle
         for p in f.params() {
             params.push(match p {
-                hir::StrParam::Str => I64,
-                hir::StrParam::I32 => I32,
+                StrParam::Str => I64,
+                StrParam::I32 => I32,
                 // `StrParam` is #[non_exhaustive]; a variant this crate
                 // does not know is a compiler/codegen version skew.
                 other => return Err(internal(format!("unknown StrParam {other:?}"))),
@@ -701,20 +705,20 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             params.push(I32);
         }
         let ret = match f.ret() {
-            hir::StrRet::I32 | hir::StrRet::Bool => I32,
-            hir::StrRet::Str | hir::StrRet::StrArray => I64,
+            StrRet::I32 | StrRet::Bool => I32,
+            StrRet::Str | StrRet::StrArray => I64,
             // See the StrParam arm above.
             other => return Err(internal(format!("unknown StrRet {other:?}"))),
         };
         str_ids.push(mk(f.symbol(), &params, Some(ret))?);
     }
-    let str_ops: [FuncId; hir::StrFn::ALL.len()] = str_ids
+    let str_ops: [FuncId; StrFn::ALL.len()] = str_ids
         .try_into()
         .map_err(|_| internal("string import table size"))?;
-    let regex_ops: [FuncId; hir::RegexFn::ALL.len()] = {
-        let mut ids = Vec::with_capacity(hir::RegexFn::ALL.len());
-        for function in hir::RegexFn::ALL {
-            use hir::RegexFn as R;
+    let regex_ops: [FuncId; RegexFn::ALL.len()] = {
+        let mut ids = Vec::with_capacity(RegexFn::ALL.len());
+        for function in RegexFn::ALL {
+            use RegexFn as R;
             let (params, ret): (&[types::Type], types::Type) = match function {
                 R::New => (&[I64, I64, I64, I32], I64),
                 R::Test => (&[I64, I64, I64, I32], I32),
@@ -735,9 +739,9 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     // table. Signatures per the §9 marshaling contract: element values
     // by pointer (I64), callbacks as `(code, env)` (I64, I64), kind
     // tags and pos ids as u32 (I32), sizes as u64 (I64).
-    let mut arr_ids: Vec<FuncId> = Vec::with_capacity(hir::ArrFn::ALL.len());
-    for f in hir::ArrFn::ALL {
-        use hir::ArrFn as A;
+    let mut arr_ids: Vec<FuncId> = Vec::with_capacity(ArrFn::ALL.len());
+    for f in ArrFn::ALL {
+        use ArrFn as A;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             // (ctx, recv, x_ptr, kind) -> i32
             A::IndexOf | A::LastIndexOf | A::Includes => (&[I64, I64, I64, I32], Some(I32)),
@@ -779,12 +783,12 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         arr_ids.push(mk(f.symbol(), params, ret)?);
     }
-    let arr_ops: [FuncId; hir::ArrFn::ALL.len()] = arr_ids
+    let arr_ops: [FuncId; ArrFn::ALL.len()] = arr_ids
         .try_into()
         .map_err(|_| internal("array import table size"))?;
-    let mut fixed_arr_ids: Vec<Option<FuncId>> = Vec::with_capacity(hir::ArrFn::ALL.len());
-    for f in hir::ArrFn::ALL {
-        use hir::ArrFn as A;
+    let mut fixed_arr_ids: Vec<Option<FuncId>> = Vec::with_capacity(ArrFn::ALL.len());
+    for f in ArrFn::ALL {
+        use ArrFn as A;
         let Some(symbol) = f.fixed_symbol() else {
             fixed_arr_ids.push(None);
             continue;
@@ -813,15 +817,15 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         fixed_arr_ids.push(Some(mk(symbol, params, ret)?));
     }
-    let fixed_arr_ops: [Option<FuncId>; hir::ArrFn::ALL.len()] = fixed_arr_ids
+    let fixed_arr_ops: [Option<FuncId>; ArrFn::ALL.len()] = fixed_arr_ids
         .try_into()
         .map_err(|_| internal("FixedArray callback import table size"))?;
     // Map/Set operations (stdlib.md §10). Keys, values, and fallbacks
     // travel by pointer; new receives the concrete monomorphized widths
     // and key-kind tag. forEach receives a generated fixed-ABI bridge.
-    let mut map_ids: Vec<FuncId> = Vec::with_capacity(hir::MapFn::ALL.len());
-    for f in hir::MapFn::ALL {
-        use hir::MapFn as F;
+    let mut map_ids: Vec<FuncId> = Vec::with_capacity(MapFn::ALL.len());
+    for f in MapFn::ALL {
+        use MapFn as F;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             F::New => (&[I64, I64, I64, I32, I32], Some(I64)),
             F::Size => (&[I64, I64], Some(I32)),
@@ -836,12 +840,12 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         map_ids.push(mk(f.symbol(), params, ret)?);
     }
-    let map_ops: [FuncId; hir::MapFn::ALL.len()] = map_ids
+    let map_ops: [FuncId; MapFn::ALL.len()] = map_ids
         .try_into()
         .map_err(|_| internal("Map import table size"))?;
-    let mut set_ids: Vec<FuncId> = Vec::with_capacity(hir::SetFn::ALL.len());
-    for f in hir::SetFn::ALL {
-        use hir::SetFn as F;
+    let mut set_ids: Vec<FuncId> = Vec::with_capacity(SetFn::ALL.len());
+    for f in SetFn::ALL {
+        use SetFn as F;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
             F::New => (&[I64, I64, I32, I32], Some(I64)),
             F::Size => (&[I64, I64], Some(I32)),
@@ -857,7 +861,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         };
         set_ids.push(mk(f.symbol(), params, ret)?);
     }
-    let set_ops: [FuncId; hir::SetFn::ALL.len()] = set_ids
+    let set_ops: [FuncId; SetFn::ALL.len()] = set_ids
         .try_into()
         .map_err(|_| internal("Set import table size"))?;
     Ok(RtFns {
@@ -1037,64 +1041,42 @@ pub(crate) fn aot_flags() -> Result<cranelift_codegen::settings::Flags, String> 
 /// value: wrapper creation is body-driven and must not shift the
 /// numbering.
 fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
-    for f in &ml.hir.functions {
-        ml.reserve_slot(FnKey::Free(f.name.clone()));
-        if f.is_generator || f.is_async {
-            ml.reserve_slot(FnKey::Resume(f.name.clone()));
-            if f.is_async && f.exported {
-                ml.reserve_slot(FnKey::AsyncExport(f.name.clone()));
+    let free_functions = ml
+        .lir
+        .functions
+        .iter()
+        .filter(|function| function.kind == lir::FunctionKind::Free)
+        .cloned()
+        .collect::<Vec<_>>();
+    for function in free_functions {
+        ml.reserve_slot(FnKey::Free(function.source_name.clone()));
+        if function.is_generator || function.is_async {
+            ml.reserve_slot(FnKey::Resume(function.source_name.clone()));
+            if function.is_async && function.host_entry_traps.is_some() {
+                ml.reserve_slot(FnKey::AsyncExport(function.source_name.clone()));
             }
         } else {
-            ml.reserve_slot(FnKey::Wrapper(f.name.clone()));
+            ml.reserve_slot(FnKey::Wrapper(function.source_name.clone()));
         }
     }
-    for (ci, c) in ml.hir.classes.iter().enumerate() {
-        if c.ctor.is_some() {
-            ml.reserve_slot(FnKey::Ctor(ci));
+    let classes = ml.lir.classes.clone();
+    for class in classes {
+        if class.constructor.is_some() {
+            ml.reserve_slot(FnKey::Ctor(class.id.0));
         }
-        for m in &c.methods {
-            ml.reserve_slot(FnKey::Method(ci, m.name.clone()));
-            if m.is_async {
-                ml.reserve_slot(FnKey::MethodResume(ci, m.name.clone()));
+        for method in class.methods {
+            ml.reserve_slot(FnKey::Method(class.id.0, method.source_name.clone()));
+            if ml
+                .lir
+                .functions
+                .get(method.function.0 as usize)
+                .is_some_and(|function| function.is_async)
+            {
+                ml.reserve_slot(FnKey::MethodResume(class.id.0, method.source_name.clone()));
             }
         }
     }
     ml.reserve_slot(FnKey::Init);
-}
-
-/// Returns true when `ty` is an opaque handle from an ambient mirror.
-pub(crate) fn is_opaque_handle(module: &hir::Module, ty: &Type) -> bool {
-    let Type::Class(id) = ty else {
-        return false;
-    };
-    module.classes.get(id.0).is_some_and(|class| {
-        !class.is_value
-            && !class.is_descriptor
-            && !class.is_boundary
-            && class.fields.is_empty()
-            && class.ctor.is_none()
-            && class.methods.is_empty()
-            && class.index_signature.is_none()
-    })
-}
-
-/// Returns true when `function` belongs to the host-callable export subset.
-pub(crate) fn is_host_callable_export(module: &hir::Module, function: &hir::Function) -> bool {
-    if !function.exported || function.is_generator || function.ret != Type::Void {
-        return false;
-    }
-    if function.is_async {
-        return function.params.is_empty();
-    }
-    function.params.iter().all(|parameter| {
-        parameter.ty.is_numeric()
-            || parameter.ty == Type::Bool
-            || is_opaque_handle(module, &parameter.ty)
-            || matches!(&parameter.ty, Type::StringAlias(alias) if module
-                .string_aliases
-                .get(alias.0)
-                .is_some_and(|definition| definition.wire_values.is_some()))
-    })
 }
 
 fn reload_entry_signature(call_conv: CallConv) -> Signature {
@@ -1104,32 +1086,74 @@ fn reload_entry_signature(call_conv: CallConv) -> Signature {
     signature
 }
 
+fn explicit_parameter_types(function: &lir::Function) -> Result<Vec<Type>, String> {
+    function
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.kind == lir::ParameterKind::Explicit)
+        .map(|parameter| {
+            function
+                .values
+                .get(parameter.value.0 as usize)
+                .and_then(|value| match &value.ty {
+                    lir::ValueType::Data(ty) => Some(ty.clone()),
+                    lir::ValueType::Address(_) | lir::ValueType::Iterator(_) => None,
+                })
+                .ok_or_else(|| {
+                    internal(format!(
+                        "function {} parameter {} has no data type",
+                        function.id.0, parameter.value.0
+                    ))
+                })
+        })
+        .collect()
+}
+
 fn define_reload_entry_adapter<M: Module>(
     ml: &mut ModLower<'_, M>,
-    function: &hir::Function,
+    function: &lir::Function,
 ) -> Result<(), String> {
-    let id = ml.func_id(&FnKey::ReloadExport(function.name.clone()))?;
-    let target = ml.func_id(&FnKey::Free(function.name.clone()))?;
-    let parameter_types = function
-        .params
+    let id = ml.func_id(&FnKey::ReloadExport(function.source_name.clone()))?;
+    let target = ml.func_id(&FnKey::LirFunction(function.id))?;
+    let parameters = function
+        .parameters
         .iter()
-        .map(|parameter| match ml.layouts.repr(&parameter.ty)? {
-            Repr::Scalar(ty) => Ok(ty),
+        .filter(|parameter| parameter.kind == lir::ParameterKind::Explicit)
+        .map(|parameter| {
+            let ty = function
+                .values
+                .get(parameter.value.0 as usize)
+                .and_then(|value| match &value.ty {
+                    lir::ValueType::Data(ty) => Some(ty),
+                    lir::ValueType::Address(_) | lir::ValueType::Iterator(_) => None,
+                })
+                .ok_or_else(|| internal("host entry parameter has no data value type"))?;
+            Ok((parameter, ty))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let parameter_types = parameters
+        .iter()
+        .map(|(_, ty)| match ml.layouts.repr(ty)? {
+            Repr::Scalar(repr) => Ok(repr),
             other => Err(internal(format!(
                 "host export `{}` has non-scalar parameter representation {other:?}",
-                function.name
+                function.source_name
             ))),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let wire_validations = function
-        .params
+    let expected_traps = function
+        .host_entry_traps
+        .as_ref()
+        .ok_or_else(|| internal("reload adapter function has no host-entry attachment"))?;
+    let mut matched_traps = vec![false; expected_traps.len()];
+    let wire_validations = parameters
         .iter()
-        .map(|parameter| {
-            let Type::StringAlias(alias) = &parameter.ty else {
+        .map(|(parameter, ty)| {
+            let Type::StringAlias(alias) = ty else {
                 return Ok(None);
             };
             let definition = ml
-                .hir
+                .lir
                 .string_aliases
                 .get(alias.0)
                 .ok_or_else(|| internal("host entry wire-alias id is out of range"))?;
@@ -1137,13 +1161,25 @@ fn define_reload_entry_adapter<M: Module>(
                 .wire_values
                 .clone()
                 .ok_or_else(|| internal("host entry string alias has no wire mapping"))?;
-            let name_len = i64::try_from(definition.name.len())
+            let name_len = i64::try_from(definition.source_name.len())
                 .map_err(|_| internal("host entry wire-alias name length does not fit i64"))?;
-            let name_data = ml.literal_data(definition.name.as_bytes())?;
-            let pos_id = ml.pos_id(&parameter.pos);
-            Ok(Some((name_data, name_len, wire_values, pos_id)))
+            let name_data = ml.literal_data(definition.source_name.as_bytes())?;
+            let trap_index = expected_traps
+                .iter()
+                .zip(&matched_traps)
+                .position(|(trap, matched)| {
+                    !matched
+                        && trap.kind == lir::TrapKind::WireEnumValue(*alias)
+                        && trap.pos == parameter.pos
+                })
+                .ok_or_else(|| internal("host entry wire parameter has no LIR trap"))?;
+            matched_traps[trap_index] = true;
+            let trap = expected_traps[trap_index].clone();
+            let pos_id = ml.pos_id(&trap.pos);
+            Ok(Some((name_data, name_len, wire_values, pos_id, trap)))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let mut consumed_traps = Vec::new();
     let mut context = ml.module.make_context();
     context.func.signature = reload_entry_signature(ml.call_conv);
     let mut builder_context = FunctionBuilderContext::new();
@@ -1164,17 +1200,17 @@ fn define_reload_entry_adapter<M: Module>(
             let offset = i32::try_from(index.checked_mul(8).ok_or_else(|| {
                 internal(format!(
                     "host export `{}` argument layout overflows",
-                    function.name
+                    function.source_name
                 ))
             })?)
             .map_err(|_| {
                 internal(format!(
                     "host export `{}` argument layout exceeds i32",
-                    function.name
+                    function.source_name
                 ))
             })?;
             let value = builder.ins().load(ty, MemFlags::new(), values, offset);
-            if let Some((name_data, name_len, wire_values, pos_id)) = validation {
+            if let Some((name_data, name_len, wire_values, pos_id, trap_site)) = validation {
                 let mut valid = builder.ins().iconst(types::I8, 0);
                 for wire_value in wire_values {
                     let matches =
@@ -1197,6 +1233,7 @@ fn define_reload_entry_adapter<M: Module>(
                 builder
                     .ins()
                     .call(trap, &[ctx, name_pointer, name_len, value, pos_id]);
+                consumed_traps.push(trap_site);
                 builder.ins().return_(&[]);
                 builder.switch_to_block(accepted);
             }
@@ -1212,13 +1249,14 @@ fn define_reload_entry_adapter<M: Module>(
         .define_function(id, &mut context)
         .map_err(|error| internal(format!("define reload entry adapter: {error}")))?;
     ml.module.clear_context(&mut context);
+    func::verify_trap_consumption(function, expected_traps, &consumed_traps)?;
     Ok(())
 }
 
 /// Lowers a checked program into `module`.
 pub(crate) fn lower_module_with<M: Module>(
     module: &mut M,
-    hirm: &hir::Module,
+    hirm: &HirModule,
     opts: LowerOptions,
 ) -> Result<Lowered, String> {
     if let Some(import) = hirm.poisoned_imports.first() {
@@ -1246,12 +1284,11 @@ pub(crate) fn lower_module_with<M: Module>(
     })?;
     let call_conv = module.isa().default_call_conv();
     let rt = declare_rt(module, call_conv)?;
-    let layouts = Layouts::build(hirm)?;
-    let context_globals = opts.reload || !hirm.worker_entries.is_empty();
+    let layouts = Layouts::build_lir(&lirm)?;
+    let context_globals = opts.reload || !lirm.worker_entries.is_empty();
 
     let mut ml = ModLower {
         module,
-        hir: hirm,
         lir: &lirm,
         layouts,
         rt,
@@ -1259,7 +1296,6 @@ pub(crate) fn lower_module_with<M: Module>(
         fns: HashMap::new(),
         fn_slot: HashMap::new(),
         slots: Vec::new(),
-        fn_index: HashMap::new(),
         str_data: HashMap::new(),
         string_alias_tables: HashMap::new(),
         globals: HashMap::new(),
@@ -1274,9 +1310,6 @@ pub(crate) fn lower_module_with<M: Module>(
         globals_align: 1,
     };
 
-    for (i, f) in hirm.functions.iter().enumerate() {
-        ml.fn_index.insert(f.name.clone(), i);
-    }
     reserve_slots(&mut ml);
 
     // Globals: zero-initialized writable module data, filled by the
@@ -1286,7 +1319,7 @@ pub(crate) fn lower_module_with<M: Module>(
     // the module and Context state must outlive a swap (§8.2).
     let mut globals_size = 0u32;
     let mut globals_align = 1u32;
-    for (gi, g) in hirm.globals.iter().enumerate() {
+    for (gi, g) in lirm.globals.iter().enumerate() {
         let (size, align) = ml.layouts.size_align(&g.ty)?;
         let (size, align) = (size.max(1), align.max(1));
         let slot = if context_globals {
@@ -1309,7 +1342,8 @@ pub(crate) fn lower_module_with<M: Module>(
                 .map_err(|e| internal(format!("define global: {e}")))?;
             GlobalSlot::Data(id)
         };
-        ml.globals.insert(g.name.clone(), (slot, g.ty.clone()));
+        ml.globals
+            .insert(g.source_name.clone(), (slot, g.ty.clone()));
     }
     globals_size = round_up_layout(globals_size, globals_align, "final Context globals layout")?;
     ml.globals_size = globals_size;
@@ -1334,98 +1368,91 @@ pub(crate) fn lower_module_with<M: Module>(
         ml.fns.insert(key, id);
         Ok::<(), String>(())
     };
-    for (i, f) in hirm.functions.iter().enumerate() {
-        let params: Vec<Type> = f.params.iter().map(|p| p.ty.clone()).collect();
-        let host_callable = is_host_callable_export(hirm, f);
-        let export = host_callable && !f.is_async;
-        let sym = if export {
-            format!("subscript_export_{}", f.name)
-        } else {
-            format!("subscript_f{i}")
+    let mut free_index = 0usize;
+    for function in &lirm.functions {
+        let parameters = explicit_parameter_types(function)?;
+        let (key, symbol, resume) = match &function.kind {
+            lir::FunctionKind::Free => {
+                let index = free_index;
+                free_index += 1;
+                let exported = function.host_entry_traps.is_some() && !function.is_async;
+                let symbol = if exported {
+                    format!("subscript_export_{}", function.source_name)
+                } else {
+                    format!("subscript_f{index}")
+                };
+                (
+                    FnKey::Free(function.source_name.clone()),
+                    symbol,
+                    Some((
+                        FnKey::Resume(function.source_name.clone()),
+                        format!("subscript_f{index}_resume"),
+                    )),
+                )
+            }
+            lir::FunctionKind::Constructor { class, .. } => (
+                FnKey::Ctor(class.0),
+                format!("subscript_ctor{}", class.0),
+                None,
+            ),
+            lir::FunctionKind::Method { class, .. } => {
+                let method_index = lirm
+                    .classes
+                    .get(class.0)
+                    .and_then(|definition| {
+                        definition
+                            .methods
+                            .iter()
+                            .position(|method| method.function == function.id)
+                    })
+                    .ok_or_else(|| internal("LIR method has no class-table position"))?;
+                (
+                    FnKey::Method(class.0, function.source_name.clone()),
+                    format!("subscript_m{}_{method_index}", class.0),
+                    Some((
+                        FnKey::MethodResume(class.0, function.source_name.clone()),
+                        format!("subscript_m{}_{method_index}_resume", class.0),
+                    )),
+                )
+            }
+            lir::FunctionKind::Lambda | lir::FunctionKind::ModuleInitializer => continue,
         };
-        if f.is_generator || f.is_async {
-            let sig = ml.make_sig(
-                &params,
-                &Type::Generator(Box::new(Type::Void)),
-                false,
-                false,
-            )?;
-            decl(&mut ml, FnKey::Free(f.name.clone()), sym, &sig, false)?;
-            let rsig = ml.resume_sig();
-            decl(
-                &mut ml,
-                FnKey::Resume(f.name.clone()),
-                format!("subscript_f{i}_resume"),
-                &rsig,
-                false,
-            )?;
-            if f.is_async && f.exported {
-                let export_sig = ml.make_sig(&[], &Type::Void, false, false)?;
+        let has_receiver = matches!(
+            function.kind,
+            lir::FunctionKind::Constructor { .. } | lir::FunctionKind::Method { .. }
+        );
+        let return_type = if function.is_generator || function.is_async {
+            Type::Generator(Box::new(Type::Void))
+        } else {
+            function.return_type.clone()
+        };
+        let signature = ml.make_sig(&parameters, &return_type, false, has_receiver)?;
+        let export = function.host_entry_traps.is_some() && !function.is_async;
+        decl(&mut ml, key, symbol, &signature, export)?;
+        if function.is_generator || function.is_async {
+            let (resume_key, resume_symbol) =
+                resume.ok_or_else(|| internal("coroutine function has no resume symbol"))?;
+            let resume_signature = ml.resume_sig();
+            decl(&mut ml, resume_key, resume_symbol, &resume_signature, false)?;
+            if function.is_async && function.host_entry_traps.is_some() {
+                let export_signature = ml.make_sig(&[], &Type::Void, false, false)?;
                 decl(
                     &mut ml,
-                    FnKey::AsyncExport(f.name.clone()),
-                    format!("subscript_export_{}", f.name),
-                    &export_sig,
+                    FnKey::AsyncExport(function.source_name.clone()),
+                    format!("subscript_export_{}", function.source_name),
+                    &export_signature,
                     true,
                 )?;
             }
-        } else {
-            let sig = ml.make_sig(&params, &f.ret, false, false)?;
-            decl(&mut ml, FnKey::Free(f.name.clone()), sym, &sig, export)?;
-            if opts.reload && host_callable && !f.params.is_empty() {
-                let adapter_sig = reload_entry_signature(call_conv);
-                decl(
-                    &mut ml,
-                    FnKey::ReloadExport(f.name.clone()),
-                    format!("subscript_reload_export_{i}"),
-                    &adapter_sig,
-                    false,
-                )?;
-            }
-        }
-    }
-    for (ci, c) in hirm.classes.iter().enumerate() {
-        if let Some(ctor) = &c.ctor {
-            let params: Vec<Type> = ctor.params.iter().map(|p| p.ty.clone()).collect();
-            let sig = ml.make_sig(&params, &Type::Void, false, true)?;
+        } else if opts.reload && function.host_entry_traps.is_some() && !parameters.is_empty() {
+            let adapter_signature = reload_entry_signature(call_conv);
             decl(
                 &mut ml,
-                FnKey::Ctor(ci),
-                format!("subscript_ctor{ci}"),
-                &sig,
+                FnKey::ReloadExport(function.source_name.clone()),
+                format!("subscript_reload_export_{}", function.id.0),
+                &adapter_signature,
                 false,
             )?;
-        }
-        for (mi, m) in c.methods.iter().enumerate() {
-            let params: Vec<Type> = m.params.iter().map(|p| p.ty.clone()).collect();
-            if m.is_async {
-                let sig =
-                    ml.make_sig(&params, &Type::Generator(Box::new(Type::Void)), false, true)?;
-                decl(
-                    &mut ml,
-                    FnKey::Method(ci, m.name.clone()),
-                    format!("subscript_m{ci}_{mi}"),
-                    &sig,
-                    false,
-                )?;
-                let resume_sig = ml.resume_sig();
-                decl(
-                    &mut ml,
-                    FnKey::MethodResume(ci, m.name.clone()),
-                    format!("subscript_m{ci}_{mi}_resume"),
-                    &resume_sig,
-                    false,
-                )?;
-            } else {
-                let sig = ml.make_sig(&params, &m.ret, false, true)?;
-                decl(
-                    &mut ml,
-                    FnKey::Method(ci, m.name.clone()),
-                    format!("subscript_m{ci}_{mi}"),
-                    &sig,
-                    false,
-                )?;
-            }
         }
     }
     {
@@ -1438,7 +1465,7 @@ pub(crate) fn lower_module_with<M: Module>(
             true,
         )?;
     }
-    if !hirm.worker_entries.is_empty() {
+    if !lirm.worker_entries.is_empty() {
         let sig = ml.make_sig(&[], &Type::Void, false, false)?;
         decl(
             &mut ml,
@@ -1447,7 +1474,7 @@ pub(crate) fn lower_module_with<M: Module>(
             &sig,
             false,
         )?;
-        for (index, entry) in hirm.worker_entries.iter().enumerate() {
+        for (index, entry) in lirm.worker_entries.iter().enumerate() {
             let params = [
                 Type::Inbox(Box::new(Type::Class(entry.input))),
                 Type::Outbox(Box::new(Type::Class(entry.output))),
@@ -1557,7 +1584,7 @@ pub(crate) fn lower_module_with<M: Module>(
                 _ => FnKey::Resume(function.source_name.clone()),
             };
             ml.alias_function(FnKey::LirResume(function.id), &resume)?;
-            if function.is_async && function.exported {
+            if function.is_async && function.host_entry_traps.is_some() {
                 ml.alias_function(
                     FnKey::LirAsyncExport(function.id),
                     &FnKey::AsyncExport(function.source_name.clone()),
@@ -1573,7 +1600,7 @@ pub(crate) fn lower_module_with<M: Module>(
         }
         if function.is_generator || function.is_async {
             func::define_coroutine(&mut ml, function)?;
-            if function.is_async && function.exported {
+            if function.is_async && function.host_entry_traps.is_some() {
                 func::define_async_export(&mut ml, function)?;
             }
         } else {
@@ -1583,8 +1610,14 @@ pub(crate) fn lower_module_with<M: Module>(
             }
         }
     }
-    for function in &hirm.functions {
-        if opts.reload && is_host_callable_export(hirm, function) && !function.params.is_empty() {
+    for function in &lirm.functions {
+        if opts.reload
+            && function.host_entry_traps.is_some()
+            && function
+                .parameters
+                .iter()
+                .any(|parameter| parameter.kind == lir::ParameterKind::Explicit)
+        {
             define_reload_entry_adapter(&mut ml, function)?;
         }
     }
@@ -1597,56 +1630,53 @@ pub(crate) fn lower_module_with<M: Module>(
     }
     func::define_async_runner(&mut ml)?;
 
-    let main_key = ml
-        .fn_index
-        .get("main")
-        .and_then(|&i| hirm.functions.get(i))
-        .and_then(|f| {
-            (f.exported && !f.is_generator && f.params.is_empty() && f.ret == Type::Void).then(
-                || {
-                    if f.is_async {
-                        FnKey::AsyncExport("main".to_string())
-                    } else {
-                        FnKey::Free("main".to_string())
-                    }
-                },
-            )
-        });
-    let main = match main_key {
-        Some(key) => Some(ml.func_id(&key)?),
+    let main = match lirm.entry {
+        Some(entry) => {
+            let function = lirm
+                .functions
+                .get(entry.0 as usize)
+                .filter(|function| function.id == entry)
+                .ok_or_else(|| internal("LIR entry function is missing"))?;
+            let key = if function.is_async {
+                FnKey::LirAsyncExport(entry)
+            } else {
+                FnKey::LirFunction(entry)
+            };
+            Some(ml.func_id(&key)?)
+        }
         None if opts.require_main => return Err(internal(NO_MAIN_DIAGNOSTIC)),
         None => None,
     };
     let init = ml.func_id(&FnKey::Init)?;
     let mut entries = Vec::new();
-    for f in &hirm.functions {
-        if is_host_callable_export(hirm, f) {
+    for function in &lirm.functions {
+        if function.host_entry_traps.is_some() {
+            let parameters = explicit_parameter_types(function)?;
             entries.push(EntryPoint {
-                name: f.name.clone(),
-                id: if f.is_async {
-                    ml.func_id(&FnKey::AsyncExport(f.name.clone()))?
+                name: function.source_name.clone(),
+                id: if function.is_async {
+                    ml.func_id(&FnKey::LirAsyncExport(function.id))?
                 } else {
-                    ml.func_id(&FnKey::Free(f.name.clone()))?
+                    ml.func_id(&FnKey::LirFunction(function.id))?
                 },
-                params: f
-                    .params
+                params: parameters
                     .iter()
-                    .map(|parameter| match &parameter.ty {
+                    .map(|parameter| match parameter {
                         Type::StringAlias(alias)
-                            if hirm
+                            if lirm
                                 .string_aliases
                                 .get(alias.0)
                                 .is_some_and(|definition| definition.wire_values.is_some()) =>
                         {
                             Type::I32
                         }
-                        _ => parameter.ty.clone(),
+                        _ => parameter.clone(),
                     })
                     .collect(),
-                reload_adapter: (opts.reload && !f.params.is_empty())
-                    .then(|| ml.func_id(&FnKey::ReloadExport(f.name.clone())))
+                reload_adapter: (opts.reload && !parameters.is_empty())
+                    .then(|| ml.func_id(&FnKey::ReloadExport(function.source_name.clone())))
                     .transpose()?,
-                is_async: f.is_async,
+                is_async: function.is_async,
             });
         }
     }

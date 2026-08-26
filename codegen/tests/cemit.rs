@@ -877,32 +877,36 @@ fn binary32_bit_access_uses_the_declared_runtime_symbols() {
     let source = "export function main(): void {\n  const bits: u32 = Math.f32ToBits(1);\n  print(`${Math.f32FromBits(bits)}`);\n}\n";
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
-    assert!(c.contains("extern uint32_t subscript_rt_math_f32_to_bits(void* ctx, double x);"));
-    assert!(c.contains("extern double subscript_rt_math_f32_from_bits(void* ctx, uint32_t bits);"));
+    assert!(c.contains("extern uint32_t subscript_rt_math_f32_to_bits(void*, double);"));
+    assert!(c.contains("extern double subscript_rt_math_f32_from_bits(void*, uint32_t);"));
     assert!(c.contains("subscript_rt_math_f32_to_bits(ctx, 1.0)"), "{c}");
-    assert!(
-        c.contains("subscript_rt_math_f32_from_bits(ctx, v_bits)"),
-        "{c}"
-    );
+    assert!(c.contains("subscript_rt_math_f32_from_bits(ctx, v"), "{c}");
 }
 
 #[test]
 fn accessor_and_underscore_member_emit_distinct_c_symbols() {
     use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
 
     let source = "class Escaped {\n  value: i32 = 1;\n  get $(): i32 { return this.value; }\n  set $(value: i32) { this.value = value; }\n  _(): i32 { return 2; }\n}\nexport function main(): void {\n  const escaped: Escaped = new Escaped();\n  escaped.$ = 3;\n  print(`${escaped.$}`);\n  print(`${escaped._()}`);\n}\n";
     let files = [SourceFile::new("test.ts", source)];
     let hir = check_program(&files).expect("the escaped accessor program must check");
-    let c = emit_c(&hir).expect("the escaped accessor program must emit C");
-
-    assert!(c.source.contains("subscript_m0__dollar_("), "{}", c.source);
-    assert!(
-        c.source.contains("subscript_m0__dollar__set_("),
-        "{}",
-        c.source
+    let lir = lower_module(&hir).expect("the escaped accessor program must lower");
+    let method_ids = lir.classes[0]
+        .methods
+        .iter()
+        .map(|method| method.function.0)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        method_ids.len(),
+        3,
+        "accessor get/set and `_` must have distinct ids"
     );
-    assert!(c.source.contains("subscript_m0__("), "{}", c.source);
+    let c = emit_c(&hir).expect("the escaped accessor program must emit C");
+    for id in method_ids {
+        assert!(c.source.contains(&format!(" sub_f{id}(")), "{}", c.source);
+    }
     assert_eq!(
         run_c_aot(&files).expect("the escaped accessor C must compile and run"),
         b"3\n2\n"
@@ -917,7 +921,7 @@ fn aligned_value_class_emits_alignas_on_the_first_field() {
     let source = "@CStruct({ align: 16 })\nclass Vec3f { x: f32; y: f32; z: f32; }\nexport function main(): void { const value: Vec3f = new Vec3f(); print(`${value.x}`); }\n";
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
-    assert!(c.contains("    _Alignas(16) float x;"), "{c}");
+    assert!(c.contains("    _Alignas(16) float d0;"), "{c}");
 }
 
 #[test]
@@ -943,12 +947,15 @@ fn host_callable_export_emits_handle_and_scalar_parameters() {
     ];
     let hir = check_program(&files).expect("host export checks cleanly");
     let c = emit_c(&hir).expect("host export emits C").source;
+    let wrapper = c
+        .split("void subscript_export_adopt")
+        .nth(1)
+        .expect("parameterized host wrapper");
     assert!(
-        c.contains(
-            "void subscript_export_adopt(subscript_rt_context* ctx, void* v_state, int32_t v_tag) { subscript_fn_adopt(ctx, v_state, v_tag); }"
-        ),
-        "parameterized host wrapper is missing:\n{c}"
+        wrapper.starts_with("(subscript_rt_context* ctx, void* a0, int32_t a1)"),
+        "{wrapper}"
     );
+    assert!(wrapper.contains("sub_f0(ctx, a0, a1);"), "{wrapper}");
 }
 
 #[test]
@@ -967,18 +974,18 @@ fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
         .split("void subscript_export_configure")
         .nth(1)
         .expect("wire entry wrapper");
-    let validation = wrapper.find("v_mode == 16").expect("wire value validation");
+    let validation = wrapper.find("a0 == 16").expect("wire value validation");
     let trap = wrapper
         .find("subscript_rt_trap_wire_enum(ctx,")
         .expect("wire value trap");
     let call = wrapper
-        .find("subscript_fn_configure(ctx, v_mode, v_tag);")
+        .find("sub_f0(ctx, a0, a1);")
         .expect("internal entry call");
     assert!(
         validation < trap && trap < call,
         "wire entry wrapper does not validate before calling the entry:\n{wrapper}"
     );
-    assert!(wrapper.contains("v_mode == 23") && wrapper.contains("v_mode == -7"));
+    assert!(wrapper.contains("a0 == 23") && wrapper.contains("a0 == -7"));
     assert!(wrapper.contains("WireMode"));
     assert!(wrapper.contains("return;"));
     assert!(
@@ -1007,7 +1014,7 @@ fn parameterized_async_export_has_no_host_wrapper() {
         .expect("later function")
         .exported = true;
     let c = emit_c(&hir).expect("async export emits C").source;
-    assert!(c.contains("static void* subscript_fn_later(void* ctx, int32_t v_tag)"));
+    assert!(c.contains("static void* sub_f0(void* ctx, int32_t a0)"));
     assert!(
         !c.contains("subscript_export_later"),
         "parameterized async export gained a host wrapper:\n{c}"
@@ -1063,7 +1070,7 @@ fn constructor_less_value_class_emits_field_initializer_store() {
     let c = emit_c(&hir).expect("emit C").source;
     assert!(
         c.lines()
-            .any(|line| line.contains(".value = 37;") && line.contains("_t")),
+            .any(|line| line.trim_start().starts_with("*(v") && line.ends_with(" = 37;")),
         "constructor-less value initializer store is missing:\n{c}"
     );
 }
@@ -1077,9 +1084,8 @@ fn constructor_less_reference_class_emits_field_initializer_store() {
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
     assert!(
-        c.lines().any(|line| {
-            line.contains("((Sub_0_ReferenceField*)") && line.contains(")->value = 41;")
-        }),
+        c.lines()
+            .any(|line| line.trim_start().starts_with("*(v") && line.ends_with(" = 41;")),
         "constructor-less reference initializer store is missing:\n{c}"
     );
 }
@@ -1101,9 +1107,8 @@ fn string_literal_union_equality_emits_an_integer_compare() {
     let c = emit_c(&hir).expect("emit C").source;
     let comparison = c
         .lines()
-        .find(|line| line.contains("return") && line.contains("left") && line.contains("right"))
+        .find(|line| line.contains(" = ((v") && line.contains(" == (v"))
         .unwrap_or_else(|| panic!("alias equality return is missing:\n{c}"));
-    assert_eq!(comparison.trim(), "return (v_left == v_right);");
     assert!(
         !comparison.contains("subscript_rt_str_eq"),
         "Q32 equality called string comparison: {comparison}"
@@ -1150,13 +1155,13 @@ fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
         "return crossing lacks the shared dynamic trap path:\n{c}"
     );
     let main = c
-        .split("void subscript_export_main(subscript_rt_context* ctx) {")
+        .split("static void sub_f0(void* ctx) {")
         .nth(1)
         .expect("main body");
     assert!(
         !main.contains("subscript_rt_str_lit(ctx,")
             && !main.contains("subscript_rt_str_eq(ctx,")
-            && !main.contains("subscript_string_alias_0["),
+            && !main.contains("sub_alias_0["),
         "wire crossing performed a string operation:\n{main}"
     );
 }
@@ -1204,11 +1209,11 @@ fn wire_enum_switch_formatting_and_boundary_member_read_use_wire_values() {
         "boundary member read lacks wire membership validation:\n{c}"
     );
     let main = c
-        .split("static void subscript_fn_main(void* ctx) {")
+        .split("static void sub_f0(void* ctx) {")
         .nth(1)
         .expect("main body");
     assert!(
-        main.contains("subscript_string_alias_0[")
+        main.contains("sub_alias_0[")
             && !main.contains("subscript_rt_str_eq")
             && !main.contains("strcmp("),
         "wire formatting must resolve its string entry with integer lookup only:\n{main}"
@@ -1234,14 +1239,15 @@ fn absence_presence_test_emits_reserved_integer_compare() {
     let c = emit_c(&hir).expect("emits C").source;
     let comparison = c
         .lines()
-        .find(|line| line.contains("compare") && line.contains("!= -1"))
+        .find(|line| line.contains("!=") && line.contains("-1"))
         .unwrap_or_else(|| panic!("absence test is not an integer compare against -1:\n{c}"));
     assert!(
         !comparison.contains("subscript_string_alias"),
         "presence comparison consulted the Q32 formatting table: {comparison}"
     );
     assert!(
-        c.lines().any(|line| line.contains("->compare = -1")),
+        c.lines()
+            .any(|line| line.trim_start().starts_with("*(v") && line.ends_with(" = -1;")),
         "omission did not store the reserved -1 discriminant:\n{c}"
     );
 }
@@ -1449,7 +1455,8 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
     missing_mirror.foreign_mirrors.clear();
     let error = emit_c(&missing_mirror).expect_err("missing mirror provenance must fail");
     assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("foreign C preamble"), "{error}");
+    assert!(error.contains("engineUse"), "{error}");
+    assert!(error.contains("invalid mirror id"), "{error}");
 }
 
 #[test]

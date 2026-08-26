@@ -581,6 +581,12 @@ impl<'m> Interpreter<'m> {
                         None => Value::Void,
                     }));
                 }
+                l::Terminator::Unreachable { pos } => {
+                    return Err(self.invalid(
+                        Some(pos.clone()),
+                        "reached a structurally unreachable LIR block",
+                    ));
+                }
                 l::Terminator::Trap(trap) => return Err(self.trap_error(trap)),
                 l::Terminator::Suspend {
                     kind,
@@ -4988,6 +4994,7 @@ mod tests {
             is_generator: false,
             is_async: false,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             parameters: Vec::new(),
             return_type: Type::I32,
             locals: Vec::new(),
@@ -5016,6 +5023,7 @@ mod tests {
             is_generator: false,
             is_async: true,
             creation_traps: Vec::new(),
+            host_entry_traps: None,
             parameters: Vec::new(),
             return_type: Type::I32,
             locals: Vec::new(),

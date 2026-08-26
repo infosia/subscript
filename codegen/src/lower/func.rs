@@ -97,6 +97,7 @@ fn runtime_traps(function: &l::Function) -> Vec<l::Trap> {
         }
         match &block.terminator {
             l::Terminator::Trap(trap) => traps.push(trap.clone()),
+            l::Terminator::Unreachable { .. } => {}
             l::Terminator::Suspend { traps: sites, .. } => {
                 traps.extend(sites.iter().cloned());
             }
@@ -109,7 +110,7 @@ fn runtime_traps(function: &l::Function) -> Vec<l::Trap> {
     traps
 }
 
-fn verify_trap_consumption(
+pub(super) fn verify_trap_consumption(
     function: &l::Function,
     expected: &[l::Trap],
     consumed: &[l::Trap],
@@ -5939,6 +5940,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.builder.ins().jump(destination, &arguments);
             }
             l::Terminator::Return { value, pos } => self.emit_return(value.as_ref(), pos)?,
+            l::Terminator::Unreachable { .. } => {
+                let unwind = self.unwind_block();
+                self.builder.ins().jump(unwind, &[]);
+            }
             l::Terminator::Trap(trap) => {
                 self.emit_trap(trap, TrapOperand::Pending)?;
                 let unwind = self.unwind_block();

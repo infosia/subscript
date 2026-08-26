@@ -254,6 +254,11 @@ pub struct Function {
     pub is_async: bool,
     /// Ordered traps owned by creating this coroutine's suspended frame.
     pub creation_traps: Vec<Trap>,
+    /// Ordered validation traps owned by the host-entry adapter.
+    ///
+    /// `None` means that this function has no host entry. `Some` can hold an
+    /// empty list when the entry needs no parameter validation.
+    pub host_entry_traps: Option<Vec<Trap>>,
     /// Typed parameters; each parameter value is a definition.
     pub parameters: Vec<Parameter>,
     /// Language return type.
@@ -748,6 +753,13 @@ pub enum Terminator {
         /// Source position of the return operation.
         pos: Pos,
     },
+    /// A control-flow successor that checked semantics prove unreachable.
+    ///
+    /// This is a structural terminator. It does not add a language trap site.
+    Unreachable {
+        /// Position of the proof-producing construct.
+        pos: Pos,
+    },
     /// Unconditional semantic trap.
     Trap(Trap),
     /// Coroutine suspension; resumption continues at a named block id.
@@ -778,6 +790,7 @@ impl Terminator {
             Self::Return { pos, .. } | Self::Suspend { pos, .. } => Some(pos),
             Self::Trap(trap) => Some(&trap.pos),
             Self::Branch(_) | Self::ConditionalBranch { .. } | Self::Switch { .. } => None,
+            Self::Unreachable { .. } => None,
         }
     }
 }
