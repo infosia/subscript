@@ -7618,9 +7618,60 @@ satisfy it.)*
    for the `let` declarations; a spill slot takes the same form.
    That also removes the offset arithmetic and the alignment
    round-up the two tiers computed differently.
+1h. **Liveness is a property of evaluation order, not of source
+   order.** *(Added 2026-08-26 after the fourth pass B review.)* The
+   scan that decides whether a value is live across a suspension
+   walks the same traversal that the planner walks to emit events.
+   A scan that walks HIR source order treats a read that precedes
+   the suspension in the text but follows it in evaluation as dead.
+   Measured, each a wrong answer with no diagnostic and a tier
+   disagreement: a lambda called with a suspending argument, where
+   the callee is read first and used at the call — the dev tier
+   printed `s02=1929953583` and the ship tier printed `s02=3` where
+   `s02=10` is correct; a capturing lambda passed as an argument
+   beside a suspending argument — `x01=-1777237247` and `x01=1`
+   where `x01=15` is correct; and a `default` arm written before a
+   suspending `case` test, which the switch reaches only after every
+   test has run — `P2=-519027216` and `P2=0` where `P2=15` is
+   correct. Three shapes of one root cause. Rule 1e already says
+   that a doubtful liveness reserves; a scan that cannot see the
+   read is not in doubt, so the rule needs the traversal, not more
+   cases.
+1i. **One function computes a spill's kind, and the planner and both
+   tiers call it.** *(Added 2026-08-26 after the fourth pass B
+   review.)* The planner took the kind from the expression type; the
+   dev tier took it from the declared type at four sites — a
+   parameter type, a function-type parameter, and two `FixedArray`
+   element types. Where the two differ, the strict cursor of rule 1d
+   refuses a `tsc`-clean program that the ship tier compiles and
+   runs correctly. Measured: `take(null, await av(3))` against
+   `function take(b: Box | null, n: i32)` stopped the dev tier with
+   "coroutine spill event mismatch: planned Value(Null), lowered
+   Value(Nullable(Class(ClassId(0))))" while the ship tier printed
+   `P1=3`, which is correct. A strict cursor is a check on agreement,
+   not a source of it.
+1j. **The receiver of a suspending async call is a spill site both
+   tiers close.** *(Added 2026-08-26 after the fourth pass B
+   review.)* The planner reserves for it and neither tier consumes
+   it, so rule 1g refuses the program. Measured: `await
+   m.step(await av(5))` stopped both tiers with "coroutine spill
+   cursor stopped at 1/2" where `P8=15` is correct. This is the one
+   unclosed site that remained after rule 1g landed, and rule 1g
+   named it rather than a review finding it.
 2. Two `await` expressions in one expression are legal, and each
    operand evaluates once, left to right, with the earlier result
    held in the frame across the later suspension.
+2a. **The ship tier allocates a suspension's label number after it
+   emits the operands, not before.** *(Added 2026-08-26 after the
+   fourth pass B review.)* `eval_async_call` read the yield counter
+   before it emitted the argument list, so a nested `await` in that
+   list took the number the outer call had already claimed. Measured
+   on `await ai(await av(2))`: the dev tier printed `s01=3`, which
+   is correct, and the ship tier stopped the C compiler with
+   "redefinition of label '_gresume0'". The defect predates this
+   section; the dev tier failed on the same program at the pin, so
+   the two tiers agreed by both failing. Rule 2 states that the
+   program is legal, so this section fixes it.
 3. A capturing lambda created before a suspension and called after
    it reads the values it captured. Its environment lives in the
    frame.
@@ -7631,6 +7682,22 @@ satisfy it.)*
    deleted. Any number of generators of one yield type is legal, and
    a generator handle passed to a function resumes correctly.
 6. Both tiers agree byte for byte on every program above.
+7. **A program that does not suspend keeps its output.** *(Added
+   2026-08-26 after the fourth pass B review.)* This section changes
+   coroutines. It does not change the evaluation or the marshalling
+   order of any other program. Measured: the round evaluated every
+   operand of a foreign call before it marshalled any argument, for
+   every call, because the pre-evaluation is keyed on the callee
+   kind and not on the presence of a suspension. An array argument's
+   data pointer and count are then read after a later argument has
+   run. A later argument that grows the array moves its storage.
+   Measured on a call whose third argument pushes to the array of
+   the second: the pin printed `f2=2` and the round printed `f2=3`.
+   The comment at the marshalling site states the old order and the
+   reason for it, and the round left the comment in place. The order
+   at the pin holds. If a suspension in a later argument makes the
+   old order impossible, the round reports the conflict and changes
+   nothing; the choice is not the round's.
 
 ### 67.3 Changes by site
 
@@ -7709,6 +7776,15 @@ Pass B:
 7. Counts, restated 2026-08-26 because pass A moved the base twice:
    accept `.ts` 147 → 148; `.expected` 148 → 149; accept source
    files 149 → 150; rejects unmoved at 151.
+9. *(Added 2026-08-26 after the fourth pass B review.)*
+   `a149-suspension-state` grows to pin every shape the review
+   measured: the three rule 1h shapes, the rule 1i declared-type
+   shapes on a parameter and on a `FixedArray` element, the rule 1j
+   async-method receiver, and the rule 2a nested `await`. The
+   counts of item 7 do not move, because the entry already exists.
+   One interop test pins rule 7: a foreign call whose later argument
+   grows the array of an earlier one, printing `f2=2`. The record
+   quotes the dev-tier and the ship-tier output of each shape.
 
 Both passes:
 
