@@ -200,6 +200,17 @@ version.
 4. Run the tier-differential suite.
 5. Log evidence in `specs/tracking/<topic>.md`.
 
+**Two review rounds are the limit for a defect class.** *(Owner,
+2026-08-26.)* A review raises a class. A round fixes it. If the next
+review raises that class again, the class is a defect of the form.
+
+Do not fix a third instance. Report what the form must carry, or
+must forbid. Change the contract first, then the code.
+
+A fix that closes named sites does not converge. Make the class
+unreachable, or make a total check at the build report every
+remaining site at once.
+
 **Every phase ends with a mandatory Phase Review ("Clean Review Then Fix"):**
 a fresh no-context subagent reviews the phase's cumulative diff and emits
 `CRITICAL`/`MAJOR`/`MINOR` findings; findings are fixed in severity order; a
