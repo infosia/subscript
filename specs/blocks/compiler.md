@@ -8040,6 +8040,32 @@ The interface is not the subject. This section moves no part of it.
    change, so the loop yields element 0 for ever, and a tier can
    only run it by holding an index that LIR does not carry.
 
+8. **LIR carries every trap site, once, on the instruction that
+   owns it.** *(Added 2026-08-26 after the second step 1 review.)*
+   A trap site belongs to the operation whose operands the check
+   reads. Every HIR node the lowering evaluates contributes its own
+   sites, a node reached as the base of a place included. A
+   function-level site is carried too: both tiers read the
+   coroutine creator's allocation site and refuse the program when
+   it is absent. Measured on the second step 1 attempt: `a[idx()].x
+   = 9` traps today with "index 5 out of bounds for array length 2",
+   and its whole LIR module carried no index trap; 13 entries lost
+   the coroutine `Allocation` site, which no part of LIR named; and
+   one `DivisionByZero` of `a76` became three, two of them on an
+   address computation that has no divisor. A `checked` flag with no
+   site and no position is not a trap site — a tier that reads it
+   decides semantics, which §68.2 item 10 forbids.
+9. **No instruction restates a fact the values table carries.**
+   *(Added 2026-08-26 after the second step 1 review.)* An operand's
+   type is a property of the value. An instruction that records its
+   operand types again gives the verifier two copies of one fact,
+   and a check that compares them cannot fire on anything the
+   lowering built. Measured: after item 11 was amended, one check
+   consulted a declared signature and about ten kept the
+   self-comparing shape, including the exact line the first review
+   named. Delete the restatement. Derive what an operation requires
+   from the operation, and compare that against the values table.
+
 ### 68.2 The rules the form makes true
 
 6. **Liveness is one fixed-point over the graph.** The analysis
