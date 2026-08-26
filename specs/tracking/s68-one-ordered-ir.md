@@ -1,0 +1,349 @@
+# §68 — one ordered IR between the checker and the two tiers
+
+Contract `37b871f`. Origin: the owner asked why recent fixes need
+many review rounds. §68's measurements answer it, and this file
+records the work.
+
+The section moves no language surface. Every gate run below compares
+every committed golden and `.expected` byte for byte.
+
+## Step 1 — define LIR, lower HIR to it, verify it
+
+Two attempts. The first passed every gate and was wrong.
+
+### First attempt
+
+149 corpus entries lowered, 878 LIR functions verified, and the
+round reported no inexpressible construct. Every gate was green.
+
+The review found three CRITICAL, and two of them were holes in the
+contract rather than defects in the round.
+
+1. Every source binding became function-scope `Local` storage. 6742
+   of 16715 instructions were local traffic, against 92 block
+   parameters, and 24 of 48 coroutine functions read a local after
+   their resume block. §68.2 item 7 says the frame holds the live-in
+   set of a suspension's successor and nothing else; that set was
+   empty, so a tier implementing item 7 builds an empty frame and
+   reads uninitialized storage. §68.1 item 4 did not forbid this,
+   because a lowering satisfies "every value has one definition"
+   while making the loads and the stores the only values.
+2. `for...of` created a cursor, stored it, and never advanced it.
+   Under item 4 the cursor cannot change, so the loop yields element
+   0 for ever. The ship tier needs an index and a bound per
+   `for...of`; LIR carried neither.
+3. The verifier's call check read `instruction.operand_types !=
+   target.parameter_types`, and both sides came from one `map` over
+   one operand list. A hand-built call passing three wrong operands
+   to a one-parameter function verified clean.
+
+The contract gained §68.1 items 6 and 7 and an amended §68.2 item
+11. §68.4 step 1 now states why it needs a review of this kind: no
+gate tests LIR while nothing consumes it.
+
+### Second attempt
+
+A source binding is now a value. Storage exists only where an
+address analysis proves the address is taken. `for...of` threads the
+cursor, the index, and the bound across the back edge as block
+parameters, and `IteratorAdvance` produces the advanced cursor. The
+call check consults the callee's declared signature, and an
+intrinsic operation consults a table the LIR module carries.
+
+Measured by the round, over the 149 corpus entries:
+
+| | first | second |
+|---|---:|---:|
+| instructions | 16715 | 10189 |
+| local traffic | 6742 | 120 |
+| locals | 2399 | 31 |
+| block parameters | 92 | 1270 |
+| coroutine functions | 48 | 48 |
+| ...reading a local after resume | 24 | 0 |
+
+The instruction count fell 39 per cent. The local traffic carried no
+information.
+
+Gates, verified by this session: zero warnings; 1054 passed, 0
+failed, 1 ignored across 60 suites in debug, 276 s; 1054 passed, 0
+failed in release, 216 s; `cargo fmt --check` clean; the `tsc` gate
+clean; clippy library counts 7 / 22 / 29; no committed golden or
+`.expected` moved; 149 entries and 878 LIR functions verified.
+
+`codegen/src/` moved 30352 → 35132 lines. The old HIR consumers stay
+until §68.4 steps 2 to 4, so §68.6 item 5 has no meaning yet.
+
+## The cost of one round, measured 2026-08-26
+
+The owner asked how to make the loop faster. The measurement:
+
+    debug suite wall 276 s, of which test execution is 260 s
+      codegen/tests/golden.rs   131.8 s   51 %
+      codegen/tests/cemit.rs     68.6 s   26 %
+      the other 58 suites        59.7 s
+
+`golden.rs` holds 33 tests, so the harness runs tests in parallel,
+but one test walks all 149 entries in a serial `for` loop. Each
+iteration runs the dev tier and then emits C, compiles it at `-O2`,
+links it, and runs it. The suite time is that one test.
+
+**Parallelizing that loop needs care.** `run_dev_corpus_entry` calls
+process-global host fixtures for the host-owned-state entries. A
+naive parallel loop trades 100 s for a flaky suite.
+
+### Owner decisions, 2026-08-26
+
+1. The coding agent runs targeted tests only. This session runs the
+   full gate once. Two full gate runs per round measured the same
+   tree twice, and the second attempt's report quoted a test count
+   that did not match the tree.
+2. This session's gate and the review run at the same time, with
+   separate `CARGO_TARGET_DIR`.
+3. A round runs the debug profile. §68.6 item 7 requires both
+   profiles for a step, not for a round, so release runs at the end
+   of a step.
+4. The LIR text form of §68.6 item 3 comes forward into step 1. The
+   first step 1 review wrote its own printer to read 4779 new lines.
+   Every later review pays that cost again.
+5. One binary built from each contract pin is kept. A review needs
+   "does this reproduce at the pin?" for almost every finding.
+6. MAJOR findings are fixed in one pass at the end of a step, not in
+   a round of their own.
+
+### The reason round count dominates
+
+§67 pass B needed seven rounds. A round that is 20 per cent faster
+does not answer that.
+
+Step 1 has no gate that tests LIR, because nothing consumes LIR. A
+defect is found only by reading. Step 2 puts the dev tier on LIR,
+and the differential gate then tests LIR against the ship tier on
+every corpus entry, automatically. **Time spent in step 1 is
+therefore the expensive kind.** Step 1 fixes what stops step 2 from
+starting; step 2's gate finds the rest.
+
+## Triage rule, owner decision 2026-08-26
+
+The owner asked that rare edge cases not take time before important
+work. The order:
+
+1. A program shape that the corpus or the downstream uses gives a
+   wrong answer, or loses a trap.
+2. A valid program does not compile.
+3. A gate or a verifier cannot see a class of defect, **and** that
+   blocks progress.
+4. Everything else waits for the end of the step, and only what a
+   real program reaches is fixed.
+
+**LIR is machine-generated.** A defect that only a hand-built LIR
+module reaches is not a program-level risk. The verifier exists to
+catch a lowering defect, and from step 2 the differential gate
+catches a lowering defect on every corpus entry, automatically and
+for no reading time. Verifier completeness is worth less than this
+record treated it before this decision.
+
+### Before step 2
+
+- `lower_module` rejects `while (true) { return 1; }` and
+  `for (;;) { return 1; }`. Both tiers compile and run them. An
+  infinite loop that returns from inside is an ordinary shape.
+- `codegen/tests/lir.rs` asserts that no local is named
+  `<for-of cursor>`. `declare_hidden_binding` sets `storage: None`
+  unconditionally, so no such local can exist. The regression test
+  for a CRITICAL cannot fail.
+
+### With step 2, because they feed the performance kill criterion
+
+§68.6 item 4 stops the phase at a ship-AOT ratio above 1.75×. Block
+parameters went from 92 to 1270. Each item below adds to that count
+or to the emitted code.
+
+- Every parameter and every `for...of` loop variable is declared
+  mutable, so a read-only binding threads through every state block.
+- `invalidates` names every array value created so far. It carries
+  no information a consumer can use, and it grows O(n²).
+- A dead placeholder address is emitted at every value-class method
+  call.
+- A field initializer is inlined at every `new` site.
+
+### End of step
+
+Panic sites; `#[non_exhaustive]` and `#[must_use]`; the dead
+`skip_resume` parameter; verifier coverage for comparison operands,
+duplicate switch arms, duplicate field ids, and `IteratorCreate`;
+replicated trap sites on a compound assignment; `invalidates` naming
+values that do not dominate; unverified suspension-successor
+parameters; module-initializer order; the `worker_operation`
+sentinel; tests that parse a diagnostic source name.
+
+### Closed without a fix
+
+`Suspend::Yield` declares no invalidation. `yield` is void-typed, so
+it cannot sit mid-expression where an address is live. The shape is
+unreachable from the language surface. Reopen this only if that
+surface changes.
+
+### The next review is targeted, not exhaustive
+
+Step 1 has no gate that tests LIR. Every defect costs reading time.
+The next check confirms only that the step 2 blockers are closed.
+Step 2's differential gate then finds semantic defects on 149
+entries without a reader.
+
+## Step 1b — the reference interpreter
+
+Owner decision 2026-08-26: an interpreter for LIR, inserted before
+step 2. Contract `3761f1f`, then §68.7 at `af5697d`.
+
+The reason it exists: step 1 has no gate that tests LIR, because
+nothing consumes LIR. Both step 1 reviews found every CRITICAL by
+reading, at about an hour each.
+
+### Attempt 1 — stopped, and the stop was the finding
+
+No file changed. The round reported that §68 defined the **form** of
+LIR and not the **meaning** of its instructions, so no interpreter
+could be written from the section. It did not read either tier to
+guess. CLAUDE.md principle 8 makes that report the wanted outcome.
+
+The finding is larger than the gap. §68.2 item 10 says that neither
+tier decides semantics. **While an instruction's meaning is
+undefined, each tier decides it.** The two tiers agree today because
+one lowering built both conventions out of HIR, not because LIR pins
+a meaning. A differential gate between two tiers cannot see that.
+
+§68.7 answers it: by reference where the language already decides, by
+definition for the three protocols LIR alone has.
+
+### Attempt 2 — 98 run, 68 matched, 30 disagreements
+
+51 entries are declared exclusions, almost all interop entries that
+need the synthetic native library.
+
+Every disagreement fell into four causes, and **three were defects in
+§68.7, which this session wrote**:
+
+- 23 entries: a field of an aggregate value. The field rows named
+  only the reference-class path.
+- 1 entry: the iteration contract contradicted `a80`. The rule said
+  the captured bound alone ends a traversal, and the interpreter
+  trapped rather than pass the entry.
+- 5 entries: a suspension's successor did not declare the values used
+  after it. **This is a defect in the lowering, and it blocks step
+  2.** Both tiers work today because both read HIR; a dev tier that
+  reads LIR loses the state. The second step 1 review predicted it as
+  M7, from reading; the interpreter measured it on `a110`, `a139`,
+  `a143`, `a145`, and `a149`.
+- 1 entry: the standard runner invoked `main` only, where §26.3
+  requires every exported zero-parameter async function.
+
+**A correction this session owes the record.** It reported to the
+owner that the language had not decided what happens when a container
+changes during a `for...of`. The language had:
+`corpus/accept/a80-for-of-foreach-mutation` states in its own header
+that "appends do not extend and removals shorten", and pins both. The
+corpus is the executable definition. That is a decided divergence
+with no `collisions.md` entry — §69's work, not an owner decision.
+
+### Attempt 3 — stopped again, on three more gaps, and all three were ours
+
+- `Suspend` carried a successor id and no argument list, so no value
+  could reach the successor's parameters. Reusing a value's id breaks
+  §68.1 item 4, and the edge-transfer paragraph named only the three
+  branching terminators. The section decided what the frame holds and
+  never said how a value reaches it.
+- The iteration protocol counted elements, so a `Map` position that a
+  removal makes inactive had no expression. `a80`'s `Map` half needs
+  it.
+- §68.7.6 item 1 still called the mutation decision open, three
+  paragraphs after saying `a80` decides it.
+
+**A process defect, ours.** The round stopped on the first gap and
+changed no file, so the aggregate-`LoadField` work — 23 of the 30
+findings, fully specified and blocked by nothing — did not happen. A
+gap that blocks one instruction blocks that instruction, not the
+round. Attempt 2 had it right: it ran 98 entries and reported four
+causes. The handoff now says so.
+
+### The two-round rule, applied to this arc
+
+CLAUDE.md limits a defect class to two review rounds. "The
+specification is incomplete" was raised three times, so the rule asks
+whether the form is wrong.
+
+It is not, and the numbers say so: 32 instructions undefined, then 30
+disagreements, then 3 gaps. The rule's own remedy — "make a total
+check at the build report every remaining site at once" — **already
+exists here.** §68.7.5 makes the interpreter the completeness test
+for §68.7. The mechanism is working, and each pass removes more of
+the prose this session wrote than the last.
+
+### Attempts 4 to 6 — the interpreter runs, and what it cost
+
+**Attempt 4 closed the work.** 97 runnable entries run, 97 match the
+golden, 52 declared exclusions with a reason each. `Suspend` carries
+positional arguments; the lowering computes graph liveness and
+repairs SSA, so a resume successor defines fresh parameter ids, a
+resume result is parameter zero with no argument, and the remaining
+parameters take explicit arguments. A join that a suspended path and
+a plain path reach with different definitions gains a parameter too.
+The frame holds the successor live-in set and nothing else.
+
+**The step 2 blocker is closed**, and it was found before step 2
+rather than during it.
+
+**Attempt 5 was the gate this session ran, not the round.** The
+round's targeted tests passed. The workspace gate did not:
+
+- `coroutine_and_measurement_lir_text_matches_goldens` failed. The
+  suspension work changed the LIR and the text goldens were stale.
+- clippy codegen was 38 against the 29 baseline.
+- **The debug suite went from 276 s to 1674 s.**
+
+The round regenerated the goldens after reading the 402 KB diff, and
+its reading is the evidence the suspension work is right: `Suspend`
+prints explicit arguments, resume blocks gain parameters for live
+values, post-resume uses name the new SSA values, and an array
+address's provenance follows the resumed array value.
+
+**A clippy suggestion was refused, correctly.** `Vec<Box<usize>>`
+became `Vec<Rc<Cell<usize>>>`, not the suggested `Vec<usize>`: the
+runtime holds raw addresses to root slots, and a `Vec<usize>`
+reallocation invalidates them. A lint that breaks a soundness
+requirement is not taken. The reason is now a comment at the site.
+
+**Attempt 6 — the requirement was wrong, not the round.**
+
+This session's profiling hypothesis was wrong, and the round measured
+instead of accepting it: the `invalidates` clone cost 227 ms per
+million instructions, and ordinary instruction execution was the
+rest. `a22-matrix-propagation` is about a million matrix
+multiplications.
+
+`a22` is a **performance benchmark**. §68.6 item 4 uses it against
+the 1.75× kill criterion. Its value is its cost, and **the
+interpreter tests semantics, not cost.** Requiring all 97 entries in
+both profiles was this session's requirement, not the contract's, and
+it was wrong.
+
+    debug sweep    1157 s  ->  4.4 s   (96 entries, plus 3 trap entries)
+    release sweep   225 s  ->  118.9 s (97 entries, all of them)
+
+Removing one entry from the debug run removed 1150 s, which confirms
+the diagnosis completely.
+
+**Keeping a debug run earned its keep.** Debug Rust checks integer
+overflow and release does not, and this language's arithmetic wraps
+by contract (§2). Three interpreter defects were found and fixed
+there: unary negation now uses `wrapping_neg`, add, subtract,
+multiply and signed division and remainder use wrapping operations,
+and a shift masks its amount to the type width. A release-only sweep
+would have reported 97 of 97 while computing the wrong arithmetic.
+
+**The exclusion rule, stated once.** "The interpreter cannot run
+this" is an escape hatch and is refused. "This entry's purpose is
+cost, and cost is not what the interpreter tests" is a scope
+statement and is allowed. Every entry outside the debug subset says
+which applies. All 52 release exclusions are interop, worker, or
+host-hook entries that need a facility the interpreter does not have,
+and each names it.
