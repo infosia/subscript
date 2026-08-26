@@ -7987,6 +7987,14 @@ The interface is not the subject. This section moves no part of it.
   bytes, with the exceptions §68.6 item 2 names and pins as Red.
 - The C ABI, the emitted header, the `subscript_*` symbol
   convention, and the host API do not move.
+  - *(One addition, 2026-08-26, recorded rather than discovered.)*
+    Step 2 added `subscript_rt_trap_index_out_of_bounds`. The dev
+    tier is Cranelift and cannot format the bounds message the way
+    emitted C does with `snprintf`, so it needs a runtime entry that
+    takes the index and the length. Nothing existing changed and no
+    host loses what it depends on. **Both tiers call it**, so the
+    message has one source instead of two — one instance of the
+    duplication this section exists to remove, closed early.
 - `specs/blocks/collisions.md` does not move. No collision is
   decided or re-decided here.
 - Invariant 3 holds: two execution forms, dev JIT and ship C AOT.
