@@ -8017,6 +8017,29 @@ The interface is not the subject. This section moves no part of it.
    method names before its contract: no consumer of a method name
    parses it.)*
 
+6. **A source binding is a value, not storage.** *(Added
+   2026-08-26 after the step 1 review, which measured that item 4
+   alone does not give this.)* `Local` storage exists only for a
+   binding whose address the program takes, and the lowering states
+   which those are. Item 4 says that every value has one definition.
+   A lowering satisfies item 4 and still routes every binding
+   through a function-scope slot, because the loads and the stores
+   are then the only values. Measured on the step 1 lowering: 6742
+   of 16715 instructions were local traffic, 2399 locals existed
+   against 92 block parameters, and 24 of 48 coroutine functions
+   read a local after their resume block. That is the storage model
+   of §67, which items 6 to 8 of §68.2 exist to retire, so the form
+   must forbid it and not only the rules.
+7. **Loop traversal state is values.** *(Added 2026-08-26 after the
+   step 1 review.)* A cursor, an index, and a bound cross a back
+   edge as block parameters. An instruction that advances a
+   traversal produces the advanced state as a result. Measured on
+   the step 1 lowering: `for...of` created a cursor, stored it in a
+   local, and read it in the body and in the condition, and no
+   instruction ever wrote it back. Under item 4 the cursor cannot
+   change, so the loop yields element 0 for ever, and a tier can
+   only run it by holding an index that LIR does not carry.
+
 ### 68.2 The rules the form makes true
 
 6. **Liveness is one fixed-point over the graph.** The analysis
@@ -8048,7 +8071,18 @@ The interface is not the subject. This section moves no part of it.
     checks that every use is dominated by its definition; that every
     value has one definition; that every block ends with one
     terminator; that no address crosses an invalidation of its base;
-    and that every operand type matches its instruction. The
+    and that every operand type matches its instruction. **Every
+    check compares two things the lowering derived separately.** A
+    check that compares a record against the expression that built
+    it cannot fire. Measured on the step 1 verifier: the call check
+    read `instruction.operand_types != target.parameter_types`, and
+    both sides came from one `map` over one operand list, so a call
+    that passed three wrong operands to a one-parameter function
+    verified clean. A call compares against the **callee's declared
+    signature**. An intrinsic operation compares against a table
+    that LIR carries, not against a positional index into a Rust
+    array. The verifier's own tests must build the violating form,
+    not mutate the record that the check reads. The
     verifier runs in the debug profile and in the release profile.
     This is rule 1g, generalized from spill slots to the whole form.
 
@@ -8080,6 +8114,14 @@ moves a committed golden, the step stops and reports it.
 1. Define LIR. Write the HIR → LIR lowering and the §68.2 item 11
    verifier. Neither tier changes yet. The verifier runs over every
    corpus entry.
+   **Nothing consumes LIR at this step, so no gate tests it.** The
+   verifier is the only check, and one round writes both. The step
+   therefore ends with a review that builds violating LIR by hand
+   for each check of item 11, and that reads the LIR of named corpus
+   entries against their known behaviour. *(Added 2026-08-26. The
+   first attempt at this step passed every gate with a lowering that
+   could not terminate a `for...of` and a call check that could not
+   fire.)*
 2. Move the dev tier to LIR. The ship tier stays on HIR. The
    differential gate now compares one LIR consumer against one HIR
    consumer, so it guards this step directly.
