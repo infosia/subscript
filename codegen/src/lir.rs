@@ -8,6 +8,8 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
+use crate::suspension::suspends_expr;
+
 /// A construct or inconsistent checked fact that cannot be represented in
 /// LIR without guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +80,7 @@ pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
 /// Returns every verifier finding in deterministic function/block order.
 pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
     let mut errors = Vec::new();
+    verify_module_entries(module, &mut errors);
     for function in &module.functions {
         verify_function(module, function, &mut errors);
     }
@@ -85,6 +88,53 @@ pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn verify_module_entries(module: &l::Module, errors: &mut Vec<VerifyError>) {
+    let function = |id: l::FunctionId| {
+        module
+            .functions
+            .get(id.0 as usize)
+            .filter(|function| function.id == id)
+    };
+    if let Some(entry) = module.entry {
+        if function(entry).is_none() {
+            errors.push(VerifyError {
+                message: format!("module entry function {} is missing", entry.0),
+            });
+        }
+    }
+    let mut previous = None;
+    let mut seen = BTreeSet::new();
+    for root in &module.async_roots {
+        if !seen.insert(*root) {
+            errors.push(VerifyError {
+                message: format!("module async root function {} occurs twice", root.0),
+            });
+        }
+        if previous.is_some_and(|previous| previous >= *root) {
+            errors.push(VerifyError {
+                message: "module async roots are not in declaration order".to_string(),
+            });
+        }
+        previous = Some(*root);
+        match function(*root) {
+            Some(function)
+                if function.exported
+                    && function.is_async
+                    && function.parameters.is_empty()
+                    && Some(function.id) != module.entry => {}
+            Some(_) => errors.push(VerifyError {
+                message: format!(
+                    "module async root function {} is not an exported zero-parameter non-entry async function",
+                    root.0
+                ),
+            }),
+            None => errors.push(VerifyError {
+                message: format!("module async root function {} is missing", root.0),
+            }),
+        }
     }
 }
 
@@ -350,7 +400,7 @@ impl<'a> Lowering<'a> {
                     vec![value],
                     None,
                     false,
-                    convert_traps(&global.init.trap_sites(builder.lowering.hir)),
+                    Vec::new(),
                     global.pos,
                 )?;
             }
@@ -396,7 +446,37 @@ impl<'a> Lowering<'a> {
             })
             .collect::<Result<Vec<_>, LowerError>>()?;
 
+        let entry = self
+            .hir
+            .functions
+            .iter()
+            .find(|function| function.exported && function.name == "main")
+            .and_then(|function| self.free_functions.get(&function.name))
+            .map(|record| record.id);
+        let async_roots = self
+            .hir
+            .functions
+            .iter()
+            .filter(|function| {
+                function.exported
+                    && function.is_async
+                    && function.name != "main"
+                    && function.params.is_empty()
+            })
+            .map(|function| {
+                self.free_functions
+                    .get(&function.name)
+                    .map(|record| record.id)
+                    .ok_or_else(|| LowerError {
+                        pos: function.pos.clone(),
+                        message: "async root has no function id".to_string(),
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(l::Module {
+            entry,
+            async_roots,
             classes: self.classes,
             enums: self
                 .hir
@@ -954,13 +1034,93 @@ impl AddressTaken<'_> {
                     hir::Callee::Method { recv, .. } => self.expr(recv),
                     _ => {}
                 }
-                for argument in args {
-                    self.expr(argument);
+                let parameter_types = match callee {
+                    hir::Callee::Func(name) => self
+                        .module
+                        .functions
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| {
+                            function
+                                .params
+                                .iter()
+                                .map(|parameter| parameter.ty.clone())
+                                .collect::<Vec<_>>()
+                        }),
+                    hir::Callee::Foreign(name) => self
+                        .module
+                        .foreign_fns
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| {
+                            function
+                                .params
+                                .iter()
+                                .map(|parameter| parameter.ty.clone())
+                                .collect::<Vec<_>>()
+                        }),
+                    hir::Callee::Value(value) => match &value.ty {
+                        Type::Func(signature) => Some(signature.params.clone()),
+                        _ => None,
+                    },
+                    hir::Callee::Method { recv, name } => match recv.ty {
+                        Type::Class(class) => self
+                            .module
+                            .classes
+                            .get(class.0)
+                            .and_then(|definition| {
+                                definition
+                                    .methods
+                                    .iter()
+                                    .find(|method| method.name == *name)
+                            })
+                            .map(|method| {
+                                method
+                                    .params
+                                    .iter()
+                                    .map(|parameter| parameter.ty.clone())
+                                    .collect::<Vec<_>>()
+                            }),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                for (index, argument) in args.iter().enumerate() {
+                    if parameter_types
+                        .as_ref()
+                        .and_then(|params| params.get(index))
+                        .is_some_and(|parameter| {
+                            self.is_boundary_struct_pointer(parameter)
+                                && matches!(argument.ty, Type::Class(_))
+                                && is_place_expr(argument)
+                        })
+                    {
+                        self.place(argument);
+                    } else {
+                        self.expr(argument);
+                    }
                 }
             }
-            K::New { args, .. } => {
-                for argument in args {
-                    self.expr(argument);
+            K::New { class, args } => {
+                let boundary_fields = self
+                    .module
+                    .classes
+                    .get(class.0)
+                    .filter(|definition| definition.is_boundary)
+                    .map(|definition| &definition.fields);
+                for (index, argument) in args.iter().enumerate() {
+                    if boundary_fields
+                        .and_then(|fields| fields.get(index))
+                        .is_some_and(|field| {
+                            self.is_boundary_struct_pointer(&field.ty)
+                                && matches!(argument.ty, Type::Class(_))
+                                && is_place_expr(argument)
+                        })
+                    {
+                        self.place(argument);
+                    } else {
+                        self.expr(argument);
+                    }
                 }
             }
             K::DescriptorLit { fields, .. } => {
@@ -1049,6 +1209,14 @@ impl AddressTaken<'_> {
 
     fn is_stored_aggregate(&self, ty: &Type) -> bool {
         matches!(ty, Type::FixedArray(..) | Type::IterResult(_)) || self.is_value_class(ty)
+    }
+
+    fn is_boundary_struct_pointer(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Nullable(inner)
+        if matches!(&**inner, Type::Class(class)
+            if self.module.classes.get(class.0).is_some_and(|definition| {
+                definition.is_value && definition.is_boundary
+            })))
     }
 }
 
@@ -1191,7 +1359,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if let Some(block) = self.current {
             if self.blocks[block.0 as usize].terminator.is_none() {
                 if self.function.ret == Type::Void || self.function.is_generator {
-                    self.blocks[block.0 as usize].terminator = Some(l::Terminator::Return(None));
+                    self.blocks[block.0 as usize].terminator = Some(l::Terminator::Return {
+                        value: None,
+                        pos: self.function.pos.clone(),
+                    });
                 } else {
                     return Err(self.error(
                         &self.function.pos,
@@ -1655,7 +1826,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         )
                     })
                     .transpose()?;
-                self.terminate(l::Terminator::Return(value), pos)?;
+                self.terminate(
+                    l::Terminator::Return {
+                        value,
+                        pos: pos.clone(),
+                    },
+                    pos,
+                )?;
             }
             hir::Stmt::If {
                 cond,
@@ -2377,18 +2554,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             K::Index { .. } => {
                 let place = self.prepare_place(expr)?;
-                let stored_type = self.place_type(&place).clone();
-                let address = self.materialize_address(&place, &expr.pos)?;
-                let value = self
-                    .emit(
-                        l::InstructionKind::LoadAddress,
-                        vec![address],
-                        Some(l::ValueType::Data(stored_type)),
-                        false,
-                        convert_traps(&expr.trap_sites(self.lowering.hir)),
-                        expr.pos.clone(),
-                    )?
-                    .expect("index load");
+                let value = self.load_place(&place, &expr.pos)?;
                 Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
             }
             K::ArrayLit(elements) => {
@@ -2501,6 +2667,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.terminate(
                     l::Terminator::Suspend {
                         kind: l::SuspendKind::Yield(value),
+                        pos: expr.pos.clone(),
                         successor,
                         resume_value: None,
                         arguments: Vec::new(),
@@ -2517,6 +2684,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.terminate(
                     l::Terminator::Suspend {
                         kind: l::SuspendKind::Async,
+                        pos: expr.pos.clone(),
                         successor,
                         resume_value: None,
                         arguments: Vec::new(),
@@ -2634,6 +2802,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         value_expr: &hir::Expr,
         whole: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
+        let traps = convert_traps(&whole.trap_sites(self.lowering.hir));
+        let binary_traps = || {
+            traps
+                .iter()
+                .filter(|trap| {
+                    matches!(
+                        trap.kind,
+                        l::TrapKind::Allocation | l::TrapKind::DivisionByZero
+                    )
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         if let hir::ExprKind::Local(name) = &target_expr.kind {
             let binding = self.lookup_binding(name, &target_expr.pos)?;
             let old = if op.is_some() {
@@ -2648,7 +2829,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![old.expect("compound old value"), value],
                     Some(l::ValueType::Data(target_expr.ty.clone())),
                     false,
-                    convert_traps(&whole.trap_sites(self.lowering.hir)),
+                    binary_traps(),
                     target_expr.pos.clone(),
                 )?
                 .expect("compound result")
@@ -2659,20 +2840,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     &target_expr.pos,
                 )?
             };
-            self.write_binding(
-                binding,
-                result.clone(),
-                &target_expr.pos,
-                convert_traps(&whole.trap_sites(self.lowering.hir)),
-            )?;
+            self.write_binding(binding, result.clone(), &target_expr.pos, Vec::new())?;
             return Ok(result);
         }
-        let place = self.prepare_place_with_traps(
-            target_expr,
-            Some(convert_traps(&whole.trap_sites(self.lowering.hir))),
-        )?;
+        let mut place = self.prepare_place_with_traps(target_expr, Some(Vec::new()))?;
         let old = if op.is_some() {
-            Some(self.load_place(&place, &target_expr.pos)?)
+            let mut read_place = place.clone();
+            read_place.traps = traps
+                .iter()
+                .filter(|trap| {
+                    matches!(
+                        trap.kind,
+                        l::TrapKind::DevOnlyLifetime | l::TrapKind::IndexRead
+                    )
+                })
+                .cloned()
+                .collect();
+            Some(self.load_place(&read_place, &target_expr.pos)?)
         } else {
             None
         };
@@ -2683,13 +2867,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 vec![old.expect("compound old value"), value],
                 Some(l::ValueType::Data(target_expr.ty.clone())),
                 false,
-                convert_traps(&whole.trap_sites(self.lowering.hir)),
+                binary_traps(),
                 target_expr.pos.clone(),
             )?
             .expect("compound result")
         } else {
             value
         };
+        place.traps = traps
+            .iter()
+            .filter(|trap| {
+                matches!(trap.kind, l::TrapKind::IndexWrite)
+                    || (op.is_none() && trap.kind == l::TrapKind::DevOnlyLifetime)
+            })
+            .cloned()
+            .collect();
         self.store_place(&place, result.clone(), &target_expr.pos)?;
         Ok(result)
     }
@@ -2733,7 +2925,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 })
                 .collect();
         }
-        let explicit = self.lower_call_arguments(&params, args, receiver_for_defaults.as_ref())?;
+        let explicit = self.lower_call_arguments(
+            &params,
+            args,
+            receiver_for_defaults.as_ref(),
+            matches!(kind, l::CallTargetKind::Foreign(_)),
+        )?;
         operands.extend(explicit);
         if matches!(kind, l::CallTargetKind::Method(_)) {
             if let Some(PreparedBase::Place(place)) = receiver_for_defaults {
@@ -2768,6 +2965,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .map(|parameter| l::ValueType::Data(parameter.ty.clone()))
                 .collect::<Vec<_>>()
         };
+        let foreign_params = |params: &[hir::Param]| {
+            params
+                .iter()
+                .flat_map(|parameter| match &parameter.ty {
+                    Type::Array(element) => vec![
+                        l::ValueType::Address(l::AddressType {
+                            pointee: (**element).clone(),
+                            array_base: None,
+                        }),
+                        l::ValueType::Data(Type::I32),
+                    ],
+                    ty => vec![l::ValueType::Data(ty.clone())],
+                })
+                .collect::<Vec<_>>()
+        };
         match callee {
             hir::Callee::Func(name) => {
                 let function = self
@@ -2789,7 +3001,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .ok_or_else(|| {
                         self.error(&expr.pos, format!("missing foreign declaration `{name}`"))
                     })?;
-                Ok((data_params(&function.params), data_result(&function.ret)))
+                Ok((foreign_params(&function.params), data_result(&function.ret)))
             }
             hir::Callee::Value(value) => {
                 let Type::Func(signature) = &value.ty else {
@@ -3092,12 +3304,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         params: &[CallParam],
         args: &[hir::Expr],
         receiver: Option<&PreparedBase>,
+        foreign: bool,
     ) -> Result<Vec<l::Operand>, LowerError> {
-        let mut operands = Vec::with_capacity(params.len());
+        let mut operand_groups = Vec::with_capacity(params.len());
+        let mut delayed_array_snapshots = Vec::new();
         let mut substitutions = HashMap::new();
         for (index, parameter) in params.iter().enumerate() {
             let value = if let Some(argument) = args.get(index) {
-                self.require_expr(argument)?
+                self.lower_argument_value(&parameter.ty, argument)?
             } else {
                 let default = parameter.default.as_ref().ok_or_else(|| {
                     self.error(
@@ -3138,7 +3352,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.coerce_operand(value, expected, &parameter.pos)?
             };
             substitutions.insert(parameter.name.clone(), value.clone());
-            operands.push(value);
+            if foreign {
+                if let Type::Array(element) = &parameter.ty {
+                    let pos = args
+                        .get(index)
+                        .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone());
+                    let later_suspends = args
+                        .get(index + 1..)
+                        .is_some_and(|later| later.iter().any(suspends_expr));
+                    if later_suspends {
+                        delayed_array_snapshots.push((index, value, (**element).clone(), pos));
+                        operand_groups.push(Vec::new());
+                    } else {
+                        operand_groups
+                            .push(self.foreign_array_snapshot(value, element, pos)?.to_vec());
+                    }
+                    continue;
+                }
+            }
+            operand_groups.push(vec![value]);
         }
         if args.len() > params.len() {
             return Err(self.error(
@@ -3150,7 +3382,42 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ),
             ));
         }
-        Ok(operands)
+        for (index, value, element, pos) in delayed_array_snapshots {
+            operand_groups[index] = self.foreign_array_snapshot(value, &element, pos)?.to_vec();
+        }
+        Ok(operand_groups.into_iter().flatten().collect())
+    }
+
+    fn foreign_array_snapshot(
+        &mut self,
+        value: l::Operand,
+        element: &Type,
+        pos: Pos,
+    ) -> Result<[l::Operand; 2], LowerError> {
+        let data = self
+            .emit(
+                l::InstructionKind::ForeignArrayData,
+                vec![value.clone()],
+                Some(l::ValueType::Address(l::AddressType {
+                    pointee: element.clone(),
+                    array_base: None,
+                })),
+                false,
+                Vec::new(),
+                pos.clone(),
+            )?
+            .expect("foreign array data snapshot");
+        let count = self
+            .emit(
+                l::InstructionKind::Length,
+                vec![value],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                pos,
+            )?
+            .expect("foreign array count snapshot");
+        Ok([data, count])
     }
 
     fn lower_new(
@@ -3189,7 +3456,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .iter()
                 .map(CallParam::from)
                 .collect::<Vec<_>>();
-            constructor_args = self.lower_call_arguments(&params, args, Some(&receiver))?;
+            constructor_args = self.lower_call_arguments(&params, args, Some(&receiver), false)?;
         }
         for (index, field) in class.fields.iter().enumerate() {
             if let Some(initializer) = &field.init {
@@ -3213,7 +3480,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ));
             }
             for (index, (field, argument)) in class.fields.iter().zip(args).enumerate() {
-                let value = self.require_expr(argument)?;
+                let value = self.lower_argument_value(&field.ty, argument)?;
                 self.store_class_field(class_id, index, allocated.clone(), value, &field.pos)?;
             }
         }
@@ -3397,6 +3664,33 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(())
     }
 
+    fn lower_argument_value(
+        &mut self,
+        expected: &Type,
+        argument: &hir::Expr,
+    ) -> Result<l::Operand, LowerError> {
+        if !self.is_boundary_struct_pointer(expected) || !matches!(argument.ty, Type::Class(_)) {
+            return self.require_expr(argument);
+        }
+        if is_place_expr(argument) {
+            let place = self.prepare_place(argument)?;
+            return self.materialize_address(&place, &argument.pos);
+        }
+        let value = self.require_expr(argument)?;
+        self.emit(
+            l::InstructionKind::AddressOfValue,
+            vec![value],
+            Some(l::ValueType::Address(l::AddressType {
+                pointee: argument.ty.clone(),
+                array_base: None,
+            })),
+            false,
+            Vec::new(),
+            argument.pos.clone(),
+        )?
+        .ok_or_else(|| self.error(&argument.pos, "boundary pointer address produced no value"))
+    }
+
     fn lower_lambda(
         &mut self,
         params: &[hir::Param],
@@ -3517,7 +3811,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .iter()
                 .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
         );
-        operands.extend(self.lower_call_arguments(&params, args, None)?);
+        operands.extend(self.lower_call_arguments(&params, args, None, false)?);
         let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
         let target = l::CallTarget {
             kind,
@@ -3541,6 +3835,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     target,
                     operands: typed_operands,
                 },
+                pos: expr.pos.clone(),
                 successor,
                 resume_value,
                 arguments: Vec::new(),
@@ -3873,6 +4168,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .is_some_and(|class| class.is_value),
             _ => false,
         }
+    }
+
+    fn is_boundary_struct_pointer(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Nullable(inner)
+        if matches!(&**inner, Type::Class(class)
+            if self.lowering.hir.classes.get(class.0).is_some_and(|definition| {
+                definition.is_value && definition.is_boundary
+            })))
     }
 
     fn allocated_type(&self, class: ClassId, pos: &Pos) -> Result<l::ValueType, LowerError> {
@@ -4561,7 +4864,7 @@ fn replace_terminator_uses(
             }
             replace_operands(&mut default.arguments, original, replacement);
         }
-        l::Terminator::Return(value) => {
+        l::Terminator::Return { value, .. } => {
             if let Some(value) = value {
                 replace_operands(std::slice::from_mut(value), original, replacement);
             }
@@ -4616,7 +4919,7 @@ fn append_normal_edge_argument(
             }
             append(default);
         }
-        l::Terminator::Return(_) | l::Terminator::Trap(_) | l::Terminator::Suspend { .. } => {}
+        l::Terminator::Return { .. } | l::Terminator::Trap(_) | l::Terminator::Suspend { .. } => {}
     }
 }
 
@@ -4901,11 +5204,25 @@ fn verify_instruction_contract(
             }
         }
         l::InstructionKind::Coerce => {
-            if operand_types.len() != 1
-                || result_type.is_none()
-                || !matches!(operand_types[0], l::ValueType::Data(_))
-                || !matches!(result_type, Some(l::ValueType::Data(_)))
-            {
+            let data_coercion = matches!(
+                (operand_types.first(), result_type.as_ref()),
+                (Some(l::ValueType::Data(_)), Some(l::ValueType::Data(_)))
+            );
+            let boundary_address_coercion = matches!(
+                (operand_types.first(), result_type.as_ref()),
+                (
+                    Some(l::ValueType::Address(l::AddressType {
+                        pointee: Type::Class(source),
+                        ..
+                    })),
+                    Some(l::ValueType::Data(Type::Nullable(target)))
+                ) if matches!(&**target, Type::Class(target)
+                    if source == target
+                        && module.classes.get(target.0).is_some_and(|class| {
+                            class.is_value && class.is_boundary
+                        }))
+            );
+            if operand_types.len() != 1 || (!data_coercion && !boundary_address_coercion) {
                 bad("implicit coercion signature is invalid", errors);
             }
         }
@@ -5215,6 +5532,18 @@ fn verify_instruction_contract(
                 bad("length signature is invalid", errors);
             }
         }
+        l::InstructionKind::ForeignArrayData => {
+            let valid = match (operand_types.as_slice(), result_type.as_ref()) {
+                (
+                    [l::ValueType::Data(Type::Array(element))],
+                    Some(l::ValueType::Address(address)),
+                ) => address.pointee == **element && address.array_base.is_none(),
+                _ => false,
+            };
+            if !valid {
+                bad("foreign array data signature is invalid", errors);
+            }
+        }
         l::InstructionKind::ArrayLiteral => {
             let valid = match result_type.as_ref() {
                 Some(l::ValueType::Data(Type::Array(element))) => operand_types
@@ -5466,7 +5795,16 @@ fn declared_call_signature(
                     function
                         .parameters
                         .iter()
-                        .map(|parameter| l::ValueType::Data(parameter.ty.clone()))
+                        .flat_map(|parameter| match &parameter.ty {
+                            Type::Array(element) => vec![
+                                l::ValueType::Address(l::AddressType {
+                                    pointee: (**element).clone(),
+                                    array_base: None,
+                                }),
+                                l::ValueType::Data(Type::I32),
+                            ],
+                            ty => vec![l::ValueType::Data(ty.clone())],
+                        })
                         .collect(),
                     (function.return_type != Type::Void)
                         .then(|| l::ValueType::Data(function.return_type.clone())),
@@ -5532,8 +5870,8 @@ fn verify_terminator_types(
             }
             verify_edge(function, block, default, false, errors);
         }
-        l::Terminator::Return(None) if function.is_generator => {}
-        l::Terminator::Return(value) => match (value, &function.return_type) {
+        l::Terminator::Return { value: None, .. } if function.is_generator => {}
+        l::Terminator::Return { value, .. } => match (value, &function.return_type) {
             (None, Type::Void) => {}
             (Some(value), ty) if *ty != Type::Void => verify_operand_type(
                 function,
@@ -5902,7 +6240,7 @@ fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
             .chain(std::iter::once(default.block))
             .collect(),
         l::Terminator::Suspend { successor, .. } => vec![*successor],
-        l::Terminator::Return(_) | l::Terminator::Trap(_) => Vec::new(),
+        l::Terminator::Return { .. } | l::Terminator::Trap(_) => Vec::new(),
     }
 }
 
@@ -5935,7 +6273,7 @@ fn terminator_values(terminator: &l::Terminator) -> Vec<l::ValueId> {
             }
             default.arguments.iter().for_each(&mut push_operand);
         }
-        l::Terminator::Return(value) => {
+        l::Terminator::Return { value, .. } => {
             if let Some(value) = value {
                 push_operand(value);
             }
@@ -6131,12 +6469,17 @@ mod verifier_tests {
                         pos: pos(),
                     },
                 ],
-                terminator: l::Terminator::Return(None),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: pos(),
+                },
             }],
             entry: l::BlockId(0),
             pos: pos(),
         };
         l::Module {
+            entry: Some(l::FunctionId(0)),
+            async_roots: Vec::new(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: Vec::new(),
@@ -6177,7 +6520,10 @@ mod verifier_tests {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: l::Terminator::Return(Some(l::Operand::Value(l::ValueId(0)))),
+                terminator: l::Terminator::Return {
+                    value: Some(l::Operand::Value(l::ValueId(0))),
+                    pos: pos(),
+                },
             }],
             entry: l::BlockId(0),
             pos: pos(),
@@ -6245,12 +6591,17 @@ mod verifier_tests {
                         pos: pos(),
                     },
                 ],
-                terminator: l::Terminator::Return(None),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: pos(),
+                },
             }],
             entry: l::BlockId(0),
             pos: pos(),
         };
         l::Module {
+            entry: Some(l::FunctionId(0)),
+            async_roots: Vec::new(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: Vec::new(),
@@ -6331,12 +6682,17 @@ mod verifier_tests {
                     traps: Vec::new(),
                     pos: pos(),
                 }],
-                terminator: l::Terminator::Return(None),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: pos(),
+                },
             }],
             entry: l::BlockId(0),
             pos: pos(),
         };
         l::Module {
+            entry: Some(l::FunctionId(0)),
+            async_roots: Vec::new(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: Vec::new(),
@@ -6352,6 +6708,33 @@ mod verifier_tests {
     #[test]
     fn valid_address_graph_passes() {
         verify_module(&base_module()).expect("valid graph");
+    }
+
+    #[test]
+    fn missing_module_entry_is_rejected() {
+        let mut module = base_module();
+        module.entry = Some(l::FunctionId(99));
+        let errors = verify_module(&module).expect_err("missing module entry must fail");
+        assert!(errors.iter().any(|error| error
+            .message
+            .contains("module entry function 99 is missing")));
+    }
+
+    #[test]
+    fn entryless_module_is_valid() {
+        let mut module = base_module();
+        module.entry = None;
+        verify_module(&module).expect("host-callable entryless module is valid");
+    }
+
+    #[test]
+    fn invalid_async_root_is_rejected() {
+        let mut module = base_module();
+        module.async_roots.push(l::FunctionId(0));
+        let errors = verify_module(&module).expect_err("invalid async root must fail");
+        assert!(errors.iter().any(|error| error
+            .message
+            .contains("is not an exported zero-parameter non-entry async function")));
     }
 
     #[test]
@@ -6442,6 +6825,7 @@ mod verifier_tests {
                 instructions: Vec::new(),
                 terminator: l::Terminator::Suspend {
                     kind: l::SuspendKind::Async,
+                    pos: pos(),
                     successor: l::BlockId(1),
                     resume_value: None,
                     arguments: Vec::new(),
@@ -6454,7 +6838,10 @@ mod verifier_tests {
                 source_name: Some("resume".to_string()),
                 parameters: vec![l::ValueId(1)],
                 instructions: Vec::new(),
-                terminator: l::Terminator::Return(None),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: pos(),
+                },
             },
         ];
         let errors = verify_module(&module).expect_err("missing suspend argument must fail");
@@ -6467,6 +6854,39 @@ mod verifier_tests {
     fn call_disagreeing_with_declared_callee_is_rejected() {
         let module = wrong_declared_call_module(l::CallTargetKind::Function(l::FunctionId(0)));
         let errors = verify_module(&module).expect_err("declared call mismatch must fail");
+        assert!(errors.iter().any(|error| error
+            .message
+            .contains("call signature disagrees with the target declaration")));
+    }
+
+    #[test]
+    fn foreign_array_call_without_snapshot_operands_is_rejected() {
+        let array = Type::Array(Box::new(Type::I32));
+        let mut module = hand_built_call_module(
+            l::CallTargetKind::Foreign(l::ForeignFunctionId(0)),
+            vec![l::ValueType::Data(array.clone())],
+            None,
+            vec![l::ValueType::Data(array.clone())],
+            None,
+        );
+        module.foreign_functions.push(l::ForeignFunction {
+            id: l::ForeignFunctionId(0),
+            source_name: "consume".to_string(),
+            parameters: vec![l::ForeignParameter {
+                source_name: "values".to_string(),
+                ty: array,
+                foreign_provenance: Some(l::ForeignTypeProvenance::Descriptor {
+                    aggregate: "Values".to_string(),
+                    element: "int32_t".to_string(),
+                    element_const: true,
+                }),
+                pos: pos(),
+            }],
+            return_type: Type::Void,
+            include: "probe.h".to_string(),
+            pos: pos(),
+        });
+        let errors = verify_module(&module).expect_err("missing snapshot operands must fail");
         assert!(errors.iter().any(|error| error
             .message
             .contains("call signature disagrees with the target declaration")));

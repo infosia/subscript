@@ -28,6 +28,10 @@ id_type!(ValueId, "Function-local SSA value id.");
 /// One completely lowered checked module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
+    /// Executable program entry, absent for host-callable entryless modules.
+    pub entry: Option<FunctionId>,
+    /// Exported zero-parameter async functions that the standard runner starts.
+    pub async_roots: Vec<FunctionId>,
     /// Class declarations in [`ClassId`] order.
     pub classes: Vec<Class>,
     /// Numeric enum declarations in [`EnumId`] order.
@@ -455,6 +459,8 @@ pub enum InstructionKind {
     LoadField(FieldRef),
     /// Read array/fixed-array/string length.
     Length,
+    /// Snapshot a dynamic array's current data pointer for a foreign call.
+    ForeignArrayData,
     /// Construct a non-spread array literal.
     ArrayLiteral,
     /// Construct an array literal with per-operand spread modes.
@@ -736,13 +742,20 @@ pub enum Terminator {
         default: BlockTarget,
     },
     /// Function return.
-    Return(Option<Operand>),
+    Return {
+        /// Optional returned value.
+        value: Option<Operand>,
+        /// Source position of the return operation.
+        pos: Pos,
+    },
     /// Unconditional semantic trap.
     Trap(Trap),
     /// Coroutine suspension; resumption continues at a named block id.
     Suspend {
         /// Suspension operation.
         kind: SuspendKind,
+        /// Source position of the suspension operation.
+        pos: Pos,
         /// Resume successor.
         successor: BlockId,
         /// Optional value defined as the successor's first block parameter.
@@ -755,6 +768,18 @@ pub enum Terminator {
         /// Ordered trap sites owned by starting/resuming the operation.
         traps: Vec<Trap>,
     },
+}
+
+impl Terminator {
+    /// Returns the source position for a terminator that can own a trap site.
+    #[must_use]
+    pub fn trap_site_position(&self) -> Option<&Pos> {
+        match self {
+            Self::Return { pos, .. } | Self::Suspend { pos, .. } => Some(pos),
+            Self::Trap(trap) => Some(&trap.pos),
+            Self::Branch(_) | Self::ConditionalBranch { .. } | Self::Switch { .. } => None,
+        }
+    }
 }
 
 /// A branch edge and its block-parameter arguments.

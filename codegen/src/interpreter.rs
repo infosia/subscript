@@ -283,19 +283,23 @@ impl<'m> Interpreter<'m> {
         if let Some(initializer) = self.module.initializer {
             let _ = self.call_function(initializer, Vec::new())?;
         }
-        let main = self
+        let entry = self
             .module
-            .functions
-            .iter()
-            .find(|function| function.exported && function.source_name == "main")
-            .ok_or_else(|| self.invalid(None, "module has no exported `main`"))?;
-        if !main.parameters.is_empty() {
+            .entry
+            .ok_or_else(|| InterpretError::InvalidLir {
+                message: "module has no executable entry".to_string(),
+                pos: None,
+            })?;
+        let entry = self.function(entry)?;
+        if !entry.parameters.is_empty() {
             return Err(InterpretError::Unsupported {
                 reason: "exported main requires host-supplied parameters".to_string(),
             });
         }
+        let entry_id = entry.id;
+        let entry_pos = entry.pos.clone();
         let mut pending = Vec::new();
-        let result = self.call_function(main.id, Vec::new())?;
+        let result = self.call_function(entry_id, Vec::new())?;
         if let Value::Coroutine(coroutine) = result {
             let mut root = CoroutineRoot {
                 stack: vec![coroutine],
@@ -304,19 +308,7 @@ impl<'m> Interpreter<'m> {
                 pending.push(root);
             }
         }
-        let async_exports = self
-            .module
-            .functions
-            .iter()
-            .filter(|function| {
-                function.exported
-                    && function.is_async
-                    && function.id != main.id
-                    && function.parameters.is_empty()
-            })
-            .map(|function| function.id)
-            .collect::<Vec<_>>();
-        for function in async_exports {
+        for function in self.module.async_roots.clone() {
             let Value::Coroutine(coroutine) = self.call_function(function, Vec::new())? else {
                 return Err(self.invalid(None, "async export did not create a coroutine"));
             };
@@ -336,7 +328,7 @@ impl<'m> Interpreter<'m> {
             }
             pending = remaining;
         }
-        self.check_runtime(&main.pos)?;
+        self.check_runtime(&entry_pos)?;
         Ok(self.context.take_stdout())
     }
 
@@ -583,7 +575,7 @@ impl<'m> Interpreter<'m> {
                     }
                     self.take_edge(frame, function, selected)?;
                 }
-                l::Terminator::Return(value) => {
+                l::Terminator::Return { value, .. } => {
                     return Ok(Flow::Returned(match value {
                         Some(value) => self.operand(frame, value, &function.pos)?,
                         None => Value::Void,
@@ -592,13 +584,14 @@ impl<'m> Interpreter<'m> {
                 l::Terminator::Trap(trap) => return Err(self.trap_error(trap)),
                 l::Terminator::Suspend {
                     kind,
+                    pos,
                     successor,
                     resume_value,
                     arguments,
                     invalidates,
                     traps: _,
                 } => {
-                    self.invalidate(invalidates, &function.pos, || format!("Suspend({kind:?})"));
+                    self.invalidate(invalidates, pos, || format!("Suspend({kind:?})"));
                     let destination =
                         function.blocks.get(successor.0 as usize).ok_or_else(|| {
                             self.invalid(
@@ -946,6 +939,19 @@ impl<'m> Interpreter<'m> {
                     self.instruction_operand_type(function, instruction, 0),
                 )? as i64,
             )),
+            l::InstructionKind::ForeignArrayData => {
+                let handle = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                // SAFETY: verified LIR supplies a live dynamic-array handle.
+                let data = unsafe { ffi::subscript_rt_array_data(&*self.context, handle) };
+                Some(Value::Address(Address {
+                    target: AddressTarget::Pointer(data.cast_mut()),
+                    pointee: self.address_pointee(result_ty, instruction)?,
+                    poison: Rc::new(RefCell::new(None)),
+                }))
+            }
             l::InstructionKind::ArrayLiteral => {
                 let ty = self.data_result_type(result_ty, instruction)?;
                 Some(self.array_literal(ty, &operands, &instruction.pos)?)
@@ -4926,6 +4932,8 @@ mod tests {
 
     fn empty_module(functions: Vec<l::Function>) -> l::Module {
         l::Module {
+            entry: Some(l::FunctionId(0)),
+            async_roots: Vec::new(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: Vec::new(),
@@ -4989,10 +4997,13 @@ mod tests {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: l::Terminator::Return(Some(l::Operand::Constant(l::Constant {
-                    ty: Type::I32,
-                    kind: l::ConstantKind::Integer(9),
-                }))),
+                terminator: l::Terminator::Return {
+                    value: Some(l::Operand::Constant(l::Constant {
+                        ty: Type::I32,
+                        kind: l::ConstantKind::Integer(9),
+                    })),
+                    pos: pos.clone(),
+                },
             }],
             entry: l::BlockId(0),
             pos: pos.clone(),
@@ -5055,6 +5066,7 @@ mod tests {
                             },
                             operands: Vec::new(),
                         },
+                        pos: pos.clone(),
                         successor: l::BlockId(1),
                         resume_value: Some(l::ValueId(0)),
                         arguments: vec![l::Operand::Value(l::ValueId(1))],
@@ -5077,7 +5089,10 @@ mod tests {
                         traps: Vec::new(),
                         pos: pos.clone(),
                     }],
-                    terminator: l::Terminator::Return(Some(l::Operand::Value(l::ValueId(3)))),
+                    terminator: l::Terminator::Return {
+                        value: Some(l::Operand::Value(l::ValueId(3))),
+                        pos: pos.clone(),
+                    },
                 },
             ],
             entry: l::BlockId(0),

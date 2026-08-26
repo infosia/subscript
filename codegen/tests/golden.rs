@@ -414,6 +414,26 @@ fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
 }
 
 #[test]
+fn embedded_chain_header_keeps_its_boundary_address() {
+    let accept = corpus::corpus_accept();
+    let id = "a89-interop-chain-payload";
+    let sources = corpus::entry_sources(&accept, id);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(jit, golden, "{id}: embedded-header payload is wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
 fn string_field_pointer_write_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a97-interop-string-field-write";
@@ -687,6 +707,31 @@ fn conditional_arm_narrowing_matches_both_tiers_and_golden() {
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
     assert_eq!(jit, golden, "{id}: conditional-arm observations are wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
+fn suspension_state_matches_both_tiers_and_golden() {
+    let accept = corpus::corpus_accept();
+    let id = "a149-suspension-state";
+    let sources = corpus::entry_sources(&accept, id);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries).unwrap_or_else(|error| {
+        if let RunError::AbnormalTermination(termination) = &error {
+            eprintln!(
+                "{id}: dev-JIT output before termination:\n{}",
+                String::from_utf8_lossy(&termination.stdout)
+            );
+        }
+        panic!("{id}: dev-JIT run failed: {error}")
+    });
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    assert_eq!(jit, golden, "{id}: dev-JIT suspension output is wrong");
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 

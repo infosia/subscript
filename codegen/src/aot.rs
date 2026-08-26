@@ -2211,9 +2211,13 @@ int main(void) {
             .collect();
         ship.sort_unstable();
 
+        // LIR ids place class members before free functions, so the
+        // constructor's lifetime-check position occupies dev slot 0 before
+        // `main` contributes its allocation positions. The source-resolution
+        // assertion below pins the semantic sites behind these local ids.
         assert_eq!(
             dev,
-            vec![(0, 0, 4), (0xFFFF_FF02, 1, 32), (0xFFFF_FF03, 4, 16),],
+            vec![(0, 1, 4), (0xFFFF_FF02, 2, 32), (0xFFFF_FF03, 5, 16),],
             "dev attribution triples changed"
         );
         assert_eq!(

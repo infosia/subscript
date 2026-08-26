@@ -166,6 +166,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         ("subscript_rt_delete", ffi::subscript_rt_delete as *const u8),
         ("subscript_rt_trap", ffi::subscript_rt_trap as *const u8),
         (
+            "subscript_rt_trap_index_out_of_bounds",
+            ffi::subscript_rt_trap_index_out_of_bounds as *const u8,
+        ),
+        (
             "subscript_rt_trap_wire_enum",
             ffi::subscript_rt_trap_wire_enum as *const u8,
         ),

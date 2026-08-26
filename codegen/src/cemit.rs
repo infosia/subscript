@@ -264,6 +264,7 @@ enum TrapOperand {
     Pending,
     Value(String),
     Condition(String),
+    Index { index: String, length: u32 },
     DynamicIndex { handle: String, index: String },
     WireValue { wire: String, valid: String },
 }
@@ -1458,13 +1459,12 @@ impl<'m> Emitter<'m> {
             hir::TrapSite::IndexRead { pos } | hir::TrapSite::IndexWrite { pos } => {
                 let pos_id = self.pos_id(pos);
                 match operand {
-                    TrapOperand::Condition(condition) => {
-                        let _ = writeln!(out, "{ind}if (!({condition})) {{");
+                    TrapOperand::Index { index, length } => {
+                        let _ = writeln!(out, "{ind}if ((uint32_t){index} >= {length}u) {{");
                         let _ = writeln!(
                             out,
-                            "{}subscript_rt_trap(ctx, {}u, {pos_id}u);",
+                            "{}subscript_rt_trap_index_out_of_bounds(ctx, {index}, {length}u, {pos_id}u);",
                             indent(depth + 1),
-                            TrapKind::IndexOutOfBounds as u32
                         );
                         self.emit_trap_return(out, depth + 1)?;
                         let _ = writeln!(out, "{ind}}}");
@@ -3458,7 +3458,10 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "{ind}int32_t {i} = {index};");
         self.emit_trap_site(
             site,
-            TrapOperand::Condition(format!("(uint32_t){i} < {len}u")),
+            TrapOperand::Index {
+                index: i.clone(),
+                length: len,
+            },
             out,
             depth,
         )?;
@@ -8505,6 +8508,7 @@ static inline SubAsyncResume subscript_coroutine_resume(const void* frame) {
 extern void subscript_rt_async_kick(void* ctx, void* frame, SubAsyncResume resume);
 extern void subscript_rt_delete(void* ctx, void* payload, uint32_t pos_id);
 extern void subscript_rt_trap(void* ctx, uint32_t kind, uint32_t pos_id);
+extern void subscript_rt_trap_index_out_of_bounds(void* ctx, int32_t index, uint32_t length, uint32_t pos_id);
 extern void subscript_rt_trap_wire_enum(void* ctx, const unsigned char* alias, uint64_t alias_len, int32_t wire_value, uint32_t pos_id);
 extern void subscript_rt_root_add(void* ctx, void* base, uint64_t words);
 extern void subscript_rt_shadow_push(void* ctx, void* base, uint64_t slots);

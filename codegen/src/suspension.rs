@@ -620,7 +620,7 @@ pub(crate) fn spill_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{emit_c, run_jit};
+    use crate::emit_c;
     use subscript_compiler::{check_program, SourceFile};
 
     fn main_plan(source: &str) -> SpillPlan {
@@ -662,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn every_statement_form_requests_the_planned_spill_kinds_on_both_tiers() {
+    fn every_statement_form_requests_the_planned_spill_kinds_on_the_ship_tier() {
         let source = SourceFile::new(
             "order.ts",
             "class Cell { n: i32 = 0; }\n\
@@ -750,11 +750,9 @@ mod tests {
         let (ship_result, ship_requests) = capture_spill_requests(|| emit_c(&module));
         ship_result.expect("ship lowering");
         assert_eq!(ship_requests, planned, "ship spill request order");
-
-        let (dev_result, dev_requests) =
-            capture_spill_requests(|| run_jit(std::slice::from_ref(&source)));
-        dev_result.expect("dev lowering");
-        assert_eq!(dev_requests, planned, "dev spill request order");
+        // The dev half of this test retires with `suspension.rs` at §68.4
+        // step 4: dev now reads LIR and no longer requests planner spill slots
+        // from this module.
     }
 
     #[test]

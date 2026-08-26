@@ -48,7 +48,7 @@ use cranelift_codegen::settings::Configurable;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use subscript_compiler::types::MAX_AGGREGATE_BYTES;
-use subscript_compiler::{hir, Pos, StringAliasId, Type};
+use subscript_compiler::{hir, lir, Pos, StringAliasId, Type};
 
 use crate::layout::{Layouts, Repr};
 
@@ -57,24 +57,32 @@ pub(crate) use func::define_function;
 /// Identity of a lowered function.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum FnKey {
-    /// Free function by HIR name (generator creators included).
+    /// Free function by HIR name (legacy module orchestration only).
     Free(String),
-    /// Generator resume function, by generator name.
+    /// Generator resume function by source name (legacy module orchestration only).
     Resume(String),
     /// Host ABI wrapper for an exported async function.
     AsyncExport(String),
     /// Reload-only adapter for one parameterized host export.
     ReloadExport(String),
+    /// Constructor of a class.
+    Ctor(usize),
+    /// Method of a class.
+    Method(usize, String),
+    /// Async method resume function.
+    MethodResume(usize, String),
     /// Generated standard-runner helper that kicks non-main async exports.
     AsyncRunner,
-    /// Constructor of class `usize`.
-    Ctor(usize),
-    /// Method `String` of class `usize`.
-    Method(usize, String),
-    /// Resume function for an async method, by class and method name.
-    MethodResume(usize, String),
     /// Env-taking wrapper for a named function used as a value.
     Wrapper(String),
+    /// Declared LIR function (coroutine creators included).
+    LirFunction(lir::FunctionId),
+    /// LIR coroutine resume function.
+    LirResume(lir::FunctionId),
+    /// Host ABI wrapper for an exported LIR async function.
+    LirAsyncExport(lir::FunctionId),
+    /// Env-taking wrapper for a direct LIR function value.
+    LirWrapper(lir::FunctionId),
     /// The synthesized global-initializer entry.
     Init,
     /// Generated initializer adapter used for fresh worker Contexts.
@@ -96,8 +104,8 @@ pub(crate) struct RtFns {
     pub boundary_scratch_release: FuncId,
     pub delete: FuncId,
     pub trap: FuncId,
+    pub trap_index_out_of_bounds: FuncId,
     pub trap_wire_enum: FuncId,
-    pub root_add: FuncId,
     pub shadow_push: FuncId,
     pub shadow_pop: FuncId,
     pub async_kick: FuncId,
@@ -123,12 +131,10 @@ pub(crate) struct RtFns {
     pub array_len: FuncId,
     pub array_push: FuncId,
     pub array_pop: FuncId,
-    pub array_ptr: FuncId,
     pub str_data: FuncId,
     pub array_data: FuncId,
     pub assoc_iter_begin: FuncId,
     pub assoc_iter_copy: FuncId,
-    pub assoc_iter_end: FuncId,
     pub str_iter_code_point: FuncId,
     pub array_spread_array: FuncId,
     pub array_spread_fixed: FuncId,
@@ -289,6 +295,7 @@ pub(crate) enum GlobalSlot {
 pub(crate) struct ModLower<'a, M: Module> {
     pub module: &'a mut M,
     pub hir: &'a hir::Module,
+    pub lir: &'a lir::Module,
     pub layouts: Layouts,
     pub rt: RtFns,
     pub opts: LowerOptions,
@@ -370,6 +377,7 @@ pub(super) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u
 /// boundary arguments are target-neutral and are **not** gated by this; a
 /// `(ptr,len)` / string-view descriptor is a 16-byte by-value aggregate
 /// whose C ABI is target-specific and is handled on this path.
+#[cfg(test)]
 pub(crate) fn boundary_struct_by_value_supported(triple: &target_lexicon::Triple) -> bool {
     use target_lexicon::Architecture;
     matches!(triple.architecture, Architecture::Aarch64(_))
@@ -528,32 +536,6 @@ impl<'a, M: Module> ModLower<'a, M> {
         Ok(id)
     }
 
-    /// The foreign (C-ABI) function named `name` (P5.2b).
-    pub fn foreign_fn(&self, name: &str) -> Result<&'a hir::ForeignFn, String> {
-        self.hir
-            .foreign_fns
-            .iter()
-            .find(|f| f.name == name)
-            .ok_or_else(|| internal(format!("unknown foreign function `{name}`")))
-    }
-
-    /// The HIR function named `name`.
-    pub fn hir_fn(&self, name: &str) -> Result<&'a hir::Function, String> {
-        self.fn_index
-            .get(name)
-            .map(|&i| &self.hir.functions[i])
-            .ok_or_else(|| internal(format!("unknown function `{name}`")))
-    }
-
-    /// The HIR method `name` of class `cid`.
-    pub fn hir_method(&self, cid: usize, name: &str) -> Result<&'a hir::Function, String> {
-        self.hir
-            .classes
-            .get(cid)
-            .and_then(|c| c.methods.iter().find(|m| m.name == name))
-            .ok_or_else(|| internal(format!("unknown method `{name}` on class {cid}")))
-    }
-
     /// FuncId for a key.
     pub fn func_id(&self, key: &FnKey) -> Result<FuncId, String> {
         self.fns
@@ -585,6 +567,16 @@ impl<'a, M: Module> ModLower<'a, M> {
                 *entry = Some(id);
             }
         }
+    }
+
+    /// Binds an additional identity to an already declared function and slot.
+    pub fn alias_function(&mut self, alias: FnKey, target: &FnKey) -> Result<(), String> {
+        let id = self.func_id(target)?;
+        self.fns.insert(alias.clone(), id);
+        if let Some(slot) = self.fn_slot.get(target).copied() {
+            self.fn_slot.insert(alias, slot);
+        }
+        Ok(())
     }
 
     /// The declared signature of a lowered function.
@@ -882,12 +874,16 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         boundary_scratch_release: mk("subscript_rt_boundary_scratch_release", &[I64, I64], None)?,
         delete: mk("subscript_rt_delete", &[I64, I64, I32], None)?,
         trap: mk("subscript_rt_trap", &[I64, I32, I32], None)?,
+        trap_index_out_of_bounds: mk(
+            "subscript_rt_trap_index_out_of_bounds",
+            &[I64, I32, I32, I32],
+            None,
+        )?,
         trap_wire_enum: mk(
             "subscript_rt_trap_wire_enum",
             &[I64, I64, I64, I32, I32],
             None,
         )?,
-        root_add: mk("subscript_rt_root_add", &[I64, I64, I64], None)?,
         shadow_push: mk("subscript_rt_shadow_push", &[I64, I64, I64], None)?,
         shadow_pop: mk("subscript_rt_shadow_pop", &[I64], None)?,
         async_kick: mk("subscript_rt_async_kick", &[I64, I64, I64], None)?,
@@ -923,7 +919,6 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         array_len: mk("subscript_rt_array_len", &[I64, I64], Some(I32))?,
         array_push: mk("subscript_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,
         array_pop: mk("subscript_rt_array_pop", &[I64, I64, I64, I32], None)?,
-        array_ptr: mk("subscript_rt_array_ptr", &[I64, I64, I32, I32], Some(I64))?,
         str_data: mk("subscript_rt_str_data", &[I64, I64], Some(I64))?,
         array_data: mk("subscript_rt_array_data", &[I64, I64], Some(I64))?,
         assoc_iter_begin: mk("subscript_rt_assoc_iter_begin", &[I64, I64, I32], Some(I64))?,
@@ -932,7 +927,6 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64, I32, I64, I32],
             Some(I32),
         )?,
-        assoc_iter_end: mk("subscript_rt_assoc_iter_end", &[I64, I64], None)?,
         str_iter_code_point: mk(
             "subscript_rt_str_iter_code_point",
             &[I64, I64, I32, I64, I32],
@@ -1238,6 +1232,18 @@ pub(crate) fn lower_module_with<M: Module>(
             "only 64-bit targets are supported: the runtime ABI assumes 8-byte handles",
         ));
     }
+    let lirm = crate::lir::lower_module(hirm)
+        .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
+    crate::lir::verify_module(&lirm).map_err(|errors| {
+        internal(format!(
+            "LIR verification failed:\n{}",
+            errors
+                .into_iter()
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        ))
+    })?;
     let call_conv = module.isa().default_call_conv();
     let rt = declare_rt(module, call_conv)?;
     let layouts = Layouts::build(hirm)?;
@@ -1246,6 +1252,7 @@ pub(crate) fn lower_module_with<M: Module>(
     let mut ml = ModLower {
         module,
         hir: hirm,
+        lir: &lirm,
         layouts,
         rt,
         opts,
@@ -1466,38 +1473,125 @@ pub(crate) fn lower_module_with<M: Module>(
         )?;
     }
 
-    // Define bodies.
-    for f in &hirm.functions {
-        if f.is_generator {
-            func::define_generator(&mut ml, f)?;
-        } else if f.is_async {
-            func::define_async(&mut ml, f)?;
-            if f.exported {
-                func::define_async_export(&mut ml, f)?;
+    // Bind every executable LIR id to its already declared target entity.
+    // Lambdas have no HIR declaration entity, so declare them here.
+    for function in &lirm.functions {
+        let target = match &function.kind {
+            lir::FunctionKind::Free => FnKey::Free(function.source_name.clone()),
+            lir::FunctionKind::Constructor { class, .. } => FnKey::Ctor(class.0),
+            lir::FunctionKind::Method { class, .. } => {
+                FnKey::Method(class.0, function.source_name.clone())
             }
-        } else {
-            define_function(&mut ml, FnKey::Free(f.name.clone()), f, None)?;
-            if opts.reload && is_host_callable_export(hirm, f) && !f.params.is_empty() {
-                define_reload_entry_adapter(&mut ml, f)?;
+            lir::FunctionKind::ModuleInitializer => FnKey::Init,
+            lir::FunctionKind::Lambda => {
+                let parameters = function
+                    .parameters
+                    .iter()
+                    .filter(|parameter| parameter.kind == lir::ParameterKind::Explicit)
+                    .map(|parameter| {
+                        function
+                            .values
+                            .get(parameter.value.0 as usize)
+                            .and_then(|value| match &value.ty {
+                                lir::ValueType::Data(ty) => Some(ty.clone()),
+                                _ => None,
+                            })
+                            .ok_or_else(|| {
+                                internal(format!(
+                                    "lambda parameter value {} is not data",
+                                    parameter.value.0
+                                ))
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let signature = ml.make_sig(&parameters, &function.return_type, true, false)?;
+                decl(
+                    &mut ml,
+                    FnKey::LirFunction(function.id),
+                    format!("subscript_lir_f{}", function.id.0),
+                    &signature,
+                    false,
+                )?;
+                continue;
+            }
+        };
+        ml.alias_function(FnKey::LirFunction(function.id), &target)?;
+        if !function.is_generator
+            && !function.is_async
+            && matches!(function.kind, lir::FunctionKind::Free)
+        {
+            let parameters = function
+                .parameters
+                .iter()
+                .filter(|parameter| parameter.kind == lir::ParameterKind::Explicit)
+                .map(|parameter| {
+                    function
+                        .values
+                        .get(parameter.value.0 as usize)
+                        .and_then(|value| match &value.ty {
+                            lir::ValueType::Data(ty) => Some(ty.clone()),
+                            _ => None,
+                        })
+                        .ok_or_else(|| {
+                            internal(format!(
+                                "wrapper parameter value {} is not data",
+                                parameter.value.0
+                            ))
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let signature = ml.make_sig(&parameters, &function.return_type, true, false)?;
+            decl(
+                &mut ml,
+                FnKey::LirWrapper(function.id),
+                format!("subscript_lir_wrap{}", function.id.0),
+                &signature,
+                false,
+            )?;
+        }
+        if function.is_generator || function.is_async {
+            let resume = match &function.kind {
+                lir::FunctionKind::Method { class, .. } => {
+                    FnKey::MethodResume(class.0, function.source_name.clone())
+                }
+                _ => FnKey::Resume(function.source_name.clone()),
+            };
+            ml.alias_function(FnKey::LirResume(function.id), &resume)?;
+            if function.is_async && function.exported {
+                ml.alias_function(
+                    FnKey::LirAsyncExport(function.id),
+                    &FnKey::AsyncExport(function.source_name.clone()),
+                )?;
             }
         }
     }
-    for (ci, c) in hirm.classes.iter().enumerate() {
-        if let Some(ctor) = &c.ctor {
-            define_function(&mut ml, FnKey::Ctor(ci), ctor, Some(ci))?;
+
+    // Define bodies.
+    for function in &lirm.functions {
+        if matches!(function.kind, lir::FunctionKind::ModuleInitializer) {
+            continue;
         }
-        for m in &c.methods {
-            if m.is_async {
-                func::define_async_method(&mut ml, m, ci)?;
-            } else {
-                define_function(&mut ml, FnKey::Method(ci, m.name.clone()), m, Some(ci))?;
+        if function.is_generator || function.is_async {
+            func::define_coroutine(&mut ml, function)?;
+            if function.is_async && function.exported {
+                func::define_async_export(&mut ml, function)?;
             }
+        } else {
+            define_function(&mut ml, function)?;
+            if matches!(function.kind, lir::FunctionKind::Free) {
+                func::define_wrapper(&mut ml, function)?;
+            }
+        }
+    }
+    for function in &hirm.functions {
+        if opts.reload && is_host_callable_export(hirm, function) && !function.params.is_empty() {
+            define_reload_entry_adapter(&mut ml, function)?;
         }
     }
     func::define_init(&mut ml)?;
-    if !hirm.worker_entries.is_empty() {
+    if !lirm.worker_entries.is_empty() {
         func::define_worker_init(&mut ml)?;
-        for (index, entry) in hirm.worker_entries.iter().enumerate() {
+        for (index, entry) in lirm.worker_entries.iter().enumerate() {
             func::define_worker_entry(&mut ml, index, entry)?;
         }
     }

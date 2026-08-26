@@ -219,6 +219,27 @@ pub unsafe extern "C" fn subscript_rt_trap(ctx: *mut Context, kind: u32, pos_id:
     ctx.trap(kind, message, pos_id);
 }
 
+/// Records an emitted array-bounds trap with its materialized index and
+/// length, preserving the runtime's canonical diagnostic across tiers.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_trap_index_out_of_bounds(
+    ctx: *mut Context,
+    index: i32,
+    length: u32,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.trap(
+        TrapKind::IndexOutOfBounds,
+        format!("index {index} out of bounds for array length {length}"),
+        pos_id,
+    );
+}
+
 /// Records an R23 boundary trap for an integer outside a `CEnum` mapping.
 ///
 /// # Safety
