@@ -98,8 +98,23 @@ Cranelift-AOT ship tier, which is retained only as a cross-check
 separate lowerings, so their agreement is established **by verification** —
 the standing gate is dev-JIT ≡ ship-C-AOT ≡ golden, byte-exact, on every
 corpus entry. The oracle is the committed golden corpus outputs plus the
-`tsc`-clean gate. No external implementation serves as oracle, baseline,
-or cross-check.
+`tsc`-clean gate. **No external implementation serves as oracle or
+baseline.**
+
+*(Owner, 2026-08-26.)* An external implementation runs as a
+**divergence detector**, never as an oracle. `tsc` gates acceptance:
+every accept entry type-checks, and every reject entry's header states
+what `tsc` does, measured. `node` runs the accept entries that carry a
+`js-comparable` header. A disagreement with the golden is one of two
+things: a defect in this compiler, or a divergence that
+`specs/blocks/collisions.md` must name. **A disagreement never corrects
+a golden.** An entry that declares itself not comparable cites a
+collision id, so "not comparable" is not an escape hatch.
+
+The reason: `collisions.md` states in prose where this language differs
+from JavaScript, and nothing checks that the list is complete. A
+divergence this project did not decide is a defect that reads as a
+decision.
 
 ## Language
 
