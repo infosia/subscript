@@ -8138,6 +8138,18 @@ The interface is not the subject. This section moves no part of it.
     the position. This is rule 1g of §67 in its general form: a
     total check turns a review's search into a build's list.
 
+    **The check is only as complete as what we know a consumer
+    needs, and writing a consumer is what tests it.** *(Added
+    2026-08-26.)* The first run reported 153 dropped facts — every
+    entry id and every async root — in one list. Step 2 then found a
+    fact the check did not know to look for: a `Suspend`'s position,
+    which a resume after a reload reports with `StaleCoroutine`.
+    Adding that item made the check report 49 sites at once. So the
+    relationship is the same one §68.7.5 states for the section: the
+    interpreter tests §68.7, and each new consumer tests this check.
+    A consumer that finds a dropped fact reports a defect in the
+    check as well as in LIR.
+
 ### 68.3 What retires
 
 The deletions are part of the contract. §68.6 item 5 measures
@@ -8456,6 +8468,12 @@ block id (§68.2 item 7). **The successor block's parameters are the
 live-in set of the suspension.** When the suspension produces a
 value, that value is the successor's first parameter. The frame holds
 exactly the successor's parameters and nothing else.
+
+**`Suspend` carries its source position.** *(Added 2026-08-26 after
+step 2.)* A resume after a hot reload raises `StaleCoroutine`, and
+the position it reports is the suspension's. `Trap` carries a
+position for the same reason (§68.7.5). The total check of §68.2 item
+12 reported 49 sites once it knew to look.
 
 **`Suspend` carries an argument list, as every other edge does.**
 *(Added 2026-08-26. Step 1b reported that the section decided what
