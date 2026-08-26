@@ -8387,28 +8387,49 @@ index, and a bound — which §68.1 item 7 threads across the back edge.
 - `IteratorCreate(kind)` takes the subject and produces the cursor.
 - `IteratorBound` takes the cursor and produces the bound, **once, at
   creation**.
+- **The cursor names a position in the container's own storage.** The
+  bound is a position too, captured at creation. A kind whose storage
+  holds no hole — an array, a `FixedArray`, a string — has the
+  position equal to the index.
 - `IteratorHasNext` takes cursor, index, and bound. It is true while
-  the index is below the bound **and** below the container's current
-  element count. *(Corrected 2026-08-26 after step 1b, which trapped
-  on `a80`.)* `corpus/accept/a80-for-of-foreach-mutation` decides
-  this: "appends do not extend and removals shorten". The bound is
-  captured, so an append does not extend the traversal; the current
-  count is read, so a removal ends it early.
+  the cursor names a live position, that position is below the bound,
+  and the position is within the container's current element count.
 - `IteratorValue` takes cursor, index, and bound, and produces the
-  element that `stdlib.md` §14 names for the kind.
-- `IteratorAdvance` takes cursor, index, and bound, and produces the
-  next cursor. The index advances by one, as a separate value.
+  entry at the cursor's position, as `stdlib.md` §14 names it for the
+  kind.
+- `IteratorAdvance` takes cursor, index, and bound, and produces **one
+  result: the next cursor**, at the next live position after the
+  current one. The index advances by one, separately, and no rule
+  reads the index for liveness.
 
-**The index names a position in the container's own storage, not a
-count of elements visited.** *(Added 2026-08-26. Step 1b reported
-that the protocol could not express `a80`'s `Map` traversal.)* A
-`Map` or a `Set` holds a position that a removal makes inactive.
-`IteratorHasNext` is true while a position at or after the index
-holds a live entry and is below the bound. `IteratorValue` reads that
-position. `IteratorAdvance` produces the cursor and index of the next
-live position. An inactive position is never a body iteration, and
-the protocol needs no edge that skips the body. For an array every
-position is live, so the rule above is the same rule.
+*(Corrected 2026-08-26, twice, after step 1b. The first text ended a
+traversal on the bound alone and trapped on `a80`. The second gave
+`IteratorAdvance` two results, which no LIR instruction has. The
+cursor carries the position, so one result is enough.)*
+
+`corpus/accept/a80-for-of-foreach-mutation` decides the rule, in its
+own header: "appends do not extend and removals shorten". The bound
+is captured at a position, so an entry appended past it is never
+reached. The current count is read, so a removal ends the traversal
+early. An inactive position is never a body iteration, and the
+protocol needs no edge that skips the body.
+
+Worked against a80's golden. A `Map` of keys 1, 2, 3 deletes key 2
+and appends key 4 on the first step, and the bound is 3:
+
+    cursor at position 0, live, 0 < 3       visits key 1
+    advance skips dead position 1           cursor at position 2
+    cursor at position 2, live, 2 < 3       visits key 3
+    advance                                 cursor at position 3
+    position 3 is not below the bound       stops
+
+An array of `1, 2, 3, 4` that pops twice on the first step, bound 4:
+
+    position 0, 0 < 4, 0 < count 4          visits 1
+    advance                                 position 1
+    position 1, 1 < 4, 1 < count 2          visits 2
+    advance                                 position 2
+    2 < 4 holds, 2 < count 2 fails          stops
 
 **Addresses and provenance.** An address is a value. An address into
 a dynamic array carries the array value it came from, as provenance.
