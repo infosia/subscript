@@ -8288,3 +8288,162 @@ name construction that `cemit.rs` holds today.
    test count and the wall time for each step of §68.4.
 8. **Tracking**: `specs/tracking/s68-one-ordered-ir.md`. Each step
    of §68.4 records its own gate run.
+
+### 68.7 What a LIR instruction means
+
+*(Added 2026-08-26. Step 1b stopped and reported that §68 defines the
+form of LIR and not the meaning of its instructions, so no
+interpreter can be written from this section. CLAUDE.md principle 8
+makes that report the wanted outcome.)*
+
+The finding matters more than the gap. §68.2 item 10 says that
+neither tier decides semantics. **While the meaning of an instruction
+is undefined, each tier decides it.** The two tiers agree today
+because one lowering built both conventions out of HIR, not because
+LIR pins a meaning. A differential gate between two tiers cannot see
+that difference, which is CLAUDE.md principle 12 one level up.
+
+**The interpreter is the completeness test for this section.** If a
+reader writes it from this document alone, the document is complete.
+If the reader must consult a tier, the document is not.
+
+#### 68.7.1 How this section defines a meaning
+
+1. **By reference where the source language already decides.** An
+   instruction that carries a construct of the language means what
+   the section that decides that construct says. This section names
+   the section. It does not restate it.
+2. **By definition where LIR has no source counterpart.** The
+   iteration protocol, the address and provenance model, the
+   suspension protocol, and edge argument transfer exist only in
+   LIR. §68.7.4 defines them.
+3. **Operands are positional.** Each row states the operand roles in
+   order. The type of an operand comes from the values table, never
+   from a record on the instruction (§68.1 item 9).
+4. **A trap fires before the operation's effect**, in the order the
+   instruction lists its sites (§68.1 item 8). A trap ends the
+   program through the observer of §18.
+5. **A gap is reported, never guessed.** If a reader cannot act on a
+   row, the row is wrong. Report it and stop.
+
+#### 68.7.2 The instruction table
+
+Numerics, string, and array behaviour come from the list at §2 and
+from §16 for the narrow widths: two's-complement wrap on
+`i32`/`u32`/`i64`/`u64`, `as` conversions that truncate and wrap as C
+does, `f32` arithmetic at `f32` precision, true 64-bit bitwise
+operations, and §2's Q14 formatting for interpolation.
+
+| instruction | operands | means |
+|---|---|---|
+| `Copy` | value | the same value, of the same type. A value class copies by value (§62); a reference class copies the handle. |
+| `StringLiteral` | none | a string of the module's literal table. §2 string rules. |
+| `Zero` | none | the zero of the result type: `0`, `0.0`, `false`, or the null handle. |
+| `LoadLocal` | none | the current value of the local. §68.1 item 6 limits a local to a binding whose address the program takes. |
+| `StoreLocal` | value | the local takes the value. No result. |
+| `AddressOfLocal` | none | the address of the local. §68.7.4 gives the address model. |
+| `LoadGlobal`, `StoreGlobal`, `AddressOfGlobal` | as the local forms | the same, on a module global. |
+| `FunctionRef` | none | the callable of a declared function, for an indirect call. |
+| `MakeClosure` | one per capture, in declaration order | a callable with an environment that holds the captured values. §68.2 item 8 governs where the environment lives. |
+| `Unary` | operand | §2 numerics, for the named operator. |
+| `Binary` | left, right | §2 numerics, string, and comparison rules, for the named operator. Division by zero traps. |
+| `Cast` | value | an explicit `as` conversion. §2: truncate and wrap as C does. §16 for the narrow widths. |
+| `Coerce` | value | an implicit widening the checker inserted. It never loses a value. A conversion that loses a value is a `Cast`. |
+| `AllocateClass` | none | a new instance, fields at their zero. The `Allocation` trap fires on failure. |
+| `AddressOfValue` | value | the address of a temporary that holds the value. The temporary lives as long as the address (§68.2 item 8). |
+| `AddressOfField` | base address or handle | the address of the named field. |
+| `AddressOfIndex` | base, index | the address of the element. `checked` states that a bounds trap site is present; the site, not the flag, raises it (§68.1 item 8). |
+| `LoadAddress` | address | the value at the address. |
+| `StoreAddress` | address, value | the value is written at the address. No result. |
+| `LoadField` | base handle | the field's value, read from a reference-class instance. |
+| `Length` | container | the element count of an array, and the **byte** length of a string (Q5, `stdlib.md` §14). |
+| `ArrayLiteral` | one per element, in order | a new array of the elements. |
+| `ArraySpreadLiteral` | one per part, in order | a new array; a spread part contributes its elements in order (`stdlib.md` §14). |
+| `Template` | one per interpolation, in order | the concatenation, formatted by §2's Q14 rules. |
+| `Call` | see §68.7.3 | a call of the named target. |
+| `IteratorCreate`, `IteratorHasNext`, `IteratorValue`, `IteratorBound`, `IteratorAdvance` | see §68.7.4 | the iteration protocol. |
+
+#### 68.7.3 What a call means
+
+The target kind decides the operand roles.
+
+| kind | operands | means |
+|---|---|---|
+| `Function` | the declared parameters, in order | a call of the module function. |
+| `Method` | the receiver first, then the parameters | a call of the class method. A value-class receiver is an address; a reference-class receiver is a handle. |
+| `Foreign` | the marshalled arguments, in order | a call across the C ABI. §67.2 rules 7 and 7a hold: an array argument's data pointer and count are read before a later argument runs. |
+| `Indirect` | the callable first, then the parameters | a call through a value of `Type::Func`. |
+| `Intrinsic` | the family's operands, in order | the operation the module's intrinsic table names. The table, not a positional index into a Rust array, defines it (§68.2 item 11). |
+| `BuiltinMethod` | the receiver first, then the parameters | the standard-library method. `stdlib.md` decides each one. |
+
+#### 68.7.4 The three protocols that LIR alone defines
+
+**Iteration.** `stdlib.md` §14 decides what `for...of` accepts and in
+what order. §14.3 states that the loop is an index loop over the
+container's own storage and that no iterator object exists. LIR
+carries that as five instructions over three values — a cursor, an
+index, and a bound — which §68.1 item 7 threads across the back edge.
+
+- `IteratorCreate(kind)` takes the subject and produces the cursor.
+- `IteratorBound` takes the cursor and produces the bound, **once, at
+  creation**.
+- `IteratorHasNext` takes cursor, index, and bound, and is true while
+  the index is below the bound.
+- `IteratorValue` takes cursor, index, and bound, and produces the
+  element that `stdlib.md` §14 names for the kind.
+- `IteratorAdvance` takes cursor, index, and bound, and produces the
+  next cursor. The index advances by one, as a separate value.
+
+**Addresses and provenance.** An address is a value. An address into
+a dynamic array carries the array value it came from, as provenance.
+§68.2 item 9 requires every instruction that can move an array's
+storage to name the arrays it invalidates. **An address whose base is
+invalidated is not used again.** The lowering re-computes it. An
+interpreter poisons it, and a use of a poisoned address is an error
+that names the instruction and the invalidation. Neither tier
+performs that check, so the interpreter is the only place it exists.
+
+**Suspension and resume.** `Suspend` is a terminator with a successor
+block id (§68.2 item 7). **The successor block's parameters are the
+live-in set of the suspension.** When the suspension produces a
+value, that value is the successor's first parameter. The frame holds
+exactly the successor's parameters and nothing else. *(This decides
+the case the second step 1 review raised: a resume block had no place
+to carry state other than the resume value.)*
+
+**Edge argument transfer.** `Branch`, `ConditionalBranch`, and
+`Switch` each carry an argument list per edge. The arguments bind to
+the destination block's parameters, by position, at the moment the
+edge is taken. The arguments are read before any binding happens, so
+a swap across an edge is well defined.
+
+#### 68.7.5 The terminators
+
+| terminator | means |
+|---|---|
+| `Branch` | the single edge is taken. |
+| `ConditionalBranch` | the condition is a `boolean` value. True takes the first edge. |
+| `Switch` | the discriminant is compared for equality against each arm's constant, in order. The first equal arm is taken, and the default arm otherwise. |
+| `Return` | the function ends. A value is returned when the signature declares one. A coroutine's return completes it. |
+| `Trap` | the program ends through the observer of §18, with the named kind and position. |
+| `Suspend` | see §68.7.4. |
+
+#### 68.7.6 Language gaps this exercise found
+
+These are gaps in the **language**, not in LIR. Each belongs to the
+section that owns the construct, and each needs an owner decision.
+LIR carries whatever that section decides.
+
+1. **A container that changes while a `for...of` runs.**
+   `stdlib.md` §14 does not decide it. The implementation reads the
+   bound once at creation: a program that pushes during the loop
+   prints `3,2,4`, which no section states. The decision belongs in
+   `stdlib.md` §14.
+2. **The temporal-dead-zone resolution order** (§66 measurement 6i).
+   `node` prints `4` and this compiler prints `3`. No entry of
+   `collisions.md` names it.
+3. **The duplicate-declaration diagnostic** (§66 measurement 6j).
+   Named in §66 and in no collision entry.
+4. **The order of module initialization.** HIR splits global
+   initializers from top-level statements, so source order is not
+   recoverable. Neither tier emits top-level statements today.
