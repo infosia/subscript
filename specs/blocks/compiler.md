@@ -7700,6 +7700,31 @@ satisfy it.)*
    introduced. Either the lowering advances every cursor across a
    skipped statement, or it does not skip. The check must not
    change which programs compile.
+1m. **The operand tables changed a synchronous program, and that
+   is rule 7 again.** *(Added 2026-08-26 after the sixth pass B
+   review.)* The dev tier evaluates every argument into a table and
+   then pushes them, so an aggregate operand is copied after a
+   later operand has run. A later operand that overwrites the
+   aggregate wins. Measured on a program that holds no `async` at
+   all: `sink(h1.v, bump(h1))`, where `bump` overwrites `h1.v`,
+   printed `call=199` on the dev tier and `call=31` on the ship
+   tier, and `31` is correct and is what the pin printed on both
+   tiers. The same shape reproduces on a `FixedArray` argument, on
+   an indirect call, on a constructor, and on an array literal. The
+   copy of an aggregate operand happens at the operand, not at the
+   call. Rule 7 states the requirement; this rule names the second
+   site that broke it.
+1n. **A boundary struct's `new` is a spill site both tiers close.**
+   *(Added 2026-08-26 after the sixth pass B review.)* The planner
+   reserves for the receiver and for each argument that a later
+   suspension outlives. The boundary branch of each tier stores
+   arguments positionally and consumes nothing, so rule 1g refuses
+   the program. Measured on `new SubRect(1, await av("rect-y", 2),
+   3 as u32, 4 as u32)`: the dev tier stopped at "cursor stopped at
+   1/2" and the ship tier at "cursor stopped at 0/2", where the pin
+   compiled, linked, and printed `rect=1,2,3,4` on the ship tier.
+   Rule 1l applies: the check must not change which programs
+   compile.
 2. Two `await` expressions in one expression are legal, and each
    operand evaluates once, left to right, with the earlier result
    held in the frame across the later suspension.
@@ -7859,3 +7884,291 @@ Both passes:
    library counts at the 7 / 22 / 29 baseline. Every pre-existing
    golden and `.expected` byte-identical, the new entries excepted.
    The record quotes the test count and the wall time.
+
+## 68. One ordered IR between the checker and the two tiers
+
+Origin: the owner asked on 2026-08-26 why recent fixes need many
+review rounds. An audit of the §66 and §67 arcs answers it. This is
+not a downstream request. **No language surface moves.** The
+accepted TypeScript subset, the C ABI, the host API, the CLI, and
+every committed `.expected` stay as they are.
+
+This section opens after §67 lands. §67 closes instances of the
+defect classes below; this section closes the classes.
+
+Measurements on this tree at `9fd9603`, with the §67 pass B working
+tree in place. Every measurement is structural. Each one is read
+from the committed tree, or quoted from the §66 and §67 records.
+
+1. **The round count separates by area, not by difficulty.** A
+   request that changes the checker or the standard library lands in
+   one implementation commit: R33 `49bdd1d`, R34 `ca5cb4e`, R36
+   `1438b76`, R37 `f29c4c5`. A request that changes codegen
+   internals does not. §66 needed seven review rounds. §67 pass A
+   needed four rounds and three reviews. §67 pass B needed five
+   rounds and five reviews, and it leaves three MINOR and two
+   adjacent defects open.
+2. **Three traversals of one HIR tree each re-derive the evaluation
+   order.** `hir::ExprKind` holds `Box<Expr>` operands
+   (`compiler/src/hir.rs`), so no evaluation order exists in the
+   data. `codegen/src/lower/func.rs` (9152 lines) walks the tree
+   for the dev tier. `codegen/src/cemit.rs` (9732 lines) walks it
+   for the ship tier. `codegen/src/suspension.rs` (871 lines) walks
+   it for the spill plan. Each walk fixes the order by its own
+   convention, and the three conventions must agree.
+3. **The same walk exists twice.** `codegen/src/lower/func.rs` and
+   `codegen/src/cemit.rs` each declare their own `walk_lets`, their
+   own `count_yields`, and their own `count_async_calls`. The two
+   `count_yields` must return one number, or the resume label tables
+   of the two tiers disagree.
+4. **Four §67 pass B CRITICAL findings are one class: traversal N
+   disagrees with traversal M.** The round 2 review measured the
+   `for` statement. The planner visits it as init, cond, step, body.
+   Both tiers lower it as init, cond, body, step. Rule 1h records
+   that the liveness scan read HIR source order as evaluation
+   order. Rule 1i
+   records that the planner took a spill kind from the expression
+   type and the dev tier took it from the declared type. Rule 1j
+   records a site the planner reserved for and neither tier closed.
+5. **The strict cursor reports the disagreement at the user's
+   program, not at the build.** The §67 record states it: the cursor
+   "did its job — but it caught the defect at the user's program,
+   not at the build." Rules 1d, 1e, 1f, 1g, 1h, 1i, 1j, 1k, and 1l
+   exist to hold three traversals in step.
+6. **Both tiers already want a control-flow graph.** The dev tier
+   builds Cranelift blocks. The ship tier emits no structured C:
+   every loop and every branch is a label and a `goto`. Measured
+   over the whole of `codegen/src/cemit.rs`: **no emitted string
+   holds a C `for`, `while`, or `do` keyword.** `emit_while`,
+   `emit_for`, `emit_for_of`, and `emit_switch` emit labels and
+   `goto` only.
+   Both tiers build a graph from a tree, separately, for every
+   function, and neither keeps the graph.
+7. **The differential gate is blind to a shared wrong answer.**
+   Three recorded instances: the `using` disposal order in a
+   `switch` case (pass A second review); a second lambda that reuses
+   a first lambda's frame member (round 3 MAJOR); the rule 7a
+   foreign call that marshals an array count after a later argument
+   grows the array (fifth review). The §67 record states the
+   consequence each time: "Both tiers agree, so the differential
+   gate does not see it."
+8. **Two defects of that class stay open, and neither program
+   suspends.** The §67 record names them as adjacent defects. A
+   `@CStruct` receiver address, taken before an argument grows the
+   same array, prints `sync=5` on both tiers, where `sync=12` is
+   correct. A second program assigns a lambda inside a loop body,
+   and calls it after the loop. The dev tier prints `v=22`. The
+   ship tier reads an abandoned C block scope. The §67 answers are
+   frame-scoped, and neither program holds a frame.
+9. **The ship tier derives C identifiers from source names; the dev
+   tier does not.** §66 measurement 5 records it:
+   `codegen/src/lower/mod.rs` names a method by index, so every
+   divergence of that class is one-sided. §66 closed the class with
+   a `v_` prefix, a keyword list, and `_N` collision logic. A prefix
+   is a convention that every future emitter site must obey.
+
+Consequence: the two tiers hold the same semantic decisions twice,
+and a third copy holds the evaluation order. A review finds one
+instance for each round, because the class has no single site.
+
+Rule 1g proved the alternative. When the check became total, the
+round named all three remaining sites with their counts — the
+number that three reviews did not produce. This section makes
+that mechanism the default: **a defect class closes with a total
+check at the build, not with a corpus entry for each instance.**
+
+### 68.0 What does not move
+
+The interface is not the subject. This section moves no part of it.
+
+- Every program in `corpus/accept/` compiles and prints the same
+  bytes, with the exceptions §68.6 item 2 names and pins as Red.
+- The C ABI, the emitted header, the `subscript_*` symbol
+  convention, and the host API do not move.
+- `specs/blocks/collisions.md` does not move. No collision is
+  decided or re-decided here.
+- Invariant 3 holds: two execution forms, dev JIT and ship C AOT.
+  They keep separate final lowerings. This section moves the shared
+  part **above** them, not between them.
+
+### 68.1 The form
+
+1. **One IR sits between the checker and both tiers.** The name is
+   LIR. One lowering builds it from typed HIR. Both tiers consume
+   it. **No tier reads HIR.**
+2. **The evaluation order is data.** Every operand of a LIR
+   instruction is a value name or a constant. No operand holds a
+   nested expression. The HIR → LIR lowering fixes the order once,
+   and writes it as a sequence.
+3. **The control flow is a graph.** A LIR function is a list of
+   basic blocks. Each block ends with one terminator: branch,
+   conditional branch, switch, return, trap, or suspend. No
+   structured statement form survives into LIR.
+4. **Every value has a name, a type, and exactly one definition.** A
+   temporary is a value like any other value.
+5. **Every entity carries an id.** A class, a method, a function, a
+   local, a block, and a value each carry one id. **A target
+   identifier derives from an id.** No target identifier derives
+   from a source string. A source name rides beside the id as an
+   attribute, for diagnostics and for the reload key. No consumer
+   parses that attribute. *(R37 verified the same property for
+   method names before its contract: no consumer of a method name
+   parses it.)*
+
+### 68.2 The rules the form makes true
+
+6. **Liveness is one fixed-point over the graph.** The analysis
+   reaches a fixed point across back edges. No other consumer
+   computes liveness. This retires §67.2 rules 1b, 1d, 1e, 1f, and
+   1h, whose subject is the agreement of two liveness walks.
+7. **A suspension is a terminator.** The values live across a
+   suspension are the live-in set of its successor block. The frame
+   holds that set, and holds nothing else. **No event list exists,
+   and no cursor exists.** This retires §67.2 rules 1, 1c, 1g, 1i,
+   1j, 1k, and 1l. It also retires rule 2a: a suspension carries a
+   block id, so no emitter allocates a label number by hand.
+8. **Storage scope is the live range, never the source block.** If a
+   value outlives its source block, the value lives in
+   function-scope storage. This closes measurement 8's second
+   defect, which holds no frame, by the same rule that serves a
+   coroutine.
+9. **An address is a value, and it carries an invalidation point.**
+   Every LIR instruction that can move an array's storage names the
+   arrays that it invalidates. The lowering re-computes an address
+   that crosses an invalidation of its base. This closes §67 rule 7,
+   the rule 7a conflict, and measurement 8's first defect, as one
+   rule instead of three sites.
+10. **Neither tier decides semantics.** Each tier is a total
+    function from LIR to its target. If a tier needs a fact that LIR
+    does not carry, LIR is wrong. The round reports it and stops.
+    That report is the intended outcome, not a failure of the round.
+11. **A verifier runs on every LIR function, in every build.** It
+    checks that every use is dominated by its definition; that every
+    value has one definition; that every block ends with one
+    terminator; that no address crosses an invalidation of its base;
+    and that every operand type matches its instruction. The
+    verifier runs in the debug profile and in the release profile.
+    This is rule 1g, generalized from spill slots to the whole form.
+
+### 68.3 What retires
+
+The deletions are part of the contract. §68.6 item 5 measures
+them.
+
+- `codegen/src/suspension.rs`, in whole: `SpillPlan`, `SpillEvent`,
+  `EvalEvent`, the trace builder, the strict cursor, and the
+  exhaustion check.
+- §67.2 rules 1, 1b through 1l, 2a, 7, and 7a, as hand-written
+  sites. Each rule keeps its corpus entry. No rule keeps a site.
+  §67.1 is checker semantics and does not move.
+- The duplicate walks of measurement 3. One lowering replaces both
+  copies of each walk.
+- §66's `v_` prefix, its keyword list, and its `_N` collision logic.
+  A C identifier derives from a LIR id, so no source name reaches
+  the C namespace.
+- The per-tier dominance and ordering assertions that each tier
+  holds today.
+
+### 68.4 The order of the work
+
+The differential gate guards this migration, if one tier moves at a
+time. Each step ends with the full gate of §68.6 item 7. If a step
+moves a committed golden, the step stops and reports it.
+
+1. Define LIR. Write the HIR → LIR lowering and the §68.2 item 11
+   verifier. Neither tier changes yet. The verifier runs over every
+   corpus entry.
+2. Move the dev tier to LIR. The ship tier stays on HIR. The
+   differential gate now compares one LIR consumer against one HIR
+   consumer, so it guards this step directly.
+3. Move the ship tier to LIR. `cemit.rs` becomes a transcriber of
+   blocks and instructions.
+4. Delete `codegen/src/suspension.rs` and both cursors. Rules 6 and
+   7 of §68.2 now carry what the cursors carried.
+5. Move C identifiers to id form. Delete the `v_` prefix.
+
+Steps 2 and 3 are the two steps that carry risk. Step 2 keeps a
+working ship tier as the reference. Step 3 keeps a working dev tier
+as the reference.
+
+### 68.5 Changes by site
+
+`compiler/`: `hir` is unchanged. The checker is unchanged. A new
+module holds the LIR types.
+
+`codegen/`: a new module holds the HIR → LIR lowering and the
+verifier. `lower/func.rs` becomes a LIR → Cranelift transcriber.
+`cemit.rs` becomes a LIR → C transcriber. `suspension.rs` is
+deleted. `lower/mod.rs` keeps the symbol tables, and takes the C
+name construction that `cemit.rs` holds today.
+
+`runtime/`: unchanged. No runtime entry point moves.
+
+### 68.6 Corpus and gate (pre-registered exit criteria)
+
+1. **No committed golden or `.expected` moves**, except the entries
+   item 2 names. A golden that moves is evidence of a defect in the
+   step, not a golden to update. The round stops and reports it.
+2. **The two open defects of measurement 8 close, and neither
+   closes with a site-specific fix.** This is the sharpest test of
+   the form. If either defect needs a hand-written site in a tier,
+   LIR is wrong, and the round reports that instead of the fix.
+   - `corpus/accept/a150-receiver-address-invalidation`: a
+     `@CStruct` value class in an array, called as a method
+     receiver, with an argument that grows the same array. Red at
+     the contract pin: both tiers print `sync=5`, and `sync=12` is
+     correct. The control line `ctl=12` stays correct at the pin.
+   - `corpus/accept/a151-lambda-env-outlives-block`: a lambda
+     assigned inside a loop body and called after the loop, with no
+     coroutine. Red at the contract pin: the dev tier prints
+     `v=22`, which is correct, and the ship tier reads an abandoned
+     C block scope.
+   - `corpus/accept/a152-lambda-env-per-iteration`: the coroutine
+     twin of the entry above. A lambda literal inside a loop body
+     in an async function, held past the loop, with a suspension in
+     the body. Red at the contract pin: the dev tier printed
+     `async-keep=-2083027712` and the ship tier printed
+     `async-keep=0`, where `async-keep=10` is correct. *(Added
+     2026-08-26. The §67 pass B sixth review found it. §67 round 6
+     made both tiers print `async-keep=30`, so the tiers now agree
+     on the wrong answer and the differential gate no longer sees
+     it. One frame member serves one lambda literal, and a literal
+     inside a loop runs many times. §68.2 rule 8 is the fix: the
+     storage scope is the live range, never the source block. A
+     narrowing patch in §67 would be the seventh of its kind, so
+     the defect moves here whole.)*
+   - Every entry must be **Red at the contract pin, verified
+     against a binary built from that pin.** *(The §67 lesson, in
+     one line: a corpus entry that never failed before the fix
+     proves nothing.)*
+3. **LIR text goldens** for a named subset: every entry that holds a
+   coroutine, plus the §66 and §67 measurement entries (`a145`,
+   `a147`, `a148`, `a149`, `a150`, `a151`). The text form makes a
+   LIR change reviewable as a diff. The rest of the corpus is
+   covered by the verifier and by the existing goldens.
+4. **Performance.** §3 fixes ship-AOT at 1.5× of the C baseline and
+   dev-JIT at 4×. §11's bisection records 1.53× post-P19, with the
+   trap checks that C6 requires. LIR names many temporaries, and the
+   emitted C depends on the C compiler to coalesce them, so this is
+   the named risk of the whole section. The round measures
+   `a22-matrix-propagation` by the §9 methodology, before and after,
+   on one machine in one session.
+   - **Kill criterion: a ship-AOT ratio above 1.75× stops the phase
+     and reopens the form of the emitted C.**
+   - A ratio between 1.53× and 1.75× is reported to the owner with
+     the emitted C of the inner loop, and the owner decides.
+   - A dev-JIT ratio above 4× stops the phase.
+5. **Line count.** The round reports the line count of
+   `codegen/src/` before and after. This section predicts a
+   decrease. An increase is evidence that the split is wrong, and
+   the round reports it with the measurement.
+6. **Build and suite time.** The verifier runs in every build. The
+   round records the debug and release suite wall time before and
+   after. An increase above 20% goes to the owner with the
+   measurement.
+7. **Gates**: `cargo test --offline --workspace` in both profiles;
+   a zero-warning build; `cargo fmt --check`; the `tsc` gate; clippy
+   library counts at the 7 / 22 / 29 baseline. The record quotes the
+   test count and the wall time for each step of §68.4.
+8. **Tracking**: `specs/tracking/s68-one-ordered-ir.md`. Each step
+   of §68.4 records its own gate run.
