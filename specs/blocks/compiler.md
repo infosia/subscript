@@ -8040,8 +8040,14 @@ The interface is not the subject. This section moves no part of it.
    change, so the loop yields element 0 for ever, and a tier can
    only run it by holding an index that LIR does not carry.
 
-8. **LIR carries every trap site, once, on the instruction that
-   owns it.** *(Added 2026-08-26 after the second step 1 review.)*
+8. **LIR carries every trap site, once, on the instruction or the
+   terminator that owns it, and each carries its position.**
+   *(Widened 2026-08-26 after step 2. The rule said "instruction",
+   and a terminator owns sites too. `Suspend` lacked the position a
+   reload's `StaleCoroutine` reports, and `Return` lacked the one a
+   boundary-pointer scratch allocation reports. Two rounds, one
+   class, so CLAUDE.md's two-round rule applies and the rule widens
+   rather than a third terminator being fixed.)* *(Added 2026-08-26 after the second step 1 review.)*
    A trap site belongs to the operation whose operands the check
    reads. Every HIR node the lowering evaluates contributes its own
    sites, a node reached as the base of a place included. A
@@ -8148,7 +8154,8 @@ The interface is not the subject. This section moves no part of it.
     relationship is the same one §68.7.5 states for the section: the
     interpreter tests §68.7, and each new consumer tests this check.
     A consumer that finds a dropped fact reports a defect in the
-    check as well as in LIR.
+    check as well as in LIR. The check verifies a position on every
+    terminator that owns a trap site, not on a named list of them.
 
 ### 68.3 What retires
 
@@ -8202,6 +8209,15 @@ moves a committed golden, the step stops and reports it.
    It also gives step 2 a tiebreaker. When a dev tier on LIR
    disagrees with a ship tier on HIR, the interpreter says which
    side moved.
+
+   **The tiebreaker has a blind spot, measured at step 2.** The
+   interpreter's declared exclusions are almost all interop entries,
+   because they need a native library it does not load. Step 2's
+   dev-and-ship disagreements were `a97`, `a124`, and `a125` — all
+   interop entries. So the third witness was unavailable exactly
+   where the disagreement was, and the round reported "cannot
+   adjudicate" rather than name a side. That is the right report,
+   and it bounds what this step's tiebreaker is worth.
 
    **Boundaries.** The interpreter is not a third execution form,
    and invariant 3 does not move: the two shipped forms stay dev JIT
