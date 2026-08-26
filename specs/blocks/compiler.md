@@ -8165,6 +8165,18 @@ The interface is not the subject. This section moves no part of it.
     check as well as in LIR. The check verifies a position on every
     terminator that owns a trap site, not on a named list of them.
 
+    **The check enumerates its fact kinds from HIR's own types,
+    exhaustively.** *(Added 2026-08-27 after step 3. Two rounds found
+    a kind the check did not enumerate: a module with no entry, where
+    the check compared presence and not absence; and a host entry's
+    parameter validation, an attachment point beside the expression
+    and the function that HIR carries ad hoc. CLAUDE.md's two-round
+    rule applies, so the rule changes rather than a third kind being
+    added by hand.)* A fact kind that HIR gains and the check does not
+    learn is a compile error, not a silent omission. The check
+    compares both directions: a fact HIR has and LIR drops, and a
+    fact LIR has and HIR does not.
+
 ### 68.3 What retires
 
 The deletions are part of the contract. §68.6 item 5 measures
@@ -8263,6 +8275,15 @@ verifier. `lower/func.rs` becomes a LIR → Cranelift transcriber.
 `cemit.rs` becomes a LIR → C transcriber. `suspension.rs` is
 deleted. `lower/mod.rs` keeps the symbol tables, and takes the C
 name construction that `cemit.rs` holds today.
+
+*(Recorded 2026-08-27 after step 3.)* `lower/mod.rs` **decides no
+semantics**, which is item 10 applied to it. After step 2 it still
+held 64 `hir::` references, and one of them derived a host entry's
+wire-alias validation from HIR. That is why `t50` passed on the dev
+tier and failed on the ship tier: one consumer had a fact the form
+did not carry. The symbol tables and the C names are its whole role.
+Step 2's commit says "the dev tier reads LIR"; `lower/func.rs` does,
+and `lower/mod.rs` did not.
 
 `runtime/`: unchanged. No runtime entry point moves.
 
