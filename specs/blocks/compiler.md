@@ -8447,3 +8447,119 @@ LIR carries whatever that section decides.
 4. **The order of module initialization.** HIR splits global
    initializers from top-level statements, so source order is not
    recoverable. Neither tier emits top-level statements today.
+
+## 69. The language definition, checked instead of asserted
+
+Origin: the owner asked on 2026-08-26 whether a language rule can be
+checked instead of written as prose, and named `node` and `tsc`
+output as the oracle to check against. **No language surface moves.**
+This section adds checks. It decides no collision.
+
+CLAUDE.md now states the boundary: an external implementation is a
+**divergence detector**, never an oracle. A disagreement is a defect
+in this compiler, or a divergence that `collisions.md` must name. A
+disagreement never corrects a golden.
+
+Measurements at `af5697d`, on this host. `node` is v24.18.0 and
+`tsc` is 5.9.2.
+
+1. **`collisions.md` is 1221 lines of prose, and nothing checks that
+   its list is complete.** The file states where this language
+   differs from JavaScript. A divergence this project did not decide
+   reads as a decision.
+2. **Two divergences are measured and are in no collision entry.**
+   §66 measurement 6i: `node` resolves a name in the temporal dead
+   zone as `4` and this compiler as `3`. §66 measurement 6j: the
+   duplicate-declaration diagnostic. Both sit in a tracking file.
+3. **25 reject entries assert what `tsc` does, by hand.** The
+   header line `tsc-clean-standalone` is prose a person wrote. The
+   other 126 assert nothing, so a reader cannot tell a measured
+   silence from an unasked question. This session got the direction
+   of invariant 5 wrong once, and the coding agent found it.
+4. **`r153`'s header already records a `node` observation by hand** —
+   "node reports a temporal-dead-zone ReferenceError". The work
+   below turns that kind of note into a measurement.
+5. **78 of 148 accept entries use no `Context`, no `@CStruct`, no
+   `FixedArray`, and no foreign call.** That is the rough upper
+   bound of the comparable subset. The real number is lower, because
+   an entry that depends on integer wrap or on a trap is not
+   comparable either.
+
+### 69.1 Three stages
+
+**Stage 1 — every `tsc` claim becomes a measurement.** The gate runs
+`tsc` on every corpus entry. An accept entry type-checks. A reject
+entry's header states what `tsc` does, and the gate confirms it. A
+header that disagrees with `tsc` fails the build.
+
+**Stage 2 — `node` runs the comparable subset.** Each accept entry
+carries a `js-comparable` header. The gate runs the comparable
+entries under `node` and compares the output against the committed
+golden, byte for byte.
+
+**Stage 3 — the collision table becomes an index.** Each collision
+carries an id. Each `js-comparable: no` cites one. Each id has at
+least one corpus entry. The gate checks all three.
+
+### 69.2 The headers are the data
+
+1. `js-comparable: yes` — the entry runs under `node` and prints the
+   golden.
+2. `js-comparable: no <collision-id> …` — the entry diverges by
+   decision. It names every collision that applies.
+3. **There is no third state.** An accept entry with no
+   `js-comparable` header fails the build. 148 entries each get a
+   decision, and "not looked at" is not one of them.
+4. A reject entry's `tsc` header states `accepts` or `rejects`, and
+   the diagnostic code when `tsc` rejects.
+
+### 69.3 The `node` harness
+
+1. **One JS file implements the ambient surface** the comparable
+   subset uses. It is small, because the subset avoids `Context`,
+   value classes, and foreign calls.
+2. **The shim never grows to make an entry comparable.** An entry
+   that needs a shim the file does not have is `js-comparable: no`,
+   with the reason. A shim that emulates a decided divergence would
+   hide the divergence, which is the opposite of the goal.
+3. **A total check ties the shim to the prelude.** Every name the
+   shim defines exists in `prelude/lang.d.ts`. A shim that drifts
+   from the prelude tests nothing.
+4. `node` and `tsc` are pinned, and the record states both versions.
+
+### 69.4 What a disagreement means
+
+A disagreement between `node` and the golden is one of two things,
+and the round decides which and reports it:
+
+1. **A defect in this compiler.** Fix it. The golden moves only
+   because the compiler was wrong.
+2. **A divergence this project decided.** Add the collision entry,
+   with the measured outputs of both sides, and mark the corpus
+   entry `js-comparable: no` citing it.
+
+**A disagreement never corrects a golden on its own.** `node` is not
+the oracle. Where this language decides to differ — integer types,
+value types, a trap where JavaScript gives `undefined` — `node` is
+wrong about this language, and the collision entry says so.
+
+### 69.5 Corpus and gate (pre-registered exit criteria)
+
+1. Every reject entry's `tsc` header is measured, and every accept
+   entry type-checks. 151 and 148 at this pin.
+2. Every accept entry carries a `js-comparable` header. No entry is
+   undecided.
+3. Every `js-comparable: no` cites an id that `collisions.md`
+   defines. Every id `collisions.md` defines has at least one corpus
+   entry. Both directions are checked.
+4. Every comparable entry's `node` output equals the golden, byte
+   for byte.
+5. **The two divergences of measurement 2 gain collision entries**,
+   with the measured output of each side. That is the sharpest test
+   of this section: it exists because those two were measured and
+   never recorded.
+6. The record states the count of comparable and non-comparable
+   entries, and the `node` and `tsc` versions.
+7. Gates: the standing gate is unchanged, and no committed golden or
+   `.expected` moves. This section adds checks and moves no output.
+8. **Tracking**: `specs/tracking/s69-checked-language-rules.md`.
