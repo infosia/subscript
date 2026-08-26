@@ -7893,11 +7893,13 @@ not a downstream request. **No language surface moves.** The
 accepted TypeScript subset, the C ABI, the host API, the CLI, and
 every committed `.expected` stay as they are.
 
-This section opens after §67 lands. §67 closes instances of the
+This section opens after §67 lands. Pass A landed at `1c578f9`.
+Pass B landed at `9bde577` and is **not COMPLETE**: one CRITICAL
+stays open, and it is item 2's `a152` below. §68 closes it. §67 closes instances of the
 defect classes below; this section closes the classes.
 
-Measurements on this tree at `9fd9603`, with the §67 pass B working
-tree in place. Every measurement is structural. Each one is read
+Measurements re-taken at `9bde577`, where §67 pass B is landed and
+not COMPLETE. `codegen/src/` holds 30352 lines. Every measurement is structural. Each one is read
 from the committed tree, or quoted from the §66 and §67 records.
 
 1. **The round count separates by area, not by difficulty.** A
@@ -7911,8 +7913,8 @@ from the committed tree, or quoted from the §66 and §67 records.
 2. **Three traversals of one HIR tree each re-derive the evaluation
    order.** `hir::ExprKind` holds `Box<Expr>` operands
    (`compiler/src/hir.rs`), so no evaluation order exists in the
-   data. `codegen/src/lower/func.rs` (9152 lines) walks the tree
-   for the dev tier. `codegen/src/cemit.rs` (9732 lines) walks it
+   data. `codegen/src/lower/func.rs` (9184 lines) walks the tree
+   for the dev tier. `codegen/src/cemit.rs` (9763 lines) walks it
    for the ship tier. `codegen/src/suspension.rs` (871 lines) walks
    it for the spill plan. Each walk fixes the order by its own
    convention, and the three conventions must agree.
@@ -8121,18 +8123,19 @@ name construction that `cemit.rs` holds today.
    - `corpus/accept/a151-lambda-env-outlives-block`: a lambda
      assigned inside a loop body and called after the loop, with no
      coroutine. Red at the contract pin: the dev tier prints
-     `v=22`, which is correct, and the ship tier reads an abandoned
-     C block scope.
+     `v=22`, which is correct, and the ship tier printed `v=-1`.
+     The ship tier reads an abandoned C block scope, so its value
+     varies between runs.
    - `corpus/accept/a152-lambda-env-per-iteration`: the coroutine
      twin of the entry above. A lambda literal inside a loop body
      in an async function, held past the loop, with a suspension in
-     the body. Red at the contract pin: the dev tier printed
-     `async-keep=-2083027712` and the ship tier printed
-     `async-keep=0`, where `async-keep=10` is correct. *(Added
-     2026-08-26. The §67 pass B sixth review found it. §67 round 6
-     made both tiers print `async-keep=30`, so the tiers now agree
-     on the wrong answer and the differential gate no longer sees
-     it. One frame member serves one lambda literal, and a literal
+     the body. Red at the contract pin: both tiers print
+     `async-keep=30`, where `async-keep=10` is correct. *(Added
+     2026-08-26. The §67 pass B sixth review found it. Before §67
+     round 6 the dev tier printed `async-keep=-2083027712` and the
+     ship tier printed `async-keep=0`, so the tiers disagreed and
+     the differential gate saw it. Round 6 made them agree on the
+     wrong answer, which the gate cannot see. One frame member serves one lambda literal, and a literal
      inside a loop runs many times. §68.2 rule 8 is the fix: the
      storage scope is the live range, never the source block. A
      narrowing patch in §67 would be the seventh of its kind, so
