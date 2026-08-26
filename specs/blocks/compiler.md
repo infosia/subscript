@@ -8112,6 +8112,21 @@ The interface is not the subject. This section moves no part of it.
     verifier runs in the debug profile and in the release profile.
     This is rule 1g, generalized from spill slots to the whole form.
 
+12. **A total check reports every fact that LIR drops.** *(Added
+    2026-08-26. Two reviews raised one class, so CLAUDE.md's
+    two-round rule applies: the form changes, and no third instance
+    is fixed by hand.)* The first step 1 review found that a
+    `for...of` needed an index and a bound that LIR did not carry.
+    The second found that no part of LIR named the coroutine
+    creator's allocation trap site, which both tiers read and
+    require, and that 13 entries lost it. Each was found by reading.
+    The build now compares, for every corpus entry, each fact a tier
+    reads out of HIR against what LIR carries: a trap site per
+    expression and per function, the entity ids, and the operand
+    counts. A dropped fact fails the build and names the entry and
+    the position. This is rule 1g of §67 in its general form: a
+    total check turns a review's search into a build's list.
+
 ### 68.3 What retires
 
 The deletions are part of the contract. §68.6 item 5 measures
