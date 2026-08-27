@@ -16,8 +16,8 @@
  * printed bytes either way.
  *
  * stdout: the checksum, formatted by shortest round-trip, plus '\n'.
- * stderr: one machine-readable line per run, `sample <index> <ns>`,
- * followed by `checksum-stable <0|1>`.
+ * stderr: `warmup <iterations> <ns>`, one `sample <index> <ns>` line
+ * per timed run, then `checksum-stable <0|1>`.
  *
  * Timed span: the workload only -- array construction, the 100
  * propagation iterations, and the checksum -- measured inside the
@@ -212,30 +212,48 @@ int main(int argc, char **argv) {
 #endif
     int warmup = 3;
     int timed = 11;
+    uint64_t warmup_floor_ns = 0;
+    int report_warmup = 0;
     if (argc >= 3) {
         warmup = atoi(argv[1]);
         timed = atoi(argv[2]);
     }
+    if (argc >= 4) {
+        warmup_floor_ns = (uint64_t)strtoull(argv[3], NULL, 10);
+        report_warmup = 1;
+    }
     if (warmup < 0 || timed < 1) {
-        fprintf(stderr, "usage: a22-baseline <warmup-runs> <timed-runs>\n");
+        fprintf(stderr, "usage: a22-baseline <warmup-runs> <timed-runs> [warmup-floor-ns]\n");
         return 2;
     }
 
     uint64_t ns = 0;
     float first = 0.0f;
     int stable = 1;
+    int warmup_iterations = 0;
+    uint64_t warmup_elapsed_ns = 0;
 
-    for (int i = 0; i < warmup; i += 1) {
+    while (warmup_iterations < warmup || warmup_elapsed_ns < warmup_floor_ns) {
         const float v = run_once(&ns);
-        if (i == 0) {
+        if (warmup_iterations == 0) {
             first = v;
         } else if (v != first) {
             stable = 0;
         }
+        warmup_elapsed_ns += ns;
+        warmup_iterations += 1;
+    }
+    if (report_warmup) {
+        fprintf(
+            stderr,
+            "warmup %d %llu\n",
+            warmup_iterations,
+            (unsigned long long)warmup_elapsed_ns
+        );
     }
     for (int i = 0; i < timed; i += 1) {
         const float v = run_once(&ns);
-        if (warmup == 0 && i == 0) {
+        if (warmup_iterations == 0 && i == 0) {
             first = v;
         } else if (v != first) {
             stable = 0;

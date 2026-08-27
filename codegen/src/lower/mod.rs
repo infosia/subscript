@@ -696,8 +696,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             params.push(match p {
                 StrParam::Str => I64,
                 StrParam::I32 => I32,
-                // `StrParam` is #[non_exhaustive]; a variant this crate
-                // does not know is a compiler/codegen version skew.
+                // `StrParam` is #[non_exhaustive]. An unknown variant means a
+                // defect in this compiler.
                 other => return Err(internal(format!("unknown StrParam {other:?}"))),
             });
         }
@@ -777,8 +777,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             A::Unshift => (&[I64, I64, I64, I32], Some(I32)),
             // (ctx, recv, target, start, end)
             A::CopyWithin => (&[I64, I64, I32, I32, I32], None),
-            // `ArrFn` is #[non_exhaustive]; a variant this crate does
-            // not know is a compiler/codegen version skew.
+            // `ArrFn` is #[non_exhaustive]. An unknown variant means a defect
+            // in this compiler.
             other => return Err(internal(format!("unknown ArrFn {other:?}"))),
         };
         arr_ids.push(mk(f.symbol(), params, ret)?);

@@ -175,7 +175,8 @@ fn abi_of(kind: ElemKind, size: usize) -> Option<Abi> {
 }
 
 /// Records the internal trap for an element shape the code generators
-/// never produce (compiler↔runtime version skew, not a program fault).
+/// never produce. This trap means a defect in this compiler, not a program
+/// fault or a build mismatch.
 unsafe fn abi_or_trap(ctx: *mut Context, kind: ElemKind, size: usize) -> Option<Abi> {
     let abi = abi_of(kind, size);
     if abi.is_none() {
@@ -481,9 +482,9 @@ pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKi
     }
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
-    // An element shape the code generators never produce is an internal
-    // trap, not a silent comparison — the same guard the callback
-    // operations apply (compiler↔runtime version skew).
+    // The code generators never produce this element shape. The trap prevents
+    // a silent wrong comparison. It means a defect in this compiler, not a
+    // program fault or a build mismatch.
     // SAFETY: caller contract.
     if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
         return -1;
@@ -756,7 +757,9 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
     let esz = unsafe { (*ctx).array_elem_size(a) };
     // SAFETY: caller contract.
     if esz != unsafe { (*ctx).array_elem_size(b) } {
-        // Version skew between checker and runtime, not a program fault.
+        // The code generators never give concat operands different element
+        // sizes. This trap means a defect in this compiler, not a program fault
+        // or a build mismatch.
         // SAFETY: caller contract.
         unsafe { &mut *ctx }.trap(
             TrapKind::Internal,

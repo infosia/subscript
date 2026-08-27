@@ -3732,8 +3732,9 @@ pub unsafe extern "C" fn subscript_rt_array_ptr(
 // when the Context is already trapped and re-checks the trap flag after
 // each callback return (stdlib.md §9).
 
-/// Decodes an element-kind tag; an unknown tag records an Internal trap
-/// (compiler↔runtime skew, never a program fault).
+/// Decodes an element-kind tag. The code generators emit only known tags.
+/// An unknown tag records an Internal trap and means a defect in this compiler,
+/// not a program fault or a build mismatch.
 ///
 /// # Safety
 ///
@@ -6309,8 +6310,8 @@ mod tests {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
         let s = ctx.alloc_str(&[0xff], 0);
-        // SAFETY: valid context and live string handle; the invalid byte
-        // exercises the defensive compiler/runtime-skew trap.
+        // SAFETY: valid context and live string handle. The invalid byte
+        // exercises the internal trap for a string the compiler never produces.
         unsafe {
             assert!(subscript_rt_num_parse_float(p, s, 23).is_nan());
         }

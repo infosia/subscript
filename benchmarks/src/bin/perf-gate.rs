@@ -30,14 +30,11 @@
 //!
 //! # Warm-up
 //!
-//! §9 fixes a floor of 3 discarded warm-up runs and 11 timed runs, not
-//! a ceiling, and invalidates a run whose spread exceeds ±20% of the
-//! median. The floor is expressed in runs, so a subject whose workload
-//! is short can still be inside the CPU's frequency/core-placement ramp
-//! when its warm-up ends: its samples then decay monotonically instead
-//! of scattering. The report prints every timed sample in order so that
-//! case is recognizable, and the answer is the one §9 gives — redo the
-//! run, with `--warmup` raised until every subject is in steady state.
+//! §9 requires at least 3 discarded warm-up runs and 200 ms of measured
+//! workload execution. It also requires at least 11 timed runs. The harness
+//! continues each warm-up until both floors are met. `--warmup` sets the
+//! minimum iteration count; the time floor is always additional. A spread
+//! wider than ±20% of the median invalidates the run.
 //!
 //! Exit status: 0 when the §3 dev-JIT threshold is met, 1 when it is
 //! missed (the report is still printed — a missed threshold is a
@@ -50,7 +47,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
-use subscript_codegen::{emit_c, jit_bench, runtime_staticlib_path, tool_output_report};
+use subscript_codegen::{
+    emit_c, jit_bench_with_warmup_floor, runtime_staticlib_path, tool_output_report,
+};
 use subscript_compiler::{check_program, SourceFile};
 
 /// The corpus entry under measurement (`specs/blocks/corpus.md` §4).
@@ -88,6 +87,9 @@ const NOISE_LIMIT: f64 = 0.20;
 /// Default number of discarded warm-up runs (§9 requires at least 3).
 const DEFAULT_WARMUP: usize = 3;
 
+/// Minimum sum of measured workload execution discarded as warm-up.
+const WARMUP_FLOOR: Duration = Duration::from_millis(200);
+
 /// Default number of timed runs (§9 requires at least 11).
 const DEFAULT_TIMED: usize = 11;
 
@@ -105,6 +107,10 @@ struct Subject {
     stdout: Vec<u8>,
     /// One duration per timed run, warm-up already discarded.
     samples: Vec<Duration>,
+    /// Sum of the measured workload-call durations discarded as warm-up.
+    warmup: Duration,
+    /// Number of workload calls discarded as warm-up.
+    warmup_iterations: usize,
     /// Time spent preparing executable code, reported but never gated.
     prepare: Vec<(&'static str, Duration)>,
 }
@@ -216,6 +222,15 @@ fn run() -> Result<ExitCode, Fail> {
     let subjects: [&Subject; 3] = [&c, &ship, &jit];
 
     for s in subjects {
+        if s.warmup_iterations < warmup || s.warmup < WARMUP_FLOOR {
+            return Err(format!(
+                "{} warmed up for {} across {} iterations; compiler.md §9 requires at least {} across at least {warmup} iterations",
+                s.name,
+                ms(s.warmup.as_secs_f64()),
+                s.warmup_iterations,
+                ms(WARMUP_FLOOR.as_secs_f64())
+            ));
+        }
         if s.stdout != ENTRY_GOLDEN {
             return Err(format!(
                 "{} printed {:?}, the golden is {:?}; the subjects do not compute the same thing, so no timing is reported",
@@ -285,7 +300,8 @@ fn write_report(
     w(
         report,
         format_args!(
-            "procedure:   {warmup} warm-up runs discarded, {timed} timed runs, median reported"
+            "procedure:   at least {warmup} warm-up runs and {} measured warm-up, {timed} timed runs, median reported",
+            ms(WARMUP_FLOOR.as_secs_f64())
         ),
     )?;
     w(
@@ -311,6 +327,20 @@ fn write_report(
                 ms(st.max),
                 st.spread() * 100.0,
                 st.median / baseline
+            ),
+        )?;
+    }
+
+    w(report, format_args!(""))?;
+    w(report, format_args!("measured warm-up per subject:"))?;
+    for s in subjects.iter() {
+        w(
+            report,
+            format_args!(
+                "  {:<10} {:>12} across {} iterations",
+                s.name,
+                ms(s.warmup.as_secs_f64()),
+                s.warmup_iterations
             ),
         )?;
     }
@@ -404,7 +434,7 @@ fn write_report(
         w(
             report,
             format_args!(
-                "noise check: FAILED for {} - spread wider than +/-{:.0}% of the median, so this run is void (compiler.md §9).\n             Redo it. Samples that decay monotonically are a warm-up ramp, not machine noise:\n             raise --warmup (§9's 3 is a floor) until every subject is in steady state.",
+                "noise check: FAILED for {} - spread wider than +/-{:.0}% of the median, so this run is void (compiler.md §9).\n             Redo it when the machine is under lower load.",
                 noisy.join(", "),
                 NOISE_LIMIT * 100.0
             ),
@@ -516,13 +546,24 @@ fn write_file(path: &Path, contents: &[u8]) -> Result<(), Fail> {
     std::fs::write(path, contents).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Runs a subject binary with the run counts and returns its stdout
-/// bytes and its timed samples, parsed from the `sample <i> <ns>` lines
-/// it writes to stderr.
-fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<(Vec<u8>, Vec<Duration>), Fail> {
+/// One parsed subject execution.
+struct SubjectRun {
+    /// Exact stdout bytes from the workload.
+    stdout: Vec<u8>,
+    /// One duration per timed workload call.
+    samples: Vec<Duration>,
+    /// Sum of measured workload-call durations discarded as warm-up.
+    warmup: Duration,
+    /// Number of workload calls discarded as warm-up.
+    warmup_iterations: usize,
+}
+
+/// Runs a subject binary and parses its warm-up and timed samples.
+fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<SubjectRun, Fail> {
     let out = Command::new(exe)
         .arg(warmup.to_string())
         .arg(timed.to_string())
+        .arg(WARMUP_FLOOR.as_nanos().to_string())
         .output()
         .map_err(|e| format!("run {}: {e}", exe.display()))?;
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -536,16 +577,38 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<(Vec<u8>, Vec<
     }
     let mut samples = Vec::with_capacity(timed);
     let mut stable = None;
+    let mut warmup_report = None;
     for line in stderr.lines() {
-        let mut parts = line.split_whitespace();
-        match (parts.next(), parts.next(), parts.next()) {
-            (Some("sample"), Some(_), Some(ns)) => {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        match fields.as_slice() {
+            ["warmup", iterations, ns] => {
+                if warmup_report.is_some() {
+                    return Err("duplicate warm-up report".to_string());
+                }
+                let iterations = iterations
+                    .parse()
+                    .map_err(|_| format!("bad warm-up iterations `{line}`"))?;
+                let ns = ns
+                    .parse()
+                    .map_err(|_| format!("bad warm-up time `{line}`"))?;
+                warmup_report = Some((iterations, Duration::from_nanos(ns)));
+            }
+            ["sample", index, ns] => {
+                let index: usize = index
+                    .parse()
+                    .map_err(|_| format!("bad sample index `{line}`"))?;
+                if index != samples.len() {
+                    return Err(format!(
+                        "sample index {index} is out of sequence; expected {}",
+                        samples.len()
+                    ));
+                }
                 let ns: u64 = ns
                     .parse()
                     .map_err(|_| format!("unreadable sample line `{line}`"))?;
                 samples.push(Duration::from_nanos(ns));
             }
-            (Some("checksum-stable"), Some(flag), None) => stable = Some(flag == "1"),
+            ["checksum-stable", flag] => stable = Some(*flag == "1"),
             _ => return Err(format!("unexpected line on stderr: `{line}`")),
         }
     }
@@ -562,7 +625,18 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<(Vec<u8>, Vec<
             samples.len()
         ));
     }
-    Ok((out.stdout, samples))
+    let Some((warmup_iterations, warmup)) = warmup_report else {
+        return Err(format!(
+            "{} did not report its measured warm-up time",
+            exe.display()
+        ));
+    };
+    Ok(SubjectRun {
+        stdout: out.stdout,
+        samples,
+        warmup,
+        warmup_iterations,
+    })
 }
 
 /// Compiles and measures the hand-written C baseline.
@@ -587,12 +661,14 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
         ));
     }
 
-    let (stdout, samples) = run_subject(&exe, warmup, timed)?;
+    let run = run_subject(&exe, warmup, timed)?;
     Ok(Subject {
         name: "C",
         span: "the workload call: array construction, 100 propagation iterations, checksum",
-        stdout,
-        samples,
+        stdout: run.stdout,
+        samples: run.samples,
+        warmup: run.warmup,
+        warmup_iterations: run.warmup_iterations,
         prepare: vec![("compile (cc)", compile)],
     })
 }
@@ -663,24 +739,29 @@ fn measure_ship(
         ));
     }
 
-    let (stdout, samples) = run_subject(&exe, warmup, timed)?;
+    let run = run_subject(&exe, warmup, timed)?;
     Ok(Subject {
         name: "ship-tier",
         span: "the subscript_export_main call in the ship-tier binary (linked with the runtime)",
-        stdout,
-        samples,
+        stdout: run.stdout,
+        samples: run.samples,
+        warmup: run.warmup,
+        warmup_iterations: run.warmup_iterations,
         prepare: vec![("check + emit C", emit), ("compile + link (cc)", compile)],
     })
 }
 
 /// Measures the dev-tier JIT on the entry.
 fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Result<Subject, Fail> {
-    let b = jit_bench(files, warmup, timed).map_err(|e| format!("dev-JIT run: {e}"))?;
+    let b = jit_bench_with_warmup_floor(files, warmup, timed, WARMUP_FLOOR)
+        .map_err(|e| format!("dev-JIT run: {e}"))?;
     Ok(Subject {
         name: "dev-JIT",
         span: "the main call in this process",
         stdout: b.stdout,
         samples: b.samples,
+        warmup: b.warmup,
+        warmup_iterations: b.warmup_iterations,
         prepare: vec![("check + lower + finalize (JIT compile)", b.compile)],
     })
 }
