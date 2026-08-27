@@ -546,3 +546,58 @@ not read the fourth.
 `dev-JIT` measured 28.72× at the pin against §3's 4× limit, and
 30.57× now. The limit has been missed for a long time and nothing
 re-measured it. That is a separate finding.
+
+## The unroller, and the inliner that was refused
+
+Landed `2d712f6`. Contract for the ceiling: `58db7a6`.
+
+The owner asked whether an unroller and an inliner in LIR would improve
+performance, with the dev tier as the target. **The measurement
+supported one and refuted the other.**
+
+    dev tier    inliner   2.398x SLOWER    121.9 -> 292.2 ms
+                unroller  1.567x faster    121.9 ->  77.8 ms
+    ship tier   inliner   2.31% slower
+                unroller  unchanged
+
+**No inliner.** The function boundary helps Cranelift's generated code
+on this shape. Why is not established — the measurement is what is
+established. The ship tier needs neither, because `clang -O2` already
+inlines and unrolls, so doing either in LIR would duplicate work and
+enlarge its input.
+
+**The unroller landed**: dev `30.78x` to `19.63x`, ship unchanged at
+`1.35x`, iteration `2.927` to `3.082 ms` inside the 20 ms budget. It is
+bounded at 8 trips and 16 instructions, and declines a body holding a
+trap, a call, an allocation, complex control flow, or a suspension.
+Across 155 corpus entries it transforms one loop and declines fourteen.
+
+The fact check needed nothing, because a body holding a trap is never
+duplicated and the HIR-versus-LIR trap multiset does not move. The
+handoff said to report rather than weaken that check if the transform
+could not keep it honest; the exclusion made the question moot.
+
+### The measurement this session got wrong first
+
+This session reported the inliner as a **6.9× win** from one unrepeated
+timing. The true figure is a **2.4× loss** — the sign was wrong. Two
+more ad-hoc attempts were also unusable: a comparison between two
+probes that were not the same program, and a run where the ship binary
+reported 0.01 s because it had not executed.
+
+§9 fixes eleven timed runs, a median, every sample reported, and a
+subject voided above ±20 per cent spread. **This session wrote that
+discipline into three handoffs and broke it in its own exploration.**
+Handing the measurement to a round that followed §9 is what produced a
+usable number.
+
+### Why §3 gained a ceiling at the same time
+
+The revision hours earlier made dev-tier execution reported and not
+gated. Under that rule the unroller would have improved a number
+nothing watches, and a later change could undo it unnoticed.
+
+`58db7a6` sets a **25× ceiling**, above the measured 19.63×. The old 4×
+was never met and nothing re-measured it, so it gated nothing. A
+ceiling above the measurement fails only when something gets worse,
+which is the difference between a gate and a number in a document.
