@@ -56,10 +56,44 @@ Two changes. Both are the owner's to accept.
 2. **The gate runs from a test target**, so an ordinary
    `cargo test --release` fails when a threshold is missed.
 
-Cost is unmeasured. Measure the `perf-gate` wall time on a quiet
-machine before the owner decides item 2. §9 requires a quiet machine,
-and a gate that runs beside a compile measures the compile.
+## Cost, measured 2026-08-28
 
-A cheaper form of item 2 exists: keep the gate hand-run, and add its
-run to the phase-end checklist. That converts an unmeasured criterion
-into a remembered one, which is what failed here.
+`perf-gate` takes **3.96 s** wall, with the binary already built.
+`cargo test --offline --release --workspace` takes about 235 s. The
+gate is 1.7% of the suite it would join.
+
+Adding `collect` costs about 7 s more, derived from the 1bb670d
+medians and §9's floors: three subjects, each 200 ms of warm-up and
+11 timed runs at 32 ms (C), 209 ms (ship), and 228 ms (dev).
+
+**The whole proposal costs about 11 s.** Cost is not the obstacle.
+
+## The real obstacle, and why it is smaller than it looks
+
+§9 requires a quiet machine and voids a subject at ±20% spread. A gate
+inside `cargo test` runs beside compiles, so it cannot meet §9.
+
+That is the wrong requirement for this job. §9's precision exists for
+the **published comparison**, where a 5% difference is the claim. A
+gate has one job: report a regression. The regression it missed was
+6.12× to 8.07×, which is 32%.
+
+Two measurements of the same run support the point. `perf-gate` read
+1.35× and 19.64× at 2026-08-27, and 1.38× and 20.17× today on a
+loaded machine. Run-to-run variation is about 3%. §3's limits are
+1.50× against 1.35× and 25× against 19.6×, so the headroom is 11% and
+27%. Noise of 3% does not trip either, and a 32% regression trips both.
+
+**A gate needs a threshold that noise cannot trip, not a quiet
+machine.** Conflating the gate with the published comparison is what
+made the gate look expensive.
+
+## What is still open
+
+The `collect` threshold does not exist. §3 pins no allocation-path
+number, and picking one is the owner's. The measurement to pick it
+from is `1bb670d`: ship 6.45× and dev 7.04×.
+
+A cheaper form of item 2 also exists: keep the gate hand-run, and add
+its run to the phase-end checklist. That converts an unmeasured
+criterion into a remembered one, which is what failed here.
