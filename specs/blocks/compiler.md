@@ -8481,6 +8481,23 @@ and `lower/mod.rs` did not.
      2026-08-27. The owner asking for an updated benchmark table is
      what found this.
 
+     **The cause, measured: a dead LIR temporary stays a GC root for
+     the whole activation.** Runtime call counts are identical at
+     every pin, so it is not extra calls. The time is inside
+     `Context.collect()`: 123 ms before §68, 297 ms at `8084c45`,
+     189 ms at `628a491`. Live allocations say why — the collector
+     reached 75005 per round and 5 at the end before §68, and leaves
+     100006 to 175006 per round and 100006 at the end after it. The
+     surplus is exact: 25000 allocations is 5000 dropped nodes times
+     a node and its four strings, and 4720000 bytes is 5000 times
+     944 bytes of that group's ship-tier capacity. A stale root holds
+     the head of the chain the program deliberately dropped.
+
+     **This violates §68.2 rule 8**, which says storage scope is the
+     live range and never the source block. Rooting a value for the
+     whole activation is precisely what that rule forbids, so this is
+     a defect and not a trade this section made.
+
    - **Kill criterion: a ship-AOT ratio above 1.75× stops the phase
      and reopens the form of the emitted C.**
 
