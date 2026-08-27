@@ -8380,6 +8380,47 @@ and `lower/mod.rs` did not.
      in C: `&x`, then `->f`, then `[i]`, then `*` is `x.f.a[i]`. The
      transcriber chooses the spelling; LIR keeps saying "address
      value".
+
+     **Cleared 2026-08-27 at 1.34×, which is better than the pin.**
+     The ship tier now measures 5.329 ms against 3.987 ms of hand C,
+     with every subject's spread inside ±20 per cent. The pin was
+     1.53×, so the migration ends faster than it started.
+
+     **The cause was none of the three this session diagnosed
+     first.** Address folding took 4.01× to 4.04×. Coalescing block
+     parameters out of SSA took it to 4.00×. Four prologue fixes
+     took it to 3.98×. Each was a real improvement to the emitted
+     code and none of them mattered.
+
+     The owner asked whether array element access called a foreign
+     function more than once at a site, and whether `array_len` was
+     called repeatedly. Both were true. Counted in the emitted C for
+     `a22`:
+
+         helper                     pin   before the fix
+         subscript_rt_array_len       4      22
+         subscript_rt_array_ptr      11       0
+         subscript_rt_array_data      1      10
+
+     The pin read `((SsArrayHeader*)h)->len` and `->data` inline and
+     called the runtime **only inside a failed bounds branch**. The
+     transcriber called `subscript_rt_array_len` for the test, again
+     to build the trap message, and `subscript_rt_array_data` for
+     the pointer — two or three opaque calls per element access, and
+     one more per loop iteration for the loop condition.
+
+     **An opaque call in a loop body is why the other three fixes
+     did nothing.** The C compiler must assume such a call writes
+     memory, so it cannot hoist, cannot vectorise, and spills every
+     cached value across it. The aggregate copies were the symptom.
+     Reading the header inline removed every one of those calls from
+     `a22`'s emitted C and took 3.98× to 1.34×. The dev tier had the
+     same shape and the same fix: 38.98× to 30.57×.
+
+     **The lesson, once.** Three diagnoses failed because each read
+     the emitted C for what looked wrong rather than for what the
+     optimizer could not see through. Measuring one change at a time
+     is what proved each of them worthless.
    - A ratio between 1.53× and 1.75× is reported to the owner with
      the emitted C of the inner loop, and the owner decides.
    - A dev-JIT ratio above 4× stops the phase.
