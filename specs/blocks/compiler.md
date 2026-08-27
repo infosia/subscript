@@ -8934,3 +8934,111 @@ wrong about this language, and the collision entry says so.
 7. Gates: the standing gate is unchanged, and no committed golden or
    `.expected` moves. This section adds checks and moves no output.
 8. **Tracking**: `specs/tracking/s69-checked-language-rules.md`.
+
+## 70. A held async handle, by reference count
+
+Origin: the owner asked on 2026-08-27 whether a `@Shared`-style
+decorator with a reference-counted handle relaxes the async
+restrictions. It does. **No `Promise` object appears, and no
+scheduler.** C8's model is unchanged; this section changes who may
+hold the frame.
+
+### 70.0 What this relaxes
+
+C8 accepts `async`/`await` as poll-driven sugar over Context-owned
+frames, and `r100` and `r105` reject a **floating async call**: the
+result must be awaited at the call site. So a program cannot start
+work, do something else, and await later.
+
+    const t = doWork();   // r100 today
+    stepRenderer();
+    const v = await t;
+
+The reason is ownership. The frame is Context-owned and its lifetime
+is tied to the await; a held handle has no owner. A reference count
+answers that.
+
+**The relaxed surface is already `tsc`-clean.** `Promise<T>` is the
+`tsc` view of an async function's value (C8), so holding one and
+awaiting it later is valid TypeScript. This section accepts more of
+what `tsc` already accepts, which invariant 5 permits without a gate
+change.
+
+### 70.1 Owner decisions, 2026-08-27
+
+1. **Scope: the async handle only.** The reference count applies to a
+   coroutine frame handle. A user-facing `@Shared` decorator on an
+   arbitrary reference class is **not** in this section. It is the
+   general form of the same mechanism and it waits for evidence.
+2. **At least one `await` is required.** Holding a handle, storing it,
+   and passing it are legal. **Dropping it without awaiting is
+   rejected.** `r100`'s intent stands: a coroutine that never
+   completes runs none of its effects, and a silent no-op is the bug
+   that rule exists to prevent. `r100` and `r105` are rewritten, not
+   deleted: they reject a *dropped* handle rather than a held one.
+
+### 70.2 Where the count lives
+
+**Measured 2026-08-27.** The allocation header is 16 bytes, fully
+packed: an 8-byte state word at `-16`, a class id at `-8`, and a
+position id at `-4`. Generated code reads the first two directly.
+
+**The header does not move.** A coroutine frame already begins with
+
+    typedef struct { int32_t state; uint32_t reserved; SubAsyncResume resume; }
+
+and `reserved` is four bytes of alignment padding that nothing reads.
+**The count goes there.** The frame does not grow, the header does not
+change, and no emitted offset moves.
+
+*(The owner allowed the allocation header's offsets to move, because
+no user depends on binary compatibility yet. That allowance is
+recorded and unused here. A user-facing `@Shared` would need it,
+because an arbitrary class's allocation has no spare word.)*
+
+### 70.3 The rules
+
+1. **A handle's count starts at one**, held by the value the call
+   returns.
+2. **A copy increments; a scope exit decrements.** The compiler emits
+   both. There is no user-visible operation.
+3. **A count reaching zero frees the frame**, deterministically, at
+   the decrement. No traversal runs and no collector is invoked, so
+   invariant 2 holds: this is `delete` at a known point, not a
+   collector running unbidden.
+4. **`await` consumes a handle's completion, not its ownership.** A
+   second holder still holds it after the first awaits.
+5. **A handle is not a `Promise`.** It has no `then`, no combinator,
+   and no constructor. C8's rejections stand.
+6. **A cycle leaks**, and a program that leaks is correct, merely
+   larger — invariant 2's own words. A frame cannot hold a handle to
+   itself today; if a shape appears that can, it is recorded, not
+   collected.
+7. **Workers are unaffected.** Q35 gives per-Context isolation and
+   copy-only messaging, so no count crosses a thread and no atomic is
+   needed.
+
+### 70.4 Corpus and gate (pre-registered exit criteria)
+
+1. **Red first, at the contract pin.** Each entry below fails at the
+   pin, verified against a binary built from it (CLAUDE.md core
+   principle 10).
+2. `corpus/accept/a154-held-async-handle`: start two async calls,
+   do work between them, await both, and print an order that pins
+   which ran when.
+3. `corpus/accept/a155-async-handle-array`: hold handles in an array
+   and await them in a loop.
+4. `corpus/reject/r157-dropped-async-handle`: a handle that is never
+   awaited. `r100` and `r105` are rewritten to reject the dropped
+   form, and their headers record that the held form is now legal.
+5. **The count is measured, not asserted.** A unit test reads the
+   frame's count through the emitted layout and pins its value across
+   a copy, a scope exit, and an await.
+6. **Free is deterministic.** A test shows the frame freed at the
+   decrement that reaches zero, with no `Context.collect()`.
+7. **`a22` stays at or below 1.53×.** The count costs an increment and
+   a decrement per handle copy; `a22` holds no async handle, so a
+   change there means something else moved.
+8. Gates: the standing gate, both profiles, zero warnings, `cargo fmt
+   --check`, the `tsc` gate, clippy at the recorded baseline.
+9. **Tracking**: `specs/tracking/s70-held-async-handle.md`.
