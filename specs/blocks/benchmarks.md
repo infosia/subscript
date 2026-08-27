@@ -5,6 +5,22 @@ subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
 
+## A partial run overwrites the whole record
+
+*(Recorded 2026-08-28.)* `--only <id>` writes `results.json` and
+`README.md` in full, with only the workload it ran. There is no
+warning and nothing marks the file as partial.
+
+This session used `--only collect` and `--only tree` while bisecting a
+regression and silently replaced a ten-workload record with one row,
+twice. `git checkout` restored it, because the files are tracked.
+
+`--only` is a correct feature for investigating one workload. A tool
+whose investigation mode destroys the record it exists to keep invites
+the mistake rather than merely permitting it. **A partial run must
+either leave the committed record alone or mark what it wrote as
+partial.**
+
 ## Purpose and reporting rules
 
 - Report measured numbers, whatever they are. No subject is tuned to
