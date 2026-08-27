@@ -1,7 +1,7 @@
-//! Stage 2 gate for compiler.md section 69: Node runs each comparable
-//! accept entry and its stdout must equal the committed golden.
+//! Stages 2 and 3 gate for compiler.md section 69: Node checks comparable
+//! output, and the collision table indexes its corpus evidence.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -48,6 +48,262 @@ fn is_collision_id(text: &str) -> bool {
         .is_some_and(|digits| {
             !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
         })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CorpusReference {
+    name: String,
+    line: usize,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct CollisionRule {
+    references: Vec<CorpusReference>,
+    pins: BTreeSet<String>,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct CollisionIndex {
+    defined_ids: BTreeSet<String>,
+    rules: BTreeMap<String, CollisionRule>,
+    retired: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScannedCorpusReference {
+    name: String,
+    start: usize,
+    end: usize,
+    retired: bool,
+}
+
+fn collision_ids_in(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|word| is_collision_id(word))
+}
+
+fn scan_corpus_references(text: &str) -> Vec<ScannedCorpusReference> {
+    let bytes = text.as_bytes();
+    let mut references = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        let start = index;
+        let (name_start, retired) = if bytes[index..].starts_with(b"retired:") {
+            (index + "retired:".len(), true)
+        } else {
+            (index, false)
+        };
+        if name_start >= bytes.len() || !matches!(bytes[name_start], b'a' | b'r') {
+            index += 1;
+            continue;
+        }
+        if start > 0
+            && matches!(bytes[start - 1], b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-')
+        {
+            index += 1;
+            continue;
+        }
+        let mut end = name_start + 1;
+        let digits_start = end;
+        while end < bytes.len() && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if end == digits_start {
+            index += 1;
+            continue;
+        }
+        if end < bytes.len() && bytes[end] == b'-' {
+            end += 1;
+            while end < bytes.len() && matches!(bytes[end], b'a'..=b'z' | b'0'..=b'9' | b'-') {
+                end += 1;
+            }
+        }
+        references.push(ScannedCorpusReference {
+            name: text[name_start..end].to_string(),
+            start,
+            end,
+            retired,
+        });
+        index = end;
+    }
+
+    let mut expanded = Vec::new();
+    for pair in references.windows(2) {
+        let [left, right] = pair else {
+            unreachable!("a two-element window must contain two references")
+        };
+        let separator: String = text[left.end..right.start]
+            .chars()
+            .filter(|character| !character.is_whitespace() && *character != '`')
+            .collect();
+        if separator != "–" {
+            continue;
+        }
+        let Some((left_kind, left_number)) = corpus_reference_number(&left.name) else {
+            continue;
+        };
+        let Some((right_kind, right_number)) = corpus_reference_number(&right.name) else {
+            continue;
+        };
+        if left_kind != right_kind || left_number >= right_number {
+            continue;
+        }
+        let width = left.name.len() - 1;
+        expanded.extend(
+            (left_number + 1..right_number).map(|number| ScannedCorpusReference {
+                name: format!("{left_kind}{number:0width$}"),
+                start: left.start,
+                end: right.end,
+                retired: false,
+            }),
+        );
+    }
+    references.extend(expanded);
+    references
+}
+
+fn corpus_reference_number(name: &str) -> Option<(char, u32)> {
+    let mut characters = name.chars();
+    let kind = characters.next()?;
+    if !matches!(kind, 'a' | 'r') {
+        return None;
+    }
+    let digits = characters.as_str();
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok().map(|number| (kind, number))
+}
+
+impl CollisionIndex {
+    fn parse(source: &str) -> Result<Self, String> {
+        let mut index = Self::default();
+        for reference in scan_corpus_references(source) {
+            if reference.retired {
+                index.retired.insert(reference.name);
+            }
+        }
+
+        let mut current_rule = None::<String>;
+        let mut in_collision_rules = false;
+        let mut in_q_register = false;
+        let mut pin_paragraph = false;
+        for (line_index, line) in source.lines().enumerate() {
+            let line_number = line_index + 1;
+            if line == "## 1. Collision rules" {
+                in_collision_rules = true;
+                in_q_register = false;
+                continue;
+            }
+            if line.starts_with("## 2.") {
+                in_collision_rules = false;
+                in_q_register = true;
+                current_rule = None;
+            }
+            if line.starts_with("## 3.") {
+                in_q_register = false;
+            }
+            if let Some(heading) = line.strip_prefix("### ").filter(|_| in_collision_rules) {
+                let Some(id) = heading.split('.').next().filter(|id| {
+                    id.strip_prefix('C').is_some_and(|digits| {
+                        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+                }) else {
+                    continue;
+                };
+                if index
+                    .rules
+                    .insert(id.to_string(), CollisionRule::default())
+                    .is_some()
+                {
+                    return Err(format!(
+                        "duplicate collision rule `{id}` at line {line_number}"
+                    ));
+                }
+                index
+                    .defined_ids
+                    .extend(collision_ids_in(line).map(str::to_string));
+                current_rule = Some(id.to_string());
+                pin_paragraph = false;
+                continue;
+            }
+            if in_q_register && line.starts_with("- **Q") {
+                index
+                    .defined_ids
+                    .extend(collision_ids_in(line).map(str::to_string));
+            }
+            if line.trim().is_empty() {
+                pin_paragraph = false;
+                continue;
+            }
+            let Some(rule_id) = &current_rule else {
+                continue;
+            };
+            if line.contains("Accept:") || line.contains("Reject:") {
+                pin_paragraph = true;
+            }
+            let rule = index
+                .rules
+                .get_mut(rule_id)
+                .expect("the active collision rule must exist");
+            for reference in scan_corpus_references(line) {
+                if pin_paragraph {
+                    rule.pins.insert(reference.name.clone());
+                }
+                rule.references.push(CorpusReference {
+                    name: reference.name,
+                    line: line_number,
+                });
+            }
+        }
+        if index.rules.is_empty() {
+            return Err("no `### C<id>.` collision rules found in section 1".to_string());
+        }
+        Ok(index)
+    }
+
+    fn consistency_errors(&self, corpus: &BTreeSet<String>) -> Vec<String> {
+        let mut errors = Vec::new();
+        for (id, rule) in &self.rules {
+            for reference in &rule.references {
+                if !self.retired.contains(&reference.name)
+                    && !corpus_contains(corpus, &reference.name)
+                {
+                    errors.push(format!(
+                        "{id} references absent corpus entry `{}` at collisions.md line {}",
+                        reference.name, reference.line
+                    ));
+                }
+            }
+            if !rule
+                .pins
+                .iter()
+                .any(|name| !self.retired.contains(name) && corpus_contains(corpus, name))
+            {
+                errors.push(format!(
+                    "{id} pins no corpus entry through its `Accept:`/`Reject:` paragraph"
+                ));
+            }
+        }
+        for retired in &self.retired {
+            if corpus_contains(corpus, retired) {
+                errors.push(format!(
+                    "collision table marks `{retired}` retired, but that corpus entry exists"
+                ));
+            }
+        }
+        errors
+    }
+}
+
+fn corpus_contains(corpus: &BTreeSet<String>, reference: &str) -> bool {
+    if corpus_reference_number(reference).is_some() {
+        corpus
+            .iter()
+            .any(|name| name == reference || name.starts_with(&format!("{reference}-")))
+    } else {
+        corpus.contains(reference)
+    }
 }
 
 #[derive(Debug)]
@@ -119,19 +375,35 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
         .collect()
 }
 
-fn collision_ids(root: &Path) -> Result<BTreeSet<String>, String> {
+fn corpus_entry_names(root: &Path) -> Result<BTreeSet<String>, String> {
+    let mut names = BTreeSet::new();
+    for kind in ["accept", "reject"] {
+        let directory = root.join("corpus").join(kind);
+        for entry in fs::read_dir(&directory)
+            .map_err(|error| format!("read {}: {error}", directory.display()))?
+        {
+            let path = entry
+                .map_err(|error| format!("read {} entry: {error}", directory.display()))?
+                .path();
+            if !path.is_file() || !path.extension().is_some_and(|extension| extension == "ts") {
+                continue;
+            }
+            let name = path
+                .file_stem()
+                .expect("a TypeScript corpus entry must have a file stem")
+                .to_string_lossy()
+                .into_owned();
+            names.insert(name);
+        }
+    }
+    Ok(names)
+}
+
+fn collision_index(root: &Path) -> Result<CollisionIndex, String> {
     let path = root.join("specs/blocks/collisions.md");
     let source =
         fs::read_to_string(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
-    Ok(source
-        .lines()
-        .filter(|line| line.starts_with("### C") || line.starts_with("- **Q"))
-        .flat_map(|line| {
-            line.split(|character: char| !character.is_ascii_alphanumeric())
-                .filter(|word| is_collision_id(word))
-                .map(str::to_string)
-        })
-        .collect())
+    CollisionIndex::parse(&source).map_err(|error| format!("parse {}: {error}", path.display()))
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>, String> {
@@ -168,7 +440,9 @@ fn prelude_has_global(prelude: &str, name: &str) -> bool {
 fn every_accept_entry_has_a_total_js_claim_and_comparable_output_matches() {
     let root = project_root();
     let entries = entries(&root).unwrap_or_else(|error| panic!("{error}"));
-    let defined_ids = collision_ids(&root).unwrap_or_else(|error| panic!("{error}"));
+    let defined_ids = collision_index(&root)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .defined_ids;
     let mut comparable = Vec::new();
     let mut claim_errors = Vec::new();
     for entry in &entries {
@@ -286,6 +560,26 @@ fn every_accept_entry_has_a_total_js_claim_and_comparable_output_matches() {
 }
 
 #[test]
+fn collision_table_is_a_consistent_corpus_index() {
+    let started = Instant::now();
+    let root = project_root();
+    let index = collision_index(&root).unwrap_or_else(|error| panic!("{error}"));
+    let corpus = corpus_entry_names(&root).unwrap_or_else(|error| panic!("{error}"));
+    let errors = index.consistency_errors(&corpus);
+    eprintln!(
+        "collision index gate: {} C rules, {} corpus entries, {:.3}s",
+        index.rules.len(),
+        corpus.len(),
+        started.elapsed().as_secs_f64()
+    );
+    assert!(
+        errors.is_empty(),
+        "invalid collision table index:\n{}",
+        errors.join("\n")
+    );
+}
+
+#[test]
 fn js_claim_parser_has_only_two_states() {
     assert_eq!(JsClaim::parse("yes"), Ok(JsClaim::Yes));
     assert_eq!(
@@ -314,4 +608,74 @@ fn shim_names_must_exist_in_the_prelude() {
         "declare function printExtra(): void;",
         "print"
     ));
+}
+
+#[test]
+fn collision_index_expands_ranges_and_reads_q_definitions() {
+    let source = "\
+# Collision table
+
+## 1. Collision rules
+
+### C1. First rule (Q1)
+
+Accept: `a01`–`a03`. Reject: `retired:r04-old`.
+
+### C2. Second rule
+
+Accept: `a05`.
+
+## 2. Q-register resolutions not covered above
+
+- **Q3/Q4 (forms)** — defined together.
+";
+    let index = CollisionIndex::parse(source).expect("parse collision index");
+    assert_eq!(
+        index.defined_ids,
+        BTreeSet::from([
+            "C1".to_string(),
+            "C2".to_string(),
+            "Q1".to_string(),
+            "Q3".to_string(),
+            "Q4".to_string(),
+        ])
+    );
+    assert_eq!(
+        index.rules["C1"].pins,
+        BTreeSet::from([
+            "a01".to_string(),
+            "a02".to_string(),
+            "a03".to_string(),
+            "r04-old".to_string(),
+        ])
+    );
+    assert_eq!(index.retired, BTreeSet::from(["r04-old".to_string()]));
+}
+
+#[test]
+fn collision_index_reports_all_missing_unpinned_and_stale_records() {
+    let source = "\
+## 1. Collision rules
+
+### C1. First rule
+
+Accept: `a01`. Reject: `r02`, `retired:r03-old`.
+
+### C2. Empty rule
+
+This paragraph cites absent `r04`, but it is not an evidence paragraph.
+
+## 2. Q-register resolutions not covered above
+";
+    let index = CollisionIndex::parse(source).expect("parse collision index");
+    let corpus = BTreeSet::from(["a01-present".to_string(), "r03-old".to_string()]);
+    assert_eq!(
+        index.consistency_errors(&corpus),
+        vec![
+            "C1 references absent corpus entry `r02` at collisions.md line 5".to_string(),
+            "C2 references absent corpus entry `r04` at collisions.md line 9".to_string(),
+            "C2 pins no corpus entry through its `Accept:`/`Reject:` paragraph".to_string(),
+            "collision table marks `r03-old` retired, but that corpus entry exists".to_string(),
+        ]
+    );
 }
