@@ -107,10 +107,49 @@ SWC parse (TS-subset front end, Rust)
   implementation of the a22 workload (same shape as corpus.md §4),
   compiled with the platform C compiler at `-O2`, measured on the same
   machine in the same session as the language runs and recorded in the
-  tracking file when P4 opens. Criteria: ship-AOT within **1.5×** of the
-  C baseline (eval median); dev-JIT within **4×** of the same baseline.
-  Failing either reopens the backend decision with the measurement as
-  the named criterion.
+  tracking file when P4 opens. Criteria: ship tier within **1.5×** of
+  the C baseline (eval median). Failing it reopens the backend decision
+  with the measurement as the named criterion.
+
+  *(Revised 2026-08-27, owner. This read "ship-AOT within 1.5× ...;
+  dev-JIT within **4×** of the same baseline". Two things were wrong
+  with it.)*
+
+  **"ship-AOT" named a tier that no longer exists.** It meant the
+  Cranelift AOT, which §11 superseded and which is now deleted. The
+  ship tier is C emission and measures 1.35×, inside the 1.5×.
+
+  **The dev-tier criterion measured the wrong thing.** Invariant 3
+  states why the dev tier exists: it is "a **fast-iteration**
+  development tier", and dropping it "forfeits the main
+  **iteration-speed** argument for the language". §9 says the same in
+  its own words — the JIT compile time "is the iteration-speed
+  argument" — and then gated execution anyway. Measured on `a22`:
+
+      dev tier   check + lower + finalize          5.0 ms
+      ship tier  check + emit C, then compile+link 119.3 ms
+                                                   24x faster to iterate
+
+      dev tier   execution                        30.8x of C
+      ship tier  execution                         1.35x of C
+
+  The dev tier is 24× faster to reach a running program and 23× slower
+  to run it. That is the trade the tier exists to make, and a 4×
+  execution limit asked it not to make it. The limit was never met, and
+  nothing re-measured it for long enough that this session found it by
+  accident.
+
+  **The dev tier's criterion is now iteration time.** Time from a
+  changed source to a running program, on `a22`, must stay within
+  **20 ms**, which is four times the 5.0 ms measured here. A hot reload
+  of one function must stay within the same budget. Execution speed for
+  the dev tier is **reported, not gated** — the inverse of the old
+  rule, and the inverse is what invariant 3 asks for.
+
+  *(No iteration-time gate existed before this. `codegen/tests/
+  reload.rs` has nineteen correctness tests and measures no time. The
+  property invariant 3 calls the main argument for the language was
+  never measured.)*
 
 ## 4. Milestones and gates
 
