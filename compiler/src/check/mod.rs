@@ -253,6 +253,8 @@ pub(crate) struct Local {
     /// True when the binding holds a capturing lambda; such a binding
     /// may be called and passed downward but may not escape (C5).
     pub holds_capturing: bool,
+    /// Async-handle creation obligations reachable through this value.
+    pub async_origins: HashSet<u32>,
 }
 
 /// One lexical scope. `fn_boundary` marks the start of a lambda body:
@@ -309,6 +311,8 @@ pub(crate) struct FnCtx {
     pub narrowed: HashSet<String>,
     pub loop_depth: u32,
     pub switch_depth: u32,
+    /// Each async handle creation or async-handle parameter in this body.
+    pub async_origins: Vec<(Pos, bool)>,
 }
 
 impl FnCtx {
@@ -327,6 +331,44 @@ impl FnCtx {
             narrowed: HashSet::new(),
             loop_depth: 0,
             switch_depth: 0,
+            async_origins: Vec::new(),
+        }
+    }
+
+    /// Registers one handle whose underlying computation needs one await.
+    pub(crate) fn register_async_origin(&mut self, pos: Pos) -> u32 {
+        let id = self.async_origins.len() as u32;
+        self.async_origins.push((pos, false));
+        id
+    }
+
+    /// Discharges every supplied handle origin through await, pass, or return.
+    pub(crate) fn handle_async_origins(&mut self, origins: &HashSet<u32>) {
+        for origin in origins {
+            if let Some((_, handled)) = self.async_origins.get_mut(*origin as usize) {
+                *handled = true;
+            }
+        }
+    }
+
+    /// Returns the async obligations carried by one already-resolved local.
+    pub(crate) fn local_async_origins(&self, name: &str) -> HashSet<u32> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.vars.get(name))
+            .map_or_else(HashSet::new, |local| local.async_origins.clone())
+    }
+
+    /// Replaces the obligations carried by a mutable local assignment.
+    pub(crate) fn set_local_async_origins(&mut self, name: &str, origins: HashSet<u32>) {
+        if let Some(local) = self
+            .scopes
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.vars.get_mut(name))
+        {
+            local.async_origins = origins;
         }
     }
 
@@ -3533,6 +3575,19 @@ impl<'p> Checker<'p> {
                 Vec::new()
             }
         };
+        let unhandled = fx
+            .async_origins
+            .iter()
+            .filter(|(_, handled)| !*handled)
+            .map(|(pos, _)| pos.clone())
+            .collect::<Vec<_>>();
+        for origin in unhandled {
+            self.error(
+                RuleCode::S013,
+                "an async handle is dropped without any await of its completion",
+                origin,
+            );
+        }
         let body = self.rewrite_using_body(body, &using_positions, &sig.ret);
         let ret = if sig.is_generator {
             let yield_ty = fx.frames[0].yield_ty.clone().unwrap_or(Type::Void);
@@ -3588,6 +3643,13 @@ impl<'p> Checker<'p> {
                     ty: ps.ty.clone(),
                     mutable: true,
                     holds_capturing: false,
+                    async_origins: if matches!(ps.ty, Type::AsyncHandle(_))
+                        || matches!(&ps.ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)))
+                    {
+                        HashSet::from([fx.register_async_origin(pos.clone())])
+                    } else {
+                        HashSet::new()
+                    },
                 },
                 pos.clone(),
                 fx,
@@ -3673,6 +3735,7 @@ impl<'p> Checker<'p> {
                                 ty: ps.ty.clone(),
                                 mutable: true,
                                 holds_capturing: false,
+                                async_origins: HashSet::new(),
                             },
                             param_pos.clone(),
                             &mut fx,
@@ -3912,6 +3975,7 @@ impl<'p> Checker<'p> {
                             ty: Type::Error,
                             mutable: true,
                             holds_capturing: false,
+                            async_origins: HashSet::new(),
                         });
                     }
                 }
@@ -3926,6 +3990,7 @@ impl<'p> Checker<'p> {
                     ty: Type::Error,
                     mutable: true,
                     holds_capturing: false,
+                    async_origins: HashSet::new(),
                 });
             }
             if let Some(local) = scope.vars.get(name) {
@@ -3942,6 +4007,7 @@ impl<'p> Checker<'p> {
                     ty: Type::Error,
                     mutable: true,
                     holds_capturing: false,
+                    async_origins: HashSet::new(),
                 });
             }
             if scope.fn_boundary {

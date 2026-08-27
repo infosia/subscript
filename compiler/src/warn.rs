@@ -312,7 +312,8 @@ impl WarningChecker<'_> {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, argument_sink);
                 }
             }
-            ExprKind::AsyncCall { callee, args } => {
+            ExprKind::AsyncCall { callee, args }
+            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.scan_w001_expr(
                         receiver,
@@ -324,6 +325,10 @@ impl WarningChecker<'_> {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
+            }
+            ExprKind::AsyncHandleAwait(handle)
+            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
+                self.scan_w001_expr(handle, loop_depth, collect_mutes, AllocationSink::Use);
             }
             ExprKind::New { args, .. } => {
                 for arg in args {
@@ -400,7 +405,8 @@ impl WarningChecker<'_> {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
             }
-            ExprKind::AsyncCall { callee, args } => {
+            ExprKind::AsyncCall { callee, args }
+            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.scan_w001_expr(
                         receiver,
@@ -412,6 +418,10 @@ impl WarningChecker<'_> {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
+            }
+            ExprKind::AsyncHandleAwait(handle)
+            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
+                self.scan_w001_expr(handle, loop_depth, collect_mutes, AllocationSink::Use);
             }
             ExprKind::DescriptorLit { fields, .. } => {
                 for value in fields.iter().flatten() {
@@ -553,13 +563,18 @@ impl WarningChecker<'_> {
                     self.scan_w003_expr(arg, loop_depth, fresh);
                 }
             }
-            ExprKind::AsyncCall { callee, args } => {
+            ExprKind::AsyncCall { callee, args }
+            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.scan_w003_expr(receiver, loop_depth, fresh);
                 }
                 for arg in args {
                     self.scan_w003_expr(arg, loop_depth, fresh);
                 }
+            }
+            ExprKind::AsyncHandleAwait(handle)
+            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
+                self.scan_w003_expr(handle, loop_depth, fresh)
             }
             ExprKind::New { args, .. } => {
                 for arg in args {
@@ -754,13 +769,18 @@ impl WarningChecker<'_> {
                     self.warn_w002_expr_uses(arg, freed);
                 }
             }
-            ExprKind::AsyncCall { callee, args } => {
+            ExprKind::AsyncCall { callee, args }
+            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.warn_w002_expr_uses(receiver, freed);
                 }
                 for arg in args {
                     self.warn_w002_expr_uses(arg, freed);
                 }
+            }
+            ExprKind::AsyncHandleAwait(handle)
+            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
+                self.warn_w002_expr_uses(handle, freed)
             }
             ExprKind::New { args, .. } => {
                 for arg in args {
@@ -903,13 +923,18 @@ impl WarningChecker<'_> {
                     self.analyze_lambdas_in_expr(arg);
                 }
             }
-            ExprKind::AsyncCall { callee, args } => {
+            ExprKind::AsyncCall { callee, args }
+            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.analyze_lambdas_in_expr(receiver);
                 }
                 for arg in args {
                     self.analyze_lambdas_in_expr(arg);
                 }
+            }
+            ExprKind::AsyncHandleAwait(handle)
+            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
+                self.analyze_lambdas_in_expr(handle)
             }
             ExprKind::New { args, .. } => {
                 for arg in args {
@@ -1130,10 +1155,12 @@ fn contains_collect_in_expr(expr: &Expr) -> bool {
             };
             callee_has_collect || args.iter().any(contains_collect_in_expr)
         }
-        ExprKind::AsyncCall { callee, args } => {
+        ExprKind::AsyncCall { callee, args } | ExprKind::AsyncHandleCreate { callee, args, .. } => {
             callee.receiver().is_some_and(contains_collect_in_expr)
                 || args.iter().any(contains_collect_in_expr)
         }
+        ExprKind::AsyncHandleAwait(handle)
+        | ExprKind::AsyncHandleTransfer { value: handle, .. } => contains_collect_in_expr(handle),
         ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
             contains_collect_in_expr(operand)
         }
@@ -1290,7 +1317,7 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
                 scan_candidate_expr(arg, name, state);
             }
         }
-        ExprKind::AsyncCall { callee, args } => {
+        ExprKind::AsyncCall { callee, args } | ExprKind::AsyncHandleCreate { callee, args, .. } => {
             if callee
                 .receiver()
                 .is_some_and(|receiver| value_is_candidate(receiver, name))
@@ -1304,6 +1331,10 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
             for arg in args {
                 scan_candidate_expr(arg, name, state);
             }
+        }
+        ExprKind::AsyncHandleAwait(handle)
+        | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
+            scan_candidate_expr(handle, name, state)
         }
         ExprKind::Assign { target, value, .. } => {
             if value_is_candidate(value, name)

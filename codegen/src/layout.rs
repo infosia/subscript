@@ -503,6 +503,7 @@ impl Layouts {
             | Type::Inbox(_)
             | Type::Outbox(_)
             | Type::Generator(_)
+            | Type::AsyncHandle(_)
             | Type::Nullable(_)
             | Type::Null => Repr::Scalar(types::I64),
             Type::Func(_) => Repr::Pair,
@@ -592,7 +593,8 @@ pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
         | Type::Array(_)
         | Type::Map(..)
         | Type::Set(_)
-        | Type::Generator(_) => true,
+        | Type::Generator(_)
+        | Type::AsyncHandle(_) => true,
         Type::Nullable(inner) => is_managed(layouts, inner)? || matches!(**inner, Type::Func(_)),
         Type::Class(id) => !layouts.class(id.0)?.is_value,
         _ => false,
@@ -679,7 +681,8 @@ fn type_contains_managed(
         | Type::Array(_)
         | Type::Map(..)
         | Type::Set(_)
-        | Type::Generator(_) => true,
+        | Type::Generator(_)
+        | Type::AsyncHandle(_) => true,
         Type::Nullable(inner) => match &**inner {
             // A nullable value-class slot is a borrowed C struct pointer,
             // not an embedded copy of the pointed-to record.

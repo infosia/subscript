@@ -376,8 +376,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 100;
-const DEBUG_RUNNABLE_COUNT: usize = 99;
+const RELEASE_RUNNABLE_COUNT: usize = 102;
+const DEBUG_RUNNABLE_COUNT: usize = 101;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -541,6 +541,14 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a152-lambda-env-per-iteration",
         "distinct loop-iteration closure environments across suspension",
+    ),
+    (
+        "a154-held-async-handle",
+        "held async-handle creation, delayed polling, and deterministic completion order",
+    ),
+    (
+        "a155-async-handle-array",
+        "async-handle array storage, indexed held awaits, and scope release",
     ),
     (
         "a15-manual-lifetime",

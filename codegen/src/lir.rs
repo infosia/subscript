@@ -857,6 +857,11 @@ struct Binding {
     value: Option<l::Operand>,
 }
 
+fn is_async_owner_type(ty: &l::ValueType) -> bool {
+    matches!(ty, l::ValueType::Data(Type::AsyncHandle(_)))
+        || matches!(ty, l::ValueType::Data(Type::Array(element)) if matches!(&**element, Type::AsyncHandle(_)))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct BindingSite {
     file: String,
@@ -880,6 +885,7 @@ impl BindingSite {
 struct Control {
     break_target: l::BlockId,
     continue_target: Option<l::BlockId>,
+    scope_depth: usize,
 }
 
 struct AddressTaken<'a> {
@@ -1155,13 +1161,16 @@ impl AddressTaken<'_> {
             }
             K::Yield(Some(value)) => self.expr(value),
             K::Yield(None) => {}
-            K::AsyncCall { callee, args } => {
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.expr(receiver);
                 }
                 for argument in args {
                     self.expr(argument);
                 }
+            }
+            K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
+                self.expr(handle);
             }
             K::Cond { cond, then, els } => {
                 self.expr(cond);
@@ -1347,6 +1356,7 @@ struct FunctionBuilder<'a, 'm> {
     this_value: Option<l::Operand>,
     controls: Vec<Control>,
     array_values: Vec<l::ValueId>,
+    moved_async_owners: HashSet<l::ValueId>,
 }
 
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
@@ -1377,6 +1387,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             this_value: None,
             controls: Vec::new(),
             array_values: Vec::new(),
+            moved_async_owners: HashSet::new(),
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
         builder.entry = entry;
@@ -1428,6 +1439,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if let Some(block) = self.current {
             if self.blocks[block.0 as usize].terminator.is_none() {
                 if self.function.ret == Type::Void || self.function.is_generator {
+                    let pos = self.function.pos.clone();
+                    self.release_scopes_from(0, &pos)?;
                     self.blocks[block.0 as usize].terminator = Some(l::Terminator::Return {
                         value: None,
                         pos: self.function.pos.clone(),
@@ -1570,7 +1583,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         mutable: bool,
         value: l::Operand,
         pos: Pos,
+        acquire_owner: bool,
     ) -> Result<(BindingId, Option<l::LocalId>), LowerError> {
+        if acquire_owner {
+            self.acquire_owner(&value, &ty, &pos)?;
+        }
         let storage = if self
             .address_taken
             .contains(&BindingSite::new(&source_name, &pos))
@@ -1639,6 +1656,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             true,
             operand.clone(),
             pos.clone(),
+            false,
         )?;
         self.parameters.push(l::Parameter {
             storage,
@@ -1706,6 +1724,108 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
+    fn operand_is_fresh_owner(&self, operand: &l::Operand, ty: &l::ValueType) -> bool {
+        let l::Operand::Value(value) = operand else {
+            return false;
+        };
+        self.blocks.iter().any(|block| {
+            block.instructions.iter().any(|instruction| {
+                instruction.result == Some(*value)
+                    && match (&instruction.kind, ty) {
+                        (
+                            l::InstructionKind::AsyncHandleCreate(_),
+                            l::ValueType::Data(Type::AsyncHandle(_)),
+                        ) => true,
+                        (l::InstructionKind::Call(_), l::ValueType::Data(Type::AsyncHandle(_))) => {
+                            true
+                        }
+                        (
+                            l::InstructionKind::ArrayLiteral
+                            | l::InstructionKind::ArraySpreadLiteral(_)
+                            | l::InstructionKind::Call(_),
+                            l::ValueType::Data(Type::Array(element)),
+                        ) => matches!(&**element, Type::AsyncHandle(_)),
+                        _ => false,
+                    }
+            })
+        })
+    }
+
+    fn acquire_owner(
+        &mut self,
+        value: &l::Operand,
+        ty: &l::ValueType,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        if self.operand_is_fresh_owner(value, ty) {
+            if let l::Operand::Value(value) = value {
+                if self.moved_async_owners.insert(*value) {
+                    return Ok(());
+                }
+            }
+        }
+        let kind = match ty {
+            l::ValueType::Data(Type::AsyncHandle(_)) => l::InstructionKind::AsyncHandleRetain,
+            l::ValueType::Data(Type::Array(element))
+                if matches!(&**element, Type::AsyncHandle(_)) =>
+            {
+                l::InstructionKind::AsyncHandleArrayRetain
+            }
+            _ => return Ok(()),
+        };
+        self.emit(
+            kind,
+            vec![value.clone()],
+            None,
+            false,
+            Vec::new(),
+            pos.clone(),
+        )?;
+        Ok(())
+    }
+
+    fn release_owner(
+        &mut self,
+        value: l::Operand,
+        ty: &l::ValueType,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let kind = match ty {
+            l::ValueType::Data(Type::AsyncHandle(_)) => l::InstructionKind::AsyncHandleRelease,
+            l::ValueType::Data(Type::Array(element))
+                if matches!(&**element, Type::AsyncHandle(_)) =>
+            {
+                l::InstructionKind::AsyncHandleArrayRelease
+            }
+            _ => return Ok(()),
+        };
+        self.emit(kind, vec![value], None, false, Vec::new(), pos.clone())?;
+        Ok(())
+    }
+
+    fn release_scopes_from(&mut self, depth: usize, pos: &Pos) -> Result<(), LowerError> {
+        if self.current.is_none() {
+            return Ok(());
+        }
+        let mut bindings = self
+            .scopes
+            .iter()
+            .skip(depth)
+            .flat_map(|scope| scope.values().copied())
+            .collect::<Vec<_>>();
+        bindings.sort_unstable();
+        bindings.dedup();
+        bindings.reverse();
+        for binding in bindings {
+            let entry = self.bindings[binding.0].clone();
+            if is_async_owner_type(&entry.ty) {
+                let value = self.read_binding(binding, pos)?;
+                self.release_owner(value, &entry.ty, pos)?;
+            }
+        }
+        Ok(())
+    }
+
     fn lookup_binding(&self, name: &str, pos: &Pos) -> Result<BindingId, LowerError> {
         self.scopes
             .iter()
@@ -1745,6 +1865,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .cloned()
             .ok_or_else(|| self.error(pos, format!("binding {} is missing", binding.0)))?;
         let value = self.coerce_operand(value, entry.ty.clone(), pos)?;
+        let old_owner = if is_async_owner_type(&entry.ty) {
+            Some(self.read_binding(binding, pos)?)
+        } else {
+            None
+        };
+        self.acquire_owner(&value, &entry.ty, pos)?;
+        if let Some(old_owner) = old_owner {
+            self.release_owner(old_owner, &entry.ty, pos)?;
+        }
         if let Some(local) = entry.storage {
             self.emit(
                 l::InstructionKind::StoreLocal(local),
@@ -1857,6 +1986,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     fn lower_scoped(&mut self, statements: &[hir::Stmt]) -> Result<(), LowerError> {
         self.scopes.push(HashMap::new());
         let result = self.lower_statements(statements);
+        if result.is_ok() && self.current.is_some() {
+            let pos = statements
+                .last()
+                .map(stmt_pos)
+                .unwrap_or_else(|| self.function.pos.clone());
+            self.release_scopes_from(self.scopes.len() - 1, &pos)?;
+        }
         self.scopes.pop();
         result
     }
@@ -1878,6 +2014,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     *mutable,
                     value,
                     pos.clone(),
+                    true,
                 )?;
             }
             hir::Stmt::Expr(expr) => {
@@ -1895,6 +2032,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         )
                     })
                     .transpose()?;
+                if let Some(value) = &value {
+                    let return_ty = l::ValueType::Data(self.function.ret.clone());
+                    self.acquire_owner(value, &return_ty, pos)?;
+                }
+                self.release_scopes_from(0, pos)?;
                 self.terminate(
                     l::Terminator::Return {
                         value,
@@ -1934,19 +2076,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let block = self
                     .controls
                     .last()
-                    .map(|control| control.break_target)
+                    .map(|control| (control.break_target, control.scope_depth))
                     .ok_or_else(|| self.error(pos, "break has no enclosing target"))?;
-                let edge = self.block_target(block, Vec::new())?;
+                self.release_scopes_from(block.1, pos)?;
+                let edge = self.block_target(block.0, Vec::new())?;
                 self.terminate(l::Terminator::Branch(edge), pos)?;
             }
             hir::Stmt::Continue(pos) => {
-                let block = self
+                let control = self
                     .controls
                     .iter()
                     .rev()
-                    .find_map(|control| control.continue_target)
+                    .find_map(|control| {
+                        control
+                            .continue_target
+                            .map(|target| (target, control.scope_depth))
+                    })
                     .ok_or_else(|| self.error(pos, "continue has no enclosing loop"))?;
-                let edge = self.block_target(block, Vec::new())?;
+                self.release_scopes_from(control.1, pos)?;
+                let edge = self.block_target(control.0, Vec::new())?;
                 self.terminate(l::Terminator::Branch(edge), pos)?;
             }
             hir::Stmt::Block(statements) => self.lower_scoped(statements)?,
@@ -2029,6 +2177,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.controls.push(Control {
             break_target: exit,
             continue_target: Some(header),
+            scope_depth: self.scopes.len(),
         });
         self.current = Some(body_block);
         self.lower_scoped(body)?;
@@ -2077,6 +2226,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.controls.push(Control {
             break_target: exit,
             continue_target: Some(step_block),
+            scope_depth: self.scopes.len(),
         });
         self.current = Some(body_block);
         self.lower_scoped(body)?;
@@ -2103,8 +2253,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.current = None;
         }
         self.controls.pop();
-        self.scopes.pop();
         self.enter_block(exit)?;
+        self.release_scopes_from(self.scopes.len() - 1, pos)?;
+        self.scopes.pop();
         Ok(())
     }
 
@@ -2188,6 +2339,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.controls.push(Control {
             break_target: exit,
             continue_target: Some(step_block),
+            scope_depth: self.scopes.len(),
         });
         self.current = Some(body_block);
         let cursor = self.read_binding(cursor_binding, pos)?;
@@ -2209,6 +2361,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             true,
             value,
             pos.clone(),
+            true,
         )?;
         self.lower_scoped(body)?;
         if self.current.is_some() {
@@ -2258,8 +2411,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.terminate(l::Terminator::Branch(edge), pos)?;
         }
         self.controls.pop();
-        self.scopes.pop();
         self.enter_block(exit)?;
+        self.release_scopes_from(self.scopes.len() - 1, pos)?;
+        self.scopes.pop();
         Ok(())
     }
 
@@ -2375,6 +2529,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.controls.push(Control {
             break_target: exit,
             continue_target: None,
+            scope_depth: self.scopes.len(),
         });
         let mut previous_end = None;
         for (index, (case, block)) in cases.iter().zip(&case_blocks).enumerate() {
@@ -2644,6 +2799,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                if matches!(element_type, Type::AsyncHandle(_)) {
+                    let owner_ty = l::ValueType::Data(element_type.clone());
+                    for (operand, element) in operands.iter().zip(elements) {
+                        self.acquire_owner(operand, &owner_ty, &element.pos)?;
+                    }
+                }
                 self.emit(
                     l::InstructionKind::ArrayLiteral,
                     operands,
@@ -2764,6 +2925,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 None
             }
             K::AsyncCall { callee, args } => self.lower_async_call(callee, args, expr)?,
+            K::AsyncHandleCreate { callee, args, .. } => {
+                Some(self.lower_async_handle_create(callee, args, expr)?)
+            }
+            K::AsyncHandleAwait(handle) => self.lower_async_handle_await(handle, expr)?,
+            K::AsyncHandleTransfer { value, .. } => self.lower_expr(value)?,
             K::Cond { cond, then, els } => Some(self.lower_cond(cond, then, els, expr)?),
             other => {
                 return Err(self.error(
@@ -3409,6 +3575,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } else {
                 self.coerce_operand(value, expected, &parameter.pos)?
             };
+            if !foreign {
+                let owner_pos = args
+                    .get(index)
+                    .map_or(&parameter.pos, |argument| &argument.pos);
+                self.acquire_owner(&value, &l::ValueType::Data(parameter.ty.clone()), owner_pos)?;
+            }
             substitutions.insert(parameter.name.clone(), value.clone());
             if foreign {
                 if let Type::Array(element) = &parameter.ty {
@@ -3907,6 +4079,130 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(resume_value.map(l::Operand::Value))
     }
 
+    fn lower_async_handle_create(
+        &mut self,
+        callee: &hir::AsyncCallee,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+    ) -> Result<l::Operand, LowerError> {
+        let (kind, mut operands, params) = match callee {
+            hir::AsyncCallee::Function(name) => {
+                let record = self
+                    .lowering
+                    .free_functions
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.error(&expr.pos, format!("unknown async function `{name}`"))
+                    })?;
+                let function = self
+                    .lowering
+                    .hir
+                    .functions
+                    .iter()
+                    .find(|function| function.name == *name)
+                    .cloned()
+                    .ok_or_else(|| self.error(&expr.pos, "async function body is missing"))?;
+                (
+                    l::CallTargetKind::Function(record.id),
+                    Vec::new(),
+                    function
+                        .params
+                        .iter()
+                        .map(CallParam::from)
+                        .collect::<Vec<_>>(),
+                )
+            }
+            hir::AsyncCallee::Method {
+                class,
+                receiver,
+                name,
+            } => {
+                let record = self.lowering.method_record(class.0, name, &expr.pos)?;
+                let function = self
+                    .lowering
+                    .hir
+                    .classes
+                    .get(class.0)
+                    .and_then(|class| class.methods.iter().find(|method| method.name == *name))
+                    .cloned()
+                    .ok_or_else(|| self.error(&expr.pos, "async method body is missing"))?;
+                (
+                    l::CallTargetKind::Method(record.method.expect("async method id")),
+                    vec![self.require_expr(receiver)?],
+                    function
+                        .params
+                        .iter()
+                        .map(CallParam::from)
+                        .collect::<Vec<_>>(),
+                )
+            }
+            other => {
+                return Err(self.error(&expr.pos, format!("unrecognized async callee: {other:?}")));
+            }
+        };
+        let mut parameter_types = if let hir::AsyncCallee::Method { class, .. } = callee {
+            vec![l::ValueType::Data(Type::Class(*class))]
+        } else {
+            Vec::new()
+        };
+        parameter_types.extend(
+            params
+                .iter()
+                .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
+        );
+        operands.extend(self.lower_call_arguments(&params, args, None, false)?);
+        let Type::AsyncHandle(value) = &expr.ty else {
+            return Err(self.error(&expr.pos, "async handle creation has a non-handle type"));
+        };
+        let return_type = (**value != Type::Void).then(|| l::ValueType::Data((**value).clone()));
+        let target = l::CallTarget {
+            kind,
+            parameter_types,
+            return_type,
+        };
+        self.emit(
+            l::InstructionKind::AsyncHandleCreate(target),
+            operands,
+            Some(l::ValueType::Data(expr.ty.clone())),
+            false,
+            convert_traps(&expr.trap_sites(self.lowering.hir)),
+            expr.pos.clone(),
+        )?
+        .ok_or_else(|| self.error(&expr.pos, "async handle creation produced no value"))
+    }
+
+    fn lower_async_handle_await(
+        &mut self,
+        handle: &hir::Expr,
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        let handle = self.require_expr(handle)?;
+        let handle = self.terminator_value(handle, &expr.pos)?;
+        let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
+        let successor = self.new_block(
+            return_type.clone().into_iter().collect(),
+            Some("async-handle.resume".to_string()),
+        );
+        let resume_value = return_type
+            .as_ref()
+            .map(|_| self.blocks[successor.0 as usize].parameters[0]);
+        self.terminate(
+            l::Terminator::Suspend {
+                kind: l::SuspendKind::AsyncHandle { handle },
+                pos: expr.pos.clone(),
+                successor,
+                resume_value,
+                arguments: Vec::new(),
+                invalidates: self.array_values.clone(),
+                traps: convert_traps(&expr.trap_sites(self.lowering.hir)),
+            },
+            &expr.pos,
+        )?;
+        self.current = Some(successor);
+        Ok(resume_value.map(l::Operand::Value))
+    }
+
     fn terminator_value(
         &mut self,
         operand: l::Operand,
@@ -4379,7 +4675,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 fn hir_expr_suspends(expr: &hir::Expr) -> bool {
     use hir::ExprKind as K;
     match &expr.kind {
-        K::Yield(_) | K::AsyncSuspend | K::AsyncCall { .. } => true,
+        K::Yield(_) | K::AsyncSuspend | K::AsyncCall { .. } | K::AsyncHandleAwait(_) => true,
+        K::AsyncHandleTransfer { value, .. } => hir_expr_suspends(value),
+        K::AsyncHandleCreate { callee, args, .. } => {
+            callee.receiver().is_some_and(hir_expr_suspends) || args.iter().any(hir_expr_suspends)
+        }
         K::Unary { operand, .. }
         | K::Cast(operand)
         | K::Field { obj: operand, .. }
@@ -5012,6 +5312,13 @@ fn replace_terminator_uses(
                 l::SuspendKind::AsyncCall { operands, .. } => {
                     replace_ids(operands, original, replacement);
                 }
+                l::SuspendKind::AsyncHandle { handle } => {
+                    if *handle == original {
+                        if let Some(replacement) = replacement {
+                            *handle = replacement;
+                        }
+                    }
+                }
             }
         }
         l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
@@ -5583,6 +5890,43 @@ fn verify_instruction_contract(
                 bad("call target identity/signature is invalid", errors);
             }
         }
+        l::InstructionKind::AsyncHandleCreate(target) => {
+            let declared = match target.kind {
+                l::CallTargetKind::Function(id) => declared_function(module, id),
+                l::CallTargetKind::Method(id) => declared_method_function(module, id),
+                _ => None,
+            };
+            let valid_result = matches!(result_type.as_ref(), Some(l::ValueType::Data(Type::AsyncHandle(value)))
+                if target.return_type.as_ref() == ((**value != Type::Void)
+                    .then(|| l::ValueType::Data((**value).clone()))) .as_ref());
+            if !call_parameters_match(&operand_types, &target.parameter_types)
+                || !valid_result
+                || declared.is_none_or(|function| !function.is_async)
+            {
+                bad("async handle creation signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::AsyncHandleRetain | l::InstructionKind::AsyncHandleRelease => {
+            if operand_types.len() != 1
+                || !matches!(
+                    operand_types.first(),
+                    Some(l::ValueType::Data(Type::AsyncHandle(_)))
+                )
+                || instruction.result.is_some()
+            {
+                bad("async handle ownership instruction is invalid", errors);
+            }
+        }
+        l::InstructionKind::AsyncHandleArrayRetain
+        | l::InstructionKind::AsyncHandleArrayRelease => {
+            if operand_types.len() != 1
+                || !matches!(operand_types.first(), Some(l::ValueType::Data(Type::Array(element)))
+                    if matches!(&**element, Type::AsyncHandle(_)))
+                || instruction.result.is_some()
+            {
+                bad("async handle array release signature is invalid", errors);
+            }
+        }
         l::InstructionKind::LoadAddress => {
             let valid = match (operand_types.as_slice(), result_type.as_ref()) {
                 ([l::ValueType::Address(address)], Some(l::ValueType::Data(result))) => {
@@ -6137,6 +6481,27 @@ fn verify_terminator_types(
                         ));
                     }
                 }
+                l::SuspendKind::AsyncHandle { handle } => {
+                    let Some(l::ValueType::Data(Type::AsyncHandle(value))) =
+                        value_type(function, *handle)
+                    else {
+                        errors.push(finding(
+                            function,
+                            format!("block {} held await has an invalid handle", block.id.0),
+                        ));
+                        return;
+                    };
+                    let expected =
+                        (**value != Type::Void).then(|| l::ValueType::Data((**value).clone()));
+                    if expected.as_ref()
+                        != resume_value.and_then(|value| value_type(function, value))
+                    {
+                        errors.push(finding(
+                            function,
+                            format!("block {} held await resume type is invalid", block.id.0),
+                        ));
+                    }
+                }
             }
             for invalidated in invalidates {
                 if !matches!(
@@ -6429,6 +6794,7 @@ fn terminator_values(terminator: &l::Terminator) -> Vec<l::ValueId> {
                 l::SuspendKind::AsyncCall { operands, .. } => {
                     values.extend(operands.iter().copied());
                 }
+                l::SuspendKind::AsyncHandle { handle } => values.push(*handle),
             }
         }
         l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}

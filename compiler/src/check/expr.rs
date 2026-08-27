@@ -2,6 +2,8 @@
 //! arithmetic (C3/Q18), nominal member access (C1/Q4/Q5), calls, `as`
 //! conversions, lambdas (C5), and null narrowing at use sites (C7).
 
+use std::collections::HashSet;
+
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
@@ -140,6 +142,53 @@ fn integer_width(ty: &Type) -> Option<i64> {
 }
 
 impl<'p> Checker<'p> {
+    /// Returns the must-await origins carried through one checked value.
+    pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> HashSet<u32> {
+        use hir::ExprKind as K;
+        match &expr.kind {
+            K::AsyncHandleCreate { origin, .. } => HashSet::from([*origin]),
+            K::AsyncHandleTransfer { origin, .. } => HashSet::from([*origin]),
+            K::Local(name) => fx.local_async_origins(name),
+            K::ArrayLit(elements) => elements
+                .iter()
+                .flat_map(|element| self.expr_async_origins(element, fx))
+                .collect(),
+            K::ArraySpreadLit(elements) => elements
+                .iter()
+                .flat_map(|element| self.expr_async_origins(&element.expr, fx))
+                .collect(),
+            K::Index { obj, .. }
+            | K::Field { obj, .. }
+            | K::Cast(obj)
+            | K::JsonResultValue(obj) => self.expr_async_origins(obj, fx),
+            K::Cond { then, els, .. } => self
+                .expr_async_origins(then, fx)
+                .into_iter()
+                .chain(self.expr_async_origins(els, fx))
+                .collect(),
+            _ => HashSet::new(),
+        }
+    }
+
+    fn track_async_call_result(&mut self, value: hir::Expr, fx: &mut FnCtx) -> hir::Expr {
+        let carries_handle = matches!(value.ty, Type::AsyncHandle(_))
+            || matches!(&value.ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)));
+        if !carries_handle {
+            return value;
+        }
+        let pos = value.pos.clone();
+        let ty = value.ty.clone();
+        let origin = fx.register_async_origin(pos.clone());
+        hir::Expr {
+            kind: ExprKind::AsyncHandleTransfer {
+                value: Box::new(value),
+                origin,
+            },
+            ty,
+            pos,
+        }
+    }
+
     /// Emits a checker-owned generated-reference rejection.
     fn reject_api_form(&mut self, group: &str, surface: &str, actual: &str, pos: Pos) -> bool {
         let Some(rejection) = crate::ambient::form_rejection(group, surface) else {
@@ -301,12 +350,24 @@ impl<'p> Checker<'p> {
             operand = &paren.expr;
         }
         let ast::Expr::Call(call) = operand else {
-            self.error(
-                RuleCode::S100,
-                "awaitable expressions are exactly `Context.suspend()` and direct async function or method calls",
-                pos.clone(),
-            );
-            return self.err_expr(pos);
+            let handle = self.check_expr(operand, None, fx);
+            let Type::AsyncHandle(value) = handle.ty.clone() else {
+                if handle.ty != Type::Error {
+                    self.error(
+                        RuleCode::S100,
+                        "`await` requires `Context.suspend()`, an async call, or a held async handle",
+                        pos.clone(),
+                    );
+                }
+                return self.err_expr(pos);
+            };
+            let origins = self.expr_async_origins(&handle, fx);
+            fx.handle_async_origins(&origins);
+            return hir::Expr {
+                kind: ExprKind::AsyncHandleAwait(Box::new(handle)),
+                ty: *value,
+                pos,
+            };
         };
         let ast::Callee::Expr(callee) = &call.callee else {
             self.error(
@@ -5353,6 +5414,15 @@ impl<'p> Checker<'p> {
             value.pos.clone(),
             "the assignment",
         );
+        if op.is_none()
+            && (matches!(target_ty, Type::AsyncHandle(_))
+                || matches!(&target_ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_))))
+        {
+            if let ExprKind::Local(name) = &target.kind {
+                let origins = self.expr_async_origins(&value, fx);
+                fx.set_local_async_origins(name, origins);
+            }
+        }
         // C5 escape rule: capturing lambdas may not be stored.
         match &target.kind {
             ExprKind::Local(name) => {
@@ -5680,12 +5750,17 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         if sig.is_async {
-            self.error(
-                RuleCode::S013,
-                format!("async call `{fn_name}(...)` must be immediately awaited"),
-                pos.clone(),
-            );
-            return self.err_expr(pos);
+            let args = self.check_args(&sig.params, &c.args, fx, &pos, fn_name);
+            let origin = fx.register_async_origin(pos.clone());
+            return hir::Expr {
+                kind: ExprKind::AsyncHandleCreate {
+                    callee: AsyncCallee::Function(fn_name.to_string()),
+                    args,
+                    origin,
+                },
+                ty: Type::AsyncHandle(Box::new(sig.ret)),
+                pos,
+            };
         }
         if sig.is_generator && !sig.yield_known {
             self.error(
@@ -5700,14 +5775,15 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let args = self.check_args(&sig.params, &c.args, fx, &pos, fn_name);
-        hir::Expr {
+        let value = hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(fn_name.to_string()),
                 args,
             },
             ty: sig.ret,
             pos,
-        }
+        };
+        self.track_async_call_result(value, fx)
     }
 
     /// Checks a call to a foreign C-ABI function declared by an ambient
@@ -5978,14 +6054,15 @@ impl<'p> Checker<'p> {
                     })
                     .collect();
                 let args = self.check_args(&params, &c.args, fx, &pos, "the function value");
-                hir::Expr {
+                let value = hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Value(Box::new(callee)),
                         args,
                     },
                     ty: ft.ret.clone(),
                     pos,
-                }
+                };
+                self.track_async_call_result(value, fx)
             }
             Type::Error => self.err_expr(pos),
             other => {
@@ -6329,18 +6406,25 @@ impl<'p> Checker<'p> {
                 match sig {
                     Some(sig) => {
                         if sig.is_async {
-                            let class_name = self.classes[id.0].name.clone();
-                            self.error(
-                                RuleCode::S013,
-                                format!(
-                                    "async method call `{class_name}.{name}(...)` must be immediately awaited"
-                                ),
-                                pos.clone(),
-                            );
-                            return self.err_expr(pos);
+                            let args = self.check_args(&sig.params, &c.args, fx, &pos, &name);
+                            let origin = fx.register_async_origin(pos.clone());
+                            return hir::Expr {
+                                kind: ExprKind::AsyncHandleCreate {
+                                    callee: AsyncCallee::Method {
+                                        class: id,
+                                        receiver: Box::new(recv),
+                                        name,
+                                    },
+                                    args,
+                                    origin,
+                                },
+                                ty: Type::AsyncHandle(Box::new(sig.ret)),
+                                pos,
+                            };
                         }
                         let args = self.check_args(&sig.params, &c.args, fx, &pos, &name);
-                        mk(recv, args, sig.ret, pos)
+                        let value = mk(recv, args, sig.ret, pos);
+                        self.track_async_call_result(value, fx)
                     }
                     None => {
                         let class_name = self.classes[id.0].name.clone();
@@ -6414,6 +6498,10 @@ impl<'p> Checker<'p> {
                     checked.pos.clone(),
                     "the argument",
                 );
+                if matches!(param_ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                    let origins = self.expr_async_origins(&checked, fx);
+                    fx.handle_async_origins(&origins);
+                }
             }
             out.push(checked);
         }
@@ -6747,6 +6835,7 @@ impl<'p> Checker<'p> {
                     ty: p.ty.clone(),
                     mutable: true,
                     holds_capturing: false,
+                    async_origins: HashSet::new(),
                 },
                 param_pos,
                 fx,

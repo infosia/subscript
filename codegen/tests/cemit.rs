@@ -2449,3 +2449,44 @@ fn ship_c_aot_reports_a_division_by_zero_trap() {
     }
     assert_trap_outcomes_identical("division-by-zero trap", &outcomes);
 }
+
+#[test]
+fn held_async_copy_pass_and_second_await_match_both_tiers() {
+    let files = [SourceFile::new(
+        "held-copy.ts",
+        "async function work(): Promise<i32> {\n  await Context.suspend();\n  return 41;\n}\nasync function consume(handle: Promise<i32>): Promise<i32> {\n  return await handle;\n}\nexport async function main(): Promise<void> {\n  const first: Promise<i32> = work();\n  {\n    const second: Promise<i32> = first;\n    print(`copy=${await second}`);\n  }\n  print(`again=${await first}`);\n  const passed: Promise<i32> = work();\n  print(`pass=${await consume(passed)}`);\n}\n",
+    )];
+    let expected = b"copy=41\nagain=41\npass=41\n";
+    let jit = run_jit(&files).expect("held-copy dev JIT");
+    let ship = run_c_aot(&files).expect("held-copy ship C AOT");
+    assert_eq!(jit, expected);
+    assert_eq!(ship, expected);
+}
+
+#[test]
+fn held_async_cached_reference_survives_collect_on_both_tiers() {
+    let files = [SourceFile::new(
+        "held-reference.ts",
+        "async function work(): Promise<string> {\n  await Context.suspend();\n  return `value=${41}`;\n}\nexport async function main(): Promise<void> {\n  const first: Promise<string> = work();\n  {\n    const second: Promise<string> = first;\n    print(await second);\n  }\n  Context.collect();\n  print(await first);\n}\n",
+    )];
+    let expected = b"value=41\nvalue=41\n";
+    let jit = run_jit(&files).expect("held-reference dev JIT");
+    let ship = run_c_aot(&files).expect("held-reference ship C AOT");
+    assert_eq!(jit, expected);
+    assert_eq!(ship, expected);
+}
+
+#[test]
+fn many_completed_async_calls_leave_no_frames_without_collect() {
+    let files = [SourceFile::new(
+        "many-awaits.ts",
+        "async function work(value: i32): Promise<i32> { return value; }\nexport async function main(): Promise<void> {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < 10000; i += 1) total += await work(i);\n}\n",
+    )];
+    let (output, accounting) =
+        run_jit_with_memory_accounting(&files, false).expect("many-awaits dev JIT");
+    assert!(output.is_empty());
+    assert_eq!(
+        accounting.live_bytes, 0,
+        "each completed child and the async root must be released without Context.collect()"
+    );
+}

@@ -133,6 +133,12 @@ struct AsyncRoot {
     resume: AsyncResume,
 }
 
+#[derive(Default)]
+struct AsyncFrameMeta {
+    created_epoch: u32,
+    completion: Option<Vec<u8>>,
+}
+
 /// Bytes between an allocation's base and its payload.
 pub const HEADER_SIZE: usize = 16;
 /// Recommended byte ceiling for freed-handle diagnostic retention.
@@ -448,6 +454,10 @@ pub struct Context {
     // collection keeps the whole current frame chain alive.
     async_roots: VecDeque<AsyncRoot>,
     active_async_frames: Vec<usize>,
+    // §70 held async handles. The reference count itself occupies the
+    // frame header's four-byte `reserved` word; Context metadata holds only
+    // reload provenance and the fulfilled bytes needed by a later holder.
+    async_frames: HashMap<usize, AsyncFrameMeta>,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -573,6 +583,7 @@ impl Context {
             script_depth: 0,
             async_roots: VecDeque::new(),
             active_async_frames: Vec::new(),
+            async_frames: HashMap::new(),
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
             dead_allocations: AddressSet::default(),
@@ -920,6 +931,135 @@ impl Context {
 
     // ----- poll-driven async roots (Q34) -----
 
+    /// Registers a fresh compiler-generated async frame. Its reference
+    /// count starts at one in the frame header's `reserved` word.
+    ///
+    /// # Safety
+    ///
+    /// `frame` is a fresh live coroutine allocation with at least eight
+    /// payload bytes and belongs to this Context.
+    pub unsafe fn async_register(&mut self, frame: *mut u8) {
+        if frame.is_null() {
+            return;
+        }
+        // SAFETY: guaranteed by the caller; offset four is the aligned
+        // `uint32_t reserved` word in every generated coroutine header.
+        unsafe { (frame.add(4) as *mut u32).write(1) };
+        self.async_frames.insert(
+            frame as usize,
+            AsyncFrameMeta {
+                created_epoch: self.reload_epoch,
+                completion: None,
+            },
+        );
+    }
+
+    /// Increments one held async handle count.
+    ///
+    /// # Safety
+    ///
+    /// `frame` is a registered live async frame in this Context.
+    pub unsafe fn async_retain(&mut self, frame: *mut u8) {
+        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+            return;
+        }
+        // SAFETY: guaranteed by the caller.
+        let count = unsafe { (frame.add(4) as *mut u32).read() };
+        // Static ownership checking prevents an unbounded copy count in a
+        // valid program; saturating avoids wrapping into a premature free.
+        unsafe { (frame.add(4) as *mut u32).write(count.saturating_add(1)) };
+    }
+
+    /// Decrements one held async handle count and frees the frame exactly
+    /// when the count reaches zero.
+    ///
+    /// # Safety
+    ///
+    /// `frame` is a registered live async frame in this Context and the
+    /// caller owns one reference.
+    pub unsafe fn async_release(&mut self, frame: *mut u8, pos_id: u32) {
+        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+            return;
+        }
+        // SAFETY: guaranteed by the caller.
+        let slot = unsafe { &mut *(frame.add(4) as *mut u32) };
+        if *slot == 0 {
+            return;
+        }
+        *slot -= 1;
+        if *slot == 0 {
+            self.async_frames.remove(&(frame as usize));
+            self.delete(frame as usize, pos_id);
+        }
+    }
+
+    /// Reads a held handle's count for the emitted-layout conformance test.
+    ///
+    /// # Safety
+    ///
+    /// `frame` is a live async frame.
+    #[must_use]
+    pub unsafe fn async_count(&self, frame: *const u8) -> u32 {
+        if frame.is_null() {
+            return 0;
+        }
+        // SAFETY: guaranteed by the caller.
+        unsafe { (frame.add(4) as *const u32).read() }
+    }
+
+    /// Returns whether a registered frame predates the current reload epoch.
+    #[must_use]
+    pub fn async_is_stale(&self, frame: *const u8) -> bool {
+        self.async_frames
+            .get(&(frame as usize))
+            .is_some_and(|meta| meta.created_epoch != self.reload_epoch)
+    }
+
+    /// Caches the fulfilled representation after the first held await.
+    ///
+    /// # Safety
+    ///
+    /// `value` is null when `size == 0`, otherwise it points to `size`
+    /// readable bytes for the duration of this call.
+    pub unsafe fn async_complete(&mut self, frame: *mut u8, value: *const u8, size: usize) {
+        let Some(meta) = self.async_frames.get_mut(&(frame as usize)) else {
+            return;
+        };
+        let bytes = if size == 0 {
+            Vec::new()
+        } else {
+            // SAFETY: guaranteed by the caller.
+            unsafe { std::slice::from_raw_parts(value, size) }.to_vec()
+        };
+        meta.completion = Some(bytes);
+    }
+
+    /// Copies a cached fulfilled representation into `out`, returning
+    /// `true` when the handle had already completed.
+    ///
+    /// # Safety
+    ///
+    /// `out` is null when `size == 0`, otherwise it points to `size`
+    /// writable bytes.
+    pub unsafe fn async_result(&self, frame: *const u8, out: *mut u8, size: usize) -> bool {
+        let Some(bytes) = self
+            .async_frames
+            .get(&(frame as usize))
+            .and_then(|meta| meta.completion.as_ref())
+        else {
+            return false;
+        };
+        if size != 0 {
+            if bytes.len() != size {
+                return false;
+            }
+            // SAFETY: guaranteed by the caller; the slices do not overlap
+            // because cached bytes are Context-owned storage.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, size) };
+        }
+        true
+    }
+
     /// Runs a newly invoked async root to its first suspension or
     /// completion, registering a suspended root at the back of the
     /// Context's deterministic pending queue.
@@ -940,6 +1080,9 @@ impl Context {
         self.active_async_frames.pop();
         if done == 0 && !self.trapped() {
             self.async_roots.push_back(AsyncRoot { frame, resume });
+        } else if done != 0 {
+            // The pending root owns the creator's initial reference.
+            unsafe { self.async_release(frame, 0) };
         }
     }
 
@@ -985,6 +1128,10 @@ impl Context {
             }
             if done == 0 {
                 self.async_roots.push_back(root);
+            } else {
+                // Queue ownership ends at completion; no collector pass is
+                // needed for the decrement that reaches zero.
+                unsafe { self.async_release(root.frame, 0) };
             }
         }
         self.active_async_frames.truncate(active_base);
@@ -2133,6 +2280,22 @@ impl Context {
         }
         work.extend(self.async_roots.iter().map(|root| root.frame as usize));
         work.extend(self.active_async_frames.iter().copied());
+        // Counted frames are roots even when the only holders form a cycle.
+        // This deliberately makes such a cycle leak (§70.3.6); collection
+        // must not reinterpret the reference-count ownership model.
+        work.extend(self.async_frames.keys().copied());
+        for completion in self
+            .async_frames
+            .values()
+            .filter_map(|meta| meta.completion.as_deref())
+        {
+            for word in completion.chunks_exact(core::mem::size_of::<usize>()) {
+                // SAFETY: `word` is exactly one native word of Context-owned
+                // completion storage; unaligned reads preserve aggregate
+                // layouts while exposing any managed handle to the marker.
+                work.push(unsafe { word.as_ptr().cast::<usize>().read_unaligned() });
+            }
+        }
         work.extend(self.interned.values().copied());
         work.extend(self.astral_code_points.values().copied());
         for binding in &self.callbacks {
@@ -2844,6 +3007,21 @@ mod tests {
         polls: u8,
     }
 
+    #[repr(C)]
+    struct TestCountedAsyncFrame {
+        state: i32,
+        count: u32,
+        resume: AsyncResume,
+    }
+
+    unsafe extern "C" fn counted_test_resume(
+        _ctx: *mut Context,
+        _frame: *mut u8,
+        _out: *mut u8,
+    ) -> u8 {
+        1
+    }
+
     unsafe extern "C" fn test_async_resume(ctx: *mut Context, frame: *mut u8, _out: *mut u8) -> u8 {
         // SAFETY: the tests pass matching live `TestAsyncFrame` values.
         let ctx = unsafe { &mut *ctx };
@@ -2854,6 +3032,57 @@ mod tests {
             ctx.collect();
         }
         u8::from(frame.polls == 2)
+    }
+
+    #[test]
+    fn held_async_count_uses_emitted_header_and_frees_without_collect() {
+        assert_eq!(core::mem::offset_of!(TestCountedAsyncFrame, state), 0);
+        assert_eq!(core::mem::offset_of!(TestCountedAsyncFrame, count), 4);
+        assert_eq!(core::mem::offset_of!(TestCountedAsyncFrame, resume), 8);
+        assert_eq!(core::mem::size_of::<TestCountedAsyncFrame>(), 16);
+
+        let mut ctx = Context::new();
+        let frame = ctx.alloc(
+            core::mem::size_of::<TestCountedAsyncFrame>(),
+            CLASS_GENERATOR,
+            70,
+        );
+        assert!(!frame.is_null());
+        // SAFETY: the allocation has exactly the emitted prefix layout.
+        unsafe {
+            frame
+                .cast::<TestCountedAsyncFrame>()
+                .write(TestCountedAsyncFrame {
+                    state: 0,
+                    count: 0,
+                    resume: counted_test_resume,
+                });
+            ctx.async_register(frame);
+            assert_eq!((*frame.cast::<TestCountedAsyncFrame>()).count, 1);
+            assert_eq!(ctx.async_count(frame), 1);
+
+            // Compiler-emitted copy retain.
+            ctx.async_retain(frame);
+            assert_eq!((*frame.cast::<TestCountedAsyncFrame>()).count, 2);
+
+            // Compiler-emitted inner-scope exit release.
+            ctx.async_release(frame, 70);
+            assert_eq!((*frame.cast::<TestCountedAsyncFrame>()).count, 1);
+
+            // Await caches/reads completion but does not change ownership.
+            let fulfilled = 37i32;
+            ctx.async_complete(frame, (&fulfilled as *const i32).cast(), 4);
+            let mut observed = 0i32;
+            assert!(ctx.async_result(frame, (&mut observed as *mut i32).cast(), 4));
+            assert_eq!(observed, fulfilled);
+            assert_eq!((*frame.cast::<TestCountedAsyncFrame>()).count, 1);
+
+            // The final lexical decrement frees immediately. No collect call
+            // occurs anywhere in this test.
+            ctx.async_release(frame, 70);
+        }
+        assert!(!ctx.is_live(frame as usize));
+        assert_eq!(ctx.live_bytes(), 0);
     }
 
     #[test]

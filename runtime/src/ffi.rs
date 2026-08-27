@@ -318,6 +318,128 @@ pub unsafe extern "C" fn subscript_rt_async_kick(
     unsafe { &mut *ctx }.async_kick(frame, resume);
 }
 
+/// Registers a freshly allocated async frame and initializes its count to one.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is a fresh live generated async frame owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_register(ctx: *mut Context, frame: *mut u8) {
+    unsafe { &mut *ctx }.async_register(frame);
+}
+
+/// Copies a held async handle, incrementing its frame count.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is a registered live async frame owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_retain(ctx: *mut Context, frame: *mut u8) {
+    unsafe { &mut *ctx }.async_retain(frame);
+}
+
+/// Ends one held async-handle ownership scope.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is a registered async frame and the caller owns
+/// one reference to it.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_release(
+    ctx: *mut Context,
+    frame: *mut u8,
+    pos_id: u32,
+) {
+    unsafe { &mut *ctx }.async_release(frame, pos_id);
+}
+
+/// Releases every held async handle stored in a dynamic array.
+///
+/// # Safety
+///
+/// Shared contract; `array` is null or a live dynamic array of registered
+/// async-frame pointers owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_release_array(
+    ctx: *mut Context,
+    array: *const u8,
+    pos_id: u32,
+) {
+    if array.is_null() {
+        return;
+    }
+    let runtime = unsafe { &mut *ctx };
+    let len = unsafe { runtime.array_len(array) }.max(0) as usize;
+    let data = unsafe { runtime.array_data(array) };
+    for index in 0..len {
+        // Async handles are pointer-sized scalar array elements.
+        let frame = unsafe { (data.add(index * 8) as *const *mut u8).read_unaligned() };
+        unsafe { runtime.async_release(frame, pos_id) };
+    }
+}
+
+/// Retains every held async handle stored in a dynamic array.
+///
+/// # Safety
+///
+/// Shared contract; `array` is null or a live dynamic array of registered
+/// async-frame pointers owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_retain_array(ctx: *mut Context, array: *const u8) {
+    if array.is_null() {
+        return;
+    }
+    let runtime = unsafe { &mut *ctx };
+    let len = unsafe { runtime.array_len(array) }.max(0) as usize;
+    let data = unsafe { runtime.array_data(array) };
+    for index in 0..len {
+        let frame = unsafe { (data.add(index * 8) as *const *mut u8).read_unaligned() };
+        unsafe { runtime.async_retain(frame) };
+    }
+}
+
+/// Returns one when a reload-mode frame predates the current Context epoch.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is a registered async frame owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_is_stale(ctx: *const Context, frame: *const u8) -> u8 {
+    u8::from(unsafe { &*ctx }.async_is_stale(frame))
+}
+
+/// Stores the fulfilled representation produced by the first held await.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is registered in `ctx`, and `value` points to
+/// `size` readable bytes when `size` is nonzero.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_complete(
+    ctx: *mut Context,
+    frame: *mut u8,
+    value: *const u8,
+    size: u64,
+) {
+    unsafe { &mut *ctx }.async_complete(frame, value, size as usize);
+}
+
+/// Copies the cached fulfilled representation for a later held await.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is registered in `ctx`, and `out` points to
+/// `size` writable bytes when `size` is nonzero.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_result(
+    ctx: *const Context,
+    frame: *const u8,
+    out: *mut u8,
+    size: u64,
+) -> u8 {
+    u8::from(unsafe { &*ctx }.async_result(frame, out, size as usize))
+}
+
 // ----- Map / Set (stdlib.md §10, Q24) -----
 
 fn assoc_receiver_is_live(ctx: &mut Context, handle: *const u8, pos_id: u32) -> bool {

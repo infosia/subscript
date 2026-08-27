@@ -3056,6 +3056,25 @@ pub enum ExprKind {
         /// the callee frame is created.
         args: Vec<Expr>,
     },
+    /// Creates a held async frame handle without polling it (§70).
+    AsyncHandleCreate {
+        /// Direct free-function or reference-class method target.
+        callee: AsyncCallee,
+        /// Explicit arguments evaluated before the callee frame is created.
+        args: Vec<Expr>,
+        /// Checker-local obligation joined through copies and storage.
+        origin: u32,
+    },
+    /// Polls a previously created async handle and yields its cached result.
+    AsyncHandleAwait(Box<Expr>),
+    /// Transfers a held async handle through a synchronous call boundary,
+    /// carrying the caller's must-await obligation.
+    AsyncHandleTransfer {
+        /// The synchronously returned handle or handle array.
+        value: Box<Expr>,
+        /// Function-local must-await obligation identity.
+        origin: u32,
+    },
     /// Conditional expression `c ? a : b`.
     Cond {
         /// Condition (boolean).
@@ -3305,7 +3324,7 @@ impl Expr {
                 }
                 sites
             }
-            K::AsyncCall { callee, .. } => {
+            K::AsyncCall { callee, .. } | K::AsyncHandleCreate { callee, .. } => {
                 let mut sites = Vec::new();
                 if let Some(receiver) = callee.receiver() {
                     if reference_value(&receiver.ty) {
@@ -3315,6 +3334,12 @@ impl Expr {
                 sites.push(call(&self.pos));
                 sites
             }
+            K::AsyncHandleAwait(_) => vec![
+                TrapSite::DevReloadOnlyStaleCoroutine {
+                    pos: self.pos.clone(),
+                },
+                call(&self.pos),
+            ],
             K::New { class, .. } => {
                 let Some(def) = module.classes.get(class.0) else {
                     return Vec::new();
@@ -3419,6 +3444,7 @@ impl Expr {
             | K::Lambda { .. }
             | K::Yield(_)
             | K::AsyncSuspend
+            | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => Vec::new(),
         }
     }

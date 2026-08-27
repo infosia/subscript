@@ -20,7 +20,7 @@ export function main(): void {
     assert_eq!(diagnostics[0].code, RuleCode::S013);
     assert_eq!(
         diagnostics[0].message,
-        "async call `first<u32>(...)` must be immediately awaited"
+        "an async handle is dropped without any await of its completion"
     );
 }
 

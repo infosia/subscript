@@ -195,8 +195,8 @@ struct LocalSlot {
 }
 
 const COROUTINE_DONE: i64 = 0x7fff_ffff;
-const COROUTINE_EPOCH_OFFSET: i32 = 4;
 const COROUTINE_RESUME_OFFSET: i32 = 8;
+const GENERATOR_EPOCH_OFFSET: i32 = 4;
 const COROUTINE_PAYLOAD_OFFSET: u32 = 16;
 const ARRAY_LEN_OFFSET: i32 = 0;
 const ARRAY_ELEM_SIZE_OFFSET: i32 = 16;
@@ -560,7 +560,10 @@ fn plan_coroutine(
             arguments.push(FrameSlot { offset, ty });
             offset = checked_layout_add(offset, size.max(1), "suspend live-in layout")?;
         }
-        let child = if matches!(kind, l::SuspendKind::AsyncCall { .. }) {
+        let child = if matches!(
+            kind,
+            l::SuspendKind::AsyncCall { .. } | l::SuspendKind::AsyncHandle { .. }
+        ) {
             offset = round_up_layout(offset, 8, "async child layout")?;
             let child = offset;
             offset = checked_layout_add(offset, 8, "async child layout")?;
@@ -1130,16 +1133,23 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         if !self.ml.opts.reload {
             return Ok(());
         }
-        let offset = ctx_off(rtc::Context::reload_epoch_offset())?;
-        let current = self
-            .builder
-            .ins()
-            .load(types::I32, flags(), self.ctx, offset);
-        let created = self
-            .builder
-            .ins()
-            .load(types::I32, flags(), frame, COROUTINE_EPOCH_OFFSET);
-        let valid = self.builder.ins().icmp(IntCC::Equal, current, created);
+        let valid = if self.function.is_async {
+            let stale = self
+                .call_runtime(self.ml.rt.async_is_stale, &[self.ctx, frame], false)?
+                .ok_or_else(|| internal("async stale check has no result"))?;
+            self.builder.ins().icmp_imm(IntCC::Equal, stale, 0)
+        } else {
+            let offset = ctx_off(rtc::Context::reload_epoch_offset())?;
+            let current = self
+                .builder
+                .ins()
+                .load(types::I32, flags(), self.ctx, offset);
+            let created =
+                self.builder
+                    .ins()
+                    .load(types::I32, flags(), frame, GENERATOR_EPOCH_OFFSET);
+            self.builder.ins().icmp(IntCC::Equal, current, created)
+        };
         self.guard(valid, TrapKind::StaleCoroutine, position)
     }
 
@@ -5752,6 +5762,53 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::InstructionKind::Call(target) => {
                 Some(self.call(target, &operands, &instruction.traps, &instruction.pos)?)
             }
+            l::InstructionKind::AsyncHandleCreate(target) => Some(RV::Scalar(
+                self.create_async_child_from_values(target, &operands, &instruction.traps)?,
+            )),
+            l::InstructionKind::AsyncHandleRetain => {
+                let frame = self.expect_scalar(
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("async retain has no handle"))?,
+                )?;
+                self.call_runtime(self.ml.rt.async_retain, &[self.ctx, frame], false)?;
+                None
+            }
+            l::InstructionKind::AsyncHandleRelease => {
+                let frame = self.expect_scalar(
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("async release has no handle"))?,
+                )?;
+                let pos = self.position_id(&instruction.pos);
+                let pos = self.iconst(types::I32, pos);
+                self.call_runtime(self.ml.rt.async_release, &[self.ctx, frame, pos], false)?;
+                None
+            }
+            l::InstructionKind::AsyncHandleArrayRetain => {
+                let array = self.expect_scalar(
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("async array retain has no array"))?,
+                )?;
+                self.call_runtime(self.ml.rt.async_retain_array, &[self.ctx, array], false)?;
+                None
+            }
+            l::InstructionKind::AsyncHandleArrayRelease => {
+                let array = self.expect_scalar(
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("async array release has no array"))?,
+                )?;
+                let pos = self.position_id(&instruction.pos);
+                let pos = self.iconst(types::I32, pos);
+                self.call_runtime(
+                    self.ml.rt.async_release_array,
+                    &[self.ctx, array, pos],
+                    false,
+                )?;
+                None
+            }
             l::InstructionKind::IteratorCreate(kind) => Some(
                 self.iterator_create(
                     *kind,
@@ -6046,6 +6103,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .store(flags(), child, frame, child_offset as i32);
                 return self.resume_async_child(block, target, child, &plan);
             }
+            l::SuspendKind::AsyncHandle { handle } => {
+                let handle_value = self.value(*handle)?;
+                let handle = self.expect_scalar(handle_value)?;
+                let handle_offset = plan
+                    .child
+                    .ok_or_else(|| internal("held await has no handle-frame slot"))?;
+                self.builder
+                    .ins()
+                    .store(flags(), handle, frame, handle_offset as i32);
+                return self.resume_async_handle(block, handle, &plan, traps, true);
+            }
         }
         let state = self.iconst(types::I32, plan.state);
         self.builder.ins().store(flags(), state, frame, 0);
@@ -6060,6 +6128,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         target: &l::CallTarget,
         operand_ids: &[l::ValueId],
+        traps: &[l::Trap],
+    ) -> Result<Value, String> {
+        let operands = operand_ids
+            .iter()
+            .map(|id| self.value(*id))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.create_async_child_from_values(target, &operands, traps)
+    }
+
+    fn create_async_child_from_values(
+        &mut self,
+        target: &l::CallTarget,
+        operands: &[RV],
         traps: &[l::Trap],
     ) -> Result<Value, String> {
         let function = match target.kind {
@@ -6085,15 +6166,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             )));
         }
         let mut arguments = vec![self.ctx];
-        for (id, ty) in operand_ids.iter().zip(&target.parameter_types) {
-            let value = self.value(*id)?;
-            self.push_argument(&mut arguments, value, ty)?;
+        for (value, ty) in operands.iter().zip(&target.parameter_types) {
+            self.push_argument(&mut arguments, *value, ty)?;
         }
         for trap in traps {
             if trap.kind == l::TrapKind::DevOnlyLifetime {
-                if let Some(first) = operand_ids.first() {
-                    let value = self.value(*first)?;
-                    let pointer = self.expect_scalar(value)?;
+                if let Some(first) = operands.first() {
+                    let pointer = self.expect_scalar(*first)?;
                     self.emit_trap(trap, TrapOperand::Value(pointer))?;
                 }
             }
@@ -6174,6 +6253,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let l::Terminator::Suspend {
             successor,
             resume_value,
+            pos,
             ..
         } = &source.terminator
         else {
@@ -6193,8 +6273,140 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 slot.offset as i32,
             )?));
         }
+        let release_pos = self.position_id(pos);
+        let release_pos = self.iconst(types::I32, release_pos);
+        self.call_runtime(
+            self.ml.rt.async_release,
+            &[self.ctx, child, release_pos],
+            false,
+        )?;
         let successor = self.blocks[successor.0 as usize];
         self.builder.ins().jump(successor, &arguments);
+        Ok(())
+    }
+
+    fn resume_async_handle(
+        &mut self,
+        block: l::BlockId,
+        handle: Value,
+        plan: &SuspendPlan,
+        traps: &[l::Trap],
+        consume_traps: bool,
+    ) -> Result<(), String> {
+        let source = self
+            .function
+            .blocks
+            .get(block.0 as usize)
+            .ok_or_else(|| internal(format!("held-await block {} is missing", block.0)))?;
+        let l::Terminator::Suspend {
+            successor,
+            resume_value,
+            pos,
+            ..
+        } = &source.terminator
+        else {
+            return Err(internal("held await source is not a suspension"));
+        };
+        if let Some(stale) = traps
+            .iter()
+            .find(|trap| trap.kind == l::TrapKind::DevReloadOnlyStaleCoroutine)
+        {
+            if consume_traps {
+                self.emit_trap(stale, TrapOperand::Value(handle))?;
+            } else {
+                self.reload_epoch_check(handle, &stale.pos)?;
+            }
+        }
+
+        let output = if let Some(value) = resume_value {
+            let ty = data_type(self.value_type(*value)?)?.clone();
+            let (size, align) = self.ml.layouts.size_align(&ty)?;
+            let address = self.stack_slot(size.max(1), align.max(1));
+            self.zero_bytes(address, size.max(1), align.max(1));
+            Some((address, ty, size))
+        } else {
+            None
+        };
+        let output_pointer = output
+            .as_ref()
+            .map_or_else(|| self.iconst(types::I64, 0), |(address, _, _)| *address);
+        let output_size = self.iconst(
+            types::I64,
+            i64::from(output.as_ref().map_or(0, |(_, _, size)| *size)),
+        );
+        let cached = self
+            .call_runtime(
+                self.ml.rt.async_result,
+                &[self.ctx, handle, output_pointer, output_size],
+                false,
+            )?
+            .ok_or_else(|| internal("held async result check has no result"))?;
+        let completed = self.builder.create_block();
+        let poll = self.builder.create_block();
+        self.builder.ins().brif(cached, completed, &[], poll, &[]);
+
+        self.builder.switch_to_block(poll);
+        let resume = self
+            .builder
+            .ins()
+            .load(types::I64, flags(), handle, COROUTINE_RESUME_OFFSET);
+        let signature = self.builder.import_signature(self.ml.resume_sig());
+        let call = self.builder.ins().call_indirect(
+            signature,
+            resume,
+            &[self.ctx, handle, output_pointer],
+        );
+        let done = self.builder.inst_results(call)[0];
+        if let Some(call_trap) = traps.iter().find(|trap| trap.kind == l::TrapKind::Call) {
+            if consume_traps {
+                self.emit_trap(call_trap, TrapOperand::Pending)?;
+            } else {
+                self.trap_check();
+            }
+        }
+        let newly_completed = self.builder.create_block();
+        let suspended = self.builder.create_block();
+        self.builder
+            .ins()
+            .brif(done, newly_completed, &[], suspended, &[]);
+
+        self.builder.switch_to_block(newly_completed);
+        self.call_runtime(
+            self.ml.rt.async_complete,
+            &[self.ctx, handle, output_pointer, output_size],
+            false,
+        )?;
+        self.builder.ins().jump(completed, &[]);
+
+        self.builder.switch_to_block(suspended);
+        let frame = self
+            .frame
+            .ok_or_else(|| internal("held await parent has no frame"))?;
+        let state = self.iconst(types::I32, plan.state);
+        self.builder.ins().store(flags(), state, frame, 0);
+        self.pop_shadow()?;
+        let zero = self.iconst(types::I8, 0);
+        self.builder.ins().return_(&[zero]);
+
+        self.builder.switch_to_block(completed);
+        let mut arguments = Vec::new();
+        if resume_value.is_some() {
+            let (address, ty, _) = output
+                .as_ref()
+                .ok_or_else(|| internal("held await result has no output slot"))?;
+            arguments.extend(rv_args(self.load_data(ty, *address, 0)?));
+        }
+        for slot in &plan.arguments {
+            arguments.extend(rv_args(self.load_value_type(
+                &slot.ty,
+                frame,
+                slot.offset as i32,
+            )?));
+        }
+        self.builder
+            .ins()
+            .jump(self.blocks[successor.0 as usize], &arguments);
+        let _ = pos;
         Ok(())
     }
 
@@ -6205,6 +6417,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 pos,
                 successor,
                 resume_value,
+                traps,
                 ..
             } = &source.terminator
             else {
@@ -6224,7 +6437,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .frame
                 .ok_or_else(|| internal("resume adapter has no frame"))?;
             self.reload_epoch_check(frame, pos)?;
-            if let l::SuspendKind::AsyncCall { target, .. } = kind {
+            if matches!(
+                kind,
+                l::SuspendKind::AsyncCall { .. } | l::SuspendKind::AsyncHandle { .. }
+            ) {
                 let child = self.builder.ins().load(
                     types::I64,
                     flags(),
@@ -6234,7 +6450,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("async adapter has no child slot"))?
                         as i32,
                 );
-                self.resume_async_child(source.id, target, child, suspend)?;
+                match kind {
+                    l::SuspendKind::AsyncCall { target, .. } => {
+                        self.resume_async_child(source.id, target, child, suspend)?;
+                    }
+                    l::SuspendKind::AsyncHandle { .. } => {
+                        self.resume_async_handle(source.id, child, suspend, traps, false)?;
+                    }
+                    _ => unreachable!(),
+                }
                 continue;
             }
             if resume_value.is_some() {
@@ -6841,7 +7065,9 @@ pub(crate) fn define_coroutine<M: Module>(
             body.builder
                 .ins()
                 .store(flags(), resume, frame, COROUTINE_RESUME_OFFSET);
-            if body.ml.opts.reload {
+            if function.is_async {
+                body.call_runtime(body.ml.rt.async_register, &[body.ctx, frame], false)?;
+            } else if body.ml.opts.reload {
                 let offset = ctx_off(rtc::Context::reload_epoch_offset())?;
                 let epoch = body
                     .builder
@@ -6849,7 +7075,7 @@ pub(crate) fn define_coroutine<M: Module>(
                     .load(types::I32, flags(), body.ctx, offset);
                 body.builder
                     .ins()
-                    .store(flags(), epoch, frame, COROUTINE_EPOCH_OFFSET);
+                    .store(flags(), epoch, frame, GENERATOR_EPOCH_OFFSET);
             }
             let mut cursor = 1usize;
             for (parameter, slot) in function.parameters.iter().zip(&plan.parameter_slots) {

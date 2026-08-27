@@ -163,6 +163,38 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_async_kick",
             ffi::subscript_rt_async_kick as *const u8,
         ),
+        (
+            "subscript_rt_async_register",
+            ffi::subscript_rt_async_register as *const u8,
+        ),
+        (
+            "subscript_rt_async_retain",
+            ffi::subscript_rt_async_retain as *const u8,
+        ),
+        (
+            "subscript_rt_async_release",
+            ffi::subscript_rt_async_release as *const u8,
+        ),
+        (
+            "subscript_rt_async_release_array",
+            ffi::subscript_rt_async_release_array as *const u8,
+        ),
+        (
+            "subscript_rt_async_retain_array",
+            ffi::subscript_rt_async_retain_array as *const u8,
+        ),
+        (
+            "subscript_rt_async_is_stale",
+            ffi::subscript_rt_async_is_stale as *const u8,
+        ),
+        (
+            "subscript_rt_async_complete",
+            ffi::subscript_rt_async_complete as *const u8,
+        ),
+        (
+            "subscript_rt_async_result",
+            ffi::subscript_rt_async_result as *const u8,
+        ),
         ("subscript_rt_delete", ffi::subscript_rt_delete as *const u8),
         ("subscript_rt_trap", ffi::subscript_rt_trap as *const u8),
         (

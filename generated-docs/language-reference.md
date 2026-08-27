@@ -263,7 +263,7 @@ export function main(): void {
 
 ### S013
 
-Promise objects and combinators are not in the language; async calls must be directly awaited.
+Promise constructors and combinators are not in the language; every async handle must have an awaited completion.
 
 Pinned corpus: [`corpus/reject/r96-new-promise.ts`](../corpus/reject/r96-new-promise.ts), line 8.
 
@@ -408,7 +408,7 @@ Corpus: [`corpus/accept/a116-exhaustive-switch-returns.ts`](../corpus/accept/a11
 
 ### Q34 async
 
-Q34/R13/R36 has exactly three awaitable forms: `await Context.suspend()`, `await` applied directly to a named async-function call, and `await receiver.method(...)` for an async instance method on a plain reference class. The named async function can be generic when the call supplies explicit type arguments. The reference class can be generic. `Promise<T>` appears only in TypeScript-compatible return annotations; Promise objects, storage, constructors, statics, and combinators do not exist. A direct async call must be immediately awaited. Suspension resumes only when the embedding host steps pending computations; there is no event loop or microtask queue.
+Q34/R13/R36/§70 admits `await Context.suspend()`, direct awaits of named async functions and async instance methods, and a held async handle awaited later. The named async function and reference class can be generic. `Promise<T>` is the TypeScript-compatible annotation and storage view of that handle, not a Promise object: constructors, `then`, statics, and combinators do not exist. Handles may be stored in locals and arrays or passed to another function, but every created handle must have at least one awaited completion. Copies retain the Context-owned frame, lexical exits release it, and `await` does not change ownership. Suspension remains host-polled; there is no event loop or microtask queue.
 
 Corpus: [`corpus/accept/a93-async-chain.ts`](../corpus/accept/a93-async-chain.ts), [`corpus/accept/a94-async-two-roots.ts`](../corpus/accept/a94-async-two-roots.ts), [`corpus/accept/a95-interop-async-await.ts`](../corpus/accept/a95-interop-async-await.ts), [`corpus/accept/a110-async-method-receiver.ts`](../corpus/accept/a110-async-method-receiver.ts), [`corpus/accept/a111-interop-async-method-poll.ts`](../corpus/accept/a111-interop-async-method-poll.ts), [`corpus/accept/a143-async-generic.ts`](../corpus/accept/a143-async-generic.ts), [`corpus/reject/r96-new-promise.ts`](../corpus/reject/r96-new-promise.ts), [`corpus/reject/r97-promise-combinator.ts`](../corpus/reject/r97-promise-combinator.ts), [`corpus/reject/r98-promise-static.ts`](../corpus/reject/r98-promise-static.ts), [`corpus/reject/r99-await-outside-async.ts`](../corpus/reject/r99-await-outside-async.ts), [`corpus/reject/r100-floating-async-call.ts`](../corpus/reject/r100-floating-async-call.ts), [`corpus/reject/r101-async-static-method.ts`](../corpus/reject/r101-async-static-method.ts), [`corpus/reject/r102-async-generator-method.ts`](../corpus/reject/r102-async-generator-method.ts), [`corpus/reject/r103-async-cstruct-method.ts`](../corpus/reject/r103-async-cstruct-method.ts), [`corpus/reject/r105-floating-async-method-call.ts`](../corpus/reject/r105-floating-async-method-call.ts), [`corpus/reject/r140-async-lambda.ts`](../corpus/reject/r140-async-lambda.ts).
 

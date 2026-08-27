@@ -109,7 +109,7 @@ impl RuleCode {
             }
             RuleCode::S012 => "`undefined` is banned; the single null story is `null`.",
             RuleCode::S013 => {
-                "Promise objects and combinators are not in the language; async calls must be directly awaited."
+                "Promise constructors and combinators are not in the language; every async handle must have an awaited completion."
             }
             RuleCode::S014 => {
                 "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected."

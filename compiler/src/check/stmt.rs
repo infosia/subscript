@@ -486,12 +486,14 @@ impl<'p> Checker<'p> {
                 },
             };
             let holds_capturing = self.is_capturing_value(&init, fx);
+            let async_origins = self.expr_async_origins(&init, fx);
             self.declare_local(
                 &name,
                 Local {
                     ty: ty.clone(),
                     mutable,
                     holds_capturing,
+                    async_origins,
                 },
                 pos.clone(),
                 fx,
@@ -548,6 +550,10 @@ impl<'p> Checker<'p> {
                             "capturing lambdas may not escape their defining function",
                             pos.clone(),
                         );
+                    }
+                    if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                        let origins = self.expr_async_origins(&checked, fx);
+                        fx.handle_async_origins(&origins);
                     }
                     Some(checked)
                 }
@@ -780,6 +786,7 @@ impl<'p> Checker<'p> {
                 ty: elem_ty.clone(),
                 mutable,
                 holds_capturing: false,
+                async_origins: HashSet::new(),
             },
             binding_pos.clone(),
             fx,

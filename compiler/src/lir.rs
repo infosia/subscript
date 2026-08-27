@@ -476,6 +476,16 @@ pub enum InstructionKind {
     MakeClosure(FunctionId),
     /// Invoke a resolved call target.
     Call(CallTarget),
+    /// Create an async coroutine frame without polling it.
+    AsyncHandleCreate(CallTarget),
+    /// Increment one async frame's non-atomic owner count.
+    AsyncHandleRetain,
+    /// Decrement one async frame's owner count and free it at zero.
+    AsyncHandleRelease,
+    /// Retain each async handle stored in one dynamic array.
+    AsyncHandleArrayRetain,
+    /// Release each async handle stored in one dynamic array.
+    AsyncHandleArrayRelease,
     /// Create a fused for-of cursor.
     IteratorCreate(ForOfKind),
     /// Test a fused cursor without advancing it.
@@ -826,6 +836,11 @@ pub enum SuspendKind {
         target: CallTarget,
         /// Flat call operands.
         operands: Vec<ValueId>,
+    },
+    /// Await a previously created async handle.
+    AsyncHandle {
+        /// The handle value to poll.
+        handle: ValueId,
     },
 }
 

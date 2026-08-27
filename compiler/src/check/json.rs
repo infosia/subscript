@@ -375,6 +375,7 @@ impl Checker<'_> {
                 | Type::Outbox(_)
                 | Type::Func(_)
                 | Type::Generator(_)
+                | Type::AsyncHandle(_)
                 | Type::IterResult(_)
                 | Type::Error => false,
             }

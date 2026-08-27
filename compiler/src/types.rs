@@ -128,6 +128,11 @@ pub enum Type {
     /// Coroutine object produced by calling a `function*` (C8); yields
     /// the carried type through `.next()`.
     Generator(Box<Type>),
+    /// Reference-counted handle returned by an async call (§70).
+    ///
+    /// `Promise<T>` is only the TypeScript spelling. The language value is
+    /// a poll-driven coroutine-frame handle with no Promise object surface.
+    AsyncHandle(Box<Type>),
     /// The value-struct shape `{ done: boolean; value: T }` returned by
     /// `.next()` (C8).
     IterResult(Box<Type>),
@@ -169,6 +174,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         | Type::Inbox(_)
         | Type::Outbox(_)
         | Type::Generator(_)
+        | Type::AsyncHandle(_)
         | Type::Nullable(_)
         | Type::Null => (8, 8),
         Type::Func(_) => (16, 8),
@@ -323,6 +329,10 @@ pub fn display_type(
         Type::Generator(y) => format!(
             "Generator<{}>",
             display_type(y, class_name, enum_name, string_alias_name)
+        ),
+        Type::AsyncHandle(value) => format!(
+            "Promise<{}>",
+            display_type(value, class_name, enum_name, string_alias_name)
         ),
         Type::IterResult(v) => format!(
             "{{ done: boolean; value: {} }}",

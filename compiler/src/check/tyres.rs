@@ -252,12 +252,24 @@ impl<'p> Checker<'p> {
                 return Type::Error;
             }
             "Promise" => {
-                self.error(
-                    RuleCode::S013,
-                    "Promise objects are not in the language; `Promise<T>` is only an async return annotation",
-                    pos,
-                );
-                return Type::Error;
+                let Some(args) = &r.type_params else {
+                    self.error(
+                        RuleCode::S100,
+                        "`Promise` requires exactly one fulfilled-value type argument",
+                        pos,
+                    );
+                    return Type::Error;
+                };
+                if args.params.len() != 1 {
+                    self.error(
+                        RuleCode::S100,
+                        "`Promise` requires exactly one fulfilled-value type argument",
+                        pos,
+                    );
+                    return Type::Error;
+                }
+                let value = self.resolve_type(&args.params[0]);
+                return Type::AsyncHandle(Box::new(value));
             }
             "FixedArray" => {
                 let Some(args) = &r.type_params else {

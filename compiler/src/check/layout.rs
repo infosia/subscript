@@ -642,13 +642,16 @@ impl<'a> Validator<'a> {
                     self.validate_closures_expr(arg);
                 }
             }
-            K::AsyncCall { callee, args } => {
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.validate_closures_expr(receiver);
                 }
                 for arg in args {
                     self.validate_closures_expr(arg);
                 }
+            }
+            K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
+                self.validate_closures_expr(handle);
             }
             K::New { args, .. } | K::ArrayLit(args) => {
                 for arg in args {
@@ -853,7 +856,7 @@ impl<'a> Validator<'a> {
                     &expr.pos,
                 );
             }
-            K::AsyncCall { callee, args } => {
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
                 if let Some(receiver) = callee.receiver() {
                     self.validate_expr_frame(receiver, false, frame);
                 }
@@ -874,6 +877,18 @@ impl<'a> Validator<'a> {
                     "async-call scratch storage",
                     &expr.pos,
                 );
+            }
+            K::AsyncHandleAwait(handle) => {
+                self.validate_expr_frame(handle, false, frame);
+                self.add_frame_slot(
+                    frame,
+                    Layout { size: 16, align: 8 },
+                    "held-async-await scratch storage",
+                    &expr.pos,
+                );
+            }
+            K::AsyncHandleTransfer { value, .. } => {
+                self.validate_expr_frame(value, destination, frame);
             }
             K::New { args, .. } => {
                 for arg in args {

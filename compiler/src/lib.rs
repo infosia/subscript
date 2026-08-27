@@ -1396,7 +1396,7 @@ mod tests {
                 "class C { async m(): Promise<void> {} }\nexport function main(): void {\n  const c: C = new C();\n  c.m();\n}\n",
                 RuleCode::S013,
                 4,
-                "must be immediately awaited",
+                "dropped without any await",
             ),
         ];
         for (source, code, line, message) in cases {

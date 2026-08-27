@@ -210,10 +210,14 @@ struct IteratorCursor {
 struct Coroutine {
     state: Frame,
     completed: bool,
+    completion: Option<Value>,
+    owners: u32,
 }
 
 struct CoroutineRoot {
-    stack: Vec<Rc<RefCell<Coroutine>>>,
+    // `true` means this poll stack owns the creator's initial reference and
+    // releases it when that frame completes. Held awaits borrow instead.
+    stack: Vec<(Rc<RefCell<Coroutine>>, bool)>,
 }
 
 struct Frame {
@@ -230,6 +234,7 @@ enum Flow {
     Suspended {
         yielded: Option<Value>,
         async_call: Option<(l::CallTarget, Vec<Value>)>,
+        async_handle: Option<Rc<RefCell<Coroutine>>>,
     },
 }
 
@@ -257,6 +262,7 @@ struct Interpreter<'m> {
     field_layouts: HashMap<l::FieldId, (usize, Type)>,
     class_layouts: HashMap<ClassId, Layout>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
+    async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
 }
 
 impl<'m> Interpreter<'m> {
@@ -269,6 +275,7 @@ impl<'m> Interpreter<'m> {
             field_layouts: HashMap::new(),
             class_layouts: HashMap::new(),
             poison_registry: HashMap::new(),
+            async_handles: RefCell::new(HashMap::new()),
         };
         interpreter.compute_class_layouts()?;
         interpreter.globals = module
@@ -302,7 +309,7 @@ impl<'m> Interpreter<'m> {
         let result = self.call_function(entry_id, Vec::new())?;
         if let Value::Coroutine(coroutine) = result {
             let mut root = CoroutineRoot {
-                stack: vec![coroutine],
+                stack: vec![(coroutine, true)],
             };
             if self.step_coroutine_root(&mut root)?.is_none() {
                 pending.push(root);
@@ -313,7 +320,7 @@ impl<'m> Interpreter<'m> {
                 return Err(self.invalid(None, "async export did not create a coroutine"));
             };
             let mut root = CoroutineRoot {
-                stack: vec![coroutine],
+                stack: vec![(coroutine, true)],
             };
             if self.step_coroutine_root(&mut root)?.is_none() {
                 pending.push(root);
@@ -401,10 +408,18 @@ impl<'m> Interpreter<'m> {
                     return Err(self.trap_error(trap));
                 }
             }
-            return Ok(Value::Coroutine(Rc::new(RefCell::new(Coroutine {
+            let coroutine = Rc::new(RefCell::new(Coroutine {
                 state: frame,
                 completed: false,
-            }))));
+                completion: None,
+                owners: u32::from(function.is_async),
+            }));
+            if function.is_async {
+                self.async_handles
+                    .borrow_mut()
+                    .insert(Rc::as_ptr(&coroutine) as usize, Rc::clone(&coroutine));
+            }
+            return Ok(Value::Coroutine(coroutine));
         }
         let mut frame = frame;
         match self.execute_frame(&mut frame)? {
@@ -421,7 +436,7 @@ impl<'m> Interpreter<'m> {
         coroutine: &Rc<RefCell<Coroutine>>,
     ) -> Result<Value, InterpretError> {
         let mut root = CoroutineRoot {
-            stack: vec![Rc::clone(coroutine)],
+            stack: vec![(Rc::clone(coroutine), true)],
         };
         loop {
             if let Some(value) = self.step_coroutine_root(&mut root)? {
@@ -437,22 +452,29 @@ impl<'m> Interpreter<'m> {
         root: &mut CoroutineRoot,
     ) -> Result<Option<Value>, InterpretError> {
         loop {
-            let Some(coroutine) = root.stack.last().cloned() else {
+            let Some((coroutine, release_on_complete)) = root.stack.last().cloned() else {
                 return Ok(Some(Value::Void));
             };
             let flow = {
                 let mut coroutine = coroutine.borrow_mut();
                 if coroutine.completed {
-                    Flow::Returned(Value::Void)
+                    Flow::Returned(coroutine.completion.clone().unwrap_or(Value::Void))
                 } else {
                     self.execute_frame(&mut coroutine.state)?
                 }
             };
             match flow {
                 Flow::Returned(value) => {
-                    coroutine.borrow_mut().completed = true;
+                    {
+                        let mut state = coroutine.borrow_mut();
+                        state.completed = true;
+                        state.completion = Some(value.clone());
+                    }
                     root.stack.pop();
-                    if let Some(parent) = root.stack.last() {
+                    if release_on_complete {
+                        self.release_coroutine(&coroutine);
+                    }
+                    if let Some((parent, _)) = root.stack.last() {
                         parent.borrow_mut().state.resume = Some(value);
                     } else {
                         return Ok(Some(value));
@@ -461,15 +483,34 @@ impl<'m> Interpreter<'m> {
                 Flow::Suspended {
                     yielded: _,
                     async_call: Some((target, arguments)),
+                    ..
                 } => match self.invoke_target(&target, arguments, None)? {
-                    Value::Coroutine(child) => root.stack.push(child),
+                    Value::Coroutine(child) => root.stack.push((child, true)),
                     value => coroutine.borrow_mut().state.resume = Some(value),
                 },
                 Flow::Suspended {
                     yielded: _,
+                    async_handle: Some(child),
+                    ..
+                } => root.stack.push((child, false)),
+                Flow::Suspended {
+                    yielded: _,
                     async_call: None,
+                    async_handle: None,
                 } => return Ok(None),
             }
+        }
+    }
+
+    fn release_coroutine(&self, coroutine: &Rc<RefCell<Coroutine>>) {
+        let key = Rc::as_ptr(coroutine) as usize;
+        let mut state = coroutine.borrow_mut();
+        if state.owners != 0 {
+            state.owners -= 1;
+        }
+        if state.owners == 0 {
+            drop(state);
+            self.async_handles.borrow_mut().remove(&key);
         }
     }
 
@@ -493,6 +534,7 @@ impl<'m> Interpreter<'m> {
             Flow::Suspended {
                 yielded: Some(value),
                 async_call: None,
+                async_handle: None,
             } => Ok(self.iter_result(false, value, value_ty)?),
             Flow::Suspended { async_call, .. } => {
                 if let Some((target, arguments)) = async_call {
@@ -612,14 +654,26 @@ impl<'m> Interpreter<'m> {
                                 .map(|value| self.get_value(frame, value, &function.pos))
                                 .transpose()?,
                             None,
+                            None,
                         ),
-                        l::SuspendKind::Async => (None, None),
+                        l::SuspendKind::Async => (None, None, None),
                         l::SuspendKind::AsyncCall { target, operands } => {
                             let arguments = operands
                                 .iter()
                                 .map(|value| self.get_value(frame, *value, &function.pos))
                                 .collect::<Result<Vec<_>, _>>()?;
-                            (None, Some((target.clone(), arguments)))
+                            (None, Some((target.clone(), arguments)), None)
+                        }
+                        l::SuspendKind::AsyncHandle { handle } => {
+                            let Value::Coroutine(handle) =
+                                self.get_value(frame, *handle, &function.pos)?
+                            else {
+                                return Err(self.invalid(
+                                    Some(pos.clone()),
+                                    "held await operand is not an async handle",
+                                ));
+                            };
+                            (None, None, Some(handle))
                         }
                     };
                     let parameters = &destination.parameters[usize::from(resume_value.is_some())..];
@@ -649,10 +703,11 @@ impl<'m> Interpreter<'m> {
                         self.set_value(&mut frame.values, parameter, value, &function.pos)?;
                     }
                     frame.block = *successor;
-                    let (yielded, async_call) = pending;
+                    let (yielded, async_call, async_handle) = pending;
                     return Ok(Flow::Suspended {
                         yielded,
                         async_call,
+                        async_handle,
                     });
                 }
             }
@@ -974,6 +1029,72 @@ impl<'m> Interpreter<'m> {
             )?)),
             l::InstructionKind::Call(target) => {
                 Some(self.invoke_target(target, operands, Some(&instruction.pos))?)
+            }
+            l::InstructionKind::AsyncHandleCreate(target) => {
+                Some(self.invoke_target(target, operands, Some(&instruction.pos))?)
+            }
+            l::InstructionKind::AsyncHandleRetain => {
+                let Value::Coroutine(handle) = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "async retain operand is not a handle",
+                    ));
+                };
+                let mut handle = handle.borrow_mut();
+                handle.owners = handle.owners.saturating_add(1);
+                None
+            }
+            l::InstructionKind::AsyncHandleRelease => {
+                let Value::Coroutine(handle) = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "async release operand is not a handle",
+                    ));
+                };
+                self.release_coroutine(handle);
+                None
+            }
+            l::InstructionKind::AsyncHandleArrayRetain => {
+                let array = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                let len = unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) }.max(0)
+                    as usize;
+                let data = unsafe { ffi::subscript_rt_array_data(&*self.context, array) };
+                for index in 0..len {
+                    let key = unsafe { (data.add(index * 8) as *const usize).read_unaligned() };
+                    if let Some(handle) = self.async_handles.borrow().get(&key).cloned() {
+                        let mut handle = handle.borrow_mut();
+                        handle.owners = handle.owners.saturating_add(1);
+                    }
+                }
+                None
+            }
+            l::InstructionKind::AsyncHandleArrayRelease => {
+                let array = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                // SAFETY: verified LIR restricts this instruction to a live
+                // dynamic array of pointer-sized async handles.
+                let len = unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) }.max(0)
+                    as usize;
+                let data = unsafe { ffi::subscript_rt_array_data(&*self.context, array) };
+                for index in 0..len {
+                    let key = unsafe { (data.add(index * 8) as *const usize).read_unaligned() };
+                    let handle = self.async_handles.borrow().get(&key).cloned();
+                    if let Some(handle) = handle {
+                        self.release_coroutine(&handle);
+                    }
+                }
+                None
             }
             l::InstructionKind::IteratorCreate(kind) => {
                 let subject_ty = self
@@ -3299,7 +3420,8 @@ impl<'m> Interpreter<'m> {
             | Type::Outbox(_)
             | Type::Func(_)
             | Type::Nullable(_)
-            | Type::Generator(_) => Value::Null,
+            | Type::Generator(_)
+            | Type::AsyncHandle(_) => Value::Null,
             Type::Error => Value::Void,
             _ => Value::Void,
         }
@@ -3793,6 +3915,13 @@ impl<'m> Interpreter<'m> {
                 }
                 out[..layout.size].copy_from_slice(value);
             }
+            Type::AsyncHandle(_) => {
+                let Value::Coroutine(handle) = value else {
+                    return Err(type_error("async handle", value));
+                };
+                let key = Rc::as_ptr(handle) as usize as u64;
+                out[..8].copy_from_slice(&key.to_ne_bytes());
+            }
             Type::Str
             | Type::RegExp
             | Type::Object
@@ -3865,6 +3994,20 @@ impl<'m> Interpreter<'m> {
                 Value::Blob(bytes[..need].to_vec())
             }
             Type::FixedArray(_, _) | Type::IterResult(_) => Value::Blob(bytes[..need].to_vec()),
+            Type::AsyncHandle(_) => {
+                let key = u64::from_ne_bytes(bytes[..8].try_into().unwrap_or([0; 8])) as usize;
+                if key == 0 {
+                    Value::Null
+                } else {
+                    let handle = self
+                        .async_handles
+                        .borrow()
+                        .get(&key)
+                        .cloned()
+                        .ok_or_else(|| self.invalid(None, "unknown packed async handle"))?;
+                    Value::Coroutine(handle)
+                }
+            }
             Type::Str
             | Type::RegExp
             | Type::Object

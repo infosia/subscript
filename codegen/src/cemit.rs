@@ -301,6 +301,7 @@ impl<'m> Emitter<'m> {
             | Type::Inbox(_)
             | Type::Outbox(_)
             | Type::Generator(_)
+            | Type::AsyncHandle(_)
             | Type::Nullable(_)
             | Type::Null
             | Type::Class(_) => "ptr".into(),
@@ -332,6 +333,7 @@ impl<'m> Emitter<'m> {
             | Type::Inbox(_)
             | Type::Outbox(_)
             | Type::Generator(_)
+            | Type::AsyncHandle(_)
             | Type::Nullable(_)
             | Type::Null => "void*".into(),
             Type::Func(_) => "SubFn".into(),
@@ -380,6 +382,7 @@ impl<'m> Emitter<'m> {
             | Type::Map(_, _)
             | Type::Set(_)
             | Type::Generator(_)
+            | Type::AsyncHandle(_)
             | Type::Worker(_, _)
             | Type::Inbox(_)
             | Type::Outbox(_)
@@ -703,7 +706,10 @@ impl<'m> Emitter<'m> {
                     parameter.0
                 );
             }
-            if matches!(kind, l::SuspendKind::AsyncCall { .. }) {
+            if matches!(
+                kind,
+                l::SuspendKind::AsyncCall { .. } | l::SuspendKind::AsyncHandle { .. }
+            ) {
                 let _ = writeln!(out, "    void* b{}_child;", block.id.0);
             }
         }
@@ -921,6 +927,15 @@ impl<'m> Emitter<'m> {
             "    memset(frame, 0, sizeof *frame);\n    frame->resume = sub_f{}_resume;",
             function.id.0
         );
+        if function.is_async {
+            let register = self.runtime_call(
+                "void",
+                "subscript_rt_async_register",
+                &["void*".into(), "void*".into()],
+                &["ctx".into(), "frame".into()],
+            );
+            let _ = writeln!(out, "    {register};");
+        }
         for parameter in &function.parameters {
             if parameter.kind != l::ParameterKind::Capture {
                 let _ = writeln!(
@@ -1333,6 +1348,11 @@ fn record_terminator_address_escapes(
                         }
                     }
                 }
+                l::SuspendKind::AsyncHandle { handle } => {
+                    if let Some(uses) = uses.get_mut(handle) {
+                        uses.push(AddressUse::Escape);
+                    }
+                }
             }
             for argument in arguments {
                 record_address_escape(uses, argument);
@@ -1624,6 +1644,9 @@ fn record_terminator_value_references(
                         references[value_storage[value.0 as usize].0 as usize].insert(block);
                     }
                 }
+                l::SuspendKind::AsyncHandle { handle } => {
+                    references[value_storage[handle.0 as usize].0 as usize].insert(block);
+                }
             }
             for argument in arguments {
                 record_value_reference(references, value_storage, argument, block);
@@ -1711,6 +1734,7 @@ fn terminator_uses_value(terminator: &l::Terminator, value: l::ValueId) -> bool 
                 l::SuspendKind::Yield(yielded) => *yielded == Some(value),
                 l::SuspendKind::Async => false,
                 l::SuspendKind::AsyncCall { operands, .. } => operands.contains(&value),
+                l::SuspendKind::AsyncHandle { handle } => *handle == value,
             };
             kind_uses
                 || arguments.iter().any(
@@ -1878,6 +1902,9 @@ fn record_terminator_liveness_uses(values: &mut BTreeSet<l::ValueId>, terminator
                 l::SuspendKind::Async => {}
                 l::SuspendKind::AsyncCall { operands, .. } => {
                     values.extend(operands.iter().copied());
+                }
+                l::SuspendKind::AsyncHandle { handle } => {
+                    values.insert(*handle);
                 }
             }
             for argument in arguments {
@@ -2719,14 +2746,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 continue;
             };
             let _ = writeln!(out, "resume_b{}:", block.id.0);
-            if matches!(kind, l::SuspendKind::AsyncCall { .. }) {
-                self.emit_async_child_resume(out, block, state)?;
-            } else {
-                if resume_value.is_some() {
-                    return Err(internal("non-call suspension defines a resume value"));
+            match kind {
+                l::SuspendKind::AsyncCall { .. } => {
+                    self.emit_async_child_resume(out, block, state)?;
                 }
-                self.restore_suspend_arguments(out, block)?;
-                let _ = writeln!(out, "    goto b{};", successor.0);
+                l::SuspendKind::AsyncHandle { .. } => {
+                    self.emit_async_handle_resume(out, block, state, false)?;
+                }
+                _ => {
+                    if resume_value.is_some() {
+                        return Err(internal("non-call suspension defines a resume value"));
+                    }
+                    self.restore_suspend_arguments(out, block)?;
+                    let _ = writeln!(out, "    goto b{};", successor.0);
+                }
             }
             state += 1;
         }
@@ -2975,6 +3008,64 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::InstructionKind::Call(target) => {
                 self.emit_call(out, instruction, target, &operands, &operand_types, result)
+            }
+            l::InstructionKind::AsyncHandleCreate(target) => {
+                let function = match target.kind {
+                    l::CallTargetKind::Function(function) => function,
+                    l::CallTargetKind::Method(method) => self.emitter.method_function(method)?,
+                    ref other => {
+                        return Err(internal(format!("held async target {other:?} is invalid")))
+                    }
+                };
+                let separator = if operands.is_empty() { "" } else { ", " };
+                self.assign(
+                    out,
+                    result,
+                    &format!("sub_f{}(ctx{separator}{})", function.0, operands.join(", ")),
+                )?;
+                self.consume_runtime_traps(out, &instruction.traps, true)
+            }
+            l::InstructionKind::AsyncHandleRetain => {
+                let call = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_retain",
+                    &["void*".into(), "void*".into()],
+                    &["ctx".into(), operands[0].clone()],
+                );
+                let _ = writeln!(out, "    {call};");
+                Ok(())
+            }
+            l::InstructionKind::AsyncHandleRelease => {
+                let pos = self.emitter.pos_id(&instruction.pos);
+                let call = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_release",
+                    &["void*".into(), "void*".into(), "uint32_t".into()],
+                    &["ctx".into(), operands[0].clone(), format!("{pos}u")],
+                );
+                let _ = writeln!(out, "    {call};");
+                Ok(())
+            }
+            l::InstructionKind::AsyncHandleArrayRetain => {
+                let call = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_retain_array",
+                    &["void*".into(), "const void*".into()],
+                    &["ctx".into(), operands[0].clone()],
+                );
+                let _ = writeln!(out, "    {call};");
+                Ok(())
+            }
+            l::InstructionKind::AsyncHandleArrayRelease => {
+                let pos = self.emitter.pos_id(&instruction.pos);
+                let call = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_release_array",
+                    &["void*".into(), "const void*".into(), "uint32_t".into()],
+                    &["ctx".into(), operands[0].clone(), format!("{pos}u")],
+                );
+                let _ = writeln!(out, "    {call};");
+                Ok(())
             }
             l::InstructionKind::IteratorCreate(kind) => {
                 self.emit_iterator_create(out, *kind, &operands[0], &operand_types[0], result)
@@ -3436,6 +3527,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.emit_async_child_create(out, block, target, operands, traps)?;
                 self.emit_async_child_resume(out, block, state)?;
             }
+            l::SuspendKind::AsyncHandle { handle } => {
+                let _ = writeln!(
+                    out,
+                    "    frame->b{}_child = {};",
+                    block.id.0,
+                    self.value(*handle)
+                );
+                self.emit_async_handle_resume(out, block, state, true)?;
+            }
         }
         Ok(())
     }
@@ -3564,6 +3664,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             kind: l::SuspendKind::AsyncCall { target, .. },
             successor,
             resume_value,
+            pos,
             ..
         } = &block.terminator
         else {
@@ -3586,6 +3687,98 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             function.0, block.id.0
         );
         self.emit_pending_check(out);
+        let _ = writeln!(out, "    if (!{done}) {{ frame->state = {state};");
+        self.emit_pop(out);
+        out.push_str("        return 0;\n    }\n");
+        self.restore_suspend_arguments(out, block)?;
+        let pos = self.emitter.pos_id(pos);
+        let release = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_async_release",
+            &["void*".into(), "void*".into(), "uint32_t".into()],
+            &[
+                "ctx".into(),
+                format!("frame->b{}_child", block.id.0),
+                format!("{pos}u"),
+            ],
+        );
+        let _ = writeln!(out, "    {release};");
+        let _ = writeln!(out, "    goto b{};", successor.0);
+        Ok(())
+    }
+
+    fn emit_async_handle_resume(
+        &mut self,
+        out: &mut String,
+        block: &l::BasicBlock,
+        state: u32,
+        consume_traps: bool,
+    ) -> Result<(), String> {
+        let l::Terminator::Suspend {
+            kind: l::SuspendKind::AsyncHandle { .. },
+            successor,
+            resume_value,
+            traps,
+            ..
+        } = &block.terminator
+        else {
+            return Err(internal("held async resume on non-handle suspend"));
+        };
+        if consume_traps {
+            for trap in traps {
+                match trap.kind {
+                    l::TrapKind::DevReloadOnlyStaleCoroutine => self.consume(trap),
+                    l::TrapKind::Call => {}
+                    ref other => {
+                        return Err(internal(format!("unexpected held-await trap {other:?}")))
+                    }
+                }
+            }
+        }
+        let (output, size) = if let Some(value) = resume_value {
+            (
+                format!("&{}", self.value(*value)),
+                format!("sizeof({})", self.value(*value)),
+            )
+        } else {
+            ("NULL".into(), "0u".into())
+        };
+        let handle = format!("frame->b{}_child", block.id.0);
+        let cached = self.emitter.runtime_call(
+            "uint8_t",
+            "subscript_rt_async_result",
+            &[
+                "const void*".into(),
+                "const void*".into(),
+                "void*".into(),
+                "uint64_t".into(),
+            ],
+            &["ctx".into(), handle.clone(), output.clone(), size.clone()],
+        );
+        let done = self.fresh();
+        let _ = writeln!(out, "    uint8_t {done} = {cached};");
+        let _ = writeln!(
+            out,
+            "    if (!{done}) {done} = ((SubCoroutinePrefix*)({handle}))->resume(ctx, {handle}, {output});"
+        );
+        if consume_traps {
+            if let Some(trap) = traps.iter().find(|trap| trap.kind == l::TrapKind::Call) {
+                self.consume(trap);
+            }
+        }
+        self.emit_pending_check(out);
+        let complete = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_async_complete",
+            &[
+                "void*".into(),
+                "void*".into(),
+                "const void*".into(),
+                "uint64_t".into(),
+            ],
+            &["ctx".into(), handle, output, size],
+        );
+        let _ = writeln!(out, "    if ({done}) {complete};");
         let _ = writeln!(out, "    if (!{done}) {{ frame->state = {state};");
         self.emit_pop(out);
         out.push_str("        return 0;\n    }\n");

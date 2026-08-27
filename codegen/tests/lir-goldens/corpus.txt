@@ -7926,6 +7926,516 @@ fn f2 "<lambda a152-lambda-env-per-iteration.ts:11:15>" kind=Lambda exported=fal
   b0 Some("entry"):
     %1: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a152-lambda-env-per-iteration.ts:11:26
     -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 11, col: 26 } }
+===== a154-held-async-handle =====
+module initializer=Some(FunctionId(2))
+global g0 "progress": I32 mutable=true @ a154-held-async-handle.ts:6:5
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "work" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a154-held-async-handle.ts:8:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 8, col: 16 } }]
+  param %0 "id": Data(I32) kind=Explicit storage=None @ a154-held-async-handle.ts:8:21
+  value %0: Data(I32) name=Some("id")
+  value %1: Data(I32) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=Some("id")
+  b0 Some("entry"):
+    %1: Data(I32) = LoadGlobal(GlobalId(0))() @ a154-held-async-handle.ts:9:28
+    %2: Data(Str) = Template([Text("work"), Operand(0), Text(":start="), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 9, col: 9 } }] @ a154-held-async-handle.ts:9:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a154-held-async-handle.ts:9:3
+    %3: Data(I32) = LoadGlobal(GlobalId(0))() @ a154-held-async-handle.ts:10:3
+    %4: Data(I32) = Binary(Add)(%3, %0) @ a154-held-async-handle.ts:10:3
+    StoreGlobal(GlobalId(0))(%4) @ a154-held-async-handle.ts:10:3
+    -> Suspend { kind: Async, pos: Pos { file: "a154-held-async-handle.ts", line: 11, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%10: Data(I32)) Some("async.resume"):
+    %5: Data(I32) = LoadGlobal(GlobalId(0))() @ a154-held-async-handle.ts:12:29
+    %6: Data(Str) = Template([Text("work"), Operand(0), Text(":resume="), Operand(1)])(%10, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 12, col: 9 } }] @ a154-held-async-handle.ts:12:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a154-held-async-handle.ts:12:3
+    %7: Data(I32) = LoadGlobal(GlobalId(0))() @ a154-held-async-handle.ts:13:10
+    %8: Data(I32) = Binary(Mul)(%10, Integer(10):I32) @ a154-held-async-handle.ts:13:21
+    %9: Data(I32) = Binary(Add)(%7, %8) @ a154-held-async-handle.ts:13:10
+    -> Return { value: Some(Value(ValueId(9))), pos: Pos { file: "a154-held-async-handle.ts", line: 13, col: 3 } }
+fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a154-held-async-handle.ts:16:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 16, col: 23 } }]
+  value %0: Data(Str) name=None
+  value %1: Data(AsyncHandle(I32)) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(AsyncHandle(I32)) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(AsyncHandle(I32)) name=None
+  value %10: Data(AsyncHandle(I32)) name=None
+  value %11: Data(AsyncHandle(I32)) name=None
+  value %12: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("main:start")() traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 17, col: 9 } }] @ a154-held-async-handle.ts:17:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a154-held-async-handle.ts:17:3
+    %1: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 18, col: 31 } }] @ a154-held-async-handle.ts:18:31
+    %2: Data(Str) = StringLiteral("main:between")() traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 19, col: 9 } }] @ a154-held-async-handle.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a154-held-async-handle.ts:19:3
+    %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 20, col: 32 } }] @ a154-held-async-handle.ts:20:32
+    %4: Data(Str) = StringLiteral("main:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 21, col: 9 } }] @ a154-held-async-handle.ts:21:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a154-held-async-handle.ts:21:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }] }
+  b1(%5: Data(I32), %9: Data(AsyncHandle(I32)), %10: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    %6: Data(Str) = Template([Text("main:first="), Operand(0)])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 24, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 24, col: 9 } }] @ a154-held-async-handle.ts:24:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a154-held-async-handle.ts:24:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(10) }, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 }, successor: BlockId(2), resume_value: Some(ValueId(7)), arguments: [Value(ValueId(9)), Value(ValueId(10))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 } }] }
+  b2(%7: Data(I32), %11: Data(AsyncHandle(I32)), %12: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    %8: Data(Str) = Template([Text("main:second="), Operand(0)])(%7) traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 26, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 26, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 26, col: 9 } }] @ a154-held-async-handle.ts:26:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a154-held-async-handle.ts:26:3
+    AsyncHandleRelease(%12) @ a154-held-async-handle.ts:16:23
+    AsyncHandleRelease(%11) @ a154-held-async-handle.ts:16:23
+    -> Return { value: None, pos: Pos { file: "a154-held-async-handle.ts", line: 16, col: 23 } }
+fn f2 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a154-held-async-handle.ts:6:5
+  b0 Some("entry"):
+    StoreGlobal(GlobalId(0))(Integer(0):I32) @ a154-held-async-handle.ts:6:5
+    -> Return { value: None, pos: Pos { file: "a154-held-async-handle.ts", line: 6, col: 5 } }
+===== a155-async-handle-array =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "work" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a155-async-handle-array.ts:6:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 6, col: 16 } }]
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a155-async-handle-array.ts:6:21
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=Some("value")
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("start="), Operand(0)])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 7, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 7, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 7, col: 9 } }] @ a155-async-handle-array.ts:7:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a155-async-handle-array.ts:7:3
+    -> Suspend { kind: Async, pos: Pos { file: "a155-async-handle-array.ts", line: 8, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [] }
+  b1(%4: Data(I32)) Some("async.resume"):
+    %2: Data(Str) = Template([Text("resume="), Operand(0)])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 9, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 9, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 9, col: 9 } }] @ a155-async-handle-array.ts:9:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a155-async-handle-array.ts:9:3
+    %3: Data(I32) = Binary(Mul)(%4, Integer(10):I32) @ a155-async-handle-array.ts:10:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a155-async-handle-array.ts", line: 10, col: 3 } }
+fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a155-async-handle-array.ts:13:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 13, col: 23 } }]
+  value %0: Data(AsyncHandle(I32)) name=None
+  value %1: Data(AsyncHandle(I32)) name=None
+  value %2: Data(AsyncHandle(I32)) name=None
+  value %3: Data(Array(AsyncHandle(I32))) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Bool) name=None
+  value %14: Address(AddressType { pointee: AsyncHandle(I32), array_base: Some(ValueId(24)) }) name=None
+  value %15: Data(AsyncHandle(I32)) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Array(AsyncHandle(I32))) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(Array(AsyncHandle(I32))) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 36 } }] @ a155-async-handle-array.ts:14:36
+    %1: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 45 } }] @ a155-async-handle-array.ts:14:45
+    %2: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 54 } }] @ a155-async-handle-array.ts:14:54
+    %3: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%0, %1, %2) traps=[Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 14, col: 54 } }] @ a155-async-handle-array.ts:14:35
+    %4: Data(I32) = Length(%3) @ a155-async-handle-array.ts:15:25
+    %5: Data(Str) = Template([Text("held="), Operand(0)])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 15, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 15, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 15, col: 9 } }] @ a155-async-handle-array.ts:15:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) invalidates=[ValueId(3)] @ a155-async-handle-array.ts:15:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(3))] })
+  b1(%6: Data(I32), %7: Data(I32), %24: Data(Array(AsyncHandle(I32)))) Some("for.cond"):
+    %12: Data(I32) = Length(%24) @ a155-async-handle-array.ts:17:36
+    %13: Data(Bool) = Binary(Lt)(%7, %12) @ a155-async-handle-array.ts:17:24
+    -> ConditionalBranch { condition: Value(ValueId(13)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(6)), Value(ValueId(7))] } }
+  b2 Some("for.body"):
+    %14: Address(AddressType { pointee: AsyncHandle(I32), array_base: Some(ValueId(24)) }) = AddressOfIndex { checked: true }(%24, %7) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 30 } }, Trap { kind: IndexRead, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 30 } }] @ a155-async-handle-array.ts:18:30
+    %15: Data(AsyncHandle(I32)) = LoadAddress(%14) @ a155-async-handle-array.ts:18:30
+    -> Suspend { kind: AsyncHandle { handle: ValueId(15) }, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 }, successor: BlockId(5), resume_value: Some(ValueId(16)), arguments: [Value(ValueId(24)), Value(ValueId(6)), Value(ValueId(7))], invalidates: [ValueId(24)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 } }] }
+  b3(%8: Data(I32), %9: Data(I32)) Some("for.step"):
+    %19: Data(I32) = Binary(Add)(%9, Integer(1):I32) @ a155-async-handle-array.ts:17:44
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(8)), Value(ValueId(19)), Value(ValueId(21))] })
+  b4(%10: Data(I32), %11: Data(I32)) Some("for.exit"):
+    %20: Data(Str) = Template([Text("total="), Operand(0)])(%10) traps=[Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 22, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 22, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 22, col: 9 } }] @ a155-async-handle-array.ts:22:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%20) invalidates=[ValueId(24)] @ a155-async-handle-array.ts:22:3
+    AsyncHandleArrayRelease(%24) @ a155-async-handle-array.ts:13:23
+    -> Return { value: None, pos: Pos { file: "a155-async-handle-array.ts", line: 13, col: 23 } }
+  b5(%16: Data(I32), %21: Data(Array(AsyncHandle(I32))), %22: Data(I32), %23: Data(I32)) Some("async-handle.resume"):
+    %17: Data(Str) = Template([Text("value="), Operand(0)])(%16) traps=[Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 19, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 19, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a155-async-handle-array.ts", line: 19, col: 11 } }] @ a155-async-handle-array.ts:19:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) invalidates=[ValueId(21)] @ a155-async-handle-array.ts:19:5
+    %18: Data(I32) = Binary(Add)(%22, %16) @ a155-async-handle-array.ts:20:5
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(18)), Value(ValueId(23))] })
 ===== a20-coroutine-generator =====
 module initializer=None
 intrinsic Ambient.0 "Print"

@@ -321,7 +321,10 @@ fn compare_terminator_positions(hir: &hir::Module, lir: &l::Module, findings: &m
     walk_module_expressions(hir, &mut |expr| {
         if matches!(
             &expr.kind,
-            hir::ExprKind::Yield(_) | hir::ExprKind::AsyncSuspend | hir::ExprKind::AsyncCall { .. }
+            hir::ExprKind::Yield(_)
+                | hir::ExprKind::AsyncSuspend
+                | hir::ExprKind::AsyncCall { .. }
+                | hir::ExprKind::AsyncHandleAwait(_)
         ) {
             expected.push(expr.pos.clone());
         }
@@ -926,7 +929,8 @@ fn collect_trap_expression(
                     collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
                 }
             }
-            hir::ExprKind::AsyncCall { callee, args } => {
+            hir::ExprKind::AsyncCall { callee, args }
+            | hir::ExprKind::AsyncHandleCreate { callee, args, .. } => {
                 let parameters = match callee {
                     hir::AsyncCallee::Function(name) => hir
                         .functions
@@ -1106,7 +1110,10 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
     for function in &lir.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {
-                if let l::InstructionKind::Call(_) = &instruction.kind {
+                if matches!(
+                    &instruction.kind,
+                    l::InstructionKind::Call(_) | l::InstructionKind::AsyncHandleCreate(_)
+                ) {
                     *actual
                         .entry((
                             instruction.pos.file.clone(),
@@ -1182,7 +1189,8 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
             .get(class.0)
             .and_then(|class| class.ctor.as_ref())
             .map(|constructor| constructor.params.len() + 1),
-        hir::ExprKind::AsyncCall { callee, .. } => match callee {
+        hir::ExprKind::AsyncCall { callee, .. }
+        | hir::ExprKind::AsyncHandleCreate { callee, .. } => match callee {
             hir::AsyncCallee::Function(name) => hir
                 .functions
                 .iter()
@@ -1278,7 +1286,13 @@ fn instruction_arity(
                 .unwrap_or(usize::MAX);
             Arity::Exact(captures)
         }
-        K::Call(target) => Arity::MatchesPayload(target.parameter_types.len()),
+        K::Call(target) | K::AsyncHandleCreate(target) => {
+            Arity::MatchesPayload(target.parameter_types.len())
+        }
+        K::AsyncHandleRetain
+        | K::AsyncHandleRelease
+        | K::AsyncHandleArrayRetain
+        | K::AsyncHandleArrayRelease => Arity::Exact(1),
         K::IteratorHasNext | K::IteratorValue | K::IteratorAdvance => Arity::Exact(3),
     }
 }
@@ -1529,13 +1543,16 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
                 walk_expr(value, visit);
             }
         }
-        K::AsyncCall { callee, args } => {
+        K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
             if let Some(receiver) = callee.receiver() {
                 walk_expr(receiver, visit);
             }
             for argument in args {
                 walk_expr(argument, visit);
             }
+        }
+        K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
+            walk_expr(handle, visit);
         }
         K::Cond { cond, then, els } => {
             walk_expr(cond, visit);
