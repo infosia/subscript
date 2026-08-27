@@ -270,6 +270,66 @@ Accept: `a144`. Reject: `r141-value-class-write-accessor`,
 `r144-accessor-increment`, `r145-accessor-write-as-value`,
 `r146-accessor-field-name-clash`, `r147-static-accessor`.
 
+### C13. Iteration over a container that changes — a fixed entry bound
+
+`for...of` and `forEach` fix the entry bound when the traversal starts.
+**An append does not extend the traversal, and a removal shortens it.**
+JavaScript re-reads the length each step for an array, and a `Map` or a
+`Set` iterator observes an entry appended during iteration.
+
+*(Added 2026-08-27 by §69 stage 2, which measured the divergence and
+had no id to cite. The behaviour was decided before this entry:
+`corpus/accept/a80-for-of-foreach-mutation` states it in its own header
+and pins it. This entry records the decision; it does not make one.)*
+
+Measured on `a80`, `node` v24.18.0 against the committed golden:
+
+    subscript   mut-map:1  mut-map:3
+    node        mut-map:1  mut-map:3  mut-map:4
+
+**The array half is matchable at a cost; the `Map` half is not.**
+Matching an array needs the length re-read and, under §68.2 item 9, the
+base address re-materialized every step, on the loop `a22` measures.
+Matching a `Map` needs the traversal to observe an entry appended after
+it started. This language's `Map` is flat insertion-ordered storage, so
+an append can rehash and no position survives it. A cursor stable across
+a rehash is an iterator object, and `stdlib.md` §14.3 rules that out:
+"an iterator held as a value would be stateful and outlive the call that
+produced it — the first escaping temporary in the language, and a
+memory-model change (invariant 2) rather than a syntax addition."
+
+So this is a decided divergence, forced by §14.3's fused index loop and
+by the `Map`'s storage, not a gap to close later.
+
+Accept: `a80`. Reject: none — the shape is legal and its value differs.
+
+### C14. Declaration scope and order — this compiler rejects where it would diverge
+
+Where this compiler and TypeScript disagree about which declaration a
+name resolves to, **this compiler rejects. It never accepts a program
+and gives it a different value.** A `switch` body is one scope, as
+TypeScript has it; two declarations of one name in one scope are
+rejected, a parameter and a body local included; a block-scoped
+declaration owns its name for the whole block, against an ambient
+namespace and a class name as well as a local.
+
+*(Added 2026-08-27 by §69 stage 2. `compiler.md` §67.1 decided the rule
+and its nine reject entries; the collision table carried none of it. The
+table's granularity is a collision class, not one id per reject entry —
+twelve ids covered 151 rejects before this — so this entry is the class,
+not the temporal dead zone alone.)*
+
+The temporal dead zone is the instance §66 measurement 6i recorded:
+`node` resolved the name as `4` and this compiler as `3`. Under this
+rule the shape is now rejected instead, so no program is accepted with
+a different value.
+
+**Matching TypeScript here is not available.** To match, this compiler
+would accept the programs §66 and §67 measured, and those are the
+programs whose two tiers printed different numbers with no diagnostic.
+
+Accept: `a147`, `a148`. Reject: `r148`–`r156`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different
