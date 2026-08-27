@@ -8108,6 +8108,52 @@ The interface is not the subject. This section moves no part of it.
    function-scope storage. This closes measurement 8's second
    defect, which holds no frame, by the same rule that serves a
    coroutine.
+
+8a. **A capturing lambda's environment is one instance per execution
+   of the literal, in a function-scoped arena.** *(Owner decision
+   2026-08-27. Rule 8 alone does not give this, and §68.6 item 2
+   named rule 8 as the fix for `a151` and `a152`. That was wrong.)*
+
+   Rule 8 is about **scope**. The defect is about **instance
+   count**. One shared function-scope environment closes `a151` by
+   accident — the loop's last iteration wins and the one local holds
+   the last closure — and leaves `a152` wrong, because `a152` keeps
+   iteration 0's closure in a second local while the literal runs
+   again. Both tiers print `async-keep=30`, and `10` is correct.
+
+   Three facts fix the shape of the answer:
+
+   - The checker rejects a capturing lambda that escapes its
+     defining function: "A capturing lambda may not escape its
+     defining function." **The lifetime is bounded by the function's
+     activation**, so no collectable allocation is needed.
+   - S009 rejects a capturing lambda stored in an array, a field, or
+     a global, so a local is its only home.
+   - A `SubFn` copy copies the environment **pointer**, so two
+     locals alias one environment. A slot per destination is
+     therefore not enough either.
+
+   So the count is dynamic — a loop's trip count — and the lifetime
+   is static. **A bump arena in the function's own storage** gives
+   both: mark at entry, release at return, and recursion nests the
+   marks. A coroutine's arena region belongs to its frame, because
+   the frame outlives the C stack; that replaces §67 rule 1k's one
+   frame member per literal, which is the member `a152` overwrites.
+
+   A closure that does not outlive its block keeps a stack slot. The
+   liveness of §68.2 item 6 already answers which is which, and no
+   second analysis decides it.
+
+   **What this does not do.** It is not a `Context` allocation. A
+   `Context` allocation would hold the environment until an explicit
+   collect, against a stack slot that costs nothing today, and it
+   would give the user an allocation they cannot `delete`. Invariant
+   2 is satisfied by the arena being explicit, scoped, and
+   deterministic, not by a collector.
+
+   **Measure, do not assert.** The record states the arena's
+   mark-and-release cost and the count of corpus entries that hold a
+   block-escaping closure. Neither is known at this decision.
 9. **An address is a value, and it carries an invalidation point.**
    Every LIR instruction that can move an array's storage names the
    arrays that it invalidates. The lowering re-computes an address
