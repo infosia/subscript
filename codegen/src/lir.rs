@@ -8,6 +8,8 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
+mod unroll;
+
 /// A construct or inconsistent checked fact that cannot be represented in
 /// LIR without guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +50,8 @@ impl Error for VerifyError {}
 /// Returns the first construct whose checked semantics cannot be encoded by
 /// the closed LIR form.
 pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
-    let lowered = Lowering::new(module)?.run()?;
+    let mut lowered = Lowering::new(module)?.run()?;
+    unroll::run(&mut lowered);
     if let Err(errors) = verify_module(&lowered) {
         return Err(LowerError {
             pos: lowered.functions.first().map_or_else(

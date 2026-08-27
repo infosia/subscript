@@ -1145,6 +1145,100 @@ fn lower_source(name: &str, source: &str) -> Module {
     lower_module(&hir).expect("source lowers to LIR")
 }
 
+fn unrolled_block_count(module: &Module) -> usize {
+    module
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .filter(|block| {
+            block
+                .source_name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("for.unrolled.") && !name.ends_with("unused"))
+        })
+        .count()
+}
+
+#[test]
+fn constant_four_trip_loop_unrolls_and_interprets() {
+    let module = lower_source(
+        "unroll-four.ts",
+        "export function main(): void {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    total += i;\n  }\n  print(`${total}`);\n}\n",
+    );
+    assert_eq!(unrolled_block_count(&module), 4);
+    verify_module(&module).expect("unrolled LIR verifies");
+    assert_eq!(interpret(&module).expect("unrolled LIR interprets"), b"6\n");
+}
+
+#[test]
+fn unroller_handles_small_counts_inclusive_bounds_and_wide_steps() {
+    for (name, condition, step, expected_blocks, expected_output) in [
+        ("one", "i < 1", "i += 1", 1, b"0\n".as_slice()),
+        ("two", "i < 2", "i += 1", 2, b"1\n".as_slice()),
+        ("inclusive", "i <= 7", "i += 1", 8, b"28\n".as_slice()),
+        ("wide-step", "i < 8", "i += 2", 4, b"12\n".as_slice()),
+    ] {
+        let source = format!(
+            "export function main(): void {{\n  let total: i32 = 0;\n  for (let i: i32 = 0; {condition}; {step}) {{ total += i; }}\n  print(`${{total}}`);\n}}\n"
+        );
+        let module = lower_source(&format!("unroll-{name}.ts"), &source);
+        assert_eq!(unrolled_block_count(&module), expected_blocks, "{name}");
+        verify_module(&module).unwrap_or_else(|errors| panic!("{name}: {errors:?}"));
+        assert_eq!(
+            interpret(&module).unwrap_or_else(|error| panic!("{name}: {error}")),
+            expected_output,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn unroller_declines_trip_body_and_trap_limits() {
+    let nine_trips = lower_source(
+        "unroll-nine.ts",
+        "export function main(): void {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < 9; i += 1) { total += i; }\n  print(`${total}`);\n}\n",
+    );
+    assert_eq!(unrolled_block_count(&nine_trips), 0);
+
+    let large_body = lower_source(
+        "unroll-large.ts",
+        "export function main(): void {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) {\n    total += i; total += i; total += i; total += i;\n    total += i; total += i; total += i; total += i;\n    total += i; total += i; total += i; total += i;\n    total += i; total += i; total += i; total += i;\n  }\n  print(`${total}`);\n}\n",
+    );
+    assert_eq!(unrolled_block_count(&large_body), 0);
+
+    let trap_source = "export function main(): void {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < 4; i += 1) { total += 12 / (i + 1); }\n  print(`${total}`);\n}\n";
+    let hir = check_program(&[SourceFile::new("unroll-trap.ts", trap_source)])
+        .expect("trap loop checks clean");
+    let trap_body = lower_module(&hir).expect("trap loop lowers");
+    assert_eq!(unrolled_block_count(&trap_body), 0);
+    assert!(
+        lir_facts::dropped_facts(&hir, &trap_body).is_empty(),
+        "declined trap loop keeps the exact HIR/LIR fact multiset"
+    );
+}
+
+#[test]
+fn a22_inner_loop_unrolls_four_times() {
+    let accept = corpus::corpus_accept();
+    let module = lower_entry(&accept, "a22-matrix-propagation");
+    let multiply = module
+        .functions
+        .iter()
+        .find(|function| function.source_name == "multiply")
+        .expect("a22 has multiply");
+    assert_eq!(
+        multiply
+            .blocks
+            .iter()
+            .filter(|block| block
+                .source_name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("for.unrolled.")))
+            .count(),
+        4
+    );
+}
+
 fn print_snapshot_module(module: &Module) -> String {
     let mut snapshot = module.clone();
     for function in &mut snapshot.functions {

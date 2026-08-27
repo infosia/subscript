@@ -2097,7 +2097,7 @@ fn local_load_store_address_chains_emit_as_member_expressions() {
 }
 
 #[test]
-fn multiply_loop_carried_values_emit_in_place() {
+fn multiply_constant_trip_loop_emits_four_straight_iterations() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -2112,26 +2112,33 @@ fn multiply_loop_carried_values_emit_in_place() {
         .expect("a22 has multiply");
     let c = emit_c(&hir).expect("a22 emits C").source;
     let body = emitted_function_body(&c, multiply.id);
-    let inner_loop = body
-        .split_once("b10:\n")
-        .map(|(_, rest)| rest)
-        .and_then(|rest| rest.split_once("b12:\n").map(|(loop_body, _)| loop_body))
-        .unwrap_or_else(|| panic!("multiply has no inner loop:\n{body}"));
-
-    assert!(
-        inner_loop.contains("v16 = ((v16) + (v39));"),
-        "the accumulator is not assigned in place:\n{inner_loop}"
+    let iterations = multiply
+        .blocks
+        .iter()
+        .filter(|block| {
+            block
+                .source_name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("for.unrolled."))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(iterations.len(), 4, "a22 inner loop was not unrolled");
+    assert!(iterations.iter().all(|block| {
+        matches!(
+            block.terminator,
+            subscript_compiler::lir::Terminator::Branch(_)
+        )
+    }));
+    assert_eq!(
+        body.matches("((v0).d0).a[").count(),
+        4,
+        "left matrix does not have four straight accesses:\n{body}"
     );
-    assert!(
-        inner_loop.contains("v17 = ((int32_t)(((uint32_t)(v17)) + ((uint32_t)(1))));"),
-        "the counter is not assigned in place:\n{inner_loop}"
+    assert_eq!(
+        body.matches("((v1).d0).a[").count(),
+        4,
+        "right matrix does not have four straight accesses:\n{body}"
     );
-    for redundant in ["v18", "v19", "v20", "v21", "v40", "v41"] {
-        assert!(
-            !inner_loop.contains(redundant),
-            "the inner loop still uses coalesced value {redundant}:\n{inner_loop}"
-        );
-    }
 }
 
 #[test]
