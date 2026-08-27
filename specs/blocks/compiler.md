@@ -8498,6 +8498,37 @@ and `lower/mod.rs` did not.
      whole activation is precisely what that rule forbids, so this is
      a defect and not a trade this section made.
 
+     **Closed 2026-08-28.** A shared root-storage plan derives slot
+     interference from the liveness §68.2 item 6 already computes —
+     no second fixed point — reuses a slot only across non-
+     overlapping live ranges, and clears a slot when its value dies.
+     Both transcribers consume that one plan.
+
+         collect          before §68    regressed     fixed
+         ship             211.7 ms      274.0 ms      207.5 ms
+         dev-JIT          229.3 ms      342.7 ms      227.5 ms
+         live per round   75005         100006+       75005
+         live at the end  5             100006        5
+
+     The live counts are the mechanism closed, not the timing
+     improved: the 5000-node chain the program dropped is freed
+     again, and both tiers agree exactly.
+
+     **The cost, recorded.** `tree` — thirty depth-16 trees built,
+     traversed, and freed with explicit `Context.free` — moved on the
+     ship tier from 1.51× to 1.67×, measured twice on a quiet
+     machine. Clearing a slot when its value dies costs a write, and
+     `tree` frees densely. Its dev tier improved from 7.81× to 6.22×.
+     **The trade is accepted**: a program that calls `collect()` and
+     does not reclaim is worse than one that reclaims and runs 17 per
+     cent slower on one allocation-dense shape. Invariant 2 says a
+     program that never collects is correct and merely larger; it
+     does not say a program that collects may keep the garbage.
+
+     **One defect was hiding another.** The dead temporaries also
+     masked a missing dev-JIT managed-global root registration, which
+     surfaced and was fixed only once they were cleared.
+
    - **Kill criterion: a ship-AOT ratio above 1.75× stops the phase
      and reopens the form of the emitted C.**
 
