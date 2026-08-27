@@ -8458,6 +8458,29 @@ and `lower/mod.rs` did not.
    the named risk of the whole section. The round measures
    `a22-matrix-propagation` by the §9 methodology, before and after,
    on one machine in one session.
+   - **`a22` alone was not enough, measured 2026-08-27.** This item
+     gates one entry, and `a22` is matrix propagation: it allocates
+     almost nothing. The `collect` workload of the cross-language
+     suite — 20000 nodes over 6 rounds, each owning strings, 15000
+     kept and the rest freed — regressed through §68 and no gate
+     saw it. Bisected on one machine in one session, with the C
+     baseline steady at 32.9 to 33.9 ms:
+
+         pin            ship             dev-JIT
+         9bde577      211.7 ms 6.43x   229.3 ms 6.97x   before §68
+         628a491      273.5 ms 8.07x   344.5 ms 10.17x  after §68
+         662a9ec      274.0 ms 8.11x   342.7 ms 10.14x  now
+
+     §70 is not the cause: `628a491` is the commit before it and
+     already carries the regression. LuaJIT and V8 measured the same
+     across the pins, so the machine is not the cause either.
+
+     **The allocation and free path has no standing gate.** The
+     cross-language suite holds the workloads that exercise it, it
+     runs by hand, and nothing ran it between 2026-07-27 and
+     2026-08-27. The owner asking for an updated benchmark table is
+     what found this.
+
    - **Kill criterion: a ship-AOT ratio above 1.75× stops the phase
      and reopens the form of the emitted C.**
 
