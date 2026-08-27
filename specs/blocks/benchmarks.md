@@ -1,11 +1,11 @@
 # Cross-language benchmarks — contract
 
-Status: Rev 4, 2026-07-27 (a fresh process per (workload, subject) becomes normative — `subscript-jit` had been the one in-process subject and its whole column was order-dependent); Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
+Status: Rev 5, 2026-08-28 (a partial run no longer writes the record — `--only` destroyed a ten-workload record twice); Rev 4, 2026-07-27 (a fresh process per (workload, subject) becomes normative — `subscript-jit` had been the one in-process subject and its whole column was order-dependent); Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
 subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
 
-## A partial run overwrites the whole record
+## A partial run does not write the record
 
 *(Recorded 2026-08-28.)* `--only <id>` writes `results.json` and
 `README.md` in full, with only the workload it ran. There is no
@@ -17,9 +17,19 @@ twice. `git checkout` restored it, because the files are tracked.
 
 `--only` is a correct feature for investigating one workload. A tool
 whose investigation mode destroys the record it exists to keep invites
-the mistake rather than merely permitting it. **A partial run must
-either leave the committed record alone or mark what it wrote as
-partial.**
+the mistake rather than merely permitting it.
+
+**Rule: a partial run does not write the record.** `--only` prints the
+report to stdout and writes neither `results.json` nor `README.md`. It
+states on stderr that it wrote no file, and it names the reason. Only a
+run over every workload writes the two files.
+
+The alternative — write the file and mark it partial — was rejected. A
+marked file is still a destroyed record, and the marker helps only the
+reader who arrives before the next commit.
+
+`--only` equivalence stays checkable, because the report still goes to
+stdout. That is the comparison the equivalence gate uses.
 
 ## Purpose and reporting rules
 
