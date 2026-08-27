@@ -4826,7 +4826,11 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
     Ok(())
 }
 
-fn lir_live_ins(function: &l::Function, original_value_count: usize) -> Vec<BTreeSet<l::ValueId>> {
+/// Computes the value live-ins with the lowering's single graph fixed point.
+pub(crate) fn lir_live_ins(
+    function: &l::Function,
+    original_value_count: usize,
+) -> Vec<BTreeSet<l::ValueId>> {
     let mut uses = vec![BTreeSet::new(); function.blocks.len()];
     let mut definitions = vec![BTreeSet::new(); function.blocks.len()];
     for block in &function.blocks {

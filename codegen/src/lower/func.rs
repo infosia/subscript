@@ -198,6 +198,9 @@ const COROUTINE_DONE: i64 = 0x7fff_ffff;
 const COROUTINE_EPOCH_OFFSET: i32 = 4;
 const COROUTINE_RESUME_OFFSET: i32 = 8;
 const COROUTINE_PAYLOAD_OFFSET: u32 = 16;
+const ARRAY_LEN_OFFSET: i32 = 0;
+const ARRAY_ELEM_SIZE_OFFSET: i32 = 16;
+const ARRAY_DATA_OFFSET: i32 = 24;
 
 fn flags() -> MemFlags {
     MemFlags::trusted()
@@ -1411,7 +1414,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         checked: bool,
         traps: &[l::Trap],
     ) -> Result<(Value, Type), String> {
-        let (base_address, length, element) = match base_type {
+        let (base_address, length, runtime_stride, element) = match base_type {
             l::ValueType::Data(Type::Array(element)) => {
                 let handle = self.expect_scalar(base)?;
                 for trap in traps {
@@ -1419,24 +1422,31 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.emit_trap(trap, TrapOperand::Value(handle))?;
                     }
                 }
-                let length = self
-                    .call_runtime(self.ml.rt.array_len, &[self.ctx, handle], false)?
-                    .ok_or_else(|| internal("array length has no result"))?;
+                let length = checked.then(|| {
+                    self.builder
+                        .ins()
+                        .load(types::I64, flags(), handle, ARRAY_LEN_OFFSET)
+                });
+                let stride =
+                    self.builder
+                        .ins()
+                        .load(types::I64, flags(), handle, ARRAY_ELEM_SIZE_OFFSET);
                 let data = self
-                    .call_runtime(self.ml.rt.array_data, &[self.ctx, handle], false)?
-                    .ok_or_else(|| internal("array data has no result"))?;
-                (data, length, (**element).clone())
+                    .builder
+                    .ins()
+                    .load(types::I64, flags(), handle, ARRAY_DATA_OFFSET);
+                (data, length, Some(stride), (**element).clone())
             }
             l::ValueType::Data(Type::FixedArray(element, count)) => {
                 let address = self.expect_aggregate(base)?;
-                let length = self.iconst(types::I32, i64::from(*count));
-                (address, length, (**element).clone())
+                let length = checked.then(|| self.iconst(types::I64, i64::from(*count)));
+                (address, length, None, (**element).clone())
             }
             l::ValueType::Address(address) => match &address.pointee {
                 Type::FixedArray(element, count) => {
                     let base = self.expect_scalar(base)?;
-                    let length = self.iconst(types::I32, i64::from(*count));
-                    (base, length, (**element).clone())
+                    let length = checked.then(|| self.iconst(types::I64, i64::from(*count)));
+                    (base, length, None, (**element).clone())
                 }
                 other => {
                     return Err(internal(format!(
@@ -1446,7 +1456,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             },
             other => return Err(internal(format!("invalid indexed base {other:?}"))),
         };
+        let index64 = if self.builder.func.dfg.value_type(index) == types::I64 {
+            index
+        } else if is_unsigned(index_type) {
+            self.builder.ins().uextend(types::I64, index)
+        } else {
+            self.builder.ins().sextend(types::I64, index)
+        };
         if checked {
+            let length = length.ok_or_else(|| internal("checked index has no captured length"))?;
             let index32 = if self.builder.func.dfg.value_type(index) == types::I32 {
                 index
             } else {
@@ -1455,7 +1473,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             let below = self
                 .builder
                 .ins()
-                .icmp(IntCC::UnsignedLessThan, index32, length);
+                .icmp(IntCC::UnsignedLessThan, index64, length);
             let valid = if is_unsigned(index_type) {
                 below
             } else {
@@ -1465,6 +1483,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .icmp_imm(IntCC::SignedGreaterThanOrEqual, index32, 0);
                 self.builder.ins().band(nonnegative, below)
             };
+            let trap_length = self.builder.ins().ireduce(types::I32, length);
             for trap in traps {
                 if matches!(trap.kind, l::TrapKind::IndexRead | l::TrapKind::IndexWrite) {
                     self.emit_trap(
@@ -1472,21 +1491,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         TrapOperand::Index {
                             condition: valid,
                             index: index32,
-                            length,
+                            length: trap_length,
                         },
                     )?;
                 }
             }
         }
-        let index64 = if self.builder.func.dfg.value_type(index) == types::I64 {
-            index
-        } else if is_unsigned(index_type) {
-            self.builder.ins().uextend(types::I64, index)
+        let offset = if let Some(stride) = runtime_stride {
+            self.builder.ins().imul(index64, stride)
         } else {
-            self.builder.ins().sextend(types::I64, index)
+            let stride = self.ml.layouts.stride(&element)?;
+            self.builder.ins().imul_imm(index64, i64::from(stride))
         };
-        let stride = self.ml.layouts.stride(&element)?;
-        let offset = self.builder.ins().imul_imm(index64, i64::from(stride));
         Ok((self.builder.ins().iadd(base_address, offset), element))
     }
 
@@ -4025,8 +4041,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let length = match ty {
             l::ValueType::Data(Type::Array(_)) => {
                 let handle = self.expect_scalar(value)?;
-                self.call_runtime(self.ml.rt.array_len, &[self.ctx, handle], false)?
-                    .ok_or_else(|| internal("array length has no result"))?
+                let length = self
+                    .builder
+                    .ins()
+                    .load(types::I64, flags(), handle, ARRAY_LEN_OFFSET);
+                self.builder.ins().ireduce(types::I32, length)
             }
             l::ValueType::Data(Type::FixedArray(_, count)) => {
                 self.iconst(types::I32, i64::from(*count))

@@ -1967,6 +1967,262 @@ fn short_circuit_in_a_loop_condition_re_runs_per_iteration() {
 const A22_SOURCE: &str = include_str!("../../corpus/accept/a22-matrix-propagation.ts");
 const A22_GOLDEN: &[u8] = include_bytes!("../../corpus/accept/a22-matrix-propagation.expected");
 
+fn emitted_function_body(c: &str, function: subscript_compiler::lir::FunctionId) -> &str {
+    let name = format!("sub_f{}(", function.0);
+    let signature = c
+        .lines()
+        .find(|line| line.starts_with("static ") && line.contains(&name) && line.ends_with(" {"))
+        .unwrap_or_else(|| panic!("emitted C has no body for {name}:\n{c}"));
+    let start = c
+        .find(signature)
+        .unwrap_or_else(|| panic!("emitted C lost the located signature `{signature}`"));
+    let rest = &c[start..];
+    let end = rest
+        .find("\n}\n")
+        .unwrap_or_else(|| panic!("emitted C has no end for {name}:\n{rest}"));
+    &rest[..end + 3]
+}
+
+#[test]
+fn dynamic_array_length_and_index_use_inline_header_fields() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "function probe(xs: i32[], i: i32): i32 {\n  if (i < xs.length) {\n    return xs[i];\n  }\n  return -1;\n}\nexport function main(): void {\n  const xs: i32[] = [7];\n  print(`${probe(xs, 0)},${probe(xs, 1)}`);\n}\n";
+    let files = [SourceFile::new("inline-array-header.ts", SOURCE)];
+    let hir = check_program(&files).expect("inline array-header probe checks cleanly");
+    let lir = lower_module(&hir).expect("inline array-header probe lowers to LIR");
+    let probe = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "probe")
+        .expect("program has probe");
+    let c = emit_c(&hir)
+        .expect("inline array-header probe emits C")
+        .source;
+    let body = emitted_function_body(&c, probe.id);
+
+    for opaque in ["subscript_rt_array_len", "subscript_rt_array_data"] {
+        assert!(
+            !body.contains(opaque),
+            "dynamic array access retained opaque helper `{opaque}`:\n{body}"
+        );
+    }
+    assert!(
+        body.contains("(int32_t)(((SsArrayHeader*)") && body.contains("->len)"),
+        "dynamic Length is not an inline header read:\n{body}"
+    );
+    let captured_length = body
+        .lines()
+        .find(|line| line.contains("uint64_t t") && line.contains("->len;"))
+        .expect("checked index does not capture its length once");
+    let length_name = captured_length
+        .split_whitespace()
+        .nth(1)
+        .expect("captured length has no C identifier");
+    let trap_branch = body
+        .lines()
+        .find(|line| line.contains("subscript_rt_trap_index_out_of_bounds"))
+        .expect("checked index has no trap branch");
+    assert!(
+        trap_branch.contains(&format!("(uint64_t)({length_name})"))
+            && trap_branch.contains(&format!("(uint32_t)({length_name})"))
+            && !trap_branch.contains("->len"),
+        "bounds test and diagnostic do not share the captured length:\n{trap_branch}"
+    );
+    assert!(
+        body.lines()
+            .any(|line| line.contains("->data +") && line.contains("->elem_size")),
+        "dynamic AddressOfIndex is not inline header arithmetic:\n{body}"
+    );
+}
+
+#[test]
+fn local_load_store_address_chains_emit_as_member_expressions() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    let files = [SourceFile::new("a22-matrix-propagation.ts", A22_SOURCE)];
+    let hir = check_program(&files).expect("a22 checks cleanly");
+    let lir = lower_module(&hir).expect("a22 lowers to LIR");
+    let multiply = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "multiply")
+        .expect("a22 has multiply");
+    let c = emit_c(&hir).expect("a22 emits C").source;
+    let body = emitted_function_body(&c, multiply.id);
+
+    assert!(
+        body.contains("((v0).d0).a["),
+        "left matrix did not fold into its parameter value:\n{body}"
+    );
+    assert!(
+        body.contains("((v1).d0).a["),
+        "right matrix did not fold into its parameter value:\n{body}"
+    );
+    for redundant in ["SubC0 l0", "SubC0 l1", "SubFA_f32_16 l2", " = &l"] {
+        assert!(
+            !body.contains(redundant),
+            "folded address retained local storage `{redundant}`:\n{body}"
+        );
+    }
+    for initialized in [
+        "SubC0 v0 = a0;",
+        "SubC0 v1 = a1;",
+        "SubFA_f32_16 v49 = v2;",
+        "SubC0 v50 = *(v48);",
+    ] {
+        assert!(
+            body.contains(initialized),
+            "whole first write did not initialize `{initialized}`:\n{body}"
+        );
+    }
+    for redundant_zero in ["SubC0 v0 = (SubC0){0};", "SubC0 v1 = (SubC0){0};"] {
+        assert!(
+            !body.contains(redundant_zero),
+            "parameter retained redundant zero `{redundant_zero}`:\n{body}"
+        );
+    }
+    assert!(
+        body.contains("SubFA_f32_16 v2 = (SubFA_f32_16){ .a = {"),
+        "fixed-array literal was not emitted as one initializer:\n{body}"
+    );
+    assert!(
+        !body.contains("v2.a["),
+        "fixed-array literal retained per-element stores:\n{body}"
+    );
+}
+
+#[test]
+fn multiply_loop_carried_values_emit_in_place() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    let files = [SourceFile::new("a22-matrix-propagation.ts", A22_SOURCE)];
+    let hir = check_program(&files).expect("a22 checks cleanly");
+    let lir = lower_module(&hir).expect("a22 lowers to LIR");
+    let multiply = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "multiply")
+        .expect("a22 has multiply");
+    let c = emit_c(&hir).expect("a22 emits C").source;
+    let body = emitted_function_body(&c, multiply.id);
+    let inner_loop = body
+        .split_once("b10:\n")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once("b12:\n").map(|(loop_body, _)| loop_body))
+        .unwrap_or_else(|| panic!("multiply has no inner loop:\n{body}"));
+
+    assert!(
+        inner_loop.contains("v16 = ((v16) + (v39));"),
+        "the accumulator is not assigned in place:\n{inner_loop}"
+    );
+    assert!(
+        inner_loop.contains("v17 = ((int32_t)(((uint32_t)(v17)) + ((uint32_t)(1))));"),
+        "the counter is not assigned in place:\n{inner_loop}"
+    );
+    for redundant in ["v18", "v19", "v20", "v21", "v40", "v41"] {
+        assert!(
+            !inner_loop.contains(redundant),
+            "the inner loop still uses coalesced value {redundant}:\n{inner_loop}"
+        );
+    }
+}
+
+#[test]
+fn parallel_copy_cycle_uses_one_temporary() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "export function main(): void {\n  let left: i32 = 1;\n  let right: i32 = 2;\n  let count: i32 = 0;\n  while (count < 1) {\n    const oldLeft: i32 = left;\n    left = right;\n    right = oldLeft;\n    count = count + 1;\n  }\n  print(`${left},${right}`);\n}\n";
+    assert_tiers_print(SOURCE, "2,1\n");
+
+    let files = [SourceFile::new("parallel-copy-cycle.ts", SOURCE)];
+    let hir = check_program(&files).expect("parallel-copy cycle checks cleanly");
+    let lir = lower_module(&hir).expect("parallel-copy cycle lowers to LIR");
+    let main = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("program has main");
+    let c = emit_c(&hir).expect("parallel-copy cycle emits C").source;
+    let body = emitted_function_body(&c, main.id);
+    let cycle_temporaries = body
+        .lines()
+        .filter(|line| line.trim_start().starts_with("int32_t t") && line.contains(" = v"))
+        .count();
+    assert_eq!(
+        cycle_temporaries, 1,
+        "the swap cycle must use one temporary:\n{body}"
+    );
+}
+
+#[test]
+fn address_passed_to_a_call_stays_materialized() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    let source = include_str!("../../corpus/accept/a21-methods.ts");
+    let files = [SourceFile::new("a21-methods.ts", source)];
+    let hir = check_program(&files).expect("a21 checks cleanly");
+    let lir = lower_module(&hir).expect("a21 lowers to LIR");
+    let main = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("a21 has main");
+    let point = main
+        .locals
+        .iter()
+        .find(|local| local.source_name == "point")
+        .expect("a21 main stores point locally");
+    let c = emit_c(&hir).expect("a21 emits C").source;
+    let body = emitted_function_body(&c, main.id);
+
+    assert!(
+        body.contains(&format!(" = &l{};", point.id.0)),
+        "the method receiver address must stay materialized:\n{body}"
+    );
+}
+
+#[test]
+fn parameter_storage_is_initialized_once_when_its_address_escapes() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "@CStruct\nclass Point {\n  x: f32;\n  constructor(x: f32) { this.x = x; }\n  value(): f32 { return this.x; }\n}\nfunction pointValue(point: Point): f32 { return point.value(); }\nexport function main(): void { print(`${pointValue(new Point(3.0))}`); }\n";
+    let files = [SourceFile::new("parameter-storage.ts", SOURCE)];
+    let hir = check_program(&files).expect("parameter-storage probe checks cleanly");
+    let lir = lower_module(&hir).expect("parameter-storage probe lowers to LIR");
+    let function = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "pointValue")
+        .expect("probe has pointValue");
+    let c = emit_c(&hir)
+        .expect("parameter-storage probe emits C")
+        .source;
+    let body = emitted_function_body(&c, function.id);
+
+    assert!(
+        body.contains("SubC0 l0 = (SubC0){0};"),
+        "escaping parameter lost addressable storage:\n{body}"
+    );
+    assert_eq!(
+        body.matches("l0 = v0;").count(),
+        1,
+        "parameter-to-local copy must be emitted exactly once:\n{body}"
+    );
+}
+
 #[test]
 fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
     let out = run_c_aot(&[SourceFile::new("a22-matrix-propagation.ts", A22_SOURCE)])

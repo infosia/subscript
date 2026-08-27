@@ -4,7 +4,7 @@
 //! suspension state. This module assigns C storage and writes those blocks
 //! and instructions without consulting typed HIR.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use subscript_compiler::lir as l;
@@ -13,7 +13,7 @@ use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::lir::verify_module;
+use crate::lir::{lir_live_ins, verify_module};
 
 /// An emitted C translation unit and its source-position metadata.
 #[derive(Debug, Clone)]
@@ -1174,8 +1174,1096 @@ struct Body<'e, 'm, 'f> {
     coroutine: bool,
     rooted_values: HashSet<l::ValueId>,
     rooted_locals: HashSet<l::LocalId>,
+    promoted_locals: HashMap<l::LocalId, l::ValueId>,
+    address_definitions: HashMap<l::ValueId, &'f l::Instruction>,
+    folded_addresses: HashSet<l::ValueId>,
+    function_scoped_values: HashSet<l::ValueId>,
+    block_value_declarations: Vec<Vec<l::ValueId>>,
+    dominator_children: Vec<Vec<l::BlockId>>,
+    graph_roots: Vec<l::BlockId>,
+    removable_edge_copies: HashSet<(l::BlockId, l::BlockId, usize)>,
+    value_storage: Vec<l::ValueId>,
+    delayed_declarations: HashSet<l::ValueId>,
     consumed_traps: Vec<l::Trap>,
     temporary: u32,
+}
+
+enum EdgeCopySource {
+    Value(l::ValueId),
+    Constant(l::Constant),
+    Temporary(String),
+}
+
+struct EdgeCopy {
+    destination: l::ValueId,
+    source: EdgeCopySource,
+}
+
+#[derive(Clone, Copy)]
+enum AddressUse {
+    Chain(l::ValueId),
+    Terminal,
+    Escape,
+}
+
+fn address_definitions(function: &l::Function) -> HashMap<l::ValueId, &l::Instruction> {
+    function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| instruction.result.map(|result| (result, instruction)))
+        .collect()
+}
+
+fn has_local_address_origin(
+    value: l::ValueId,
+    definitions: &HashMap<l::ValueId, &l::Instruction>,
+    memo: &mut HashMap<l::ValueId, bool>,
+    visiting: &mut HashSet<l::ValueId>,
+) -> bool {
+    if let Some(result) = memo.get(&value) {
+        return *result;
+    }
+    if !visiting.insert(value) {
+        return false;
+    }
+    let result = definitions.get(&value).is_some_and(|instruction| {
+        if matches!(instruction.kind, l::InstructionKind::AddressOfLocal(_)) {
+            return true;
+        }
+        if !matches!(
+            instruction.kind,
+            l::InstructionKind::AddressOfField(_) | l::InstructionKind::AddressOfIndex { .. }
+        ) {
+            return false;
+        }
+        let Some(l::Operand::Value(base)) = instruction.operands.first() else {
+            return false;
+        };
+        has_local_address_origin(*base, definitions, memo, visiting)
+    });
+    visiting.remove(&value);
+    memo.insert(value, result);
+    result
+}
+
+fn record_address_escape(uses: &mut HashMap<l::ValueId, Vec<AddressUse>>, operand: &l::Operand) {
+    if let l::Operand::Value(value) = operand {
+        if let Some(uses) = uses.get_mut(value) {
+            uses.push(AddressUse::Escape);
+        }
+    }
+}
+
+fn record_target_address_escapes(
+    uses: &mut HashMap<l::ValueId, Vec<AddressUse>>,
+    target: &l::BlockTarget,
+) {
+    for argument in &target.arguments {
+        record_address_escape(uses, argument);
+    }
+}
+
+fn record_terminator_address_escapes(
+    uses: &mut HashMap<l::ValueId, Vec<AddressUse>>,
+    terminator: &l::Terminator,
+) {
+    match terminator {
+        l::Terminator::Branch(target) => record_target_address_escapes(uses, target),
+        l::Terminator::ConditionalBranch {
+            condition,
+            then_target,
+            else_target,
+        } => {
+            record_address_escape(uses, condition);
+            record_target_address_escapes(uses, then_target);
+            record_target_address_escapes(uses, else_target);
+        }
+        l::Terminator::Switch {
+            value,
+            arms,
+            default,
+        } => {
+            record_address_escape(uses, value);
+            for arm in arms {
+                record_target_address_escapes(uses, &arm.target);
+            }
+            record_target_address_escapes(uses, default);
+        }
+        l::Terminator::Return { value, .. } => {
+            if let Some(value) = value {
+                record_address_escape(uses, value);
+            }
+        }
+        l::Terminator::Suspend {
+            kind,
+            arguments,
+            invalidates,
+            ..
+        } => {
+            match kind {
+                l::SuspendKind::Yield(value) => {
+                    if let Some(value) = value {
+                        if let Some(uses) = uses.get_mut(value) {
+                            uses.push(AddressUse::Escape);
+                        }
+                    }
+                }
+                l::SuspendKind::Async => {}
+                l::SuspendKind::AsyncCall { operands, .. } => {
+                    for value in operands {
+                        if let Some(uses) = uses.get_mut(value) {
+                            uses.push(AddressUse::Escape);
+                        }
+                    }
+                }
+            }
+            for argument in arguments {
+                record_address_escape(uses, argument);
+            }
+            for value in invalidates {
+                if let Some(uses) = uses.get_mut(value) {
+                    uses.push(AddressUse::Escape);
+                }
+            }
+        }
+        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
+    }
+}
+
+fn address_has_only_terminal_consumers(
+    value: l::ValueId,
+    uses: &HashMap<l::ValueId, Vec<AddressUse>>,
+    memo: &mut HashMap<l::ValueId, bool>,
+    visiting: &mut HashSet<l::ValueId>,
+) -> bool {
+    if let Some(result) = memo.get(&value) {
+        return *result;
+    }
+    if !visiting.insert(value) {
+        return false;
+    }
+    let result = uses.get(&value).is_some_and(|value_uses| {
+        value_uses.iter().all(|use_| match use_ {
+            AddressUse::Chain(child) => {
+                address_has_only_terminal_consumers(*child, uses, memo, visiting)
+            }
+            AddressUse::Terminal => true,
+            AddressUse::Escape => false,
+        })
+    });
+    visiting.remove(&value);
+    memo.insert(value, result);
+    result
+}
+
+fn foldable_local_addresses(
+    function: &l::Function,
+    definitions: &HashMap<l::ValueId, &l::Instruction>,
+) -> HashSet<l::ValueId> {
+    let mut origin_memo = HashMap::new();
+    let candidates = definitions
+        .keys()
+        .copied()
+        .filter(|value| {
+            has_local_address_origin(*value, definitions, &mut origin_memo, &mut HashSet::new())
+        })
+        .collect::<HashSet<_>>();
+    let mut uses = candidates
+        .iter()
+        .map(|value| (*value, Vec::new()))
+        .collect::<HashMap<_, _>>();
+
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            for (index, operand) in instruction.operands.iter().enumerate() {
+                let l::Operand::Value(value) = operand else {
+                    continue;
+                };
+                let Some(value_uses) = uses.get_mut(value) else {
+                    continue;
+                };
+                let use_ = match (&instruction.kind, index, instruction.result) {
+                    (l::InstructionKind::LoadAddress, 0, _)
+                    | (l::InstructionKind::StoreAddress, 0, _) => AddressUse::Terminal,
+                    (l::InstructionKind::AddressOfField(_), 0, Some(child))
+                    | (l::InstructionKind::AddressOfIndex { .. }, 0, Some(child))
+                        if candidates.contains(&child) =>
+                    {
+                        AddressUse::Chain(child)
+                    }
+                    _ => AddressUse::Escape,
+                };
+                value_uses.push(use_);
+            }
+            for value in &instruction.invalidates {
+                if let Some(value_uses) = uses.get_mut(value) {
+                    value_uses.push(AddressUse::Escape);
+                }
+            }
+        }
+        record_terminator_address_escapes(&mut uses, &block.terminator);
+    }
+
+    let mut memo = HashMap::new();
+    candidates
+        .into_iter()
+        .filter(|value| {
+            address_has_only_terminal_consumers(*value, &uses, &mut memo, &mut HashSet::new())
+        })
+        .collect()
+}
+
+fn value_only_seeds_local(function: &l::Function, value: l::ValueId, local: l::LocalId) -> bool {
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            for (index, operand) in instruction.operands.iter().enumerate() {
+                if !matches!(operand, l::Operand::Value(candidate) if *candidate == value) {
+                    continue;
+                }
+                if !matches!(instruction.kind, l::InstructionKind::StoreLocal(candidate) if candidate == local)
+                    || index != 0
+                {
+                    return false;
+                }
+            }
+            if instruction.invalidates.contains(&value) {
+                return false;
+            }
+        }
+        if terminator_uses_value(&block.terminator, value) {
+            return false;
+        }
+    }
+    true
+}
+
+fn promoted_local_values(
+    function: &l::Function,
+    folded_addresses: &HashSet<l::ValueId>,
+) -> HashMap<l::LocalId, l::ValueId> {
+    let materialized_locals = function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| {
+            let l::InstructionKind::AddressOfLocal(local) = &instruction.kind else {
+                return None;
+            };
+            (!instruction
+                .result
+                .is_some_and(|result| folded_addresses.contains(&result)))
+            .then_some(*local)
+        })
+        .collect::<HashSet<_>>();
+    let parameter_values = function
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.storage.map(|local| (local, parameter.value)))
+        .collect::<HashMap<_, _>>();
+    let mut store_values = HashMap::new();
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            let l::InstructionKind::StoreLocal(local) = &instruction.kind else {
+                continue;
+            };
+            if let Some(l::Operand::Value(value)) = instruction.operands.first() {
+                store_values.entry(*local).or_insert(*value);
+            }
+        }
+    }
+
+    let mut used_values = HashSet::new();
+    function
+        .locals
+        .iter()
+        .filter(|local| !materialized_locals.contains(&local.id))
+        .filter_map(|local| {
+            let value = parameter_values
+                .get(&local.id)
+                .copied()
+                .or_else(|| store_values.get(&local.id).copied())?;
+            (used_values.insert(value) && value_only_seeds_local(function, value, local.id))
+                .then_some((local.id, value))
+        })
+        .collect()
+}
+
+fn declaration_can_use_instruction_assignment(kind: &l::InstructionKind) -> bool {
+    matches!(
+        kind,
+        l::InstructionKind::Copy
+            | l::InstructionKind::StringLiteral(_)
+            | l::InstructionKind::Zero
+            | l::InstructionKind::LoadLocal(_)
+            | l::InstructionKind::AddressOfLocal(_)
+            | l::InstructionKind::LoadGlobal(_)
+            | l::InstructionKind::AddressOfGlobal(_)
+            | l::InstructionKind::FunctionRef(_)
+            | l::InstructionKind::Unary(_)
+            | l::InstructionKind::AllocateClass(_)
+            | l::InstructionKind::AddressOfValue
+            | l::InstructionKind::LoadAddress
+            | l::InstructionKind::LoadField(_)
+            | l::InstructionKind::Length
+            | l::InstructionKind::ForeignArrayData
+            | l::InstructionKind::ArrayLiteral
+            | l::InstructionKind::IteratorCreate(_)
+    )
+}
+
+struct DeclarationScopes {
+    function_values: HashSet<l::ValueId>,
+    block_values: Vec<Vec<l::ValueId>>,
+    dominator_children: Vec<Vec<l::BlockId>>,
+    graph_roots: Vec<l::BlockId>,
+}
+
+fn record_value_reference(
+    references: &mut [HashSet<l::BlockId>],
+    value_storage: &[l::ValueId],
+    operand: &l::Operand,
+    block: l::BlockId,
+) {
+    if let l::Operand::Value(value) = operand {
+        references[value_storage[value.0 as usize].0 as usize].insert(block);
+    }
+}
+
+fn record_target_value_references(
+    function: &l::Function,
+    references: &mut [HashSet<l::BlockId>],
+    value_storage: &[l::ValueId],
+    target: &l::BlockTarget,
+    source: l::BlockId,
+) {
+    for argument in &target.arguments {
+        record_value_reference(references, value_storage, argument, source);
+    }
+    for parameter in &function.blocks[target.block.0 as usize].parameters {
+        references[value_storage[parameter.0 as usize].0 as usize].insert(source);
+    }
+}
+
+fn record_terminator_value_references(
+    function: &l::Function,
+    references: &mut [HashSet<l::BlockId>],
+    value_storage: &[l::ValueId],
+    forced_function: &mut HashSet<l::ValueId>,
+    block: l::BlockId,
+    terminator: &l::Terminator,
+) {
+    match terminator {
+        l::Terminator::Branch(target) => {
+            record_target_value_references(function, references, value_storage, target, block);
+        }
+        l::Terminator::ConditionalBranch {
+            condition,
+            then_target,
+            else_target,
+        } => {
+            record_value_reference(references, value_storage, condition, block);
+            record_target_value_references(function, references, value_storage, then_target, block);
+            record_target_value_references(function, references, value_storage, else_target, block);
+        }
+        l::Terminator::Switch {
+            value,
+            arms,
+            default,
+        } => {
+            record_value_reference(references, value_storage, value, block);
+            for arm in arms {
+                record_target_value_references(
+                    function,
+                    references,
+                    value_storage,
+                    &arm.target,
+                    block,
+                );
+            }
+            record_target_value_references(function, references, value_storage, default, block);
+        }
+        l::Terminator::Return { value, .. } => {
+            if let Some(value) = value {
+                record_value_reference(references, value_storage, value, block);
+            }
+        }
+        l::Terminator::Suspend {
+            kind,
+            successor,
+            resume_value,
+            arguments,
+            invalidates,
+            ..
+        } => {
+            match kind {
+                l::SuspendKind::Yield(value) => {
+                    if let Some(value) = value {
+                        references[value_storage[value.0 as usize].0 as usize].insert(block);
+                    }
+                }
+                l::SuspendKind::Async => {}
+                l::SuspendKind::AsyncCall { operands, .. } => {
+                    for value in operands {
+                        references[value_storage[value.0 as usize].0 as usize].insert(block);
+                    }
+                }
+            }
+            for argument in arguments {
+                record_value_reference(references, value_storage, argument, block);
+            }
+            for value in invalidates {
+                references[value_storage[value.0 as usize].0 as usize].insert(block);
+            }
+            for parameter in &function.blocks[successor.0 as usize].parameters {
+                forced_function.insert(value_storage[parameter.0 as usize]);
+            }
+            if let Some(value) = resume_value {
+                forced_function.insert(value_storage[value.0 as usize]);
+            }
+        }
+        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
+    }
+}
+
+fn terminator_successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
+    match terminator {
+        l::Terminator::Branch(target) => vec![target.block],
+        l::Terminator::ConditionalBranch {
+            then_target,
+            else_target,
+            ..
+        } => vec![then_target.block, else_target.block],
+        l::Terminator::Switch { arms, default, .. } => arms
+            .iter()
+            .map(|arm| arm.target.block)
+            .chain(std::iter::once(default.block))
+            .collect(),
+        l::Terminator::Suspend { successor, .. } => vec![*successor],
+        l::Terminator::Return { .. }
+        | l::Terminator::Unreachable { .. }
+        | l::Terminator::Trap(_) => Vec::new(),
+    }
+}
+
+fn instruction_uses_value(instruction: &l::Instruction, value: l::ValueId) -> bool {
+    instruction
+        .operands
+        .iter()
+        .any(|operand| matches!(operand, l::Operand::Value(candidate) if *candidate == value))
+        || instruction.invalidates.contains(&value)
+}
+
+fn target_uses_value(target: &l::BlockTarget, value: l::ValueId) -> bool {
+    target
+        .arguments
+        .iter()
+        .any(|operand| matches!(operand, l::Operand::Value(candidate) if *candidate == value))
+}
+
+fn terminator_uses_value(terminator: &l::Terminator, value: l::ValueId) -> bool {
+    match terminator {
+        l::Terminator::Branch(target) => target_uses_value(target, value),
+        l::Terminator::ConditionalBranch {
+            condition,
+            then_target,
+            else_target,
+        } => {
+            matches!(condition, l::Operand::Value(candidate) if *candidate == value)
+                || target_uses_value(then_target, value)
+                || target_uses_value(else_target, value)
+        }
+        l::Terminator::Switch {
+            value: discriminant,
+            arms,
+            default,
+        } => {
+            matches!(discriminant, l::Operand::Value(candidate) if *candidate == value)
+                || arms.iter().any(|arm| target_uses_value(&arm.target, value))
+                || target_uses_value(default, value)
+        }
+        l::Terminator::Return {
+            value: returned, ..
+        } => matches!(returned, Some(l::Operand::Value(candidate)) if *candidate == value),
+        l::Terminator::Suspend {
+            kind,
+            arguments,
+            invalidates,
+            ..
+        } => {
+            let kind_uses = match kind {
+                l::SuspendKind::Yield(yielded) => *yielded == Some(value),
+                l::SuspendKind::Async => false,
+                l::SuspendKind::AsyncCall { operands, .. } => operands.contains(&value),
+            };
+            kind_uses
+                || arguments.iter().any(
+                    |operand| matches!(operand, l::Operand::Value(candidate) if *candidate == value),
+                )
+                || invalidates.contains(&value)
+        }
+        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => false,
+    }
+}
+
+fn block_uses_value(block: &l::BasicBlock, value: l::ValueId) -> bool {
+    block
+        .instructions
+        .iter()
+        .any(|instruction| instruction_uses_value(instruction, value))
+        || terminator_uses_value(&block.terminator, value)
+}
+
+fn value_used_from(function: &l::Function, value: l::ValueId, start: l::BlockId) -> bool {
+    let mut seen = HashSet::new();
+    let mut pending = vec![start];
+    while let Some(block) = pending.pop() {
+        if !seen.insert(block) {
+            continue;
+        }
+        let definition = &function.blocks[block.0 as usize];
+        if definition.parameters.contains(&value) {
+            continue;
+        }
+        if block_uses_value(definition, value) {
+            return true;
+        }
+        pending.extend(terminator_successors(&definition.terminator));
+    }
+    false
+}
+
+fn ordinary_targets(terminator: &l::Terminator) -> Vec<&l::BlockTarget> {
+    match terminator {
+        l::Terminator::Branch(target) => vec![target],
+        l::Terminator::ConditionalBranch {
+            then_target,
+            else_target,
+            ..
+        } => vec![then_target, else_target],
+        l::Terminator::Switch { arms, default, .. } => arms
+            .iter()
+            .map(|arm| &arm.target)
+            .chain(std::iter::once(default))
+            .collect(),
+        l::Terminator::Return { .. }
+        | l::Terminator::Unreachable { .. }
+        | l::Terminator::Trap(_)
+        | l::Terminator::Suspend { .. } => Vec::new(),
+    }
+}
+
+fn removable_block_parameter_copies(
+    function: &l::Function,
+) -> (
+    HashSet<(l::BlockId, l::BlockId, usize)>,
+    HashSet<l::ValueId>,
+) {
+    let used_values = function
+        .values
+        .iter()
+        .filter(|value| {
+            function
+                .blocks
+                .iter()
+                .any(|block| block_uses_value(block, value.id))
+        })
+        .map(|value| value.id)
+        .collect::<HashSet<_>>();
+    let mut removable = HashSet::new();
+    let mut incoming = HashMap::<l::ValueId, usize>::new();
+    let mut removable_incoming = HashMap::<l::ValueId, usize>::new();
+    for block in &function.blocks {
+        for target in ordinary_targets(&block.terminator) {
+            let destination = &function.blocks[target.block.0 as usize];
+            for (index, (argument, parameter)) in target
+                .arguments
+                .iter()
+                .zip(&destination.parameters)
+                .enumerate()
+            {
+                *incoming.entry(*parameter).or_default() += 1;
+                if used_values.contains(parameter) {
+                    continue;
+                }
+                let source_dead = match argument {
+                    l::Operand::Constant(_) => true,
+                    l::Operand::Value(source) => {
+                        !value_used_from(function, *source, target.block)
+                            && !target.arguments[index + 1..].iter().any(|argument| {
+                                matches!(argument, l::Operand::Value(candidate) if candidate == source)
+                            })
+                    }
+                };
+                if source_dead {
+                    removable.insert((block.id, target.block, index));
+                    *removable_incoming.entry(*parameter).or_default() += 1;
+                }
+            }
+        }
+    }
+    let elided_values = incoming
+        .into_iter()
+        .filter_map(|(value, count)| {
+            (removable_incoming.get(&value).copied() == Some(count)).then_some(value)
+        })
+        .collect();
+    (removable, elided_values)
+}
+
+fn record_operand_liveness_use(values: &mut BTreeSet<l::ValueId>, operand: &l::Operand) {
+    if let l::Operand::Value(value) = operand {
+        values.insert(*value);
+    }
+}
+
+fn record_target_liveness_uses(values: &mut BTreeSet<l::ValueId>, target: &l::BlockTarget) {
+    for argument in &target.arguments {
+        record_operand_liveness_use(values, argument);
+    }
+}
+
+fn record_terminator_liveness_uses(values: &mut BTreeSet<l::ValueId>, terminator: &l::Terminator) {
+    match terminator {
+        l::Terminator::Branch(target) => record_target_liveness_uses(values, target),
+        l::Terminator::ConditionalBranch {
+            condition,
+            then_target,
+            else_target,
+        } => {
+            record_operand_liveness_use(values, condition);
+            record_target_liveness_uses(values, then_target);
+            record_target_liveness_uses(values, else_target);
+        }
+        l::Terminator::Switch {
+            value,
+            arms,
+            default,
+        } => {
+            record_operand_liveness_use(values, value);
+            for arm in arms {
+                record_target_liveness_uses(values, &arm.target);
+            }
+            record_target_liveness_uses(values, default);
+        }
+        l::Terminator::Return { value, .. } => {
+            if let Some(value) = value {
+                record_operand_liveness_use(values, value);
+            }
+        }
+        l::Terminator::Suspend {
+            kind,
+            arguments,
+            invalidates,
+            ..
+        } => {
+            match kind {
+                l::SuspendKind::Yield(value) => values.extend(value),
+                l::SuspendKind::Async => {}
+                l::SuspendKind::AsyncCall { operands, .. } => {
+                    values.extend(operands.iter().copied());
+                }
+            }
+            for argument in arguments {
+                record_operand_liveness_use(values, argument);
+            }
+            values.extend(invalidates.iter().copied());
+        }
+        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
+    }
+}
+
+fn add_interference(interference: &mut [HashSet<l::ValueId>], left: l::ValueId, right: l::ValueId) {
+    if left == right {
+        return;
+    }
+    interference[left.0 as usize].insert(right);
+    interference[right.0 as usize].insert(left);
+}
+
+fn value_interference(function: &l::Function) -> Vec<HashSet<l::ValueId>> {
+    // Reuse the lowering's fixed-point liveness. The transcriber only derives
+    // interference at each definition and does not run a second graph walk.
+    let live_in = lir_live_ins(function, function.values.len());
+    let live_out = function
+        .blocks
+        .iter()
+        .map(|block| {
+            terminator_successors(&block.terminator)
+                .into_iter()
+                .flat_map(|successor| live_in[successor.0 as usize].iter().copied())
+                .collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut interference = vec![HashSet::new(); function.values.len()];
+    for block in &function.blocks {
+        let index = block.id.0 as usize;
+        let mut live = live_out[index].clone();
+        record_terminator_liveness_uses(&mut live, &block.terminator);
+        for instruction in block.instructions.iter().rev() {
+            if let Some(result) = instruction.result {
+                for other in live.iter().copied() {
+                    add_interference(&mut interference, result, other);
+                }
+                live.remove(&result);
+            }
+            for operand in &instruction.operands {
+                record_operand_liveness_use(&mut live, operand);
+            }
+            live.extend(instruction.invalidates.iter().copied());
+        }
+        for parameter in &block.parameters {
+            for other in live.iter().copied() {
+                add_interference(&mut interference, *parameter, other);
+            }
+            for other in &block.parameters {
+                add_interference(&mut interference, *parameter, *other);
+            }
+        }
+    }
+
+    let entry_live = &live_in[function.entry.0 as usize];
+    for parameter in &function.parameters {
+        for other in entry_live.iter().copied() {
+            add_interference(&mut interference, parameter.value, other);
+        }
+        for other in &function.parameters {
+            add_interference(&mut interference, parameter.value, other.value);
+        }
+    }
+    interference
+}
+
+struct Coalescing {
+    parents: Vec<usize>,
+    members: Vec<Vec<l::ValueId>>,
+}
+
+impl Coalescing {
+    fn new(value_count: usize) -> Self {
+        Self {
+            parents: (0..value_count).collect(),
+            members: (0..value_count)
+                .map(|index| vec![l::ValueId(index as u32)])
+                .collect(),
+        }
+    }
+
+    fn root(&self, value: l::ValueId) -> usize {
+        let mut root = value.0 as usize;
+        while self.parents[root] != root {
+            root = self.parents[root];
+        }
+        root
+    }
+
+    fn try_merge(
+        &mut self,
+        left: l::ValueId,
+        right: l::ValueId,
+        interference: &[HashSet<l::ValueId>],
+    ) {
+        let left = self.root(left);
+        let right = self.root(right);
+        if left == right
+            || self.members[left].iter().any(|left| {
+                self.members[right]
+                    .iter()
+                    .any(|right| interference[left.0 as usize].contains(right))
+            })
+        {
+            return;
+        }
+        let (representative, merged) = if left < right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        self.parents[merged] = representative;
+        let merged_members = std::mem::take(&mut self.members[merged]);
+        self.members[representative].extend(merged_members);
+    }
+
+    fn representatives(&self) -> Vec<l::ValueId> {
+        (0..self.parents.len())
+            .map(|index| l::ValueId(self.root(l::ValueId(index as u32)) as u32))
+            .collect()
+    }
+}
+
+fn coalesced_value_storage(
+    function: &l::Function,
+    rooted_values: &HashSet<l::ValueId>,
+    folded_addresses: &HashSet<l::ValueId>,
+    removable_edge_copies: &HashSet<(l::BlockId, l::BlockId, usize)>,
+    elided_values: &HashSet<l::ValueId>,
+    promoted_local_values: &HashSet<l::ValueId>,
+) -> Vec<l::ValueId> {
+    let interference = value_interference(function);
+    let mut coalescing = Coalescing::new(function.values.len());
+    // Prefer every block-parameter copy. A merge is valid only when no value
+    // in either storage group interferes with a value in the other group.
+    for block in &function.blocks {
+        for target in ordinary_targets(&block.terminator) {
+            let destination = &function.blocks[target.block.0 as usize];
+            for (index, (argument, parameter)) in target
+                .arguments
+                .iter()
+                .zip(&destination.parameters)
+                .enumerate()
+            {
+                if removable_edge_copies.contains(&(block.id, target.block, index))
+                    || elided_values.contains(parameter)
+                    || folded_addresses.contains(parameter)
+                    || promoted_local_values.contains(parameter)
+                {
+                    continue;
+                }
+                let l::Operand::Value(argument) = argument else {
+                    continue;
+                };
+                if elided_values.contains(argument)
+                    || folded_addresses.contains(argument)
+                    || promoted_local_values.contains(argument)
+                    || function.values[argument.0 as usize].ty
+                        != function.values[parameter.0 as usize].ty
+                    || rooted_values.contains(argument) != rooted_values.contains(parameter)
+                {
+                    continue;
+                }
+                coalescing.try_merge(*argument, *parameter, &interference);
+            }
+        }
+    }
+    coalescing.representatives()
+}
+
+fn declaration_scopes(
+    function: &l::Function,
+    coroutine: bool,
+    rooted_values: &HashSet<l::ValueId>,
+    folded_addresses: &HashSet<l::ValueId>,
+    elided_values: &HashSet<l::ValueId>,
+    value_storage: &[l::ValueId],
+    promoted_locals: &HashMap<l::LocalId, l::ValueId>,
+) -> DeclarationScopes {
+    let block_count = function.blocks.len();
+    let mut block_values = vec![Vec::new(); block_count];
+    let mut dominator_children = vec![Vec::new(); block_count];
+    if coroutine {
+        return DeclarationScopes {
+            function_values: function
+                .values
+                .iter()
+                .map(|value| value.id)
+                .filter(|value| {
+                    value_storage[value.0 as usize] == *value
+                        && !rooted_values.contains(value)
+                        && !folded_addresses.contains(value)
+                        && !elided_values.contains(value)
+                })
+                .collect(),
+            block_values,
+            dominator_children,
+            graph_roots: function.blocks.iter().map(|block| block.id).collect(),
+        };
+    }
+
+    let mut references = vec![HashSet::new(); function.values.len()];
+    let mut forced_function = function
+        .parameters
+        .iter()
+        .map(|parameter| value_storage[parameter.value.0 as usize])
+        .collect::<HashSet<_>>();
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            if let Some(result) = instruction.result {
+                references[value_storage[result.0 as usize].0 as usize].insert(block.id);
+            }
+            for operand in &instruction.operands {
+                record_value_reference(&mut references, value_storage, operand, block.id);
+            }
+            let promoted_local = match &instruction.kind {
+                l::InstructionKind::LoadLocal(local)
+                | l::InstructionKind::StoreLocal(local)
+                | l::InstructionKind::AddressOfLocal(local) => promoted_locals.get(local),
+                _ => None,
+            };
+            if let Some(value) = promoted_local {
+                references[value_storage[value.0 as usize].0 as usize].insert(block.id);
+            }
+            if matches!(
+                instruction.kind,
+                l::InstructionKind::Cast | l::InstructionKind::Coerce
+            ) {
+                // A value-class-to-nullable conversion emits its storage address.
+                // Function scope preserves that storage through later aggregate stores.
+                if let (Some(result), Some(l::Operand::Value(source))) =
+                    (instruction.result, instruction.operands.first())
+                {
+                    let source_type = &function.values[source.0 as usize].ty;
+                    let result_type = &function.values[result.0 as usize].ty;
+                    if matches!(
+                        (source_type, result_type),
+                        (
+                            l::ValueType::Data(Type::Class(source)),
+                            l::ValueType::Data(Type::Nullable(target))
+                        ) if matches!(target.as_ref(), Type::Class(target) if target == source)
+                    ) {
+                        forced_function.insert(value_storage[source.0 as usize]);
+                    }
+                }
+            }
+            for value in &instruction.invalidates {
+                references[value_storage[value.0 as usize].0 as usize].insert(block.id);
+            }
+        }
+        record_terminator_value_references(
+            function,
+            &mut references,
+            value_storage,
+            &mut forced_function,
+            block.id,
+            &block.terminator,
+        );
+    }
+
+    let mut predecessors = vec![Vec::new(); block_count];
+    for block in &function.blocks {
+        for successor in terminator_successors(&block.terminator) {
+            predecessors[successor.0 as usize].push(block.id);
+        }
+    }
+    let entry = function.entry.0 as usize;
+    let mut reachable = vec![false; block_count];
+    let mut pending = vec![function.entry];
+    while let Some(block) = pending.pop() {
+        let index = block.0 as usize;
+        if reachable[index] {
+            continue;
+        }
+        reachable[index] = true;
+        pending.extend(terminator_successors(&function.blocks[index].terminator));
+    }
+    let reachable_blocks = reachable
+        .iter()
+        .enumerate()
+        .filter_map(|(index, reachable)| reachable.then_some(l::BlockId(index as u32)))
+        .collect::<HashSet<_>>();
+    let mut dominators = vec![HashSet::new(); block_count];
+    for (index, is_reachable) in reachable.iter().copied().enumerate() {
+        if !is_reachable {
+            dominators[index].insert(l::BlockId(index as u32));
+        } else if index == entry {
+            dominators[index].insert(function.entry);
+        } else {
+            dominators[index] = reachable_blocks.clone();
+        }
+    }
+    loop {
+        let mut changed = false;
+        for index in 0..block_count {
+            if index == entry || !reachable[index] {
+                continue;
+            }
+            let mut incoming = predecessors[index]
+                .iter()
+                .copied()
+                .filter(|predecessor| reachable[predecessor.0 as usize]);
+            let mut next = incoming
+                .next()
+                .map(|predecessor| dominators[predecessor.0 as usize].clone())
+                .unwrap_or_default();
+            for predecessor in incoming {
+                next.retain(|dominator| dominators[predecessor.0 as usize].contains(dominator));
+            }
+            next.insert(l::BlockId(index as u32));
+            if dominators[index] != next {
+                dominators[index] = next;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    for index in 0..block_count {
+        if index == entry || !reachable[index] {
+            continue;
+        }
+        let block = l::BlockId(index as u32);
+        let immediate = dominators[index]
+            .iter()
+            .copied()
+            .filter(|dominator| *dominator != block)
+            .max_by_key(|dominator| dominators[dominator.0 as usize].len());
+        if let Some(immediate) = immediate {
+            dominator_children[immediate.0 as usize].push(block);
+        }
+    }
+    for children in &mut dominator_children {
+        children.sort_by_key(|block| block.0);
+    }
+
+    let mut function_values = HashSet::new();
+    for value in &function.values {
+        if value_storage[value.id.0 as usize] != value.id
+            || rooted_values.contains(&value.id)
+            || folded_addresses.contains(&value.id)
+            || elided_values.contains(&value.id)
+        {
+            continue;
+        }
+        if forced_function.contains(&value.id) || references[value.id.0 as usize].is_empty() {
+            function_values.insert(value.id);
+            continue;
+        }
+        let mut blocks = references[value.id.0 as usize].iter().copied();
+        let Some(first) = blocks.next() else {
+            function_values.insert(value.id);
+            continue;
+        };
+        if !reachable[first.0 as usize] {
+            function_values.insert(value.id);
+            continue;
+        }
+        let mut common = dominators[first.0 as usize].clone();
+        let mut all_reachable = true;
+        for block in blocks {
+            if !reachable[block.0 as usize] {
+                all_reachable = false;
+                break;
+            }
+            common.retain(|dominator| dominators[block.0 as usize].contains(dominator));
+        }
+        let scope = all_reachable
+            .then(|| {
+                common
+                    .into_iter()
+                    .max_by_key(|dominator| dominators[dominator.0 as usize].len())
+            })
+            .flatten();
+        if let Some(scope) = scope {
+            block_values[scope.0 as usize].push(value.id);
+        } else {
+            function_values.insert(value.id);
+        }
+    }
+    let mut graph_roots = vec![function.entry];
+    graph_roots.extend(
+        function
+            .blocks
+            .iter()
+            .filter(|block| !reachable[block.id.0 as usize])
+            .map(|block| block.id),
+    );
+    DeclarationScopes {
+        function_values,
+        block_values,
+        dominator_children,
+        graph_roots,
+    }
 }
 
 impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
@@ -1196,9 +2284,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
+        let address_definitions = address_definitions(function);
+        let folded_addresses = foldable_local_addresses(function, &address_definitions);
+        let promoted_locals = promoted_local_values(function, &folded_addresses);
+        let promoted_local_values = promoted_locals.values().copied().collect::<HashSet<_>>();
         let rooted_locals = function
             .locals
             .iter()
+            .filter(|local| !promoted_locals.contains_key(&local.id))
             .map(|local| {
                 emitter
                     .value_contains_managed(&local.ty)
@@ -1208,12 +2301,56 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
+        let (removable_edge_copies, elided_values) = removable_block_parameter_copies(function);
+        let value_storage = coalesced_value_storage(
+            function,
+            &rooted_values,
+            &folded_addresses,
+            &removable_edge_copies,
+            &elided_values,
+            &promoted_local_values,
+        );
+        let declaration_scopes = declaration_scopes(
+            function,
+            coroutine,
+            &rooted_values,
+            &folded_addresses,
+            &elided_values,
+            &value_storage,
+            &promoted_locals,
+        );
+        let mut delayed_declarations = HashSet::new();
+        for (block, values) in declaration_scopes.block_values.iter().enumerate() {
+            for value in values {
+                if value_storage[value.0 as usize] == *value
+                    && function.blocks[block]
+                        .instructions
+                        .iter()
+                        .any(|instruction| {
+                            instruction.result == Some(*value)
+                                && declaration_can_use_instruction_assignment(&instruction.kind)
+                        })
+                {
+                    delayed_declarations.insert(*value);
+                }
+            }
+        }
         Ok(Self {
             emitter,
             function,
             coroutine,
             rooted_values,
             rooted_locals,
+            promoted_locals,
+            address_definitions,
+            folded_addresses,
+            function_scoped_values: declaration_scopes.function_values,
+            block_value_declarations: declaration_scopes.block_values,
+            dominator_children: declaration_scopes.dominator_children,
+            graph_roots: declaration_scopes.graph_roots,
+            removable_edge_copies,
+            value_storage,
+            delayed_declarations,
             consumed_traps: Vec::new(),
             temporary: 0,
         })
@@ -1226,6 +2363,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn value(&self, id: l::ValueId) -> String {
+        let id = self.value_storage[id.0 as usize];
         if self.rooted_values.contains(&id) {
             format!("roots.v{}", id.0)
         } else {
@@ -1234,6 +2372,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn local(&self, id: l::LocalId) -> String {
+        if let Some(value) = self.promoted_locals.get(&id) {
+            return self.value(*value);
+        }
         if self.rooted_locals.contains(&id) {
             format!("roots.l{}", id.0)
         } else {
@@ -1250,11 +2391,94 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .ok_or_else(|| internal(format!("value {} is missing", id.0)))
     }
 
+    fn folded_address_expression(&mut self, value: l::ValueId) -> Result<String, String> {
+        if !self.folded_addresses.contains(&value) {
+            return Err(internal(format!(
+                "address value {} is not foldable",
+                value.0
+            )));
+        }
+        let instruction = self
+            .address_definitions
+            .get(&value)
+            .copied()
+            .ok_or_else(|| internal(format!("address value {} has no definition", value.0)))?
+            .clone();
+        match instruction.kind {
+            l::InstructionKind::AddressOfLocal(local) => Ok(self.local(local)),
+            l::InstructionKind::AddressOfField(field) => {
+                let Some(l::Operand::Value(base)) = instruction.operands.first() else {
+                    return Err(internal("folded field address has no value base"));
+                };
+                let base = *base;
+                let base_expression = if self.folded_addresses.contains(&base) {
+                    self.folded_address_expression(base)?
+                } else {
+                    format!("*({})", self.value(base))
+                };
+                match field {
+                    l::FieldRef::Class(field) => {
+                        let (class, _, _) = self.emitter.field(field)?;
+                        let l::ValueType::Address(address) = self.value_type(base)? else {
+                            return Err(internal("folded field base is not an address"));
+                        };
+                        match &address.pointee {
+                            Type::Class(id) if self.emitter.is_value_class(*id)? => {
+                                Ok(format!("({base_expression}).d{}", field.0))
+                            }
+                            Type::Class(_) => Ok(format!(
+                                "((({}*)({base_expression}))->d{})",
+                                self.emitter.class_name(class),
+                                field.0
+                            )),
+                            other => Err(internal(format!(
+                                "folded class field base has type {other:?}"
+                            ))),
+                        }
+                    }
+                    l::FieldRef::IterDone => Ok(format!("({base_expression}).done")),
+                    l::FieldRef::IterValue => Ok(format!("({base_expression}).value")),
+                }
+            }
+            l::InstructionKind::AddressOfIndex { .. } => {
+                let Some(l::Operand::Value(base)) = instruction.operands.first() else {
+                    return Err(internal("folded index address has no value base"));
+                };
+                let base = *base;
+                let base_expression = if self.folded_addresses.contains(&base) {
+                    self.folded_address_expression(base)?
+                } else {
+                    format!("*({})", self.value(base))
+                };
+                let index = instruction
+                    .operands
+                    .get(1)
+                    .ok_or_else(|| internal("folded index address has no index"))?;
+                let index = self.operand(index)?;
+                let l::ValueType::Address(address) = self.value_type(base)? else {
+                    return Err(internal("folded index base is not an address"));
+                };
+                match &address.pointee {
+                    Type::FixedArray(_, _) => Ok(format!("({base_expression}).a[{index}]")),
+                    other => Err(internal(format!(
+                        "folded indexed address points to {other:?}"
+                    ))),
+                }
+            }
+            ref other => Err(internal(format!(
+                "folded address value {} has definition {other:?}",
+                value.0
+            ))),
+        }
+    }
+
     fn emit_storage(&mut self, out: &mut String) -> Result<(), String> {
         if !self.rooted_values.is_empty() || !self.rooted_locals.is_empty() {
             out.push_str("    struct {\n");
             for value in &self.function.values {
-                if self.rooted_values.contains(&value.id) {
+                if self.value_storage[value.id.0 as usize] == value.id
+                    && self.rooted_values.contains(&value.id)
+                {
                     let _ = writeln!(
                         out,
                         "        {} v{};",
@@ -1287,18 +2511,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let _ = writeln!(out, "    {call};");
         }
         for value in &self.function.values {
-            if !self.rooted_values.contains(&value.id) {
-                let _ = writeln!(
-                    out,
-                    "    {} v{} = {};",
-                    self.emitter.value_ctype(&value.ty)?,
-                    value.id.0,
-                    self.emitter.zero(&value.ty)?
-                );
+            if self.function_scoped_values.contains(&value.id) {
+                let ctype = self.emitter.value_ctype(&value.ty)?;
+                if let Some(initializer) = self.parameter_declaration_initializer(value.id) {
+                    let _ = writeln!(out, "    {ctype} v{} = {initializer};", value.id.0);
+                } else {
+                    let zero = self.emitter.zero(&value.ty)?;
+                    let _ = writeln!(out, "    {ctype} v{} = {zero};", value.id.0);
+                }
             }
         }
         for local in &self.function.locals {
-            if !self.rooted_locals.contains(&local.id) {
+            if !self.rooted_locals.contains(&local.id)
+                && !self.promoted_locals.contains_key(&local.id)
+            {
                 let _ = writeln!(
                     out,
                     "    {} l{} = {};",
@@ -1314,23 +2540,64 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     fn emit_parameter_initializers(&mut self, out: &mut String) -> Result<(), String> {
         for parameter in &self.function.parameters {
             let destination = self.value(parameter.value);
-            match parameter.kind {
-                l::ParameterKind::Capture => {
-                    let _ = writeln!(
-                        out,
-                        "    {destination} = ((SubEnv{}*)environment)->c{};",
-                        self.function.id.0, parameter.value.0
-                    );
-                }
-                l::ParameterKind::Explicit | l::ParameterKind::Receiver => {
-                    let _ = writeln!(out, "    {destination} = a{};", parameter.value.0);
+            if self
+                .parameter_declaration_initializer(self.value_storage[parameter.value.0 as usize])
+                .is_none()
+            {
+                match parameter.kind {
+                    l::ParameterKind::Capture => {
+                        let _ = writeln!(
+                            out,
+                            "    {destination} = ((SubEnv{}*)environment)->c{};",
+                            self.function.id.0, parameter.value.0
+                        );
+                    }
+                    l::ParameterKind::Explicit | l::ParameterKind::Receiver => {
+                        let _ = writeln!(out, "    {destination} = a{};", parameter.value.0);
+                    }
                 }
             }
             if let Some(storage) = parameter.storage {
-                let _ = writeln!(out, "    {} = {destination};", self.local(storage));
+                let storage = self.local(storage);
+                if storage != destination
+                    && !self.entry_initializes_parameter_storage(parameter, storage.as_str())
+                {
+                    let _ = writeln!(out, "    {storage} = {destination};");
+                }
             }
         }
         Ok(())
+    }
+
+    fn entry_initializes_parameter_storage(&self, parameter: &l::Parameter, storage: &str) -> bool {
+        self.function.blocks[self.function.entry.0 as usize]
+            .instructions
+            .iter()
+            .any(|instruction| {
+                matches!(instruction.kind, l::InstructionKind::StoreLocal(local)
+                    if self.local(local) == storage)
+                    && matches!(instruction.operands.as_slice(),
+                        [l::Operand::Value(value)] if *value == parameter.value)
+            })
+    }
+
+    fn parameter_declaration_initializer(&self, value: l::ValueId) -> Option<String> {
+        if self.coroutine || !self.function_scoped_values.contains(&value) {
+            return None;
+        }
+        self.function.parameters.iter().find_map(|parameter| {
+            (self.value_storage[parameter.value.0 as usize] == value).then(|| {
+                match parameter.kind {
+                    l::ParameterKind::Capture => format!(
+                        "((SubEnv{}*)environment)->c{}",
+                        self.function.id.0, parameter.value.0
+                    ),
+                    l::ParameterKind::Explicit | l::ParameterKind::Receiver => {
+                        format!("a{}", parameter.value.0)
+                    }
+                }
+            })
+        })
     }
 
     fn emit_coroutine_dispatch(&mut self, out: &mut String) -> Result<(), String> {
@@ -1342,12 +2609,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 parameter.value.0
             );
             if let Some(storage) = parameter.storage {
-                let _ = writeln!(
-                    out,
-                    "    {} = {};",
-                    self.local(storage),
-                    self.value(parameter.value)
-                );
+                let storage = self.local(storage);
+                let value = self.value(parameter.value);
+                if storage != value {
+                    let _ = writeln!(out, "    {storage} = {value};");
+                }
             }
         }
         let _ = writeln!(
@@ -1394,18 +2660,50 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn emit_graph(&mut self, out: &mut String) -> Result<(), String> {
-        for block in &self.function.blocks {
-            let _ = writeln!(out, "b{}:", block.id.0);
-            for instruction in &block.instructions {
-                self.emit_instruction(out, instruction).map_err(|error| {
-                    internal(format!(
-                        "function {} block {} instruction {:?}: {error}",
-                        self.function.id.0, block.id.0, instruction.kind
-                    ))
-                })?;
-            }
-            self.emit_terminator(out, block)?;
+        for root in self.graph_roots.clone() {
+            self.emit_dominator_subtree(out, root)?;
         }
+        Ok(())
+    }
+
+    fn emit_dominator_subtree(
+        &mut self,
+        out: &mut String,
+        block_id: l::BlockId,
+    ) -> Result<(), String> {
+        let block = self
+            .function
+            .blocks
+            .get(block_id.0 as usize)
+            .filter(|block| block.id == block_id)
+            .ok_or_else(|| internal(format!("block {} is missing", block_id.0)))?
+            .clone();
+        let _ = writeln!(out, "b{}:\n    {{", block.id.0);
+        for value in self.block_value_declarations[block.id.0 as usize].clone() {
+            if self.delayed_declarations.contains(&value) {
+                continue;
+            }
+            let _ = writeln!(
+                out,
+                "    {} v{} = {};",
+                self.emitter.value_ctype(self.value_type(value)?)?,
+                value.0,
+                self.emitter.zero(self.value_type(value)?)?
+            );
+        }
+        for instruction in &block.instructions {
+            self.emit_instruction(out, instruction).map_err(|error| {
+                internal(format!(
+                    "function {} block {} instruction {:?}: {error}",
+                    self.function.id.0, block.id.0, instruction.kind
+                ))
+            })?;
+        }
+        self.emit_terminator(out, &block)?;
+        for child in self.dominator_children[block.id.0 as usize].clone() {
+            self.emit_dominator_subtree(out, child)?;
+        }
+        out.push_str("    }\n");
         Ok(())
     }
 
@@ -1462,10 +2760,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::InstructionKind::LoadLocal(local) => self.assign(out, result, &self.local(*local)),
             l::InstructionKind::StoreLocal(local) => {
-                self.assign(out, Some(self.local(*local)), &operands[0])
+                let local = self.local(*local);
+                if local == operands[0] {
+                    Ok(())
+                } else {
+                    self.assign(out, Some(local), &operands[0])
+                }
             }
             l::InstructionKind::AddressOfLocal(local) => {
-                self.assign(out, result, &format!("&{}", self.local(*local)))
+                if instruction
+                    .result
+                    .is_some_and(|result| self.folded_addresses.contains(&result))
+                {
+                    Ok(())
+                } else {
+                    self.assign(out, result, &format!("&{}", self.local(*local)))
+                }
             }
             l::InstructionKind::LoadGlobal(global) => self.assign(
                 out,
@@ -1538,10 +2848,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 result,
             ),
             l::InstructionKind::LoadAddress => {
-                self.assign(out, result, &format!("*({})", operands[0]))
+                let expression = match instruction.operands.first() {
+                    Some(l::Operand::Value(address)) if self.folded_addresses.contains(address) => {
+                        self.folded_address_expression(*address)?
+                    }
+                    _ => format!("*({})", operands[0]),
+                };
+                self.assign(out, result, &expression)
             }
             l::InstructionKind::StoreAddress => {
-                self.assign(out, Some(format!("*({})", operands[0])), &operands[1])
+                let destination = match instruction.operands.first() {
+                    Some(l::Operand::Value(address)) if self.folded_addresses.contains(address) => {
+                        self.folded_address_expression(*address)?
+                    }
+                    _ => format!("*({})", operands[0]),
+                };
+                self.assign(out, Some(destination), &operands[1])
             }
             l::InstructionKind::LoadField(field) => {
                 self.emit_load_field(out, instruction, *field, &operands, &operand_types, result)
@@ -1592,7 +2914,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn assign(
-        &self,
+        &mut self,
         out: &mut String,
         destination: Option<String>,
         value: &str,
@@ -1600,6 +2922,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let Some(destination) = destination else {
             return Ok(());
         };
+        let delayed = self
+            .delayed_declarations
+            .iter()
+            .find(|candidate| self.value(**candidate) == destination)
+            .copied();
+        if let Some(delayed) = delayed {
+            self.delayed_declarations.remove(&delayed);
+            let ctype = self.emitter.value_ctype(self.value_type(delayed)?)?;
+            let _ = writeln!(out, "    {ctype} {destination} = {value};");
+            return Ok(());
+        }
         let _ = writeln!(out, "    {destination} = {value};");
         Ok(())
     }
@@ -1689,7 +3022,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
 
     fn emit_terminator(&mut self, out: &mut String, block: &l::BasicBlock) -> Result<(), String> {
         match &block.terminator {
-            l::Terminator::Branch(target) => self.emit_edge(out, target),
+            l::Terminator::Branch(target) => self.emit_edge(out, block.id, target),
             l::Terminator::ConditionalBranch {
                 condition,
                 then_target,
@@ -1701,9 +3034,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     out,
                     "    if ({condition}) goto {next}_then; else goto {next}_else;\n{next}_then:"
                 );
-                self.emit_edge(out, then_target)?;
+                self.emit_edge(out, block.id, then_target)?;
                 let _ = writeln!(out, "{next}_else:");
-                self.emit_edge(out, else_target)
+                self.emit_edge(out, block.id, else_target)
             }
             l::Terminator::Switch {
                 value,
@@ -1721,10 +3054,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 for arm in arms {
                     let constant = self.constant(&arm.value)?;
                     let _ = writeln!(out, "    case {constant}:");
-                    self.emit_edge(out, &arm.target)?;
+                    self.emit_edge(out, block.id, &arm.target)?;
                 }
                 out.push_str("    default:\n");
-                self.emit_edge(out, default)?;
+                self.emit_edge(out, block.id, default)?;
                 out.push_str("    }\n    }\n");
                 Ok(())
             }
@@ -1897,11 +3230,79 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
-    fn emit_edge(&mut self, out: &mut String, target: &l::BlockTarget) -> Result<(), String> {
+    fn emit_edge(
+        &mut self,
+        out: &mut String,
+        source: l::BlockId,
+        target: &l::BlockTarget,
+    ) -> Result<(), String> {
         let destination = &self.function.blocks[target.block.0 as usize];
-        for (argument, parameter) in target.arguments.iter().zip(&destination.parameters) {
-            let value = self.operand(argument)?;
-            let _ = writeln!(out, "    {} = {value};", self.value(*parameter));
+        let mut copies = Vec::new();
+        for (index, (argument, parameter)) in target
+            .arguments
+            .iter()
+            .zip(&destination.parameters)
+            .enumerate()
+        {
+            if self
+                .removable_edge_copies
+                .contains(&(source, target.block, index))
+            {
+                continue;
+            }
+            let destination = self.value_storage[parameter.0 as usize];
+            let source = match argument {
+                l::Operand::Value(value) => {
+                    let value = self.value_storage[value.0 as usize];
+                    if value == destination {
+                        continue;
+                    }
+                    EdgeCopySource::Value(value)
+                }
+                l::Operand::Constant(constant) => EdgeCopySource::Constant(constant.clone()),
+            };
+            copies.push(EdgeCopy {
+                destination,
+                source,
+            });
+        }
+        while !copies.is_empty() {
+            if let Some(index) = copies.iter().position(|copy| {
+                !copies.iter().any(|other| {
+                    matches!(other.source, EdgeCopySource::Value(source) if source == copy.destination)
+                })
+            }) {
+                let copy = copies.remove(index);
+                let value = match copy.source {
+                    EdgeCopySource::Value(value) => self.value(value),
+                    EdgeCopySource::Constant(constant) => self.constant(&constant)?,
+                    EdgeCopySource::Temporary(temporary) => temporary,
+                };
+                let _ = writeln!(out, "    {} = {value};", self.value(copy.destination));
+                continue;
+            }
+
+            let cycle_source = copies
+                .iter()
+                .find_map(|copy| match copy.source {
+                    EdgeCopySource::Value(value) => Some(value),
+                    EdgeCopySource::Constant(_) | EdgeCopySource::Temporary(_) => None,
+                })
+                .ok_or_else(|| internal("parallel edge copies could not make progress"))?;
+            // One saved source breaks this cycle. Copies outside the cycle
+            // remain pending and can expose another independent cycle.
+            let temporary = self.fresh();
+            let _ = writeln!(
+                out,
+                "    {} {temporary} = {};",
+                self.emitter.value_ctype(self.value_type(cycle_source)?)?,
+                self.value(cycle_source)
+            );
+            for copy in &mut copies {
+                if matches!(copy.source, EdgeCopySource::Value(value) if value == cycle_source) {
+                    copy.source = EdgeCopySource::Temporary(temporary.clone());
+                }
+            }
         }
         let _ = writeln!(out, "    goto b{};", target.block.0);
         Ok(())
@@ -2403,14 +3804,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         self.emitter.class_name(class),
                         self.emitter.class_name(class)
                     );
-                    let _ = writeln!(out, "    {destination} = &{temporary};");
+                    self.assign(out, Some(destination), &format!("&{temporary}"))?;
                 }
             } else {
-                let _ = writeln!(
-                    out,
-                    "    {destination} = ({}){{0}};",
-                    self.emitter.class_name(class)
-                );
+                let zero = format!("({}){{0}}", self.emitter.class_name(class));
+                self.assign(out, Some(destination), &zero)?;
             }
             for trap in &instruction.traps {
                 self.consume(trap);
@@ -2435,7 +3833,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 format!("{pos}u"),
             ],
         );
-        let _ = writeln!(out, "    {destination} = {call};");
+        self.assign(out, Some(destination), &call)?;
         self.emit_pending_check(out);
         Ok(())
     }
@@ -2454,7 +3852,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.consume(trap);
             }
         }
-        let destination = result.ok_or_else(|| internal("field address has no result"))?;
+        let result_id = instruction
+            .result
+            .ok_or_else(|| internal("field address has no result"))?;
+        if self.folded_addresses.contains(&result_id) {
+            return Ok(());
+        }
+        let destination = result.ok_or_else(|| internal("field address has no destination"))?;
         let expression = match field {
             l::FieldRef::Class(field) => {
                 let (class, _, _) = self.emitter.field(field)?;
@@ -2611,43 +4015,44 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         operand_types: &[l::ValueType],
         result: Option<String>,
     ) -> Result<(), String> {
-        let destination = result.ok_or_else(|| internal("index address has no result"))?;
+        let result_id = instruction
+            .result
+            .ok_or_else(|| internal("index address has no result"))?;
         let index = &operands[1];
-        let (data, length, element) = match &operand_types[0] {
+        let (address, length) = match &operand_types[0] {
             l::ValueType::Data(Type::Array(element)) => {
                 for trap in &instruction.traps {
                     if trap.kind == l::TrapKind::DevOnlyLifetime {
                         self.consume(trap);
                     }
                 }
-                let data = self.emitter.runtime_call(
-                    "const void*",
-                    "subscript_rt_array_data",
-                    &["void*".into(), "const void*".into()],
-                    &["ctx".into(), operands[0].clone()],
+                let header = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    SsArrayHeader* {header} = (SsArrayHeader*)({});",
+                    operands[0]
                 );
-                let length = self.emitter.runtime_call(
-                    "int32_t",
-                    "subscript_rt_array_len",
-                    &["void*".into(), "const void*".into()],
-                    &["ctx".into(), operands[0].clone()],
-                );
+                let length = checked.then(|| {
+                    let length = self.fresh();
+                    let _ = writeln!(out, "    uint64_t {length} = {header}->len;");
+                    length
+                });
                 (
-                    format!("({}*)({data})", self.emitter.ctype(element)?),
+                    format!(
+                        "({}*)({header}->data + (int64_t)({index}) * (int64_t)({header}->elem_size))",
+                        self.emitter.ctype(element)?
+                    ),
                     length,
-                    (**element).clone(),
                 )
             }
-            l::ValueType::Data(Type::FixedArray(element, count)) => (
-                format!("({}).a", operands[0]),
-                count.to_string(),
-                (**element).clone(),
+            l::ValueType::Data(Type::FixedArray(_element, count)) => (
+                format!("&((({}).a)[{index}])", operands[0]),
+                checked.then(|| count.to_string()),
             ),
             l::ValueType::Address(address) => match &address.pointee {
-                Type::FixedArray(element, count) => (
-                    format!("({})->a", operands[0]),
-                    count.to_string(),
-                    (**element).clone(),
+                Type::FixedArray(_element, count) => (
+                    format!("&((({})->a)[{index}])", operands[0]),
+                    checked.then(|| count.to_string()),
                 ),
                 other => return Err(internal(format!("indexed address points to {other:?}"))),
             },
@@ -2661,6 +4066,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .ok_or_else(|| internal("checked index has no bounds trap"))?
                 .clone();
             self.consume(&trap);
+            let length = length
+                .as_ref()
+                .ok_or_else(|| internal("checked index has no captured length"))?;
             let pos = self.emitter.pos_id(&trap.pos);
             let call = self.emitter.runtime_call(
                 "void",
@@ -2680,11 +4088,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             );
             let _ = writeln!(
                 out,
-                "    if ((uint32_t)({index}) >= (uint32_t)({length})) {{ {call}; goto unwind; }}"
+                "    if ((int64_t)({index}) < 0 || (uint64_t)({index}) >= (uint64_t)({length})) {{ {call}; goto unwind; }}"
             );
         }
-        let _ = element;
-        let _ = writeln!(out, "    {destination} = &(({data})[{index}]);");
+        if !self.folded_addresses.contains(&result_id) {
+            let destination = result.ok_or_else(|| internal("index address has no destination"))?;
+            let _ = writeln!(out, "    {destination} = {address};");
+        }
         Ok(())
     }
 
@@ -2696,12 +4106,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         result: Option<String>,
     ) -> Result<(), String> {
         let expression = match operand_type {
-            l::ValueType::Data(Type::Array(_)) => self.emitter.runtime_call(
-                "int32_t",
-                "subscript_rt_array_len",
-                &["void*".into(), "const void*".into()],
-                &["ctx".into(), operand.into()],
-            ),
+            l::ValueType::Data(Type::Array(_)) => {
+                format!("(int32_t)(((SsArrayHeader*)({operand}))->len)")
+            }
             l::ValueType::Data(Type::Str) => self.emitter.runtime_call(
                 "int32_t",
                 "subscript_rt_str_len",
@@ -2743,14 +4150,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 if operands.len() != count as usize {
                     return Err(internal("fixed array literal arity mismatch"));
                 }
-                let _ = writeln!(
-                    out,
-                    "    {destination} = ({}){{0}};",
-                    self.emitter.fixed_array_name(&element, count)?
+                let initializer = format!(
+                    "({}){{ .a = {{ {} }} }}",
+                    self.emitter.fixed_array_name(&element, count)?,
+                    operands.join(", ")
                 );
-                for (index, operand) in operands.iter().enumerate() {
-                    let _ = writeln!(out, "    {destination}.a[{index}] = {operand};");
-                }
+                self.assign(out, Some(destination), &initializer)?;
                 for trap in &instruction.traps {
                     self.consume(trap);
                 }
@@ -2773,7 +4178,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         format!("{pos}u"),
                     ],
                 );
-                let _ = writeln!(out, "    {destination} = {call};");
+                self.assign(out, Some(destination.clone()), &call)?;
                 self.emit_pending_check(out);
                 for operand in operands {
                     let trap = traps
@@ -3175,7 +4580,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn emit_iterator_create(
-        &self,
+        &mut self,
         out: &mut String,
         kind: l::ForOfKind,
         subject: &str,
