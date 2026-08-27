@@ -9015,6 +9015,19 @@ because an arbitrary class's allocation has no spare word.)*
    the decrement. No traversal runs and no collector is invoked, so
    invariant 2 holds: this is `delete` at a known point, not a
    collector running unbidden.
+
+   **Measured 2026-08-27: today a coroutine frame is never freed.**
+   The emitted C for `a93-async-chain` calls `subscript_rt_free` zero
+   times, and a frame is allocated with class id `CLASS_GENERATOR`
+   and left to the Context's lifetime. A program that awaits a
+   million async calls holds a million frames until the host
+   collects.
+
+   So this section does not only decide *who* holds a frame; **it is
+   the first thing that frees one.** That is a behaviour change and
+   it is recorded here rather than discovered in a measurement: peak
+   Context memory for an async-heavy program falls, and the fall is
+   the point, not a side effect. §70.4 item 6 pins it.
 4. **`await` consumes a handle's completion, not its ownership.** A
    second holder still holds it after the first awaits.
 5. **A handle is not a `Promise`.** It has no `then`, no combinator,
