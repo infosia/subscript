@@ -8133,12 +8133,29 @@ The interface is not the subject. This section moves no part of it.
      locals alias one environment. A slot per destination is
      therefore not enough either.
 
-   So the count is dynamic — a loop's trip count — and the lifetime
-   is static. **A bump arena in the function's own storage** gives
-   both: mark at entry, release at return, and recursion nests the
-   marks. A coroutine's arena region belongs to its frame, because
-   the frame outlives the C stack; that replaces §67 rule 1k's one
-   frame member per literal, which is the member `a152` overwrites.
+   **The reasoning above concluded a bump arena, and that was
+   wrong.** *(Corrected 2026-08-27, the same day.)* It assumed the
+   `SubFn` copy keeps sharing one environment, so instances must be
+   per execution and their count is a loop's trip count. A fourth
+   fact removes that assumption:
+
+   - S009: "capturing lambdas may capture only const locals **by
+     value**". A capture is immutable and copied, so **sharing an
+     environment and copying it are not distinguishable**. No
+     program can observe the difference, because no lambda can write
+     a captured variable.
+
+   So the environment travels **with the value**: every function-
+   typed LIR value owns its environment storage, and a `Copy`, a
+   block parameter, an edge, a parameter, and a resume all copy the
+   environment rather than alias it. `keep = f` takes iteration 0's
+   contents, and a later iteration overwrites `f`'s storage and not
+   `keep`'s. The count is then the number of LIR values, which is
+   static, and no arena is needed.
+
+   Ordinary functions hold that storage in a shadow frame; a
+   coroutine holds it in its own frame, which replaces §67 rule 1k's
+   one member per literal — the member `a152` overwrites.
 
    A closure that does not outlive its block keeps a stack slot. The
    liveness of §68.2 item 6 already answers which is which, and no
@@ -8151,9 +8168,9 @@ The interface is not the subject. This section moves no part of it.
    2 is satisfied by the arena being explicit, scoped, and
    deterministic, not by a collector.
 
-   **Measure, do not assert.** The record states the arena's
-   mark-and-release cost and the count of corpus entries that hold a
-   block-escaping closure. Neither is known at this decision.
+   **Measure, do not assert.** The record states the cost of the
+   per-value environment storage. `a22` measured 1.34× with it, the
+   same as without, so the cost does not reach the performance gate.
 9. **An address is a value, and it carries an invalidation point.**
    Every LIR instruction that can move an array's storage names the
    arrays that it invalidates. The lowering re-computes an address
