@@ -11,13 +11,18 @@
 //!   the baseline flags, and linked with the runtime static library.
 //! - **dev-JIT** — the entry through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
+//! - **dev iteration** — one complete check + lower + JIT-finalize of
+//!   the changed `a22` source.
+//! - **hot reload** — the one-function `ENTRYLESS_V1` → `ENTRYLESS_V2`
+//!   body swap from `codegen/tests/reload.rs`.
 //!
-//! Every subject times the workload execution only, inside its own
+//! Every execution subject times the workload execution only, inside its own
 //! process, with a monotonic clock: the C baseline times its workload
 //! function, the ship binary times its `subscript_export_main` call, and the
-//! JIT times its `main` call. Compilation, linking, process start-up,
-//! Context creation, global initialization, and I/O are all outside
-//! the timed span.
+//! JIT times its `main` call. Compilation, linking, process start-up, Context
+//! creation, global initialization, and I/O are all outside those execution
+//! spans. The two iteration subjects state their separate spans in the
+//! report.
 //!
 //! Before any timing is reported, every subject's stdout bytes are
 //! compared against the frozen golden
@@ -32,14 +37,18 @@
 //!
 //! §9 requires at least 3 discarded warm-up runs and 200 ms of measured
 //! workload execution. It also requires at least 11 timed runs. The harness
-//! continues each warm-up until both floors are met. `--warmup` sets the
-//! minimum iteration count; the time floor is always additional. A spread
-//! wider than ±20% of the median invalidates the run.
+//! continues each execution warm-up until both floors are met. §9 does not
+//! state a separate warm-up rule for one-shot compilation, so this harness
+//! applies the same two floors to repeated, complete compile/reload
+//! observations and discards those observations; it does not turn a compile
+//! into an artificial inner loop. A spread wider than ±20% of the median
+//! invalidates the subject.
 //!
-//! Exit status: 0 when the §3 dev-JIT threshold is met, 1 when it is
-//! missed (the report is still printed — a missed threshold is a
-//! measurement, not a harness failure), 2 when the measurement is void
-//! (output mismatch, machine too noisy, or a toolchain error).
+//! Exit status: 0 when §3's ship execution, dev iteration, and hot-reload
+//! thresholds are met; 1 when one is missed (the report is still printed — a
+//! missed threshold is a measurement, not a harness failure); 2 when the
+//! measurement is void (output mismatch, machine too noisy, or a toolchain
+//! error). Dev-tier execution remains measured and reported but is not a gate.
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -48,7 +57,8 @@ use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
 use subscript_codegen::{
-    emit_c, jit_bench_with_warmup_floor, runtime_staticlib_path, tool_output_report,
+    emit_c, jit_bench_with_warmup_floor, jit_compile_time, runtime_staticlib_path,
+    tool_output_report, ReloadSession,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -77,8 +87,11 @@ const SHIP_BENCH_ENTRY_C: &str = concat!(
 /// which never contracts a multiply-add into an FMA.
 const BASELINE_CFLAGS: [&str; 2] = ["-O2", "-ffp-contract=off"];
 
-/// §3: dev-JIT must be within this multiple of the C baseline.
-const JIT_LIMIT: f64 = 4.0;
+/// §3: ship-tier execution must be within this multiple of the C baseline.
+const SHIP_LIMIT: f64 = 1.5;
+
+/// §3: both dev iteration and a one-function hot reload must fit this budget.
+const DEV_ITERATION_LIMIT: Duration = Duration::from_millis(20);
 
 /// §9: a spread wider than this fraction of the median invalidates the
 /// run — the machine was too noisy and the measurement is redone.
@@ -92,6 +105,32 @@ const WARMUP_FLOOR: Duration = Duration::from_millis(200);
 
 /// Default number of timed runs (§9 requires at least 11).
 const DEFAULT_TIMED: usize = 11;
+
+/// First revision of the exact one-function reload shape exercised by
+/// `codegen/tests/reload.rs::entryless_session_observes_an_accepted_body_swap`.
+const RELOAD_V1: &str = "\
+let initialized: i32 = 41;
+export function frame(): void {
+  print(`frame v1: ${initialized}`);
+}
+export function shutdown(): void {
+  print(\"shutdown v1\");
+}
+";
+
+/// Second revision of the reload shape. Only `frame`'s body changes.
+const RELOAD_V2: &str = "\
+let initialized: i32 = 41;
+export function frame(): void {
+  print(`frame v2: ${initialized + 1}`);
+}
+export function shutdown(): void {
+  print(\"shutdown v1\");
+}
+";
+
+/// Output proving that the newly finalized `frame` body is runnable.
+const RELOAD_GOLDEN: &[u8] = b"frame v2: 42\n";
 
 /// A measurement that could not be produced. The harness never panics;
 /// every failure path ends here.
@@ -113,6 +152,20 @@ struct Subject {
     warmup_iterations: usize,
     /// Time spent preparing executable code, reported but never gated.
     prepare: Vec<(&'static str, Duration)>,
+}
+
+/// One one-shot timing subject measured by repeating the complete operation.
+struct OneShotSubject {
+    /// Display name in the report.
+    name: &'static str,
+    /// What exactly was timed, stated in the report.
+    span: &'static str,
+    /// One duration per timed complete operation.
+    samples: Vec<Duration>,
+    /// Sum of discarded complete-operation durations.
+    warmup: Duration,
+    /// Number of complete operations discarded as warm-up.
+    warmup_iterations: usize,
 }
 
 /// Median, minimum, and maximum of a subject's samples, in seconds.
@@ -220,6 +273,15 @@ fn run() -> Result<ExitCode, Fail> {
     let ship = measure_ship(&files, workdir.path(), warmup, timed)?;
     let jit = measure_jit(&files, warmup, timed)?;
     let subjects: [&Subject; 3] = [&c, &ship, &jit];
+    let iteration = measure_one_shot(
+        "dev-iteration",
+        "changed a22 source: check + lower + finalize",
+        warmup,
+        timed,
+        || jit_compile_time(&files).map_err(|e| format!("dev iteration: {e}")),
+    )?;
+    let reload = measure_reload(warmup, timed)?;
+    let one_shots: [&OneShotSubject; 2] = [&iteration, &reload];
 
     for s in subjects {
         if s.warmup_iterations < warmup || s.warmup < WARMUP_FLOOR {
@@ -240,9 +302,20 @@ fn run() -> Result<ExitCode, Fail> {
             ));
         }
     }
+    for s in one_shots {
+        if s.warmup_iterations < warmup || s.warmup < WARMUP_FLOOR {
+            return Err(format!(
+                "{} warmed up for {} across {} complete operations; the one-shot interpretation of compiler.md §9 requires at least {} across at least {warmup} operations",
+                s.name,
+                ms(s.warmup.as_secs_f64()),
+                s.warmup_iterations,
+                ms(WARMUP_FLOOR.as_secs_f64())
+            ));
+        }
+    }
 
     let mut report = String::new();
-    let outcome = write_report(&mut report, &subjects, warmup, timed)?;
+    let outcome = write_report(&mut report, &subjects, &one_shots, warmup, timed)?;
     let mut out = std::io::stdout();
     out.write_all(report.as_bytes())
         .and_then(|()| out.flush())
@@ -252,11 +325,13 @@ fn run() -> Result<ExitCode, Fail> {
 
 /// Builds the report and returns the process exit status it implies.
 ///
-/// The report contains the C baseline, the ship tier, and dev-JIT.
-/// The retained §3 dev-JIT threshold gates the run.
+/// The report contains all execution and iteration subjects. §3's ship-tier
+/// execution, dev-iteration, and hot-reload thresholds gate the run; dev-JIT
+/// execution is reported only.
 fn write_report(
     report: &mut String,
     subjects: &[&Subject],
+    one_shots: &[&OneShotSubject],
     warmup: usize,
     timed: usize,
 ) -> Result<ExitCode, Fail> {
@@ -271,6 +346,10 @@ fn write_report(
     if baseline <= 0.0 {
         return Err("the C baseline measured zero time; the clock is unusable".to_string());
     }
+    let one_shot_stats: Vec<Stats> = one_shots
+        .iter()
+        .map(|s| Stats::of(&s.samples))
+        .collect::<Result<_, _>>()?;
 
     let w = |r: &mut String, line: std::fmt::Arguments<'_>| -> Result<(), Fail> {
         writeln!(r, "{line}").map_err(|e| format!("formatting the report: {e}"))
@@ -365,9 +444,73 @@ fn write_report(
     }
 
     w(report, format_args!(""))?;
+    w(report, format_args!("one-shot iteration timings:"))?;
     w(
         report,
-        format_args!("preparation time (reported, not gated - compiler.md §9):"),
+        format_args!(
+            "{:<15} {:>12} {:>12} {:>12} {:>9}",
+            "subject", "median", "min", "max", "spread"
+        ),
+    )?;
+    for (s, st) in one_shots.iter().zip(one_shot_stats.iter()) {
+        w(
+            report,
+            format_args!(
+                "{:<15} {:>12} {:>12} {:>12} {:>8.1}%",
+                s.name,
+                ms(st.median),
+                ms(st.min),
+                ms(st.max),
+                st.spread() * 100.0
+            ),
+        )?;
+    }
+    w(report, format_args!(""))?;
+    w(report, format_args!("one-shot measured warm-up:"))?;
+    for s in one_shots.iter() {
+        w(
+            report,
+            format_args!(
+                "  {:<15} {:>12} across {} complete operations",
+                s.name,
+                ms(s.warmup.as_secs_f64()),
+                s.warmup_iterations
+            ),
+        )?;
+    }
+    w(report, format_args!(""))?;
+    w(report, format_args!("one-shot timed runs in order (ms):"))?;
+    for s in one_shots.iter() {
+        let mut line = String::new();
+        for d in &s.samples {
+            let _ = write!(line, " {:.3}", d.as_secs_f64() * 1000.0);
+        }
+        w(report, format_args!("  {:<15}{}", s.name, line))?;
+    }
+    w(report, format_args!(""))?;
+    w(report, format_args!("one-shot timed span per subject:"))?;
+    for s in one_shots.iter() {
+        w(report, format_args!("  {:<15} {}", s.name, s.span))?;
+    }
+    w(report, format_args!(""))?;
+    w(
+        report,
+        format_args!(
+            "one-shot warm-up decision: compiler.md §9 gives no separate rule for a one-shot compile."
+        ),
+    )?;
+    w(
+        report,
+        format_args!(
+            "  This harness repeats and discards complete operations until both its 3-operation and {} measured-span floors are met, then times {timed} fresh complete operations; no inner loop is added.",
+            ms(WARMUP_FLOOR.as_secs_f64())
+        ),
+    )?;
+
+    w(report, format_args!(""))?;
+    w(
+        report,
+        format_args!("auxiliary preparation time (single observations, reported, not gated):"),
     )?;
     for s in subjects.iter() {
         for (label, d) in &s.prepare {
@@ -381,31 +524,79 @@ fn write_report(
     w(report, format_args!(""))?;
     w(
         report,
-        format_args!("threshold (compiler.md §3, pre-registered):"),
+        format_args!("thresholds (compiler.md §3, pre-registered):"),
     )?;
-    let (Some(jit), Some(jit_stats)) = (subjects.get(2), stats.get(2)) else {
-        return Err("the dev-JIT subject is missing from the report".to_string());
+    let (Some(ship), Some(ship_stats), Some(jit), Some(jit_stats)) =
+        (subjects.get(1), stats.get(1), subjects.get(2), stats.get(2))
+    else {
+        return Err("a tier subject is missing from the report".to_string());
     };
+    let (Some(iteration), Some(iteration_stats), Some(reload), Some(reload_stats)) = (
+        one_shots.first(),
+        one_shot_stats.first(),
+        one_shots.get(1),
+        one_shot_stats.get(1),
+    ) else {
+        return Err("an iteration subject is missing from the report".to_string());
+    };
+    let ship_ratio = ship_stats.median / baseline;
     let jit_ratio = jit_stats.median / baseline;
-    let threshold_met = jit_ratio <= JIT_LIMIT;
+    let ship_met = ship_ratio <= SHIP_LIMIT;
+    let iteration_met = iteration_stats.median <= DEV_ITERATION_LIMIT.as_secs_f64();
+    let reload_met = reload_stats.median <= DEV_ITERATION_LIMIT.as_secs_f64();
+    let thresholds_met = ship_met && iteration_met && reload_met;
     w(
         report,
         format_args!(
-            "  {:<10} {:>5.2}x of C, limit {:.2}x  {}",
-            jit.name,
-            jit_ratio,
-            JIT_LIMIT,
-            if threshold_met { "MET" } else { "MISSED" }
+            "  {:<15} {:>7.2}x of C, limit {:.2}x  {}",
+            ship.name,
+            ship_ratio,
+            SHIP_LIMIT,
+            if ship_met { "MET" } else { "MISSED" }
+        ),
+    )?;
+    w(
+        report,
+        format_args!(
+            "  {:<15} {:>10}, limit {}  {}",
+            iteration.name,
+            ms(iteration_stats.median),
+            ms(DEV_ITERATION_LIMIT.as_secs_f64()),
+            if iteration_met { "MET" } else { "MISSED" }
+        ),
+    )?;
+    w(
+        report,
+        format_args!(
+            "  {:<15} {:>10}, limit {}  {}",
+            reload.name,
+            ms(reload_stats.median),
+            ms(DEV_ITERATION_LIMIT.as_secs_f64()),
+            if reload_met { "MET" } else { "MISSED" }
+        ),
+    )?;
+    w(
+        report,
+        format_args!(
+            "  {:<15} {:>7.2}x of C  REPORTED, NOT GATED",
+            jit.name, jit_ratio
         ),
     )?;
 
     w(report, format_args!(""))?;
-    let noisy: Vec<&str> = subjects
+    let mut noisy: Vec<&str> = subjects
         .iter()
         .zip(stats.iter())
         .filter(|(_, st)| st.spread() > NOISE_LIMIT)
         .map(|(s, _)| s.name)
         .collect();
+    noisy.extend(
+        one_shots
+            .iter()
+            .zip(one_shot_stats.iter())
+            .filter(|(_, st)| st.spread() > NOISE_LIMIT)
+            .map(|(s, _)| s.name),
+    );
     if noisy.is_empty() {
         w(
             report,
@@ -418,14 +609,14 @@ fn write_report(
             report,
             format_args!(
                 "result:      {}",
-                if threshold_met {
-                    "the threshold was met"
+                if thresholds_met {
+                    "all gated criteria were met"
                 } else {
-                    "a threshold was missed; compiler.md §3 names the backend decision this reopens"
+                    "a gated criterion was missed; compiler.md §3 names the backend decision this reopens"
                 }
             ),
         )?;
-        Ok(if threshold_met {
+        Ok(if thresholds_met {
             ExitCode::SUCCESS
         } else {
             ExitCode::from(1)
@@ -441,6 +632,73 @@ fn write_report(
         )?;
         Ok(ExitCode::from(2))
     }
+}
+
+/// Repeats a complete one-shot operation for §9 warm-up and timed samples.
+fn measure_one_shot<F>(
+    name: &'static str,
+    span: &'static str,
+    warmup: usize,
+    timed: usize,
+    mut measure: F,
+) -> Result<OneShotSubject, Fail>
+where
+    F: FnMut() -> Result<Duration, Fail>,
+{
+    let mut warmup_elapsed = Duration::ZERO;
+    let mut warmup_iterations = 0;
+    while warmup_iterations < warmup || warmup_elapsed < WARMUP_FLOOR {
+        warmup_elapsed += measure()?;
+        warmup_iterations += 1;
+    }
+    let mut samples = Vec::with_capacity(timed);
+    for _ in 0..timed {
+        samples.push(measure()?);
+    }
+    Ok(OneShotSubject {
+        name,
+        span,
+        samples,
+        warmup: warmup_elapsed,
+        warmup_iterations,
+    })
+}
+
+/// Measures the exact accepted one-function body swap from the reload suite.
+fn measure_reload(warmup: usize, timed: usize) -> Result<OneShotSubject, Fail> {
+    let before = vec![SourceFile::new("live.ts", RELOAD_V1)];
+    let after = vec![SourceFile::new("live.ts", RELOAD_V2)];
+    measure_one_shot(
+        "hot-reload",
+        "reload.rs::entryless_session_observes_an_accepted_body_swap (`frame` only): check + lower + finalize + atomic table swap",
+        warmup,
+        timed,
+        || {
+            // Session construction is deliberately outside the timed span:
+            // the subject is an edit applied to an already-running program.
+            // A fresh session makes every observation the suite's exact V1 ->
+            // V2 transition and avoids accumulating old generations.
+            let mut session = ReloadSession::new(&before)
+                .map_err(|e| format!("hot-reload session setup: {e}"))?;
+            let started = Instant::now();
+            session
+                .reload(&after)
+                .map_err(|e| format!("hot reload: {e}"))?;
+            let elapsed = started.elapsed();
+            session
+                .call_export("frame")
+                .map_err(|e| format!("run reloaded `frame`: {e}"))?;
+            let output = session.take_output();
+            if output != RELOAD_GOLDEN {
+                return Err(format!(
+                    "reloaded `frame` printed {:?}, expected {:?}",
+                    String::from_utf8_lossy(&output),
+                    String::from_utf8_lossy(RELOAD_GOLDEN)
+                ));
+            }
+            Ok(elapsed)
+        },
+    )
 }
 
 /// First line of the C compiler's version banner, for the report.
@@ -762,6 +1020,6 @@ fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Result<Subj
         samples: b.samples,
         warmup: b.warmup,
         warmup_iterations: b.warmup_iterations,
-        prepare: vec![("check + lower + finalize (JIT compile)", b.compile)],
+        prepare: Vec::new(),
     })
 }

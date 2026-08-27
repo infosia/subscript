@@ -41,7 +41,7 @@ mod ship;
 pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
-    jit_bench, jit_bench_with_warmup_floor, run_jit, run_jit_with_alloc_failure,
+    jit_bench, jit_bench_with_warmup_floor, jit_compile_time, run_jit, run_jit_with_alloc_failure,
     run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
     run_jit_with_native_libraries, AbnormalTermination, BenchSamples, JitMemoryAccounting,
     RunError, TrapReport, JIT_OUTPUT_FILE_ENV,

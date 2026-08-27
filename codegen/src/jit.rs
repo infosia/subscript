@@ -1840,9 +1840,33 @@ pub struct BenchSamples {
     pub warmup: Duration,
     /// Number of workload calls discarded as warm-up.
     pub warmup_iterations: usize,
-    /// Time spent turning source into executable code before the first
-    /// run (reported, never gated — §9).
+    /// One observation of the time spent turning source into executable code
+    /// before this execution batch. The §3 iteration gate uses repeated
+    /// [`jit_compile_time`] observations instead.
     pub compile: Duration,
+}
+
+/// Measures one dev-tier iteration: check the changed source, lower it to
+/// native code, and finalize the JIT module so it is ready to run.
+///
+/// The returned duration ends when finalization completes. Releasing the
+/// temporary module and executing an entry are outside the measured span.
+/// This is the iteration-time subject gated by `compiler.md` §3; callers that
+/// need a statistically valid result repeat this whole one-shot operation
+/// under §9's sampling methodology.
+///
+/// # Errors
+///
+/// Returns the same check, lowering, finalization, and symbol-resolution
+/// errors as [`run_jit`].
+pub fn jit_compile_time(files: &[SourceFile]) -> Result<Duration, RunError> {
+    let started = Instant::now();
+    let (module, _lowered) = compile_jit(files, &[])?;
+    let elapsed = started.elapsed();
+    // SAFETY: the finalized module was not executed and no pointer into its
+    // code or data escaped this function.
+    unsafe { module.free_memory() };
+    Ok(elapsed)
 }
 
 /// Measures the dev-JIT tier on `files`: compiles once, then calls the
