@@ -9,10 +9,6 @@
 //! lowerings. The entry set is derived from `corpus/accept/`, so a new
 //! entry or golden is picked up with no edit here.
 //!
-//! The `cranelift-object` AOT path is retained only as an **optional
-//! extra cross-check** column (its ship role has ended, §11): it is
-//! compared when it is available, but the gate does not require it.
-//!
 //! There are no skips of the ship tier. A missing host C compiler, a
 //! missing runtime static library, or a failing compile/link fails this
 //! test: the gate machine is the development machine (§8.3).
@@ -26,9 +22,8 @@ mod corpus;
 mod native_fixture;
 
 use subscript_codegen::{
-    run_aot_with_native_libraries, run_c_aot_with_native_libraries,
-    run_c_aot_with_native_libraries_and_host_hooks, run_jit_with_native_libraries, NativeLibrary,
-    RunError,
+    run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
+    run_jit_with_native_libraries, NativeLibrary, RunError,
 };
 #[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::{EntryArg, ReloadSession};
@@ -340,11 +335,8 @@ fn q34_async_entries_match_across_tiers_and_golden() {
             .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
         let ship = run_c_aot_with_native_libraries(&sources, &libraries)
             .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
-        let object = run_aot_with_native_libraries(&sources, &libraries)
-            .unwrap_or_else(|error| panic!("{id}: object-AOT run failed: {error}"));
         let golden = corpus::golden_bytes(&accept, id);
         assert_eq!(jit, ship, "{id}: tier outputs differ");
-        assert_eq!(jit, object, "{id}: generated AOT entry output differs");
         assert_eq!(jit, golden, "{id}: captured golden differs");
         println!("{id}:\n{}", String::from_utf8_lossy(&jit));
     }
@@ -1009,47 +1001,6 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     assert_eq!(
         skipped, 0,
         "the reference configuration compares every committed golden and skips none"
-    );
-}
-
-/// Optional cross-check: the retired `cranelift-object` AOT path still
-/// reproduces the goldens byte-for-byte (§11 keeps it as an extra
-/// column, not a requirement). It shares the dev tier's lowering, so it
-/// is a cheap independent confirmation that the goldens are stable.
-#[test]
-fn cranelift_object_aot_still_matches_the_goldens_cross_check() {
-    let accept = corpus::corpus_accept();
-    let mut failures = Vec::new();
-    for id in corpus::golden_ids(&accept) {
-        if matches!(
-            id.as_str(),
-            HOST_OWNED_STATE_ID | HANDLE_ENTRY_PARAM_ID | WIRE_ENTRY_PARAM_ID
-        ) {
-            // The host-driven forms use the ship-C surface. The retired
-            // Cranelift-object cross-check has no hook-enabled runner.
-            continue;
-        }
-        let golden = corpus::golden_bytes(&accept, &id);
-        let sources = corpus::entry_sources(&accept, &id);
-        let Some(libraries) = native_libraries(&sources) else {
-            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
-            continue;
-        };
-        match run_aot_with_native_libraries(&sources, &libraries) {
-            Ok(bytes) if bytes == golden => {}
-            Ok(bytes) => failures.push(format!(
-                "{id}: cranelift-AOT output {:?} != golden {:?}",
-                String::from_utf8_lossy(&bytes),
-                String::from_utf8_lossy(&golden)
-            )),
-            Err(e) => failures.push(format!("{id}: cranelift-AOT run failed: {e}")),
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} cranelift cross-check failure(s):\n{}",
-        failures.len(),
-        failures.join("\n")
     );
 }
 

@@ -3,7 +3,7 @@ name = "subscript-codegen"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "HIR-to-CLIF lowering and both execution tiers of subscript. The lowering is tier-neutral: it targets any cranelift-module backend, so the dev-tier JIT and the ship-tier AOT object emitter share it unchanged."
+description = "The Cranelift development JIT and C-emitting ship tier for subscript."
 
 [features]
 # Opt-in only for the golden-capture helper: links the synthetic interop
@@ -14,18 +14,11 @@ capture-interop = []
 [dependencies]
 subscript-compiler = { path = "../compiler" }
 subscript-runtime = { path = "../runtime" }
-# `arm64` is explicit: the ship tier emits objects for the two arm64
-# device triples regardless of what the host architecture is.
-# Every ship-target backend, host-independent: the retained
-# Cranelift-object cross-check emits arm64 (iOS/Android) and x86-64
-# (linux-gnu) objects on every dev host (compiler.md §11 "Ship
-# targets"). host-arch alone made the x86-64 triple fail on arm64.
-cranelift-codegen = { version = "=0.125.4", features = ["arm64", "x86"] }
+cranelift-codegen = "=0.125.4"
 cranelift-frontend = "=0.125.4"
 cranelift-module = "=0.125.4"
 cranelift-jit = "=0.125.4"
 cranelift-native = "=0.125.4"
-cranelift-object = "=0.125.4"
 target-lexicon = "=0.13.5"
 libc = "0.2"
 # Used only on windows-msvc, to locate the MSVC `cl` toolchain and its
@@ -35,9 +28,6 @@ libc = "0.2"
 cc = "1"
 
 [dev-dependencies]
-# Object-file inspection for the AOT emission tests, as in the P0.5
-# spike; the same version the spike pins.
-object = { version = "0.36", default-features = false, features = ["read", "std"] }
 # This fixture has no `_Float16`, so the MSVC gate keeps it.
 subscript-archive-fixture = { path = "tests/archive-fixture" }
 

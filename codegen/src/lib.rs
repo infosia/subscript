@@ -1,11 +1,9 @@
 #![warn(missing_docs)]
-//! HIR-to-CLIF lowering and both execution tiers of subscript (plan
+//! Code generation for both execution tiers of subscript (plan
 //! phases P2 and P3, `specs/blocks/compiler.md` §7, §8).
 //!
-//! One lowering serves both tiers (§1): the `lower` module targets
-//! the `cranelift_module::Module` trait, the dev-tier JIT driver
-//! instantiates it with `JITModule`, and the ship-tier AOT driver
-//! instantiates the same lowering with `ObjectModule`.
+//! The dev-tier JIT lowers HIR to Cranelift IR. The ship tier lowers HIR
+//! to LIR, emits C, and invokes the platform C compiler.
 //!
 //! Three entry points, all returning the exact stdout bytes of a run, a
 //! [`TrapReport`], or an [`AbnormalTermination`] that retains stdout produced
@@ -16,10 +14,8 @@
 //!   `main(): void` in an isolated child on Unix hosts.
 //! - [`run_jit_with_memory_accounting`] — the same dev-tier run with
 //!   post-run Context memory figures for host-side measurement.
-//! - [`run_aot`] — ship tier: check, lower, emit an object, link it
-//!   with the runtime static library and the generated C entry, run
-//!   the binary. [`emit_object`] stops after emission and is what the
-//!   device-triple link script uses.
+//! - [`run_c_aot`] — ship tier: check, emit C, compile and link it with
+//!   the runtime static library and generated C entry, then run it.
 //! - [`ReloadSession`] — dev tier with hot reload: a live program whose
 //!   function bodies can be swapped between host calls, accepted only
 //!   when its [`DeclarationHash`] is unchanged.
@@ -31,7 +27,6 @@
 //! performance gate (§9): same compilation, but the exported `main` is
 //! called repeatedly and each call is timed on its own.
 
-mod aot;
 mod cemit;
 mod emit_files;
 pub mod interpreter;
@@ -41,16 +36,8 @@ pub mod lir;
 mod lower;
 mod native;
 mod reload;
+mod ship;
 
-pub use aot::{
-    add_c11_optimized_flags, add_executable_output, add_object_directory, emit_object,
-    host_c_compiler, include_directory_arg, run_aot, run_aot_with_native_libraries, run_c_aot,
-    run_c_aot_with_alloc_failure, run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
-    run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
-    runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
-    AotObject, CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
-    WINDOWS_SYSTEM_LIBRARIES,
-};
 pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
@@ -60,6 +47,14 @@ pub use jit::{
     RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
+pub use ship::{
+    add_c11_optimized_flags, add_executable_output, add_object_directory, host_c_compiler,
+    include_directory_arg, run_c_aot, run_c_aot_with_alloc_failure,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
+    run_c_aot_with_native_libraries_and_host_hooks, runtime_staticlib_name, runtime_staticlib_path,
+    runtime_system_libraries, tool_output_report, CCompilerStyle, HostCCompiler, AOT_ENTRY_C,
+    HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
+};
 
 /// Lowers checked HIR to verified LIR and emits ship-tier C.
 ///
@@ -151,22 +146,17 @@ export function main(): void {
 }
 ";
         let files = [SourceFile::new("frame.ts", source)];
-        for result in [
-            run_jit(&files).map(|_| ()),
-            emit_object(&files, None).map(|_| ()),
-        ] {
-            match result {
-                Err(RunError::Rejected(diagnostics)) => {
-                    assert!(
-                        diagnostics.iter().any(|diagnostic| {
-                            diagnostic.code == subscript_compiler::RuleCode::S100
-                                && diagnostic.message.contains("2147483632 bytes")
-                        }),
-                        "missing frame-limit S100: {diagnostics:?}"
-                    );
-                }
-                other => panic!("oversized frame reached a backend: {other:?}"),
+        match run_jit(&files) {
+            Err(RunError::Rejected(diagnostics)) => {
+                assert!(
+                    diagnostics.iter().any(|diagnostic| {
+                        diagnostic.code == subscript_compiler::RuleCode::S100
+                            && diagnostic.message.contains("2147483632 bytes")
+                    }),
+                    "missing frame-limit S100: {diagnostics:?}"
+                );
             }
+            other => panic!("oversized frame reached the backend: {other:?}"),
         }
     }
 

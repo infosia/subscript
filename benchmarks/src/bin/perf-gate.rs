@@ -7,21 +7,14 @@
 //! - **C baseline** — `benchmarks/a22-baseline.c`, the hand-written C
 //!   implementation of the same workload, compiled here with the
 //!   platform C compiler at `-O2`.
-//! - **ship-AOT** — the entry through the AOT tier: object emitted by
-//!   `subscript_codegen::emit_object`, linked with the runtime static
-//!   library and `benchmarks/aot-entry.c`.
+//! - **ship-tier** — the entry's typed HIR emitted as C, compiled with
+//!   the baseline flags, and linked with the runtime static library.
 //! - **dev-JIT** — the entry through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
-//! - **emitted-C** — the entry's typed HIR emitted as C
-//!   (`subscript_codegen::emit_c`, now the ship tier — compiler.md §11),
-//!   compiled with the same flags as the hand C baseline and linked with
-//!   the runtime static library. Reported, not gated: the pre-registered
-//!   §3 thresholds (ship-AOT, dev-JIT) do not move; emitted-C's ratios
-//!   are the ship tier's measured answer.
 //!
 //! Every subject times the workload execution only, inside its own
 //! process, with a monotonic clock: the C baseline times its workload
-//! function, the AOT binary times its `subscript_export_main` call, and the
+//! function, the ship binary times its `subscript_export_main` call, and the
 //! JIT times its `main` call. Compilation, linking, process start-up,
 //! Context creation, global initialization, and I/O are all outside
 //! the timed span.
@@ -46,8 +39,8 @@
 //! case is recognizable, and the answer is the one §9 gives — redo the
 //! run, with `--warmup` raised until every subject is in steady state.
 //!
-//! Exit status: 0 when both §3 thresholds are met, 1 when a threshold
-//! is missed (the report is still printed — a missed threshold is a
+//! Exit status: 0 when the §3 dev-JIT threshold is met, 1 when it is
+//! missed (the report is still printed — a missed threshold is a
 //! measurement, not a harness failure), 2 when the measurement is void
 //! (output mismatch, machine too noisy, or a toolchain error).
 
@@ -57,9 +50,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
-use subscript_codegen::{
-    emit_c, emit_object, jit_bench, runtime_staticlib_path, tool_output_report,
-};
+use subscript_codegen::{emit_c, jit_bench, runtime_staticlib_path, tool_output_report};
 use subscript_compiler::{check_program, SourceFile};
 
 /// The corpus entry under measurement (`specs/blocks/corpus.md` §4).
@@ -76,8 +67,8 @@ const ENTRY_GOLDEN: &[u8] =
 /// The hand-written C baseline, written out and compiled at run time.
 const BASELINE_C: &str = include_str!("../../a22-baseline.c");
 
-/// The timing entry program linked with the AOT object.
-const AOT_BENCH_ENTRY_C: &str = concat!(
+/// The timing entry program linked with the ship-tier C translation unit.
+const SHIP_BENCH_ENTRY_C: &str = concat!(
     include_str!("../../../runtime/include/subscript_runtime.h"),
     include_str!("../../aot-entry.c")
 );
@@ -86,9 +77,6 @@ const AOT_BENCH_ENTRY_C: &str = concat!(
 /// (§3); `-ffp-contract=off` matches the language's f32 arithmetic,
 /// which never contracts a multiply-add into an FMA.
 const BASELINE_CFLAGS: [&str; 2] = ["-O2", "-ffp-contract=off"];
-
-/// §3: ship-AOT must be within this multiple of the C baseline.
-const AOT_LIMIT: f64 = 1.5;
 
 /// §3: dev-JIT must be within this multiple of the C baseline.
 const JIT_LIMIT: f64 = 4.0;
@@ -223,10 +211,9 @@ fn run() -> Result<ExitCode, Fail> {
     let files = vec![SourceFile::new(format!("{ENTRY_ID}.ts"), ENTRY_SOURCE)];
 
     let c = measure_c(workdir.path(), warmup, timed)?;
-    let aot = measure_aot(&files, workdir.path(), warmup, timed)?;
+    let ship = measure_ship(&files, workdir.path(), warmup, timed)?;
     let jit = measure_jit(&files, warmup, timed)?;
-    let cemit = measure_emitted_c(&files, workdir.path(), warmup, timed)?;
-    let subjects: [&Subject; 4] = [&c, &aot, &jit, &cemit];
+    let subjects: [&Subject; 3] = [&c, &ship, &jit];
 
     for s in subjects {
         if s.stdout != ENTRY_GOLDEN {
@@ -250,11 +237,8 @@ fn run() -> Result<ExitCode, Fail> {
 
 /// Builds the report and returns the process exit status it implies.
 ///
-/// The first three subjects are the pre-registered P4 gate (`C`,
-/// `ship-AOT`, `dev-JIT`); the gated thresholds (§3) are computed for
-/// indices 1 and 2 exactly as before. Any further subjects (the P4.2
-/// emitted-C measurement) are reported as extra rows with their ratios,
-/// but never gate the run — the standing thresholds do not move.
+/// The report contains the C baseline, the ship tier, and dev-JIT.
+/// The retained §3 dev-JIT threshold gates the run.
 fn write_report(
     report: &mut String,
     subjects: &[&Subject],
@@ -367,72 +351,23 @@ fn write_report(
     w(report, format_args!(""))?;
     w(
         report,
-        format_args!("thresholds (compiler.md §3, pre-registered):"),
+        format_args!("threshold (compiler.md §3, pre-registered):"),
     )?;
-    let mut thresholds_met = true;
-    for (index, limit) in [(1usize, AOT_LIMIT), (2usize, JIT_LIMIT)] {
-        let (Some(s), Some(st)) = (subjects.get(index), stats.get(index)) else {
-            return Err("a subject is missing from the report".to_string());
-        };
-        let ratio = st.median / baseline;
-        let met = ratio <= limit;
-        thresholds_met &= met;
-        w(
-            report,
-            format_args!(
-                "  {:<10} {:>5.2}x of C, limit {:.2}x  {}",
-                s.name,
-                ratio,
-                limit,
-                if met { "MET" } else { "MISSED" }
-            ),
-        )?;
-    }
-
-    // P4.2 emitted-C measurement (index 3, if present): reported, not
-    // gated. Its ratios answer the spike's question — emitted-C through
-    // clang vs the hand C baseline, vs ship-AOT, and vs the 1.5x/4x
-    // thresholds — without moving any standing threshold.
-    if let (Some(cemit), Some(cst)) = (subjects.get(3), stats.get(3)) {
-        let vs_c = cst.median / baseline;
-        w(report, format_args!(""))?;
-        w(
-            report,
-            format_args!("emitted-C measurement (compiler.md P4.2 spike; reported, not gated):"),
-        )?;
-        w(
-            report,
-            format_args!(
-                "  {:<10} {:>5.2}x of hand C baseline (§3 AOT limit {:.2}x, dev-JIT limit {:.2}x)",
-                cemit.name, vs_c, AOT_LIMIT, JIT_LIMIT
-            ),
-        )?;
-        for (label, idx) in [("ship-AOT", 1usize), ("dev-JIT", 2usize)] {
-            if let Some(other) = stats.get(idx) {
-                if cst.median > 0.0 {
-                    w(
-                        report,
-                        format_args!(
-                            "  {:<10} {:>5.2}x faster than {} ({:.2}x of C vs {:.2}x of C)",
-                            cemit.name,
-                            other.median / cst.median,
-                            label,
-                            vs_c,
-                            other.median / baseline
-                        ),
-                    )?;
-                }
-            }
-        }
-        w(
-            report,
-            format_args!(
-                "  emitted-C clears 1.5x: {}; clears 4x: {}",
-                if vs_c <= AOT_LIMIT { "yes" } else { "no" },
-                if vs_c <= JIT_LIMIT { "yes" } else { "no" }
-            ),
-        )?;
-    }
+    let (Some(jit), Some(jit_stats)) = (subjects.get(2), stats.get(2)) else {
+        return Err("the dev-JIT subject is missing from the report".to_string());
+    };
+    let jit_ratio = jit_stats.median / baseline;
+    let threshold_met = jit_ratio <= JIT_LIMIT;
+    w(
+        report,
+        format_args!(
+            "  {:<10} {:>5.2}x of C, limit {:.2}x  {}",
+            jit.name,
+            jit_ratio,
+            JIT_LIMIT,
+            if threshold_met { "MET" } else { "MISSED" }
+        ),
+    )?;
 
     w(report, format_args!(""))?;
     let noisy: Vec<&str> = subjects
@@ -453,14 +388,14 @@ fn write_report(
             report,
             format_args!(
                 "result:      {}",
-                if thresholds_met {
-                    "both thresholds met"
+                if threshold_met {
+                    "the threshold was met"
                 } else {
                     "a threshold was missed; compiler.md §3 names the backend decision this reopens"
                 }
             ),
         )?;
-        Ok(if thresholds_met {
+        Ok(if threshold_met {
             ExitCode::SUCCESS
         } else {
             ExitCode::from(1)
@@ -506,7 +441,7 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
 }
 
 /// Resolves the C compiler used for the C subjects. The compiler is clang
-/// (compiler.md §11), matching the ship path (`codegen::aot`): `$CC`
+/// (compiler.md §11), matching the ship path: `$CC`
 /// verbatim when set, else `clang` on `PATH`, else — on Windows only — the
 /// standard LLVM install (`%ProgramFiles%\LLVM\bin\clang.exe`). Falls back
 /// to the bare name `clang`, so a missing toolchain surfaces as a clear
@@ -532,7 +467,7 @@ fn host_cc() -> std::ffi::OsString {
 /// clang's own defaults do not supply. The runtime static library embeds
 /// Rust `std`, which references these; `rustc` passes them automatically
 /// when it links, so a manual clang link of the staticlib must add them
-/// (mirrors `codegen::aot::runtime_system_libs`). Empty on every other
+/// (mirrors `subscript_codegen::runtime_system_libraries`). Empty on every other
 /// target.
 fn runtime_system_libs() -> &'static [&'static str] {
     if cfg!(all(windows, target_env = "msvc")) {
@@ -671,8 +606,8 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
 /// value-class copies, checked growable-array indexing and push growth,
 /// f32-precision arithmetic) and calls the runtime for arrays, strings,
 /// and Q14 formatting, so this measures the shipped path through clang,
-/// timed on the whole `subscript_export_main` call exactly as the AOT subject.
-fn measure_emitted_c(
+/// timed on the whole `subscript_export_main` call.
+fn measure_ship(
     files: &[SourceFile],
     dir: &Path,
     warmup: usize,
@@ -693,11 +628,11 @@ fn measure_emitted_c(
         .source;
     let emit = started.elapsed();
 
-    let source = dir.join("a22-cemit.c");
-    let entry = dir.join("cemit-entry.c");
-    let exe = dir.join(format!("a22-cemit{}", std::env::consts::EXE_SUFFIX));
+    let source = dir.join("a22-ship.c");
+    let entry = dir.join("ship-entry.c");
+    let exe = dir.join(format!("a22-ship{}", std::env::consts::EXE_SUFFIX));
     write_file(&source, c_source.as_bytes())?;
-    write_file(&entry, AOT_BENCH_ENTRY_C.as_bytes())?;
+    write_file(&entry, SHIP_BENCH_ENTRY_C.as_bytes())?;
     let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
 
     let started = Instant::now();
@@ -730,61 +665,11 @@ fn measure_emitted_c(
 
     let (stdout, samples) = run_subject(&exe, warmup, timed)?;
     Ok(Subject {
-        name: "emitted-C",
-        span: "the subscript_export_main call in the emitted-C binary (linked with the runtime)",
+        name: "ship-tier",
+        span: "the subscript_export_main call in the ship-tier binary (linked with the runtime)",
         stdout,
         samples,
         prepare: vec![("check + emit C", emit), ("compile + link (cc)", compile)],
-    })
-}
-
-/// Emits, links, and measures the ship-tier AOT build of the entry.
-fn measure_aot(
-    files: &[SourceFile],
-    dir: &Path,
-    warmup: usize,
-    timed: usize,
-) -> Result<Subject, Fail> {
-    let started = Instant::now();
-    let object = emit_object(files, None).map_err(|e| format!("AOT emission: {e}"))?;
-    let emit = started.elapsed();
-
-    let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
-    let obj_path = dir.join("a22-aot.o");
-    let entry_path = dir.join("aot-entry.c");
-    let exe = dir.join(format!("a22-aot{}", std::env::consts::EXE_SUFFIX));
-    write_file(&obj_path, &object.bytes)?;
-    write_file(&entry_path, AOT_BENCH_ENTRY_C.as_bytes())?;
-
-    let started = Instant::now();
-    let link = Command::new(host_cc())
-        .arg("-O2")
-        .arg(&entry_path)
-        .arg(&obj_path)
-        .arg(&staticlib)
-        .args(runtime_system_libs())
-        .arg("-o")
-        .arg(&exe)
-        .output()
-        .map_err(|e| format!("the platform C compiler could not be run: {e}"))?;
-    let link_time = started.elapsed();
-    if !link.status.success() {
-        return Err(format!(
-            "linking the AOT build failed:\n{}",
-            tool_output_report(&link)
-        ));
-    }
-
-    let (stdout, samples) = run_subject(&exe, warmup, timed)?;
-    Ok(Subject {
-        name: "ship-AOT",
-        span: "the subscript_export_main call in the linked binary",
-        stdout,
-        samples,
-        prepare: vec![
-            ("check + lower + emit object", emit),
-            ("link (cc, entry + runtime)", link_time),
-        ],
     })
 }
 

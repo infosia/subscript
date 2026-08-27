@@ -1,4 +1,4 @@
-//! The dev-tier JIT driver: instantiates the tier-neutral lowering
+//! The dev-tier JIT driver: instantiates the Cranelift lowering
 //! with `cranelift-jit`, resolves the runtime's `extern "C"` symbols,
 //! runs the exported `main(): void`, and returns captured stdout bytes or a
 //! trap report. Run helpers retain completed lines in a helper-owned file so

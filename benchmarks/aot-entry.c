@@ -2,7 +2,7 @@
  * performance gate (specs/blocks/compiler.md sections 3 and 9).
  *
  * It is the measurement counterpart of the gate's normal entry
- * (`AOT_ENTRY_C` in codegen/src/aot.rs): same C-ABI surface, but the
+ * (`AOT_ENTRY_C` in codegen/src/ship.rs): same C-ABI surface, but the
  * exported `main` is called for a measured warm-up phase and then for
  * each timed sample, timing every call on its own with CLOCK_MONOTONIC.
  *

@@ -4,7 +4,7 @@
 //! `examples/host/build.sh` runs under `sh` (Git Bash), which does not carry
 //! the MSVC `INCLUDE`/`LIB`/`PATH` a bare `cl` needs. This shim resolves
 //! `cl.exe` and its environment through the same registry lookup the ship
-//! tier uses (`codegen/src/aot.rs`, compiler.md §11c), forwards its own CLI
+//! tier uses (`codegen/src/ship.rs`, compiler.md §11c), forwards its own CLI
 //! arguments to `cl`, and exits with `cl`'s exit code.
 
 #[cfg(all(windows, target_env = "msvc"))]

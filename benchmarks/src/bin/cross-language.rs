@@ -1096,7 +1096,7 @@ impl Tools {
 /// Resolves clang: `$CC` verbatim, else `clang` on `PATH`, else — on
 /// Windows only — the standard LLVM install
 /// (`%ProgramFiles%\LLVM\bin\clang.exe`). `None` when none is found
-/// (reported as `-`, mirroring `codegen::aot::host_c_compiler` but
+/// (reported as `-`, mirroring `subscript_codegen::host_c_compiler` but
 /// without that function's fail-loud bare-name fallback, since an
 /// absent compiler here is a skipped subject, not an error).
 fn resolve_clang() -> Option<PathBuf> {
@@ -1154,7 +1154,7 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
 }
 
 /// System import libraries a manual clang link of the runtime static library
-/// needs on windows-msvc (mirrors `codegen::aot`). Empty elsewhere.
+/// needs on windows-msvc (mirrors the codegen ship support). Empty elsewhere.
 fn runtime_system_libs() -> &'static [&'static str] {
     if cfg!(all(windows, target_env = "msvc")) {
         &[

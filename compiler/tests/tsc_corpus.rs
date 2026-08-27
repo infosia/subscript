@@ -134,7 +134,10 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
                     headers.len()
                 ));
             }
-            let claim = TscClaim::parse(headers[0])
+            let claim_text = headers[0]
+                .split_once("; js-comparable: ")
+                .map_or(headers[0], |(claim, _)| claim);
+            let claim = TscClaim::parse(claim_text)
                 .map_err(|error| format!("{relative}: invalid tsc header: {error}"))?;
             if !accept {
                 let expected_errors: Vec<&str> = source

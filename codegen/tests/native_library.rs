@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use subscript_codegen::{
-    run_aot_with_native_libraries, run_c_aot, run_c_aot_with_native_libraries, run_jit,
-    run_jit_with_native_libraries, NativeLibrary, RunError, JIT_OUTPUT_FILE_ENV,
+    run_c_aot, run_c_aot_with_native_libraries, run_jit, run_jit_with_native_libraries,
+    NativeLibrary, RunError, JIT_OUTPUT_FILE_ENV,
 };
 use subscript_compiler::SourceFile;
 
@@ -132,20 +132,9 @@ fn static_archive_link_input_follows_translation_units_on_all_tiers() {
         .expect("ship C-AOT tier runs with the static archive");
     assert_eq!(c_aot, ARCHIVE_ONLY_EXPECTED, "ship C-AOT tier output");
 
-    let object_aot = run_aot_with_native_libraries(&files, std::slice::from_ref(&library))
-        .expect("retained Cranelift-object AOT tier runs with the static archive");
-    assert_eq!(
-        object_aot, ARCHIVE_ONLY_EXPECTED,
-        "retained Cranelift-object AOT tier output"
-    );
-
     let jit = run_jit_with_native_libraries(&files, std::slice::from_ref(&library))
         .expect("dev JIT tier runs with the registered archive symbol");
     assert_eq!(jit, c_aot, "dev JIT tier differs from ship C-AOT tier");
-    assert_eq!(
-        jit, object_aot,
-        "dev JIT tier differs from retained Cranelift-object AOT tier"
-    );
 }
 
 #[test]

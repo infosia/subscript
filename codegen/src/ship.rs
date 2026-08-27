@@ -1,25 +1,8 @@
-//! The ship-tier AOT driver (`specs/blocks/compiler.md` §8.1).
-//!
-//! The *same* lowering the dev JIT uses, instantiated with
-//! `cranelift-object` instead of `cranelift-jit` and with the ship
-//! flag set (`is_pic = true`; the dev tier resolves everything by
-//! absolute in-process address and uses `is_pic = false`).
-//!
-//! Two entry points:
-//! - [`emit_object`] produces a relocatable object for any supported
-//!   target triple. The device triples (`aarch64-apple-ios`,
-//!   `aarch64-linux-android`) go through this; `codegen/device-link.sh`
-//!   drives it through the `emit-object` binary and links the results
-//!   with the platform toolchains.
-//! - [`run_aot`] does the whole host-target cycle in a temporary
-//!   directory: emit the object, write the C entry program, link both
-//!   against the runtime static library with the host C compiler
-//!   (clang, §11), run the binary, and return the stdout bytes it
-//!   produced.
+//! The ship-tier C compile, link, and run support.
 //!
 //! # Entry program
 //!
-//! The linked program has no `main` of its own: the lowering exports
+//! The emitted program has no `main` of its own. It exports
 //! `subscript_init` (module-global initializer) and `subscript_export_<name>` for
 //! every exported script function. The C entry creates a Context
 //! through the runtime's host-driver entry points, calls `subscript_init` and
@@ -32,17 +15,12 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::str::FromStr;
 
-use cranelift_object::object::macho::PLATFORM_IOS;
-use cranelift_object::object::write::MachOBuildVersion;
-use cranelift_object::{ObjectBuilder, ObjectModule};
 use subscript_compiler::{check_program, Pos, SourceFile};
 use subscript_runtime::TrapKind;
-use target_lexicon::Triple;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
-use crate::lower::{aot_flags, internal, lower_module_with, LowerOptions};
+use crate::lower::internal;
 use crate::native::missing_symbol;
 use crate::NativeLibrary;
 
@@ -50,108 +28,20 @@ use crate::NativeLibrary;
 #[path = "../clang_resolver.rs"]
 mod clang_resolver;
 
-/// Mach-O build version `10.0.0`, nibble-packed as `xxxx.yy.zz`. Apple's
-/// linker rejects an iOS object with no `LC_BUILD_VERSION`, and
-/// `cranelift-object 0.125.4` does not stamp one
-/// (`specs/tracking/p0.5-mobile-link.md`).
-const MACHO_VERSION_10_0_0: u32 = 10 << 16;
-
 /// Environment variable naming a prebuilt runtime static library for
-/// [`run_aot`] to link against. When unset (the normal case, including
-/// the differential gate), `run_aot` looks for the archive next to the
+/// [`run_c_aot`] to link against. When unset, `run_c_aot` looks for the archive next to the
 /// current executable and builds `subscript-runtime` with the
 /// workspace's own cargo if it is missing or stale.
 ///
 /// It exists for a host-target link that must use an archive cargo did
-/// not just build. The device-triple links do not use it: they never
-/// call `run_aot`, and `codegen/device-link.sh` passes each
-/// cross-compiled archive to the platform linker directly.
+/// not just build. Device links pass each cross-compiled archive to the
+/// platform C compiler directly.
 pub const RUNTIME_STATICLIB_ENV: &str = "SUBSCRIPT_RUNTIME_STATICLIB";
 
-/// A relocatable object emitted for one target triple, with the trap
-/// position table the lowering built for it.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct AotObject {
-    /// Target triple the object was emitted for.
-    pub triple: String,
-    /// Object file bytes, ready to write and link.
-    pub bytes: Vec<u8>,
-    /// Trap position table: `pos_id` -> TS position.
-    pub positions: Vec<Pos>,
-    foreign_symbols: Vec<String>,
-}
-
-/// Checks `files` and emits a relocatable object for `triple`.
+/// The C entry program linked with each ship-tier build.
 ///
-/// Pass `None` for the host triple. The object defines `subscript_init` and
-/// one `subscript_export_<name>` per exported script function, and imports the
-/// runtime's `subscript_rt_*` symbols, which the link resolves from the
-/// runtime static library.
-///
-/// # Errors
-///
-/// [`RunError::Rejected`] when the checker rejects the program;
-/// [`RunError::Internal`] when the triple is unknown, unsupported by
-/// the pinned Cranelift, or the lowering fails.
-pub fn emit_object(files: &[SourceFile], triple: Option<&str>) -> Result<AotObject, RunError> {
-    let hir = check_program(files).map_err(RunError::Rejected)?;
-    let flags = aot_flags().map_err(RunError::Internal)?;
-
-    let (isa, triple_name, is_macho) = match triple {
-        Some(name) => {
-            let parsed = Triple::from_str(name)
-                .map_err(|e| RunError::Internal(internal(format!("target triple {name}: {e}"))))?;
-            let is_macho = parsed.operating_system.to_string().contains("ios")
-                || parsed.operating_system.to_string().contains("darwin");
-            let isa = cranelift_codegen::isa::lookup(parsed)
-                .map_err(|e| RunError::Internal(internal(format!("ISA for {name}: {e}"))))?
-                .finish(flags)
-                .map_err(|e| RunError::Internal(internal(format!("ISA flags: {e}"))))?;
-            (isa, name.to_string(), is_macho)
-        }
-        None => {
-            let builder = cranelift_native::builder()
-                .map_err(|e| RunError::Internal(internal(format!("host ISA: {e}"))))?;
-            let isa = builder
-                .finish(flags)
-                .map_err(|e| RunError::Internal(internal(format!("ISA flags: {e}"))))?;
-            let name = isa.triple().to_string();
-            (isa, name, false)
-        }
-    };
-
-    let builder = ObjectBuilder::new(isa, "subscript", cranelift_module::default_libcall_names())
-        .map_err(|e| RunError::Internal(internal(format!("object builder: {e}"))))?;
-    let mut module = ObjectModule::new(builder);
-    let lowered = lower_module_with(&mut module, &hir, LowerOptions::default())
-        .map_err(RunError::Internal)?;
-
-    let mut product = module.finish();
-    if is_macho && triple_name.contains("ios") {
-        let mut version = MachOBuildVersion::default();
-        version.platform = PLATFORM_IOS;
-        version.minos = MACHO_VERSION_10_0_0;
-        version.sdk = MACHO_VERSION_10_0_0;
-        product.object.set_macho_build_version(version);
-    }
-    let bytes = product
-        .emit()
-        .map_err(|e| RunError::Internal(internal(format!("emit object: {e}"))))?;
-    Ok(AotObject {
-        triple: triple_name,
-        bytes,
-        positions: lowered.positions,
-        foreign_symbols: lowered.foreign_symbols,
-    })
-}
-
-/// The C entry program linked with every AOT build, host or device.
-///
-/// It is the single definition of the entry: [`run_aot`] writes it into
-/// its temporary directory, and the device-triple link script writes it
-/// through the `emit-object` binary. It is generated output, never
-/// hand-edited in place.
+/// It is the single definition used by the host runner and emitted-C files.
+/// It is generated output. Do not edit a generated copy.
 pub const AOT_ENTRY_C: &str = concat!(
     include_str!("../../runtime/include/subscript_runtime.h"),
     r#"
@@ -166,7 +56,7 @@ pub const AOT_ENTRY_C: &str = concat!(
 #include <fcntl.h>
 #endif
 
-/* Generated by both object lowering and the C ship tier. */
+/* Generated by the C ship tier. */
 extern void subscript_kick_async_exports(subscript_rt_context *ctx);
 
 static void call_script_entry(subscript_rt_context *ctx, subscript_main_entry entry) {
@@ -397,10 +287,8 @@ fn runtime_staticlib() -> Result<PathBuf, RunError> {
 /// building it with the workspace's own cargo when it is missing or
 /// older than the runtime sources.
 ///
-/// [`run_aot`] uses it for its own link; it is public so that a host
-/// program which links an [`emit_object`] result with an entry of its
-/// own — the P4 benchmark harness is the one in-tree case — resolves
-/// the same archive the differential gate links.
+/// The ship-tier runner uses it for its link. It is public so that host
+/// programs resolve the same archive as the differential gate.
 /// [`RUNTIME_STATICLIB_ENV`] overrides it.
 ///
 /// # Errors
@@ -645,17 +533,6 @@ pub fn add_executable_output(command: &mut Command, executable: &Path, style: CC
     }
 }
 
-/// The object-file path for `stem` in `directory`, with the platform's
-/// object extension (`.obj` on windows-msvc, `.o` elsewhere).
-fn object_path(directory: &Path, stem: &str) -> PathBuf {
-    let extension = if cfg!(all(windows, target_env = "msvc")) {
-        "obj"
-    } else {
-        "o"
-    };
-    directory.join(format!("{stem}.{extension}"))
-}
-
 /// Windows system libraries required when linking the Rust runtime archive.
 pub const WINDOWS_SYSTEM_LIBRARIES: &[&str] =
     &["kernel32", "ntdll", "userenv", "ws2_32", "dbghelp"];
@@ -766,108 +643,14 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
         .map_err(|e| RunError::Internal(internal(format!("write {}: {e}", path.display()))))
 }
 
-/// Compiles, links, and runs `files` through the ship tier on the host
-/// target, returning the exact stdout bytes the program produced.
-///
-/// The whole cycle happens in a temporary directory that is removed
-/// before returning. Linking uses clang (resolved by
-/// [`host_c_compiler`], or `$CC`); its absence is a failure, never a
-/// skip — the differential gate machine is the development machine
-/// (`specs/blocks/compiler.md` §8.3).
-///
-/// # Errors
-///
-/// [`RunError::Rejected`] when the checker rejects the program,
-/// [`RunError::Trap`] when the linked program trapped (the trap is
-/// reported by the entry program and mapped back through the position
-/// table), [`RunError::UnresolvedForeignSymbol`] when the program calls a
-/// symbol but no native library was supplied,
-/// [`RunError::AbnormalTermination`] when the linked program ends outside
-/// the trap protocol, and [`RunError::Internal`] on emission, toolchain,
-/// link, or execution failures.
-pub fn run_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    run_aot_with_native_libraries(files, &[])
-}
-
-/// Compiles, links, and runs `files` through the retained Cranelift-object
-/// AOT cross-check with caller-supplied native libraries.
-///
-/// # Errors
-///
-/// Returns the same [`RunError`] variants as [`run_aot`], including
-/// [`RunError::UnresolvedForeignSymbol`] when a called foreign symbol is
-/// absent from `libraries`.
-pub fn run_aot_with_native_libraries(
-    files: &[SourceFile],
-    libraries: &[NativeLibrary],
-) -> Result<Vec<u8>, RunError> {
-    let object = emit_object(files, None)?;
-    require_native_symbols(&object.foreign_symbols, libraries)?;
-    let staticlib = runtime_staticlib()?;
-    let dir = TempDir::new("run")?;
-
-    let obj_path = object_path(&dir.path, "program");
-    let entry_path = dir.path.join("entry.c");
-    let exe_path = dir
-        .path
-        .join(format!("program{}", std::env::consts::EXE_SUFFIX));
-    write_file(&obj_path, &object.bytes)?;
-    write_file(&entry_path, AOT_ENTRY_C.as_bytes())?;
-
-    let cc = host_c_compiler()?;
-    let mut command = cc.command();
-    if cc.style().is_msvc() {
-        // The C entry is the only source compiled here; direct its
-        // object into the temp dir so `cl` does not litter the cwd.
-        add_c11_optimized_flags(&mut command, cc.style());
-        add_object_directory(&mut command, &dir.path, cc.style());
-    }
-    add_native_include_directories(&mut command, libraries, cc.style());
-    command.arg(&entry_path).arg(&obj_path);
-    add_native_link_inputs(&mut command, libraries);
-    command
-        .arg(&staticlib)
-        .args(runtime_system_libraries(cc.style()));
-    add_executable_output(&mut command, &exe_path, cc.style());
-    let link = command.output().map_err(|e| {
-        RunError::Internal(internal(format!(
-            "the platform C compiler `{}` could not be run: {e}; \
-                 install the host C toolchain or set $CC (compiler.md §11c)",
-            cc.program.to_string_lossy()
-        )))
-    })?;
-    if !link.status.success() {
-        return Err(RunError::Internal(internal(format!(
-            "link failed:\n{}",
-            tool_output_report(&link)
-        ))));
-    }
-
-    let run = Command::new(&exe_path)
-        .output()
-        .map_err(|e| RunError::Internal(internal(format!("run linked program: {e}"))))?;
-    if run.status.success() {
-        return Ok(run.stdout);
-    }
-    match parse_trap(&run.stderr, &object.positions, &run.stdout) {
-        Some(report) => Err(RunError::Trap(report)),
-        None => Err(RunError::AbnormalTermination(AbnormalTermination {
-            status: format!("linked program exited with {}", run.status),
-            stdout: run.stdout,
-            stderr: run.stderr,
-        })),
-    }
-}
-
 /// Compiles, links, and runs `files` through the **ship tier** (§11) on
 /// the host target, returning the exact stdout bytes the program
 /// produced.
 ///
 /// The ship tier emits C ([`crate::emit_c`]), which the platform C
 /// compiler compiles at `-O2 -ffp-contract=off` and links with the
-/// runtime static library and the same host entry [`AOT_ENTRY_C`] the
-/// Cranelift AOT path uses — the emitted C exports the identical
-/// `subscript_init` / `subscript_export_main` surface, so it is a drop-in subject.
+/// runtime static library and host entry [`AOT_ENTRY_C`]. The emitted C
+/// exports `subscript_init` and `subscript_export_main`.
 /// The whole cycle happens in a temporary directory removed before
 /// returning. The C compiler's absence is a failure, never a skip (the
 /// gate machine is the development machine, §8.3).
@@ -1135,8 +918,8 @@ fn run_c_aot_configured(
 }
 
 /// Parses the entry program's `trap <kind> <pos_id> <message>` line
-/// back into a report, resolving the position through the table the
-/// lowering produced for this object.
+/// back into a report, resolving the position through the emitted C
+/// position table.
 fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapReport> {
     let text = std::str::from_utf8(stderr).ok()?;
     let line = text.lines().find(|l| l.starts_with("trap "))?;
@@ -1159,7 +942,6 @@ fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapRep
 #[cfg(test)]
 mod tests {
     use super::*;
-    use object::{Architecture, BinaryFormat, Object, ObjectSymbol};
 
     fn sources(src: &str) -> Vec<SourceFile> {
         vec![SourceFile::new("test.ts", src)]
@@ -1719,123 +1501,6 @@ int main(void) {
         )
     }
 
-    /// Asserts the shape every emitted object must have: the right
-    /// format and architecture, `subscript_export_main` and `subscript_init` defined
-    /// and global, and the runtime reached only as undefined imports.
-    /// Mach-O global names carry a `_` prefix.
-    fn assert_object_shape(bytes: &[u8], format: BinaryFormat, arch: Architecture) {
-        let file = object::File::parse(bytes).expect("object file must parse");
-        assert_eq!(file.format(), format);
-        assert_eq!(file.architecture(), arch);
-        let prefix = if format == BinaryFormat::MachO {
-            "_"
-        } else {
-            ""
-        };
-        for name in ["subscript_export_main", "subscript_init"] {
-            let sym = file
-                .symbols()
-                .find(|s| s.name() == Ok(format!("{prefix}{name}").as_str()))
-                .unwrap_or_else(|| panic!("{name} must be present"));
-            assert!(sym.is_definition(), "{name} must be defined");
-            assert!(sym.is_global(), "{name} must be global");
-        }
-        let print = file
-            .symbols()
-            .find(|s| s.name() == Ok(format!("{prefix}subscript_rt_print").as_str()))
-            .expect("subscript_rt_print must be referenced");
-        assert!(print.is_undefined(), "the runtime is resolved at link time");
-    }
-
-    /// The object format the host target must produce.
-    const HOST_FORMAT: BinaryFormat = if cfg!(target_os = "macos") {
-        BinaryFormat::MachO
-    } else if cfg!(target_os = "windows") {
-        BinaryFormat::Coff
-    } else {
-        BinaryFormat::Elf
-    };
-
-    /// The architecture the host target must produce.
-    const HOST_ARCH: Architecture = if cfg!(target_arch = "aarch64") {
-        Architecture::Aarch64
-    } else {
-        Architecture::X86_64
-    };
-
-    #[test]
-    fn host_object_defines_the_exported_entries_and_imports_the_runtime() {
-        let obj = emit_object(
-            &sources("export function main(): void {\n  print(\"hi\");\n}\n"),
-            None,
-        )
-        .expect("emit host object");
-        assert!(!obj.triple.is_empty());
-        // Expected format and architecture are stated, not read back
-        // out of the object under test.
-        assert_object_shape(&obj.bytes, HOST_FORMAT, HOST_ARCH);
-    }
-
-    #[test]
-    fn ship_target_triples_emit_objects_for_the_real_lowering() {
-        let src = "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < xs.length; i += 1) {\n    total += xs[i];\n  }\n  print(`${total}`);\n}\n";
-        for (triple, format, architecture) in [
-            (
-                "aarch64-apple-ios",
-                BinaryFormat::MachO,
-                Architecture::Aarch64,
-            ),
-            (
-                "aarch64-linux-android",
-                BinaryFormat::Elf,
-                Architecture::Aarch64,
-            ),
-            (
-                "x86_64-unknown-linux-gnu",
-                BinaryFormat::Elf,
-                Architecture::X86_64,
-            ),
-            (
-                "aarch64-apple-darwin",
-                BinaryFormat::MachO,
-                Architecture::Aarch64,
-            ),
-            (
-                "x86_64-pc-windows-msvc",
-                BinaryFormat::Coff,
-                Architecture::X86_64,
-            ),
-        ] {
-            let obj = emit_object(&sources(src), Some(triple)).expect("emit ship-target object");
-            assert_eq!(obj.triple, triple);
-            assert_object_shape(&obj.bytes, format, architecture);
-        }
-    }
-
-    #[test]
-    fn unknown_triple_is_an_internal_error_not_a_panic() {
-        let err = emit_object(
-            &sources("export function main(): void {}\n"),
-            Some("nonsense"),
-        );
-        assert!(matches!(err, Err(RunError::Internal(_))));
-    }
-
-    #[test]
-    fn rejected_program_never_reaches_the_backend() {
-        let err = emit_object(&sources("const x: number = 1;\n"), None);
-        assert!(matches!(err, Err(RunError::Rejected(_))));
-    }
-
-    #[test]
-    fn aot_runs_the_program_and_captures_the_sink_bytes() {
-        let out = run_aot(&sources(
-            "export function main(): void {\n  const a: i32 = 6;\n  print(`${a * 7}`);\n}\n",
-        ))
-        .expect("aot run");
-        assert_eq!(out, b"42\n");
-    }
-
     #[test]
     fn ship_c_host_trap_observer_and_clear_api_preserve_unwind_semantics() {
         let program = sources(
@@ -2330,21 +1995,6 @@ int main(void) {
             eprintln!("{id}: object allocation requests dev={dev}, ship={ship}");
             assert_eq!(dev, expected, "{id}: dev exact allocation count changed");
             assert_eq!(ship, expected, "{id}: ship exact allocation count changed");
-        }
-    }
-
-    #[test]
-    fn aot_reports_a_trap_with_its_rule_and_position() {
-        let err = run_aot(&sources(
-            "export function main(): void {\n  const xs: i32[] = [1];\n  print(`${xs[4]}`);\n}\n",
-        ));
-        match err {
-            Err(RunError::Trap(t)) => {
-                assert_eq!(t.rule, TrapKind::IndexOutOfBounds);
-                assert_eq!(t.pos.file, "test.ts");
-                assert_eq!(t.pos.line, 3);
-            }
-            other => panic!("expected a trap, got {other:?}"),
         }
     }
 
