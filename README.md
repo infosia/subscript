@@ -39,14 +39,19 @@ control step in an embedded system — who want:
 
 - **Fast iteration** — a hot-reload development tier (edit a function
   body, see it swap at the next loop boundary) without giving up native
-  performance when shipping.
+  performance when shipping. A changed function body reaches a running
+  program in **0.30 ms**, and a changed whole program in **3.3 ms**; the
+  shipping tier needs **118 ms** to check, emit C, compile, and link the
+  same program.
 - **Native ship performance** — the shipping tier compiles to a native
-  binary that, on the project's matrix-propagation benchmark, runs within
-  **≈5% of an equivalent hand-written C program** (measured 1.05× of
-  `clang -O2`). The shipping tier emits C and hands it to the platform C
-  compiler (LLVM/clang), so it inherits that compiler's optimization; the
-  small gap is the cost of the language's memory-safety semantics over
-  hand-tuned C.
+  binary. On the project's matrix-propagation gate it runs at **1.35× of
+  an equivalent hand-written C program** (`clang -O2`, same machine, same
+  session); on compute-bound benchmark workloads it reaches **1.00×**. The
+  shipping tier emits C and hands it to the platform C compiler
+  (LLVM/clang), so it inherits that compiler's optimization; the gap is
+  what the language's safety semantics cost over hand-tuned C — a bounds
+  check per element access, an overflow and divide check, an allocation
+  header.
 - **Editor tooling with no custom plugin** — the syntax is a subset of
   TypeScript, so `tsserver` (completion, go-to-definition, inline errors)
   works unmodified against an ambient `.d.ts` prelude. Note that
@@ -207,24 +212,28 @@ behaviour is defined by that corpus, not by either backend.
 
 ## Performance
 
-Eight sqrt-free numeric workloads, each implemented identically in every
-language and producing the same integer checksum (the benchmark refuses to
-report a workload unless all subjects agree — same computation, verified).
-Ratios are to a hand-written C baseline; **lower is better**, C = 1.00×.
-Apple M2, one machine, median of 21 timed runs after 20 warm-ups. Full
-table with absolute times, methodology, and machine/runtime versions is in
-[`benchmarks/`](benchmarks/README.md).
+Ten workloads, each implemented identically in every language and producing
+the same integer checksum (the benchmark refuses to report a workload
+unless all subjects agree — same computation, verified). Ratios are to a
+hand-written C baseline; **lower is better**, C = 1.00×. One arm64 macOS
+machine, one session. Every subject discards warm-up runs until measured
+execution passes a 200 ms floor (at least three), then reports the median
+of 11 timed runs; a subject whose samples spread wider than ±20% is
+withheld as noise. Full table with absolute times, methodology, and
+machine/runtime versions is in [`benchmarks/`](benchmarks/README.md).
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
-| mandelbrot | 1.00× | **1.00×** | 1.05× | 2.78× | 1.00× | 1.01× |
-| queen | 1.00× | **0.99×** | 1.48× | 1.54× | 1.23× | 1.76× |
-| primes | 1.00× | **0.96×** | 1.44× | 2.06× | 0.92× | 1.69× |
-| fib-recursive | 1.00× | 0.99× | 1.67× | 1.49× | 1.14× | 2.02× |
-| fib-loop | 1.00× | 1.02× | 2.01× | 1.50× | 1.09× | 1.58× |
-| tree | 1.00× | 1.37× | 10.42× | 2.20× | 0.33× | 0.47× |
-| sort | 1.00× | 1.77× | 3.70× | 2.28× | 1.45× | 1.83× |
-| particles | 1.00× | 3.07× | 10.35× | 3.84× | 1.90× | 3.58× |
+| mandelbrot | 1.00× | **1.00×** | 1.04× | 2.78× | 1.00× | 1.01× |
+| fib-recursive | 1.00× | **1.00×** | 2.17× | 1.87× | 1.49× | 2.63× |
+| primes | 1.00× | **1.00×** | 1.47× | 2.10× | 0.92× | 1.71× |
+| fib-loop | 1.00× | 1.03× | 2.41× | 1.48× | 1.09× | 1.58× |
+| queen | 1.00× | 1.09× | 1.51× | 1.36× | 1.23× | 1.76× |
+| sort | 1.00× | 1.24× | 2.33× | 2.29× | 1.45× | 1.83× |
+| tree | 1.00× | 1.54× | 6.20× | 2.19× | 0.32× | 0.47× |
+| particles | 1.00× | 2.12× | 12.75× | 3.93× | 1.95× | 3.67× |
+| collect | 1.00× | 6.45× | 7.04× | 3.68× | 1.04× | 2.60× |
+| callbacks | 1.00× | 22.95× | 26.35× | 9.58× | 5.25× | 29.76× |
 
 For what the language looks like at these speeds — ten commented programs,
 a C host facade, and a C host that owns the loop — see
@@ -233,31 +242,59 @@ a C host facade, and a C host that owns the loop — see
 What the numbers show:
 
 - **On compute-bound work the shipping tier reaches hand-written C** —
-  mandelbrot and queen at 1.00×, primes at 0.97×, the fibonacci loops
-  within a few percent. The shipping tier *is* the emitted C compiled by
-  the same `clang -O2`, and pure-numeric code has no array bounds checks to
-  pay for, so it lands on C.
-- **The cost is value-copy and checked array traffic** — `particles`
-  (value-struct arrays) at 3×, `sort` (bounds-checked growable arrays) at
-  1.8×, `tree` (per-node allocate/free through the Context's size-class
-  arena) at 1.4×. These are the language's real costs — value-copy
-  semantics, an emitted bounds check per element, a 16-byte allocation
-  header — not a measurement artifact.
-- **Against the JITs**, the shipping tier is at or ahead of LuaJIT on
-  every row and level with JSC/V8 on the compute-bound rows; JSC leads on
-  `sort` and `particles`, and JSC/V8 lead on `tree`, where
-  garbage-collected bump allocation beats even C. The
-  development-tier JIT (Cranelift, tuned for compile speed and hot reload,
-  not peak codegen) is uniformly slower — the price of the
-  fast-iteration tier.
+  mandelbrot, fib-recursive, and primes at 1.00×, fib-loop at 1.03×, queen
+  at 1.09×. The shipping tier *is* the emitted C compiled by the same
+  `clang -O2`, and pure-numeric code has almost no array traffic to check.
+- **The cost is checked memory traffic and value copies** — `sort`
+  (bounds-checked growable arrays) at 1.24×, `tree` (per-node allocate and
+  free through the Context's size-class arena) at 1.54×, `particles`
+  (value-struct arrays) at 2.12×. These are the language's real costs — an
+  emitted bounds check per element, value-copy semantics, a 16-byte
+  allocation header — not a measurement artifact.
+- **Two rows are the language's weak ones, and they say what they cost.**
+  `collect` (6.45×) allocates 20000 string-owning nodes per round, drops
+  one quarter of them, and reclaims those through an explicit collection;
+  the generational collectors beat it (JSC 1.04×, V8 2.60×), because a
+  size-class arena that frees each object individually is not a
+  bump-and-sweep nursery. `callbacks` (22.95×) runs `map`/`filter`/`reduce`
+  over a 1000000-element array 20 times; the C baseline reuses three
+  buffers it allocates once, while the callback spelling allocates a new
+  array per stage, and every runtime pays for it (V8 29.76×, LuaJIT
+  9.58×). Neither row is a codegen defect; both are what the idiom costs
+  against C that does not use it.
+- **Against the JITs**, the shipping tier is at or ahead of LuaJIT on every
+  row except `collect` and `callbacks`, and level with JSC/V8 on the
+  compute-bound rows. JSC leads on `particles`, `collect`, and `callbacks`,
+  and JSC/V8 lead on `tree`, where garbage-collected bump allocation beats
+  even C.
+- **The development tier trades execution speed for iteration speed** —
+  the Cranelift JIT is tuned for compile speed and hot reload, not peak
+  codegen, and runs 1.04×–26.35×. That is the trade the tier exists to
+  make; the next section measures the side it is paid on.
+
+### Iteration speed
+
+Time from a changed source to a running program, on the same
+matrix-propagation gate, median of 11 timed runs:
+
+| What changed | Development tier | Shipping tier |
+|---|---|---|
+| one function body (hot reload) | **0.295 ms** | — |
+| the whole program | **3.267 ms** | 117.7 ms (3.7 ms check and emit C, 114.0 ms `cc` compile and link) |
+
+The development tier reaches a running program **36× faster** than the
+shipping tier, and a hot reload of one function is **400× faster**. On the
+same gate the shipping tier executes at 1.35× of C and the development
+tier at 19.6×. All four figures are gated: `specs/blocks/compiler.md` §3
+requires the shipping tier within 1.5× of C, either kind of iteration
+within 20 ms, and development-tier execution below a 25× ceiling.
 
 This is one benchmark set on one machine; treat the ratios as indicative,
-not a leaderboard. The table above is the arm64 / Apple M2 snapshot (the
-shipping target). A x86_64 / Windows snapshot — four subjects, since LuaJIT
-and JSC are not built there — is in
+not a leaderboard. The table above is the arm64 / macOS snapshot (the
+shipping target), captured 2026-08-27. An older x86_64 / Windows snapshot
+(2026-07-24) — four subjects, since LuaJIT and JSC are not built there — is
+in
 [`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md).
-Re-run either yourself with
-`cargo run --release -p subscript-benchmarks --bin cross-language`.
 
 ## How it works
 

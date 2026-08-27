@@ -92,7 +92,9 @@ commit.
 subscript builds its own compiler and runtime. **Dev tier:** Cranelift JIT
 with hot reload. **Ship tier:** C emission handed to the platform C
 compiler — adopted at P4 on measured evidence (Cranelift AOT was 23× a
-hand-written C baseline; emitted C is 1.05×), superseding the original
+hand-written C baseline; emitted C was 1.05× on an emitter that did no
+trap checking, and measures 1.35× with the checks the language requires —
+`specs/tracking/p19-trap-parity.md`), superseding the original
 Cranelift-AOT ship tier (`specs/blocks/compiler.md` §11; plan §8 Rev 2).
 
 *(Owner, 2026-08-27: the Cranelift AOT tier is **deleted**.)* It was
