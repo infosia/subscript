@@ -2,7 +2,7 @@
 // purpose: Exercises deterministic foreign polling from an async instance method.
 // exercises: async-instance-method, foreign-poll, receiver-state, Context.suspend
 // questions: R13, Q34, Q1, C8
-
+// tsc: accepts
 class DevicePoller {
   attempt: i32 = 0;
 

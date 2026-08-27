@@ -2,8 +2,8 @@
 // purpose: Rejects the Promise object combinator surface.
 // exercises: Promise.then, async-call-value
 // questions: Q34, C8
+// tsc: accepts
 // expected-error: S013 at the `.then` call
-
 async function leaf(): Promise<i32> {
   return 1;
 }

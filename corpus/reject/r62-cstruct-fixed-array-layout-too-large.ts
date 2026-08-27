@@ -2,8 +2,8 @@
 // purpose: Rejects a CStruct field whose FixedArray exceeds the aggregate byte limit.
 // exercises: CStruct layout, FixedArray byte size
 // questions: Q3
+// tsc: rejects TS2564
 // expected-error: S100 at the FixedArray type
-
 @CStruct
 class Big {
   data: FixedArray<u8, 4294967295>;

@@ -2,7 +2,7 @@
 // purpose: Sums an f32 slice whose boundary lowers to a pointer-length pair.
 // exercises: slice-parameter, pointer-length-lowering, tight-loop
 // questions: Q1, Q4, Q12
-
+// tsc: accepts
 function sum(values: f32[]): f32 {
   let total: f32 = 0.0;
   for (let index: i32 = 0; index < values.length; index += 1) {

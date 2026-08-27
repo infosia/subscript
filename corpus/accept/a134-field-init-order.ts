@@ -2,7 +2,7 @@
 // purpose: Orders constructor arguments before field initializers and the constructor body.
 // exercises: field-initializer, constructor-argument-order, initializer-side-effect
 // questions: §57, R27
-
+// tsc: accepts
 function initValue(): i32 {
   print("init runs");
   return 17;

@@ -3,7 +3,7 @@
 // observable: each accepted subject prints its values in the contracted order.
 // exercises: for-of, arrays, fixed-arrays, map-keys, set-order, unicode-code-points
 // questions: Q30
-
+// tsc: accepts
 export function main(): void {
   const array: i32[] = [1, 2, 3];
   for (const value of array) {

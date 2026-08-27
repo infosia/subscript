@@ -2,7 +2,7 @@
 // purpose: Pins two workers computing disjoint chunks with parent-observed worker-order output.
 // exercises: two-workers, concurrent-computation, ordered-parent-aggregation
 // questions: Q35
-
+// tsc: accepts
 class RangeMessage {
   start: i32;
   end: i32;

@@ -2,8 +2,8 @@
 // purpose: Rejects reading this from a field initializer.
 // exercises: field-initializer, this-binding
 // questions: §57, R27
+// tsc: accepts
 // expected-error: `this` is only available in constructors and methods
-
 class InvalidInitializer {
   tag: i32 = 2;
   value: i32 = this.tag + 1;

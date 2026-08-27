@@ -2,8 +2,8 @@
 // purpose: Rejects JSON.parse without a static target type.
 // exercises: JSON, typed parse, contextual typing
 // questions: Q28
+// tsc: accepts
 // expected-error: S014 at the parse member
-
 export function main(): void {
   JSON.parse("{}");
 }

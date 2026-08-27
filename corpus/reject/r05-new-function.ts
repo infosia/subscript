@@ -2,8 +2,8 @@
 // purpose: Rejects dynamic function construction.
 // exercises: rejected-new-function
 // questions: none
+// tsc: accepts
 // expected-error: no dynamic code evaluation
-
 export function main(): void {
   const build = new Function("print('dynamic')");
 }

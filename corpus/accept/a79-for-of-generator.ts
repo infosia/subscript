@@ -3,7 +3,7 @@
 // observable: for-of and hand-written next() print the same sequence.
 // exercises: for-of-generator, coroutine-next, iterator-result
 // questions: Q30, Q11
-
+// tsc: accepts
 function* values(): Generator<i32> {
   yield 3;
   yield 5;

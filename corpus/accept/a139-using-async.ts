@@ -2,7 +2,7 @@
 // purpose: Keeps a disposable binding live across one suspension.
 // exercises: using-declaration, symbol-dispose, async-function, direct-await
 // questions: §60, R31
-
+// tsc: accepts
 class AsyncResource {
   [Symbol.dispose](): void {
     print("dispose:async");

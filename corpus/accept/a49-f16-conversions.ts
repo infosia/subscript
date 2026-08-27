@@ -2,7 +2,7 @@
 // purpose: Pins IEEE binary16 narrowing and widening at representable, rounded, overflow, subnormal, NaN, and signed-zero cases.
 // exercises: f16-storage, explicit-conversion, ieee-binary16, q14-formatting
 // questions: Q14, Q23, C3, C4
-
+// tsc: accepts
 export function main(): void {
   const representable: f16 = (1.5 as f64) as f16;
   const rounded: f16 = (1.0006 as f64) as f16;

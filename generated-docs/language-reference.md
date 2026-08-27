@@ -19,12 +19,13 @@ Pinned corpus: [`corpus/reject/r01-any.ts`](../corpus/reject/r01-any.ts), line 7
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: any is not part of the language
 ```
 
 ```ts
+// tsc: accepts
 // expected-error: any is not part of the language
-
 const value: any = 1;
 
 export function main(): void {
@@ -39,11 +40,12 @@ Pinned corpus: [`corpus/reject/r02-eval.ts`](../corpus/reject/r02-eval.ts), line
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: no dynamic code evaluation
 ```
 
 ```ts
-
+// expected-error: no dynamic code evaluation
 export function main(): void {
   eval("print('dynamic')");
 }
@@ -58,6 +60,7 @@ Pinned corpus: [`corpus/reject/r03-prototype-mutation.ts`](../corpus/reject/r03-
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: no prototype mutation
 ```
 
@@ -78,6 +81,7 @@ Pinned corpus: [`corpus/reject/r04-undeclared-property.ts`](../corpus/reject/r04
 Header guidance:
 
 ```text
+// tsc: rejects TS2339
 // expected-error: nominal types are closed
 ```
 
@@ -98,6 +102,7 @@ Pinned corpus: [`corpus/reject/r06-structural-substitution.ts`](../corpus/reject
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: nominal types are not interchangeable
 ```
 
@@ -118,6 +123,7 @@ Pinned corpus: [`corpus/reject/r07-value-class-extends.ts`](../corpus/reject/r07
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: value classes do not inherit
 ```
 
@@ -138,12 +144,13 @@ Pinned corpus: [`corpus/reject/r08-bare-number.ts`](../corpus/reject/r08-bare-nu
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: no default numeric type; use a sized type
 ```
 
 ```ts
+// tsc: accepts
 // expected-error: no default numeric type; use a sized type
-
 const count: number = 3;
 
 export function main(): void {
@@ -158,12 +165,13 @@ Pinned corpus: [`corpus/reject/r09-int-literal-overflow.ts`](../corpus/reject/r0
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: literal out of range for i32
 ```
 
 ```ts
+// tsc: accepts
 // expected-error: literal out of range for i32
-
 const big: i32 = 3000000000;
 
 export function main(): void {
@@ -178,6 +186,7 @@ Pinned corpus: [`corpus/reject/r10-escaping-capture.ts`](../corpus/reject/r10-es
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: capturing lambdas may not escape
 ```
 
@@ -198,11 +207,12 @@ Pinned corpus: [`corpus/reject/r11-throw.ts`](../corpus/reject/r11-throw.ts), li
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: exceptions are not in the language
 ```
 
 ```ts
-
+// expected-error: exceptions are not in the language
 function fail(): void {
   throw "failure";
 }
@@ -218,11 +228,12 @@ Pinned corpus: [`corpus/reject/r12-general-union.ts`](../corpus/reject/r12-gener
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: unions are limited to T | null
 ```
 
 ```ts
-
+// expected-error: unions are limited to T | null
 class Choice {
   value: i32 | string;
 
@@ -238,12 +249,13 @@ Pinned corpus: [`corpus/reject/r13-undefined.ts`](../corpus/reject/r13-undefined
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: single null story: use null
 ```
 
 ```ts
+// tsc: accepts
 // expected-error: single null story: use null
-
 let maybe: i32 | undefined = undefined;
 
 export function main(): void {
@@ -258,11 +270,12 @@ Pinned corpus: [`corpus/reject/r96-new-promise.ts`](../corpus/reject/r96-new-pro
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: S013 at the `new Promise` expression
 ```
 
 ```ts
-
+// expected-error: S013 at the `new Promise` expression
 export function main(): void {
   const pending = new Promise<i32>((resolve) => resolve(1));
   print(`${pending}`);
@@ -278,11 +291,12 @@ Pinned corpus: [`corpus/reject/r16-math-variadic-max.ts`](../corpus/reject/r16-m
 Header guidance:
 
 ```text
+// tsc: accepts
 // expected-error: Math.max takes exactly two arguments
 ```
 
 ```ts
-
+// expected-error: Math.max takes exactly two arguments
 export function main(): void {
   print(`${Math.max(1, 2, 3)}`);
 }
@@ -297,6 +311,7 @@ Pinned corpus: [`corpus/reject/r62-cstruct-fixed-array-layout-too-large.ts`](../
 Header guidance:
 
 ```text
+// tsc: rejects TS2564
 // expected-error: S100 at the FixedArray type
 ```
 

@@ -2,7 +2,7 @@
 // purpose: Reads an extension payload through its embedded chain header.
 // exercises: interop-chain, embedded-header-address, payload-read, foreign-call
 // questions: Q13, Q16, compiler.md §23.7a
-
+// tsc: accepts
 export function main(): void {
   const extension: SubChainExtA = new SubChainExtA(
     new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_EXT_A, null),

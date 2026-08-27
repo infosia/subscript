@@ -2,7 +2,7 @@
 // purpose: Rejects a compound assignment through an accessor.
 // exercises: accessor-compound-assignment
 // questions: R37
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts accessor compound assignment.
+// tsc: accepts
 // expected-error: S100 at the compound assignment
 
 class Value {

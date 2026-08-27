@@ -2,7 +2,7 @@
 // purpose: Represents and checks a fallible operation with a result value.
 // exercises: result-value, checked-error, no-throw
 // questions: Q1, Q2, Q9, Q12
-
+// tsc: accepts
 @CStruct
 class DivisionResult {
   ok: boolean;

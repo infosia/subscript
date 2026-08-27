@@ -4,8 +4,8 @@
 //          with toISOString().
 // exercises: rejected-date-subset, date-intrinsics, q14-formatting
 // questions: Q20
+// tsc: accepts
 // expected-error: a Date cannot be interpolated; use toISOString()
-
 export function main(): void {
   const d: Date = new Date(0);
   print(`now: ${d}`);

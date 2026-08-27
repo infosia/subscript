@@ -2,7 +2,7 @@
 // purpose: Proves that host-owned state spans two separate script entry calls.
 // exercises: ship-host-hooks, borrowed-opaque-handle, sync-and-async-entries
 // questions: R21, Q1, C8
-
+// tsc: accepts
 let borrowed: SubHostOwnedState | null = null;
 
 export function main(): void {

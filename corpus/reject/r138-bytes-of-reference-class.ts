@@ -2,7 +2,8 @@
 // purpose: Rejects storage-byte access for a reference class.
 // exercises: Context.bytesOf, reference-class-rejection
 // questions: R34
-
+// tsc: accepts
+// expected-error: S100 at the bytesOf member
 class Node {
   value: i32 = 0;
 }

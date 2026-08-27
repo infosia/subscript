@@ -3,7 +3,7 @@
 //          callbacks mutate their parameter or overwrite the visited entry.
 // exercises: map-foreach, value-class-copy, fixed-array-copy, callback-abi
 // questions: Q24, C2, C5
-
+// tsc: accepts
 @CStruct
 class V3 {
   x: i32;

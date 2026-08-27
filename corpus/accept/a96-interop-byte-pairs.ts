@@ -2,7 +2,7 @@
 // purpose: Passes scalar arrays through adjacent count/pointer C parameters in const-input and mutable-fill directions.
 // exercises: scalar-parameter-pair, zero-copy-slice, out-array, u8, u16, foreign-call
 // questions: Q13, C4
-
+// tsc: accepts
 // compiler.md §27. The mirror collapses each adjacent
 // `size_t dataCount, [const] S* data` pair to one `S[]` parameter. The
 // consumer receives the input array's pointer and length. Each filler gets

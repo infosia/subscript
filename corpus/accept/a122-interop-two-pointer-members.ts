@@ -2,7 +2,7 @@
 // purpose: Pins independent scratch storage for two simultaneously-present reach-through pointer members separated by a varying by-value aggregate.
 // exercises: recursive-boundary-lowering, two-reach-through-pointers, nested-aggregate, array-pair, sibling-independent-scratch
 // questions: Q13, C4, C7
-
+// tsc: accepts
 function report(
   name: string,
   descriptor: SGPUProbeBreadthRenderPipelineDescriptor,

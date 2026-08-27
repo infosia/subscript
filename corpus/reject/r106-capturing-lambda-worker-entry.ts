@@ -2,7 +2,7 @@
 // purpose: Rejects a capturing lambda where Worker.spawn requires a directly named module function.
 // exercises: Worker.spawn, capturing-lambda-entry, direct-entry-affinity
 // questions: Q35, C5
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts the capturing callback.
+// tsc: accepts
 // expected-error: S100 at the capturing lambda passed to Worker.spawn
 
 class Message {

@@ -2,7 +2,7 @@
 // purpose: Pins standard-runner async-export kick and poll ordering.
 // exercises: sync-main, two-async-roots, kick-order, pump-to-quiescence
 // questions: Q34, C8
-
+// tsc: accepts
 export function main(): void {
   print("main:sync");
 }

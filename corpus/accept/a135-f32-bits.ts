@@ -2,7 +2,7 @@
 // purpose: Reads and writes binary32 bit patterns through Math.
 // exercises: math-f32-to-bits, math-f32-from-bits, canonical-nan
 // questions: §17, R28
-
+// tsc: accepts
 export function main(): void {
   print(`one ${Math.f32ToBits(1)}`);
 

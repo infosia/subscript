@@ -2,8 +2,8 @@
 // purpose: Rejects a CEnum wire value outside the i32 range.
 // exercises: CEnum, i32-wire-range
 // questions: R23
-// tsc-clean-standalone: stock TypeScript accepts this numeric literal type.
-
+// tsc: accepts
+// expected-error: S100 at the out-of-range wire value
 type WideWire = CEnum<{
   "m0": 2147483648;
 }>;

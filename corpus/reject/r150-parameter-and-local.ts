@@ -2,8 +2,8 @@
 // purpose: Rejects a body local that duplicates a function parameter.
 // exercises: function-body-scope, duplicate-declaration
 // questions: §67
+// tsc: rejects TS2300
 // expected-error: S100 at the body-local declaration
-
 function select(value: i32): i32 {
   const value: i32 = 7;
   return value;

@@ -2,7 +2,7 @@
 // purpose: Lowers a pipeline-layout-shaped string label and collapsed opaque-handle pair from script to C with pointer identity preserved.
 // exercises: opaque-handle-array, struct-handle-pair, string-view-field, c-layout-scratch, zero-copy-slice, pointer-identity
 // questions: Q13, C4
-
+// tsc: accepts
 // compiler.md §31.1. The repeated first handle gives deterministic identity
 // evidence without relying on process-global fixture state.
 

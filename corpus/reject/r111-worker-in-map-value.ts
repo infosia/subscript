@@ -2,7 +2,7 @@
 // purpose: Rejects a Context-affine Worker used as a module-global Map value type.
 // exercises: Worker, Map-value, module-global-affinity
 // questions: Q35
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts Worker as a Map value type.
+// tsc: accepts
 // expected-error: S100 at the Worker Map value type argument
 
 class Message {

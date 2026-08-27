@@ -2,7 +2,7 @@
 // purpose: Combines flag-typedef members with | (Q18) and passes the combined u64 to a foreign bit test.
 // exercises: interop-flags, flag-typedef, u64-bitwise, foreign-call
 // questions: Q13, Q18
-
+// tsc: accepts
 // A flag typedef `SubAccess` (= u64) with `static const` members, mapped by
 // bindgen to a `u64` alias plus folded `declare const` values whose bits
 // come from the C header (compiler.md §13.2). The members combine with `|`

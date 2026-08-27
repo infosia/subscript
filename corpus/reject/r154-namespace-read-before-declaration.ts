@@ -2,7 +2,7 @@
 // purpose: Rejects an ambient namespace read before a local declaration owns the name.
 // exercises: block-scope, ambient-namespace, read-before-declaration
 // questions: §67
-// tsc-status: stock TypeScript reports TS2339, TS2448, and TS2454 for Math.
+// tsc: rejects TS2339, TS2448, TS2454
 // expected-error: S100 at the Math read
 
 export function main(): void {

@@ -2,7 +2,7 @@
 // purpose: Exercises integer-dispatched switch statements over a closed Q32 alias.
 // exercises: string-literal-union, exhaustive-switch, default-subset, integer-dispatch
 // questions: Q32, R14
-
+// tsc: accepts
 type Phase = "queued" | "running" | "done";
 
 function exhaustive(phase: Phase): i32 {

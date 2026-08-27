@@ -2,7 +2,7 @@
 // purpose: Rejects a Q32 switch label outside the alias member set.
 // exercises: string-literal-union, switch-case, closed-member-set
 // questions: Q32, R14
-// tsc-status: stock TypeScript also rejects the non-member label with TS2678; this is not a tsc-clean pin.
+// tsc: rejects TS2678
 // expected-error: S100 at the non-member case label
 
 type Phase = "queued" | "running" | "done";

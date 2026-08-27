@@ -2,7 +2,7 @@
 // purpose: Gives conditional arms the same null narrowing as if branches for references, handles, and converted boundary aggregates.
 // exercises: conditional-expression, flow-narrowing, nullable-reference, nullable-handle, nullable-boundary-aggregate, branch-order
 // questions: R19, R18, C7, Q13
-
+// tsc: accepts
 class ReferenceValue {
   value: u32;
 

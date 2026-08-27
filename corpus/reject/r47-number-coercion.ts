@@ -2,8 +2,8 @@
 // purpose: Rejects Number(x) coercion; explicit `as` is the conversion.
 // exercises: rejected-number-coercion
 // questions: Q25
+// tsc: accepts
 // expected-error: Number(x) coercion is rejected
-
 export function main(): void {
   const value: f64 = Number("1");
   print(`${value}`);

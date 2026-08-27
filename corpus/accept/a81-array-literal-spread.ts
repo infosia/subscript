@@ -3,7 +3,7 @@
 // observable: fresh arrays preserve prefix/suffix and fused traversal order.
 // exercises: array-spread, multi-spread, fixed-array, map-keys, set, unicode-string
 // questions: Q30
-
+// tsc: accepts
 export function main(): void {
   const xs: i32[] = [1, 2];
   const ys: i32[] = [3, 4];

@@ -2,8 +2,8 @@
 // purpose: Rejects a descriptor literal missing a required member.
 // exercises: descriptor-literal, required-member
 // questions: Q33
+// tsc: rejects TS2741
 // expected-error: S100 at the constructing literal
-
 @Descriptor
 class RequiredDescriptor {
   value!: i32;

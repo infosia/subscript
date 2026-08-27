@@ -2,7 +2,7 @@
 // purpose: Rejects a write to a local that a different switch case declares.
 // exercises: switch-body-scope, cross-case-write
 // questions: §67
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts the cross-case assignment, but node reports a temporal-dead-zone ReferenceError.
+// tsc: accepts
 // expected-error: S100 at the cross-case write
 
 export function main(): void {

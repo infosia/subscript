@@ -2,7 +2,7 @@
 // purpose: Pins separate source and emitter identifier spaces in emitted C.
 // exercises: function-source-prefix, local-name-table, coroutine-frame-members, async-resume-symbols
 // questions: §66
-
+// tsc: accepts
 function temporaryValue(value: i32): i32 {
   return value * 100;
 }

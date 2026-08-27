@@ -4,7 +4,7 @@
 //          reduceRight prints the indices in callback visit order.
 // exercises: array-callback-index, dual-callback-arity, runtime-to-script-calls
 // questions: Q27, C5
-
+// tsc: accepts
 let valueTotal: i32 = 0;
 let indexedTrace: string = "";
 

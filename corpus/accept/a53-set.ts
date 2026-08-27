@@ -4,7 +4,7 @@
 //          ordinary float miss.
 // exercises: set-methods, float-keys, deterministic-hashing
 // questions: Q24, Q22
-
+// tsc: accepts
 export function main(): void {
   const words: Set<string> = new Set<string>();
   print(`add receiver ${words.add("red") === words}`);

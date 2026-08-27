@@ -2,7 +2,7 @@
 // purpose: Connects Q32 switch exhaustiveness and unreachable() to all-paths-return flow.
 // exercises: string-literal-union, exhaustive-switch, divergence-flow, unreachable
 // questions: Q32, R15
-
+// tsc: accepts
 type GPUBufferMapState = "unmapped" | "pending" | "mapped";
 
 function lower(v: GPUBufferMapState): i32 {

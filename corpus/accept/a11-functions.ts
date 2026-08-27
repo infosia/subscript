@@ -2,7 +2,7 @@
 // purpose: Calls plain functions with explicit and default parameter values.
 // exercises: plain-function, default-parameter, return-value
 // questions: Q1, Q12
-
+// tsc: accepts
 function multiply(left: i32, right: i32): i32 {
   return left * right;
 }

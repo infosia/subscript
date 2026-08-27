@@ -3,7 +3,7 @@
 // observable: BMP code points print in Unicode scalar order.
 // exercises: for-of-string, bmp-code-points, p24-static-table
 // questions: Q30
-
+// tsc: accepts
 export function main(): void {
   const text: string = "Aé漢かな";
   for (const value of text) {

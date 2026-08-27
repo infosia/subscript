@@ -11,7 +11,7 @@
 //          keep input order, pinned by the seq digits).
 // exercises: array-methods, closures, runtime-to-script-calls
 // questions: Q22, C5
-
+// tsc: accepts
 let probes: i32 = 0;
 let sum: f64 = 0;
 

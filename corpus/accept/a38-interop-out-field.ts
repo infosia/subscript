@@ -2,7 +2,7 @@
 // purpose: Passes a boundary struct by reference; the callee WRITES its fields and the script reads them after the call.
 // exercises: interop-out-field, boundary-struct-by-reference, callee-writes, foreign-call
 // questions: Q13, Q16
-
+// tsc: accepts
 // §14.3 out field. The out/mutable case is spelled here as a caller-provided
 // boundary struct passed by reference — the `Struct | null` boundary form.
 // The callee WRITES the struct's fields; the script reads them back after

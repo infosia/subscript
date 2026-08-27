@@ -2,7 +2,7 @@
 // purpose: Requires every async method call to appear immediately under await.
 // exercises: floating-async-method-call, no-Promise-values
 // questions: R13, Q34, C8
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript permits ignoring an async method return value.
+// tsc: accepts
 // expected-error: S013 at the floating async method call
 
 class Worker {

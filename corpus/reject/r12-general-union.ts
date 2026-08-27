@@ -2,8 +2,8 @@
 // purpose: Rejects a non-null general union type.
 // exercises: rejected-general-union, reference-class-field
 // questions: none
+// tsc: accepts
 // expected-error: unions are limited to T | null
-
 class Choice {
   value: i32 | string;
 

@@ -2,7 +2,7 @@
 // purpose: Keeps a conditional arm's null narrowing from escaping to a later expression.
 // exercises: conditional-expression, flow-narrowing, narrowing-scope, nullable-reference
 // questions: R19, C7
-// tsc-status: exit 2 (TS2345 at 22:14) verified with node_modules/.bin/tsc --noEmit --strict --target es2022 --lib es2022 corpus/reject/r120-narrowing-escapes-conditional.ts prelude/lang.d.ts; stock TypeScript also keeps the arm narrowing from escaping.
+// tsc: rejects TS2345
 // expected-error: S005 at the post-conditional argument
 
 class EscapingValue {

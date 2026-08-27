@@ -2,7 +2,7 @@
 // purpose: Pins nested async suspension propagation and fulfilled values.
 // exercises: async-function, direct-await, Context.suspend, async-chain
 // questions: Q34, C8
-
+// tsc: accepts
 let polls: i32 = 0;
 
 async function leaf(): Promise<i32> {

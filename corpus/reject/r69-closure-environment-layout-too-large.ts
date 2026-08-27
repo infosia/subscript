@@ -2,8 +2,8 @@
 // purpose: Rejects two individually valid captures whose closure environment exceeds the aggregate limit.
 // exercises: closure environment layout, accumulated captures
 // questions: Q10
+// tsc: accepts
 // expected-error: S100 at the lambda
-
 function probe(
   leftInput: FixedArray<u8, 1600000000>,
   rightInput: FixedArray<u8, 1600000000>,

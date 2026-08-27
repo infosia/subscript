@@ -2,8 +2,8 @@
 // purpose: Rejects an await using declaration.
 // exercises: await-using-declaration, symbol-dispose, async-function
 // questions: §60, R31
+// tsc: accepts
 // expected-error: await using is outside the decided surface
-
 class AsyncDisposableResource {
   [Symbol.dispose](): void {}
 }

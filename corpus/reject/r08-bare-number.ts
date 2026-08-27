@@ -2,8 +2,8 @@
 // purpose: Rejects the unsized default numeric type.
 // exercises: rejected-bare-number, sized-numerics
 // questions: none
+// tsc: accepts
 // expected-error: no default numeric type; use a sized type
-
 const count: number = 3;
 
 export function main(): void {

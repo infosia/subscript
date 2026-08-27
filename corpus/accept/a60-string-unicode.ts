@@ -3,7 +3,7 @@
 //          LineTerminator trimming while retaining Q5 UTF-8 byte views.
 // exercises: string-methods, unicode-case, ecma-whitespace
 // questions: Q5, Q21
-
+// tsc: accepts
 export function main(): void {
   print(`upper-sharp ${"ß".toUpperCase()}`);
   print(`upper-ligature ${"ﬄ".toUpperCase()}`);

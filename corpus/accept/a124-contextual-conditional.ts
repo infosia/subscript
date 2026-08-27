@@ -2,7 +2,7 @@
 // purpose: Exercises contextual conditional typing for nullable references, handles, and boundary aggregates in both branch orders.
 // exercises: conditional-expression, contextual-typing, nullable-reference, nullable-handle, nullable-boundary-aggregate, branch-order
 // questions: R18, C7, Q13
-
+// tsc: accepts
 class RefValue {
   value: i32;
 

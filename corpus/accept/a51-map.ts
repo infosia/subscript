@@ -4,7 +4,7 @@
 //          eager clear/delete, and explicit collection of a dropped map.
 // exercises: map-methods, monomorphization, container-collection
 // questions: Q24, C2, C7
-
+// tsc: accepts
 @CStruct
 class Vec2 {
   x: i32;

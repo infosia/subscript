@@ -3,8 +3,8 @@
 //          getTime() milliseconds instead.
 // exercises: rejected-date-subset, date-intrinsics
 // questions: Q20
+// tsc: accepts
 // expected-error: Dates do not compare directly; compare getTime()
-
 export function main(): void {
   const a: Date = new Date(0);
   const b: Date = new Date(1);

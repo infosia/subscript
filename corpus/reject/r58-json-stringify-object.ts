@@ -1,9 +1,9 @@
 // corpus: reject/r58-json-stringify-object
 // purpose: Rejects a boundary-opaque object with no static field shape.
 // exercises: JSON.stringify, object, missing-static-shape
-// expected: S014 at stringify
+// expected-error: S014 at stringify
 // questions: Q28, C7
-
+// tsc: accepts
 class Box {
   constructor() {}
 }

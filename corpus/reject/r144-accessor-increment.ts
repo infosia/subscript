@@ -2,7 +2,7 @@
 // purpose: Rejects an increment through an accessor.
 // exercises: accessor-increment
 // questions: R37
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts accessor increment.
+// tsc: accepts
 // expected-error: S100 at the increment
 
 class Value {

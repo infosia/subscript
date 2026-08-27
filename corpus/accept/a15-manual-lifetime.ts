@@ -2,7 +2,7 @@
 // purpose: Allocates, uses, and manually frees a reference-class instance.
 // exercises: reference-class, allocation, manual-free
 // questions: Q1, Q2, Q6, Q12
-
+// tsc: accepts
 class Counter {
   value: i32;
 

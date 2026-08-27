@@ -2,8 +2,8 @@
 // purpose: Rejects dynamic source evaluation.
 // exercises: rejected-eval
 // questions: none
+// tsc: accepts
 // expected-error: no dynamic code evaluation
-
 export function main(): void {
   eval("print('dynamic')");
 }

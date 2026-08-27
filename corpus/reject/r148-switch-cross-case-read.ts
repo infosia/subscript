@@ -2,8 +2,8 @@
 // purpose: Rejects a read of a local that a different switch case declares.
 // exercises: switch-body-scope, cross-case-read
 // questions: §67
+// tsc: rejects TS2454
 // expected-error: S100 at the cross-case read
-
 export function main(): void {
   const selected: i32 = 0;
   const caseValue: i32 = 99;

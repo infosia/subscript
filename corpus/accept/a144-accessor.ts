@@ -2,7 +2,7 @@
 // purpose: Uses named accessors as read and write method sugar.
 // exercises: read-accessor, write-accessor, value-class-accessor, generic-accessor, identifier-escape, sanitized-name-collision
 // questions: R37
-
+// tsc: accepts
 class Counter {
   private value: i32;
 

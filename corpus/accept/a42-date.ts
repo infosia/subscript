@@ -8,7 +8,7 @@
 //          class field and a Date[] element.
 // exercises: date-intrinsics, date-accessors, date-iso, q14-formatting
 // questions: Q14, Q20
-
+// tsc: accepts
 class Stamp {
   at: Date;
   constructor(at: Date) {

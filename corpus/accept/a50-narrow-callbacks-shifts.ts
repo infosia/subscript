@@ -3,7 +3,7 @@
 //          kind and modulo-width shifts for every integer width on both tiers.
 // exercises: array-callback-signedness, masked-shifts, f16-literal-rounding
 // questions: Q18, Q22, Q23, C4
-
+// tsc: accepts
 export function main(): void {
   const signedBytes: i8[] = [-128, 3, -1, 127];
   print(`i8 map ${signedBytes.map((v: i8): i32 => v as i32).join(",")}`);

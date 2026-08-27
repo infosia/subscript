@@ -2,7 +2,7 @@
 // purpose: Rejects assignment across nominal Q32 aliases with identical members.
 // exercises: string-literal-union, nominal-alias-identity
 // questions: Q32
-// tsc-clean: stock TypeScript accepts this structurally; keep this entry out of tsconfig.
+// tsc: accepts
 // expected-error: S100 type mismatch at the cross-alias initializer
 
 type IndexFormat = "uint16" | "uint32";

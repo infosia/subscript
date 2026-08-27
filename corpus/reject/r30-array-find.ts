@@ -4,8 +4,8 @@
 //          spelling (Q22).
 // exercises: rejected-array-subset, array-methods
 // questions: Q22
+// tsc: accepts
 // expected-error: find is out of subset; use findIndex
-
 export function main(): void {
   const xs: i32[] = [3, 1, 2];
   const hit = xs.find((v: i32): boolean => v > 1);

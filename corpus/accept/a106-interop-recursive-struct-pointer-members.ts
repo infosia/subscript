@@ -2,7 +2,7 @@
 // purpose: Recursively lowers a render descriptor through nullable fragment and blend struct-pointer members.
 // exercises: recursive-boundary-lowering, struct-pointer-members, nullable-fragment, nullable-blend, mixed-depth-scratch
 // questions: Q13, C4
-
+// tsc: accepts
 function report(descriptor: SGPUProbeFullRenderPipelineDescriptor, last: u32): void {
   let selector: u32 = 0;
   while (selector <= last) {

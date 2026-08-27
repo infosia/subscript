@@ -2,8 +2,8 @@
 // purpose: Rejects compound assignment through a class index signature.
 // exercises: class-index-signature, compound-index-write
 // questions: §58, R29
+// tsc: accepts
 // expected-error: an index signature rejects `a[i] op= v`
-
 class MutableValues {
   [index: u32]: i32;
   data: i32[] = [1];

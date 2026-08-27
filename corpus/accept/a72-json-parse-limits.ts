@@ -2,7 +2,7 @@
 // purpose: Reports parse-side representation and input-depth failures as data.
 // exercises: JSON, typed parse, JsonResult, depth limit, UTF-8, f32 range
 // questions: Q28, Q5, Q6
-
+// tsc: accepts
 export function main(): void {
   const loneSurrogate: JsonResult<string> =
     JSON.parse<string>('"\\ud800"');

@@ -3,8 +3,8 @@
 //          not an object.
 // exercises: rejected-math-subset, math-intrinsics
 // questions: Q19
+// tsc: accepts
 // expected-error: Math is a namespace; only member access is accepted
-
 export function main(): void {
   const m = Math;
   print("unreachable");

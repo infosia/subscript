@@ -2,7 +2,7 @@
 // purpose: Provides the minimal exported entry point and deterministic host output.
 // exercises: entry-point, host-print, string-literal
 // questions: Q12
-
+// tsc: accepts
 export function main(): void {
   print("hello");
 }

@@ -7,3 +7,4 @@ export function main(): void {
   print(`q ${q}`);
   print(`next ${Math.random()}`);
 }
+// tsc: accepts

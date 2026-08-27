@@ -4,8 +4,8 @@
 //          Unicode Default Case Conversion).
 // exercises: rejected-string-subset, string-methods
 // questions: Q21
+// tsc: accepts
 // expected-error: toLocaleUpperCase is locale-dependent; use toUpperCase
-
 export function main(): void {
   const s: string = "hi";
   const t: string = s.toLocaleUpperCase();

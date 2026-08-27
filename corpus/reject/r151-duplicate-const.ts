@@ -2,8 +2,8 @@
 // purpose: Rejects two const declarations of one name in one block.
 // exercises: block-scope, duplicate-declaration
 // questions: §67
+// tsc: rejects TS2451
 // expected-error: S100 at the second declaration
-
 export function main(): void {
   const value: i32 = 1;
   const value: i32 = 2;

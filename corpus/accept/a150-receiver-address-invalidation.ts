@@ -2,7 +2,7 @@
 // purpose: Recomputes a CStruct array-element receiver address after an argument grows the same array.
 // exercises: CStruct, dynamic-array, method-receiver, argument-evaluation, address-invalidation
 // questions: §68
-
+// tsc: accepts
 @CStruct
 class V {
   a: i32;

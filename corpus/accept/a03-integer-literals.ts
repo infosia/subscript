@@ -2,7 +2,7 @@
 // purpose: Places suffix-less integer literals into several sized numeric contexts.
 // exercises: numeric-literals, typed-initializer, typed-argument, typed-array
 // questions: Q1, Q4, Q12
-
+// tsc: accepts
 function addOffset(value: i32, offset: i32): i32 {
   return value + offset;
 }

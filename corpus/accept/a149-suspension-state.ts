@@ -2,7 +2,7 @@
 // purpose: Keeps each live value in its coroutine frame across a suspension.
 // exercises: await-expression-order, nested-await-labels, evaluation-order-liveness, canonical-spill-kind, async-method-receiver-state, composite-expression-state, assignment-place-state, planner-order, complete-spill-cursor, skipped-statement-spill-cursor, aggregate-operand-copy-order, Context.bytes, foreign-call-state, descriptor-literal-state, aggregate-local-state, nested-list-lambda-environment, intrinsic-operand-state, switch-discriminant-state, array-spread-state, unconditional-lambda-environment, assigned-lambda-environment, distinct-lambda-environments, lambda-environment, managed-capture, for-of-suspension, generator-resume-address
 // questions: §67
-
+// tsc: accepts
 let leftCalls: i32 = 0;
 let rightCalls: i32 = 0;
 

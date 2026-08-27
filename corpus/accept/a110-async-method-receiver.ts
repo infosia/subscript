@@ -2,7 +2,7 @@
 // purpose: Pins async method receiver state and lifetime across nested suspension and explicit collection.
 // exercises: async-instance-method, this-receiver, nested-method-await, receiver-frame-root
 // questions: R13, Q34, C8
-
+// tsc: accepts
 class Session {
   state: i32;
 

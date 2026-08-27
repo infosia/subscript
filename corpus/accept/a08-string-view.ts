@@ -2,7 +2,7 @@
 // purpose: Uses string length and slicing without a NUL terminator assumption.
 // exercises: string-view, string-length, string-slice
 // questions: Q1, Q5, Q12
-
+// tsc: accepts
 function middle(value: string, start: i32, end: i32): string {
   return value.slice(start, end);
 }

@@ -9,7 +9,7 @@
 //          replace/replaceAll (including Q27 `$` substitution).
 // exercises: string-methods, q14-formatting
 // questions: Q14, Q21
-
+// tsc: accepts
 export function main(): void {
   const s: string = "hello world";
   // indexOf: hit, miss, from, and the clamps (negative -> 0, beyond

@@ -2,7 +2,7 @@
 // purpose: Uses two same-shaped nominal value types without interchanging them.
 // exercises: nominal-identity, value-struct, same-shape-types
 // questions: Q1, Q2, Q12
-
+// tsc: accepts
 @CStruct
 class Metres {
   value: f32;

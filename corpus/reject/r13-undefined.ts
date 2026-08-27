@@ -2,8 +2,8 @@
 // purpose: Rejects undefined in the language's single null story.
 // exercises: rejected-undefined, nullable-value
 // questions: none
+// tsc: accepts
 // expected-error: single null story: use null
-
 let maybe: i32 | undefined = undefined;
 
 export function main(): void {

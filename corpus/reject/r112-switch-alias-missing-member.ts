@@ -2,7 +2,7 @@
 // purpose: Rejects a default-free Q32 switch that omits one alias member.
 // exercises: string-literal-union, switch-exhaustiveness, missing-member
 // questions: Q32, R14
-// tsc-clean-standalone: verified with node_modules/.bin/tsc --noEmit --strict --target es2022 --lib es2022 against prelude/lang.d.ts; stock TypeScript accepts non-exhaustive alias switches.
+// tsc: accepts
 // expected-error: S100 at the non-exhaustive switch
 
 type Phase = "queued" | "running" | "done";

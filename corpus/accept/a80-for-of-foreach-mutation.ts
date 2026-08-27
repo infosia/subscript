@@ -3,7 +3,7 @@
 // observable: the two spellings print identical sequences; appends do not extend and removals shorten.
 // exercises: for-of-foreach-parity, mutation-during-iteration, fixed-entry-bound
 // questions: Q30
-
+// tsc: accepts
 function visitArray(value: i32): void {
   print(`array:${value}`);
 }

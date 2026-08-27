@@ -2,8 +2,8 @@
 // purpose: Rejects two declarations of one name in one switch body.
 // exercises: switch-body-scope, duplicate-declaration
 // questions: §67
+// tsc: rejects TS2451
 // expected-error: S100 at the second declaration, with a message that names the switch
-
 export function main(): void {
   const selected: i32 = 1;
   switch (selected) {

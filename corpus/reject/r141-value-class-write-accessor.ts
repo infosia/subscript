@@ -2,7 +2,7 @@
 // purpose: Rejects a write accessor on a value class.
 // exercises: value-class-write-accessor
 // questions: R37
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts a value-class write accessor.
+// tsc: accepts
 // expected-error: S100 at the write accessor
 
 @CStruct

@@ -2,7 +2,7 @@
 // purpose: Covers typed JSON.parse success, data failures, and numeric edges.
 // exercises: JSON, typed parse, JsonResult, duplicate keys, numeric ranges
 // questions: Q28, Q5, Q6
-
+// tsc: accepts
 class Config {
   name: string;
   count: i32;

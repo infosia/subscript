@@ -5,7 +5,7 @@
 //          zero) formatted per Q14.
 // exercises: math-intrinsics, math-constants, q14-formatting
 // questions: Q14, Q19
-
+// tsc: accepts
 export function main(): void {
   // Constants (folded to f64 literals at check time).
   print(`E ${Math.E}`);

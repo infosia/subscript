@@ -2,8 +2,8 @@
 // purpose: Rejects a descriptor optional member that has no default.
 // exercises: descriptor-member, optional-without-default
 // questions: Q33, C7
+// tsc: accepts
 // expected-error: S012 at the optional member
-
 @Descriptor
 class InvalidDescriptor {
   value?: i32;

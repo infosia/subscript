@@ -2,7 +2,7 @@
 // purpose: Narrows nullable parameters and fields before reference use.
 // exercises: nullable-parameter, nullable-field, null-narrowing
 // questions: Q1, Q2, Q6, Q8, Q12
-
+// tsc: accepts
 class ListNode {
   value: i32;
   next: ListNode | null;

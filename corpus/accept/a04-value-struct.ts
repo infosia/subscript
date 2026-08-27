@@ -2,7 +2,7 @@
 // purpose: Makes value-struct copy-on-assign semantics observable.
 // exercises: value-struct, field-access, copy-on-assign
 // questions: Q1, Q2, Q12, Q14, Q17
-
+// tsc: accepts
 @CStruct
 class Vec3 {
   x: f32;

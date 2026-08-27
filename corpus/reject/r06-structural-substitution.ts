@@ -2,8 +2,8 @@
 // purpose: Rejects structural substitution between same-shaped nominal classes.
 // exercises: rejected-structural-substitution, nominal-identity
 // questions: none
+// tsc: accepts
 // expected-error: nominal types are not interchangeable
-
 class A {
   value: i32 = 1;
 }

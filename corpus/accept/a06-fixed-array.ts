@@ -2,7 +2,7 @@
 // purpose: Places a fixed-size array field inside a value struct.
 // exercises: value-struct, fixed-array, field-layout
 // questions: Q1, Q2, Q3, Q12
-
+// tsc: accepts
 @CStruct
 class Matrix4 {
   elements: FixedArray<f32, 16>;

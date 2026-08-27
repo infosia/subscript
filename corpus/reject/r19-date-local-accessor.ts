@@ -3,8 +3,8 @@
 //          UTC-only (getUTC…).
 // exercises: rejected-date-subset, date-intrinsics
 // questions: Q20
+// tsc: accepts
 // expected-error: getFullYear reads local time; use getUTCFullYear
-
 export function main(): void {
   const d: Date = new Date(0);
   const y: i32 = d.getFullYear();

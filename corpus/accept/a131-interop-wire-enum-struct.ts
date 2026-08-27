@@ -2,7 +2,7 @@
 // purpose: Stores wire-mapped aliases directly and in a zero-copy pair inside a C boundary struct.
 // exercises: CEnum, boundary-struct-member, embedded-array-pair, member-read-validation, switch
 // questions: §52, Q32
-
+// tsc: accepts
 export function main(): void {
   const record: SubWireModeRecord = new SubWireModeRecord(
     7,

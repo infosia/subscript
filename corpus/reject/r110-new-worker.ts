@@ -2,7 +2,7 @@
 // purpose: Rejects direct construction of a runtime-created Worker handle.
 // exercises: new-Worker, checker-owned-construction-rejection
 // questions: Q35
-// tsc-status: stock TypeScript also rejects this program because Worker's constructor is private; this is not a tsc-clean pin.
+// tsc: rejects TS2673
 // expected-error: S100 at new Worker
 
 class Message {

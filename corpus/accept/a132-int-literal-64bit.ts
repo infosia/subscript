@@ -2,7 +2,7 @@
 // purpose: Reads integer literals from their spelling across the full u64 and i64 ranges.
 // exercises: integer-literal-spelling, u64-range, i64-range, numeric-separators
 // questions: §56, R26
-
+// tsc: accepts
 const decimalMax: u64 = 18446744073709551615;
 const hexadecimalMax: u64 = 0xFFFFFFFFFFFFFFFF;
 const separatedMax: u64 = 18_446_744_073_709_551_615;

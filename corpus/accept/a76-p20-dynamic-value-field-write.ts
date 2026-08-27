@@ -2,7 +2,7 @@
 // purpose: Writes fields through a value-class element of a dynamic array.
 // exercises: Array<CStruct>, field-place, plain-assignment, compound-assignment, side-effecting-index
 // questions: none
-
+// tsc: accepts
 @CStruct
 class Vec2 {
   x: i32;

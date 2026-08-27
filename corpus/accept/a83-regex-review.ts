@@ -1,11 +1,11 @@
 // corpus: accept/a83-regex-review
 // questions: Q31
+// tsc: accepts
 // purpose: Pins regex source rendering inside character classes, every
 //          accepted flag, literal reuse across collection, and the
 //          documented non-BMP matching divergence with and without u.
 // exercises: RegExp, source, flags, collection, non-BMP-matching
 // expected: corpus/accept/a83-regex-review.expected
-
 export function main(): void {
   print(`source ${/[/]/.source} ${/a[/]b/.source} ${new RegExp("[/]").source} ${new RegExp("/").source}`);
   print(`flags ${/a/d.flags} ${/a/g.flags} ${/a/i.flags} ${/a/m.flags} ${/a/s.flags} ${/a/u.flags} ${new RegExp("a", "v").flags}`);

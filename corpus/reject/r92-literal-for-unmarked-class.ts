@@ -2,7 +2,7 @@
 // purpose: Keeps object literals from structurally satisfying unmarked nominal classes.
 // exercises: object-literal, nominal-class, descriptor-marker
 // questions: Q33, C1
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts this structurally.
+// tsc: accepts
 // expected-error: S005 at the object literal
 
 class UnmarkedDescriptorShape {

@@ -9,7 +9,7 @@
 //          returning the receiver, and concat of exactly one array.
 // exercises: array-methods, q14-formatting
 // questions: Q14, Q22
-
+// tsc: accepts
 class Obj {
   tag: i32;
   constructor(tag: i32) {

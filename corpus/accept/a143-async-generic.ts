@@ -2,7 +2,7 @@
 // purpose: Proves async generic functions and generic-class async methods at two instantiations.
 // exercises: generic-async-function, generic-class-async-method, monomorphization, async-export-instance
 // questions: R36, Q34, R13
-
+// tsc: accepts
 @CStruct
 class Vec2 {
   x: f32;

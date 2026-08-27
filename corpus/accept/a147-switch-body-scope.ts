@@ -22,3 +22,4 @@ export function main(): void {
       break;
   }
 }
+// tsc: accepts

@@ -2,7 +2,7 @@
 // purpose: Passes every narrow numeric array zero-copy to a typed C slice facade.
 // exercises: narrow-numerics, zero-copy-slice, contiguous-array, foreign-call
 // questions: Q4, Q23, C3, C4
-
+// tsc: accepts
 export function main(): void {
   const unsignedBytes: u8[] = [1, 2, 255];
   const signedBytes: i8[] = [1, -2, 3];

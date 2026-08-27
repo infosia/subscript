@@ -2,7 +2,7 @@
 // purpose: Passes an f32[] zero-copy through a typed facade to an untyped void*+byte-size C API.
 // exercises: interop-untyped-facade, void-pointer-byte-size, zero-copy-slice, foreign-call
 // questions: Q13, Q4
-
+// tsc: accepts
 // The untyped API takes `const void* data, size_t size` (byte size); a
 // thin typed C facade (subBulkConsumeF32) takes a typed f32 slice, computes
 // `size = count * sizeof(f32)`, and forwards the borrowed run zero-copy

@@ -2,7 +2,7 @@
 // purpose: Rejects an accessor write that appears in a value position.
 // exercises: accessor-write-as-value
 // questions: R37
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts an accessor write as a value.
+// tsc: accepts
 // expected-error: S100 at the assignment
 
 class Value {

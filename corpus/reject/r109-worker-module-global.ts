@@ -2,8 +2,8 @@
 // purpose: Rejects a Context-affine Worker handle stored in a module global.
 // exercises: Worker, module-global-affinity
 // questions: Q35
+// tsc: accepts
 // expected-error: S100 at the Worker module global
-
 class Message {
   value: i32 = 0;
 }

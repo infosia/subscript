@@ -2,8 +2,8 @@
 // purpose: Rejects inheritance between value classes.
 // exercises: rejected-value-inheritance, value-class
 // questions: none
+// tsc: accepts
 // expected-error: value classes do not inherit
-
 @CStruct
 class Base {
   value: i32 = 4;

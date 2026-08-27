@@ -2,8 +2,8 @@
 // purpose: Rejects methods in a data-only descriptor class.
 // exercises: descriptor-class, method
 // questions: Q33
+// tsc: rejects TS2322
 // expected-error: S100 at the method name
-
 @Descriptor
 class InvalidDescriptor {
   value?: i32 = 1;

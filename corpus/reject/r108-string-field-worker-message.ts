@@ -2,8 +2,8 @@
 // purpose: Rejects a worker message class whose innermost field is not transferable.
 // exercises: Worker.spawn, message-transferability, innermost-field-diagnostic
 // questions: Q35
+// tsc: accepts
 // expected-error: S100 at the string field
-
 class TextMessage {
   text: string;
 

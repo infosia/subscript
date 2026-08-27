@@ -2,7 +2,7 @@
 // purpose: Declares and uses a numeric enum with stable values.
 // exercises: numeric-enum, enum-comparison, c-enum-lowering
 // questions: Q1, Q12
-
+// tsc: accepts
 enum Status {
   Ready = 1,
   Running = 2,

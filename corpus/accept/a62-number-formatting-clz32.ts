@@ -3,7 +3,7 @@
 // exercises: number-to-string-radix, number-to-exponential,
 //            number-to-precision, math-clz32
 // questions: Q19, Q26
-
+// tsc: accepts
 export function main(): void {
   const integer: f64 = 255.0;
   const fraction: f64 = 1234.5678;

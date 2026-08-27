@@ -2,7 +2,7 @@
 // purpose: Exercises sized numeric arithmetic and explicit conversions.
 // exercises: sized-numerics, arithmetic, explicit-conversion
 // questions: Q1, Q12
-
+// tsc: accepts
 export function main(): void {
   const signed: i32 = -12;
   const unsigned: u32 = 20;

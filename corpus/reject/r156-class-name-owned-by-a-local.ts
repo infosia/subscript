@@ -2,7 +2,7 @@
 // purpose: Rejects construction through a local that owns a known class name.
 // exercises: class-name, local-shadow, constructor-read
 // questions: §67
-// tsc-status: stock TypeScript reports TS2351 because the local value is not constructable.
+// tsc: rejects TS2351
 // expected-error: S100 at the constructor read
 
 class Foo {

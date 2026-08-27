@@ -2,7 +2,7 @@
 // purpose: Keeps async arrow functions outside the decided surface.
 // exercises: async-arrow-function
 // questions: R36, Q34
-// tsc-clean-standalone: verified with node_modules/.bin/tsc against prelude/lang.d.ts; stock TypeScript accepts async arrow functions.
+// tsc: accepts
 // expected-error: S100 at the async arrow function
 
 export async function main(): Promise<void> {

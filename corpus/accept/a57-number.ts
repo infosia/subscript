@@ -2,7 +2,7 @@
 // purpose: Exercises Q25 Number constants and non-coercing predicates.
 // exercises: number-constants, number-predicates
 // questions: Q14, Q25
-
+// tsc: accepts
 export function main(): void {
   // MAX_SAFE_INTEGER is the f64 precision bound, not an i64/u64 bound:
   // the language's 64-bit integer types remain exact (C3).

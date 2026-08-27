@@ -2,7 +2,7 @@
 // purpose: Composes recursive lowering through an embedded vertex state, a buffer-layout pair, and each layout's scalar attribute pair.
 // exercises: recursive-boundary-lowering, render-pipeline-depth-chain, struct-element-scratch-array, nested-collapsed-pair, deepest-evidence
 // questions: Q13, C4
-
+// tsc: accepts
 export function main(): void {
   const firstAttributes: SGPUProbeVertexAttribute[] = [
     new SGPUProbeVertexAttribute(1, 11, 64),

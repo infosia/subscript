@@ -2,8 +2,8 @@
 // purpose: Rejects duplicate wire values across distinct CEnum members.
 // exercises: CEnum, unique-wire-values
 // questions: R23
-// tsc-clean-standalone: stock TypeScript does not require property values to be unique.
-
+// tsc: accepts
+// expected-error: S100 at the second duplicate wire value
 type DuplicateWire = CEnum<{
   "m0": 7;
   "m1": 7;
