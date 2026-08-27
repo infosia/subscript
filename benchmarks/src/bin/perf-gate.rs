@@ -1,15 +1,14 @@
 #![warn(missing_docs)]
 //! The P4 performance-gate harness (`specs/blocks/compiler.md` §3, §9).
 //!
-//! It measures three subjects on the `a22-matrix-propagation` corpus
-//! entry, in one process, in one session:
+//! It measures three subjects on the `a22-matrix-propagation` and `collect`
+//! workloads, in one process, in one session:
 //!
-//! - **C baseline** — `benchmarks/a22-baseline.c`, the hand-written C
-//!   implementation of the same workload, compiled here with the
-//!   platform C compiler at `-O2`.
-//! - **ship-tier** — the entry's typed HIR emitted as C, compiled with
+//! - **C baseline** — each workload's hand-written C implementation,
+//!   compiled here with the platform C compiler at `-O2`.
+//! - **ship-tier** — each workload's typed HIR emitted as C, compiled with
 //!   the baseline flags, and linked with the runtime static library.
-//! - **dev-JIT** — the entry through the JIT tier
+//! - **dev-JIT** — each workload through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
 //! - **dev iteration** — one complete check + lower + JIT-finalize of
 //!   the changed `a22` source.
@@ -24,14 +23,21 @@
 //! spans. The two iteration subjects state their separate spans in the
 //! report.
 //!
-//! Before any timing is reported, every subject's stdout bytes are
-//! compared against the frozen golden
-//! `corpus/accept/a22-matrix-propagation.expected`; a mismatch aborts
-//! the run without a report, because subjects that compute different
-//! things cannot be compared.
+//! Before any timing is reported, every `a22` subject's stdout bytes are
+//! compared against the frozen golden. Every `collect` subject must return
+//! the i32 checksum `1332546592`. A mismatch aborts the run without timing.
+//!
+//! The binary serves two runs:
+//!
+//! - The default is a §9 reporting run. Excessive spread withholds that
+//!   subject's timing, voids the run, and returns status 2.
+//! - `--gate` selects the automatic gate run. Spread stays visible but does
+//!   not control the result. The §3 thresholds return status 0 or 1.
+//!
+//! Output or toolchain errors return status 2 in both runs.
 //!
 //! Usage:
-//! `cargo run --offline --release -p subscript-benchmarks --bin perf-gate [-- --warmup N --timed M]`
+//! `cargo run --offline --release -p subscript-benchmarks --bin perf-gate [-- [--gate] [--warmup N] [--timed M]]`
 //!
 //! # Warm-up
 //!
@@ -41,14 +47,7 @@
 //! state a separate warm-up rule for one-shot compilation, so this harness
 //! applies the same two floors to repeated, complete compile/reload
 //! observations and discards those observations; it does not turn a compile
-//! into an artificial inner loop. A spread wider than ±20% of the median
-//! invalidates the subject.
-//!
-//! Exit status: 0 when §3's ship execution, dev iteration, and hot-reload
-//! thresholds are met; 1 when one is missed (the report is still printed — a
-//! missed threshold is a measurement, not a harness failure); 2 when the
-//! measurement is void (output mismatch, machine too noisy, or a toolchain
-//! error). Dev-tier execution remains measured and reported but is not a gate.
+//! into an artificial inner loop.
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -62,19 +61,11 @@ use subscript_codegen::{
 };
 use subscript_compiler::{check_program, SourceFile};
 
-/// The corpus entry under measurement (`specs/blocks/corpus.md` §4).
-const ENTRY_ID: &str = "a22-matrix-propagation";
-
-/// The entry's source, compiled into the harness so the measured
-/// program is exactly the committed corpus file.
-const ENTRY_SOURCE: &str = include_str!("../../../corpus/accept/a22-matrix-propagation.ts");
-
 /// The entry's frozen golden output (`specs/blocks/compiler.md` §2).
-const ENTRY_GOLDEN: &[u8] =
-    include_bytes!("../../../corpus/accept/a22-matrix-propagation.expected");
+const A22_GOLDEN: &[u8] = include_bytes!("../../../corpus/accept/a22-matrix-propagation.expected");
 
-/// The hand-written C baseline, written out and compiled at run time.
-const BASELINE_C: &str = include_str!("../../a22-baseline.c");
+/// The required result of the allocation workload.
+const COLLECT_CHECKSUM: i32 = 1_332_546_592;
 
 /// The timing entry program linked with the ship-tier C translation unit.
 const SHIP_BENCH_ENTRY_C: &str = concat!(
@@ -87,14 +78,10 @@ const SHIP_BENCH_ENTRY_C: &str = concat!(
 /// which never contracts a multiply-add into an FMA.
 const BASELINE_CFLAGS: [&str; 2] = ["-O2", "-ffp-contract=off"];
 
-/// §3: ship-tier execution must be within this multiple of the C baseline.
-const SHIP_LIMIT: f64 = 1.5;
-
 /// §3: both dev iteration and a one-function hot reload must fit this budget.
 const DEV_ITERATION_LIMIT: Duration = Duration::from_millis(20);
 
-/// §9: a spread wider than this fraction of the median invalidates the
-/// run — the machine was too noisy and the measurement is redone.
+/// §9's reporting-run noise limit. The gate run reports it only.
 const NOISE_LIMIT: f64 = 0.20;
 
 /// Default number of discarded warm-up runs (§9 requires at least 3).
@@ -105,6 +92,106 @@ const WARMUP_FLOOR: Duration = Duration::from_millis(200);
 
 /// Default number of timed runs (§9 requires at least 11).
 const DEFAULT_TIMED: usize = 11;
+
+/// The selected `perf-gate` run contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RunMode {
+    /// A §9 reporting run that withholds noisy timings and voids.
+    Reporting,
+    /// An automatic threshold gate that reports noise without voiding.
+    Gate,
+}
+
+/// Parsed command-line arguments.
+struct Args {
+    /// The selected run contract.
+    mode: RunMode,
+    /// Minimum discarded warm-up runs.
+    warmup: usize,
+    /// Number of timed runs.
+    timed: usize,
+}
+
+/// The result selected from thresholds and sample spread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RunDecision {
+    /// Every threshold was met.
+    Passed,
+    /// One threshold was missed.
+    Missed,
+    /// A reporting run contained an invalid timing.
+    Void,
+}
+
+/// The format of one C baseline's timing protocol.
+#[derive(Clone, Copy)]
+enum BaselineProtocol {
+    /// A third argument sets the warm-up floor. Times use nanoseconds.
+    NanosecondsWithFloor,
+    /// The binary enforces the warm-up floor. Times use seconds.
+    SecondsWithInternalFloor,
+}
+
+/// The result contract for one workload.
+#[derive(Clone, Copy)]
+enum ExpectedOutput {
+    /// Every subject must match these exact bytes.
+    Bytes(&'static [u8]),
+    /// Every subject must print this i32 checksum.
+    I32(i32),
+}
+
+/// One performance-gate workload.
+struct Workload {
+    /// Short name in the report.
+    name: &'static str,
+    /// Source name in diagnostics and the report.
+    source_path: &'static str,
+    /// Source text compiled into the harness.
+    source: &'static str,
+    /// C baseline name in diagnostics and the report.
+    baseline_path: &'static str,
+    /// C baseline source text compiled into the harness.
+    baseline_c: &'static str,
+    /// C baseline argument and timing protocol.
+    baseline_protocol: BaselineProtocol,
+    /// Result that every subject must produce.
+    expected_output: ExpectedOutput,
+    /// Maximum ship-tier ratio to the C baseline.
+    ship_limit: f64,
+    /// Maximum dev-tier ratio to the C baseline.
+    dev_limit: f64,
+    /// Description of the C timed span.
+    c_span: &'static str,
+}
+
+/// The workloads that the P4 gate measures.
+const WORKLOADS: [Workload; 2] = [
+    Workload {
+        name: "a22",
+        source_path: "corpus/accept/a22-matrix-propagation.ts",
+        source: include_str!("../../../corpus/accept/a22-matrix-propagation.ts"),
+        baseline_path: "benchmarks/a22-baseline.c",
+        baseline_c: include_str!("../../a22-baseline.c"),
+        baseline_protocol: BaselineProtocol::NanosecondsWithFloor,
+        expected_output: ExpectedOutput::Bytes(A22_GOLDEN),
+        ship_limit: 1.50,
+        dev_limit: 25.0,
+        c_span: "the workload call: array construction, 100 propagation iterations, checksum",
+    },
+    Workload {
+        name: "collect",
+        source_path: "benchmarks/workloads/subscript/collect.ts",
+        source: include_str!("../../workloads/subscript/collect.ts"),
+        baseline_path: "benchmarks/workloads/c/collect.c",
+        baseline_c: include_str!("../../workloads/c/collect.c"),
+        baseline_protocol: BaselineProtocol::SecondsWithInternalFloor,
+        expected_output: ExpectedOutput::I32(COLLECT_CHECKSUM),
+        ship_limit: 7.50,
+        dev_limit: 8.50,
+        c_span: "the workload call: graph construction, explicit reclamation, traversal, checksum",
+    },
+];
 
 /// First revision of the exact one-function reload shape exercised by
 /// `codegen/tests/reload.rs::entryless_session_observes_an_accepted_body_swap`.
@@ -152,6 +239,14 @@ struct Subject {
     warmup_iterations: usize,
     /// Time spent preparing executable code, reported but never gated.
     prepare: Vec<(&'static str, Duration)>,
+}
+
+/// The three execution subjects for one workload.
+struct WorkloadRun {
+    /// Workload contract and thresholds.
+    workload: &'static Workload,
+    /// C, ship-tier, and dev-JIT subjects, in that order.
+    subjects: [Subject; 3],
 }
 
 /// One one-shot timing subject measured by repeating the complete operation.
@@ -217,6 +312,22 @@ fn ms(seconds: f64) -> String {
     format!("{:.3} ms", seconds * 1000.0)
 }
 
+/// Selects the run result from the threshold result and observed spreads.
+fn decide_run(mode: RunMode, thresholds_met: bool, spreads: &[f64]) -> RunDecision {
+    if mode == RunMode::Reporting && spreads.iter().any(|spread| *spread > NOISE_LIMIT) {
+        RunDecision::Void
+    } else if thresholds_met {
+        RunDecision::Passed
+    } else {
+        RunDecision::Missed
+    }
+}
+
+/// Whether a reporting run must withhold this sample set.
+fn timing_is_withheld(mode: RunMode, spread: f64) -> bool {
+    mode == RunMode::Reporting && spread > NOISE_LIMIT
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(code) => code,
@@ -227,33 +338,49 @@ fn main() -> ExitCode {
     }
 }
 
-/// Parses the command line into `(warmup, timed)`.
-fn parse_args() -> Result<(usize, usize), Fail> {
+/// Parses the command line.
+fn parse_args() -> Result<Args, Fail> {
+    parse_args_from(std::env::args().skip(1))
+}
+
+/// Parses command-line values from an iterator.
+fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<Args, Fail> {
+    let mut mode = RunMode::Reporting;
     let mut warmup = DEFAULT_WARMUP;
     let mut timed = DEFAULT_TIMED;
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut i = 0;
-    while i < args.len() {
-        let flag = args.get(i).map(String::as_str).unwrap_or_default();
-        let value = args
-            .get(i + 1)
-            .ok_or_else(|| format!("{flag} needs a value"))?;
-        let parsed: usize = value
-            .parse()
-            .map_err(|_| format!("{flag}: `{value}` is not a count"))?;
-        match flag {
-            "--warmup" => warmup = parsed,
-            "--timed" => timed = parsed,
+    let mut args = args.into_iter();
+    while let Some(flag) = args.next() {
+        match flag.as_str() {
+            "--gate" => {
+                if mode == RunMode::Gate {
+                    return Err("`--gate` cannot be repeated".to_string());
+                }
+                mode = RunMode::Gate;
+            }
+            "--warmup" | "--timed" => {
+                let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
+                let parsed: usize = value
+                    .parse()
+                    .map_err(|_| format!("{flag}: `{value}` is not a count"))?;
+                if flag == "--warmup" {
+                    warmup = parsed;
+                } else {
+                    timed = parsed;
+                }
+            }
             other => return Err(format!("unknown argument `{other}`")),
         }
-        i += 2;
     }
     if warmup < 3 || timed < 11 {
         return Err(format!(
             "the methodology fixes a floor of 3 warm-up and 11 timed runs (compiler.md §9); got {warmup} and {timed}"
         ));
     }
-    Ok((warmup, timed))
+    Ok(Args {
+        mode,
+        warmup,
+        timed,
+    })
 }
 
 /// Measures every subject, verifies the outputs, and prints the report.
@@ -265,43 +392,36 @@ fn run() -> Result<ExitCode, Fail> {
                 .to_string(),
         );
     }
-    let (warmup, timed) = parse_args()?;
+    let args = parse_args()?;
+    let warmup = args.warmup;
+    let timed = args.timed;
     let workdir = WorkDir::new()?;
-    let files = vec![SourceFile::new(format!("{ENTRY_ID}.ts"), ENTRY_SOURCE)];
+    let mut workload_runs = Vec::with_capacity(WORKLOADS.len());
+    for workload in &WORKLOADS {
+        let files = vec![SourceFile::new(workload.source_path, workload.source)];
+        let subjects = [
+            measure_c(workload, workdir.path(), warmup, timed)?,
+            measure_ship(workload, &files, workdir.path(), warmup, timed)?,
+            measure_jit(&files, warmup, timed)?,
+        ];
+        validate_execution_subjects(workload, &subjects, warmup)?;
+        workload_runs.push(WorkloadRun { workload, subjects });
+    }
 
-    let c = measure_c(workdir.path(), warmup, timed)?;
-    let ship = measure_ship(&files, workdir.path(), warmup, timed)?;
-    let jit = measure_jit(&files, warmup, timed)?;
-    let subjects: [&Subject; 3] = [&c, &ship, &jit];
+    let a22 = WORKLOADS
+        .first()
+        .ok_or_else(|| "the a22 workload is missing".to_string())?;
+    let a22_files = vec![SourceFile::new(a22.source_path, a22.source)];
     let iteration = measure_one_shot(
         "dev-iteration",
         "changed a22 source: check + lower + finalize",
         warmup,
         timed,
-        || jit_compile_time(&files).map_err(|e| format!("dev iteration: {e}")),
+        || jit_compile_time(&a22_files).map_err(|e| format!("dev iteration: {e}")),
     )?;
     let reload = measure_reload(warmup, timed)?;
     let one_shots: [&OneShotSubject; 2] = [&iteration, &reload];
 
-    for s in subjects {
-        if s.warmup_iterations < warmup || s.warmup < WARMUP_FLOOR {
-            return Err(format!(
-                "{} warmed up for {} across {} iterations; compiler.md §9 requires at least {} across at least {warmup} iterations",
-                s.name,
-                ms(s.warmup.as_secs_f64()),
-                s.warmup_iterations,
-                ms(WARMUP_FLOOR.as_secs_f64())
-            ));
-        }
-        if s.stdout != ENTRY_GOLDEN {
-            return Err(format!(
-                "{} printed {:?}, the golden is {:?}; the subjects do not compute the same thing, so no timing is reported",
-                s.name,
-                String::from_utf8_lossy(&s.stdout),
-                String::from_utf8_lossy(ENTRY_GOLDEN)
-            ));
-        }
-    }
     for s in one_shots {
         if s.warmup_iterations < warmup || s.warmup < WARMUP_FLOOR {
             return Err(format!(
@@ -315,7 +435,14 @@ fn run() -> Result<ExitCode, Fail> {
     }
 
     let mut report = String::new();
-    let outcome = write_report(&mut report, &subjects, &one_shots, warmup, timed)?;
+    let outcome = write_report(
+        &mut report,
+        &workload_runs,
+        &one_shots,
+        args.mode,
+        warmup,
+        timed,
+    )?;
     let mut out = std::io::stdout();
     out.write_all(report.as_bytes())
         .and_then(|()| out.flush())
@@ -323,43 +450,115 @@ fn run() -> Result<ExitCode, Fail> {
     Ok(outcome)
 }
 
+/// Verifies the warm-up and result contracts for one workload.
+fn validate_execution_subjects(
+    workload: &Workload,
+    subjects: &[Subject; 3],
+    warmup: usize,
+) -> Result<(), Fail> {
+    for subject in subjects {
+        if subject.warmup_iterations < warmup || subject.warmup < WARMUP_FLOOR {
+            return Err(format!(
+                "{}/{} warmed up for {} across {} iterations; compiler.md §9 requires at least {} across at least {warmup} iterations",
+                workload.name,
+                subject.name,
+                ms(subject.warmup.as_secs_f64()),
+                subject.warmup_iterations,
+                ms(WARMUP_FLOOR.as_secs_f64())
+            ));
+        }
+    }
+
+    match workload.expected_output {
+        ExpectedOutput::Bytes(expected) => {
+            for subject in subjects {
+                if subject.stdout != expected {
+                    return Err(format!(
+                        "{}/{} printed {:?}, expected {:?}; no timing is reported for this workload",
+                        workload.name,
+                        subject.name,
+                        String::from_utf8_lossy(&subject.stdout),
+                        String::from_utf8_lossy(expected)
+                    ));
+                }
+            }
+        }
+        ExpectedOutput::I32(expected) => {
+            let results = subjects
+                .iter()
+                .map(|subject| {
+                    let text = String::from_utf8_lossy(&subject.stdout);
+                    let result = text.trim().parse::<i32>().map_err(|_| {
+                        format!(
+                            "{}/{} printed {:?}, not an i32 checksum; no timing is reported for this workload",
+                            workload.name, subject.name, text
+                        )
+                    })?;
+                    Ok((subject.name, result))
+                })
+                .collect::<Result<Vec<_>, Fail>>()?;
+            if results.iter().any(|(_, result)| *result != expected) {
+                let observed = results
+                    .iter()
+                    .map(|(name, result)| format!("{name}={result}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(format!(
+                    "{} subjects did not agree on required i32 checksum {expected}: {observed}; no timing is reported for this workload",
+                    workload.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Builds the report and returns the process exit status it implies.
 ///
-/// The report contains all execution and iteration subjects. §3's ship-tier
-/// execution, dev-iteration, and hot-reload thresholds gate the run; dev-JIT
-/// execution is reported only.
+/// The report contains all execution and iteration subjects.
 fn write_report(
     report: &mut String,
-    subjects: &[&Subject],
+    workload_runs: &[WorkloadRun],
     one_shots: &[&OneShotSubject],
+    mode: RunMode,
     warmup: usize,
     timed: usize,
 ) -> Result<ExitCode, Fail> {
-    let stats: Vec<Stats> = subjects
+    let workload_stats: Vec<Vec<Stats>> = workload_runs
         .iter()
-        .map(|s| Stats::of(&s.samples))
+        .map(|run| {
+            run.subjects
+                .iter()
+                .map(|subject| Stats::of(&subject.samples))
+                .collect::<Result<_, _>>()
+        })
         .collect::<Result<_, _>>()?;
-    let baseline = stats
-        .first()
-        .ok_or_else(|| "no baseline statistics".to_string())?
-        .median;
-    if baseline <= 0.0 {
-        return Err("the C baseline measured zero time; the clock is unusable".to_string());
-    }
     let one_shot_stats: Vec<Stats> = one_shots
         .iter()
         .map(|s| Stats::of(&s.samples))
         .collect::<Result<_, _>>()?;
+    let spreads = workload_stats
+        .iter()
+        .flatten()
+        .chain(one_shot_stats.iter())
+        .map(Stats::spread)
+        .collect::<Vec<_>>();
 
     let w = |r: &mut String, line: std::fmt::Arguments<'_>| -> Result<(), Fail> {
         writeln!(r, "{line}").map_err(|e| format!("formatting the report: {e}"))
     };
 
     w(report, format_args!("== subscript P4 performance gate =="))?;
-    w(
-        report,
-        format_args!("entry:       corpus/accept/{ENTRY_ID}.ts"),
-    )?;
+    w(report, format_args!("workloads:"))?;
+    for run in workload_runs {
+        w(
+            report,
+            format_args!(
+                "  {:<8} source {}, C baseline {}",
+                run.workload.name, run.workload.source_path, run.workload.baseline_path
+            ),
+        )?;
+    }
     w(
         report,
         format_args!(
@@ -383,45 +582,108 @@ fn write_report(
             ms(WARMUP_FLOOR.as_secs_f64())
         ),
     )?;
-    w(
-        report,
-        format_args!("output:      every subject matches corpus/accept/{ENTRY_ID}.expected"),
-    )?;
+    w(report, format_args!("output:"))?;
+    for run in workload_runs {
+        match run.workload.expected_output {
+            ExpectedOutput::Bytes(_) => w(
+                report,
+                format_args!(
+                    "  {:<8} every subject matches corpus/accept/a22-matrix-propagation.expected",
+                    run.workload.name
+                ),
+            )?,
+            ExpectedOutput::I32(expected) => w(
+                report,
+                format_args!(
+                    "  {:<8} every subject agrees on i32 checksum {expected}",
+                    run.workload.name
+                ),
+            )?,
+        }
+    }
     w(report, format_args!(""))?;
     w(
         report,
         format_args!(
-            "{:<10} {:>12} {:>12} {:>12} {:>9} {:>10}",
-            "subject", "median", "min", "max", "spread", "vs C"
+            "{:<9} {:<10} {:>12} {:>12} {:>12} {:>9} {:>10}",
+            "workload", "subject", "median", "min", "max", "spread", "vs C"
         ),
     )?;
-    for (s, st) in subjects.iter().zip(stats.iter()) {
-        w(
-            report,
-            format_args!(
-                "{:<10} {:>12} {:>12} {:>12} {:>8.1}% {:>9.2}x",
-                s.name,
-                ms(st.median),
-                ms(st.min),
-                ms(st.max),
-                st.spread() * 100.0,
-                st.median / baseline
-            ),
-        )?;
+    for (run, stats) in workload_runs.iter().zip(workload_stats.iter()) {
+        let baseline_stats = stats
+            .first()
+            .ok_or_else(|| format!("{} has no baseline statistics", run.workload.name))?;
+        let baseline = baseline_stats.median;
+        if baseline <= 0.0 {
+            return Err(format!(
+                "{} C baseline measured zero time; the clock is unusable",
+                run.workload.name
+            ));
+        }
+        let baseline_withheld = timing_is_withheld(mode, baseline_stats.spread());
+        for (subject, subject_stats) in run.subjects.iter().zip(stats.iter()) {
+            let withheld = timing_is_withheld(mode, subject_stats.spread());
+            if withheld {
+                w(
+                    report,
+                    format_args!(
+                        "{:<9} {:<10} {:>12} {:>12} {:>12} {:>8.1}% {:>10}",
+                        run.workload.name,
+                        subject.name,
+                        "withheld",
+                        "withheld",
+                        "withheld",
+                        subject_stats.spread() * 100.0,
+                        "withheld"
+                    ),
+                )?;
+            } else if baseline_withheld {
+                w(
+                    report,
+                    format_args!(
+                        "{:<9} {:<10} {:>12} {:>12} {:>12} {:>8.1}% {:>10}",
+                        run.workload.name,
+                        subject.name,
+                        ms(subject_stats.median),
+                        ms(subject_stats.min),
+                        ms(subject_stats.max),
+                        subject_stats.spread() * 100.0,
+                        "withheld"
+                    ),
+                )?;
+            } else {
+                w(
+                    report,
+                    format_args!(
+                        "{:<9} {:<10} {:>12} {:>12} {:>12} {:>8.1}% {:>9.2}x",
+                        run.workload.name,
+                        subject.name,
+                        ms(subject_stats.median),
+                        ms(subject_stats.min),
+                        ms(subject_stats.max),
+                        subject_stats.spread() * 100.0,
+                        subject_stats.median / baseline
+                    ),
+                )?;
+            }
+        }
     }
 
     w(report, format_args!(""))?;
     w(report, format_args!("measured warm-up per subject:"))?;
-    for s in subjects.iter() {
-        w(
-            report,
-            format_args!(
-                "  {:<10} {:>12} across {} iterations",
-                s.name,
-                ms(s.warmup.as_secs_f64()),
-                s.warmup_iterations
-            ),
-        )?;
+    for run in workload_runs {
+        for subject in &run.subjects {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<10} {:>12} across {} iterations",
+                    run.workload.name,
+                    subject.name,
+                    ms(subject.warmup.as_secs_f64()),
+                    subject.warmup_iterations
+                ),
+            )?;
+        }
     }
 
     w(report, format_args!(""))?;
@@ -429,18 +691,41 @@ fn write_report(
         report,
         format_args!("timed runs in order (ms), so a warm-up ramp is visible as such:"),
     )?;
-    for s in subjects.iter() {
-        let mut line = String::new();
-        for d in &s.samples {
-            let _ = write!(line, " {:.3}", d.as_secs_f64() * 1000.0);
+    for (run, stats) in workload_runs.iter().zip(workload_stats.iter()) {
+        for (subject, subject_stats) in run.subjects.iter().zip(stats.iter()) {
+            if timing_is_withheld(mode, subject_stats.spread()) {
+                w(
+                    report,
+                    format_args!(
+                        "  {:<9} {:<10} withheld (noise)",
+                        run.workload.name, subject.name
+                    ),
+                )?;
+                continue;
+            }
+            let mut line = String::new();
+            for duration in &subject.samples {
+                let _ = write!(line, " {:.3}", duration.as_secs_f64() * 1000.0);
+            }
+            w(
+                report,
+                format_args!("  {:<9} {:<10}{}", run.workload.name, subject.name, line),
+            )?;
         }
-        w(report, format_args!("  {:<10}{}", s.name, line))?;
     }
 
     w(report, format_args!(""))?;
     w(report, format_args!("timed span per subject:"))?;
-    for s in subjects.iter() {
-        w(report, format_args!("  {:<10} {}", s.name, s.span))?;
+    for run in workload_runs {
+        for subject in &run.subjects {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<10} {}",
+                    run.workload.name, subject.name, subject.span
+                ),
+            )?;
+        }
     }
 
     w(report, format_args!(""))?;
@@ -453,17 +738,31 @@ fn write_report(
         ),
     )?;
     for (s, st) in one_shots.iter().zip(one_shot_stats.iter()) {
-        w(
-            report,
-            format_args!(
-                "{:<15} {:>12} {:>12} {:>12} {:>8.1}%",
-                s.name,
-                ms(st.median),
-                ms(st.min),
-                ms(st.max),
-                st.spread() * 100.0
-            ),
-        )?;
+        if timing_is_withheld(mode, st.spread()) {
+            w(
+                report,
+                format_args!(
+                    "{:<15} {:>12} {:>12} {:>12} {:>8.1}%",
+                    s.name,
+                    "withheld",
+                    "withheld",
+                    "withheld",
+                    st.spread() * 100.0
+                ),
+            )?;
+        } else {
+            w(
+                report,
+                format_args!(
+                    "{:<15} {:>12} {:>12} {:>12} {:>8.1}%",
+                    s.name,
+                    ms(st.median),
+                    ms(st.min),
+                    ms(st.max),
+                    st.spread() * 100.0
+                ),
+            )?;
+        }
     }
     w(report, format_args!(""))?;
     w(report, format_args!("one-shot measured warm-up:"))?;
@@ -480,7 +779,11 @@ fn write_report(
     }
     w(report, format_args!(""))?;
     w(report, format_args!("one-shot timed runs in order (ms):"))?;
-    for s in one_shots.iter() {
+    for (s, st) in one_shots.iter().zip(one_shot_stats.iter()) {
+        if timing_is_withheld(mode, st.spread()) {
+            w(report, format_args!("  {:<15} withheld (noise)", s.name))?;
+            continue;
+        }
         let mut line = String::new();
         for d in &s.samples {
             let _ = write!(line, " {:.3}", d.as_secs_f64() * 1000.0);
@@ -512,12 +815,20 @@ fn write_report(
         report,
         format_args!("auxiliary preparation time (single observations, reported, not gated):"),
     )?;
-    for s in subjects.iter() {
-        for (label, d) in &s.prepare {
-            w(
-                report,
-                format_args!("  {:<10} {:<34} {}", s.name, label, ms(d.as_secs_f64())),
-            )?;
+    for run in workload_runs {
+        for subject in &run.subjects {
+            for (label, duration) in &subject.prepare {
+                w(
+                    report,
+                    format_args!(
+                        "  {:<9} {:<10} {:<34} {}",
+                        run.workload.name,
+                        subject.name,
+                        label,
+                        ms(duration.as_secs_f64())
+                    ),
+                )?;
+            }
         }
     }
 
@@ -526,11 +837,6 @@ fn write_report(
         report,
         format_args!("thresholds (compiler.md §3, pre-registered):"),
     )?;
-    let (Some(ship), Some(ship_stats), Some(jit), Some(jit_stats)) =
-        (subjects.get(1), stats.get(1), subjects.get(2), stats.get(2))
-    else {
-        return Err("a tier subject is missing from the report".to_string());
-    };
     let (Some(iteration), Some(iteration_stats), Some(reload), Some(reload_stats)) = (
         one_shots.first(),
         one_shot_stats.first(),
@@ -539,63 +845,138 @@ fn write_report(
     ) else {
         return Err("an iteration subject is missing from the report".to_string());
     };
-    let ship_ratio = ship_stats.median / baseline;
-    let jit_ratio = jit_stats.median / baseline;
-    let ship_met = ship_ratio <= SHIP_LIMIT;
+    let mut thresholds_met = true;
+    for (run, stats) in workload_runs.iter().zip(workload_stats.iter()) {
+        let (Some(baseline), Some(ship), Some(dev)) = (stats.first(), stats.get(1), stats.get(2))
+        else {
+            return Err(format!(
+                "{} tier statistics are missing from the report",
+                run.workload.name
+            ));
+        };
+        if baseline.median <= 0.0 {
+            return Err(format!(
+                "{} C baseline measured zero time; the clock is unusable",
+                run.workload.name
+            ));
+        }
+        let ship_ratio = ship.median / baseline.median;
+        let dev_ratio = dev.median / baseline.median;
+        let ship_met = ship_ratio <= run.workload.ship_limit;
+        let dev_met = dev_ratio <= run.workload.dev_limit;
+        thresholds_met = thresholds_met && ship_met && dev_met;
+        let baseline_withheld = timing_is_withheld(mode, baseline.spread());
+        if baseline_withheld || timing_is_withheld(mode, ship.spread()) {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<15} {:>16}, limit {:.2}x  WITHHELD",
+                    run.workload.name, "ship-tier", "noise", run.workload.ship_limit
+                ),
+            )?;
+        } else {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<15} {:>7.2}x of C, limit {:.2}x  {}",
+                    run.workload.name,
+                    "ship-tier",
+                    ship_ratio,
+                    run.workload.ship_limit,
+                    if ship_met { "MET" } else { "MISSED" }
+                ),
+            )?;
+        }
+        if baseline_withheld || timing_is_withheld(mode, dev.spread()) {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<15} {:>16}, limit {:.2}x  WITHHELD",
+                    run.workload.name, "dev-JIT", "noise", run.workload.dev_limit
+                ),
+            )?;
+        } else {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<15} {:>7.2}x of C, limit {:.2}x  {}",
+                    run.workload.name,
+                    "dev-JIT",
+                    dev_ratio,
+                    run.workload.dev_limit,
+                    if dev_met { "MET" } else { "MISSED" }
+                ),
+            )?;
+        }
+    }
     let iteration_met = iteration_stats.median <= DEV_ITERATION_LIMIT.as_secs_f64();
     let reload_met = reload_stats.median <= DEV_ITERATION_LIMIT.as_secs_f64();
-    let thresholds_met = ship_met && iteration_met && reload_met;
-    w(
-        report,
-        format_args!(
-            "  {:<15} {:>7.2}x of C, limit {:.2}x  {}",
-            ship.name,
-            ship_ratio,
-            SHIP_LIMIT,
-            if ship_met { "MET" } else { "MISSED" }
-        ),
-    )?;
-    w(
-        report,
-        format_args!(
-            "  {:<15} {:>10}, limit {}  {}",
-            iteration.name,
-            ms(iteration_stats.median),
-            ms(DEV_ITERATION_LIMIT.as_secs_f64()),
-            if iteration_met { "MET" } else { "MISSED" }
-        ),
-    )?;
-    w(
-        report,
-        format_args!(
-            "  {:<15} {:>10}, limit {}  {}",
-            reload.name,
-            ms(reload_stats.median),
-            ms(DEV_ITERATION_LIMIT.as_secs_f64()),
-            if reload_met { "MET" } else { "MISSED" }
-        ),
-    )?;
-    w(
-        report,
-        format_args!(
-            "  {:<15} {:>7.2}x of C  REPORTED, NOT GATED",
-            jit.name, jit_ratio
-        ),
-    )?;
-
+    thresholds_met = thresholds_met && iteration_met && reload_met;
+    if timing_is_withheld(mode, iteration_stats.spread()) {
+        w(
+            report,
+            format_args!(
+                "  {:<9} {:<15} {:>10}, limit {}  WITHHELD",
+                "a22",
+                iteration.name,
+                "noise",
+                ms(DEV_ITERATION_LIMIT.as_secs_f64())
+            ),
+        )?;
+    } else {
+        w(
+            report,
+            format_args!(
+                "  {:<9} {:<15} {:>10}, limit {}  {}",
+                "a22",
+                iteration.name,
+                ms(iteration_stats.median),
+                ms(DEV_ITERATION_LIMIT.as_secs_f64()),
+                if iteration_met { "MET" } else { "MISSED" }
+            ),
+        )?;
+    }
+    if timing_is_withheld(mode, reload_stats.spread()) {
+        w(
+            report,
+            format_args!(
+                "  {:<9} {:<15} {:>10}, limit {}  WITHHELD",
+                "a22",
+                reload.name,
+                "noise",
+                ms(DEV_ITERATION_LIMIT.as_secs_f64())
+            ),
+        )?;
+    } else {
+        w(
+            report,
+            format_args!(
+                "  {:<9} {:<15} {:>10}, limit {}  {}",
+                "a22",
+                reload.name,
+                ms(reload_stats.median),
+                ms(DEV_ITERATION_LIMIT.as_secs_f64()),
+                if reload_met { "MET" } else { "MISSED" }
+            ),
+        )?;
+    }
     w(report, format_args!(""))?;
-    let mut noisy: Vec<&str> = subjects
-        .iter()
-        .zip(stats.iter())
-        .filter(|(_, st)| st.spread() > NOISE_LIMIT)
-        .map(|(s, _)| s.name)
-        .collect();
+    let mut noisy = Vec::new();
+    for (run, stats) in workload_runs.iter().zip(workload_stats.iter()) {
+        noisy.extend(
+            run.subjects
+                .iter()
+                .zip(stats.iter())
+                .filter(|(_, subject_stats)| subject_stats.spread() > NOISE_LIMIT)
+                .map(|(subject, _)| format!("{}/{}", run.workload.name, subject.name)),
+        );
+    }
     noisy.extend(
         one_shots
             .iter()
             .zip(one_shot_stats.iter())
-            .filter(|(_, st)| st.spread() > NOISE_LIMIT)
-            .map(|(s, _)| s.name),
+            .filter(|(_, subject_stats)| subject_stats.spread() > NOISE_LIMIT)
+            .map(|(subject, _)| format!("a22/{}", subject.name)),
     );
     if noisy.is_empty() {
         w(
@@ -605,23 +986,7 @@ fn write_report(
                 NOISE_LIMIT * 100.0
             ),
         )?;
-        w(
-            report,
-            format_args!(
-                "result:      {}",
-                if thresholds_met {
-                    "all gated criteria were met"
-                } else {
-                    "a gated criterion was missed; compiler.md §3 names the backend decision this reopens"
-                }
-            ),
-        )?;
-        Ok(if thresholds_met {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::from(1)
-        })
-    } else {
+    } else if mode == RunMode::Reporting {
         w(
             report,
             format_args!(
@@ -630,7 +995,34 @@ fn write_report(
                 NOISE_LIMIT * 100.0
             ),
         )?;
-        Ok(ExitCode::from(2))
+    } else {
+        w(
+            report,
+            format_args!(
+                "noise check: {} exceeded +/-{:.0}% of the median; this is reported and not gated (compiler.md §9)",
+                noisy.join(", "),
+                NOISE_LIMIT * 100.0
+            ),
+        )?;
+    }
+    match decide_run(mode, thresholds_met, &spreads) {
+        RunDecision::Passed => {
+            w(
+                report,
+                format_args!("result:      all gated criteria were met"),
+            )?;
+            Ok(ExitCode::SUCCESS)
+        }
+        RunDecision::Missed => {
+            w(
+                report,
+                format_args!(
+                    "result:      a gated criterion was missed; compiler.md §3 names the backend decision this reopens"
+                ),
+            )?;
+            Ok(ExitCode::from(1))
+        }
+        RunDecision::Void => Ok(ExitCode::from(2)),
     }
 }
 
@@ -816,12 +1208,69 @@ struct SubjectRun {
     warmup_iterations: usize,
 }
 
+/// Parses one protocol time value.
+fn parse_protocol_duration(value: &str, protocol: BaselineProtocol) -> Result<Duration, Fail> {
+    match protocol {
+        BaselineProtocol::NanosecondsWithFloor => value
+            .parse::<u64>()
+            .map(Duration::from_nanos)
+            .map_err(|_| format!("time `{value}` is not nanoseconds")),
+        BaselineProtocol::SecondsWithInternalFloor => {
+            let seconds = value
+                .parse::<f64>()
+                .map_err(|_| format!("time `{value}` is not seconds"))?;
+            if !seconds.is_finite() || seconds < 0.0 {
+                return Err(format!("time `{value}` is not a nonnegative duration"));
+            }
+            Ok(Duration::from_secs_f64(seconds))
+        }
+    }
+}
+
+/// Normalizes the result bytes from one C baseline protocol.
+fn normalize_baseline_stdout(stdout: Vec<u8>, protocol: BaselineProtocol) -> Result<Vec<u8>, Fail> {
+    match protocol {
+        BaselineProtocol::NanosecondsWithFloor => Ok(stdout),
+        BaselineProtocol::SecondsWithInternalFloor => {
+            let text = String::from_utf8_lossy(&stdout);
+            let mut fields = text.split_whitespace();
+            let (Some(checksum), Some(median), None) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                return Err(format!(
+                    "C baseline output {:?} is not `<checksum> <median>`",
+                    text.trim()
+                ));
+            };
+            let checksum = checksum
+                .parse::<i32>()
+                .map_err(|_| format!("C baseline checksum `{checksum}` is not an i32"))?;
+            let median = median
+                .parse::<f64>()
+                .map_err(|_| format!("C baseline median `{median}` is not seconds"))?;
+            if !median.is_finite() || median < 0.0 {
+                return Err(format!(
+                    "C baseline median `{median}` is not a nonnegative duration"
+                ));
+            }
+            Ok(format!("{checksum}\n").into_bytes())
+        }
+    }
+}
+
 /// Runs a subject binary and parses its warm-up and timed samples.
-fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<SubjectRun, Fail> {
-    let out = Command::new(exe)
-        .arg(warmup.to_string())
-        .arg(timed.to_string())
-        .arg(WARMUP_FLOOR.as_nanos().to_string())
+fn run_subject(
+    exe: &Path,
+    warmup: usize,
+    timed: usize,
+    protocol: BaselineProtocol,
+) -> Result<SubjectRun, Fail> {
+    let mut command = Command::new(exe);
+    command.arg(warmup.to_string()).arg(timed.to_string());
+    if matches!(protocol, BaselineProtocol::NanosecondsWithFloor) {
+        command.arg(WARMUP_FLOOR.as_nanos().to_string());
+    }
+    let out = command
         .output()
         .map_err(|e| format!("run {}: {e}", exe.display()))?;
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -846,10 +1295,9 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<SubjectRun, Fa
                 let iterations = iterations
                     .parse()
                     .map_err(|_| format!("bad warm-up iterations `{line}`"))?;
-                let ns = ns
-                    .parse()
+                let duration = parse_protocol_duration(ns, protocol)
                     .map_err(|_| format!("bad warm-up time `{line}`"))?;
-                warmup_report = Some((iterations, Duration::from_nanos(ns)));
+                warmup_report = Some((iterations, duration));
             }
             ["sample", index, ns] => {
                 let index: usize = index
@@ -861,16 +1309,19 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<SubjectRun, Fa
                         samples.len()
                     ));
                 }
-                let ns: u64 = ns
-                    .parse()
+                let duration = parse_protocol_duration(ns, protocol)
                     .map_err(|_| format!("unreadable sample line `{line}`"))?;
-                samples.push(Duration::from_nanos(ns));
+                samples.push(duration);
             }
-            ["checksum-stable", flag] => stable = Some(*flag == "1"),
+            ["checksum-stable", flag]
+                if matches!(protocol, BaselineProtocol::NanosecondsWithFloor) =>
+            {
+                stable = Some(*flag == "1");
+            }
             _ => return Err(format!("unexpected line on stderr: `{line}`")),
         }
     }
-    if stable != Some(true) {
+    if matches!(protocol, BaselineProtocol::NanosecondsWithFloor) && stable != Some(true) {
         return Err(format!(
             "{} did not report a stable result across its runs",
             exe.display()
@@ -890,7 +1341,7 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<SubjectRun, Fa
         ));
     };
     Ok(SubjectRun {
-        stdout: out.stdout,
+        stdout: normalize_baseline_stdout(out.stdout, protocol)?,
         samples,
         warmup,
         warmup_iterations,
@@ -898,10 +1349,19 @@ fn run_subject(exe: &Path, warmup: usize, timed: usize) -> Result<SubjectRun, Fa
 }
 
 /// Compiles and measures the hand-written C baseline.
-fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
-    let source = dir.join("a22-baseline.c");
-    let exe = dir.join(format!("a22-baseline{}", std::env::consts::EXE_SUFFIX));
-    write_file(&source, BASELINE_C.as_bytes())?;
+fn measure_c(
+    workload: &Workload,
+    dir: &Path,
+    warmup: usize,
+    timed: usize,
+) -> Result<Subject, Fail> {
+    let source = dir.join(format!("{}-baseline.c", workload.name));
+    let exe = dir.join(format!(
+        "{}-baseline{}",
+        workload.name,
+        std::env::consts::EXE_SUFFIX
+    ));
+    write_file(&source, workload.baseline_c.as_bytes())?;
 
     let started = Instant::now();
     let build = Command::new(host_cc())
@@ -919,10 +1379,10 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
         ));
     }
 
-    let run = run_subject(&exe, warmup, timed)?;
+    let run = run_subject(&exe, warmup, timed, workload.baseline_protocol)?;
     Ok(Subject {
         name: "C",
-        span: "the workload call: array construction, 100 propagation iterations, checksum",
+        span: workload.c_span,
         stdout: run.stdout,
         samples: run.samples,
         warmup: run.warmup,
@@ -942,6 +1402,7 @@ fn measure_c(dir: &Path, warmup: usize, timed: usize) -> Result<Subject, Fail> {
 /// and Q14 formatting, so this measures the shipped path through clang,
 /// timed on the whole `subscript_export_main` call.
 fn measure_ship(
+    workload: &Workload,
     files: &[SourceFile],
     dir: &Path,
     warmup: usize,
@@ -962,9 +1423,13 @@ fn measure_ship(
         .source;
     let emit = started.elapsed();
 
-    let source = dir.join("a22-ship.c");
-    let entry = dir.join("ship-entry.c");
-    let exe = dir.join(format!("a22-ship{}", std::env::consts::EXE_SUFFIX));
+    let source = dir.join(format!("{}-ship.c", workload.name));
+    let entry = dir.join(format!("{}-ship-entry.c", workload.name));
+    let exe = dir.join(format!(
+        "{}-ship{}",
+        workload.name,
+        std::env::consts::EXE_SUFFIX
+    ));
     write_file(&source, c_source.as_bytes())?;
     write_file(&entry, SHIP_BENCH_ENTRY_C.as_bytes())?;
     let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
@@ -997,7 +1462,7 @@ fn measure_ship(
         ));
     }
 
-    let run = run_subject(&exe, warmup, timed)?;
+    let run = run_subject(&exe, warmup, timed, BaselineProtocol::NanosecondsWithFloor)?;
     Ok(Subject {
         name: "ship-tier",
         span: "the subscript_export_main call in the ship-tier binary (linked with the runtime)",
@@ -1022,4 +1487,77 @@ fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Result<Subj
         warmup_iterations: b.warmup_iterations,
         prepare: Vec::new(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_reporting_run_passes_when_thresholds_are_met() {
+        let spreads = [NOISE_LIMIT - 0.01];
+        assert_eq!(
+            decide_run(RunMode::Reporting, true, &spreads),
+            RunDecision::Passed
+        );
+    }
+
+    #[test]
+    fn clean_reporting_run_reports_a_missed_threshold() {
+        let spreads = [NOISE_LIMIT - 0.01];
+        assert_eq!(
+            decide_run(RunMode::Reporting, false, &spreads),
+            RunDecision::Missed
+        );
+    }
+
+    #[test]
+    fn gate_noise_does_not_void_a_missed_threshold() {
+        let spreads = [NOISE_LIMIT + 0.01];
+        assert_eq!(
+            decide_run(RunMode::Gate, false, &spreads),
+            RunDecision::Missed
+        );
+    }
+
+    #[test]
+    fn reporting_noise_voids_before_a_missed_threshold() {
+        let spreads = [NOISE_LIMIT + 0.01];
+        assert_eq!(
+            decide_run(RunMode::Reporting, false, &spreads),
+            RunDecision::Void
+        );
+    }
+
+    #[test]
+    fn only_noisy_reporting_timings_are_withheld() {
+        let under_limit = NOISE_LIMIT - 0.01;
+        let over_limit = NOISE_LIMIT + 0.01;
+
+        assert!(!timing_is_withheld(RunMode::Reporting, under_limit));
+        assert!(timing_is_withheld(RunMode::Reporting, over_limit));
+        assert!(!timing_is_withheld(RunMode::Gate, under_limit));
+        assert!(!timing_is_withheld(RunMode::Gate, over_limit));
+    }
+
+    #[test]
+    fn an_empty_spread_list_never_voids_either_run() {
+        for mode in [RunMode::Reporting, RunMode::Gate] {
+            assert_eq!(decide_run(mode, true, &[]), RunDecision::Passed);
+            assert_eq!(decide_run(mode, false, &[]), RunDecision::Missed);
+        }
+    }
+
+    #[test]
+    fn excessive_spread_voids_only_the_reporting_run() {
+        let spreads = [NOISE_LIMIT + 0.01];
+        assert_eq!(
+            decide_run(RunMode::Reporting, true, &spreads),
+            RunDecision::Void
+        );
+        assert_eq!(
+            decide_run(RunMode::Gate, true, &spreads),
+            RunDecision::Passed
+        );
+    }
 }
