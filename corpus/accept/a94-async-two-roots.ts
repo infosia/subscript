@@ -2,7 +2,7 @@
 // purpose: Pins standard-runner async-export kick and poll ordering.
 // exercises: sync-main, two-async-roots, kick-order, pump-to-quiescence
 // questions: Q34, C8
-// tsc: accepts
+// tsc: accepts; js-comparable: no C8: The corpus runner starts async exports differently.
 export function main(): void {
   print("main:sync");
 }

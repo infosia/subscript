@@ -2,7 +2,7 @@
 // purpose: Proves explicit value-class alignment in nested classes and fixed arrays.
 // exercises: CStruct-alignment, value-copy, nested-value-class, FixedArray-stride
 // questions: R33
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 @CStruct({ align: 16 })
 class Vec3f {
   x: f32 = 0.0;

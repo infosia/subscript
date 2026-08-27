@@ -4,7 +4,7 @@
 //          results, both operand directions, and predicate outcomes.
 // exercises: map-group-by, set-algebra, insertion-order, owned-results
 // questions: Q27, Q24, C2, C5
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 let setOrder: string = "";
 
 function showSet(label: string, values: Set<i32>): void {

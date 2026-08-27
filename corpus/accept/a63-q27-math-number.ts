@@ -4,7 +4,7 @@
 //          the accepted globals on identical inputs.
 // exercises: math-imul, math-fround, number-parse-int, number-parse-float
 // questions: Q27
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const high: i32 = 2147483647;
   const low: i32 = -2147483648;

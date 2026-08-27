@@ -2,7 +2,7 @@
 // purpose: Passes primitive-typed arrays zero-copy to typed C slice facades (f32/i32/f64/i64) and prints each checksum.
 // exercises: interop-array-pair, pointer-count-view, zero-copy-slice, foreign-call, multi-primitive
 // questions: Q13, Q4
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // A primitive `T[]` lowers to its (pointer, count) pair (Q4); a typed C
 // descriptor `{ const T*; size_t }` binds it as `T[]` and borrows it
 // zero-copy (Q13). Each `subSliceChecksum*` reads every element straight

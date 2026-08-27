@@ -2,7 +2,7 @@
 // purpose: Registers a callback with userdata, fires it twice, and narrows the userdata via `as`.
 // exercises: interop-callback, userdata-narrowing, as-narrowing, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // Q16: self-created handle via subDeviceCreate(null). The callback is a
 // non-capturing function (C5) plus two userdata slots (§14.4; the boundary
 // `object | null` form); inside, the first userdata is narrowed to its

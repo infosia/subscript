@@ -2,7 +2,7 @@
 // purpose: Composes all five C interop patterns in one program.
 // exercises: interop-chain, interop-array-pair, interop-string-view, interop-callback, interop-handle, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // Q16: self-created handle via subDeviceCreate(chain), passing a chain the
 // entry builds. All five plan-§4 patterns appear together: an intrusive
 // extension chain (1), a (pointer,count) command view (2), a

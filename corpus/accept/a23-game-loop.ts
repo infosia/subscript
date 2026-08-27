@@ -2,7 +2,7 @@
 // purpose: Simulates a host-owned fixed-step loop for sixty deterministic frames.
 // exercises: exported-lifecycle, fixed-dt, value-struct-array, state-checksum
 // questions: Q1, Q2, Q4, Q12, Q14, Q15, Q17
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 const ENTITY_COUNT: i32 = 128;
 const FRAME_COUNT: i32 = 60;
 const FIXED_DT: f32 = 1.0 / 60.0;

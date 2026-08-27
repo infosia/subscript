@@ -3,7 +3,7 @@
 //          equal-shaped instances remain distinct and mutation is safe.
 // exercises: map-reference-keys, identity-equality, identity-hashing
 // questions: Q24, Q22, C2
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q24: Map.getOr has no JavaScript shim.
 class Key {
   id: i32;
   constructor(id: i32) {

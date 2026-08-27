@@ -2,7 +2,7 @@
 // purpose: Calls methods on a value struct and a reference class.
 // exercises: value-method, reference-method, receiver
 // questions: Q1, Q2, Q6, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2 Q6: The CStruct decorator has no JavaScript shim.
 @CStruct
 class Point {
   x: f32;

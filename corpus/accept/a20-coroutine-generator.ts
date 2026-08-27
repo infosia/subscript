@@ -2,7 +2,7 @@
 // purpose: Drives a generator explicitly until completion.
 // exercises: generator, yield, host-driven-coroutine
 // questions: Q1, Q11, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 function* sequence(limit: i32) {
   for (let value: i32 = 1; value <= limit; value += 1) {
     yield value;

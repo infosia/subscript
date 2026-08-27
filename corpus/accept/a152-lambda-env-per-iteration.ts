@@ -2,7 +2,7 @@
 // purpose: Keeps one coroutine loop iteration's lambda environment distinct from later iterations.
 // exercises: closures, lambda-environment, coroutine, loop-iteration, live-range-storage
 // questions: §68
-// tsc: accepts
+// tsc: accepts; js-comparable: no C8: The coroutine API has no JavaScript shim.
 export async function main(): Promise<void> {
   let keep = (): i32 => 0;
   let i: i32 = 0;

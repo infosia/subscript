@@ -3,7 +3,7 @@
 // observable: astral for-of prints identically before and after collection.
 // exercises: for-of-string, astral-code-point, collect, p24-context-interning
 // questions: Q30, Q7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q7: The Context memory API has no JavaScript shim.
 export function main(): void {
   const text: string = "😀🦀😀";
   for (const value of text) {

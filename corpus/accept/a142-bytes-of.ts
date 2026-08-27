@@ -2,7 +2,7 @@
 // purpose: Proves byte copies for aligned value classes and fixed arrays.
 // exercises: Context.bytesOf, Context.bytesInto, Context.fromBytes, padding-zero
 // questions: R34
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 @CStruct({ align: 16 })
 class Vec3f {
   x: f32 = 0.0;

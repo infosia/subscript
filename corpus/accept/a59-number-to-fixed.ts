@@ -3,7 +3,7 @@
 //          Q14 fallback, and f32 receiver widening on both tiers.
 // exercises: number-to-fixed, q14-exponent-threshold
 // questions: Q14, Q25
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   print(`stored-half ${(1.005).toFixed(2)}`);
   print(`ties ${(2.5).toFixed(0)} ${(-2.5).toFixed(0)}`);

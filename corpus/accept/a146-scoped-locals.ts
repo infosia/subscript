@@ -2,7 +2,7 @@
 // purpose: Pins source scopes and derived type names in emitted C.
 // exercises: managed-local-shadowing, coroutine-scope, storage-mask, lambda-capture-name-table, coroutine-frame-type, for-of-body-scope, generator-driven-for-of, switch-case-shadow, lambda-function-state, function-body-kinds, using-scope
 // questions: §66
-// tsc: accepts
+// tsc: accepts; js-comparable: no C8 C11: The coroutine API has no JavaScript shim.
 class Box {
   value: i32;
 

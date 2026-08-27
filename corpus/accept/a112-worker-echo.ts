@@ -2,7 +2,7 @@
 // purpose: Pins one deterministic parent-to-worker-to-parent echo round-trip.
 // exercises: Worker.spawn, Worker.post, Inbox.wait, Outbox.post, Worker.close, Worker.join, Worker.poll
 // questions: Q35
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q35: The Worker API has no JavaScript shim.
 class EchoMessage {
   value: i32;
 

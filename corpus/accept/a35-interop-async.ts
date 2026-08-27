@@ -2,7 +2,7 @@
 // purpose: Deferred (host-driven) callback — registered now, fired later by a pump; userdata outlives the registration.
 // exercises: interop-callback, async-deferred-fire, userdata-lifetime, as-narrowing, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // P6.3 async model (compiler.md §13.3). Unlike a28 (subDeviceSetLogger fires
 // the callback synchronously inside the registering call), subDeviceOnComplete
 // only STORES the callback-info and returns; subDevicePump fires it LATER. The

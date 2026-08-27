@@ -2,7 +2,7 @@
 // purpose: Exercises absence-capable Q32 alias members on descriptor literals and narrowed reads.
 // exercises: descriptor-member, Q32 alias, omission, presence-narrowing, reserved-discriminant
 // questions: Q33, Q32, R16, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q33: The Descriptor decorator has no JavaScript shim.
 type CompareFunction = "never" | "less" | "equal";
 
 @Descriptor

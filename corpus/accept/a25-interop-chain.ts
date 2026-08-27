@@ -2,7 +2,7 @@
 // purpose: Builds an intrusive extension chain and observes its depth through the callback.
 // exercises: interop-chain, chain-header, struct-pointer-slot, callback, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // Q16: this entry creates its own handle through the synthetic
 // `subDeviceCreate`, passing a chain it builds; the handle is not
 // host-injected. The chain depth is the only value the callback surfaces

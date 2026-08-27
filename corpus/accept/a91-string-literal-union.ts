@@ -2,7 +2,7 @@
 // purpose: Exercises nominal closed string-literal union aliases.
 // exercises: contextual members, assignment, parameters, fields, returns, arrays, equality, formatting
 // questions: Q32
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 type IndexFormat = "uint16" | "uint32";
 type TwinFormat = "uint16" | "uint32";
 

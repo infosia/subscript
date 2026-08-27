@@ -2,7 +2,7 @@
 // purpose: Combines members of a TWO-LEVEL flag alias with | (Q18) and passes the combined u64 to a foreign bit test.
 // exercises: interop-flags, chained-flag-typedef, u64-bitwise, foreign-call
 // questions: Q13, Q18
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // §14.1 chained flag alias. The C header spells the flag typedef as two
 // typedef levels: `typedef uint64_t SubStageBits; typedef SubStageBits
 // SubStageFlags;`. bindgen follows the chain to the underlying integer,

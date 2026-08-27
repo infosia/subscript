@@ -2,7 +2,7 @@
 // purpose: Disposes resources at the exit of one switch-body scope.
 // exercises: using-declaration, switch-body-scope, fallthrough, reverse-disposal
 // questions: §67, §60
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 class Resource {
   label: string;
 

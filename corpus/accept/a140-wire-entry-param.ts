@@ -2,7 +2,7 @@
 // purpose: Proves that a host passes one wire-mapped alias and one scalar to a script entry.
 // exercises: host-callable-export-parameters, CEnum, unknown-wire-value-validation
 // questions: R32
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 let configuredMode: SubWireMode = "m0";
 let configuredTag: i32 = 0;
 

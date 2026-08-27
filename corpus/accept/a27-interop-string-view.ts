@@ -2,7 +2,7 @@
 // purpose: Round-trips a length-carrying string label through setLabel and the callback.
 // exercises: interop-string-view, string-boundary, callback, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // Q16: self-created handle via subDeviceCreate(null). A `string` argument
 // lowers to a length-carrying view (pointer + byte length, no NUL); the
 // callee stores it and setLogger replays it to the callback, whose

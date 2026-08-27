@@ -2,7 +2,7 @@
 // purpose: Round-trips one-of-three nullable opaque-handle fields through a bind-group-entry-shaped C record in both directions.
 // exercises: nullable-handle-field, null-lowering, null-readback, boundary-struct-pointer, one-of-three
 // questions: Q13, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // compiler.md §31.2. Direct field reads prove that C NULL becomes language
 // null; the C checker independently proves that script null crossed as NULL.
 

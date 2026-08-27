@@ -2,7 +2,7 @@
 // purpose: Submits a (pointer,count) command view and observes its sum through the callback.
 // exercises: interop-array-pair, pointer-count-view, callback, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // Q16: self-created handle via subDeviceCreate(null). The chain is null
 // (depth 0), so the callback's message length is the array sum alone —
 // the printed number is exactly the sum of the submitted u32 view.

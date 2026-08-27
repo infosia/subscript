@@ -4,7 +4,7 @@
 // exercises: substring, substr, char-at, code-point-at, string-concat,
 //            positioned-prefix-suffix, replacement-substitutions
 // questions: Q5, Q21, Q27
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const word: string = "hello";
   // Side-by-side comparisons are the proof that substring is not a

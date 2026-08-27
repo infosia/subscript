@@ -2,7 +2,7 @@
 // purpose: Pins nested component structs behind a nullable blend pointer inside a scratch-lowered target-element array.
 // exercises: recursive-boundary-lowering, nullable-struct-pointer, pointer-in-array-element, nested-behind-pointer, mixed-depth-scratch
 // questions: Q13, C4, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 function report(
   name: string,
   descriptor: SGPUProbeNestedRenderPipelineDescriptor,

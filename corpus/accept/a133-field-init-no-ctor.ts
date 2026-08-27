@@ -2,7 +2,7 @@
 // purpose: Runs non-zero field initializers for value and reference classes without constructors.
 // exercises: field-initializer, constructor-less-value-class, constructor-less-reference-class
 // questions: §57, R27
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 @CStruct
 class ValueField {
   value: i32 = 37;

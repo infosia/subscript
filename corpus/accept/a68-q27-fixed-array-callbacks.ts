@@ -3,7 +3,7 @@
 //          Every indexed callback makes its index observable in output.
 // exercises: fixed-array-callbacks, dual-callback-arity, dynamic-results
 // questions: Q27, C5
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 let valueTrace: string = "";
 let indexedTrace: string = "";
 

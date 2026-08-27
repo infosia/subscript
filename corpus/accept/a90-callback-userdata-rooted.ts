@@ -2,7 +2,7 @@
 // purpose: Registered callback userdata remains live across Context.collect after all script references are dropped.
 // exercises: interop-callback, two-userdata, async-deferred-fire, callback-userdata-rooting, explicit-collection
 // questions: Q7, Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q7 Q13: The host C boundary has no JavaScript shim.
 class RootedPrimary {
   value: i32;
   constructor(value: i32) {

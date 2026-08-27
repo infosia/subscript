@@ -2,7 +2,7 @@
 // purpose: Declares, converts, formats, and computes at each narrow numeric width.
 // exercises: narrow-numerics, explicit-conversion, wrapping-arithmetic, bitwise
 // questions: Q1, Q14, Q18, Q23, C3, C4
-// tsc: accepts
+// tsc: accepts; js-comparable: no C3 Q23: Narrow numeric operations produce different output.
 export function main(): void {
   const signedByte: i8 = -12;
   const unsignedByte: u8 = 250;

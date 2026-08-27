@@ -2,7 +2,7 @@
 // purpose: Runs synchronous disposal at every completed scope exit.
 // exercises: using-declaration, symbol-dispose, reverse-disposal, scope-exit
 // questions: §60, R31
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 class Resource {
   label: string;
 

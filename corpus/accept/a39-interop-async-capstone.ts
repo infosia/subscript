@@ -2,7 +2,7 @@
 // purpose: Composed Future-shape async — kick returns a future by value, wait writes an out-array and fires a two-userdata callback.
 // exercises: interop-struct-return, two-userdata, out-array, async-deferred-fire, as-narrowing, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // §14.5 capstone (compiler.md §14.4/§14.5). Composes the P7.1 shapes into
 // the common main-thread-driven async model: subDeviceKickAsync returns a
 // future BY VALUE (§14.2) while registering a callback-info with TWO

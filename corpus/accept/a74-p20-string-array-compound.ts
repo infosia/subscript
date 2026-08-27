@@ -2,7 +2,7 @@
 // purpose: Keeps string-array element compound addition visible as a ship-C failure.
 // exercises: string-array, index-write, compound-assignment, str-concat
 // questions: none
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const values: string[] = ["a"];
   const index: i32 = 0;

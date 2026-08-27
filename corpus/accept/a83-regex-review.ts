@@ -1,6 +1,6 @@
 // corpus: accept/a83-regex-review
 // questions: Q31
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q7 Q31: The Context memory API has no JavaScript shim.
 // purpose: Pins regex source rendering inside character classes, every
 //          accepted flag, literal reuse across collection, and the
 //          documented non-BMP matching divergence with and without u.

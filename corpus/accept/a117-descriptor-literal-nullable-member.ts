@@ -2,7 +2,7 @@
 // purpose: Exercises descriptor object literals through nullable descriptor contexts.
 // exercises: nullable-descriptor, member-initializer, argument, array-element, nesting, null-default
 // questions: Q33, R17, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q33: The Descriptor decorator has no JavaScript shim.
 @Descriptor
 class InnerDescriptor {
   a?: i32 = 7;

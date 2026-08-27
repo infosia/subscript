@@ -2,7 +2,7 @@
 // purpose: Reads fields of boundary value classes returned BY VALUE from foreign calls (register and sret ABI).
 // exercises: interop-struct-return, by-value-aggregate-abi, boundary-value-class, foreign-call
 // questions: Q13
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // §14.2 by-value boundary-struct return. A foreign function returns a
 // boundary value class by value; both tiers marshal the C-ABI struct return
 // (small structs in registers, larger via sret), arch-gated by §12.3a. The

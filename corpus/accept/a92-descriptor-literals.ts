@@ -2,7 +2,7 @@
 // purpose: Exercises literal construction of data-only @Descriptor reference classes.
 // exercises: required/defaulted members, Q32 aliases, nesting, descriptor arrays, all-defaulted {}, arguments
 // questions: Q33, C1, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q33: The Descriptor decorator has no JavaScript shim.
 type Mode = "fast" | "safe";
 
 @Descriptor

@@ -2,7 +2,7 @@
 // purpose: Drops the last allocation reference before an explicit collection request.
 // exercises: reference-class, allocation, last-reference-drop, explicit-collection
 // questions: Q1, Q2, Q7, Q8, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q7: The Context memory API has no JavaScript shim.
 class Token {
   id: i32;
 

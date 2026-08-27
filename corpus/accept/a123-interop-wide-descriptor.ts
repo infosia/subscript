@@ -2,7 +2,7 @@
 // purpose: Pins scratch ownership for a wide render-pipeline-shaped descriptor combining nested pairs, by-value states, handles, and two reach-through pointer trees.
 // exercises: recursive-boundary-lowering, wide-descriptor, breadth-depth-composition, pointer-bearing-array-elements, sibling-independent-scratch
 // questions: Q13, C4, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 function report(descriptor: SGPUProbeWideRenderPipelineDescriptor): void {
   print("wide-present");
   let selector: u32 = 0;

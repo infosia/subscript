@@ -3,7 +3,7 @@
 //          parseInt/parseFloat, including NaN as parse failure data.
 // exercises: parse-int, parse-float, number-is-nan, numeric-cast
 // questions: Q25
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   print(`radix ${parseInt("101tail", 2)} ${parseInt("-0xFz", 16)} ${parseInt("z!", 36)}`);
   print(`space-sign ${parseInt(" \t +42done", 10)} ${parseInt("\uFEFF-11", 10)}`);

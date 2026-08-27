@@ -2,7 +2,7 @@
 // purpose: Narrows nullable parameters and fields before reference use.
 // exercises: nullable-parameter, nullable-field, null-narrowing
 // questions: Q1, Q2, Q6, Q8, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q6: The Context memory API has no JavaScript shim.
 class ListNode {
   value: i32;
   next: ListNode | null;

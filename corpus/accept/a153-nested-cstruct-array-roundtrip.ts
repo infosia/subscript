@@ -2,7 +2,7 @@
 // purpose: Round-trips a nested CStruct value through a dynamic array without aliasing either value copy.
 // exercises: CStruct, nested-value-class, dynamic-array, indexed-read, indexed-write, value-copy
 // questions: §68
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 @CStruct
 class NestedValue {
   value: i32 = 0;

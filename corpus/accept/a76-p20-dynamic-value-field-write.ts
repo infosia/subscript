@@ -2,7 +2,7 @@
 // purpose: Writes fields through a value-class element of a dynamic array.
 // exercises: Array<CStruct>, field-place, plain-assignment, compound-assignment, side-effecting-index
 // questions: none
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 @CStruct
 class Vec2 {
   x: i32;

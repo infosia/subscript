@@ -2,7 +2,7 @@
 // purpose: Allocates, uses, and manually frees a reference-class instance.
 // exercises: reference-class, allocation, manual-free
 // questions: Q1, Q2, Q6, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q6: The Context memory API has no JavaScript shim.
 class Counter {
   value: i32;
 

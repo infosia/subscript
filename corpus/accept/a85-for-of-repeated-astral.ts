@@ -3,7 +3,7 @@
 // observable: every repeated astral code point prints unchanged.
 // exercises: for-of-string, astral-code-point, p24-context-interning
 // questions: Q30
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const text: string = "😀😀😀😀";
   for (const value of text) {

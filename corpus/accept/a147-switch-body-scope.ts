@@ -22,4 +22,4 @@ export function main(): void {
       break;
   }
 }
-// tsc: accepts
+// tsc: accepts; js-comparable: yes

@@ -2,7 +2,7 @@
 // purpose: Recursively lowers an embedded compute state whose entry point is a string view.
 // exercises: recursive-boundary-lowering, embedded-string-view, compute-pipeline-descriptor, c-layout-scratch
 // questions: Q13, C4
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 export function main(): void {
   const compute: SGPUProbeComputeState = new SGPUProbeComputeState(
     "main_cs",

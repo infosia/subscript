@@ -2,7 +2,7 @@
 // purpose: Exercises the opaque-handle create/retain/release lifecycle and observes completion.
 // exercises: interop-handle, opaque-handle, lifecycle, foreign-call
 // questions: Q13, Q16
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // Q16: self-created handle via subDeviceCreate(null) — the handle is not
 // host-injected. The opaque handle lowers to a pointer-sized value with no
 // visible layout; retain/release take it as that opaque pointer. create

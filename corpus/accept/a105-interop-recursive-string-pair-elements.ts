@@ -2,7 +2,7 @@
 // purpose: Rebuilds a collapsed constants pair as a scratch array whose entries each expand a string key view.
 // exercises: recursive-boundary-lowering, string-field-struct-elements, scratch-element-array, programmable-stage-constants
 // questions: Q13, C4
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 export function main(): void {
   const constants: SGPUProbeConstantEntry[] = [
     new SGPUProbeConstantEntry("alpha", 125),

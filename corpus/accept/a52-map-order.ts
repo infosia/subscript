@@ -3,7 +3,7 @@
 //          movement, delete, and re-insertion at the end.
 // exercises: map-insertion-order, overwrite, delete-reinsert
 // questions: Q24
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 let order: string = "";
 
 export function main(): void {

@@ -7,4 +7,4 @@ export function main(): void {
   print(`q ${q}`);
   print(`next ${Math.random()}`);
 }
-// tsc: accepts
+// tsc: accepts; js-comparable: no C3 Q19: Integer division and the Context PRNG produce different output.

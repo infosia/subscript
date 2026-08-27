@@ -2,7 +2,7 @@
 // purpose: Serializes every P13 stage-1 JSON.stringify input family.
 // exercises: JSON, scalars, UTF-8 escaping, Date, arrays, value/reference classes, nullable
 // questions: Q28, Q14, Q5, Q20
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2 Q28: The CStruct decorator has no JavaScript shim.
 @CStruct
 class Point {
   x: i32;

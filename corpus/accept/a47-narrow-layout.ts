@@ -2,7 +2,7 @@
 // purpose: Stores narrow and established numeric fields in one C-layout value class.
 // exercises: narrow-numerics, value-struct, mixed-field-layout, copy-on-assign
 // questions: Q2, Q23, C2, C3, C4
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 @CStruct
 class NarrowRecord {
   kind: u8;

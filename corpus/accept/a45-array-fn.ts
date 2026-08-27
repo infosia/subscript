@@ -11,7 +11,7 @@
 //          keep input order, pinned by the seq digits).
 // exercises: array-methods, closures, runtime-to-script-calls
 // questions: Q22, C5
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q14: Negative-zero formatting produces different output.
 let probes: i32 = 0;
 let sum: f64 = 0;
 

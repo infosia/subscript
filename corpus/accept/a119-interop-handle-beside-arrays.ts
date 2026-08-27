@@ -2,7 +2,7 @@
 // purpose: Pins a nullable scalar handle beside a string and two arrays in a scratch-lowered fragment reached through a nullable pointer member.
 // exercises: recursive-boundary-lowering, nullable-struct-pointer, nullable-handle-field, handle-beside-arrays, mixed-depth-scratch
 // questions: Q13, C4, C7
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 function report(
   name: string,
   descriptor: SGPUProbeHandleRenderPipelineDescriptor,

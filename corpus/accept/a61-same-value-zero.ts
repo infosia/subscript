@@ -4,7 +4,7 @@
 //          unification, literal NaN keys, and stored -0 normalization.
 // exercises: includes-same-value-zero, map-set-nan-keys, zero-key-normalization
 // questions: Q22, Q24
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q24: Map.getOr has no JavaScript shim.
 let zeroKeys: string = "";
 
 export function main(): void {

@@ -2,7 +2,7 @@
 // purpose: Provides the single minimal probe for a capturing lambda.
 // exercises: capturing-lambda, closure-environment, indirect-call
 // questions: Q1, Q10, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const offset: i32 = 5;
   const addOffset: (value: i32) => i32 = (value: i32): i32 => value + offset;

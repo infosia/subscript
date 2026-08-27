@@ -2,7 +2,7 @@
 // purpose: Passes a descriptor-embedded (count, pointer) array field zero-copy inside a boundary struct.
 // exercises: interop-embedded-array, descriptor-embedded-pair, boundary-struct-by-value, foreign-call
 // questions: Q13, Q4
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 // A production header spells an array as adjacent `size_t drawsCount;
 // const uint32_t* draws;` fields inside a larger struct (SubDrawList,
 // compiler.md §13.2). The mirror elides the count and exposes

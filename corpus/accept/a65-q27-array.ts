@@ -4,7 +4,7 @@
 //          one-element unshift, and negative/clamped copyWithin.
 // exercises: array-methods, runtime-to-script-calls, structural-mutation
 // questions: Q27
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const letters: string[] = ["a", "b", "c"];
   const right: string = letters.reduceRight(

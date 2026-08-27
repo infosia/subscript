@@ -2,7 +2,7 @@
 // purpose: Pins async method receiver state and lifetime across nested suspension and explicit collection.
 // exercises: async-instance-method, this-receiver, nested-method-await, receiver-frame-root
 // questions: R13, Q34, C8
-// tsc: accepts
+// tsc: accepts; js-comparable: no C8 Q7: The Context memory API has no JavaScript shim.
 class Session {
   state: i32;
 

@@ -2,7 +2,7 @@
 // purpose: Uses named accessors as read and write method sugar.
 // exercises: read-accessor, write-accessor, value-class-accessor, generic-accessor, identifier-escape, sanitized-name-collision
 // questions: R37
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2 C12: The CStruct decorator has no JavaScript shim.
 class Counter {
   private value: i32;
 

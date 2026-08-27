@@ -2,7 +2,7 @@
 // purpose: Exercises the founding control-flow statements in one terminating program.
 // exercises: if, while, for, switch, break, continue
 // questions: Q1, Q12
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   let total: i32 = 0;
   let cursor: i32 = 0;

@@ -3,7 +3,7 @@
 // observable: mixed code points print in source order without representation leaks.
 // exercises: for-of-string, bmp-code-points, astral-code-points, p24-mixed-handles
 // questions: Q30
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const text: string = "A😀é🦀Z";
   for (const value of text) {

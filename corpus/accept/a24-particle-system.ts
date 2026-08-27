@@ -2,7 +2,7 @@
 // purpose: Updates equivalent array-of-structs and struct-of-arrays particle layouts.
 // exercises: value-struct, array-of-structs, struct-of-arrays, tight-loop, checksum
 // questions: Q1, Q2, Q4, Q12, Q14, Q15, Q17
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
 const PARTICLE_COUNT: i32 = 2048;
 const STEP_COUNT: i32 = 50;
 

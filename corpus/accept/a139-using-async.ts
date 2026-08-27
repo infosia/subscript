@@ -2,7 +2,7 @@
 // purpose: Keeps a disposable binding live across one suspension.
 // exercises: using-declaration, symbol-dispose, async-function, direct-await
 // questions: §60, R31
-// tsc: accepts
+// tsc: accepts; js-comparable: no C8 C11: The coroutine API has no JavaScript shim.
 class AsyncResource {
   [Symbol.dispose](): void {
     print("dispose:async");

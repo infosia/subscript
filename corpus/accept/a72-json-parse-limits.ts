@@ -2,7 +2,7 @@
 // purpose: Reports parse-side representation and input-depth failures as data.
 // exercises: JSON, typed parse, JsonResult, depth limit, UTF-8, f32 range
 // questions: Q28, Q5, Q6
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q6 Q28: The Context memory API has no JavaScript shim.
 export function main(): void {
   const loneSurrogate: JsonResult<string> =
     JSON.parse<string>('"\\ud800"');

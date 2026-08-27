@@ -2,7 +2,7 @@
 // purpose: Round-trips every P13 serializable family except untagged Date.
 // exercises: JSON, typed parse, stringify, JsonResult, static type validation
 // questions: Q28, Q6, Q14, Q5
-// tsc: accepts
+// tsc: accepts; js-comparable: no C2 Q6 Q7 Q28: The CStruct decorator has no JavaScript shim.
 @CStruct
 class Point {
   x: i32;

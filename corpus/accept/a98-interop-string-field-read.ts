@@ -2,7 +2,7 @@
 // purpose: Materializes language strings from C-filled string views inside pointer-passed boundary structs.
 // exercises: string-view-field, boundary-struct-pointer, c-layout-scratch, view-copy-in, all-zero-view
 // questions: Q13, C4
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q7 Q13: The host C boundary has no JavaScript shim.
 // compiler.md §28.2. The first fill writes a stable C view and scalar
 // fields; copy-back materializes the viewed bytes as a language string. The
 // second fill writes an all-zero view, which must read as the empty string.

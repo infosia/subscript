@@ -3,7 +3,7 @@
 //          the callback trap path used by the cross-tier trap gate.
 // exercises: map-foreach, set-foreach, callback-abi, callback-trap-path
 // questions: Q24, Q22, C5, C6
-// tsc: accepts
+// tsc: accepts; js-comparable: yes
 let seen: string = "";
 const probe: i32[] = [7];
 

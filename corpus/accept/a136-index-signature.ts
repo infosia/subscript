@@ -2,7 +2,7 @@
 // purpose: Uses class index signatures as read and write accessor sugar.
 // exercises: class-index-signature, readonly-index-read, mutable-index-write, generic-class
 // questions: §58, R29
-// tsc: accepts
+// tsc: accepts; js-comparable: no C10: Indexed access calls methods in this language.
 class ReadOnlyIndex<T> {
   readonly [index: u32]: T;
   data: T[] = [];

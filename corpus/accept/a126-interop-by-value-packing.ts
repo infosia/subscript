@@ -2,7 +2,7 @@
 // purpose: Pins target-ABI register images for by-value boundary structs, including AAPCS64 eightbyte packing, HFAs, padding, and indirect composites.
 // exercises: interop-by-value, aapcs64-eightbytes, hfa, c-layout-padding, indirect-composite
 // questions: OBS-4
-// tsc: accepts
+// tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 export function main(): void {
   const i32One: SubByValueI32One = new SubByValueI32One(3);
   const i32OneReport: SubByValueI32One = new SubByValueI32One(0);

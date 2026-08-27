@@ -3,7 +3,7 @@
 // observable: the two spellings print identical sequences; appends do not extend and removals shorten.
 // exercises: for-of-foreach-parity, mutation-during-iteration, fixed-entry-bound
 // questions: Q30
-// tsc: accepts
+// tsc: accepts; js-comparable: no C13: Mutation during traversal produces different output.
 function visitArray(value: i32): void {
   print(`array:${value}`);
 }
