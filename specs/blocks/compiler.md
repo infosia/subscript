@@ -142,9 +142,19 @@ SWC parse (TS-subset front end, Rust)
   **The dev tier's criterion is now iteration time.** Time from a
   changed source to a running program, on `a22`, must stay within
   **20 ms**, which is four times the 5.0 ms measured here. A hot reload
-  of one function must stay within the same budget. Execution speed for
-  the dev tier is **reported, not gated** — the inverse of the old
-  rule, and the inverse is what invariant 3 asks for.
+  of one function must stay within the same budget.
+
+  **Dev-tier execution has a ceiling, not a target.** *(Owner,
+  2026-08-27: "30× is too slow".)* It must stay within **25×** of the C
+  baseline. That is a ceiling against regression, not a performance
+  goal: the tier exists to iterate, and 25× is chosen from the measured
+  19.6× that a constant-trip unroller reaches, with room above it.
+
+  Making this a ceiling rather than dropping the measurement is
+  deliberate. The old 4× was never met and nothing re-measured it for
+  long enough that this session found it by accident; a number nobody
+  can reach is not a gate. A ceiling above the measurement fails only
+  when something gets worse, which is what a gate is for.
 
   *(No iteration-time gate existed before this. `codegen/tests/
   reload.rs` has nineteen correctness tests and measures no time. The
