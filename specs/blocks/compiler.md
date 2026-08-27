@@ -8996,9 +8996,17 @@ position id at `-4`. Generated code reads the first two directly.
 
     typedef struct { int32_t state; uint32_t reserved; SubAsyncResume resume; }
 
-and `reserved` is four bytes of alignment padding that nothing reads.
-**The count goes there.** The frame does not grow, the header does not
-change, and no emitted offset moves.
+and the count goes at byte offset 4. **The frame does not grow, the
+header does not change, and no emitted offset moves.**
+
+*(Corrected 2026-08-27. This section first called offset 4 "four bytes
+of alignment padding that nothing reads", from reading the struct
+declaration in `cemit.rs` and not looking for a writer.* `runtime/src/
+context.rs` documented it as the **reload epoch**, and as an "ABI
+contract with generated code". One `grep` in `runtime/` would have
+found it. The round took the wrong premise and handled it correctly:
+an async frame's epoch moved to Context metadata, and a generator
+still uses offset 4.)*
 
 *(The owner allowed the allocation header's offsets to move, because
 no user depends on binary compatibility yet. That allowance is
