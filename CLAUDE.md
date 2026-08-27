@@ -93,11 +93,22 @@ subscript builds its own compiler and runtime. **Dev tier:** Cranelift JIT
 with hot reload. **Ship tier:** C emission handed to the platform C
 compiler — adopted at P4 on measured evidence (Cranelift AOT was 23× a
 hand-written C baseline; emitted C is 1.05×), superseding the original
-Cranelift-AOT ship tier, which is retained only as a cross-check
-(`specs/blocks/compiler.md` §11; plan §8 Rev 2). The two tiers are
-separate lowerings, so their agreement is established **by verification** —
-the standing gate is dev-JIT ≡ ship-C-AOT ≡ golden, byte-exact, on every
-corpus entry. The oracle is the committed golden corpus outputs plus the
+Cranelift-AOT ship tier (`specs/blocks/compiler.md` §11; plan §8 Rev 2).
+
+*(Owner, 2026-08-27: the Cranelift AOT tier is **deleted**.)* It was
+retained as a cross-check and it was not one: it shared `lower/func.rs`
+with the dev JIT, so it was one lowering with a second output sink and
+could not catch a defect that lowering held. No shipping path used it —
+`device-link.sh` uses emitted C with the platform clang, and no shipping
+target lacks a C compiler. §68's reference interpreter is the
+independent witness it was standing in for: written from the LIR
+contract alone, it shares no tier's assumption, which is what core
+principle 12 asks for. 350 lines were Cranelift-only; the 2018 lines of
+link and tool detection the C tier also needs stayed.
+
+The two tiers are separate lowerings, so their agreement is established
+**by verification** — the standing gate is dev-JIT ≡ ship-C-AOT ≡
+interpreter ≡ golden, byte-exact, on every corpus entry. The oracle is the committed golden corpus outputs plus the
 `tsc`-clean gate. **No external implementation serves as oracle or
 baseline.**
 
