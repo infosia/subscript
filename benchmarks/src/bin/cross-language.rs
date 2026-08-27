@@ -1,8 +1,8 @@
 #![warn(missing_docs)]
 //! Cross-language benchmark runner (`specs/blocks/benchmarks.md`).
 //!
-//! Measures six subjects on ten workloads in one session and writes
-//! `benchmarks/results.json` and `benchmarks/README.md`:
+//! Measures six subjects on up to ten workloads in one session. A full
+//! ten-workload run writes `benchmarks/results.json` and `benchmarks/README.md`:
 //!
 //! - **C** — the hand-written baseline (`benchmarks/workloads/c/<id>.c`), compiled
 //!   `clang -O2 -ffp-contract=off`, self-timed, the 1.00x reference.
@@ -24,9 +24,9 @@
 //! Usage (release only — a debug runtime would be unoptimized and unfair):
 //! `cargo run --offline --release -p subscript-benchmarks --bin cross-language`
 //! Flags: `--warmup N` (minimum warm-up iterations; every subject also reaches
-//! the 200 ms floor), `--timed M`, `--only <id>`, `--check` (validate the
-//! subscript sources through the JIT and print each checksum, no timing/external
-//! tools).
+//! the 200 ms floor), `--timed M`, `--only <id>` (print the report and write no
+//! file), `--check` (validate the subscript sources through the JIT and print
+//! each checksum, no timing/external tools).
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -55,6 +55,12 @@ const WORKLOADS: [&str; 10] = [
     "callbacks",
     "collect",
 ];
+
+/// Answers whether this run may write the committed record.
+/// A run that measured no workloads or a subset of the workloads must not.
+fn writes_the_record(measured: usize, total: usize) -> bool {
+    measured != 0 && measured == total
+}
 
 /// One-line parameter/checksum description per workload, rendered into the
 /// report so the pinned sizes are recorded next to the numbers.
@@ -396,15 +402,23 @@ fn run() -> Result<ExitCode, Fail> {
         args.warmup,
         args.timed,
     );
-    std::fs::write(root.join("results.json"), json.as_bytes())
-        .map_err(|e| format!("write results.json: {e}"))?;
-    std::fs::write(root.join("README.md"), readme.as_bytes())
-        .map_err(|e| format!("write README.md: {e}"))?;
-    eprintln!(
-        "wrote {} and {}",
-        root.join("results.json").display(),
-        root.join("README.md").display()
-    );
+    if writes_the_record(rows.len(), WORKLOADS.len()) {
+        std::fs::write(root.join("results.json"), json.as_bytes())
+            .map_err(|e| format!("write results.json: {e}"))?;
+        std::fs::write(root.join("README.md"), readme.as_bytes())
+            .map_err(|e| format!("write README.md: {e}"))?;
+        eprintln!(
+            "wrote {} and {}",
+            root.join("results.json").display(),
+            root.join("README.md").display()
+        );
+    } else {
+        let reason = args.only.as_deref().map_or_else(
+            || format!("measured {} of {} workloads", rows.len(), WORKLOADS.len()),
+            |id| format!("--only {id}"),
+        );
+        eprintln!("benchmarks: partial run ({reason}) — results.json and README.md not written");
+    }
 
     print!("{readme}");
     if any_mismatch {
@@ -1773,4 +1787,24 @@ fn jstr(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::writes_the_record;
+
+    #[test]
+    fn writes_record_when_all_workloads_are_measured() {
+        assert!(writes_the_record(10, 10));
+    }
+
+    #[test]
+    fn does_not_write_record_when_fewer_workloads_are_measured() {
+        assert!(!writes_the_record(1, 10));
+    }
+
+    #[test]
+    fn does_not_write_record_when_no_workloads_are_measured() {
+        assert!(!writes_the_record(0, 0));
+    }
 }
