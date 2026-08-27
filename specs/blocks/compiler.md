@@ -662,6 +662,15 @@ pins *how* the numbers are produced, before any number exists.
   withheld. **A subject must report its measured warm-up time and is
   rejected below the floor.**
 
+  *(Defect recorded 2026-08-27: the harness's default does not meet
+  this rule.* `DEFAULT_WARMUP` is 3, and `a22` runs about 4 ms, so a
+  default run warms up for about 12 ms against a 200 ms floor. Both
+  this session and the round that deleted the Cranelift AOT tier had
+  their first run declared void by the harness's own noise check, and
+  both had to pass `--warmup` by hand. **A gate whose default is void
+  is a gate nobody can run correctly by accident.** The floor is a
+  time, so the default must reach it by measuring, not by a count.)*
+
   *(Revised 2026-07-27; this said "at least 3 warm-up runs discarded"
   and min/max-only reporting. `benchmarks.md` Rev 3 has the evidence:
   `clang -O2` was deleting the warm-up loop outright in three of ten C
