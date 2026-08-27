@@ -52,6 +52,9 @@ impl Error for VerifyError {}
 pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
     let mut lowered = Lowering::new(module)?.run()?;
     unroll::run(&mut lowered);
+    for function in &mut lowered.functions {
+        thread_suspension_live_ins(function)?;
+    }
     if let Err(errors) = verify_module(&lowered) {
         return Err(LowerError {
             pos: lowered.functions.first().map_or_else(
@@ -1463,7 +1466,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 });
             }
         }
-        let mut function = l::Function {
+        let function = l::Function {
             id: self.id,
             source_name: self.function.name,
             kind: self.kind,
@@ -1476,6 +1479,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             return_type: self.function.ret,
             locals: self.locals,
             values: self.values,
+            liveness: l::Liveness::default(),
             blocks: self
                 .blocks
                 .into_iter()
@@ -1490,7 +1494,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             entry: self.entry,
             pos: self.function.pos,
         };
-        thread_suspension_live_ins(&mut function)?;
         Ok(function)
     }
 
@@ -4895,6 +4898,9 @@ fn address_base(ty: &l::ValueType) -> Option<l::ValueId> {
 fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerError> {
     let original_value_count = function.values.len();
     let live_in = lir_live_ins(function, original_value_count);
+    let mut value_origins = (0..original_value_count)
+        .map(|index| l::ValueId(index as u32))
+        .collect::<Vec<_>>();
     let block_count = function.blocks.len();
     let mut carried = vec![Vec::<(l::ValueId, l::ValueId)>::new(); block_count];
     let mut suspend_successors = BTreeSet::new();
@@ -4931,6 +4937,7 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
                 ty: definition.ty,
                 source_name: definition.source_name,
             });
+            value_origins.push(original);
             function.blocks[destination_id.0 as usize]
                 .parameters
                 .push(parameter);
@@ -4943,6 +4950,13 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
         .flat_map(|values| values.iter().map(|(original, _)| *original))
         .collect::<BTreeSet<_>>();
     if origins.is_empty() {
+        function.liveness = l::Liveness {
+            live_ins: live_in
+                .into_iter()
+                .map(|values| values.into_iter().collect())
+                .collect(),
+            value_origins,
+        };
         return Ok(());
     }
 
@@ -5010,6 +5024,7 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
                                 ty: definition.ty,
                                 source_name: definition.source_name,
                             });
+                            value_origins.push(origin);
                             function.blocks[block_index].parameters.push(parameter);
                             merges[block_index] = Some(parameter);
                             changed = true;
@@ -5128,14 +5143,18 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
             }
         }
     }
+    function.liveness = l::Liveness {
+        live_ins: live_in
+            .into_iter()
+            .map(|values| values.into_iter().collect())
+            .collect(),
+        value_origins,
+    };
     Ok(())
 }
 
 /// Computes the value live-ins with the lowering's single graph fixed point.
-pub(crate) fn lir_live_ins(
-    function: &l::Function,
-    original_value_count: usize,
-) -> Vec<BTreeSet<l::ValueId>> {
+fn lir_live_ins(function: &l::Function, original_value_count: usize) -> Vec<BTreeSet<l::ValueId>> {
     let mut uses = vec![BTreeSet::new(); function.blocks.len()];
     let mut definitions = vec![BTreeSet::new(); function.blocks.len()];
     for block in &function.blocks {
@@ -6948,6 +6967,7 @@ mod verifier_tests {
                     source_name: None,
                 },
             ],
+            liveness: l::Liveness::default(),
             blocks: vec![l::BasicBlock {
                 id: l::BlockId(0),
                 source_name: Some("entry".to_string()),
@@ -7026,6 +7046,7 @@ mod verifier_tests {
                 ty: l::ValueType::Data(Type::I32),
                 source_name: Some("value".to_string()),
             }],
+            liveness: l::Liveness::default(),
             blocks: vec![l::BasicBlock {
                 id: l::BlockId(0),
                 source_name: Some("entry".to_string()),
@@ -7063,6 +7084,7 @@ mod verifier_tests {
                     source_name: None,
                 },
             ],
+            liveness: l::Liveness::default(),
             blocks: vec![l::BasicBlock {
                 id: l::BlockId(0),
                 source_name: Some("entry".to_string()),
@@ -7179,6 +7201,7 @@ mod verifier_tests {
             return_type: Type::Void,
             locals: Vec::new(),
             values,
+            liveness: l::Liveness::default(),
             blocks: vec![l::BasicBlock {
                 id: l::BlockId(0),
                 source_name: Some("entry".to_string()),

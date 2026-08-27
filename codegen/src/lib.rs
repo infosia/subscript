@@ -36,6 +36,7 @@ pub mod lir;
 mod lower;
 mod native;
 mod reload;
+mod root_storage;
 mod ship;
 
 pub use cemit::CProgram;

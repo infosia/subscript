@@ -2013,6 +2013,47 @@ pub(crate) fn memory_accounting_after_run(
 }
 
 #[cfg(test)]
+pub(crate) fn live_allocations_after_main_calls(
+    files: &[SourceFile],
+    calls: usize,
+) -> Result<Vec<u64>, RunError> {
+    let (module, lowered) = compile_jit(files, &[])?;
+    let init = module.get_finalized_function(lowered.init);
+    let main = module.get_finalized_function(lowered.main_id().map_err(RunError::Internal)?);
+    let mut ctx = Context::new();
+    let result = (|| {
+        // SAFETY: both finalized entries use the `(ctx) -> void` host ABI.
+        unsafe { call_script_entry(init, &mut ctx) };
+        let mut counts = Vec::with_capacity(calls);
+        for _ in 0..calls {
+            if ctx.trapped() {
+                let trap = ctx
+                    .trap_record()
+                    .map(|record| {
+                        let position = lowered
+                            .positions
+                            .get(record.pos_id as usize)
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| format!("position {}", record.pos_id));
+                        format!("{:?} at {position}: {}", record.kind, record.message)
+                    })
+                    .unwrap_or_else(|| "unknown trap".to_string());
+                return Err(RunError::Internal(internal(format!(
+                    "allocation probe trapped before all calls completed: {trap}"
+                ))));
+            }
+            // SAFETY: the finalized main entry and Context remain live.
+            unsafe { call_script_entry(main, &mut ctx) };
+            counts.push(ctx.live_count() as u64);
+        }
+        Ok(counts)
+    })();
+    // SAFETY: every generated-code call returned and no code pointer survives.
+    unsafe { module.free_memory() };
+    result
+}
+
+#[cfg(test)]
 type AllocationAttribution = (Vec<(u32, u32, u64)>, Vec<Pos>);
 
 #[cfg(test)]

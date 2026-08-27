@@ -4,7 +4,7 @@
 //! suspension state. This module assigns C storage and writes those blocks
 //! and instructions without consulting typed HIR.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use subscript_compiler::lir as l;
@@ -13,7 +13,9 @@ use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::lir::{lir_live_ins, verify_module};
+use crate::layout::Layouts;
+use crate::lir::verify_module;
+use crate::root_storage::{self, RootStoragePlan};
 
 /// An emitted C translation unit and its source-position metadata.
 #[derive(Debug, Clone)]
@@ -42,7 +44,7 @@ pub(crate) fn emit_lir_c(module: &l::Module, require_main: bool) -> Result<CProg
                 .join("\n")
         )
     })?;
-    Emitter::new(module).emit(require_main)
+    Emitter::new(module)?.emit(require_main)
 }
 
 fn internal(message: impl AsRef<str>) -> String {
@@ -131,6 +133,7 @@ fn verify_trap_consumption(
 
 struct Emitter<'m> {
     module: &'m l::Module,
+    layouts: Layouts,
     positions: Vec<Pos>,
     runtime_symbols: BTreeMap<String, (String, Vec<String>)>,
     foreign_symbols: Vec<String>,
@@ -147,7 +150,7 @@ struct BoundaryPtrWriteback {
 }
 
 impl<'m> Emitter<'m> {
-    fn new(module: &'m l::Module) -> Self {
+    fn new(module: &'m l::Module) -> Result<Self, String> {
         let field_owners = module
             .classes
             .iter()
@@ -159,8 +162,9 @@ impl<'m> Emitter<'m> {
                     .map(move |(index, field)| (field.id, (class.id, index)))
             })
             .collect();
-        Self {
+        Ok(Self {
             module,
+            layouts: Layouts::build_lir(module)?,
             positions: Vec::new(),
             runtime_symbols: BTreeMap::new(),
             foreign_symbols: Vec::new(),
@@ -168,7 +172,7 @@ impl<'m> Emitter<'m> {
             helper_prototypes: String::new(),
             helpers: String::new(),
             helper_count: 0,
-        }
+        })
     }
 
     fn pos_id(&mut self, pos: &Pos) -> u32 {
@@ -1214,6 +1218,7 @@ struct Body<'e, 'm, 'f> {
     graph_roots: Vec<l::BlockId>,
     removable_edge_copies: HashSet<(l::BlockId, l::BlockId, usize)>,
     value_storage: Vec<l::ValueId>,
+    root_storage: RootStoragePlan,
     delayed_declarations: HashSet<l::ValueId>,
     consumed_traps: Vec<l::Trap>,
     temporary: u32,
@@ -1851,132 +1856,6 @@ fn removable_block_parameter_copies(
     (removable, elided_values)
 }
 
-fn record_operand_liveness_use(values: &mut BTreeSet<l::ValueId>, operand: &l::Operand) {
-    if let l::Operand::Value(value) = operand {
-        values.insert(*value);
-    }
-}
-
-fn record_target_liveness_uses(values: &mut BTreeSet<l::ValueId>, target: &l::BlockTarget) {
-    for argument in &target.arguments {
-        record_operand_liveness_use(values, argument);
-    }
-}
-
-fn record_terminator_liveness_uses(values: &mut BTreeSet<l::ValueId>, terminator: &l::Terminator) {
-    match terminator {
-        l::Terminator::Branch(target) => record_target_liveness_uses(values, target),
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            record_operand_liveness_use(values, condition);
-            record_target_liveness_uses(values, then_target);
-            record_target_liveness_uses(values, else_target);
-        }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
-            record_operand_liveness_use(values, value);
-            for arm in arms {
-                record_target_liveness_uses(values, &arm.target);
-            }
-            record_target_liveness_uses(values, default);
-        }
-        l::Terminator::Return { value, .. } => {
-            if let Some(value) = value {
-                record_operand_liveness_use(values, value);
-            }
-        }
-        l::Terminator::Suspend {
-            kind,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            match kind {
-                l::SuspendKind::Yield(value) => values.extend(value),
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => {
-                    values.extend(operands.iter().copied());
-                }
-                l::SuspendKind::AsyncHandle { handle } => {
-                    values.insert(*handle);
-                }
-            }
-            for argument in arguments {
-                record_operand_liveness_use(values, argument);
-            }
-            values.extend(invalidates.iter().copied());
-        }
-        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
-    }
-}
-
-fn add_interference(interference: &mut [HashSet<l::ValueId>], left: l::ValueId, right: l::ValueId) {
-    if left == right {
-        return;
-    }
-    interference[left.0 as usize].insert(right);
-    interference[right.0 as usize].insert(left);
-}
-
-fn value_interference(function: &l::Function) -> Vec<HashSet<l::ValueId>> {
-    // Reuse the lowering's fixed-point liveness. The transcriber only derives
-    // interference at each definition and does not run a second graph walk.
-    let live_in = lir_live_ins(function, function.values.len());
-    let live_out = function
-        .blocks
-        .iter()
-        .map(|block| {
-            terminator_successors(&block.terminator)
-                .into_iter()
-                .flat_map(|successor| live_in[successor.0 as usize].iter().copied())
-                .collect::<BTreeSet<_>>()
-        })
-        .collect::<Vec<_>>();
-    let mut interference = vec![HashSet::new(); function.values.len()];
-    for block in &function.blocks {
-        let index = block.id.0 as usize;
-        let mut live = live_out[index].clone();
-        record_terminator_liveness_uses(&mut live, &block.terminator);
-        for instruction in block.instructions.iter().rev() {
-            if let Some(result) = instruction.result {
-                for other in live.iter().copied() {
-                    add_interference(&mut interference, result, other);
-                }
-                live.remove(&result);
-            }
-            for operand in &instruction.operands {
-                record_operand_liveness_use(&mut live, operand);
-            }
-            live.extend(instruction.invalidates.iter().copied());
-        }
-        for parameter in &block.parameters {
-            for other in live.iter().copied() {
-                add_interference(&mut interference, *parameter, other);
-            }
-            for other in &block.parameters {
-                add_interference(&mut interference, *parameter, *other);
-            }
-        }
-    }
-
-    let entry_live = &live_in[function.entry.0 as usize];
-    for parameter in &function.parameters {
-        for other in entry_live.iter().copied() {
-            add_interference(&mut interference, parameter.value, other);
-        }
-        for other in &function.parameters {
-            add_interference(&mut interference, parameter.value, other.value);
-        }
-    }
-    interference
-}
-
 struct Coalescing {
     parents: Vec<usize>,
     members: Vec<Vec<l::ValueId>>,
@@ -2037,13 +1916,23 @@ impl Coalescing {
 fn coalesced_value_storage(
     function: &l::Function,
     rooted_values: &HashSet<l::ValueId>,
+    root_storage: &RootStoragePlan,
     folded_addresses: &HashSet<l::ValueId>,
     removable_edge_copies: &HashSet<(l::BlockId, l::BlockId, usize)>,
     elided_values: &HashSet<l::ValueId>,
     promoted_local_values: &HashSet<l::ValueId>,
-) -> Vec<l::ValueId> {
-    let interference = value_interference(function);
+) -> Result<Vec<l::ValueId>, String> {
+    let interference = root_storage::value_interference(function)?;
     let mut coalescing = Coalescing::new(function.values.len());
+    for (index, slot) in root_storage.value_slots.iter().copied().enumerate() {
+        if let Some(slot) = slot {
+            coalescing.try_merge(
+                l::ValueId(index as u32),
+                root_storage.slots[slot].representative,
+                &interference,
+            );
+        }
+    }
     // Prefer every block-parameter copy. A merge is valid only when no value
     // in either storage group interferes with a value in the other group.
     for block in &function.blocks {
@@ -2071,6 +1960,9 @@ fn coalesced_value_storage(
                     || function.values[argument.0 as usize].ty
                         != function.values[parameter.0 as usize].ty
                     || rooted_values.contains(argument) != rooted_values.contains(parameter)
+                    || (rooted_values.contains(argument)
+                        && root_storage.value_slots[argument.0 as usize]
+                            != root_storage.value_slots[parameter.0 as usize])
                 {
                     continue;
                 }
@@ -2078,7 +1970,7 @@ fn coalesced_value_storage(
             }
         }
     }
-    coalescing.representatives()
+    Ok(coalescing.representatives())
 }
 
 fn declaration_scopes(
@@ -2315,21 +2207,31 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         function: &'f l::Function,
         coroutine: bool,
     ) -> Result<Self, String> {
-        let rooted_values = function
-            .values
+        let root_storage = root_storage::plan(function, &emitter.layouts)?;
+        let rooted_values = root_storage
+            .value_slots
             .iter()
-            .map(|value| {
+            .enumerate()
+            .filter_map(|(index, slot)| slot.map(|_| l::ValueId(index as u32)))
+            .collect::<HashSet<_>>();
+        let address_definitions = address_definitions(function);
+        let folded_addresses = foldable_local_addresses(function, &address_definitions);
+        let managed_locals = function
+            .locals
+            .iter()
+            .map(|local| {
                 emitter
-                    .value_contains_managed(&value.ty)
-                    .map(|contains| contains.then_some(value.id))
+                    .value_contains_managed(&local.ty)
+                    .map(|managed| managed.then_some(local.id))
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
-        let address_definitions = address_definitions(function);
-        let folded_addresses = foldable_local_addresses(function, &address_definitions);
-        let promoted_locals = promoted_local_values(function, &folded_addresses);
+        let promoted_locals = promoted_local_values(function, &folded_addresses)
+            .into_iter()
+            .filter(|(local, _)| !managed_locals.contains(local))
+            .collect::<HashMap<_, _>>();
         let promoted_local_values = promoted_locals.values().copied().collect::<HashSet<_>>();
         let rooted_locals = function
             .locals
@@ -2348,11 +2250,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let value_storage = coalesced_value_storage(
             function,
             &rooted_values,
+            &root_storage,
             &folded_addresses,
             &removable_edge_copies,
             &elided_values,
             &promoted_local_values,
-        );
+        )?;
         let declaration_scopes = declaration_scopes(
             function,
             coroutine,
@@ -2393,6 +2296,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             graph_roots: declaration_scopes.graph_roots,
             removable_edge_copies,
             value_storage,
+            root_storage,
             delayed_declarations,
             consumed_traps: Vec::new(),
             temporary: 0,
@@ -2403,6 +2307,24 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let value = format!("t{}", self.temporary);
         self.temporary += 1;
         value
+    }
+
+    fn emit_root_clears(&mut self, out: &mut String, slots: &[usize]) -> Result<(), String> {
+        let representatives = slots
+            .iter()
+            .map(|slot| {
+                self.root_storage
+                    .slots
+                    .get(*slot)
+                    .map(|slot| slot.representative)
+                    .ok_or_else(|| internal(format!("root slot {slot} is missing")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for representative in representatives {
+            let zero = self.emitter.zero(self.value_type(representative)?)?;
+            let _ = writeln!(out, "    {} = {zero};", self.value(representative));
+        }
+        Ok(())
     }
 
     fn value(&self, id: l::ValueId) -> String {
@@ -2562,7 +2484,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn emit_storage(&mut self, out: &mut String) -> Result<(), String> {
-        if !self.rooted_values.is_empty() || !self.rooted_locals.is_empty() {
+        let owns_closure_environments = !self.coroutine && self.emitter.has_closure_environments();
+        if !self.rooted_values.is_empty()
+            || !self.rooted_locals.is_empty()
+            || owns_closure_environments
+        {
             out.push_str("    struct {\n");
             for value in &self.function.values {
                 if self.value_storage[value.id.0 as usize] == value.id
@@ -2586,7 +2512,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     );
                 }
             }
-            if !self.coroutine && self.emitter.has_closure_environments() {
+            if owns_closure_environments {
                 for value in &self.function.values {
                     if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
                         let _ = writeln!(out, "        SubEnvStorage env_v{};", value.id.0);
@@ -2786,6 +2712,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .ok_or_else(|| internal(format!("block {} is missing", block_id.0)))?
             .clone();
         let _ = writeln!(out, "b{}:\n    {{", block.id.0);
+        let entry_clears = self.root_storage.clear_at_block_entry[block.id.0 as usize].clone();
+        self.emit_root_clears(out, &entry_clears)?;
         for value in self.block_value_declarations[block.id.0 as usize].clone() {
             if self.delayed_declarations.contains(&value) {
                 continue;
@@ -2798,13 +2726,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.emitter.zero(self.value_type(value)?)?
             );
         }
-        for instruction in &block.instructions {
+        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
             self.emit_instruction(out, instruction).map_err(|error| {
                 internal(format!(
                     "function {} block {} instruction {:?}: {error}",
                     self.function.id.0, block.id.0, instruction.kind
                 ))
             })?;
+            let clears = self.root_storage.clear_after_instruction[block.id.0 as usize]
+                [instruction_index]
+                .clone();
+            self.emit_root_clears(out, &clears)?;
         }
         self.emit_terminator(out, &block)?;
         for child in self.dominator_children[block.id.0 as usize].clone() {
@@ -7932,6 +7864,7 @@ mod tests {
             return_type: Type::Void,
             locals: Vec::new(),
             values: Vec::new(),
+            liveness: l::Liveness::default(),
             blocks: Vec::new(),
             entry: l::BlockId(0),
             pos,

@@ -267,12 +267,23 @@ pub struct Function {
     pub locals: Vec<Local>,
     /// Every named value entity.
     pub values: Vec<Value>,
+    /// The lowering's single graph liveness result and value-version origins.
+    pub liveness: Liveness,
     /// Basic blocks in id order.
     pub blocks: Vec<BasicBlock>,
     /// Entry block.
     pub entry: BlockId,
     /// Declaration or literal position.
     pub pos: Pos,
+}
+
+/// The one fixed-point liveness result retained for all LIR consumers.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Liveness {
+    /// Values live at each block entry, in [`BlockId`] order.
+    pub live_ins: Vec<Vec<ValueId>>,
+    /// Original logical value for each SSA version, in [`ValueId`] order.
+    pub value_origins: Vec<ValueId>,
 }
 
 /// The source role of an executable function.

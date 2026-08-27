@@ -5142,6 +5142,7 @@ mod tests {
             return_type: Type::I32,
             locals: Vec::new(),
             values: Vec::new(),
+            liveness: l::Liveness::default(),
             blocks: vec![l::BasicBlock {
                 id: l::BlockId(0),
                 source_name: Some("entry".to_string()),
@@ -5192,6 +5193,7 @@ mod tests {
                     source_name: None,
                 },
             ],
+            liveness: l::Liveness::default(),
             blocks: vec![
                 l::BasicBlock {
                     id: l::BlockId(0),

@@ -23,6 +23,7 @@ use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layo
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
 };
+use crate::root_storage::{self, RootStoragePlan};
 
 #[derive(Debug, Clone, Copy)]
 enum RV {
@@ -658,6 +659,7 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     unwind: Option<Block>,
     shadow: Option<Value>,
     value_roots: HashMap<l::ValueId, u32>,
+    root_storage: RootStoragePlan,
     resume_adapters: HashMap<l::BlockId, Block>,
     suspend_plans: HashMap<l::BlockId, SuspendPlan>,
     stable_addresses: HashMap<l::ValueId, u32>,
@@ -953,6 +955,30 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .get_mut(id.0 as usize)
             .ok_or_else(|| internal(format!("value {} slot is missing", id.0)))?;
         *slot = Some(value);
+        Ok(())
+    }
+
+    fn clear_root_slots(&mut self, slots: &[usize]) -> Result<(), String> {
+        if slots.is_empty() {
+            return Ok(());
+        }
+        let shadow = self
+            .shadow
+            .ok_or_else(|| internal("root clear has no shadow frame"))?;
+        let clears = slots
+            .iter()
+            .map(|slot| {
+                self.root_storage
+                    .slots
+                    .get(*slot)
+                    .map(|slot| (slot.offset, slot.words))
+                    .ok_or_else(|| internal(format!("root slot {slot} is missing")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for (offset, words) in clears {
+            let address = self.address_offset(shadow, i64::from(offset) * 8);
+            self.zero_bytes(address, words * 8, 8);
+        }
         Ok(())
     }
 
@@ -6546,13 +6572,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             for (parameter, value) in incoming {
                 self.set_value(parameter, value)?;
             }
-            for instruction in &source.instructions {
+            let entry_clears = self.root_storage.clear_at_block_entry[source.id.0 as usize].clone();
+            self.clear_root_slots(&entry_clears)?;
+            for (instruction_index, instruction) in source.instructions.iter().enumerate() {
                 self.emit_instruction(instruction).map_err(|error| {
                     internal(format!(
                         "function {} block {} instruction {:?}: {error}",
                         self.function.id.0, source.id.0, instruction.kind
                     ))
                 })?;
+                let clears = self.root_storage.clear_after_instruction[source.id.0 as usize]
+                    [instruction_index]
+                    .clone();
+                self.clear_root_slots(&clears)?;
             }
             self.emit_terminator(source.id, &source.terminator)?;
         }
@@ -6562,22 +6594,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
 }
 
 fn initialize_storage<M: Module>(body: &mut Body<'_, '_, '_, '_, M>) -> Result<(), String> {
-    let mut words = 0u32;
-    let value_types = body
-        .function
-        .values
-        .iter()
-        .map(|value| value.ty.clone())
-        .collect::<Vec<_>>();
-    for (index, ty) in value_types.iter().enumerate() {
-        let managed = match ty {
-            l::ValueType::Data(ty) => managed_words(&body.ml.layouts, ty)?,
-            l::ValueType::Iterator(_) => 4,
-            l::ValueType::Address(_) => 0,
-        };
-        if managed != 0 {
-            body.value_roots.insert(l::ValueId(index as u32), words);
-            words = checked_layout_add(words, managed, "LIR shadow value layout")?;
+    let mut words = body.root_storage.words;
+    for (index, slot) in body.root_storage.value_slots.iter().copied().enumerate() {
+        if let Some(slot) = slot {
+            body.value_roots.insert(
+                l::ValueId(index as u32),
+                body.root_storage.slots[slot].offset,
+            );
         }
     }
     let locals = body.function.locals.clone();
@@ -6863,6 +6886,7 @@ pub(crate) fn define_function<M: Module>(
             blocks.push(block);
         }
         let closure_environment_layout = closure_environment_layout(ml.lir, &ml.layouts)?;
+        let root_storage = root_storage::plan(function, &ml.layouts)?;
         let mut body = Body {
             ml,
             builder,
@@ -6878,6 +6902,7 @@ pub(crate) fn define_function<M: Module>(
             unwind: None,
             shadow: None,
             value_roots: HashMap::new(),
+            root_storage,
             resume_adapters: HashMap::new(),
             suspend_plans: HashMap::new(),
             stable_addresses: HashMap::new(),
@@ -6886,6 +6911,9 @@ pub(crate) fn define_function<M: Module>(
             consumed_traps: Vec::new(),
         };
         initialize_storage(&mut body)?;
+        if matches!(function.kind, l::FunctionKind::ModuleInitializer) {
+            initialize_module_globals(body.ml, &mut body.builder, body.ctx)?;
+        }
         if let Some(environment) = environment {
             let mut offset = 0u32;
             for parameter in capture_parameters(function) {
@@ -7021,6 +7049,7 @@ pub(crate) fn define_coroutine<M: Module>(
             builder.switch_to_block(entry);
             let abi = builder.block_params(entry).to_vec();
             let ctx = abi[0];
+            let root_storage = root_storage::plan(function, &ml.layouts)?;
             let mut body = Body {
                 ml,
                 builder,
@@ -7036,6 +7065,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 unwind: None,
                 shadow: None,
                 value_roots: HashMap::new(),
+                root_storage,
                 resume_adapters: HashMap::new(),
                 suspend_plans: HashMap::new(),
                 stable_addresses: HashMap::new(),
@@ -7149,6 +7179,7 @@ pub(crate) fn define_coroutine<M: Module>(
                     resume_adapters.insert(source.id, builder.create_block());
                 }
             }
+            let root_storage = root_storage::plan(function, &ml.layouts)?;
             let mut body = Body {
                 ml,
                 builder,
@@ -7164,6 +7195,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 unwind: None,
                 shadow: None,
                 value_roots: HashMap::new(),
+                root_storage,
                 resume_adapters,
                 suspend_plans: plan.suspends.clone(),
                 stable_addresses: plan.stable_addresses.clone(),
@@ -7284,21 +7316,67 @@ pub(crate) fn define_init<M: Module>(ml: &mut ModLower<'_, M>) -> Result<(), Str
         builder.append_block_params_for_function_params(entry);
         builder.switch_to_block(entry);
         let ctx = builder.block_params(entry)[0];
-        if ml.context_globals && !ml.opts.reload {
-            let size = builder.ins().iconst(types::I64, i64::from(ml.globals_size));
-            let align = builder
-                .ins()
-                .iconst(types::I64, i64::from(ml.globals_align));
-            let initialize = ml
-                .module
-                .declare_func_in_func(ml.rt.globals_init, builder.func);
-            builder.ins().call(initialize, &[ctx, size, align]);
-        }
+        initialize_module_globals(ml, &mut builder, ctx)?;
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
     }
     define_context(ml, id, &mut context, "empty LIR initializer")
+}
+
+fn initialize_module_globals<M: Module>(
+    ml: &mut ModLower<'_, M>,
+    builder: &mut FunctionBuilder<'_>,
+    ctx: Value,
+) -> Result<(), String> {
+    if ml.context_globals && !ml.opts.reload {
+        let size = builder.ins().iconst(types::I64, i64::from(ml.globals_size));
+        let align = builder
+            .ins()
+            .iconst(types::I64, i64::from(ml.globals_align));
+        let initialize = ml
+            .module
+            .declare_func_in_func(ml.rt.globals_init, builder.func);
+        builder.ins().call(initialize, &[ctx, size, align]);
+    }
+
+    let roots = ml
+        .lir
+        .globals
+        .iter()
+        .map(|global| {
+            managed_words(&ml.layouts, &global.ty).map(|words| (global.source_name.clone(), words))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (source_name, words) in roots {
+        if words == 0 {
+            continue;
+        }
+        let (slot, _) = ml
+            .globals
+            .get(&source_name)
+            .cloned()
+            .ok_or_else(|| internal(format!("global {source_name} has no target slot")))?;
+        let address = match slot {
+            GlobalSlot::Data(data) => {
+                let global = ml.module.declare_data_in_func(data, builder.func);
+                builder.ins().symbol_value(types::I64, global)
+            }
+            GlobalSlot::Offset(offset) => {
+                let base_offset = ctx_off(rtc::Context::globals_offset())?;
+                let base = builder.ins().load(types::I64, flags(), ctx, base_offset);
+                if offset == 0 {
+                    base
+                } else {
+                    builder.ins().iadd_imm(base, i64::from(offset))
+                }
+            }
+        };
+        let words = builder.ins().iconst(types::I64, i64::from(words));
+        let root_add = ml.module.declare_func_in_func(ml.rt.root_add, builder.func);
+        builder.ins().call(root_add, &[ctx, address, words]);
+    }
+    Ok(())
 }
 
 /// Defines the fresh-worker Context initializer adapter.

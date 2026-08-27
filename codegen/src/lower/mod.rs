@@ -100,6 +100,7 @@ pub(crate) struct RtFns {
     pub collect: FuncId,
     pub alloc: FuncId,
     pub globals_init: FuncId,
+    pub root_add: FuncId,
     pub boundary_scratch_mark: FuncId,
     pub boundary_scratch_alloc: FuncId,
     pub boundary_scratch_release: FuncId,
@@ -869,6 +870,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         collect: mk("subscript_rt_collect", &[I64], None)?,
         alloc: mk("subscript_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
         globals_init: mk("subscript_rt_globals_init", &[I64, I64, I64], Some(I64))?,
+        root_add: mk("subscript_rt_root_add", &[I64, I64, I64], None)?,
         boundary_scratch_mark: mk("subscript_rt_boundary_scratch_mark", &[I64], Some(I64))?,
         boundary_scratch_alloc: mk(
             "subscript_rt_boundary_scratch_alloc",

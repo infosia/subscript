@@ -1742,6 +1742,109 @@ int main(void) {
     }
 
     #[test]
+    fn collect_drops_dead_lir_temporaries_on_both_tiers() {
+        let program = sources(
+            "const COUNT: i32 = 20000;\n\
+             let round: i32 = 0;\n\
+             let state: i32 = 0x12345678;\n\
+             let checksum: i32 = 0;\n\
+             class Node {\n\
+               value: i32; s9: string; s41: string; s105: string; s233: string;\n\
+               next: Node | null;\n\
+               constructor(value: i32, s9: string, s41: string, s105: string,\n\
+                           s233: string, next: Node | null) {\n\
+                 this.value = value; this.s9 = s9; this.s41 = s41;\n\
+                 this.s105 = s105; this.s233 = s233; this.next = next;\n\
+               }\n\
+             }\n\
+             export function main(): void {\n\
+               if (round < 6) {\n\
+                 let keep: Node | null = null;\n\
+                 let dropped: Node | null = null;\n\
+                 let suffix: string = \"\";\n\
+                 let s9: string = \"\"; let s41: string = \"\";\n\
+                 let s105: string = \"\"; let s233: string = \"\";\n\
+                 for (let i: i32 = 0; i < COUNT; i += 1) {\n\
+                   state = state * 1664525 + 1013904223;\n\
+                   const uid: i32 = round * COUNT + i;\n\
+                   suffix = `${uid}`;\n\
+                   s9 = suffix.padStart(9, \"a\");\n\
+                   s41 = suffix.padStart(41, \"b\");\n\
+                   s105 = suffix.padStart(105, \"c\");\n\
+                   s233 = suffix.padStart(233, \"d\");\n\
+                   if ((state & 3) !== 0) {\n\
+                     keep = new Node(state, s9, s41, s105, s233, keep);\n\
+                   } else {\n\
+                     dropped = new Node(state, s9, s41, s105, s233, dropped);\n\
+                   }\n\
+                 }\n\
+                 dropped = null; suffix = \"\"; s9 = \"\"; s41 = \"\";\n\
+                 s105 = \"\"; s233 = \"\";\n\
+                 Context.collect();\n\
+                 let cursor: Node | null = keep;\n\
+                 while (cursor !== null) {\n\
+                   checksum = checksum * 31 + cursor.value;\n\
+                   checksum += cursor.s9.length + cursor.s41.length;\n\
+                   checksum += cursor.s105.length + cursor.s233.length;\n\
+                   cursor = cursor.next;\n\
+                 }\n\
+                 round += 1;\n\
+               } else {\n\
+                 Context.collect();\n\
+               }\n\
+             }\n",
+        );
+        let expected = vec![75_005, 75_005, 75_005, 75_005, 75_005, 75_005, 5];
+        let dev = crate::jit::live_allocations_after_main_calls(&program, expected.len())
+            .expect("dev collect allocation probe");
+
+        let entry = host_entry(
+            r#"
+#include <stdio.h>
+
+static void call_entry(subscript_rt_context* ctx, subscript_main_entry entry) {
+    subscript_rt_ctx_enter_script(ctx);
+    entry(ctx);
+    subscript_rt_ctx_exit_script(ctx);
+}
+
+int main(void) {
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    call_entry(ctx, subscript_init);
+    for (int i = 0; i < 7; i++) {
+        call_entry(ctx, subscript_export_main);
+        if (subscript_rt_ctx_trap_kind(ctx) != 0) {
+            subscript_rt_ctx_release(ctx);
+            return 3;
+        }
+        printf("%llu%c",
+            (unsigned long long)subscript_rt_ctx_live_allocations(ctx),
+            i == 6 ? '\n' : ' ');
+    }
+    subscript_rt_ctx_release(ctx);
+    return 0;
+}
+"#,
+        );
+        let run = run_c_aot_with_entry(&program, &entry);
+        assert!(
+            run.status.success(),
+            "ship collect host exited with {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let ship = String::from_utf8(run.stdout)
+            .expect("ship counts are UTF-8")
+            .split_whitespace()
+            .map(|value| value.parse::<u64>().expect("ship count is an integer"))
+            .collect::<Vec<_>>();
+        assert_eq!(dev, expected, "dev live allocation counts changed");
+        assert_eq!(ship, expected, "ship live allocation counts changed");
+        eprintln!("collect live allocations: dev={dev:?}, ship={ship:?}");
+    }
+
+    #[test]
     fn host_allocation_attribution_reports_known_sites_on_both_tiers() {
         let program = sources(
             "class Cell {\n\
