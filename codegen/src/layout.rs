@@ -527,6 +527,59 @@ impl Layouts {
     }
 }
 
+/// Returns the uniform backing layout for closure environments in one LIR
+/// module. A uniform slot lets a function value move between SSA values
+/// without a target-specific storage decision in either transcriber.
+pub(crate) fn closure_environment_layout(
+    module: &lir::Module,
+    layouts: &Layouts,
+) -> Result<Option<(u32, u32)>, String> {
+    let mut maximum_size = 0u32;
+    let mut maximum_align = 1u32;
+    let mut found = false;
+    for function in &module.functions {
+        if function.kind != lir::FunctionKind::Lambda {
+            continue;
+        }
+        let mut size = 0u32;
+        let mut align = 1u32;
+        let mut captures = 0usize;
+        for parameter in function
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.kind == lir::ParameterKind::Capture)
+        {
+            let value = function
+                .values
+                .get(parameter.value.0 as usize)
+                .filter(|value| value.id == parameter.value)
+                .ok_or_else(|| internal("closure capture value is missing"))?;
+            let lir::ValueType::Data(ty) = &value.ty else {
+                return Err(internal("closure capture is not a data value"));
+            };
+            let (field_size, field_align) = layouts.size_align(ty)?;
+            size = round_up(size, field_align.max(1))?;
+            size = checked_add_size(size, field_size.max(1), "closure environment layout")?;
+            align = align.max(field_align.max(1));
+            captures += 1;
+        }
+        if captures == 0 {
+            continue;
+        }
+        found = true;
+        maximum_size = maximum_size.max(round_up(size.max(1), align)?);
+        maximum_align = maximum_align.max(align);
+    }
+    if found {
+        Ok(Some((
+            round_up(maximum_size, maximum_align)?,
+            maximum_align,
+        )))
+    } else {
+        Ok(None)
+    }
+}
+
 /// True for types whose values are Context allocations (collection
 /// roots when held in locals or globals): strings, `object`,
 /// reference classes, dynamic arrays, coroutines, and their nullable

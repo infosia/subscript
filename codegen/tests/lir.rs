@@ -376,8 +376,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 97;
-const DEBUG_RUNNABLE_COUNT: usize = 96;
+const RELEASE_RUNNABLE_COUNT: usize = 100;
+const DEBUG_RUNNABLE_COUNT: usize = 99;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -529,6 +529,18 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a148-switch-using-scope",
         "resource disposal across switch fallthrough and scope exit",
+    ),
+    (
+        "a150-receiver-address-invalidation",
+        "receiver address recomputation after dynamic-array storage invalidation",
+    ),
+    (
+        "a151-lambda-env-outlives-block",
+        "capturing closure environment storage beyond its source block",
+    ),
+    (
+        "a152-lambda-env-per-iteration",
+        "distinct loop-iteration closure environments across suspension",
     ),
     (
         "a15-manual-lifetime",
@@ -1156,6 +1168,8 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
                     | "a147-switch-body-scope"
                     | "a148-switch-using-scope"
                     | "a149-suspension-state"
+                    | "a150-receiver-address-invalidation"
+                    | "a151-lambda-env-outlives-block"
             )
         {
             actual.push_str("===== ");

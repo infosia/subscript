@@ -219,6 +219,13 @@ impl<'m> Emitter<'m> {
             .ok_or_else(|| internal(format!("function {} is missing", id.0)))
     }
 
+    fn has_closure_environments(&self) -> bool {
+        self.module.functions.iter().any(|function| {
+            function.kind == l::FunctionKind::Lambda
+                && capture_parameters(function).next().is_some()
+        })
+    }
+
     fn method_function(&self, id: l::MethodId) -> Result<l::FunctionId, String> {
         self.module
             .classes
@@ -544,10 +551,12 @@ impl<'m> Emitter<'m> {
                 _ => {}
             }
         }
+        let mut closure_environment_types = Vec::new();
         for function in &self.module.functions {
             if matches!(function.kind, l::FunctionKind::Lambda) {
                 let captures = capture_parameters(function).collect::<Vec<_>>();
                 if !captures.is_empty() {
+                    closure_environment_types.push(function.id);
                     let _ = writeln!(out, "typedef struct SubEnv{} {{", function.id.0);
                     for parameter in captures {
                         let ty = &function.values[parameter.value.0 as usize].ty;
@@ -557,6 +566,13 @@ impl<'m> Emitter<'m> {
                     let _ = writeln!(out, "}} SubEnv{};", function.id.0);
                 }
             }
+        }
+        if !closure_environment_types.is_empty() {
+            out.push_str("typedef union SubEnvStorage {\n");
+            for function in closure_environment_types {
+                let _ = writeln!(out, "    SubEnv{} e{};", function.0, function.0);
+            }
+            out.push_str("} SubEnvStorage;\n");
         }
         for function in &self.module.functions {
             if function.is_generator || function.is_async {
@@ -718,12 +734,12 @@ impl<'m> Emitter<'m> {
                             writeln!(out, "    {} stable_v{};", self.class_name(*class), result.0);
                     }
                 }
-                if let (Some(result), l::InstructionKind::MakeClosure(target)) =
-                    (instruction.result, &instruction.kind)
-                {
-                    if capture_parameters(self.function(*target)?).next().is_some() {
-                        let _ = writeln!(out, "    SubEnv{} env_v{};", target.0, result.0);
-                    }
+            }
+        }
+        if self.has_closure_environments() {
+            for value in &function.values {
+                if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                    let _ = writeln!(out, "    SubEnvStorage env_v{};", value.id.0);
                 }
             }
         }
@@ -2382,6 +2398,52 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
     }
 
+    fn is_function_value(&self, id: l::ValueId) -> Result<bool, String> {
+        Ok(matches!(
+            self.value_type(id)?,
+            l::ValueType::Data(Type::Func(_))
+        ))
+    }
+
+    fn closure_environment(&self, id: l::ValueId) -> String {
+        if self.coroutine {
+            format!("&frame->env_v{}", id.0)
+        } else {
+            format!("&roots.env_v{}", id.0)
+        }
+    }
+
+    fn assign_function_value(
+        &mut self,
+        out: &mut String,
+        id: l::ValueId,
+        source: &str,
+    ) -> Result<(), String> {
+        if !self.emitter.has_closure_environments() {
+            return self.assign(out, Some(self.value(id)), source);
+        }
+        let temporary = self.fresh();
+        let environment = self.closure_environment(id);
+        let _ = writeln!(out, "    SubFn {temporary} = {source};");
+        let _ = writeln!(
+            out,
+            "    if ({temporary}.env != NULL) {{ memcpy({environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = {environment}; }}"
+        );
+        self.assign(out, Some(self.value(id)), &temporary)
+    }
+
+    fn snapshot_function_value(&mut self, out: &mut String, source: &str) -> String {
+        let temporary = self.fresh();
+        let environment = self.fresh();
+        let _ = writeln!(out, "    SubFn {temporary} = {source};");
+        let _ = writeln!(out, "    SubEnvStorage {environment} = {{0}};");
+        let _ = writeln!(
+            out,
+            "    if ({temporary}.env != NULL) {{ memcpy(&{environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = &{environment}; }}"
+        );
+        temporary
+    }
+
     fn value_type(&self, id: l::ValueId) -> Result<&l::ValueType, String> {
         self.function
             .values
@@ -2497,6 +2559,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     );
                 }
             }
+            if !self.coroutine && self.emitter.has_closure_environments() {
+                for value in &self.function.values {
+                    if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                        let _ = writeln!(out, "        SubEnvStorage env_v{};", value.id.0);
+                    }
+                }
+            }
             out.push_str("    } roots = {0};\n");
             let call = self.emitter.runtime_call(
                 "void",
@@ -2544,17 +2613,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .parameter_declaration_initializer(self.value_storage[parameter.value.0 as usize])
                 .is_none()
             {
-                match parameter.kind {
-                    l::ParameterKind::Capture => {
-                        let _ = writeln!(
-                            out,
-                            "    {destination} = ((SubEnv{}*)environment)->c{};",
-                            self.function.id.0, parameter.value.0
-                        );
-                    }
+                let source = match parameter.kind {
+                    l::ParameterKind::Capture => format!(
+                        "((SubEnv{}*)environment)->c{}",
+                        self.function.id.0, parameter.value.0
+                    ),
                     l::ParameterKind::Explicit | l::ParameterKind::Receiver => {
-                        let _ = writeln!(out, "    {destination} = a{};", parameter.value.0);
+                        format!("a{}", parameter.value.0)
                     }
+                };
+                if self.is_function_value(parameter.value)? {
+                    self.assign_function_value(out, parameter.value, &source)?;
+                } else {
+                    let _ = writeln!(out, "    {destination} = {source};");
                 }
             }
             if let Some(storage) = parameter.storage {
@@ -2582,7 +2653,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn parameter_declaration_initializer(&self, value: l::ValueId) -> Option<String> {
-        if self.coroutine || !self.function_scoped_values.contains(&value) {
+        if self.coroutine
+            || !self.function_scoped_values.contains(&value)
+            || self.is_function_value(value).ok() == Some(true)
+        {
             return None;
         }
         self.function.parameters.iter().find_map(|parameter| {
@@ -2602,12 +2676,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
 
     fn emit_coroutine_dispatch(&mut self, out: &mut String) -> Result<(), String> {
         for parameter in &self.function.parameters {
-            let _ = writeln!(
-                out,
-                "    {} = frame->p{};",
-                self.value(parameter.value),
-                parameter.value.0
-            );
+            let source = format!("frame->p{}", parameter.value.0);
+            if self.is_function_value(parameter.value)? {
+                self.assign_function_value(out, parameter.value, &source)?;
+            } else {
+                let _ = writeln!(out, "    {} = {source};", self.value(parameter.value));
+            }
             if let Some(storage) = parameter.storage {
                 let storage = self.local(storage);
                 let value = self.value(parameter.value);
@@ -2724,7 +2798,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .collect::<Result<Vec<_>, _>>()?;
         let result = instruction.result.map(|id| self.value(id));
         match &instruction.kind {
-            l::InstructionKind::Copy => self.assign(out, result, &operands[0]),
+            l::InstructionKind::Copy => {
+                if let Some(id) = instruction.result {
+                    if self.is_function_value(id)? {
+                        return self.assign_function_value(out, id, &operands[0]);
+                    }
+                }
+                self.assign(out, result, &operands[0])
+            }
             l::InstructionKind::StringLiteral(text) => {
                 let trap = self.take_pending_trap(&instruction.traps, l::TrapKind::Allocation)?;
                 let pos = self.emitter.pos_id(&trap.pos);
@@ -3278,7 +3359,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     EdgeCopySource::Constant(constant) => self.constant(&constant)?,
                     EdgeCopySource::Temporary(temporary) => temporary,
                 };
-                let _ = writeln!(out, "    {} = {value};", self.value(copy.destination));
+                if self.is_function_value(copy.destination)? {
+                    self.assign_function_value(out, copy.destination, &value)?;
+                } else {
+                    let _ = writeln!(out, "    {} = {value};", self.value(copy.destination));
+                }
                 continue;
             }
 
@@ -3291,13 +3376,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .ok_or_else(|| internal("parallel edge copies could not make progress"))?;
             // One saved source breaks this cycle. Copies outside the cycle
             // remain pending and can expose another independent cycle.
-            let temporary = self.fresh();
-            let _ = writeln!(
-                out,
-                "    {} {temporary} = {};",
-                self.emitter.value_ctype(self.value_type(cycle_source)?)?,
-                self.value(cycle_source)
-            );
+            let source = self.value(cycle_source);
+            let temporary = if self.is_function_value(cycle_source)?
+                && self.emitter.has_closure_environments()
+            {
+                self.snapshot_function_value(out, &source)
+            } else {
+                let temporary = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    {} {temporary} = {source};",
+                    self.emitter.value_ctype(self.value_type(cycle_source)?)?
+                );
+                temporary
+            };
             for copy in &mut copies {
                 if matches!(copy.source, EdgeCopySource::Value(value) if value == cycle_source) {
                     copy.source = EdgeCopySource::Temporary(temporary.clone());
@@ -3390,7 +3482,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn restore_suspend_arguments(
-        &self,
+        &mut self,
         out: &mut String,
         block: &l::BasicBlock,
     ) -> Result<(), String> {
@@ -3408,13 +3500,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .iter()
             .skip(usize::from(resume_value.is_some()))
         {
-            let _ = writeln!(
-                out,
-                "    {} = frame->b{}_v{};",
-                self.value(*parameter),
-                block.id.0,
-                parameter.0
-            );
+            let source = format!("frame->b{}_v{}", block.id.0, parameter.0);
+            if self.is_function_value(*parameter)? {
+                self.assign_function_value(out, *parameter, &source)?;
+            } else {
+                let _ = writeln!(out, "    {} = {source};", self.value(*parameter));
+            }
         }
         Ok(())
     }
@@ -4558,18 +4649,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             );
             return Ok(());
         }
-        let environment = if self.coroutine {
-            let result_id = instruction
-                .result
-                .ok_or_else(|| internal("closure has no id"))?;
-            format!("&frame->env_v{}", result_id.0)
-        } else {
-            let temporary = self.fresh();
-            let _ = writeln!(out, "    SubEnv{} {temporary} = {{0}};", function.0);
-            format!("&{temporary}")
-        };
+        let result_id = instruction
+            .result
+            .ok_or_else(|| internal("closure has no id"))?;
+        let environment = self.closure_environment(result_id);
+        let _ = writeln!(out, "    memset({environment}, 0, sizeof(SubEnvStorage));");
         for ((capture, operand), _) in captures.iter().zip(operands).zip(0..) {
-            let _ = writeln!(out, "    ({environment})->c{} = {operand};", capture.0);
+            let _ = writeln!(
+                out,
+                "    ((SubEnv{}*){environment})->c{} = {operand};",
+                function.0, capture.0
+            );
         }
         let _ = writeln!(
             out,

@@ -4110,7 +4110,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     _ => None,
                 };
                 self.emit(
-                    l::InstructionKind::AddressOfIndex { checked: *checked },
+                    l::InstructionKind::AddressOfIndex {
+                        checked: *checked && include_traps,
+                    },
                     vec![base, index.clone()],
                     Some(l::ValueType::Address(l::AddressType {
                         pointee: ty.clone(),
@@ -5603,7 +5605,7 @@ fn verify_instruction_contract(
                 bad("address store signature is invalid", errors);
             }
         }
-        l::InstructionKind::AddressOfIndex { .. } => {
+        l::InstructionKind::AddressOfIndex { checked } => {
             let valid_index = matches!(
                 operand_types.get(1),
                 Some(l::ValueType::Data(Type::I32 | Type::U32))
@@ -5624,12 +5626,19 @@ fn verify_instruction_contract(
                 Some(l::ValueType::Address(address)) => address.array_base,
                 _ => None,
             };
+            let has_bounds_trap = instruction
+                .traps
+                .iter()
+                .any(|trap| matches!(trap.kind, l::TrapKind::IndexRead | l::TrapKind::IndexWrite));
             if operand_types.len() != 2
                 || !valid_index
                 || element != result_element
                 || expected_base != result_base
             {
                 bad("index address signature is invalid", errors);
+            }
+            if *checked != has_bounds_trap {
+                bad("index address check disagrees with its bounds trap", errors);
             }
         }
         l::InstructionKind::LoadField(field) => {
@@ -6586,7 +6595,10 @@ mod verifier_tests {
                             }),
                         ],
                         invalidates: Vec::new(),
-                        traps: Vec::new(),
+                        traps: vec![l::Trap {
+                            kind: l::TrapKind::IndexRead,
+                            pos: pos(),
+                        }],
                         pos: pos(),
                     },
                     l::Instruction {
@@ -6840,6 +6852,16 @@ mod verifier_tests {
     #[test]
     fn valid_address_graph_passes() {
         verify_module(&base_module()).expect("valid graph");
+    }
+
+    #[test]
+    fn checked_index_without_bounds_trap_is_rejected() {
+        let mut module = base_module();
+        module.functions[0].blocks[0].instructions[0].traps.clear();
+        let errors = verify_module(&module).expect_err("missing bounds trap must fail");
+        assert!(errors.iter().any(|error| error
+            .message
+            .contains("index address check disagrees with its bounds trap")));
     }
 
     #[test]

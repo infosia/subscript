@@ -7183,6 +7183,749 @@ fn f73 "<module initializer>" kind=ModuleInitializer exported=false generator=fa
     %0: Data(Func(FuncType { params: [Class(ClassId(94)), I32], ret: I32 })) = FunctionRef(FunctionId(15))() @ a149-suspension-state.ts:127:65
     StoreGlobal(GlobalId(2))(%0) @ a149-suspension-state.ts:127:7
     -> Return { value: None, pos: Pos { file: "a149-suspension-state.ts", line: 6, col: 5 } }
+===== a150-receiver-address-invalidation =====
+module initializer=None
+class c0 "V" value=true descriptor=false boundary=false align=None @ a150-receiver-address-invalidation.ts:7:7
+  field d0 "a": I32 defaulted=false absence=false foreign=None @ a150-receiver-address-invalidation.ts:8:3
+  method m0 "constructor" -> f0
+  method m1 "bump" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a150-receiver-address-invalidation.ts:10:3
+  param %0 "this": Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) kind=Receiver storage=None @ a150-receiver-address-invalidation.ts:10:3
+  param %1 "a": Data(I32) kind=Explicit storage=None @ a150-receiver-address-invalidation.ts:10:15
+  value %0: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=Some("this")
+  value %1: Data(I32) name=Some("a")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) @ a150-receiver-address-invalidation.ts:11:10
+    StoreAddress(%2, %1) @ a150-receiver-address-invalidation.ts:11:10
+    -> Return { value: None, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 10, col: 3 } }
+fn f1 "bump" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a150-receiver-address-invalidation.ts:14:3
+  param %0 "this": Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) kind=Receiver storage=None @ a150-receiver-address-invalidation.ts:14:3
+  param %1 "n": Data(I32) kind=Explicit storage=None @ a150-receiver-address-invalidation.ts:14:8
+  value %0: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = LoadField(Class(FieldId(0)))(%0) @ a150-receiver-address-invalidation.ts:15:17
+    %3: Data(I32) = Binary(Add)(%2, %1) @ a150-receiver-address-invalidation.ts:15:12
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 15, col: 5 } }
+fn f2 "growSync" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a150-receiver-address-invalidation.ts:19:10
+  param %0 "xs": Data(Array(Class(ClassId(0)))) kind=Explicit storage=None @ a150-receiver-address-invalidation.ts:19:19
+  param %1 "n": Data(I32) kind=Explicit storage=None @ a150-receiver-address-invalidation.ts:19:28
+  value %0: Data(Array(Class(ClassId(0)))) name=Some("xs")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(Array(Class(ClassId(0)))) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Array(Class(ClassId(0)))) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Array(Class(ClassId(0)))) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Class(ClassId(0))) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%2: Data(Array(Class(ClassId(0)))), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Lt)(%4, Integer(64):I32) @ a150-receiver-address-invalidation.ts:20:24
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    %12: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a150-receiver-address-invalidation.ts:21:13
+    %13: Data(I32) = Binary(Add)(Integer(100):I32, %4) @ a150-receiver-address-invalidation.ts:21:19
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%12, %13) invalidates=[ValueId(0), ValueId(2), ValueId(5), ValueId(8)] traps=[Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 21, col: 13 } }] @ a150-receiver-address-invalidation.ts:21:13
+    %14: Data(Class(ClassId(0))) = LoadAddress(%12) @ a150-receiver-address-invalidation.ts:21:13
+    %15: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Class(ClassId(0)))), Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%2, %14) invalidates=[ValueId(0), ValueId(2), ValueId(5), ValueId(8)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 21, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 21, col: 5 } }] @ a150-receiver-address-invalidation.ts:21:5
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] })
+  b3(%5: Data(Array(Class(ClassId(0)))), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %16: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a150-receiver-address-invalidation.ts:20:36
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(16))] })
+  b4(%8: Data(Array(Class(ClassId(0)))), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: Some(Value(ValueId(9))), pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 23, col: 3 } }
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a150-receiver-address-invalidation.ts:26:17
+  value %0: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(Array(Class(ClassId(0)))) name=None
+  value %3: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(2)) }) name=None
+  value %4: Data(I32) name=None
+  value %5: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(2)) }) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Str) name=None
+  value %8: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %9: Data(Class(ClassId(0))) name=None
+  value %10: Data(Array(Class(ClassId(0)))) name=None
+  value %11: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(10)) }) name=None
+  value %12: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(10)) }) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a150-receiver-address-invalidation.ts:27:20
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%0, Integer(7):I32) traps=[Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 27, col: 20 } }] @ a150-receiver-address-invalidation.ts:27:20
+    %1: Data(Class(ClassId(0))) = LoadAddress(%0) @ a150-receiver-address-invalidation.ts:27:20
+    %2: Data(Array(Class(ClassId(0)))) = ArrayLiteral(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 27, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 27, col: 20 } }] @ a150-receiver-address-invalidation.ts:27:19
+    %3: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 17 } }, Trap { kind: IndexRead, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 17 } }] @ a150-receiver-address-invalidation.ts:28:17
+    %4: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Array(Class(ClassId(0)))), Data(I32)], return_type: Some(Data(I32)) })(%2, Integer(5):I32) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 28 } }] @ a150-receiver-address-invalidation.ts:28:28
+    %5: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: false }(%2, Integer(0):I32) @ a150-receiver-address-invalidation.ts:28:17
+    %6: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: Some(Data(I32)) })(%5, %4) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 17 } }] @ a150-receiver-address-invalidation.ts:28:17
+    %7: Data(Str) = Template([Text("sync="), Operand(0)])(%6) traps=[Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 28, col: 9 } }] @ a150-receiver-address-invalidation.ts:28:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) invalidates=[ValueId(2)] @ a150-receiver-address-invalidation.ts:28:3
+    %8: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a150-receiver-address-invalidation.ts:29:20
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%8, Integer(7):I32) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 29, col: 20 } }] @ a150-receiver-address-invalidation.ts:29:20
+    %9: Data(Class(ClassId(0))) = LoadAddress(%8) @ a150-receiver-address-invalidation.ts:29:20
+    %10: Data(Array(Class(ClassId(0)))) = ArrayLiteral(%9) traps=[Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 29, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 29, col: 20 } }] @ a150-receiver-address-invalidation.ts:29:19
+    %11: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(10)) }) = AddressOfIndex { checked: true }(%10, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 30, col: 16 } }, Trap { kind: IndexRead, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 30, col: 16 } }] @ a150-receiver-address-invalidation.ts:30:16
+    %12: Address(AddressType { pointee: Class(ClassId(0)), array_base: Some(ValueId(10)) }) = AddressOfIndex { checked: false }(%10, Integer(0):I32) @ a150-receiver-address-invalidation.ts:30:16
+    %13: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: Some(Data(I32)) })(%12, Integer(5):I32) invalidates=[ValueId(2), ValueId(10)] traps=[Trap { kind: Call, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 30, col: 16 } }] @ a150-receiver-address-invalidation.ts:30:16
+    %14: Data(Str) = Template([Text("ctl="), Operand(0)])(%13) traps=[Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 30, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 30, col: 9 } }] @ a150-receiver-address-invalidation.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%14) invalidates=[ValueId(2), ValueId(10)] @ a150-receiver-address-invalidation.ts:30:3
+    -> Return { value: None, pos: Pos { file: "a150-receiver-address-invalidation.ts", line: 26, col: 17 } }
+===== a151-lambda-env-outlives-block =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a151-lambda-env-outlives-block.ts:6:17
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(1))() @ a151-lambda-env-outlives-block.ts:7:11
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%1: Data(Func(FuncType { params: [], ret: I32 })), %2: Data(I32)) Some("for.cond"):
+    %7: Data(Bool) = Binary(Lt)(%2, Integer(3):I32) @ a151-lambda-env-outlives-block.ts:8:24
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(1)), Value(ValueId(2))] } }
+  b2 Some("for.body"):
+    %8: Data(I32) = Binary(Mul)(%2, Integer(10):I32) @ a151-lambda-env-outlives-block.ts:9:20
+    %9: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(2))(%8) @ a151-lambda-env-outlives-block.ts:10:9
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(9)), Value(ValueId(2))] })
+  b3(%3: Data(Func(FuncType { params: [], ret: I32 })), %4: Data(I32)) Some("for.step"):
+    %10: Data(I32) = Binary(Add)(%4, Integer(1):I32) @ a151-lambda-env-outlives-block.ts:8:35
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(3)), Value(ValueId(10))] })
+  b4(%5: Data(Func(FuncType { params: [], ret: I32 })), %6: Data(I32)) Some("for.exit"):
+    %11: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%5) traps=[Trap { kind: Call, pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 12, col: 14 } }] @ a151-lambda-env-outlives-block.ts:12:14
+    %12: Data(Str) = Template([Text("v="), Operand(0)])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 12, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 12, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 12, col: 9 } }] @ a151-lambda-env-outlives-block.ts:12:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a151-lambda-env-outlives-block.ts:12:3
+    -> Return { value: None, pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 6, col: 17 } }
+fn f1 "<lambda a151-lambda-env-outlives-block.ts:7:11>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a151-lambda-env-outlives-block.ts:7:11
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(0) })), pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 7, col: 22 } }
+fn f2 "<lambda a151-lambda-env-outlives-block.ts:10:9>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a151-lambda-env-outlives-block.ts:10:9
+  param %0 "k": Data(I32) kind=Capture storage=None @ a151-lambda-env-outlives-block.ts:10:9
+  value %0: Data(I32) name=Some("k")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Add)(%0, Integer(2):I32) @ a151-lambda-env-outlives-block.ts:10:20
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a151-lambda-env-outlives-block.ts", line: 10, col: 20 } }
+===== a152-lambda-env-per-iteration =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a152-lambda-env-per-iteration.ts:6:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 6, col: 23 } }]
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Bool) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(1))() @ a152-lambda-env-per-iteration.ts:7:14
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%1: Data(Func(FuncType { params: [], ret: I32 })), %2: Data(I32)) Some("while.cond"):
+    %5: Data(Bool) = Binary(Lt)(%2, Integer(3):I32) @ a152-lambda-env-per-iteration.ts:9:10
+    -> ConditionalBranch { condition: Value(ValueId(5)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(1)), Value(ValueId(2))] } }
+  b2 Some("while.body"):
+    %6: Data(I32) = Binary(Add)(%2, Integer(1):I32) @ a152-lambda-env-per-iteration.ts:10:25
+    %7: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(2))(%6) @ a152-lambda-env-per-iteration.ts:11:15
+    %8: Data(Bool) = Binary(Eq)(%2, Integer(0):I32) @ a152-lambda-env-per-iteration.ts:12:9
+    -> ConditionalBranch { condition: Value(ValueId(8)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
+  b3(%3: Data(Func(FuncType { params: [], ret: I32 })), %4: Data(I32)) Some("while.exit"):
+    %12: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%3) traps=[Trap { kind: Call, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 18, col: 23 } }] @ a152-lambda-env-per-iteration.ts:18:23
+    %13: Data(Str) = Template([Text("async-keep="), Operand(0)])(%12) traps=[Trap { kind: Allocation, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 18, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 18, col: 9 } }] @ a152-lambda-env-per-iteration.ts:18:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a152-lambda-env-per-iteration.ts:18:3
+    -> Return { value: None, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 6, col: 23 } }
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(7)), Value(ValueId(2))] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(1)), Value(ValueId(2))] })
+  b6(%9: Data(Func(FuncType { params: [], ret: I32 })), %10: Data(I32)) Some("if.join"):
+    -> Suspend { kind: Async, pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 15, col: 5 }, successor: BlockId(7), resume_value: None, arguments: [Value(ValueId(9)), Value(ValueId(10))], invalidates: [], traps: [] }
+  b7(%14: Data(Func(FuncType { params: [], ret: I32 })), %15: Data(I32)) Some("async.resume"):
+    %11: Data(I32) = Binary(Add)(%15, Integer(1):I32) @ a152-lambda-env-per-iteration.ts:16:9
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(14)), Value(ValueId(11))] })
+fn f1 "<lambda a152-lambda-env-per-iteration.ts:7:14>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a152-lambda-env-per-iteration.ts:7:14
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(0) })), pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 7, col: 25 } }
+fn f2 "<lambda a152-lambda-env-per-iteration.ts:11:15>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a152-lambda-env-per-iteration.ts:11:15
+  param %0 "factor": Data(I32) kind=Capture storage=None @ a152-lambda-env-per-iteration.ts:11:15
+  value %0: Data(I32) name=Some("factor")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a152-lambda-env-per-iteration.ts:11:26
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a152-lambda-env-per-iteration.ts", line: 11, col: 26 } }
 ===== a20-coroutine-generator =====
 module initializer=None
 intrinsic Ambient.0 "Print"

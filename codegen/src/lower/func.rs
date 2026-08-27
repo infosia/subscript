@@ -19,7 +19,7 @@ use subscript_compiler::{ClassId, Pos, Type};
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::layout::{is_unsigned, managed_words, Layouts, Repr};
+use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
 };
@@ -620,44 +620,13 @@ fn plan_coroutine(
         offset = checked_layout_add(offset, size.max(1), "stable coroutine address layout")?;
     }
     let mut closure_environments = HashMap::new();
-    for block in &function.blocks {
-        for instruction in &block.instructions {
-            let l::InstructionKind::MakeClosure(target_id) = instruction.kind else {
-                continue;
-            };
-            let Some(result) = instruction.result else {
-                return Err(internal("closure instruction has no result"));
-            };
-            let target = module
-                .functions
-                .get(target_id.0 as usize)
-                .filter(|target| target.id == target_id)
-                .ok_or_else(|| internal(format!("closure function {} is missing", target_id.0)))?;
-            let captures = capture_parameters(target)
-                .map(|parameter| {
-                    target
-                        .values
-                        .get(parameter.value.0 as usize)
-                        .map(|value| &value.ty)
-                        .ok_or_else(|| {
-                            internal(format!("capture value {} is missing", parameter.value.0))
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if captures.is_empty() {
+    if let Some((size, align)) = closure_environment_layout(module, layouts)? {
+        for value in &function.values {
+            if !matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
                 continue;
             }
-            let mut size = 0u32;
-            let mut align = 1u32;
-            for ty in captures {
-                let (field_size, field_align) = value_size_align(layouts, ty)?;
-                size = round_up_layout(size, field_align.max(1), "closure environment layout")?;
-                size = checked_layout_add(size, field_size.max(1), "closure environment layout")?;
-                align = align.max(field_align.max(1));
-            }
-            size = round_up_layout(size.max(1), align, "final closure environment layout")?;
             offset = round_up_layout(offset, align, "coroutine closure environment layout")?;
-            closure_environments.insert(result, offset);
+            closure_environments.insert(value.id, offset);
             offset = checked_layout_add(offset, size, "coroutine closure environment layout")?;
         }
     }
@@ -690,6 +659,7 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     suspend_plans: HashMap<l::BlockId, SuspendPlan>,
     stable_addresses: HashMap<l::ValueId, u32>,
     closure_environments: HashMap<l::ValueId, u32>,
+    closure_environment_layout: Option<(u32, u32)>,
     consumed_traps: Vec<l::Trap>,
 }
 
@@ -746,6 +716,64 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             true,
             MemFlags::new(),
         );
+    }
+
+    fn closure_environment_address(&mut self, id: l::ValueId) -> Result<Value, String> {
+        let offset = self.closure_environments.get(&id).copied().ok_or_else(|| {
+            internal(format!(
+                "function value {} has no environment storage",
+                id.0
+            ))
+        })?;
+        let base = if self.coroutine.is_some() {
+            self.frame
+                .ok_or_else(|| internal("coroutine environment storage has no frame"))?
+        } else {
+            self.shadow
+                .ok_or_else(|| internal("closure environment storage has no shadow frame"))?
+        };
+        Ok(self.address_offset(base, i64::from(offset)))
+    }
+
+    fn relocate_closure_environment(
+        &mut self,
+        code: Value,
+        environment: Value,
+        destination: Value,
+    ) -> Result<RV, String> {
+        let Some((size, align)) = self.closure_environment_layout else {
+            return Ok(RV::Pair(code, environment));
+        };
+        let copy = self.builder.create_block();
+        let done = self.builder.create_block();
+        self.builder.append_block_param(done, types::I64);
+        let present = self.builder.ins().icmp_imm(IntCC::NotEqual, environment, 0);
+        self.builder
+            .ins()
+            .brif(present, copy, &[], done, &[BlockArg::Value(environment)]);
+        self.builder.switch_to_block(copy);
+        self.copy_bytes(destination, environment, size, align);
+        self.builder
+            .ins()
+            .jump(done, &[BlockArg::Value(destination)]);
+        self.builder.switch_to_block(done);
+        Ok(RV::Pair(code, self.builder.block_params(done)[0]))
+    }
+
+    fn own_closure_environment(&mut self, id: l::ValueId, value: RV) -> Result<RV, String> {
+        let (code, environment) = self.expect_pair(value)?;
+        let destination = self.closure_environment_address(id)?;
+        self.relocate_closure_environment(code, environment, destination)
+    }
+
+    fn snapshot_closure_environment(&mut self, value: RV) -> Result<RV, String> {
+        let Some((size, align)) = self.closure_environment_layout else {
+            return Ok(value);
+        };
+        let (code, environment) = self.expect_pair(value)?;
+        let destination = self.stack_slot(size, align);
+        self.zero_bytes(destination, size, align);
+        self.relocate_closure_environment(code, environment, destination)
     }
 
     fn zero_bytes(&mut self, destination: Value, size: u32, align: u32) {
@@ -901,12 +929,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     fn set_value(&mut self, id: l::ValueId, mut value: RV) -> Result<(), String> {
+        let ty = self.value_type(id)?.clone();
+        if self.closure_environment_layout.is_some()
+            && matches!(ty, l::ValueType::Data(Type::Func(_)))
+        {
+            value = self.own_closure_environment(id, value)?;
+        }
         if let Some(root) = self.value_roots.get(&id).copied() {
             let base = self
                 .shadow
                 .ok_or_else(|| internal("managed value has no shadow frame"))?;
             let address = self.address_offset(base, i64::from(root) * 8);
-            let ty = self.value_type(id)?.clone();
             self.store_value_type(&ty, address, 0, value)?;
             if matches!(value_repr(&self.ml.layouts, &ty)?, Repr::Agg { .. }) {
                 value = RV::Aggregate(address);
@@ -3513,12 +3546,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(RV::Pair(code, env))
     }
 
-    fn make_closure(
-        &mut self,
-        result: l::ValueId,
-        function: l::FunctionId,
-        operands: &[RV],
-    ) -> Result<RV, String> {
+    fn make_closure(&mut self, function: l::FunctionId, operands: &[RV]) -> Result<RV, String> {
         let target = self
             .ml
             .lir
@@ -3547,15 +3575,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             offset = checked_layout_add(offset, size.max(1), "closure environment layout")?;
             align = align.max(field_align.max(1));
         }
-        let size = round_up_layout(offset.max(1), align, "final closure environment layout")?;
+        let _ = round_up_layout(offset.max(1), align, "final closure environment layout")?;
         let environment = if captures.is_empty() {
             self.iconst(types::I64, 0)
-        } else if let (Some(frame), Some(offset)) =
-            (self.frame, self.closure_environments.get(&result).copied())
-        {
-            self.address_offset(frame, i64::from(offset))
         } else {
-            self.stack_slot(size, align)
+            let (size, align) = self
+                .closure_environment_layout
+                .ok_or_else(|| internal("capturing closure has no uniform environment layout"))?;
+            let environment = self.stack_slot(size, align);
+            self.zero_bytes(environment, size, align);
+            environment
         };
         for (((value, ty), offset), _) in
             operands.iter().copied().zip(&captures).zip(fields).zip(0..)
@@ -5718,10 +5747,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 &instruction.pos,
             )?),
             l::InstructionKind::MakeClosure(function) => {
-                let result = instruction
-                    .result
-                    .ok_or_else(|| internal("closure instruction has no result"))?;
-                Some(self.make_closure(result, *function, &operands)?)
+                Some(self.make_closure(*function, &operands)?)
             }
             l::InstructionKind::Call(target) => {
                 Some(self.call(target, &operands, &instruction.traps, &instruction.pos)?)
@@ -6282,10 +6308,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .block_params(self.blocks[source.id.0 as usize])
                 .to_vec();
             let mut cursor = 0usize;
+            let mut incoming = Vec::with_capacity(source.parameters.len());
             for parameter in &source.parameters {
                 let ty = self.value_type(*parameter)?.clone();
-                let value = rv_from_params(&self.ml.layouts, &ty, &parameters, &mut cursor)?;
-                self.set_value(*parameter, value)?;
+                let mut value = rv_from_params(&self.ml.layouts, &ty, &parameters, &mut cursor)?;
+                if self.closure_environment_layout.is_some()
+                    && matches!(ty, l::ValueType::Data(Type::Func(_)))
+                {
+                    value = self.snapshot_closure_environment(value)?;
+                }
+                incoming.push((*parameter, value));
+            }
+            for (parameter, value) in incoming {
+                self.set_value(parameter, value)?;
             }
             for instruction in &source.instructions {
                 self.emit_instruction(instruction).map_err(|error| {
@@ -6336,11 +6371,34 @@ fn initialize_storage<M: Module>(body: &mut Body<'_, '_, '_, '_, M>) -> Result<(
             words = checked_layout_add(words, managed, "LIR shadow local layout")?;
         }
     }
-    if words != 0 {
-        let bytes = checked_layout_mul(words, 8, "LIR shadow frame")?;
-        let shadow = body.stack_slot(bytes, 8);
+    let mut bytes = checked_layout_mul(words, 8, "LIR shadow frame")?;
+    let mut shadow_align = 8u32;
+    if body.coroutine.is_none() {
+        if let Some((environment_size, environment_align)) = body.closure_environment_layout {
+            for value in &body.function.values {
+                if !matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                    continue;
+                }
+                bytes = round_up_layout(
+                    bytes,
+                    environment_align,
+                    "closure shadow environment layout",
+                )?;
+                body.closure_environments.insert(value.id, bytes);
+                bytes = checked_layout_add(
+                    bytes,
+                    environment_size,
+                    "closure shadow environment layout",
+                )?;
+            }
+            shadow_align = shadow_align.max(environment_align);
+        }
+    }
+    if bytes != 0 {
+        bytes = round_up_layout(bytes, 8, "final LIR shadow frame")?;
+        let shadow = body.stack_slot(bytes, shadow_align);
         body.zero_bytes(shadow, bytes, 8);
-        let count = body.iconst(types::I64, i64::from(words));
+        let count = body.iconst(types::I64, i64::from(bytes / 8));
         body.call_runtime(body.ml.rt.shadow_push, &[body.ctx, shadow, count], false)?;
         body.shadow = Some(shadow);
     }
@@ -6580,6 +6638,7 @@ pub(crate) fn define_function<M: Module>(
             }
             blocks.push(block);
         }
+        let closure_environment_layout = closure_environment_layout(ml.lir, &ml.layouts)?;
         let mut body = Body {
             ml,
             builder,
@@ -6599,6 +6658,7 @@ pub(crate) fn define_function<M: Module>(
             suspend_plans: HashMap::new(),
             stable_addresses: HashMap::new(),
             closure_environments: HashMap::new(),
+            closure_environment_layout,
             consumed_traps: Vec::new(),
         };
         initialize_storage(&mut body)?;
@@ -6720,6 +6780,7 @@ pub(crate) fn define_coroutine<M: Module>(
     function: &l::Function,
 ) -> Result<(), String> {
     let plan = plan_coroutine(&ml.layouts, ml.lir, function)?;
+    let closure_environment_layout = closure_environment_layout(ml.lir, &ml.layouts)?;
     let creator_id = ml.func_id(&function_key(function))?;
     let resume_id = ml.func_id(&resume_key(function))?;
 
@@ -6755,6 +6816,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 suspend_plans: HashMap::new(),
                 stable_addresses: HashMap::new(),
                 closure_environments: HashMap::new(),
+                closure_environment_layout,
                 consumed_traps: Vec::new(),
             };
             let size = body.iconst(types::I64, i64::from(plan.size));
@@ -6880,6 +6942,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 suspend_plans: plan.suspends.clone(),
                 stable_addresses: plan.stable_addresses.clone(),
                 closure_environments: plan.closure_environments.clone(),
+                closure_environment_layout,
                 consumed_traps: Vec::new(),
             };
             initialize_storage(&mut body)?;
