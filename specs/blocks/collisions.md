@@ -8,6 +8,15 @@ throughout: **stock `tsc` accepts a superset; this compiler narrows.** A
 construct `tsc` cannot police is policed by this compiler with its own
 diagnostic; the `tsc` gate stays trivially green and soundness lives here.
 
+**A retired entry keeps its record.** A corpus name this file no
+longer expects to exist is written `retired:<name>`, so the check of
+§69 stage 3 skips it by its spelling and not by reading the prose
+around it. *(Added 2026-08-27. Three names — `r14-async` twice and
+`r104` — were retired in prose, and a check that reads names would
+report them as missing for ever. Deleting them would lose why the
+entry went; keying the check on the word "retired" in a sentence
+would put a check back on prose, which §69 exists to end.)*
+
 ## 1. Collision rules
 
 ### C1. Structural vs nominal — nominal per declaration
@@ -165,19 +174,19 @@ event loop exists.
 sugar over the same Context-owned frame machinery — no scheduler, no
 microtask queue, no `Promise` object; the lib `Promise<T>` is only the
 `tsc` view of an async function's value, exactly as `IteratorResult` is
-for coroutines. The model, lifetimes, and the retired `r14-async` entry
-are Q34's; `Promise` construction and combinators stay rejected. Host
+for coroutines. The model, lifetimes, and the retired entry
+`retired:r14-async` are Q34's; `Promise` construction and combinators stay rejected. Host
 async C APIs still surface as C-style callbacks plus poll functions
 (plan §4 pattern 4); `await` consumes them through script-level polling.
 Accept: `a20`, `a93`–`a95`. Reject: `r96`–`r100` (Q34 boundaries;
-`r14-async` retired by Q34 — the construct it pinned is now legal).
+`retired:r14-async` by Q34 — the construct it pinned is now legal).
 *Revised 2026-08-02 (R13):* async instance methods on plain,
 non-generic reference classes join the surface —
 `await recv.m(...)` as a third direct-await form (`compiler.md`
 §37). Accept adds `a110`–`a111`; reject adds `r101`–`r105`. *Revised 2026-08-23 (R36):* the class can be generic, and
 a generic async function with explicit type arguments is awaitable
 (`compiler.md` §64). Accept adds `a143`; reject adds `r140`;
-`r104` retired.
+`retired:r104`.
 
 ### C9. Field initializers — every construction, no `this`
 
