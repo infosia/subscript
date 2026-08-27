@@ -97,3 +97,39 @@ from is `1bb670d`: ship 6.45× and dev 7.04×.
 A cheaper form of item 2 also exists: keep the gate hand-run, and add
 its run to the phase-end checklist. That converts an unmeasured
 criterion into a remembered one, which is what failed here.
+
+## Both runs verified under forced noise, 2026-08-28
+
+The two manual runs the round reported were both quiet, so neither
+exercised the path the round restored. Twelve busy cores force it.
+
+**Reporting run**, no flag: exit 2. Every threshold row reads
+`WITHHELD`, not a number. The noise line names each noisy subject.
+A subject under the limit keeps its median and still shows `withheld`
+for its ratio, because the C baseline it divides by was withheld.
+**No invalid number appears as a valid one.**
+
+**Gate run**, `--gate`: exit 1. Spread is reported and does not void.
+
+    a22       ship-tier     2.53x of C, limit  1.50x   MISSED
+    a22       dev-JIT      31.23x of C, limit 25.00x   MISSED
+    collect   ship-tier     5.82x of C, limit  7.50x   MET
+    collect   dev-JIT       6.66x of C, limit  8.50x   MET
+
+The gate can fail. Principle 10 asks for that, and this is it.
+
+### The short workload is the load-sensitive one
+
+Under the same load `a22` missed both limits and `collect` met both,
+by a wider margin than on a quiet machine. `a22` runs about 4 ms and
+`collect` about 200 ms, so a scheduler delay is a large fraction of
+one `a22` sample and a small fraction of one `collect` sample.
+
+§3 says that if the gate run proves unstable, the answer is more
+headroom or a serialized run, and that the measurement must come
+first. **This is the measurement.** It also names where instability
+will come from: `a22`, not the workload this round added.
+
+Twelve busy cores is heavier than a `cargo test` run. The release
+suite passed twice with the gate in it, at 257.80 s and 256.19 s.
+No change is made now.
