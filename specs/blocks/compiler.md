@@ -8821,11 +8821,26 @@ Measurements at `af5697d`, on this host. `node` is v24.18.0 and
    §66 measurement 6i: `node` resolves a name in the temporal dead
    zone as `4` and this compiler as `3`. §66 measurement 6j: the
    duplicate-declaration diagnostic. Both sit in a tracking file.
-3. **25 reject entries assert what `tsc` does, by hand.** The
-   header line `tsc-clean-standalone` is prose a person wrote. The
-   other 126 assert nothing, so a reader cannot tell a measured
-   silence from an unasked question. This session got the direction
-   of invariant 5 wrong once, and the coding agent found it.
+3. **32 entries assert what `tsc` does, by hand, in three
+   spellings.** *(Re-measured 2026-08-27 at `e598994`: 303 entries,
+   152 accept and 151 reject.)* `tsc-clean-standalone` appears 25
+   times, `tsc-status` 6 times, and `tsc-clean` once. One concept
+   with three words breaks this project's own rule that one concept
+   takes one word. The other 271 entries assert nothing, so a reader
+   cannot tell a measured silence from an unasked question. This
+   session got the direction of invariant 5 wrong once, and the
+   coding agent found it.
+3a. **The hand measurements are already in the headers, unrepeated.**
+   One reads "exit 2 (TS2345 at 22:14) verified with
+   `node_modules/.bin/tsc --noEmit --strict ...`". A person ran that
+   once and wrote the answer down. Nothing re-runs it, so it is a
+   claim about another system that the gate does not hold — which
+   CLAUDE.md's rule about running another system exists to prevent.
+3b. **13 reject entries state no `expected-error` at all**:
+   `r52`-`r59`, `r121`-`r123`, `r138`, and `r139`. A reject entry
+   that names no diagnostic pins the rejection and not its reason,
+   so a later change can reject it for a different reason and the
+   gate stays green.
 4. **`r153`'s header already records a `node` observation by hand** —
    "node reports a temporal-dead-zone ReferenceError". The work
    below turns that kind of note into a measurement.
@@ -8850,6 +8865,12 @@ golden, byte for byte.
 **Stage 3 — the collision table becomes an index.** Each collision
 carries an id. Each `js-comparable: no` cites one. Each id has at
 least one corpus entry. The gate checks all three.
+
+*(Measured 2026-08-27.)* `collisions.md` already numbers C1 to C12,
+and §2 carries the Q-register resolutions separately. So stage 3 is
+smaller than this section first assumed: the ids exist, and the work
+is the two directions of the check, plus ids for whatever §2 decides
+that C1 to C12 do not cover.
 
 ### 69.2 The headers are the data
 
