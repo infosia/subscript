@@ -453,3 +453,96 @@ The full 97-entry interpreter sweep ran. No committed golden,
 `.expected`, or example output moved. clippy compiler 7, runtime 22,
 codegen **19** — down from 29 because the old HIR consumer went, so
 19 is the new ceiling.
+
+## Steps 3 to 5, the performance gate, and the sharpest test
+
+Landed `8084c45`, `01c99a4`, and `ea45068`.
+
+`cemit.rs` reads no HIR and went from 9767 lines to 6260.
+`lower/mod.rs` went from 71 `hir::` references to 0. `suspension.rs`
+is deleted — 871 lines that §67 pass B needed seven rounds and six
+reviews to build, and that existed only to hold three tree walks in
+step. C identifiers are id-derived, so §66's `v_` prefix, keyword
+list, and `_N` collision logic are gone; step 5 finished inside step
+3's rewrite.
+
+### The performance gate, and three wrong diagnoses
+
+§68.6 item 4 stops the phase above 1.75×. Measured before and after
+on one machine in one session, with the C baseline the same on both
+sides:
+
+    ship tier   1.53× at the pin  ->  4.01× when LIR landed
+
+The criterion was tripped, and the item had named this risk in
+advance. This session then diagnosed the cause three times and was
+wrong three times:
+
+    address folding      4.01x -> 4.04x
+    SSA coalescing               4.00x
+    four prologue fixes          3.98x
+
+Each was a real improvement to the emitted code and none of them
+mattered. Each was chosen by reading the emitted C for what looked
+wrong.
+
+**The owner asked whether array element access called a foreign
+function more than once at a site, and whether `array_len` was called
+repeatedly.** Both were true.
+
+    helper                    pin   before the fix
+    subscript_rt_array_len      4      22
+    subscript_rt_array_ptr     11       0
+    subscript_rt_array_data     1      10
+
+The pin read `((SsArrayHeader*)h)->len` and `->data` inline and
+called the runtime **only inside a failed bounds branch**. The
+transcriber called `array_len` for the test, again to build the trap
+message, and `array_data` for the pointer — two or three opaque calls
+per element access, and one more per loop iteration.
+
+**An opaque call in a loop body is why the other three fixes did
+nothing.** The C compiler must assume such a call writes memory, so
+it cannot hoist, cannot vectorise, and spills every cached value
+across it. The aggregate copies this session kept removing were the
+symptom. Reading the header inline took 3.98× to **1.34×**, which
+beats the pin. The dev tier had the same shape: 38.98× to 30.57×.
+
+**The lesson, once: read the emitted code for what the optimizer
+cannot see through, not for what looks wrong.** The counts above take
+one command and this session ran it only after being asked.
+
+### The sharpest test
+
+§68.6 item 2 named three entries and the rule that matters more: if
+either defect needs a hand-written site in a tier, LIR is wrong.
+
+All three close with no site-specific fix, and each is Red at the pin
+against a binary built from `9bde577`.
+
+- `a150` — a `@CStruct` receiver in an array with an argument that
+  grows it. §68.2 item 9's provenance model closes it. Its ship-tier
+  build failure was a checked index whose recomputed address carries
+  no bounds trap; the verifier now rejects that disagreement.
+- `a151`, `a152` — a lambda environment that outlives its block, and
+  the same inside a coroutine. Closed by rule 8 plus per-value
+  environment storage.
+
+§66 recorded `a150` and `a151` as adjacent defects it would not fix.
+§67 pass B moved `a152` here as the seventh of its narrowing class.
+**Three arcs deferred them and the form closed all three.**
+
+### A correction this session owes the record
+
+Rule 8a first concluded a bump arena, reasoning that a `SubFn` copy
+keeps sharing one environment, so instances are per execution and the
+count is a loop's trip count. S009 removes the assumption: a capture
+is a `const` local **by value**, so a copied environment and a shared
+one are indistinguishable. The reasoning listed three facts and did
+not read the fourth.
+
+### Open, and not §68's
+
+`dev-JIT` measured 28.72× at the pin against §3's 4× limit, and
+30.57× now. The limit has been missed for a long time and nothing
+re-measured it. That is a separate finding.
