@@ -161,6 +161,50 @@ SWC parse (TS-subset front end, Rust)
   property invariant 3 calls the main argument for the language was
   never measured.)*
 
+- **P4 allocation gate**, and the gate becomes automatic. *(Owner,
+  2026-08-28: "両方入れる".)* Two changes. `specs/tracking/gate-scope.md`
+  holds the evidence and the cost.
+
+  **The gate measured `a22` alone, and `a22` has no path to the memory
+  model.** `a22` builds three growable arrays of a value type and holds
+  them to the end. It frees no object and collects nothing. §68 held a
+  root-set defect for 31 days, and no gate reported it. Invariant 2 is
+  the memory model; a gate that measures only arithmetic cannot see it.
+
+  **The gate now measures `collect` as well.**
+
+      source     benchmarks/workloads/subscript/collect.ts
+      baseline   benchmarks/workloads/c/collect.c, -O2, same machine,
+                 same session
+      subjects   C, ship tier, dev tier
+      agreement  every subject computes the same i32 checksum
+
+  Criteria:
+
+      ship tier   within 7.5x of the C baseline
+      dev tier    within 8.5x, a ceiling, as a22's is
+
+  Derivation: the two tiers measured 6.45× and 7.04× at `1bb670d`. The
+  §68 regression measured 8.07× and 10.17×. 7.5× leaves 16% over the
+  measurement, and it trips 7% under the known regression. 8.5× leaves
+  21%, and it trips 16% under it.
+
+  **The gate runs from a test target.** `cargo test --release` fails
+  when a threshold is missed. In a debug build the gate does not run,
+  and it states the reason: §3's subject is optimized code, and a debug
+  runtime is not it.
+
+  Measured cost: `perf-gate` takes 3.96 s with the binary built, and
+  `collect` adds about 7 s. `cargo test --offline --release --workspace`
+  takes about 235 s. The gate is under 5% of the suite it joins.
+
+  **A gate does not need §9's quiet machine.** §9's precision exists for
+  the published comparison, where 5% is the claim. A gate reports a
+  regression. `perf-gate` read 1.35× and 19.64× on a quiet machine and
+  1.38× and 20.17× on a loaded one, so run-to-run variation is about 3%.
+  Every limit here keeps at least 11% headroom. Noise does not trip a
+  limit, and the regression this gate exists to catch was 32%.
+
 ## 4. Milestones and gates
 
 | # | Deliverable | Gate |
@@ -732,13 +776,24 @@ pins *how* the numbers are produced, before any number exists.
   same session on the same machine, with the machine's state described
   in the tracking entry (host, CPU, whether on AC power). Numbers from
   different sessions are never compared.
-- **Compile-time is reported, not gated**: dev-tier JIT compile time
-  for the entry is recorded alongside (it is the iteration-speed
-  argument), but §3's 4× criterion is about execution.
+- **Compile-time is gated, and dev-tier execution has a ceiling**:
+  *(amended 2026-08-28.)* This read "compile-time is reported, not
+  gated ... §3's 4× criterion is about execution". §3's revision of
+  2026-08-27 deleted the 4× criterion and made iteration time the
+  dev tier's criterion. Iteration time is now gated at 20 ms, and
+  dev-tier execution has a 25× ceiling.
 - **Both outcomes are recorded.** If a threshold fails, the tracking
   entry records the measurement, the failure, and the named criterion
   reopening the backend decision (§3) — the gate is not retried with a
   different methodology.
+- **This section governs a reported measurement, not a gate run.**
+  *(Added 2026-08-28.)* The quiet machine and the ±20% spread rule
+  exist because a published comparison claims a 5% difference. A gate
+  run under `cargo test` shares a machine with compiles and cannot
+  meet them. It does not have to: every §3 limit keeps at least 11%
+  headroom over its measurement, and run-to-run variation is about 3%.
+  A gate reports a regression. A number this project publishes comes
+  from a §9 run, and a gate result is never published as one.
 
 ## 10. P4.1 lowering optimization and re-measurement
 
