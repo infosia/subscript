@@ -556,11 +556,13 @@ suites in debug; 1044 passed, 0 failed in release; `cargo fmt
 --check` clean; the `tsc` gate clean; clippy library counts
 7 / 22 / 29; no committed corpus file moved.
 
-## §67 is not COMPLETE, and this is the record of why
+## Why pass B did not land in its own cycle
+
+*(This section records the block. The next section closes it.)*
 
 The Phase Review rule is that a phase cannot be COMPLETE with an
 open CRITICAL or MAJOR. §67 pass A is COMPLETE and landed at
-`1c578f9`. **Pass B is not.**
+`1c578f9`. **Pass B was not, in this cycle.**
 
 Before round 6 this session pre-registered a stop: if a sixth review
 found a CRITICAL of the lambda-environment class, pass B does not
@@ -591,3 +593,57 @@ measurement 4: three traversals of one HIR tree each re-derive the
 evaluation order, and a review finds one instance of the
 disagreement per round. §68 closes the class; this section closed
 instances.
+
+## Pass B is COMPLETE, 2026-08-28
+
+Re-checked at `d53e4a8`. Item 1 above was the one CRITICAL, and §68
+closed it: `corpus/accept/a152-lambda-env-per-iteration` runs, and
+§68.2 rule 8 makes the storage scope the live range. Items 2 and 3
+were six MINOR. **Five of the six are void, because §68 deleted the
+code they name.** Measured by grep at this pin:
+
+| Item | State |
+|---|---|
+| 4th review 1 — `cemit.rs` repeats the receiver classification on the suspending method path | Void. cemit reads LIR operands; the HIR-era path is deleted. |
+| 4th review 2 — `save_address` types a spilled pointer `Type::U64` | Void. `save_address`, `SavedValue`, and `SpillKind` do not exist. |
+| 4th review 3 — the `Type::Void` guard sits in the trace and the C emitter, not the dev tier | Void. The planner is deleted. |
+| 6th review 1 — an arity-only call in the intrinsic families | **Open.** `codegen/src/cemit.rs:6203`. |
+| 6th review 2 — no note at the `LambdaEnv` acquire | Void. `LambdaEnv` does not exist. |
+| 6th review 3 — no note that `K::Cond` plans both arms | Void. The planner is deleted. |
+
+Item 4, the rule 7a owner decision, is settled in the contract and
+pinned by an interop test pair.
+
+No CRITICAL and no MAJOR are open, so the Phase Review rule does not
+block pass B. It is COMPLETE.
+
+### The one open MINOR, stated correctly
+
+The record above names it "an arity-only call that reads as a
+discarded result". That is wrong, and this is the measured shape.
+`cemit.rs:6203` decides whether an `Array` callback takes an index
+parameter, and it reads the decision from the callback's parameter
+count:
+
+    match function.params.len() {
+        arity if arity + 1 == expected => Ok(0),
+        arity if arity == expected     => Ok(1),
+        ...
+    }
+
+The checker knows whether the callback declares the index parameter.
+LIR does not carry it, so the C emitter derives it again. That is
+core principle 8's class: a form must carry every fact its consumers
+need. The mapping is total over the six listed names today, so
+nothing is wrong at this pin. A family with a third optional
+parameter would misclassify silently.
+
+### One more site of the same class
+
+Not from any review; found while re-checking the six above.
+`cemit.rs:2574` and `cemit.rs:2622` each map `l::ParameterKind` to
+the same C source spelling, with the same three arms. One fact,
+two derivations.
+
+Both sites are MINOR and both are recorded, not fixed. A fix is a
+change to what LIR carries, which is §68.7's contract.
