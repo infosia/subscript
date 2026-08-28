@@ -376,8 +376,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 102;
-const DEBUG_RUNNABLE_COUNT: usize = 101;
+const RELEASE_RUNNABLE_COUNT: usize = 104;
+const DEBUG_RUNNABLE_COUNT: usize = 103;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -549,6 +549,14 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a155-async-handle-array",
         "async-handle array storage, indexed held awaits, and scope release",
+    ),
+    (
+        "a156-cstruct-this-by-value",
+        "value-class receiver loads for by-value returns and arguments",
+    ),
+    (
+        "a157-await-loop-liveness",
+        "await-result liveness through a loop and a later suspension",
     ),
     (
         "a15-manual-lifetime",

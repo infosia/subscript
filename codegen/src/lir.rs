@@ -4663,11 +4663,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expected: l::ValueType,
         pos: &Pos,
     ) -> Result<l::Operand, LowerError> {
-        if self.operand_type(&operand, pos)? == expected {
+        let actual = self.operand_type(&operand, pos)?;
+        if actual == expected {
             return Ok(operand);
         }
+        let kind = match (&actual, &expected) {
+            (l::ValueType::Address(address), l::ValueType::Data(result))
+                if address.pointee == *result =>
+            {
+                l::InstructionKind::LoadAddress
+            }
+            _ => l::InstructionKind::Coerce,
+        };
         self.emit(
-            l::InstructionKind::Coerce,
+            kind,
             vec![operand],
             Some(expected),
             false,
@@ -5010,10 +5019,10 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
                         .filter(|predecessor| reachable[predecessor.0 as usize])
                         .map(|predecessor| outgoing[predecessor.0 as usize])
                         .collect::<Vec<_>>();
-                    if pred_versions.is_empty() || pred_versions.iter().any(Option::is_none) {
+                    let versions = pred_versions.into_iter().flatten().collect::<BTreeSet<_>>();
+                    if versions.is_empty() {
                         None
                     } else {
-                        let versions = pred_versions.into_iter().flatten().collect::<BTreeSet<_>>();
                         if versions.len() == 1 {
                             versions.first().copied()
                         } else if live_in[block_index].contains(&origin) {
