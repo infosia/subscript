@@ -78,8 +78,8 @@ saturates, and `NaN` converts to `0`. JavaScript has no such
 conversion; `as` is a no-op there and the double prints as itself
 (`1e10` against `2147483647`). A program that prints such a value
 cites C3. Float `%` is the C `fmod`, which equals JavaScript's `%` in
-every IEEE case, so it is comparable and cites nothing. Accept adds
-`a165`.
+every IEEE case, so it is comparable and cites nothing. The round that
+lands the rule adds the accept entry and cites it here.
 
 ### C4. Integer literals — contextual typing
 
