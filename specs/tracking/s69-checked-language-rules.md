@@ -109,3 +109,51 @@ C14 covers a class, not the temporal dead zone alone. The table's
 granularity is a collision class — twelve ids covered 151 rejects
 before this. That structural judgment is this session's and is recorded
 so it can be reversed.
+
+## The `node` pin is the major line, 2026-08-28
+
+§69.3 rule 4 read "`node` and `tsc` are pinned", and the harness read it
+as one exact equality for both. On a host running Node v24.16.0 against a
+v24.18.0 record, stage 2 did not run at all: the assert fired before the
+42 comparable entries were measured.
+
+**The two are not symmetric.** `package.json` and its lockfile install
+`tsc`, so an exact check compares the record against something the
+repository put there, and it fails only for a stale `node_modules`. The
+repository does not install `node`. `engines` declares a version and does
+not supply one, so an exact equality reports the host, not a divergence,
+and it stops the gate.
+
+**The version check adds no detection.** §69.5 criterion 4 is what
+catches a `node` divergence, and it names the entry and the bytes. The
+version equality moves attribution earlier and fires on the runs where
+nothing differs. The major line is what the pin must hold: a major
+release brings a new V8, and that is when a person re-measures.
+
+### Measured, not assumed
+
+Running stage 2 on the older line is the evidence that the loosening is
+safe, and it was run:
+
+    js corpus gate: 42 comparable, 112 non-comparable, 1 shim name(s),
+                    node v24.16.0, tsc 5.9.2, 0.263s
+
+**All 42 comparable entries match their goldens byte for byte on Node
+v24.16.0**, the same result §69 stage 2 recorded on v24.18.0. No
+observable this corpus reads moved between the two releases.
+
+The record keeps the exact version it was measured on, and the failure
+message names it, so a reader tells a host mismatch from a divergence
+without leaving the message. The summary prints the version that ran, so
+the record follows the run (§69.3 rule 6).
+
+Two unit tests pin it: one reads what "major line" means, including that
+a new major and a malformed string both fail; one reads `package.json`
+against the same constants, because two records that disagree are worse
+than one.
+
+### The Windows profile closes
+
+This was the last open failure on `x86_64-pc-windows-msvc`. Both
+profiles pass: 1044 in debug and 1043 in release, zero failures
+(`specs/tracking/windows-portability.md`).

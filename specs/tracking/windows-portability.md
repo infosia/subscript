@@ -1,9 +1,9 @@
 # Windows portability — evidence
 
-Status: measured 2026-08-28 (the sections at the end of this file). Each
-profile has one open failure, and it is the same one: this host runs Node
-v24.16.0 against a v24.18.0 pin, so §69 stage 2 cannot run here. Every
-other gate passes, `perf_gate_meets_every_threshold` included. Contract:
+Status: **green**, measured 2026-08-28 (the sections at the end of this
+file). Both profiles pass on `x86_64-pc-windows-msvc`: 1044 in debug and
+1043 in release, zero failures, with `cargo fmt --check` at exit 0 and
+`perf_gate_meets_every_threshold` passing. Contract:
 `specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
 cranelift-jit, Windows/Mac). This file keeps the record from
 2026-07-23 forward, so the older sections state older states.
