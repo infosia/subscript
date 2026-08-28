@@ -283,6 +283,10 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
         "calls the synthetic native interop library",
     ),
     (
+        "a159-address-keeps-base-alive",
+        "calls the synthetic native interop library",
+    ),
+    (
         "a107-interop-handle-parameter-pair",
         "calls the synthetic native interop library",
     ),
@@ -832,7 +836,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
     let entries = corpus::golden_ids(&accept);
     assert_eq!(
         INTERPRETER_EXCLUSIONS.len(),
-        53,
+        54,
         "the declared host-dependent exclusion count changed"
     );
     for (id, reason) in INTERPRETER_EXCLUSIONS {
