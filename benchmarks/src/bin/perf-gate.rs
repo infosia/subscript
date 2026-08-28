@@ -157,12 +157,54 @@ struct Workload {
     baseline_protocol: BaselineProtocol,
     /// Result that every subject must produce.
     expected_output: ExpectedOutput,
-    /// Maximum ship-tier ratio to the C baseline.
-    ship_limit: f64,
+    /// Maximum ship-tier ratio to the C baseline, by host ISA.
+    ship_limit: ShipLimit,
     /// Maximum dev-tier ratio to the C baseline.
     dev_limit: f64,
     /// Description of the C timed span.
     c_span: &'static str,
+}
+
+/// A ship-tier ceiling that differs by host instruction set
+/// (`specs/blocks/compiler.md` §3). The emitted C is one text, and it does
+/// not cost the same on both: §10a measures out-of-line growable-array
+/// access and copy-heavy value-class parameter passing as costs clang
+/// optimizes on arm64 and does not on x86-64. One number over two
+/// instruction sets therefore states a criterion neither host owns.
+#[derive(Debug, Clone, Copy)]
+struct ShipLimit {
+    /// The gated ratio on aarch64, where §3 keeps 1.5x.
+    aarch64: f64,
+    /// The gated ratio on x86-64.
+    x86_64: f64,
+}
+
+impl ShipLimit {
+    /// One ratio for every host, where the instruction set does not change
+    /// the measured cost.
+    const fn uniform(limit: f64) -> Self {
+        Self {
+            aarch64: limit,
+            x86_64: limit,
+        }
+    }
+
+    /// The ceiling for the host this binary runs on. A host that is
+    /// neither aarch64 nor x86-64 reads the aarch64 number, and §3 has no
+    /// measurement for it; the report names the host, so the reader sees
+    /// which number applied.
+    fn here(self) -> f64 {
+        if cfg!(target_arch = "x86_64") {
+            self.x86_64
+        } else {
+            self.aarch64
+        }
+    }
+
+    /// Whether this workload's ceiling differs by host.
+    fn is_scoped(self) -> bool {
+        self.aarch64 != self.x86_64
+    }
 }
 
 /// The workloads that the P4 gate measures.
@@ -175,7 +217,10 @@ const WORKLOADS: [Workload; 2] = [
         baseline_c: include_str!("../../a22-baseline.c"),
         baseline_protocol: BaselineProtocol::NanosecondsWithFloor,
         expected_output: ExpectedOutput::Bytes(A22_GOLDEN),
-        ship_limit: 1.50,
+        ship_limit: ShipLimit {
+            aarch64: 1.50,
+            x86_64: 2.50,
+        },
         dev_limit: 25.0,
         c_span: "the workload call: array construction, 100 propagation iterations, checksum",
     },
@@ -187,7 +232,7 @@ const WORKLOADS: [Workload; 2] = [
         baseline_c: include_str!("../../workloads/c/collect.c"),
         baseline_protocol: BaselineProtocol::SecondsWithInternalFloor,
         expected_output: ExpectedOutput::I32(COLLECT_CHECKSUM),
-        ship_limit: 7.50,
+        ship_limit: ShipLimit::uniform(7.50),
         dev_limit: 8.50,
         c_span: "the workload call: graph construction, explicit reclamation, traversal, checksum",
     },
@@ -837,6 +882,16 @@ fn write_report(
         report,
         format_args!("thresholds (compiler.md §3, pre-registered):"),
     )?;
+    for workload in WORKLOADS.iter().filter(|w| w.ship_limit.is_scoped()) {
+        w(
+            report,
+            format_args!(
+                "  {} ship-tier is scoped by host ISA: aarch64 {:.2}x, x86-64 {:.2}x. \
+                 §10a names the x86-64 cost, and it is open.",
+                workload.name, workload.ship_limit.aarch64, workload.ship_limit.x86_64
+            ),
+        )?;
+    }
     let (Some(iteration), Some(iteration_stats), Some(reload), Some(reload_stats)) = (
         one_shots.first(),
         one_shot_stats.first(),
@@ -862,7 +917,8 @@ fn write_report(
         }
         let ship_ratio = ship.median / baseline.median;
         let dev_ratio = dev.median / baseline.median;
-        let ship_met = ship_ratio <= run.workload.ship_limit;
+        let ship_limit = run.workload.ship_limit.here();
+        let ship_met = ship_ratio <= ship_limit;
         let dev_met = dev_ratio <= run.workload.dev_limit;
         thresholds_met = thresholds_met && ship_met && dev_met;
         let baseline_withheld = timing_is_withheld(mode, baseline.spread());
@@ -871,7 +927,7 @@ fn write_report(
                 report,
                 format_args!(
                     "  {:<9} {:<15} {:>16}, limit {:.2}x  WITHHELD",
-                    run.workload.name, "ship-tier", "noise", run.workload.ship_limit
+                    run.workload.name, "ship-tier", "noise", ship_limit
                 ),
             )?;
         } else {
@@ -882,7 +938,7 @@ fn write_report(
                     run.workload.name,
                     "ship-tier",
                     ship_ratio,
-                    run.workload.ship_limit,
+                    ship_limit,
                     if ship_met { "MET" } else { "MISSED" }
                 ),
             )?;
