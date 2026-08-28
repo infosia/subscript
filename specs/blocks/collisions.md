@@ -73,6 +73,14 @@ TS 80008 is a suggestion, not an error (measured, `tsc` exit 0).
 Accept: `a02`, `a132`. Reject: `r08-bare-number` (`number` in a
 declaration), `r124` (`u64` overflow), `r125` (`i64` underflow).
 
+*Revised 2026-08-28 (§68.7.2):* a float to integer `as` conversion
+saturates, and `NaN` converts to `0`. JavaScript has no such
+conversion; `as` is a no-op there and the double prints as itself
+(`1e10` against `2147483647`). A program that prints such a value
+cites C3. Float `%` is the C `fmod`, which equals JavaScript's `%` in
+every IEEE case, so it is comparable and cites nothing. Accept adds
+`a165`.
+
 ### C4. Integer literals — contextual typing
 
 A suffix-less integer literal adopts the sized type of its context

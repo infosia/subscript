@@ -1243,7 +1243,16 @@ site, and no future round needs to find the site by hand.
 The check is not a formatter and not a C parser. It skips comments and
 string and character literals, so a brace inside either is not a member.
 
-## 12. P5 C-header binding vertical slice
+## 11e. A label is followed by a statement
+
+*(2026-08-28, review of §68 consumers, M4.)* The emitted C placed a
+declaration directly after a resume label: `resume_b6: SubFn t0 =
+frame->b6_v14;`. C11 6.8.1 gives a label a statement, and a
+declaration is not one; clang reports it under `-pedantic` as a C23
+extension, and MSVC rejects it *(docs)*. The emitter writes `;` after
+every label it emits, so a declaration that follows is a statement's
+successor. `verify_no_empty_aggregate`'s neighbour checks the emitted
+text for a label followed by a declaration, over every corpus entry.## 12. P5 C-header binding vertical slice
 
 The language's founding purpose (plan §4): express zero-copy C-ABI
 interop. P5 proves it against a **neutral synthetic C header**
@@ -8510,6 +8519,37 @@ The interface is not the subject. This section moves no part of it.
    and no cursor exists.** This retires §67.2 rules 1, 1c, 1g, 1i,
    1j, 1k, and 1l. It also retires rule 2a: a suspension carries a
    block id, so no emitter allocates a label number by hand.
+7a. **A `Local` that is live across a suspension lives in the frame,
+   and LIR says so.** *(Added 2026-08-28 after the Fable phase review
+   of §68 consumers, C1.)* Item 7 says the frame holds the successor's
+   live-in set and nothing else. A `Local` is storage, not a value, so
+   it was never in that set, and both transcribers gave it a C local
+   or a stack slot of the resume function, re-created at every resume.
+   Measured at `2a65724` and at `e598994`:
+
+       function* g(): Generator<i32> {
+         const fixed: FixedArray<i32, 2> = [1, 2];
+         yield fixed[0]; yield fixed[1]; yield fixed[0] + fixed[1];
+       }
+       dev 1,0,0   ship 1,0,0   interpreter 1,2,3
+
+   `fixed[0] + (await val(3)) + fixed[1]` prints `4` on both tiers and
+   `6` on the interpreter. Both tiers agree, so the differential gate
+   cannot see it; the interpreter is right.
+
+   The form carries the fact. Every `Local` declares its storage
+   class: **activation** (dies with the activation) or **frame**
+   (lives in the coroutine frame from its first definition to the
+   function's end). The lowering marks a `Local` `frame` when any
+   suspension lies between a definition and a use of it. The verifier
+   fails a function in which an activation `Local` is read after a
+   suspension that a definition of it dominates. Both transcribers
+   read the class and decide nothing. Item 7's "nothing else" now
+   reads: the frame holds the live-in set and the frame-class locals.
+
+   Corpus: `a164` (a generator and an async function, each with a
+   `FixedArray` local and a `FixedArray<CStruct, N>` local read after
+   a suspension, in a loop and outside one). Red at `2a65724`.
 8. **Storage scope is the live range, never the source block.** If a
    value outlives its source block, the value lives in
    function-scope storage. This closes measurement 8's second
@@ -9148,6 +9188,35 @@ position.** It has no per-kind arm and no runtime fallback for a kind
 LIR owns. The trap gate compares line and column on every tier and on
 the interpreter.
 
+*(2026-08-28, review of §68 consumers, C4 and M1. Two conversions
+this section said "as C does" are undefined in C, and each tier
+decided one.)*
+
+**A float to integer `as` conversion saturates, and `NaN` converts to
+zero.** The value is truncated toward zero; a result below the
+target's minimum is the minimum, above its maximum is the maximum;
+`NaN` is `0`. Measured at `2a65724`: both tiers already do this
+(`1e10 as i32` is `2147483647`, `(-1.0) as u32` is `0`, `300.0 as i8`
+is `127`), and the interpreter wrapped (`1410065408`, `4294967295`,
+`44`). The interpreter changes. C leaves the out-of-range case
+undefined; the emitted C calls a helper that saturates, and the dev
+tier uses the saturating convert. JavaScript has no such conversion,
+and `as` is a no-op there, so a program that prints such a value is
+not comparable: collisions.md C3 names it.
+
+**Float `%` is the C `fmod`**, and it is in the language. The checker
+accepted it, the dev tier refused it ("floating remainder is not
+supported"), the ship tier emitted C `%` on a `double` and did not
+compile, and the interpreter ran `fmod`. `fmod` agrees with
+JavaScript's `%` for every IEEE case: the sign of the dividend, `x % 0`
+is `NaN`, `Infinity % y` is `NaN`, `x % Infinity` is `x`, `NaN`
+propagates. Both tiers call the runtime's `fmod`; Cranelift has no
+float remainder. A program that prints such a value is comparable.
+
+Corpus: `a165` (the three saturating conversions above, `NaN as i32`,
+and float `%` over the seven cases). Its float `%` half is
+`js-comparable: yes`; its conversion half cites C3.
+
 #### 68.7.2 The instruction table
 
 Numerics, string, and array behaviour come from the list at §2 and
@@ -9182,6 +9251,7 @@ operations, and §2's Q14 formatting for interpolation.
 | `ArrayLiteral` | one per element, in order | a new array of the elements. |
 | `ArraySpreadLiteral` | one per part, in order | a new array; a spread part contributes its elements in order (`stdlib.md` §14). |
 | `Template` | one per interpolation, in order | the concatenation, formatted by §2's Q14 rules. |
+| `Template` (no parts) | — | *(Added 2026-08-28, review of §68 consumers, C3.)* the empty string, and no trap. The dev tier emitted `""` and the ship tier reported `template consumed 0 of 1 traps`; the two transcribers decided an unstated case. It is stated here, and the lowering attaches no trap site to an empty template. |
 | `Call` | see §68.7.3 | a call of the named target. |
 | `IteratorCreate`, `IteratorHasNext`, `IteratorValue`, `IteratorBound`, `IteratorAdvance` | see §68.7.4 | the iteration protocol. |
 | `ForeignArrayData` | array | *(Added 2026-08-28, review of §68 form, M2.)* the array's current data pointer, as an `Address` whose provenance is the array. A foreign call takes it as an operand for each array argument, so the call carries the snapshot §68.7.3 names. It is invalidated by the same instructions that invalidate any address into that array. |
@@ -9205,6 +9275,32 @@ The target kind decides the operand roles.
 | `Indirect` | the callable first, then the parameters | a call through a value of `Type::Func`. |
 | `Intrinsic` | the family's operands, in order | the operation the module's intrinsic table names. The table, not a positional index into a Rust array, defines it (§68.2 item 11). |
 | `BuiltinMethod` | the receiver first, then the parameters | the standard-library method. `stdlib.md` decides each one. |
+
+*(2026-08-28, review of §68 consumers, M6 — **open, the owner's**.)*
+The sentence above and the tree disagree, and the tree disagrees with
+itself. Measured at `2a65724`, a foreign call whose array argument is
+grown by a later argument:
+
+    grow in a later argument, no suspension            2   (snapshot before the later argument)
+    grow after an await earlier in the function        2
+    grow in a later argument that contains an await    3   (snapshot in the resume block, after grow)
+
+`codegen/tests/interop.rs` pins the third as `f2suspend=3`. The
+sentence above gives `2` for all three. Rule 9 forces the third: the
+snapshot is an address into the array, `grow` invalidates it, and an
+address that crosses an invalidation is recomputed. The first case
+carries the hazard rule 9 exists for: a snapshot taken before a later
+argument that reallocates the array is a stale pointer at the call.
+
+Two consistent answers exist. **Call-time view**: the snapshot is
+taken after every argument, so all three print `3`, the array is the
+reference JavaScript passes, and no stale pointer is possible.
+**Evaluation-point view, made safe**: the snapshot is taken at the
+argument's evaluation point and the later argument's growth is a
+trap, so the first and third cases stop. The first keeps §67.2 rule 7's
+intent for sync code and changes one pinned value; the second changes
+which programs run. The owner decides, because rule 7a was the
+owner's, and until then the tree stands as measured.
 
 #### 68.7.4 The three protocols that LIR alone defines
 
