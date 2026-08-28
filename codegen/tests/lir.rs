@@ -380,8 +380,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 104;
-const DEBUG_RUNNABLE_COUNT: usize = 103;
+const RELEASE_RUNNABLE_COUNT: usize = 105;
+const DEBUG_RUNNABLE_COUNT: usize = 104;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -561,6 +561,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a157-await-loop-liveness",
         "await-result liveness through a loop and a later suspension",
+    ),
+    (
+        "a160-module-initializer-order",
+        "module initializers and entry calls read initialized data bindings",
     ),
     (
         "a15-manual-lifetime",

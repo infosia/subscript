@@ -167,6 +167,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r155-class-read-before-declaration.ts", RuleCode::S100, 17),
     ("r156-class-name-owned-by-a-local.ts", RuleCode::S100, 14),
     ("r157-dropped-async-handle.ts", RuleCode::S013, 13),
+    ("r158-module-initializer-direct-read.ts", RuleCode::S100, 8),
+    (
+        "r159-module-initializer-transitive-read.ts",
+        RuleCode::S100,
+        12,
+    ),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -288,8 +294,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        152,
-        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, nine §67 entries, and one §70 entry"
+        154,
+        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, eleven §67 entries, and one §70 entry"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -357,6 +363,28 @@ fn class_name_owned_by_a_local_reports_the_shadow() {
         diagnostics[0].message,
         "`Foo` names a local value here, not a class"
     );
+}
+
+#[test]
+fn module_initializer_diagnostics_name_the_binding_and_call_path() {
+    let cases = [
+        (
+            "r158-module-initializer-direct-read.ts",
+            "`second` is accessed before its declaration, directly from this initializer",
+        ),
+        (
+            "r159-module-initializer-transitive-read.ts",
+            "`h` is accessed before its declaration, through `f`",
+        ),
+    ];
+    for (file, message) in cases {
+        let source = fs::read_to_string(corpus_dir().join("reject").join(file))
+            .unwrap_or_else(|error| panic!("read {file}: {error}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("the module initializer must fail");
+        assert_eq!(diagnostics.len(), 1, "{file} must report one error");
+        assert_eq!(diagnostics[0].message, message);
+    }
 }
 
 #[test]

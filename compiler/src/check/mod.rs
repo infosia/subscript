@@ -13,7 +13,7 @@ mod layout;
 mod stmt;
 mod tyres;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
@@ -608,6 +608,8 @@ pub(crate) fn run(
             ck.check_bodies(i);
         }
     }
+    let initializer_diags = module_initializer_diagnostics(&ck);
+    ck.diags.extend(initializer_diags);
     ck.validate_layouts();
 
     if ck.diags.is_empty() {
@@ -628,6 +630,469 @@ pub(crate) fn run(
     } else {
         Err(ck.diags)
     }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum ModuleFunction {
+    Free(String),
+    Constructor(ClassId),
+    Method(ClassId, String),
+}
+
+#[derive(Clone, Default)]
+struct ModuleEffects {
+    accesses: BTreeMap<String, Vec<String>>,
+    calls: Vec<(ModuleFunction, String)>,
+}
+
+struct ModuleEffectScanner<'a> {
+    bindings: &'a [String],
+    classes: &'a [hir::ClassDef],
+    effects: ModuleEffects,
+}
+
+impl<'a> ModuleEffectScanner<'a> {
+    fn new(bindings: &'a [String], classes: &'a [hir::ClassDef]) -> Self {
+        Self {
+            bindings,
+            classes,
+            effects: ModuleEffects::default(),
+        }
+    }
+
+    fn function(mut self, function: &hir::Function) -> ModuleEffects {
+        for parameter in &function.params {
+            if let Some(default) = &parameter.default {
+                self.expr(default);
+            }
+        }
+        self.stmts(&function.body);
+        self.effects
+    }
+
+    fn constructor(mut self, class: &hir::ClassDef) -> ModuleEffects {
+        for field in &class.fields {
+            if let Some(initializer) = &field.init {
+                self.expr(initializer);
+            }
+        }
+        if let Some(constructor) = &class.ctor {
+            for parameter in &constructor.params {
+                if let Some(default) = &parameter.default {
+                    self.expr(default);
+                }
+            }
+            self.stmts(&constructor.body);
+        }
+        self.effects
+    }
+
+    fn record_access(&mut self, name: &str, path: Vec<String>) {
+        let replace = self
+            .effects
+            .accesses
+            .get(name)
+            .is_none_or(|current| path_is_better(&path, current));
+        if replace {
+            self.effects.accesses.insert(name.to_string(), path);
+        }
+    }
+
+    fn record_indirect_call(&mut self) {
+        for binding in self.bindings {
+            self.record_access(binding, vec!["[indirect call]".to_string()]);
+        }
+    }
+
+    fn record_call(&mut self, function: ModuleFunction, label: String) {
+        self.effects.calls.push((function, label));
+    }
+
+    fn class_of(ty: &Type) -> Option<ClassId> {
+        match ty {
+            Type::Class(id) => Some(*id),
+            Type::Nullable(inner) => Self::class_of(inner),
+            _ => None,
+        }
+    }
+
+    fn method_call(&mut self, receiver: &hir::Expr, name: &str) {
+        let Some(class_id) = Self::class_of(&receiver.ty) else {
+            return;
+        };
+        let Some(class) = self.classes.get(class_id.0) else {
+            return;
+        };
+        if class.methods.iter().any(|method| method.name == name) {
+            self.record_call(
+                ModuleFunction::Method(class_id, name.to_string()),
+                format!("{}.{}", class.name, name),
+            );
+        }
+    }
+
+    fn async_callee(&mut self, callee: &hir::AsyncCallee) {
+        match callee {
+            hir::AsyncCallee::Function(name) => {
+                self.record_call(ModuleFunction::Free(name.clone()), name.clone());
+            }
+            hir::AsyncCallee::Method {
+                class,
+                receiver,
+                name,
+            } => {
+                self.expr(receiver);
+                let label = self.classes.get(class.0).map_or_else(
+                    || name.clone(),
+                    |definition| format!("{}.{}", definition.name, name),
+                );
+                self.record_call(ModuleFunction::Method(*class, name.clone()), label);
+            }
+        }
+    }
+
+    fn stmts(&mut self, statements: &[hir::Stmt]) {
+        for statement in statements {
+            self.stmt(statement);
+        }
+    }
+
+    fn stmt(&mut self, statement: &hir::Stmt) {
+        match statement {
+            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => self.expr(init),
+            hir::Stmt::Return { value, .. } => {
+                if let Some(value) = value {
+                    self.expr(value);
+                }
+            }
+            hir::Stmt::If {
+                cond, then, els, ..
+            } => {
+                self.expr(cond);
+                self.stmts(then);
+                if let Some(els) = els {
+                    self.stmts(els);
+                }
+            }
+            hir::Stmt::While { cond, body, .. } => {
+                self.expr(cond);
+                self.stmts(body);
+            }
+            hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                if let Some(init) = init {
+                    self.stmt(init);
+                }
+                if let Some(cond) = cond {
+                    self.expr(cond);
+                }
+                if let Some(step) = step {
+                    self.expr(step);
+                }
+                self.stmts(body);
+            }
+            hir::Stmt::ForOf { subject, body, .. } => {
+                self.expr(subject);
+                self.stmts(body);
+            }
+            hir::Stmt::Switch { disc, cases, .. } => {
+                self.expr(disc);
+                for case in cases {
+                    if let Some(test) = &case.test {
+                        self.expr(test);
+                    }
+                    self.stmts(&case.body);
+                }
+            }
+            hir::Stmt::Block(body) => self.stmts(body),
+            hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
+        }
+    }
+
+    fn expr(&mut self, expression: &hir::Expr) {
+        use hir::ExprKind as K;
+
+        match &expression.kind {
+            K::Global(name) => self.record_access(name, Vec::new()),
+            K::Unary { operand, .. }
+            | K::Cast(operand)
+            | K::JsonResultValue(operand)
+            | K::Length(operand)
+            | K::AsyncHandleAwait(operand)
+            | K::AsyncHandleTransfer { value: operand, .. } => self.expr(operand),
+            K::Binary { left, right, .. } => {
+                self.expr(left);
+                self.expr(right);
+            }
+            K::Assign { target, value, .. } => {
+                self.expr(target);
+                self.expr(value);
+            }
+            K::Call { callee, args } => {
+                match callee {
+                    hir::Callee::Func(name) => {
+                        self.record_call(ModuleFunction::Free(name.clone()), name.clone());
+                    }
+                    hir::Callee::Value(value) => {
+                        self.expr(value);
+                        self.record_indirect_call();
+                    }
+                    hir::Callee::Method { recv, name } => {
+                        self.expr(recv);
+                        self.method_call(recv, name);
+                    }
+                    _ => {}
+                }
+                let invokes_callback = match callee {
+                    hir::Callee::Arr(function) => function.takes_callback(),
+                    hir::Callee::Map(function) => {
+                        matches!(function, hir::MapFn::ForEach | hir::MapFn::GroupBy)
+                    }
+                    hir::Callee::Set(function) => matches!(function, hir::SetFn::ForEach),
+                    _ => false,
+                };
+                if invokes_callback {
+                    self.record_indirect_call();
+                }
+                for argument in args {
+                    self.expr(argument);
+                }
+            }
+            K::New { class, args } => {
+                for argument in args {
+                    self.expr(argument);
+                }
+                let label = self.classes.get(class.0).map_or_else(
+                    || "constructor".to_string(),
+                    |definition| format!("{}.constructor", definition.name),
+                );
+                self.record_call(ModuleFunction::Constructor(*class), label);
+            }
+            K::DescriptorLit { class, fields } => {
+                let defaults = self
+                    .classes
+                    .get(class.0)
+                    .map(|definition| &definition.fields);
+                for (index, field) in fields.iter().enumerate() {
+                    if let Some(value) = field {
+                        self.expr(value);
+                    } else if let Some(default) = defaults
+                        .and_then(|fields| fields.get(index))
+                        .and_then(|field| field.init.as_ref())
+                    {
+                        self.expr(default);
+                    }
+                }
+            }
+            K::Field { obj, .. } => self.expr(obj),
+            K::Index { obj, index, .. } => {
+                self.expr(obj);
+                self.expr(index);
+            }
+            K::ArrayLit(elements) => {
+                for element in elements {
+                    self.expr(element);
+                }
+            }
+            K::ArraySpreadLit(elements) => {
+                for element in elements {
+                    self.expr(&element.expr);
+                }
+            }
+            K::Template(parts) => {
+                for part in parts {
+                    if let hir::TplPart::Expr(value) = part {
+                        self.expr(value);
+                    }
+                }
+            }
+            K::Yield(value) => {
+                if let Some(value) = value {
+                    self.expr(value);
+                }
+            }
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
+                self.async_callee(callee);
+                for argument in args {
+                    self.expr(argument);
+                }
+            }
+            K::Cond { cond, then, els } => {
+                self.expr(cond);
+                self.expr(then);
+                self.expr(els);
+            }
+            K::Int(_)
+            | K::Float(_)
+            | K::Bool(_)
+            | K::Str(_)
+            | K::Null
+            | K::This
+            | K::Local(_)
+            | K::FuncRef(_)
+            | K::EnumMember { .. }
+            | K::Zero
+            | K::RawNew { .. }
+            | K::Lambda { .. }
+            | K::AsyncSuspend => {}
+        }
+    }
+}
+
+fn path_is_better(candidate: &[String], current: &[String]) -> bool {
+    candidate.len() < current.len() || (candidate.len() == current.len() && candidate < current)
+}
+
+fn merge_path(accesses: &mut BTreeMap<String, Vec<String>>, name: &str, path: Vec<String>) -> bool {
+    let replace = accesses
+        .get(name)
+        .is_none_or(|current| path_is_better(&path, current));
+    if replace {
+        accesses.insert(name.to_string(), path);
+    }
+    replace
+}
+
+fn resolve_module_effects(
+    effects: &ModuleEffects,
+    summaries: &HashMap<ModuleFunction, BTreeMap<String, Vec<String>>>,
+) -> BTreeMap<String, Vec<String>> {
+    let mut accesses = effects.accesses.clone();
+    for (callee, label) in &effects.calls {
+        let Some(callee_accesses) = summaries.get(callee) else {
+            continue;
+        };
+        for (name, path) in callee_accesses {
+            let mut candidate = Vec::with_capacity(path.len() + 1);
+            candidate.push(label.clone());
+            candidate.extend(path.iter().cloned());
+            merge_path(&mut accesses, name, candidate);
+        }
+    }
+    accesses
+}
+
+fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
+    let mut bindings = Vec::new();
+    for file in &checker.prog.files {
+        if file.dts {
+            continue;
+        }
+        for item in &file.module.body {
+            let Some(declaration) = module_decl(item) else {
+                continue;
+            };
+            match declaration {
+                ast::Decl::Var(variables) if variables.kind != ast::VarDeclKind::Var => {
+                    for declarator in &variables.decls {
+                        if let ast::Pat::Ident(binding) = &declarator.name {
+                            bindings.push(binding.id.sym.to_string());
+                        }
+                    }
+                }
+                ast::Decl::Using(using) => {
+                    for declarator in &using.decls {
+                        if let ast::Pat::Ident(binding) = &declarator.name {
+                            bindings.push(binding.id.sym.to_string());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    bindings
+}
+
+fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
+    let bindings = module_data_bindings(checker);
+    let binding_order: HashMap<&str, usize> = bindings
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.as_str(), index))
+        .collect();
+    let mut effects = HashMap::new();
+
+    for function in &checker.functions {
+        let direct = ModuleEffectScanner::new(&bindings, &checker.classes).function(function);
+        effects.insert(ModuleFunction::Free(function.name.clone()), direct);
+    }
+    for (index, class) in checker.classes.iter().enumerate() {
+        let class_id = ClassId(index);
+        let constructor = ModuleEffectScanner::new(&bindings, &checker.classes).constructor(class);
+        effects.insert(ModuleFunction::Constructor(class_id), constructor);
+        for method in &class.methods {
+            let direct = ModuleEffectScanner::new(&bindings, &checker.classes).function(method);
+            effects.insert(
+                ModuleFunction::Method(class_id, method.name.clone()),
+                direct,
+            );
+        }
+    }
+
+    let mut summaries: HashMap<_, _> = effects
+        .iter()
+        .map(|(function, effect)| (function.clone(), effect.accesses.clone()))
+        .collect();
+    loop {
+        let mut changed = false;
+        for (function, effect) in &effects {
+            let resolved = resolve_module_effects(effect, &summaries);
+            let Some(summary) = summaries.get_mut(function) else {
+                continue;
+            };
+            for (name, path) in resolved {
+                changed |= merge_path(summary, &name, path);
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+    for global in &checker.globals {
+        let Some(&initializer_index) = binding_order.get(global.name.as_str()) else {
+            continue;
+        };
+        let mut scanner = ModuleEffectScanner::new(&bindings, &checker.classes);
+        scanner.expr(&global.init);
+        let accesses = resolve_module_effects(&scanner.effects, &summaries);
+        let violation = bindings
+            .iter()
+            .skip(initializer_index)
+            .find_map(|binding| accesses.get(binding).map(|path| (binding, path)));
+        let Some((binding, path)) = violation else {
+            continue;
+        };
+        let route = if path.is_empty() {
+            "directly from this initializer".to_string()
+        } else {
+            let path = path
+                .iter()
+                .map(|step| {
+                    if step == "[indirect call]" {
+                        "an indirect call".to_string()
+                    } else {
+                        format!("`{step}`")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            format!("through {path}")
+        };
+        diagnostics.push(Diagnostic::new(
+            RuleCode::S100,
+            format!("`{binding}` is accessed before its declaration, {route}"),
+            global.init.pos.clone(),
+        ));
+    }
+    diagnostics
 }
 
 impl<'p> Checker<'p> {
@@ -3018,6 +3483,15 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::Decl::Var(v) => {
+                if v.kind == ast::VarDeclKind::Var {
+                    let pos = self.pos(v.span);
+                    self.error(
+                        RuleCode::S100,
+                        "`var` is not in the language; use `let` or `const`",
+                        pos,
+                    );
+                    return;
+                }
                 for d in &v.decls {
                     let ast::Pat::Ident(binding) = &d.name else {
                         continue;
