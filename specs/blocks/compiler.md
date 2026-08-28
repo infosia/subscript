@@ -9179,7 +9179,36 @@ that C1 to C12 do not cover.
 3. **A total check ties the shim to the prelude.** Every name the
    shim defines exists in `prelude/lang.d.ts`. A shim that drifts
    from the prelude tests nothing.
-4. `node` and `tsc` are pinned, and the record states both versions.
+4. **`tsc` is pinned exactly. `node` is pinned to its major line.**
+   *(Corrected 2026-08-28. This read "`node` and `tsc` are pinned",
+   and the harness read it as one exact equality for both. The two are
+   not symmetric, and one rule for both states a requirement neither
+   owns.)*
+
+   `package.json` and its lockfile **install** `tsc`, so the repository
+   controls that version, and an exact check compares the record against
+   something the repository put there. It fails only for a stale
+   `node_modules`, which is a real defect and a cheap one to report.
+
+   The repository does not install `node`. `node` is the host's
+   interpreter, and `engines` declares a version rather than supplying
+   one. An exact equality therefore fails on every host that has not
+   matched a patch release by hand — a failure that reports the host, not
+   a divergence, and that stops the whole gate from running.
+
+5. **The golden comparison detects a `node` divergence; the version does
+   not.** If `node` changes an observable, §69.5 criterion 4 fails and
+   names the entry and the bytes. A version equality adds no detection.
+   It moves attribution earlier, and it fires on the runs where nothing
+   differs at all. The major line is what the pin must hold, because a
+   major release brings a new V8, and that is when a person re-measures
+   the record rather than reads past it.
+
+6. **The record states the measured version, not the pinned one**
+   (§69.5 criterion 6). The gate prints the `node` and `tsc` versions it
+   ran, so the record follows the run. A failure on the major line names
+   the version the record was measured on, so a reader can tell a host
+   mismatch from a divergence without leaving the message.
 
 ### 69.4 What a disagreement means
 
