@@ -294,6 +294,21 @@ Accept: `a144`. Reject: `r141-value-class-write-accessor`,
 
 ### C13. Iteration over a container that changes — a fixed entry bound
 
+**Retired 2026-08-29 (owner: "1,2,3 やりましょう", item 2).** The
+divergence bought nothing: `IteratorHasNext` already read the
+container's current element count every step to shorten on a removal,
+so the fixed bound saved no work. ECMA's own rules are now the
+language's, and they differ by spelling: `for...of` over an array, a
+string, a `Map`, or a `Set` observes the live container, so an append
+during the loop is visited; `Map.prototype.forEach` and
+`Set.prototype.forEach` visit entries added during the call;
+`Array.prototype.forEach` fixes its range before the first call, and an
+element appended after the call begins is not visited. Every spelling
+now matches `node`, `a80` becomes `js-comparable: yes`, and its golden
+moves by this decision. `retired:C13` is kept below as the record of
+what was decided before.
+
+
 `for...of` and `forEach` fix the entry bound when the traversal starts.
 **An append does not extend the traversal, and a removal shortens it.**
 JavaScript re-reads the length each step for an array, and a `Map` or a

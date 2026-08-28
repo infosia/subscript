@@ -9352,8 +9352,19 @@ carries that as five instructions over three values — a cursor, an
 index, and a bound — which §68.1 item 7 threads across the back edge.
 
 - `IteratorCreate(kind)` takes the subject and produces the cursor.
-- `IteratorBound` takes the cursor and produces the bound, **once, at
-  creation**.
+- `IteratorBound` takes the cursor and produces the bound. *(Revised
+  2026-08-29, owner, C13 retired.)* **Which bound depends on the
+  spelling, and LIR carries which.** `Array.prototype.forEach` fixes
+  its range before the first call, as ECMA does, so its bound is the
+  element count at creation, read once. `for...of` over any kind, and
+  `Map`/`Set` `forEach`, observe the live container: their bound is the
+  container's current element count, read at every step, so an append
+  during the traversal is visited. The lowering states the choice on
+  the cursor's kind, both tiers and the interpreter read it, and the
+  verifier checks that a fixed-bound cursor is created only by an
+  `Array.forEach` lowering. Under the live bound the "position is
+  within the container's current element count" clause of
+  `IteratorHasNext` is the bound.
 - **The cursor names a position in the container's own storage.** The
   bound is a position too, captured at creation. A kind whose storage
   holds no hole — an array, a `FixedArray`, a string — has the
@@ -9436,15 +9447,15 @@ the destination block's parameters, by position, at the moment the
 edge is taken. The arguments are read before any binding happens, so
 a swap across an edge is well defined.
 
-*(2026-08-28, review of §68 form, M6.)* The interpreter implements a
-different machine: it reads the bound when `IteratorBound` executes,
-moves the cursor in `IteratorAdvance` and skips dead positions inside
-`IteratorHasNext`, which writes to the cursor. Every sequence the
-lowering emits gives the same result under both, and `a80` passes. **The
-text above is the contract.** The bound is read once, at creation
-(C13's fixed entry bound). `IteratorHasNext` is pure: a cursor is an
-SSA value (§68.1 item 4) and no instruction mutates it. The skip over
-dead positions is `IteratorAdvance`'s. The interpreter changes.
+*(2026-08-28, review of §68 form, M6; the bound sentence revised
+2026-08-29 when C13 retired.)* The interpreter implemented a different
+machine: it read the bound when `IteratorBound` executed, moved the
+cursor in `IteratorAdvance` and skipped dead positions inside
+`IteratorHasNext`, which wrote to the cursor. **The text above is the
+contract.** `IteratorHasNext` is pure: a cursor is an SSA value (§68.1
+item 4) and no instruction mutates it. The skip over dead positions is
+`IteratorAdvance`'s. The bound is the spelling's, as the `IteratorBound`
+row states.
 
 #### 68.7.5 The terminators
 
