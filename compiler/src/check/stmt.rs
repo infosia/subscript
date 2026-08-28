@@ -552,6 +552,11 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
+                    self.reject_nullable_boundary_aggregate_escape(
+                        &checked.ty,
+                        "a return",
+                        pos.clone(),
+                    );
                     if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
                         let origins = self.async_origins_at_copy_site(
                             hir::AsyncCopySite::Return,

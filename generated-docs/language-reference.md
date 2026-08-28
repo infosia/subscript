@@ -302,6 +302,27 @@ export function main(): void {
 }
 ```
 
+### S015
+
+A nullable boundary aggregate may not escape the activation that built it.
+
+Pinned corpus: [`corpus/reject/r160-nullable-boundary-aggregate-escape.ts`](../corpus/reject/r160-nullable-boundary-aggregate-escape.ts), line 11.
+
+Header guidance:
+
+```text
+// tsc: accepts
+// expected-error: S015 at the reference-class field store
+```
+
+```ts
+
+  constructor(descriptor: SGPUProbeFullRenderPipelineDescriptor) {
+    this.descriptor = descriptor;
+  }
+}
+```
+
 ### S100
 
 Constructs outside the decided language surface are rejected.

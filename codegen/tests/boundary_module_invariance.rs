@@ -1,6 +1,6 @@
 //! OBS-3 §44.9: unrelated module declarations cannot change recursive
-//! boundary lowering. The two pointer targets deliberately come from helper
-//! returns, so their storage must remain valid after those helpers return.
+//! boundary lowering. The descriptor is built and consumed in one activation;
+//! uncalled helper padding must not change its two pointer targets.
 
 #![cfg(not(all(windows, target_env = "msvc")))]
 
@@ -30,18 +30,19 @@ fn program(padding: usize) -> String {
              [203, 204],\n\
            );\n\
          }\n\
-         function makeDescriptor(): SGPUProbeBreadthRenderPipelineDescriptor {\n\
-           return new SGPUProbeBreadthRenderPipelineDescriptor(\n\
+         function checkDescriptor(selector: u32): u64 {\n\
+           let descriptor: SGPUProbeBreadthRenderPipelineDescriptor = new SGPUProbeBreadthRenderPipelineDescriptor(\n\
              \"module-invariant\",\n\
              makeDepth(),\n\
              new SGPUProbeBreadthPrimitiveState(301, 302),\n\
              makeFragment(),\n\
            );\n\
+           return subProbeBreadthRenderPipelineCheck(descriptor, selector);\n\
          }\n\
          export function main(): void {\n\
            let selector: u32 = 1;\n\
            while (selector <= 15) {\n\
-             print(`${subProbeBreadthRenderPipelineCheck(makeDescriptor(), selector)}`);\n\
+             print(`${checkDescriptor(selector)}`);\n\
              selector = selector + 1;\n\
            }\n\
          }\n",

@@ -174,6 +174,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         12,
     ),
     (
+        "r160-nullable-boundary-aggregate-escape.ts",
+        RuleCode::S015,
+        11,
+    ),
+    (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
         10,
@@ -227,7 +232,15 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
         let path = dir.join(file);
         let source =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-        let result = check_program(&[SourceFile::new(file, source)]);
+        let mut files = Vec::new();
+        if file == "r160-nullable-boundary-aggregate-escape.ts" {
+            let mirror_path = corpus_dir().join("interop/interop.generated.d.ts");
+            let mirror = fs::read_to_string(&mirror_path)
+                .unwrap_or_else(|e| panic!("read {}: {}", mirror_path.display(), e));
+            files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
+        }
+        files.push(SourceFile::new(file, source));
+        let result = check_program(&files);
         let diags = match result {
             Err(diags) => diags,
             Ok(_) => panic!("{} was accepted; expected {}", file, code),
@@ -294,8 +307,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        154,
-        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, eleven §67 entries, and one §70 entry"
+        155,
+        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, eleven §67 entries, one §70 entry, and one §33.4 entry"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)

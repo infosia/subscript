@@ -379,7 +379,7 @@ fn foreign_call_rule_7a_later_suspension_value_is_unsettled() {
 /// list; its fields are evaluated left to right too.
 #[test]
 fn boundary_struct_field_initializers_run_left_to_right() {
-    let prog = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkHeader(): SubChainHeader {\n  note(\"H\");\n  return new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_BASE, null);\n}\nfunction mkIntensity(): f32 {\n  note(\"I\");\n  return 1.5;\n}\nexport function main(): void {\n  const ext: SubChainExtA = new SubChainExtA(mkHeader(), pick ? mkIntensity() : 0.0, 2);\n  print(`${log}:${ext.intensity}`);\n}\n";
+    let prog = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkKind(): SubChainKind {\n  note(\"H\");\n  return SubChainKind.SUB_CHAIN_KIND_BASE;\n}\nfunction mkIntensity(): f32 {\n  note(\"I\");\n  return 1.5;\n}\nexport function main(): void {\n  const ext: SubChainExtA = new SubChainExtA(new SubChainHeader(mkKind(), null), pick ? mkIntensity() : 0.0, 2);\n  print(`${log}:${ext.intensity}`);\n}\n";
     assert_eq!(both_tiers(prog), b"HI:1.5\n");
 }
 

@@ -2126,14 +2126,14 @@ impl Coalescing {
 
 fn coalesced_value_storage(
     function: &l::Function,
-    rooted_values: &HashSet<l::ValueId>,
+    layouts: &Layouts,
     root_storage: &RootStoragePlan,
     folded_addresses: &HashSet<l::ValueId>,
     removable_edge_copies: &HashSet<(l::BlockId, l::BlockId, usize)>,
     elided_values: &HashSet<l::ValueId>,
     promoted_local_values: &HashSet<l::ValueId>,
 ) -> Result<Vec<l::ValueId>, String> {
-    let interference = root_storage::value_interference(function)?;
+    let interference = root_storage::value_interference(function, layouts)?;
     let mut coalescing = Coalescing::new(function.values.len());
     for (index, slot) in root_storage.value_slots.iter().copied().enumerate() {
         if let Some(slot) = slot {
@@ -2170,10 +2170,8 @@ fn coalesced_value_storage(
                     || promoted_local_values.contains(argument)
                     || function.values[argument.0 as usize].ty
                         != function.values[parameter.0 as usize].ty
-                    || rooted_values.contains(argument) != rooted_values.contains(parameter)
-                    || (rooted_values.contains(argument)
-                        && root_storage.value_slots[argument.0 as usize]
-                            != root_storage.value_slots[parameter.0 as usize])
+                    || root_storage.value_slots[argument.0 as usize]
+                        != root_storage.value_slots[parameter.0 as usize]
                 {
                     continue;
                 }
@@ -2460,7 +2458,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let (removable_edge_copies, elided_values) = removable_block_parameter_copies(function);
         let value_storage = coalesced_value_storage(
             function,
-            &rooted_values,
+            &emitter.layouts,
             &root_storage,
             &folded_addresses,
             &removable_edge_copies,

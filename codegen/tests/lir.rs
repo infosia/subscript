@@ -424,6 +424,10 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
         "calls the synthetic native interop library",
     ),
     (
+        "a163-address-taken-activation",
+        "calls the synthetic native interop library",
+    ),
+    (
         "a107-interop-handle-parameter-pair",
         "calls the synthetic native interop library",
     ),
@@ -517,8 +521,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 107;
-const DEBUG_RUNNABLE_COUNT: usize = 106;
+const RELEASE_RUNNABLE_COUNT: usize = 108;
+const DEBUG_RUNNABLE_COUNT: usize = 107;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -710,6 +714,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a162-async-copy-sites",
         "shared async-copy sites across loops, lambdas, conditionals, and pop",
+    ),
+    (
+        "a166-resume-parameter-interference",
+        "resume-parameter interference under conditional lambda storage",
     ),
     (
         "a15-manual-lifetime",
@@ -985,7 +993,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
     let entries = corpus::golden_ids(&accept);
     assert_eq!(
         INTERPRETER_EXCLUSIONS.len(),
-        54,
+        55,
         "the declared host-dependent exclusion count changed"
     );
     for (id, reason) in INTERPRETER_EXCLUSIONS {
@@ -1422,7 +1430,9 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
     for id in corpus::entry_ids(&accept) {
         if matches!(
             id.as_str(),
-            "a161-counted-handle-stores" | "a162-async-copy-sites"
+            "a161-counted-handle-stores"
+                | "a162-async-copy-sites"
+                | "a166-resume-parameter-interference"
         ) {
             // This round must not extend or move the pre-existing behavior
             // record. The new entries have dedicated ownership, verifier,

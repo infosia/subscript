@@ -2052,6 +2052,11 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                     );
                 }
+                self.reject_nullable_boundary_aggregate_escape(
+                    &checked.ty,
+                    "a descriptor field store",
+                    checked.pos.clone(),
+                );
             }
             fields.push(checked);
         }
@@ -3705,6 +3710,11 @@ impl<'p> Checker<'p> {
                             value.pos.clone(),
                         );
                     }
+                    self.reject_nullable_boundary_aggregate_escape(
+                        &value.ty,
+                        "an array `fill` store",
+                        value.pos.clone(),
+                    );
                 }
                 if checked.len() == 1 {
                     checked.push(int_default(0, &pos));
@@ -3808,6 +3818,11 @@ impl<'p> Checker<'p> {
                             value.pos.clone(),
                         );
                     }
+                    self.reject_nullable_boundary_aggregate_escape(
+                        &value.ty,
+                        "an array `unshift` store",
+                        value.pos.clone(),
+                    );
                 }
                 let mut args = vec![recv];
                 args.extend(checked);
@@ -5484,6 +5499,25 @@ impl<'p> Checker<'p> {
             }
             _ => {}
         }
+        match &target.kind {
+            ExprKind::Global(_) => self.reject_nullable_boundary_aggregate_escape(
+                &value.ty,
+                "an assignment to a module-level binding",
+                value.pos.clone(),
+            ),
+            ExprKind::Index { .. } => self.reject_nullable_boundary_aggregate_escape(
+                &value.ty,
+                "an array-element store",
+                value.pos.clone(),
+            ),
+            ExprKind::Field { obj, .. } if self.is_reference_class(&obj.ty) => self
+                .reject_nullable_boundary_aggregate_escape(
+                    &value.ty,
+                    "a reference-class field store",
+                    value.pos.clone(),
+                ),
+            _ => {}
+        }
         // C7: an assignment invalidates narrowing for the path and its
         // extensions.
         if let Some(key) = path_key(&target) {
@@ -6346,6 +6380,11 @@ impl<'p> Checker<'p> {
                                 arg.pos.clone(),
                             );
                         }
+                        self.reject_nullable_boundary_aggregate_escape(
+                            &arg.ty,
+                            "an array `push` store",
+                            arg.pos.clone(),
+                        );
                     }
                     mk(recv, args, Type::I32, pos)
                 }
@@ -6763,6 +6802,13 @@ impl<'p> Checker<'p> {
                     arg.pos.clone(),
                 );
             }
+            if !self.classes[class_id.0].is_value {
+                self.reject_nullable_boundary_aggregate_escape(
+                    &arg.ty,
+                    "a reference-class construction",
+                    arg.pos.clone(),
+                );
+            }
         }
         hir::Expr {
             kind: ExprKind::New {
@@ -6977,5 +7023,63 @@ mod tests {
             .expect_err("f32FromBits rejects an f64 argument");
         assert_eq!(diagnostics[0].code, RuleCode::S007);
         assert_eq!(diagnostics[0].pos.line, 3);
+    }
+
+    #[test]
+    fn s015_names_each_local_escape_site_from_one_reachable_set() {
+        let mirror = SourceFile::ambient(
+            "boundary.d.ts",
+            "declare class Inner {\n\
+               value: u32;\n\
+               constructor(value: u32);\n\
+             }\n\
+             declare class Outer {\n\
+               inner: Inner | null;\n\
+               constructor(inner: Inner | null);\n\
+             }\n",
+        );
+        let source = SourceFile::new(
+            "test.ts",
+            "class Holder {\n\
+               value: Outer;\n\
+               constructor(value: Outer) { this.value = value; }\n\
+             }\n\
+             let globalValue: Outer = new Outer(null);\n\
+             function returned(): Outer { return new Outer(new Inner(1)); }\n\
+             function storedInArray(): void {\n\
+               const values: Outer[] = [new Outer(null)];\n\
+               values[0] = new Outer(new Inner(2));\n\
+             }\n\
+             function captured(): void {\n\
+               const value: Outer = new Outer(new Inner(3));\n\
+               const read = (): boolean => value.inner !== null;\n\
+               print(`${read()}`);\n\
+             }\n\
+             export function main(): void {\n\
+               const holder: Holder = new Holder(new Outer(new Inner(4)));\n\
+               storedInArray();\n\
+               captured();\n\
+               print(`${holder.value.inner !== null}:${globalValue.inner !== null}:${returned().inner !== null}`);\n\
+             }\n",
+        );
+        let diagnostics = check_program(&[mirror, source]).expect_err("S015 escape sites reject");
+        let messages = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == RuleCode::S015)
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>();
+        for site in [
+            "a return",
+            "a module-level initializer",
+            "an array-element store",
+            "a reference-class field store",
+            "a lambda capture",
+        ] {
+            assert!(
+                messages.iter().any(|message| message.contains(site)),
+                "missing {site}: {messages:?}"
+            );
+        }
+        assert!(messages.iter().all(|message| message.contains("`inner`")));
     }
 }

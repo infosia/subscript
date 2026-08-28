@@ -67,34 +67,47 @@ function toBlend(source: BlendSource): SGPUProbeBlendState {
 }
 
 function boundaryViaIf(
+  label: string,
   source: BlendSource | null,
   format: u32,
-): SGPUProbeColorTargetState {
+): void {
   if (source !== null) {
-    return new SGPUProbeColorTargetState(format, toBlend(source), 1);
+    reportBoundary(
+      label,
+      new SGPUProbeColorTargetState(format, toBlend(source), 1),
+    );
+    return;
   }
-  return new SGPUProbeColorTargetState(format, null, 1);
+  reportBoundary(label, new SGPUProbeColorTargetState(format, null, 1));
 }
 
 function boundaryViaNotEqual(
+  label: string,
   source: BlendSource | null,
   format: u32,
-): SGPUProbeColorTargetState {
-  return new SGPUProbeColorTargetState(
-    format,
-    source !== null ? toBlend(source) : null,
-    1,
+): void {
+  reportBoundary(
+    label,
+    new SGPUProbeColorTargetState(
+      format,
+      source !== null ? toBlend(source) : null,
+      1,
+    ),
   );
 }
 
 function boundaryViaEqual(
+  label: string,
   source: BlendSource | null,
   format: u32,
-): SGPUProbeColorTargetState {
-  return new SGPUProbeColorTargetState(
-    format,
-    source === null ? null : toBlend(source),
-    1,
+): void {
+  reportBoundary(
+    label,
+    new SGPUProbeColorTargetState(
+      format,
+      source === null ? null : toBlend(source),
+      1,
+    ),
   );
 }
 
@@ -132,12 +145,12 @@ export function main(): void {
   print(`handle-eq-null=${handleViaEqual(null)}`);
 
   const blend: BlendSource = new BlendSource(31, 47);
-  reportBoundary("boundary-if-value", boundaryViaIf(blend, 101));
-  reportBoundary("boundary-if-null", boundaryViaIf(null, 102));
-  reportBoundary("boundary-ne-value", boundaryViaNotEqual(blend, 103));
-  reportBoundary("boundary-ne-null", boundaryViaNotEqual(null, 104));
-  reportBoundary("boundary-eq-value", boundaryViaEqual(blend, 105));
-  reportBoundary("boundary-eq-null", boundaryViaEqual(null, 106));
+  boundaryViaIf("boundary-if-value", blend, 101);
+  boundaryViaIf("boundary-if-null", null, 102);
+  boundaryViaNotEqual("boundary-ne-value", blend, 103);
+  boundaryViaNotEqual("boundary-ne-null", null, 104);
+  boundaryViaEqual("boundary-eq-value", blend, 105);
+  boundaryViaEqual("boundary-eq-null", null, 106);
 
   subDeviceRelease(handle);
 }
