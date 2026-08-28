@@ -1,6 +1,6 @@
 # Phase review, 2026-08-28 — sections 66 to 70 and the arc after them
 
-Status: **rounds 1–4 landed; round 5 in progress.** This file records
+Status: **all five rounds landed.** This file records
 the review and what it changed. The contract commits hold the rules;
 the round commits hold the code.
 
@@ -38,9 +38,9 @@ storage. One was the verifier not checking a rule the contract states.
 | 5 | The ship tier coalesced two interfering resume parameters (id-space mismatch, regression at `26403be`) | — | `135565b`: `value_interference` expands to raw ids, `a166` |
 | 6 | The interpreter raised only `DivisionByZero` from a trap site; a fixed-array read past its length printed heap contents | §68.7.1, `7f769a1` | `d318367` (round 4): one dispatch over every kind at the site's position; the trap gate compares columns |
 | 7 | The verifier accepted a value read after a resume that is not a successor parameter | §68.2 rule 8c, `7f769a1` | `d318367` |
-| 8 | A `Local` live across a suspension is re-created at every resume on both tiers (`1,0,0` where `1,2,3`) | §68.2 item 7a, `9cc1102` | round 5 |
-| 9 | An empty template literal does not compile on the ship tier | §68.7.2, `9cc1102` | round 5 |
-| 10 | Float→integer out of range: both tiers saturate, the interpreter wraps, nothing pins it | §68.7.2 and C3, `9cc1102` | round 5 |
+| 8 | A `Local` live across a suspension is re-created at every resume on both tiers (`1,0,0` where `1,2,3`) | §68.2 item 7a, `9cc1102` | `b5ea24e`: `LocalStorageClass`, verifier check, `a164` |
+| 9 | An empty template literal does not compile on the ship tier | §68.7.2, `9cc1102` | `b5ea24e`: no trap on an empty template, `a165` |
+| 10 | Float→integer out of range: both tiers saturate, the interpreter wraps, nothing pins it | §68.7.2 and C3, `9cc1102` | `b5ea24e` (round 5): the interpreter saturates, `a167` |
 
 ## The MAJOR findings
 
@@ -51,7 +51,7 @@ wildcards, the self-agreeing intrinsic check, `array_base`, the
 iteration machine, the `a153` exclusion); post-§70 M1 (`cross-language`
 wrote a record for a run with an errored cell).
 
-Round 5 closes §68 consumers M1–M5 (float `%`, `JsonResult.ok` by name,
+`b5ea24e` (round 5) closes §68 consumers M1–M5 (float `%`, `JsonResult.ok` by name,
 the entry by name, a declaration after a label, duplicated walks) and
 M6, which the owner decided: the foreign-call array snapshot is the
 **call-time view** (`c3fd247`); `f2sync=2` becomes `3`.
