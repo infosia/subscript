@@ -372,23 +372,6 @@ pub(super) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u
     ensure_layout_size(sum & !mask, context)
 }
 
-/// Whether the dev-JIT boundary marshaler may pass a **boundary struct by
-/// value** to a foreign call on `triple` (`specs/blocks/compiler.md`
-/// §12.3a). A by-value aggregate's C ABI differs by target, so only the
-/// implemented-and-verified ABIs are permitted; any other dev host must
-/// fail loudly rather than silently mis-marshal (dev-JIT ≠ ship-C).
-/// Supported: aarch64 (AAPCS64, any OS), x86-64 on Windows (Win64), and
-/// x86-64 on non-Windows (SysV). Only genuinely scalar / single-pointer
-/// boundary arguments are target-neutral and are **not** gated by this; a
-/// `(ptr,len)` / string-view descriptor is a 16-byte by-value aggregate
-/// whose C ABI is target-specific and is handled on this path.
-#[cfg(test)]
-pub(crate) fn boundary_struct_by_value_supported(triple: &target_lexicon::Triple) -> bool {
-    use target_lexicon::Architecture;
-    matches!(triple.architecture, Architecture::Aarch64(_))
-        || matches!(triple.architecture, Architecture::X86_64)
-}
-
 impl<'a, M: Module> ModLower<'a, M> {
     /// Allocates a position-table entry.
     pub fn pos_id(&mut self, pos: &Pos) -> u32 {
@@ -1694,44 +1677,19 @@ pub(crate) fn lower_module_with<M: Module>(
 #[cfg(test)]
 mod tests {
     use super::{
-        boundary_struct_by_value_supported, checked_layout_add, checked_layout_mul, dev_flags,
-        lower_module_with, round_up_layout, LowerOptions,
+        checked_layout_add, checked_layout_mul, dev_flags, lower_module_with, round_up_layout,
+        LowerOptions,
     };
     use cranelift_codegen::settings::ProbestackStrategy;
     use cranelift_jit::{JITBuilder, JITModule};
     use cranelift_module::default_libcall_names;
-    use std::str::FromStr;
     use subscript_compiler::{check_program_with, CheckOptions, SourceFile};
-    use target_lexicon::Triple;
 
     #[test]
     fn dev_cranelift_flags_use_inline_stack_probes() {
         let flags = dev_flags().expect("dev flags");
         assert!(flags.enable_probestack());
         assert_eq!(flags.probestack_strategy(), ProbestackStrategy::Inline);
-    }
-
-    /// The dev-JIT boundary-struct-by-value marshaler implements AAPCS64,
-    /// Win64, and x86-64 SysV (compiler.md §12.3a). Other architectures
-    /// fail loudly instead of silently mis-marshaling (dev-JIT ≠ ship-C).
-    #[test]
-    fn boundary_struct_by_value_supports_aapcs64_win64_and_sysv() {
-        for t in [
-            "aarch64-apple-darwin",
-            "x86_64-pc-windows-msvc",
-            "x86_64-unknown-linux-gnu",
-        ] {
-            let triple = Triple::from_str(t).expect("triple");
-            assert!(
-                boundary_struct_by_value_supported(&triple),
-                "{t} must be supported by the by-value struct path"
-            );
-        }
-        let unsupported = Triple::from_str("i686-unknown-linux-gnu").expect("triple");
-        assert!(
-            !boundary_struct_by_value_supported(&unsupported),
-            "i686-unknown-linux-gnu must be unsupported by the by-value struct path"
-        );
     }
 
     #[test]

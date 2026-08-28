@@ -36,7 +36,291 @@ enum RV {
 #[derive(Debug, Clone, Copy)]
 enum StructRet {
     Sret(Value),
-    Registers { slot: Value, count: u32 },
+    Registers {
+        slot: Value,
+        count: u32,
+        ty: types::Type,
+    },
+}
+
+/// The target ABI whose by-value aggregate rule the dev JIT must build.
+/// The ship tier hands every aggregate to the platform C compiler, so this
+/// exists for the dev JIT alone (`specs/blocks/compiler.md` §12.3a).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AggregateAbi {
+    Aapcs64,
+    Win64,
+    SysV,
+}
+
+impl AggregateAbi {
+    /// The by-value aggregate ABI of `triple`, or `None` when this dev host
+    /// has no implemented and verified rule. Lowering reads this function,
+    /// so a host it does not name fails loud instead of a silent
+    /// mis-marshal (dev-JIT ≠ ship-C).
+    fn of(triple: &target_lexicon::Triple) -> Option<Self> {
+        use target_lexicon::{Architecture, OperatingSystem};
+        match triple.architecture {
+            Architecture::Aarch64(_) => Some(Self::Aapcs64),
+            Architecture::X86_64 => Some(match triple.operating_system {
+                OperatingSystem::Windows => Self::Win64,
+                _ => Self::SysV,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The register class of one aggregate image. AAPCS64 and Win64 images are
+/// always `Integer`; SysV classifies each eightbyte separately.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegisterClass {
+    Integer,
+    Sse,
+}
+
+/// One aggregate register image: its byte offset in the C struct, its
+/// register class, and the CLIF type that carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EightbyteImage {
+    offset: u32,
+    class: RegisterClass,
+    ty: types::Type,
+}
+
+/// How the target ABI passes one by-value boundary aggregate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AggregateArgPlan {
+    /// AAPCS64 HFA: the leaves stay component-wise float-register arguments.
+    Hfa(Vec<(u32, types::Type)>),
+    /// One register argument per image, read from the aggregate's bytes.
+    Images(Vec<EightbyteImage>),
+    /// The address of a caller copy is the argument.
+    Indirect,
+    /// SysV MEMORY class: the caller copies the bytes onto the call stack.
+    Memory,
+}
+
+/// Whether the leaves form a Homogeneous Floating-point Aggregate (AAPCS
+/// 6.4.2 / Win64): 1 to 4 leaves, all of one fundamental float type. Such
+/// an aggregate travels in SIMD registers, so the integer-image path must
+/// not marshal it.
+fn is_pure_hfa_leaves(leaves: &[(u32, types::Type)]) -> bool {
+    if !matches!(leaves.len(), 1..=4) {
+        return false;
+    }
+    leaves.iter().all(|(_, ty)| *ty == types::F32) || leaves.iter().all(|(_, ty)| *ty == types::F64)
+}
+
+/// Whether a leaf crosses an eightbyte boundary or sits off its natural
+/// alignment. Such an aggregate is SysV class MEMORY.
+fn sysv_leaf_is_unaligned(offset: u32, ty: types::Type) -> bool {
+    let width = ty.bytes();
+    let align = width.clamp(1, 8);
+    !offset.is_multiple_of(align) || offset % 8 + width > 8
+}
+
+/// The CLIF type of one SysV SSE-class image. A lone trailing `f32` uses an
+/// `F32` register image; every other all-float eightbyte uses `F64`.
+fn sysv_image_type(offset: u32, leaves: &[(u32, types::Type)], total: u32) -> types::Type {
+    if leaves == [(offset, types::F32)] && total <= offset + 4 {
+        types::F32
+    } else {
+        types::F64
+    }
+}
+
+/// The register-image plan for one by-value aggregate of `total` bytes.
+/// It is separate from SSA materialization, so a unit test pins the ABI
+/// class — the packing, the HFA rule, and the indirect threshold — and not
+/// only the corpus shapes that cross a foreign boundary today.
+fn plan_aggregate_arg(
+    abi: AggregateAbi,
+    leaves: &[(u32, types::Type)],
+    total: u32,
+) -> AggregateArgPlan {
+    let integer_images = |total: u32| {
+        (0..total.div_ceil(8))
+            .map(|index| EightbyteImage {
+                offset: index * 8,
+                class: RegisterClass::Integer,
+                ty: types::I64,
+            })
+            .collect::<Vec<_>>()
+    };
+    match abi {
+        AggregateAbi::Aapcs64 => {
+            if is_pure_hfa_leaves(leaves) {
+                AggregateArgPlan::Hfa(leaves.to_vec())
+            } else if total <= 16 {
+                AggregateArgPlan::Images(integer_images(total))
+            } else {
+                AggregateArgPlan::Indirect
+            }
+        }
+        AggregateAbi::Win64 => {
+            let packed = |ty: types::Type| {
+                AggregateArgPlan::Images(vec![EightbyteImage {
+                    offset: 0,
+                    class: RegisterClass::Integer,
+                    ty,
+                }])
+            };
+            match total {
+                1 => packed(types::I8),
+                2 => packed(types::I16),
+                4 => packed(types::I32),
+                8 => packed(types::I64),
+                _ => AggregateArgPlan::Indirect,
+            }
+        }
+        AggregateAbi::SysV => {
+            if total > 16
+                || leaves
+                    .iter()
+                    .any(|(offset, ty)| sysv_leaf_is_unaligned(*offset, *ty))
+            {
+                return AggregateArgPlan::Memory;
+            }
+            let images = (0..total.div_ceil(8))
+                .map(|index| {
+                    let offset = index * 8;
+                    let inside = leaves
+                        .iter()
+                        .copied()
+                        .filter(|(leaf, _)| *leaf >= offset && *leaf < offset + 8)
+                        .collect::<Vec<_>>();
+                    let all_float = !inside.is_empty()
+                        && inside
+                            .iter()
+                            .all(|(_, ty)| matches!(*ty, types::F32 | types::F64));
+                    if all_float {
+                        EightbyteImage {
+                            offset,
+                            class: RegisterClass::Sse,
+                            ty: sysv_image_type(offset, &inside, total),
+                        }
+                    } else {
+                        EightbyteImage {
+                            offset,
+                            class: RegisterClass::Integer,
+                            ty: types::I64,
+                        }
+                    }
+                })
+                .collect();
+            AggregateArgPlan::Images(images)
+        }
+    }
+}
+
+/// Whether any `f16` leaf falls inside a register-class image. `f16` is
+/// storage-only here (`specs/blocks/compiler.md` §16.2), so its register
+/// image has no verified rule.
+fn sysv_images_contain_f16(images: &[EightbyteImage], f16_offsets: &[u32]) -> bool {
+    f16_offsets.iter().any(|offset| {
+        images
+            .iter()
+            .any(|image| *offset >= image.offset && *offset < image.offset + 8)
+    })
+}
+
+/// Confirms the SysV argument registers this aggregate needs are free. If
+/// they are not, the C ABI reverts the aggregate to MEMORY, which this
+/// marshaler does not build; the call fails loud instead.
+fn ensure_sysv_argument_register_capacity(
+    signature: &Signature,
+    images: &[EightbyteImage],
+    f16_offsets: &[u32],
+) -> Result<(), String> {
+    if sysv_images_contain_f16(images, f16_offsets) {
+        return Err(internal(
+            "SysV by-value struct with an f16 field in a register-class eightbyte is not \
+             supported; f16 is storage-only (compiler.md §16.2)",
+        ));
+    }
+    let mut used_integer = 0usize;
+    let mut used_sse = 0usize;
+    for parameter in &signature.params {
+        if matches!(parameter.purpose, ArgumentPurpose::StructArgument(_)) {
+            continue;
+        }
+        if parameter.value_type.is_float() {
+            used_sse += 1;
+        } else {
+            used_integer += 1;
+        }
+    }
+    let required_integer = images
+        .iter()
+        .filter(|image| image.class == RegisterClass::Integer)
+        .count();
+    let required_sse = images
+        .iter()
+        .filter(|image| image.class == RegisterClass::Sse)
+        .count();
+    if required_integer > 6usize.saturating_sub(used_integer)
+        || required_sse > 8usize.saturating_sub(used_sse)
+    {
+        return Err(internal(
+            "foreign call passing a SysV boundary struct by value under argument register \
+             pressure requires the SysV MEMORY-on-stack revert path, not yet implemented \
+             (compiler.md §12.3a — fail loud, never a silent mis-marshal)",
+        ));
+    }
+    Ok(())
+}
+
+/// The SysV register images for one by-value struct return, or `None` for
+/// the MEMORY class, which returns through a hidden pointer.
+fn plan_sysv_struct_return(
+    leaves: &[(u32, types::Type)],
+    size: u32,
+    f16_offsets: &[u32],
+) -> Result<Option<Vec<EightbyteImage>>, String> {
+    match plan_aggregate_arg(AggregateAbi::SysV, leaves, size) {
+        AggregateArgPlan::Images(images) => {
+            if sysv_images_contain_f16(&images, f16_offsets) {
+                return Err(internal(
+                    "foreign call returning a SysV by-value struct with an f16 field in a \
+                     register-class eightbyte is not supported; f16 is storage-only \
+                     (compiler.md §16.2)",
+                ));
+            }
+            if images.iter().any(|image| image.class == RegisterClass::Sse) {
+                return Err(internal(
+                    "foreign call returning a SysV SSE-class boundary struct by value is not \
+                     supported in the dev JIT: the float return register path is not modeled \
+                     (compiler.md §12.3a — fail loud, never a silent mis-marshal)",
+                ));
+            }
+            Ok(Some(images))
+        }
+        AggregateArgPlan::Memory => Ok(None),
+        other => Err(internal(format!(
+            "SysV struct-return planner produced {other:?}"
+        ))),
+    }
+}
+
+/// The C-layout leaves of one by-value boundary aggregate, with the byte
+/// offsets of its `f16` fields listed apart: `f16` is storage-only
+/// (`specs/blocks/compiler.md` §16.2) and has no verified register image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BoundaryLeaves {
+    leaves: Vec<(u32, types::Type)>,
+    f16_offsets: Vec<u32>,
+}
+
+impl BoundaryLeaves {
+    /// A `(pointer, length)` descriptor. Both halves are integer-class on
+    /// every supported ABI.
+    fn descriptor() -> Self {
+        Self {
+            leaves: vec![(0, types::I64), (8, types::I64)],
+            f16_offsets: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -187,6 +471,159 @@ mod trap_consumption_tests {
             error.contains("LIR carries 2 site(s), transcriber consumed 1"),
             "{error}"
         );
+    }
+}
+
+#[cfg(test)]
+mod aggregate_abi_tests {
+    use super::*;
+    use std::str::FromStr;
+    use target_lexicon::Triple;
+
+    fn abi(triple: &str) -> Option<AggregateAbi> {
+        AggregateAbi::of(&Triple::from_str(triple).expect("triple"))
+    }
+
+    fn image(offset: u32, class: RegisterClass, ty: types::Type) -> EightbyteImage {
+        EightbyteImage { offset, class, ty }
+    }
+
+    /// The dev-JIT by-value aggregate marshaler implements AAPCS64, Win64,
+    /// and x86-64 SysV (compiler.md §12.3a). Lowering reads this same
+    /// function, so a host named here cannot fail in the marshaler for want
+    /// of an ABI rule. An unnamed host fails loud.
+    #[test]
+    fn every_supported_dev_host_names_its_aggregate_abi() {
+        assert_eq!(abi("aarch64-apple-darwin"), Some(AggregateAbi::Aapcs64));
+        assert_eq!(abi("aarch64-linux-android"), Some(AggregateAbi::Aapcs64));
+        assert_eq!(abi("x86_64-pc-windows-msvc"), Some(AggregateAbi::Win64));
+        assert_eq!(abi("x86_64-unknown-linux-gnu"), Some(AggregateAbi::SysV));
+        assert_eq!(abi("x86_64-apple-darwin"), Some(AggregateAbi::SysV));
+        assert_eq!(abi("i686-unknown-linux-gnu"), None);
+    }
+
+    #[test]
+    fn aapcs64_passes_a_small_composite_as_eightbyte_images() {
+        let leaves = [(0, types::I32), (4, types::I32), (8, types::I64)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::Aapcs64, &leaves, 16),
+            AggregateArgPlan::Images(vec![
+                image(0, RegisterClass::Integer, types::I64),
+                image(8, RegisterClass::Integer, types::I64),
+            ])
+        );
+    }
+
+    #[test]
+    fn aapcs64_passes_an_hfa_component_wise_and_a_large_struct_by_reference() {
+        let hfa = [(0, types::F32), (4, types::F32)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::Aapcs64, &hfa, 8),
+            AggregateArgPlan::Hfa(hfa.to_vec())
+        );
+        let wide = [(0, types::I64), (8, types::I64), (16, types::I64)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::Aapcs64, &wide, 24),
+            AggregateArgPlan::Indirect
+        );
+    }
+
+    /// Win64 passes a 1/2/4/8-byte aggregate as one packed integer register
+    /// and every other size by reference. It has no HFA case, so a pair of
+    /// floats that AAPCS64 splits into two SIMD registers is one packed
+    /// eightbyte here.
+    #[test]
+    fn win64_packs_one_two_four_and_eight_byte_aggregates_only() {
+        let byte = [(0, types::I8)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::Win64, &byte, 1),
+            AggregateArgPlan::Images(vec![image(0, RegisterClass::Integer, types::I8)])
+        );
+        let pair = [(0, types::F32), (4, types::F32)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::Win64, &pair, 8),
+            AggregateArgPlan::Images(vec![image(0, RegisterClass::Integer, types::I64)])
+        );
+        for size in [3u32, 5, 6, 7, 12, 16, 24] {
+            assert_eq!(
+                plan_aggregate_arg(AggregateAbi::Win64, &pair, size),
+                AggregateArgPlan::Indirect,
+                "size {size} must pass by reference on Win64"
+            );
+        }
+    }
+
+    #[test]
+    fn sysv_classifies_each_eightbyte_and_reverts_a_wide_one_to_memory() {
+        let mixed = [(0, types::I32), (4, types::I32), (8, types::F64)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::SysV, &mixed, 16),
+            AggregateArgPlan::Images(vec![
+                image(0, RegisterClass::Integer, types::I64),
+                image(8, RegisterClass::Sse, types::F64),
+            ])
+        );
+        let wide = [(0, types::I64), (8, types::I64), (16, types::I64)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::SysV, &wide, 24),
+            AggregateArgPlan::Memory
+        );
+    }
+
+    #[test]
+    fn sysv_gives_a_lone_trailing_f32_an_f32_image() {
+        let leaves = [(0, types::I64), (8, types::F32)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::SysV, &leaves, 12),
+            AggregateArgPlan::Images(vec![
+                image(0, RegisterClass::Integer, types::I64),
+                image(8, RegisterClass::Sse, types::F32),
+            ])
+        );
+    }
+
+    #[test]
+    fn sysv_reverts_an_unaligned_leaf_to_memory() {
+        let straddling = [(0, types::I32), (5, types::I64)];
+        assert_eq!(
+            plan_aggregate_arg(AggregateAbi::SysV, &straddling, 16),
+            AggregateArgPlan::Memory
+        );
+    }
+
+    #[test]
+    fn a_sysv_sse_class_return_and_an_f16_image_both_fail_loud() {
+        let sse = [(0, types::F64), (8, types::F64)];
+        let error = plan_sysv_struct_return(&sse, 16, &[])
+            .expect_err("an SSE-class return has no modeled float return register");
+        assert!(error.contains("SSE-class"), "{error}");
+
+        let f16 = [(0, types::I16), (8, types::I64)];
+        let error = plan_sysv_struct_return(&f16, 16, &[0])
+            .expect_err("f16 is storage-only, so it has no register image");
+        assert!(error.contains("f16"), "{error}");
+
+        assert_eq!(
+            plan_sysv_struct_return(
+                &[(0, types::I64), (8, types::I64), (16, types::I64)],
+                24,
+                &[]
+            )
+            .expect("a wide return is MEMORY class"),
+            None
+        );
+    }
+
+    #[test]
+    fn sysv_argument_register_pressure_fails_loud() {
+        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::SystemV);
+        for _ in 0..6 {
+            signature.params.push(AbiParam::new(types::I64));
+        }
+        let images = [image(0, RegisterClass::Integer, types::I64)];
+        let error = ensure_sysv_argument_register_capacity(&signature, &images, &[])
+            .expect_err("no integer argument register is free");
+        assert!(error.contains("register pressure"), "{error}");
     }
 }
 
@@ -4424,16 +4861,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok((offsets, size, align))
     }
 
-    fn class_hfa_components(
-        &self,
-        class: usize,
-    ) -> Result<Option<Vec<(u32, types::Type)>>, String> {
+    /// The C-layout leaves of a boundary class, and the byte offsets of its
+    /// `f16` fields. The walk is total over every field type
+    /// `boundary_c_field` sizes, so a leaf list is never partial: an
+    /// absorbed callback is one pointer leaf, and a string or array
+    /// descriptor is two.
+    fn boundary_leaf_components(&self, class: usize) -> Result<BoundaryLeaves, String> {
         fn collect<M: Module>(
             body: &Body<'_, '_, '_, '_, M>,
             class: usize,
             base: u32,
-            output: &mut Vec<(u32, types::Type)>,
-        ) -> Result<bool, String> {
+            leaves: &mut Vec<(u32, types::Type)>,
+            f16_offsets: &mut Vec<u32>,
+        ) -> Result<(), String> {
             let definition = body
                 .ml
                 .lir
@@ -4442,76 +4882,115 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
             let (offsets, _, _) = body.boundary_c_layout(class)?;
             for (field, offset) in definition.fields.iter().zip(offsets) {
-                let offset = checked_layout_add(base, offset, "HFA field offset")?;
+                let offset = checked_layout_add(base, offset, "boundary leaf offset")?;
                 match &field.ty {
-                    Type::F32 => output.push((offset, types::F32)),
-                    Type::F64 => output.push((offset, types::F64)),
                     Type::Class(inner) if body.is_value_class(&field.ty) => {
-                        if !collect(body, inner.0, offset, output)? {
-                            return Ok(false);
-                        }
+                        collect(body, inner.0, offset, leaves, f16_offsets)?;
                     }
-                    _ => return Ok(false),
+                    Type::Str | Type::Array(_) => {
+                        leaves.push((offset, types::I64));
+                        let second = checked_layout_add(offset, 8, "boundary leaf offset")?;
+                        leaves.push((second, types::I64));
+                    }
+                    Type::F16 => {
+                        f16_offsets.push(offset);
+                        leaves.push((offset, types::I16));
+                    }
+                    Type::F32 => leaves.push((offset, types::F32)),
+                    Type::F64 => leaves.push((offset, types::F64)),
+                    Type::Bool | Type::I8 | Type::U8 => leaves.push((offset, types::I8)),
+                    Type::I16 | Type::U16 => leaves.push((offset, types::I16)),
+                    Type::I32 | Type::U32 | Type::Enum(_) | Type::StringAlias(_) => {
+                        leaves.push((offset, types::I32))
+                    }
+                    Type::I64 | Type::U64 => leaves.push((offset, types::I64)),
+                    Type::Func(_)
+                    | Type::Object
+                    | Type::Nullable(_)
+                    | Type::Class(_)
+                    | Type::Map(..)
+                    | Type::Set(_) => leaves.push((offset, types::I64)),
+                    other => {
+                        return Err(internal(format!("boundary C field type {other:?}")));
+                    }
                 }
             }
-            Ok(true)
+            Ok(())
         }
 
-        let mut components = Vec::new();
-        if !collect(self, class, 0, &mut components)? || !(1..=4).contains(&components.len()) {
-            return Ok(None);
-        }
-        let first = components[0].1;
-        Ok(components
-            .iter()
-            .all(|(_, ty)| *ty == first)
-            .then_some(components))
+        let mut leaves = Vec::new();
+        let mut f16_offsets = Vec::new();
+        collect(self, class, 0, &mut leaves, &mut f16_offsets)?;
+        Ok(BoundaryLeaves {
+            leaves,
+            f16_offsets,
+        })
     }
 
-    fn push_aapcs_aggregate(
+    /// Passes a by-value boundary aggregate the way the platform C ABI
+    /// passes it (`specs/blocks/compiler.md` §12.3a). AAPCS64, Win64, and
+    /// x86-64 SysV are implemented; any other dev host fails loud, because
+    /// dev-JIT ≡ ship-C is otherwise unverifiable there.
+    fn push_boundary_aggregate(
         &mut self,
         signature: &mut Signature,
         arguments: &mut Vec<Value>,
         address: Value,
         size: u32,
         align: u32,
-        hfa: Option<&[(u32, types::Type)]>,
+        components: &BoundaryLeaves,
     ) -> Result<(), String> {
-        let triple = self.ml.module.isa().triple();
-        if !matches!(
-            triple.architecture,
-            target_lexicon::Architecture::Aarch64(_)
-        ) {
-            return Err(internal(format!(
-                "LIR foreign aggregate transcription currently requires AAPCS64; target is {triple}"
-            )));
-        }
-        if let Some(components) = hfa {
-            for (offset, ty) in components {
-                let value = self
-                    .builder
-                    .ins()
-                    .load(*ty, flags(), address, *offset as i32);
-                self.push_foreign_argument(signature, arguments, *ty, value);
+        let triple = self.ml.module.isa().triple().clone();
+        let abi = AggregateAbi::of(&triple).ok_or_else(|| {
+            internal(format!(
+                "foreign call passing a boundary struct by value is supported on aarch64 \
+                 (AAPCS64) and on x86-64 (Win64 or SysV) in the dev JIT (compiler.md \
+                 §12.3a); target {triple} is unsupported"
+            ))
+        })?;
+        match plan_aggregate_arg(abi, &components.leaves, size) {
+            AggregateArgPlan::Hfa(hfa) => {
+                for (offset, ty) in hfa {
+                    let value = self.builder.ins().load(ty, flags(), address, offset as i32);
+                    self.push_foreign_argument(signature, arguments, ty, value);
+                }
             }
-            return Ok(());
-        }
-        if size <= 16 {
-            let image_size = size.div_ceil(8) * 8;
-            let copy = self.stack_slot(image_size, align.max(8));
-            self.zero_bytes(copy, image_size, align.max(8));
-            self.copy_bytes(copy, address, size, align.max(1));
-            for offset in (0..image_size).step_by(8) {
-                let value = self
-                    .builder
-                    .ins()
-                    .load(types::I64, flags(), copy, offset as i32);
-                self.push_foreign_argument(signature, arguments, types::I64, value);
+            AggregateArgPlan::Images(images) => {
+                if abi == AggregateAbi::SysV {
+                    ensure_sysv_argument_register_capacity(
+                        signature,
+                        &images,
+                        &components.f16_offsets,
+                    )?;
+                }
+                // Every image is read from a zero-filled copy, so a trailing
+                // partial eightbyte carries defined bytes.
+                let image_size = round_up_layout(size.max(1), 8, "boundary aggregate image")?;
+                let copy = self.stack_slot(image_size, align.max(8));
+                self.zero_bytes(copy, image_size, align.max(8));
+                self.copy_bytes(copy, address, size, align.max(1));
+                for image in images {
+                    let value =
+                        self.builder
+                            .ins()
+                            .load(image.ty, flags(), copy, image.offset as i32);
+                    self.push_foreign_argument(signature, arguments, image.ty, value);
+                }
             }
-        } else {
-            let copy = self.stack_slot(size, align);
-            self.copy_bytes(copy, address, size, align);
-            self.push_foreign_argument(signature, arguments, types::I64, copy);
+            AggregateArgPlan::Indirect => {
+                let copy = self.stack_slot(size, align);
+                self.copy_bytes(copy, address, size, align);
+                self.push_foreign_argument(signature, arguments, types::I64, copy);
+            }
+            AggregateArgPlan::Memory => {
+                let copy = self.stack_slot(size, align);
+                self.copy_bytes(copy, address, size, align);
+                signature.params.push(AbiParam::special(
+                    types::I64,
+                    ArgumentPurpose::StructArgument(size),
+                ));
+                arguments.push(copy);
+            }
         }
         Ok(())
     }
@@ -4527,16 +5006,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let Type::Class(class) = ty else {
             return Err(internal("foreign aggregate return is not a class"));
         };
-        let triple = self.ml.module.isa().triple();
-        if !matches!(
-            triple.architecture,
-            target_lexicon::Architecture::Aarch64(_)
-        ) {
-            return Err(internal(format!(
-                "LIR foreign aggregate return transcription currently requires AAPCS64; target is {triple} at {pos}"
-            )));
-        }
-        if self.class_hfa_components(class.0)?.is_some() {
+        let triple = self.ml.module.isa().triple().clone();
+        let abi = AggregateAbi::of(&triple).ok_or_else(|| {
+            internal(format!(
+                "foreign call returning a boundary struct by value is supported on aarch64 \
+                 (AAPCS64) and on x86-64 (Win64 or SysV) in the dev JIT (compiler.md \
+                 §12.3a); target {triple} is unsupported at {pos}"
+            ))
+        })?;
+        let components = self.boundary_leaf_components(class.0)?;
+        // An HFA return travels in SIMD registers on every supported ABI,
+        // and the dev JIT models no float return register.
+        if is_pure_hfa_leaves(&components.leaves) {
             return Err(internal(format!(
                 "foreign homogeneous floating-point aggregate return is unsupported at {pos}"
             )));
@@ -4556,13 +5037,28 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 "foreign aggregate return contains an absorbed field",
             ));
         }
-        if size <= 16 {
-            let count = size.div_ceil(8);
-            for _ in 0..count {
-                signature.returns.push(AbiParam::new(types::I64));
+        let registers = match abi {
+            AggregateAbi::Aapcs64 => (size <= 16).then(|| (size.div_ceil(8), types::I64)),
+            AggregateAbi::Win64 => match size {
+                1 => Some((1, types::I8)),
+                2 => Some((1, types::I16)),
+                4 => Some((1, types::I32)),
+                8 => Some((1, types::I64)),
+                _ => None,
+            },
+            AggregateAbi::SysV => {
+                plan_sysv_struct_return(&components.leaves, size, &components.f16_offsets)?
+                    .map(|images| (images.len() as u32, types::I64))
             }
-            let slot = self.stack_slot(count * 8, align.max(8));
-            Ok(StructRet::Registers { slot, count })
+        };
+        if let Some((count, ty)) = registers {
+            for _ in 0..count {
+                signature.returns.push(AbiParam::new(ty));
+            }
+            let image_bytes = checked_layout_mul(count, ty.bytes(), "struct-return image")?;
+            let slot_size = round_up_layout(size.max(image_bytes), 8, "struct-return slot")?;
+            let slot = self.stack_slot(slot_size, align.max(8));
+            Ok(StructRet::Registers { slot, count, ty })
         } else {
             let slot = self.stack_slot(size, align);
             signature
@@ -4579,14 +5075,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     ) -> Result<Value, String> {
         match plan {
             StructRet::Sret(slot) => Ok(slot),
-            StructRet::Registers { slot, count } => {
+            StructRet::Registers { slot, count, ty } => {
                 if results.len() != count as usize {
                     return Err(internal("foreign struct-return register count mismatch"));
                 }
+                let stride = ty.bytes() as usize;
                 for (index, value) in results.iter().enumerate() {
                     self.builder
                         .ins()
-                        .store(flags(), *value, slot, (index * 8) as i32);
+                        .store(flags(), *value, slot, (index * stride) as i32);
                 }
                 Ok(slot)
             }
@@ -4631,7 +5128,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let slot = self.stack_slot(16, 8);
                 self.builder.ins().store(flags(), data, slot, 0);
                 self.builder.ins().store(flags(), length, slot, 8);
-                self.push_aapcs_aggregate(signature, arguments, slot, 16, 8, None)
+                self.push_boundary_aggregate(
+                    signature,
+                    arguments,
+                    slot,
+                    16,
+                    8,
+                    &BoundaryLeaves::descriptor(),
+                )
             }
             Type::Array(element) => {
                 let (data, length) =
@@ -4660,7 +5164,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         let slot = self.stack_slot(16, 8);
                         self.builder.ins().store(flags(), data, slot, 0);
                         self.builder.ins().store(flags(), count, slot, 8);
-                        self.push_aapcs_aggregate(signature, arguments, slot, 16, 8, None)
+                        self.push_boundary_aggregate(
+                            signature,
+                            arguments,
+                            slot,
+                            16,
+                            8,
+                            &BoundaryLeaves::descriptor(),
+                        )
                     }
                     Some(l::ForeignTypeProvenance::ScalarPair { .. }) => {
                         self.push_foreign_argument(signature, arguments, types::I64, count);
@@ -5345,8 +5856,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let scratch = self.stack_slot(size, align);
         self.zero_bytes(scratch, size, align);
         self.populate_boundary_value(class, source, scratch, scratch_mark, pos)?;
-        let hfa = self.class_hfa_components(class)?;
-        self.push_aapcs_aggregate(signature, arguments, scratch, size, align, hfa.as_deref())
+        let components = self.boundary_leaf_components(class)?;
+        self.push_boundary_aggregate(signature, arguments, scratch, size, align, &components)
     }
 
     fn call(
