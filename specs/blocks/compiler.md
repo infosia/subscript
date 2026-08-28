@@ -321,6 +321,7 @@ Observable obligations only; internal design is the implementer's.
 | S011 | unions limited to `T \| null` | C7 | r12 |
 | S012 | `undefined` banned | C7 | r13 |
 | S013 | no `async` / event loop | C8 | r14 |
+| S015 | a nullable boundary aggregate may not escape its function | §33.4 | r158 |
 
   Constructs outside the decided surface (e.g. non-whitelisted
   `Array.prototype` / `string` members — collisions.md Q4/Q5) are
@@ -4130,6 +4131,75 @@ Goldens by the standard capture path.
    `..._at_any_depth` coverage).
 4. No existing golden moves; full gate, `tsc` gate, zero-warning
    sweep, and the generated-docs gates green.
+
+### 33.4 A nullable boundary aggregate may not escape its function
+
+*(Owner, 2026-08-28: "禁止にしましょう".)*
+
+§33.1 gives a non-null struct-pointer field a **pointer to a
+recursively-built scratch struct, call-duration valid**. That storage
+serves the call it is built for. It does not serve a value that
+outlives the call, and no storage this language has does.
+
+**Rule.** A value whose type transitively holds a nullable
+boundary-aggregate field may not escape the function activation that
+built it. The checker rejects the escape with **S015**, naming the
+field and the site.
+
+An escape is a store into a location that outlives the activation:
+
+- a `return` of the value,
+- an assignment to a module-level binding,
+- a store into an array element,
+- a store into a reference-class field,
+- a capture by a lambda.
+
+These are the sites S009 already enumerates for a capturing lambda,
+and this rule reads the same set. The check is **local to one
+function**: a value passed down to a script function is a copy, and
+the callee's own check covers what the callee does with it.
+
+**Legal, and pinned.** `corpus/accept/a106` builds the descriptor,
+passes it to a script function, and that function passes it to a
+foreign call. The value never outlives the activation that built it.
+Passing down, calling foreign functions, and reading fields all stay
+legal. This rule removes nothing `a106` does.
+
+#### Why not a storage class
+
+Two were built and measured, and both are too short-lived:
+
+| Storage | Fails on |
+|---|---|
+| a root slot per borrowed source, held to function return | the value returned directly, and returned in an array |
+| the call-duration boundary scratch | a synchronous native callback that stores the descriptor past the outer call's scratch mark |
+
+A third option — the payload as an ordinary Context allocation, rooted
+like an array — was not built. It collides with value-class copy
+semantics: copying the outer value copies the pointer, so two copies
+alias one payload, and a write through one is visible in the other.
+
+A persistent boundary storage class with its own ownership is the
+general answer, and core principle 8 makes it expensive: LIR must
+carry the ownership and the lifetime, and both tier consumers must
+read them. **No measured program needs it.** The rule above is what
+this project decides now, and evidence of a program that needs to
+escape reopens it.
+
+#### The separate defect this arc found
+
+A value-class-to-nullable conversion takes the address of the source
+aggregate's storage. `codegen/src/root_storage.rs` types an
+`l::ValueType::Address(_)` as zero root slots, so no address keeps its
+base alive. Before `74a091c` every managed value stayed a root for the
+whole activation and the address survived by accident. `74a091c` made
+the storage scope the live range (§68.2 rule 8), and the base now dies
+while an address into it is live.
+
+**That is a defect inside §68's form, not a case for this rule.** LIR
+carries address provenance. Root storage must read it, so that a base
+stays rooted while an address derived from it is live. The
+non-escaping shape must run after that fix.
 
 ## 34. R11 — parameter-position handle-element pairs
 
