@@ -8618,6 +8618,50 @@ The interface is not the subject. This section moves no part of it.
    Corpus: `a163` — the in-activation shapes the review measured
    that S015 leaves legal, each read back through the foreign
    checker. Red at `2a65724`.
+8c. **The form's own invariants are verified, not stated.** *(Added
+   2026-08-28 after the Fable phase review of §68 form, C2, M3, M4,
+   M5.)* Four checks the section claims did not exist, and each was
+   built as a hand-written LIR module and accepted:
+
+   - **Rule 7 / §68.7.4.** A value read after a resume that is not a
+     successor parameter was accepted (`b1: %1 = Copy(%0)` after a
+     `Suspend` whose successor has no parameters). The verifier treats
+     a suspend edge as an ordinary edge. It must not: after a
+     `Suspend`, the successor's live-in set is exactly its parameters,
+     and a read of any other value fails verification.
+   - **`array_base`.** An `Address` whose `array_base` names an
+     undeclared value was accepted. The base must be a declared value
+     that dominates the address, or verification fails. Every check
+     keyed on the base — invalidation, the interpreter's poison
+     registry — is silent for a wrong base, so this is the check that
+     guards the others.
+   - **Item 11 for intrinsics and built-in methods.** The verifier
+     compared a call's operands against the `parameter_types` on the
+     same instruction, so a `Math.Abs` called with three strings and a
+     self-agreeing record verified clean. That is the shape core
+     principle 9 forbids. **The module carries one signature table for
+     intrinsics and built-in methods, derived from the checker's
+     definitions, and the verifier compares every such call against
+     it.** `CallTarget.parameter_types` for those kinds is then the
+     restatement item 9 forbids, and it goes.
+   - **Item 12's exhaustiveness.** The fact check enumerates from
+     HIR's types without a wildcard for `TrapSite` only, because
+     `ExprKind`, `Stmt`, `Callee`, and `AsyncCallee` are
+     `#[non_exhaustive]` and force a wildcard in another crate. A new
+     suspending or calling kind is then silently unchecked. **Those
+     four enums lose `#[non_exhaustive]`**, as `TrapSite` did. CLAUDE.md's
+     convention is for public extensible enums; HIR is this project's
+     internal form, and a consumer that must be total over it is the
+     point. The check then names every new kind at compile time.
+
+   Item 12's "fails the build" is corrected to "fails the suite": the
+   fact check runs in the test suite over every corpus entry, and the
+   CLI does not run it. Totality over facts is the property; when it
+   runs is not.
+
+   The interpreter's exclusion list is part of the form's record. An
+   exclusion whose reason no longer holds is removed: `a153` runs and
+   matches its golden at `2a65724`, and the list said it could not.
 9. **An address is a value, and it carries an invalidation point.**
    Every LIR instruction that can move an array's storage names the
    arrays that it invalidates. The lowering re-computes an address
@@ -9087,6 +9131,23 @@ If the reader must consult a tier, the document is not.
 5. **A gap is reported, never guessed.** If a reader cannot act on a
    row, the row is wrong. Report it and stop.
 
+*(2026-08-28, review of §68 form, C1 and M1.)* Item 4 is the contract,
+and the interpreter did not implement it. It read `instruction.traps`
+at one place, integer `Div`/`Rem`, and raised every other trap it
+raised from the runtime library or a `Trap` terminator. Measured: a
+fixed-array read at index 4 of length 2 trapped on both tiers and
+printed `1805878962` on the interpreter, then `4` on a second run — a
+read past the payload in the oracle. `t01` (`JsonResultValue`) trapped
+on both tiers and printed `0` on the interpreter. A trap position it
+did raise was the instruction's, not the site's (`t27`: tiers `25:3`,
+interpreter `25:19`), and no gate compared columns.
+
+**The interpreter raises every site-owned trap kind from one dispatch
+over `instruction.traps`, before the operation's effect, at the site's
+position.** It has no per-kind arm and no runtime fallback for a kind
+LIR owns. The trap gate compares line and column on every tier and on
+the interpreter.
+
 #### 68.7.2 The instruction table
 
 Numerics, string, and array behaviour come from the list at §2 and
@@ -9123,6 +9184,14 @@ operations, and §2's Q14 formatting for interpolation.
 | `Template` | one per interpolation, in order | the concatenation, formatted by §2's Q14 rules. |
 | `Call` | see §68.7.3 | a call of the named target. |
 | `IteratorCreate`, `IteratorHasNext`, `IteratorValue`, `IteratorBound`, `IteratorAdvance` | see §68.7.4 | the iteration protocol. |
+| `ForeignArrayData` | array | *(Added 2026-08-28, review of §68 form, M2.)* the array's current data pointer, as an `Address` whose provenance is the array. A foreign call takes it as an operand for each array argument, so the call carries the snapshot §68.7.3 names. It is invalidated by the same instructions that invalidate any address into that array. |
+| `Coerce` (an `Address` to a boundary value class, into that class's `Nullable`) | address | *(Same review, M2.)* the address as a non-null pointer value of the nullable type. This is the one `Coerce` that is not a widening: it converts an address to the C-visible pointer a boundary struct-pointer member holds (§33.1). It is legal only for a boundary value class, and the verifier admits no other address-to-data `Coerce` (§68.2 item 11). Rule 8b keeps the base rooted for the activation, and S015 keeps the value from leaving it. |
+| `AllocateClass` (a value class) | — | *(Same review, M2.)* an `Address` of fresh zero-initialized storage for the class, in the activation, not "a new instance". A reference class yields a handle; a value class yields the address its constructor writes through. |
+| `AsyncHandleCreate(target)` | the call's operands | *(Added for §70; the rows were missing.)* a new coroutine frame for the target, not polled, with its owner count at one, held by the result. |
+| `AsyncHandleRetain` | handle | the same handle; the frame's owner count is one higher. |
+| `AsyncHandleRelease` | handle | no value; the frame's owner count is one lower, and at zero the frame is freed at this instruction (§70.3 rule 3). |
+| `AsyncHandleArrayRetain` | array of handles | no value; every element's frame is retained once. |
+| `AsyncHandleArrayRelease` | array of handles | no value; every element's frame is released once. |
 
 #### 68.7.3 What a call means
 
@@ -9230,6 +9299,16 @@ the destination block's parameters, by position, at the moment the
 edge is taken. The arguments are read before any binding happens, so
 a swap across an edge is well defined.
 
+*(2026-08-28, review of §68 form, M6.)* The interpreter implements a
+different machine: it reads the bound when `IteratorBound` executes,
+moves the cursor in `IteratorAdvance` and skips dead positions inside
+`IteratorHasNext`, which writes to the cursor. Every sequence the
+lowering emits gives the same result under both, and `a80` passes. **The
+text above is the contract.** The bound is read once, at creation
+(C13's fixed entry bound). `IteratorHasNext` is pure: a cursor is an
+SSA value (§68.1 item 4) and no instruction mutates it. The skip over
+dead positions is `IteratorAdvance`'s. The interpreter changes.
+
 #### 68.7.5 The terminators
 
 | terminator | means |
@@ -9240,6 +9319,7 @@ a swap across an edge is well defined.
 | `Return` | the function ends. A value is returned when the signature declares one. A coroutine's return completes it. |
 | `Trap` | the program ends through the observer of §18, with the named kind and position. |
 | `Suspend` | see §68.7.4. |
+| `Unreachable` | *(Added 2026-08-28, review of §68 form, M2.)* a successor that checked semantics prove unreachable. It is structural: it carries no trap site and no language meaning. Reaching it is an internal error of the lowering, and the interpreter reports it as invalid LIR, never as a program trap. The text golden prints it as itself. |
 
 #### 68.7.5a What step 1b measured
 
