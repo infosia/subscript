@@ -94,6 +94,22 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The repository-relative name of `absolute`, always with `/` separators.
+/// A directory walk yields the host separator and a `tsc` diagnostic yields
+/// `/`, so both spellings pass through here and name one entry on every
+/// host.
+fn repository_relative(root: &Path, absolute: &Path) -> Option<String> {
+    Some(
+        absolute
+            .strip_prefix(root)
+            .ok()?
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
 fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
     let mut entries = Vec::new();
     for (kind, accept) in [("accept", true), ("reject", false)] {
@@ -106,11 +122,8 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
             .collect();
         paths.sort();
         for absolute in paths {
-            let relative = absolute
-                .strip_prefix(root)
-                .expect("corpus path must be below the workspace root")
-                .to_string_lossy()
-                .into_owned();
+            let relative = repository_relative(root, &absolute)
+                .expect("corpus path must be below the workspace root");
             let source = fs::read_to_string(&absolute)
                 .map_err(|error| format!("read {relative}: {error}"))?;
             for obsolete in [
@@ -257,11 +270,10 @@ fn diagnostic_codes(
         } else {
             root.join(source_path)
         };
-        let Ok(relative) = absolute.strip_prefix(root) else {
+        let Some(relative) = repository_relative(root, &absolute) else {
             unowned.push(line.to_string());
             continue;
         };
-        let relative = relative.to_string_lossy().into_owned();
         if !entry_names.contains(relative.as_str()) {
             unowned.push(line.to_string());
             continue;
@@ -291,7 +303,14 @@ fn every_corpus_tsc_header_matches_measured_tsc() {
     let temporary = TempProjectDirectory::create();
     let projects =
         write_projects(&root, &entries, &temporary.0).unwrap_or_else(|error| panic!("{error}"));
-    let tsc = root.join("node_modules/.bin/tsc");
+    // `node_modules/.bin/tsc` is a POSIX shell script. Windows cannot
+    // execute it (`os error 193`); npm writes `tsc.cmd` beside it for that
+    // host.
+    let tsc = root.join(if cfg!(windows) {
+        "node_modules/.bin/tsc.cmd"
+    } else {
+        "node_modules/.bin/tsc"
+    });
     assert!(
         tsc.is_file(),
         "the pinned TypeScript compiler is absent at {}",
