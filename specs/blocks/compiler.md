@@ -1276,6 +1276,18 @@ foreign call that passes or returns a boundary struct by value stays a
 **loud codegen error**, never a silent mis-marshal, since dev-JIT ≡ ship-C
 equivalence is otherwise unverifiable there.
 
+*(2026-08-28.)* This section read "Implemented and verified" for a month
+while Win64 and SysV were absent. `5807d7b` (§68 step 2) replaced the HIR
+consumer with the LIR transcriber and carried AAPCS64 across alone, so
+every x86-64 dev host met the loud error above. Only the arm64 reference
+machine ran, so no gate reported it
+(`specs/tracking/windows-portability.md`). The guard that should have
+reported it, `boundary_struct_by_value_supported`, was a `#[cfg(test)]`
+predicate lowering never called — core principle 9's shape. The three
+ABIs are one function, `plan_aggregate_arg(abi, leaves, size)`; lowering
+and the test both read `AggregateAbi::of(triple)`, and the test pins the
+ABI identity per triple, not a bool.
+
 The corpus exercises the SysV **MEMORY argument** path directly — a 24-byte
 `SubCallbackInfo` (`{ fn-ptr, void*, void* }`, in `a25`–`a90`) and a
 `{ i64, i64, i64 }` triple (`a126`) are each passed by value — so that path

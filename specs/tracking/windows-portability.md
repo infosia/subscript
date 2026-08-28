@@ -1,8 +1,10 @@
 # Windows portability — evidence
 
-Status: the workspace is green on `x86_64-pc-windows-msvc` in the dev
-profile and the release profile, measured 2026-08-10 at `3c3e7d7`
-(the section at the end of this file). Contract:
+Status: measured 2026-08-28 at `bbced38` (the section at the end of this
+file). The dev profile has one open failure and the release profile has
+two; both profiles fail for reasons this host owns, not for a defect in
+the tree — the Node pin is ahead of this host, and §3's `a22` ship-tier
+threshold is pre-registered on the arm64 reference machine. Contract:
 `specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
 cranelift-jit, Windows/Mac). This file keeps the record from
 2026-07-23 forward, so the older sections state older states.
@@ -902,3 +904,158 @@ runs both profiles:
 - `cargo fmt --check` exit 0; `tsc` gate exit 0.
 
 §55.3 criterion 5 holds. Every §55 criterion is now discharged.
+
+## Full Windows gate at `bbced38`, 2026-08-28 — five defects
+
+### Why this run happened
+
+The owner asked for the Windows compilation state. The tree had not run
+on this host since `3c3e7d7` (2026-08-10). `cargo check`, `cargo build`,
+`cargo fmt --check`, and clippy were all clean at `bbced38`, and the
+test suite was not: 13 tests failed across five test binaries.
+
+This is `gate-scope.md`'s finding in a second shape. That file says the
+performance criteria are not run. This says the same of a host: the
+reference machine is arm64 macOS, so a defect that only x86-64 shows
+waits for somebody to run x86-64.
+
+### The five causes, measured at `bbced38`
+
+| # | Cause | Failing tests |
+|---|---|---|
+| 1 | The emitted C declares a structure with no member | 10 |
+| 2 | The emitted C divides by a literal zero | 1 (7 corpus entries) |
+| 3 | `node_modules/.bin/tsc` is not executable on Windows | 1 |
+| 4 | The Node pin does not match this host | 1 |
+| 5 | Win64 and SysV foreign aggregate marshaling are absent | 2 examples |
+
+### 1 — a structure with no member
+
+`cemit.rs` declared the shadow-root frame when the **module** has closure
+environments, and filled it from facts about the **function**. A lambda
+body with no rooted value, no rooted local, and no `Func`-typed value
+got an empty declaration:
+
+    static int32_t sub_f1(void* ctx, void* environment, int32_t a1) {
+        struct {
+        } roots = {0};
+        subscript_rt_shadow_push(ctx, &roots, (sizeof roots + 7u) / 8u);
+
+C11 6.7.2.1 gives a structure at least one member. GCC and clang accept
+an empty one as an extension; MSVC reports `C2016`, then `C2078` for the
+initializer.
+
+`emit_pop` read a **different** predicate — the rooted sets alone — so
+the same function pushed a frame and never popped it. GCC and clang
+compile that, and the shadow stack grows once per lambda call. The
+measurement that found it was an MSVC compile error; the leak it
+uncovered is on every host.
+
+One derivation now serves both: `shadow_frame_members` builds the member
+list, `emit_storage` declares a frame only for a non-empty list, and
+`emit_pop` reads the same fact. `a14-closures-capture` re-emitted with
+no frame in `sub_f1` and no unmatched push.
+
+### 2 — a literal zero divisor
+
+`t08-div-zero-expression` emitted a reachable guard and an unreachable
+division, both constant-folded:
+
+    if ((0) == 0) { subscript_rt_trap(ctx, 10u, 1u); goto unwind; }
+    v1 = ((0) == (int32_t)-1) ? ... : (int32_t)((84) / (0));
+
+The guard always traps, so the division never runs. MSVC does not need
+it to run: `C2124` is a translation-time diagnostic on the constant
+expression. GCC and clang warn only.
+
+The divisor is now bound to a local before the guard, which also gives
+it one evaluation where three sites named it.
+
+**The cost is not measurable.** `a22` computes `% 17` and `% index`, so
+it takes this path twice in its hot loops. Six perf-gate runs, three per
+side, ship-tier `a22` against the C baseline:
+
+    pin       2.08x  2.03x  1.93x
+    with fix  2.18x  1.93x  1.92x
+
+The distributions overlap. The constant divisor stays a constant after
+the C compiler propagates it.
+
+### 3 — `tsc` on Windows
+
+`tsc_corpus.rs` ran `node_modules/.bin/tsc`, which is a POSIX shell
+script: `os error 193`. npm writes `tsc.cmd` beside it for this host.
+
+A second defect stood behind the first. The test attributes each
+diagnostic by comparing a path from the directory walk against a path
+parsed out of the `tsc` output. The walk yields `\` on Windows and `tsc`
+prints `/`, so **every** diagnostic was unowned and the test reported
+that 116 diagnostics belonged to no entry. Both spellings now pass
+through `repository_relative`, which always joins with `/`.
+
+### 4 — the Node pin — open, environment
+
+`js_corpus.rs` pins `v24.18.0`. This host runs `v24.16.0`, which
+`benchmarks/README.windows-x86_64.md` also records. The pin is correct
+and the host is behind it. **No code changed.** This host needs Node
+v24.18.0 to run the §69 stage 2 gate.
+
+### 5 — Win64 and SysV foreign aggregate marshaling
+
+`push_aapcs_aggregate` and `plan_foreign_struct_return` rejected every
+target that is not aarch64:
+
+    LIR foreign aggregate transcription currently requires AAPCS64;
+    target is x86_64-pc-windows-msvc
+
+`compiler.md` §12.3a states Win64 and SysV are "Implemented and
+verified". They were: Win64 landed at `05aa5da`, SysV at `cfb583d`.
+**`5807d7b` (§68 step 2: the dev tier reads LIR) deleted both.** The
+commit replaced a 9184-line HIR consumer with a 6688-line LIR
+transcriber and carried AAPCS64 across alone.
+
+The deletion reached x86-64 Linux as well. Only the arm64 reference
+machine was unaffected, which is why no gate reported it for a month.
+
+**The check could not report it.** `boundary_struct_by_value_supported`
+in `lower/mod.rs` was a `#[cfg(test)]` predicate returning `true` for
+aarch64 and x86-64. Lowering never called it. It is CLAUDE.md core
+principle 9 exactly: the check read a record, not the operation, so it
+passed on Windows while lowering failed.
+
+The planner is restored as `plan_aggregate_arg`, one total function over
+`(abi, leaves, size)`, and lowering reads `AggregateAbi::of(triple)` —
+the same function the test now pins, by ABI identity rather than by a
+bool. The predicate is deleted.
+
+`class_hfa_components` is replaced by `boundary_leaf_components`, a
+**total** leaf walk over every field type `boundary_c_field` sizes: an
+absorbed callback is one pointer leaf and a descriptor is two. HFA is
+derived from that one list, so the HFA rule and the SysV eightbyte
+classes no longer come from two walks.
+
+Eight unit tests pin the ABI classes: the AAPCS64 eightbyte and HFA
+rules and its 16-byte indirect threshold, Win64's 1/2/4/8 packing with
+no HFA case, the SysV INTEGER/SSE split, its lone trailing `f32` image,
+its MEMORY reverts for width and for an unaligned leaf, the `f16` and
+SSE-return loud errors, and the argument-register-pressure loud error.
+
+### Result at this pin
+
+Every count from a run on this host with the pinned toolchain.
+
+| Gate | Before | After |
+|---|---|---|
+| `cargo test --workspace` | 1023 passed, 13 failed | 1035 passed, 1 failed |
+| `cargo test --workspace --release` | not reached | 1033 passed, 2 failed |
+| `cargo fmt --check` | exit 0 | exit 0 |
+| clippy compiler / runtime / codegen | 7 / 22 / 13 | 7 / 22 / 13 |
+
+The two release failures are cause 4 above and one more:
+
+**`perf_gate_meets_every_threshold` misses on this host, and the miss
+predates this work.** `a22` ship-tier measures 1.93x to 2.18x of the C
+baseline against §3's 1.50x limit, in six runs across both sides of this
+change. `s70` records 1.34x on the arm64 reference machine. The
+threshold is pre-registered on one machine and this host does not meet
+it. That is the owner's to resolve; nothing here changed it.
