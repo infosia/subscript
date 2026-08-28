@@ -7861,6 +7861,35 @@ satisfy it.)*
    second declaration. A function parameter and a body local of one
    name are two declarations in one scope, because the body opens no
    scope of its own.
+3a. **A class body is one member namespace: one name, one member.**
+   *(Owner, 2026-08-29: "A で進めて", after the Fable phase review of
+   §66–§67, M1.)* Rule 3 is stated for a scope; a class body is the
+   scope of its instance members, and §65 applied the rule to
+   accessors only. Measured at `857757a`, `tsc` under the corpus
+   gate's options:
+
+       field + method     checker accepts; c.x prints 1, c.x() prints 2     tsc TS2300 ×2
+       method + method    checker accepts; the lowering fails internally    tsc TS2393 ×2
+                          ("class `C` has duplicate checked method `x`")
+       field + field      checker accepts; prints 2, the later wins         tsc TS2300
+       field + accessor   S100 (§65)                                        tsc TS2300 ×2
+       static + instance  S100, static fields are undecided                 tsc accepts
+
+   The checker resolved a member by its use — a read found the field,
+   a call found the method — and accepted programs `tsc` rejects, which
+   invariant 5 forbids. The method pair reached the lowering, which
+   reports an internal error where a diagnostic belongs.
+
+   **Rule.** Two instance members of one name in one class body —
+   a field, a method, or an accessor pair, in any combination — fail
+   with S100 at the second declaration, naming both kinds. §65's
+   accessor rule is one case of this rule and keeps its message. The
+   static namespace is separate, as `tsc` has it; static fields stay
+   undecided under their own S100.
+
+   No accept entry has a clashing class (measured, 0 of 165). Corpus:
+   `r161` (field and method), `r162` (two methods), `r163` (two
+   fields), each with the measured `tsc` code in its header.
 4. A block-scoped declaration owns its name for the whole block. A
    read of that name earlier in the same block fails with S100 at
    the read, whether the read is direct or inside a nested lambda.
