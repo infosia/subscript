@@ -9306,10 +9306,13 @@ argument's evaluation point and the later argument's growth is a
 trap, so the first and third cases stop. The first keeps §67.2 rule 7's
 intent for sync code and changes one pinned value; the second changes
 which programs run. **Decided: the call-time view** *(Owner, 2026-08-28)*. All three
-cases print `3`. One pinned value moves: the `f2sync=2` interop twin
-in `codegen/tests/interop.rs` becomes `3`; the `f2suspend=3` twin is
-already the call-time value. No corpus `.expected` prints the sync
-case (`a149` does not), so none moves.
+cases print `3`. Every test pin that recorded the evaluation-point
+value moves to the call-time value: in `codegen/tests/interop.rs`,
+the `f2sync=2` twin and
+`foreign_call_without_suspension_preserves_marshalling_order`'s
+`f2=2` both become `3`; the `f2suspend=3` twin is already the
+call-time value. No corpus `.expected` prints the sync case (`a149`
+does not), so none moves.
 
 #### 68.7.4 The three protocols that LIR alone defines
 
