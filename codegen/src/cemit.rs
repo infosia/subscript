@@ -1222,6 +1222,9 @@ struct Body<'e, 'm, 'f> {
     delayed_declarations: HashSet<l::ValueId>,
     consumed_traps: Vec<l::Trap>,
     temporary: u32,
+    /// Whether `emit_storage` declared a shadow-root frame. `emit_pop`
+    /// reads the same fact, so push and pop cannot disagree.
+    shadow_frame: bool,
 }
 
 enum EdgeCopySource {
@@ -2300,6 +2303,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             delayed_declarations,
             consumed_traps: Vec::new(),
             temporary: 0,
+            shadow_frame: false,
         })
     }
 
@@ -2483,41 +2487,53 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
     }
 
-    fn emit_storage(&mut self, out: &mut String) -> Result<(), String> {
+    /// The members of this function's shadow-root frame, in emission order.
+    ///
+    /// One derivation serves the frame declaration and the frame pop, so a
+    /// frame is never declared without a member and never pushed without a
+    /// matching pop. C11 6.7.2.1 gives a structure at least one member;
+    /// MSVC enforces it (`C2016`), and GCC and clang accept an empty one as
+    /// an extension.
+    fn shadow_frame_members(&self) -> Result<Vec<String>, String> {
         let owns_closure_environments = !self.coroutine && self.emitter.has_closure_environments();
-        if !self.rooted_values.is_empty()
-            || !self.rooted_locals.is_empty()
-            || owns_closure_environments
-        {
-            out.push_str("    struct {\n");
+        let mut members = Vec::new();
+        for value in &self.function.values {
+            if self.value_storage[value.id.0 as usize] == value.id
+                && self.rooted_values.contains(&value.id)
+            {
+                members.push(format!(
+                    "        {} v{};\n",
+                    self.emitter.value_ctype(&value.ty)?,
+                    value.id.0
+                ));
+            }
+        }
+        for local in &self.function.locals {
+            if self.rooted_locals.contains(&local.id) {
+                members.push(format!(
+                    "        {} l{};\n",
+                    self.emitter.value_ctype(&local.ty)?,
+                    local.id.0
+                ));
+            }
+        }
+        if owns_closure_environments {
             for value in &self.function.values {
-                if self.value_storage[value.id.0 as usize] == value.id
-                    && self.rooted_values.contains(&value.id)
-                {
-                    let _ = writeln!(
-                        out,
-                        "        {} v{};",
-                        self.emitter.value_ctype(&value.ty)?,
-                        value.id.0
-                    );
+                if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                    members.push(format!("        SubEnvStorage env_v{};\n", value.id.0));
                 }
             }
-            for local in &self.function.locals {
-                if self.rooted_locals.contains(&local.id) {
-                    let _ = writeln!(
-                        out,
-                        "        {} l{};",
-                        self.emitter.value_ctype(&local.ty)?,
-                        local.id.0
-                    );
-                }
-            }
-            if owns_closure_environments {
-                for value in &self.function.values {
-                    if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
-                        let _ = writeln!(out, "        SubEnvStorage env_v{};", value.id.0);
-                    }
-                }
+        }
+        Ok(members)
+    }
+
+    fn emit_storage(&mut self, out: &mut String) -> Result<(), String> {
+        let members = self.shadow_frame_members()?;
+        self.shadow_frame = !members.is_empty();
+        if self.shadow_frame {
+            out.push_str("    struct {\n");
+            for member in &members {
+                out.push_str(member);
             }
             out.push_str("    } roots = {0};\n");
             let call = self.emitter.runtime_call(
@@ -3097,7 +3113,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn emit_pop(&mut self, out: &mut String) {
-        if !self.rooted_values.is_empty() || !self.rooted_locals.is_empty() {
+        if self.shadow_frame {
             let call = self.emitter.runtime_call(
                 "void",
                 "subscript_rt_shadow_pop",
@@ -3825,12 +3841,18 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     format!("{pos}u"),
                 ],
             );
+            let ctype = self.emitter.ctype(ty)?;
+            // The divisor is bound to a local before the guard. The guard
+            // makes a zero divisor unreachable, but a literal `x / 0` stays
+            // a constant expression that MSVC rejects at translation
+            // (`C2124`). The local also gives the divisor one evaluation
+            // where the expressions below name it three times.
+            let divisor = self.fresh();
+            let _ = writeln!(out, "    {ctype} {divisor} = {};", operands[1]);
             let _ = writeln!(
                 out,
-                "    if (({}) == 0) {{ {trap_call}; goto unwind; }}",
-                operands[1]
+                "    if (({divisor}) == 0) {{ {trap_call}; goto unwind; }}"
             );
-            let ctype = self.emitter.ctype(ty)?;
             if is_unsigned(ty) {
                 let symbol = if operator == l::BinaryOp::Div {
                     "/"
@@ -3839,24 +3861,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 };
                 let _ = writeln!(
                     out,
-                    "    {destination} = ({ctype})(({}) {symbol} ({}));",
-                    operands[0], operands[1]
+                    "    {destination} = ({ctype})(({}) {symbol} ({divisor}));",
+                    operands[0]
                 );
             } else if operator == l::BinaryOp::Div {
                 let _ = writeln!(
                     out,
-                    "    {destination} = (({}) == ({ctype})-1) ? ({ctype})(0 - ({})({})) : ({ctype})(({}) / ({}));",
-                    operands[1],
+                    "    {destination} = (({divisor}) == ({ctype})-1) ? ({ctype})(0 - ({})({})) : ({ctype})(({}) / ({divisor}));",
                     unsigned_ctype(ty)?,
                     operands[0],
                     operands[0],
-                    operands[1]
                 );
             } else {
                 let _ = writeln!(
                     out,
-                    "    {destination} = (({}) == ({ctype})-1) ? ({ctype})0 : ({ctype})(({}) % ({}));",
-                    operands[1], operands[0], operands[1]
+                    "    {destination} = (({divisor}) == ({ctype})-1) ? ({ctype})0 : ({ctype})(({}) % ({divisor}));",
+                    operands[0]
                 );
             }
             return Ok(());
