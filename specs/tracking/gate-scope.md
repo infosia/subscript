@@ -32,7 +32,7 @@ question about the benchmark tables found it, 31 days later.
 
 `74a091c` fixed it. `1bb670d` records the measurement.
 
-## Why `a22` could not find it
+## Why `a22` cannot find it
 
 `perf-gate` measures `a22` alone. `a22` builds three growable arrays
 once and holds them to the end. `Matrix4` carries `@CStruct`, so those
@@ -60,7 +60,7 @@ Two changes. Both are the owner's to accept.
 
 `perf-gate` takes **3.96 s** wall, with the binary already built.
 `cargo test --offline --release --workspace` takes about 235 s. The
-gate is 1.7% of the suite it would join.
+gate is 1.7% of the suite it joins.
 
 Adding `collect` costs about 7 s more, derived from the 1bb670d
 medians and §9's floors: three subjects, each 200 ms of warm-up and

@@ -227,7 +227,7 @@ reading, at about an hour each.
 
 No file changed. The round reported that §68 defined the **form** of
 LIR and not the **meaning** of its instructions, so no interpreter
-could be written from the section. It did not read either tier to
+can be written from the section. It did not read either tier to
 guess. CLAUDE.md principle 8 makes that report the wanted outcome.
 
 The finding is larger than the gap. §68.2 item 10 says that neither
@@ -272,7 +272,7 @@ with no `collisions.md` entry — §69's work, not an owner decision.
 ### Attempt 3 — stopped again, on three more gaps, and all three were ours
 
 - `Suspend` carried a successor id and no argument list, so no value
-  could reach the successor's parameters. Reusing a value's id breaks
+  can reach the successor's parameters. Reusing a value's id breaks
   §68.1 item 4, and the edge-transfer paragraph named only the three
   branching terminators. The section decided what the frame holds and
   never said how a value reaches it.
@@ -362,7 +362,7 @@ by contract (§2). Three interpreter defects were found and fixed
 there: unary negation now uses `wrapping_neg`, add, subtract,
 multiply and signed division and remainder use wrapping operations,
 and a shift masks its amount to the type width. A release-only sweep
-would have reported 97 of 97 while computing the wrong arithmetic.
+reports 97 of 97 while it computes the wrong arithmetic.
 
 **The exclusion rule, stated once.** "The interpreter cannot run
 this" is an escape hatch and is refused. "This entry's purpose is
@@ -410,9 +410,9 @@ what the transcriber consumed, at build time, naming the function,
 the site, the counts, and what is missing or extra. §67 rule 1g is
 the same mechanism, and **step 3 starts with it already in place.**
 
-### What the differential gate could not see
+### What the differential gate cannot see
 
-Two defects were not program output, so no golden could hold them.
+Two defects were not program output, so no golden holds them.
 
 - The host trap observer stopped firing. The program still trapped
   and printed the same bytes; the host callback did not run. §18
@@ -528,7 +528,7 @@ against a binary built from `9bde577`.
   the same inside a coroutine. Closed by rule 8 plus per-value
   environment storage.
 
-§66 recorded `a150` and `a151` as adjacent defects it would not fix.
+§66 recorded `a150` and `a151` as adjacent defects it did not fix.
 §67 pass B moved `a152` here as the seventh of its narrowing class.
 **Three arcs deferred them and the form closed all three.**
 
@@ -551,7 +551,7 @@ re-measured it. That is a separate finding.
 
 Landed `2d712f6`. Contract for the ceiling: `58db7a6`.
 
-The owner asked whether an unroller and an inliner in LIR would improve
+The owner asked whether an unroller and an inliner in LIR improve
 performance, with the dev tier as the target. **The measurement
 supported one and refuted the other.**
 
@@ -563,7 +563,7 @@ supported one and refuted the other.**
 **No inliner.** The function boundary helps Cranelift's generated code
 on this shape. Why is not established — the measurement is what is
 established. The ship tier needs neither, because `clang -O2` already
-inlines and unrolls, so doing either in LIR would duplicate work and
+inlines and unrolls, so either one in LIR duplicates work and
 enlarge its input.
 
 **The unroller landed**: dev `30.78x` to `19.63x`, ship unchanged at
@@ -575,7 +575,7 @@ Across 155 corpus entries it transforms one loop and declines fourteen.
 The fact check needed nothing, because a body holding a trap is never
 duplicated and the HIR-versus-LIR trap multiset does not move. The
 handoff said to report rather than weaken that check if the transform
-could not keep it honest; the exclusion made the question moot.
+cannot keep it honest; the exclusion made the question moot.
 
 ### The measurement this session got wrong first
 
@@ -594,8 +594,8 @@ usable number.
 ### Why §3 gained a ceiling at the same time
 
 The revision hours earlier made dev-tier execution reported and not
-gated. Under that rule the unroller would have improved a number
-nothing watches, and a later change could undo it unnoticed.
+gated. Under that rule the unroller improves a number
+nothing watches, and a later change undoes it unnoticed.
 
 `58db7a6` sets a **25× ceiling**, above the measured 19.63×. The old 4×
 was never met and nothing re-measured it, so it gated nothing. A

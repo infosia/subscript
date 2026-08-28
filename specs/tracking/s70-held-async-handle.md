@@ -41,7 +41,7 @@ A test pins `live_bytes` at zero after the last decrement, with no
 **Invariant 2 holds and improves.** This is not a collector: no
 traversal runs and the free happens at a known decrement. The
 invariant says a program that never collects is correct, merely
-larger. This makes "merely larger" eighteen times smaller.
+larger. Peak memory for the measured program is 18.1× smaller.
 
 ## A correction this session owes the record
 
@@ -49,7 +49,7 @@ The handoff said offset 4 was "four bytes of alignment padding that
 nothing reads". **It was the reload epoch**, documented in
 `runtime/src/context.rs` as an ABI contract with generated code. The
 claim came from reading the struct declaration in `cemit.rs` without
-looking for a writer; one `grep` in `runtime/` would have found it.
+looking for a writer; one `grep` in `runtime/` finds it.
 
 The round took the wrong premise and handled it correctly: an async
 frame's epoch moved to Context metadata, and a generator still uses

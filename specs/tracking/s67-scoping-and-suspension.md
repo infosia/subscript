@@ -132,7 +132,7 @@ Two records worth keeping:
   tell the two apart. The entry pins the regression the first round
   introduced; the message discrimination lives in a unit test.
 - §67.1 rule 6 removed the emitter's per-case scope restore because
-  a name a case declares would then be in scope in a later case.
+  a name a case declares is then in scope in a later case.
   Rules 1 and 2 reject every cross-case read and write, so no
   accepted program can observe that change. It is a forward guard
   with no accept-corpus coverage. Pass B must revisit it if a
@@ -317,7 +317,7 @@ sites existed, and the round names all three with their counts:
     foreign call        stopped at 0/2
 
 The 149 committed corpus entries left no unconsumed event. That is
-the number the three reviews could not produce.
+the number the three reviews did not produce.
 
 Measured after the fixes, on both tiers, byte-identical:
 
@@ -574,7 +574,7 @@ Open, and moved to §68 rather than patched here:
    iteration. Measured: `async-keep=30` on both tiers, where `10` is
    correct. At the pin the dev tier printed garbage and the ship
    tier printed `0`, so the tiers disagreed and the differential
-   gate could see it. Round 6 made them agree. This is the seventh
+   gate saw it. Round 6 made them agree. This is the seventh
    defect of the narrowing class, so it moves whole, as §68 corpus
    entry `a152`. §68.2 rule 8 is its fix: the storage scope is the
    live range, never the source block.
@@ -607,7 +607,7 @@ code they name.** Measured by grep at this pin:
 | 4th review 1 — `cemit.rs` repeats the receiver classification on the suspending method path | Void. cemit reads LIR operands; the HIR-era path is deleted. |
 | 4th review 2 — `save_address` types a spilled pointer `Type::U64` | Void. `save_address`, `SavedValue`, and `SpillKind` do not exist. |
 | 4th review 3 — the `Type::Void` guard sits in the trace and the C emitter, not the dev tier | Void. The planner is deleted. |
-| 6th review 1 — an arity-only call in the intrinsic families | **Open.** `codegen/src/cemit.rs:6203`. |
+| 6th review 1 — an arity-only call in the intrinsic families | **Open.** `codegen/src/cemit.rs`, `emit_array_intrinsic`. |
 | 6th review 2 — no note at the `LambdaEnv` acquire | Void. `LambdaEnv` does not exist. |
 | 6th review 3 — no note that `K::Cond` plans both arms | Void. The planner is deleted. |
 
@@ -621,7 +621,7 @@ block pass B. It is COMPLETE.
 
 The record above names it "an arity-only call that reads as a
 discarded result". That is wrong, and this is the measured shape.
-`cemit.rs:6203` decides whether an `Array` callback takes an index
+`emit_array_intrinsic` in `cemit.rs` decides whether an `Array` callback takes an index
 parameter, and it reads the decision from the callback's parameter
 count:
 
@@ -636,12 +636,12 @@ LIR does not carry it, so the C emitter derives it again. That is
 core principle 8's class: a form must carry every fact its consumers
 need. The mapping is total over the six listed names today, so
 nothing is wrong at this pin. A family with a third optional
-parameter would misclassify silently.
+parameter misclassifies silently.
 
 ### One more site of the same class
 
 Not from any review; found while re-checking the six above.
-`cemit.rs:2574` and `cemit.rs:2622` each map `l::ParameterKind` to
+`emit_parameter_initializers` and its sibling in `cemit.rs` each map `l::ParameterKind` to
 the same C source spelling, with the same three arms. One fact,
 two derivations.
 

@@ -177,7 +177,7 @@ kept minimal:
   (its errors are silent miscompiles the test suite does not catch) for a
   benefit that is **x86-dev-host only** (the arm64 ship target has no
   value-copy problem, already 1.05x). Owner decision: not worth the risk;
-  B dropped, no B code committed. Closing fully to 1.05x on x86 would need a
+  B dropped, no B code committed. Closing fully to 1.05x on x86 needs a
   SIMD vector-type representation — a larger separate effort, not scheduled.
 - **Root cause of B's difficulty is a language-design choice (C2), not a
   codegen gap.** A scripting language that defines struct/aggregate
@@ -369,7 +369,7 @@ gated. Fixed by gating the fixture `build.rs` on the windows-msvc target
 (`CARGO_CFG_TARGET_OS`/`_ENV`). Three MINORs left as accepted: the msvc
 phase gate compares zero programs (its sole program is interop-gated; the
 example set still exercises both tiers); `$CC` on windows-msvc is assumed
-MSVC-style (`clang-cl` works, GNU `clang` would not); the shim collapses
+MSVC-style (`clang-cl` works, GNU `clang` does not); the shim collapses
 exit codes >255 (`cl` never uses them). No open CRITICAL/MAJOR.
 
 What each piece required, beyond the plan:
@@ -494,7 +494,7 @@ missing arm became a build error.
 
 ### Task plan (handoff — coding agent)
 
-One task, one file: `codegen/tests/golden.rs`. No other file may change;
+One task, one file: `codegen/tests/golden.rs`. No other file changes;
 no corpus entry, golden, or production source is touched.
 
 1. Replace both `native_libraries` definitions with one pair returning
@@ -547,7 +547,7 @@ the two helper signatures were hand-wrapped where rustfmt puts them on
 one line. Whole-file `rustfmt` was forbidden in the handoff and not run:
 this host's rustfmt disagrees with the committed formatting in 8 places
 in this file and ~873 across the repo, so formatting is not a gate here
-and a reformat would have buried the change in unrelated churn.
+and a reformat buries the change in unrelated churn.
 
 Off windows-msvc nothing changes: the helper returns `Some` for every
 entry there, the deleted guards were all `#[cfg(msvc)]`-only, and the
@@ -1016,7 +1016,7 @@ transcriber and carried AAPCS64 across alone.
 The deletion reached x86-64 Linux as well. Only the arm64 reference
 machine was unaffected, which is why no gate reported it for a month.
 
-**The check could not report it.** `boundary_struct_by_value_supported`
+**The check cannot report it.** `boundary_struct_by_value_supported`
 in `lower/mod.rs` was a `#[cfg(test)]` predicate returning `true` for
 aarch64 and x86-64. Lowering never called it. It is CLAUDE.md core
 principle 9 exactly: the check read a record, not the operation, so it
@@ -1080,7 +1080,7 @@ shape `keyword [tag] { ... }`.
 
 Six unit tests pin it, including the two shapes that actually occurred —
 `struct Frame {\n};` and the anonymous `struct {\n} roots = {0};` — plus
-the three false-positive shapes that would make it useless: a forward
+the three false-positive shapes that make it useless: a forward
 declaration, `sizeof(struct Forward)`, and a brace pair inside a comment
 or a literal. One test perturbs a `CProgram` and reads the message, so
 "no sites" cannot be confused with a broken check.

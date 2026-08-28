@@ -7471,7 +7471,7 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    recorded, and the 6h collision cannot arise. The emitter fix
    stands on its own and is still correct. **Consequence for the
    corpus: no accept entry pins this shape.** The corpus is the
-   language's executable definition, and a golden here would settle
+   language's executable definition, and a golden here settles
    a semantic divergence from TypeScript that no owner decision
    covers. The emitter unit test pins the C block without pinning a
    value. Name resolution needs its own request and its own owner
@@ -7485,7 +7485,7 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    lowering error on the dev tier. Stock `tsc` rejects every one
    (TS2300, TS2451), so none is a valid subscript program under
    invariant 5. This is the bucket of measurement 6e — a
-   checker-acceptance gap whose fix may move diagnostics — and it
+   checker-acceptance gap whose fix can move diagnostics — and it
    belongs to the same follow-up cycle.
 6e. *(Third review, 2026-08-25. Recorded, not fixed here.)* The
    checker gives each `switch` case its own scope; TypeScript gives

@@ -15,7 +15,7 @@ JavaScript, and nothing checked that the list was complete. Two
 divergences were measured in the §66 arc and appeared in no entry.
 
 **The list was very nearly complete.** Running `node` over 152 accept
-entries produced no divergence that an existing id could not name,
+entries produced no divergence that an existing id cannot name,
 after two ids were added. The value is not that it was complete; it is
 that completeness is now checked, every build, for 6.4 per cent of the
 compiler suite.
@@ -53,9 +53,9 @@ No third state and no absent state, so every entry got a decision.
 each cites is the decided one, and every one was.
 
 **The shim is 193 bytes and defines one name, `print`.** That is the
-rule "the shim never grows to make an entry comparable" working: had it
-been allowed to grow, it would have emulated `Context` and value
-classes, and a shim that emulates a decided divergence hides it. A
+rule "the shim never grows to make an entry comparable" at work: if the
+shim grows, it emulates `Context` and value classes, and a shim that
+emulates a decided divergence hides it. A
 check confirms every name it defines exists in `prelude/lang.d.ts`.
 
 **The round stopped rather than invent an id**, twice, which §69.2
@@ -71,8 +71,8 @@ confirmed to pin at least one entry through its own `Accept:` and
 `retired:<name>` confirmed absent.
 
 Three references were missing: `r14-async` twice and `r104`, both
-retired in prose. Deleting them would lose why the entry went, and
-keying the check on the word "retired" in a sentence would put a check
+retired in prose. Deleting them loses why the entry went, and
+keying the check on the word "retired" in a sentence puts a check
 back on prose. So a retired name is spelled `retired:<name>`.
 
 **What the check deliberately does not do.** C1, C4, C5, C6, C7, C9,

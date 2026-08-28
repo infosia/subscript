@@ -2,6 +2,7 @@
 // purpose: Exercises one switch-body scope without a cross-case read.
 // exercises: switch-body-scope, distinct-case-declarations, fallthrough
 // questions: §67
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const selected: i32 = 2;
   switch (selected) {
@@ -22,4 +23,3 @@ export function main(): void {
       break;
   }
 }
-// tsc: accepts; js-comparable: yes
