@@ -7603,6 +7603,38 @@ with their outputs (this host).
    library counts at the 7 / 22 / 29 baseline. The record quotes the
    test count and the wall time.
 
+### 66.1 The emitted spelling is not an interface
+
+*(2026-08-28. A consumer asked whether `SubC{id}` and `d{id}` are
+contract, because it compiles a C probe that names both.)*
+
+**They are not, and no consumer must name them.**
+
+§68 requires that a C identifier derives from a LIR id, so that no
+source name reaches the C namespace. That rule is what closes §66's
+collision class. The spelling that satisfies it is a consequence, not
+a promise.
+
+`cemit.rs` builds a class name as `format!("SubC{}", id.0)`, and
+`ClassId` is `pub struct ClassId(pub usize)` — an index into the
+module's class table. Adding, removing, or reordering a class moves
+every later id, so the same source class takes a different C name in a
+different program. The spelling is stable for one compilation, and for
+nothing wider.
+
+**This project names no emitted identifier to prove anything.** §12.3's
+`offsetof` proof compiles its probe against the C header's own type
+names, and compares the result against the layout the compiler
+computed. It never reads emitted C.
+
+**A consumer proves the same property the same way.**
+`subscript_codegen::layout::value_class_layouts` is public. It returns
+one `StructLayout` per `@CStruct` class — `name`, `size`, `align`, and
+one `FieldLayout { name, offset }` per field — keyed by the **source**
+class and field names. The caller compares those against
+`sizeof`/`_Alignof`/`offsetof` taken from its own header. Both sides of
+that comparison are names the consumer controls.
+
 ## 67. Checker scoping, and state that must survive a suspension
 
 Origin: the §66 arc recorded three constructs it could not fix
