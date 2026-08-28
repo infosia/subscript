@@ -357,20 +357,20 @@ fn foreign_call_operands_survive_a_later_suspension() {
 }
 
 #[test]
-fn foreign_call_without_suspension_preserves_marshalling_order() {
+fn foreign_call_without_suspension_uses_call_time_view() {
     let program = "function grow(commands: SubDevice[], device: SubDevice): u32 {\n  commands.push(device);\n  return 0;\n}\nexport function main(): void {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const third: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, grow(commands, third));\n  print(`f2=${probe} len=${commands.length}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n  subDeviceRelease(third);\n}\n";
-    assert_eq!(both_tiers(program), b"f2=2 len=3\n");
+    assert_eq!(both_tiers(program), b"f2=3 len=3\n");
 }
 
 #[test]
-fn foreign_call_rule_7a_plain_twin_preserves_marshalling_order() {
+fn foreign_call_rule_7a_plain_twin_uses_call_time_view() {
     let program = "async function av(value: u32): Promise<u32> {\n  await Context.suspend();\n  return value;\n}\nfunction grow(commands: SubDevice[], device: SubDevice, value: u32): u32 {\n  commands.push(device);\n  return value;\n}\nexport async function main(): Promise<void> {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const third: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, grow(commands, third, 0));\n  print(`f2sync=${probe} len=${commands.length}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n  subDeviceRelease(third);\n}\n";
-    assert_eq!(both_tiers(program), b"f2sync=2 len=3\n");
+    assert_eq!(both_tiers(program), b"f2sync=3 len=3\n");
 }
 
 #[test]
-fn foreign_call_rule_7a_later_suspension_value_is_unsettled() {
-    // §67.2 rule 7a records this value while the owner decision remains open.
+fn foreign_call_rule_7a_later_suspension_uses_call_time_view() {
+    // §68.7.3 applies the same call-time view after a later suspension.
     let program = "async function av(value: u32): Promise<u32> {\n  await Context.suspend();\n  return value;\n}\nfunction grow(commands: SubDevice[], device: SubDevice, value: u32): u32 {\n  commands.push(device);\n  return value;\n}\nexport async function main(): Promise<void> {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const third: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, grow(commands, third, await av(0)));\n  print(`f2suspend=${probe} len=${commands.length}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n  subDeviceRelease(third);\n}\n";
     assert_eq!(both_tiers(program), b"f2suspend=3 len=3\n");
 }

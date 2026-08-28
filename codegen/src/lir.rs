@@ -54,6 +54,7 @@ pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
     unroll::run(&mut lowered);
     for function in &mut lowered.functions {
         thread_suspension_live_ins(function)?;
+        classify_local_storage(function);
     }
     if let Err(errors) = verify_module(&lowered) {
         return Err(LowerError {
@@ -950,7 +951,9 @@ fn convert_traps(sites: &[hir::TrapSite]) -> Vec<l::Trap> {
                 hir::TrapSite::DivisionByZero { .. } => l::TrapKind::DivisionByZero,
                 hir::TrapSite::IndexRead { .. } => l::TrapKind::IndexRead,
                 hir::TrapSite::IndexWrite { .. } => l::TrapKind::IndexWrite,
-                hir::TrapSite::JsonResultValue { .. } => l::TrapKind::JsonResultValue,
+                hir::TrapSite::JsonResultValue { .. } => {
+                    l::TrapKind::JsonResultValue(l::FieldId(u32::MAX))
+                }
                 hir::TrapSite::NullNarrowing { .. } => l::TrapKind::NullNarrowing,
                 hir::TrapSite::ClassMismatch { class, .. } => l::TrapKind::ClassMismatch(*class),
                 hir::TrapSite::DevOnlyLifetime { .. } => l::TrapKind::DevOnlyLifetime,
@@ -1730,6 +1733,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             source_name: source_name.clone(),
             ty,
             mutable,
+            storage: l::LocalStorageClass::Activation,
             pos: pos.clone(),
         });
         Ok(id)
@@ -3012,14 +3016,31 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             K::JsonResultValue(obj) => {
                 let object = self.require_expr(obj)?;
                 let field = self.resolve_field(&obj.ty, "value", &expr.pos)?;
+                let ok_field = match self.resolve_field(&obj.ty, "ok", &expr.pos)? {
+                    l::FieldRef::Class(field) => field,
+                    _ => {
+                        return Err(
+                            self.error(&expr.pos, "JSON result ok field is not a class field")
+                        );
+                    }
+                };
                 let stored_type = self.resolved_field_type(field, &obj.ty, &expr.pos)?;
+                let traps = convert_traps(&expr.trap_sites(self.lowering.hir))
+                    .into_iter()
+                    .map(|mut trap| {
+                        if matches!(trap.kind, l::TrapKind::JsonResultValue(_)) {
+                            trap.kind = l::TrapKind::JsonResultValue(ok_field);
+                        }
+                        trap
+                    })
+                    .collect();
                 let value = self
                     .emit(
                         l::InstructionKind::LoadField(field),
                         vec![object],
                         Some(l::ValueType::Data(stored_type)),
                         false,
-                        convert_traps(&expr.trap_sites(self.lowering.hir)),
+                        traps,
                         expr.pos.clone(),
                     )?
                     .expect("JSON result field load");
@@ -3149,12 +3170,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         }
                     }
                 }
+                let traps = if lowered_parts.is_empty() {
+                    Vec::new()
+                } else {
+                    convert_traps(&expr.trap_sites(self.lowering.hir))
+                };
                 self.emit(
                     l::InstructionKind::Template(lowered_parts),
                     operands,
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    traps,
                     expr.pos.clone(),
                 )?
             }
@@ -3956,16 +3982,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     let pos = args
                         .get(index)
                         .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone());
-                    let later_suspends = args
-                        .get(index + 1..)
-                        .is_some_and(|later| later.iter().any(hir_expr_suspends));
-                    if later_suspends {
-                        delayed_array_snapshots.push((index, value, (**element).clone(), pos));
-                        operand_groups.push(Vec::new());
-                    } else {
-                        operand_groups
-                            .push(self.foreign_array_snapshot(value, element, pos)?.to_vec());
-                    }
+                    delayed_array_snapshots.push((index, value, (**element).clone(), pos));
+                    operand_groups.push(Vec::new());
                     continue;
                 }
             }
@@ -5136,53 +5154,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     }
 }
 
-fn hir_expr_suspends(expr: &hir::Expr) -> bool {
-    use hir::ExprKind as K;
-    match &expr.kind {
-        K::Yield(_) | K::AsyncSuspend | K::AsyncCall { .. } | K::AsyncHandleAwait(_) => true,
-        K::AsyncHandleTransfer { value, .. } => hir_expr_suspends(value),
-        K::AsyncHandleCreate { callee, args, .. } => {
-            callee.receiver().is_some_and(hir_expr_suspends) || args.iter().any(hir_expr_suspends)
-        }
-        K::Unary { operand, .. }
-        | K::Cast(operand)
-        | K::Field { obj: operand, .. }
-        | K::JsonResultValue(operand)
-        | K::Length(operand) => hir_expr_suspends(operand),
-        K::Binary { left, right, .. }
-        | K::Assign {
-            target: left,
-            value: right,
-            ..
-        }
-        | K::Index {
-            obj: left,
-            index: right,
-            ..
-        } => hir_expr_suspends(left) || hir_expr_suspends(right),
-        K::Call { callee, args } => {
-            let callee_suspends = match callee {
-                hir::Callee::Value(value) => hir_expr_suspends(value),
-                hir::Callee::Method { recv, .. } => hir_expr_suspends(recv),
-                _ => false,
-            };
-            callee_suspends || args.iter().any(hir_expr_suspends)
-        }
-        K::New { args, .. } | K::ArrayLit(args) => args.iter().any(hir_expr_suspends),
-        K::DescriptorLit { fields, .. } => fields.iter().flatten().any(hir_expr_suspends),
-        K::ArraySpreadLit(elements) => elements
-            .iter()
-            .any(|element| hir_expr_suspends(&element.expr)),
-        K::Template(parts) => parts
-            .iter()
-            .any(|part| matches!(part, hir::TplPart::Expr(expr) if hir_expr_suspends(expr))),
-        K::Cond { cond, then, els } => {
-            hir_expr_suspends(cond) || hir_expr_suspends(then) || hir_expr_suspends(els)
-        }
-        _ => false,
-    }
-}
-
 type CallResolution = (
     l::CallTargetKind,
     Vec<l::Operand>,
@@ -5708,6 +5679,82 @@ fn reachable_blocks(function: &l::Function) -> Vec<bool> {
     reachable
 }
 
+/// Marks storage that a resumed activation must read before any redefinition.
+fn classify_local_storage(function: &mut l::Function) {
+    let predecessors = predecessors(function);
+    let dominators = dominators(function, &predecessors);
+    let required = function
+        .locals
+        .iter()
+        .filter(|local| local_requires_frame(function, local.id, &dominators))
+        .map(|local| local.id)
+        .collect::<HashSet<_>>();
+    for local in &mut function.locals {
+        local.storage = if required.contains(&local.id) {
+            l::LocalStorageClass::Frame
+        } else {
+            l::LocalStorageClass::Activation
+        };
+    }
+}
+
+fn local_requires_frame(
+    function: &l::Function,
+    local: l::LocalId,
+    dominators: &[BTreeSet<l::BlockId>],
+) -> bool {
+    function.blocks.iter().any(|suspend| {
+        let l::Terminator::Suspend { successor, .. } = suspend.terminator else {
+            return false;
+        };
+        let definition_dominates = function.blocks.iter().any(|definition| {
+            definition.instructions.iter().any(
+                |instruction| matches!(instruction.kind, l::InstructionKind::StoreLocal(id) if id == local),
+            ) && (definition.id == suspend.id
+                || dominators
+                    .get(suspend.id.0 as usize)
+                    .is_some_and(|blocks| blocks.contains(&definition.id)))
+        });
+        definition_dominates && local_read_before_redefinition(function, successor, local)
+    })
+}
+
+fn local_read_before_redefinition(
+    function: &l::Function,
+    start: l::BlockId,
+    local: l::LocalId,
+) -> bool {
+    let mut pending = VecDeque::from([start]);
+    let mut visited = HashSet::new();
+    while let Some(block) = pending.pop_front() {
+        if !visited.insert(block) {
+            continue;
+        }
+        let Some(block) = function.blocks.get(block.0 as usize) else {
+            continue;
+        };
+        let mut redefined = false;
+        for instruction in &block.instructions {
+            match instruction.kind {
+                l::InstructionKind::LoadLocal(id) | l::InstructionKind::AddressOfLocal(id)
+                    if id == local =>
+                {
+                    return true;
+                }
+                l::InstructionKind::StoreLocal(id) if id == local => {
+                    redefined = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if !redefined {
+            pending.extend(successors(&block.terminator));
+        }
+    }
+    false
+}
+
 fn replace_address_base(
     function: &mut l::Function,
     value: l::ValueId,
@@ -5858,7 +5905,80 @@ fn verify_function(module: &l::Module, function: &l::Function, errors: &mut Vec<
     verify_structure_and_types(module, function, errors);
     verify_counted_stores(function, errors);
     verify_dominance(function, errors);
+    verify_local_storage_classes(function, errors);
     verify_address_invalidation(function, errors);
+}
+
+fn verify_local_storage_classes(function: &l::Function, errors: &mut Vec<VerifyError>) {
+    let predecessors = predecessors(function);
+    let dominators = dominators(function, &predecessors);
+    for local in &function.locals {
+        if local.storage != l::LocalStorageClass::Activation {
+            continue;
+        }
+        for suspend in &function.blocks {
+            let l::Terminator::Suspend { successor, .. } = suspend.terminator else {
+                continue;
+            };
+            let definition_dominates = function.blocks.iter().any(|definition| {
+                let stores_local = definition.instructions.iter().any(|instruction| {
+                    matches!(instruction.kind, l::InstructionKind::StoreLocal(id) if id == local.id)
+                });
+                stores_local
+                    && (definition.id == suspend.id
+                        || dominators
+                            .get(suspend.id.0 as usize)
+                            .is_some_and(|blocks| blocks.contains(&definition.id)))
+            });
+            if !definition_dominates {
+                continue;
+            }
+
+            let mut pending = VecDeque::from([successor]);
+            let mut visited = HashSet::new();
+            let mut violating_read = None;
+            while let Some(block_id) = pending.pop_front() {
+                if !visited.insert(block_id) {
+                    continue;
+                }
+                let Some(block) = function.blocks.get(block_id.0 as usize) else {
+                    continue;
+                };
+                let mut redefined = false;
+                for instruction in &block.instructions {
+                    match instruction.kind {
+                        l::InstructionKind::LoadLocal(id)
+                        | l::InstructionKind::AddressOfLocal(id)
+                            if id == local.id =>
+                        {
+                            violating_read = Some(block.id);
+                            break;
+                        }
+                        l::InstructionKind::StoreLocal(id) if id == local.id => {
+                            redefined = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                if violating_read.is_some() {
+                    break;
+                }
+                if !redefined {
+                    pending.extend(successors(&block.terminator));
+                }
+            }
+            if let Some(read_block) = violating_read {
+                errors.push(finding(
+                    function,
+                    format!(
+                        "activation local {} is read in block {} after suspend in block {} dominated by its definition",
+                        local.id.0, read_block.0, suspend.id.0
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 fn verify_counted_stores(function: &l::Function, errors: &mut Vec<VerifyError>) {
@@ -6425,6 +6545,30 @@ fn verify_instruction_contract(
             ),
         ));
     };
+    for trap in &instruction.traps {
+        let l::TrapKind::JsonResultValue(ok_field) = trap.kind else {
+            continue;
+        };
+        let valid = match instruction.kind {
+            l::InstructionKind::LoadField(l::FieldRef::Class(value_field)) => module
+                .classes
+                .iter()
+                .find(|class| class.fields.iter().any(|field| field.id == value_field))
+                .is_some_and(|class| {
+                    class
+                        .fields
+                        .iter()
+                        .any(|field| field.id == ok_field && field.ty == Type::Bool)
+                }),
+            _ => false,
+        };
+        if !valid {
+            bad(
+                "JsonResultValue trap names no boolean field in the loaded field's class",
+                errors,
+            );
+        }
+    }
     match &instruction.kind {
         l::InstructionKind::Copy => {
             if operand_types.len() != 1 || result_type.as_ref() != operand_types.first() {
@@ -7948,6 +8092,7 @@ mod verifier_tests {
                 id: l::LocalId(0),
                 source_name: "array".to_string(),
                 ty: l::ValueType::Data(array_type.clone()),
+                storage: l::LocalStorageClass::Activation,
                 mutable: true,
                 pos: pos(),
             }],

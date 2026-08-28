@@ -197,6 +197,50 @@ fn assert_tiers_print(src: &str, expected: &str) {
 }
 
 #[test]
+fn s68_frame_class_locals_match_both_tiers() {
+    let source = include_str!("../../corpus/accept/a164-frame-class-locals.ts");
+    let expected = include_str!("../../corpus/accept/a164-frame-class-locals.expected");
+    let files = [SourceFile::new("a164-frame-class-locals.ts", source)];
+    let dev = run_jit(&files).expect("a164 dev-JIT run");
+    let ship = run_c_aot(&files).expect("a164 ship-C-AOT run");
+    assert_eq!(
+        (
+            String::from_utf8_lossy(&dev),
+            String::from_utf8_lossy(&ship)
+        ),
+        (expected.into(), expected.into()),
+        "a164 storage-class outputs differ from the golden"
+    );
+}
+
+#[test]
+fn s68_empty_template_matches_both_tiers() {
+    assert_tiers_print(
+        "export function main(): void { const value: string = ``; print(`empty=[${value}] len=${value.length}`); }\n",
+        "empty=[] len=0\n",
+    );
+}
+
+#[test]
+fn s68_float_remainder_matches_both_tiers() {
+    let source = include_str!("../../corpus/accept/a165-empty-template-float-remainder.ts");
+    let expected = include_str!("../../corpus/accept/a165-empty-template-float-remainder.expected");
+    let files = [SourceFile::new(
+        "a165-empty-template-float-remainder.ts",
+        source,
+    )];
+    let dev = run_jit(&files);
+    let ship = run_c_aot(&files);
+    assert!(
+        matches!(&dev, Ok(output) if output == expected.as_bytes())
+            && matches!(&ship, Ok(output) if output == expected.as_bytes()),
+        "a165 did not match the golden:\n  dev={}\n  ship={}",
+        render_run(&dev),
+        render_run(&ship)
+    );
+}
+
+#[test]
 fn narrow_integer_operations_wrap_at_the_declared_width_on_both_tiers() {
     assert_tiers_print(
         "export function main(): void {\n\

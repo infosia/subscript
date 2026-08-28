@@ -27,6 +27,15 @@ fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
 }
 
+#[test]
+fn s68_interpreter_saturates_float_to_integer_casts() {
+    let accept = corpus::corpus_accept();
+    let id = "a167-saturating-float-casts";
+    let module = lower_entry(&accept, id);
+    let output = interpret(&module).expect("a167 interpreter run");
+    assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
+}
+
 fn verifier_module(function: lir::Function) -> Module {
     Module {
         entry: None,
@@ -120,6 +129,105 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
         error.message
             == "function 0 (`cross_suspend`): use of value 0 in block 1 crosses suspend in block 0 without a successor parameter"
     }), "{errors:?}");
+}
+
+#[test]
+fn activation_local_rejects_a_read_after_a_dominated_suspend() {
+    let pos = subscript_compiler::Pos::new("local-storage-class.ts", 1, 1);
+    let module = verifier_module(lir::Function {
+        id: lir::FunctionId(0),
+        source_name: "bad_activation_local".to_string(),
+        kind: lir::FunctionKind::Free,
+        exported: false,
+        is_generator: false,
+        is_async: true,
+        creation_traps: Vec::new(),
+        host_entry_traps: None,
+        parameters: Vec::new(),
+        return_type: Type::Void,
+        locals: vec![lir::Local {
+            id: lir::LocalId(0),
+            source_name: "saved".to_string(),
+            ty: ValueType::Data(Type::I32),
+            mutable: true,
+            storage: lir::LocalStorageClass::Activation,
+            pos: pos.clone(),
+        }],
+        values: vec![
+            lir::Value {
+                id: lir::ValueId(0),
+                ty: ValueType::Data(Type::I32),
+                source_name: None,
+            },
+            lir::Value {
+                id: lir::ValueId(1),
+                ty: ValueType::Data(Type::I32),
+                source_name: Some("saved".to_string()),
+            },
+        ],
+        liveness: lir::Liveness::default(),
+        blocks: vec![
+            lir::BasicBlock {
+                id: BlockId(0),
+                source_name: Some("entry".to_string()),
+                parameters: Vec::new(),
+                instructions: vec![
+                    lir::Instruction {
+                        result: Some(lir::ValueId(0)),
+                        kind: InstructionKind::Zero,
+                        operands: Vec::new(),
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                    lir::Instruction {
+                        result: None,
+                        kind: InstructionKind::StoreLocal(lir::LocalId(0)),
+                        operands: vec![Operand::Value(lir::ValueId(0))],
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                ],
+                terminator: Terminator::Suspend {
+                    kind: lir::SuspendKind::Async,
+                    pos: pos.clone(),
+                    successor: BlockId(1),
+                    resume_value: None,
+                    arguments: Vec::new(),
+                    invalidates: Vec::new(),
+                    traps: Vec::new(),
+                },
+            },
+            lir::BasicBlock {
+                id: BlockId(1),
+                source_name: Some("resume".to_string()),
+                parameters: Vec::new(),
+                instructions: vec![lir::Instruction {
+                    result: Some(lir::ValueId(1)),
+                    kind: InstructionKind::LoadLocal(lir::LocalId(0)),
+                    operands: Vec::new(),
+                    invalidates: Vec::new(),
+                    traps: Vec::new(),
+                    pos: pos.clone(),
+                }],
+                terminator: Terminator::Return {
+                    value: None,
+                    pos: pos.clone(),
+                },
+            },
+        ],
+        entry: BlockId(0),
+        pos,
+    });
+    let errors = verify_module(&module).expect_err("activation local must fail");
+    assert!(
+        errors.iter().any(|error| {
+            error.message
+                == "function 0 (`bad_activation_local`): activation local 0 is read in block 1 after suspend in block 0 dominated by its definition"
+        }),
+        "{errors:?}"
+    );
 }
 
 #[test]
@@ -343,6 +451,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
                     id: lir::LocalId(0),
                     source_name: "source".to_string(),
                     ty: owner_type.clone(),
+                    storage: lir::LocalStorageClass::Activation,
                     mutable: true,
                     pos: pos.clone(),
                 },
@@ -350,6 +459,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
                     id: lir::LocalId(1),
                     source_name: "copy".to_string(),
                     ty: owner_type.clone(),
+                    storage: lir::LocalStorageClass::Activation,
                     mutable: true,
                     pos: pos.clone(),
                 },
@@ -481,9 +591,8 @@ fn item_12_reports_a_missing_foreign_array_snapshot_pair() {
         .expect("a26 has a foreign array snapshot");
     snapshot.kind = InstructionKind::Copy;
     let findings = lir_facts::dropped_facts(&hir, &lir);
-    assert!(findings
-        .iter()
-        .any(|finding| finding.contains("foreign array argument carries no data/count snapshot")));
+    assert!(findings.iter().any(|finding| finding
+        .contains("foreign array argument carries no call-time data/count snapshot")));
 }
 
 #[test]
@@ -798,8 +907,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 109;
-const DEBUG_RUNNABLE_COUNT: usize = 108;
+const RELEASE_RUNNABLE_COUNT: usize = 112;
+const DEBUG_RUNNABLE_COUNT: usize = 111;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -997,8 +1106,20 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
         "shared async-copy sites across loops, lambdas, conditionals, and pop",
     ),
     (
+        "a164-frame-class-locals",
+        "frame-class fixed-array locals across generator and async suspension",
+    ),
+    (
+        "a165-empty-template-float-remainder",
+        "empty template and IEEE floating remainder edges",
+    ),
+    (
         "a166-resume-parameter-interference",
         "resume-parameter interference under conditional lambda storage",
+    ),
+    (
+        "a167-saturating-float-casts",
+        "saturating float-to-integer casts and NaN-to-zero",
     ),
     (
         "a15-manual-lifetime",

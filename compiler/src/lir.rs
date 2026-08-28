@@ -348,8 +348,19 @@ pub struct Local {
     pub ty: ValueType,
     /// Whether source assignments are accepted.
     pub mutable: bool,
+    /// Storage lifetime selected by the HIR-to-LIR lowering.
+    pub storage: LocalStorageClass,
     /// Declaration position.
     pub pos: Pos,
+}
+
+/// The activation component that owns one local storage entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalStorageClass {
+    /// Storage exists only for one uninterrupted function activation.
+    Activation,
+    /// Storage exists in the coroutine frame through function completion.
+    Frame,
 }
 
 /// One value entity. Its definition is named separately by a parameter,
@@ -928,8 +939,8 @@ pub enum TrapKind {
     IndexRead,
     /// Bounds-checked index write.
     IndexWrite,
-    /// Failed `JsonResult.value` guard.
-    JsonResultValue,
+    /// Failed `JsonResult.value` guard, with the boolean field it reads.
+    JsonResultValue(FieldId),
     /// Failed null narrowing.
     NullNarrowing,
     /// Failed reference-class narrowing.

@@ -135,6 +135,8 @@ pub(crate) struct RtFns {
     pub f16_from_f64: FuncId,
     /// Raw IEEE binary16 bits to exact `f64` (Q23).
     pub f16_to_f64: FuncId,
+    /// IEEE floating remainder shared by both code-generation tiers.
+    pub fmod: FuncId,
     pub array_new: FuncId,
     pub array_from_bytes: FuncId,
     pub array_byte_range: FuncId,
@@ -902,6 +904,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         fmt_bool: mk("subscript_rt_fmt_bool", &[I64, I32, I32], Some(I64))?,
         f16_from_f64: mk("subscript_rt_f16_from_f64", &[F64], Some(I16))?,
         f16_to_f64: mk("subscript_rt_f16_to_f64", &[I16], Some(F64))?,
+        fmod: mk("subscript_rt_fmod", &[I64, F64, F64], Some(F64))?,
         array_new: mk("subscript_rt_array_new", &[I64, I64, I32], Some(I64))?,
         array_from_bytes: mk(
             "subscript_rt_array_from_bytes",
@@ -1245,14 +1248,22 @@ pub(crate) fn lower_module_with<M: Module>(
             import.module
         ));
     }
+    let lirm = crate::lir::lower_module(hirm)
+        .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
+    lower_lir_module_with(module, &lirm, opts)
+}
+
+fn lower_lir_module_with<M: Module>(
+    module: &mut M,
+    lirm: &lir::Module,
+    opts: LowerOptions,
+) -> Result<Lowered, String> {
     if module.isa().pointer_type() != types::I64 {
         return Err(internal(
             "only 64-bit targets are supported: the runtime ABI assumes 8-byte handles",
         ));
     }
-    let lirm = crate::lir::lower_module(hirm)
-        .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
-    crate::lir::verify_module(&lirm).map_err(|errors| {
+    crate::lir::verify_module(lirm).map_err(|errors| {
         internal(format!(
             "LIR verification failed:\n{}",
             errors
@@ -1264,12 +1275,12 @@ pub(crate) fn lower_module_with<M: Module>(
     })?;
     let call_conv = module.isa().default_call_conv();
     let rt = declare_rt(module, call_conv)?;
-    let layouts = Layouts::build_lir(&lirm)?;
+    let layouts = Layouts::build_lir(lirm)?;
     let context_globals = opts.reload || !lirm.worker_entries.is_empty();
 
     let mut ml = ModLower {
         module,
-        lir: &lirm,
+        lir: lirm,
         layouts,
         rt,
         opts,
@@ -1677,13 +1688,13 @@ pub(crate) fn lower_module_with<M: Module>(
 #[cfg(test)]
 mod tests {
     use super::{
-        checked_layout_add, checked_layout_mul, dev_flags, lower_module_with, round_up_layout,
-        LowerOptions,
+        checked_layout_add, checked_layout_mul, dev_flags, lower_lir_module_with,
+        lower_module_with, round_up_layout, LowerOptions,
     };
     use cranelift_codegen::settings::ProbestackStrategy;
     use cranelift_jit::{JITBuilder, JITModule};
     use cranelift_module::default_libcall_names;
-    use subscript_compiler::{check_program_with, CheckOptions, SourceFile};
+    use subscript_compiler::{check_program, check_program_with, CheckOptions, SourceFile};
 
     #[test]
     fn dev_cranelift_flags_use_inline_stack_probes() {
@@ -1727,5 +1738,44 @@ mod tests {
             error,
             "cannot lower discovery HIR: poisoned import `./p.typegpu`"
         );
+    }
+
+    #[test]
+    fn cranelift_json_guard_reads_the_lir_field_id() {
+        let hir = check_program(&[SourceFile::new(
+            "json-field-id.ts",
+            "export function main(): void {\n  const result: JsonResult<i32> = JSON.parse<i32>(\"1\");\n  print(`${result.value}`);\n}\n",
+        )])
+        .expect("JSON field-id source checks");
+        let mut lir = crate::lir::lower_module(&hir).expect("JSON field-id source lowers");
+        let ok_field = lir
+            .functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .flat_map(|block| &block.instructions)
+            .flat_map(|instruction| &instruction.traps)
+            .find_map(|trap| match trap.kind {
+                subscript_compiler::lir::TrapKind::JsonResultValue(field) => Some(field),
+                _ => None,
+            })
+            .expect("JSON value load names its ok field");
+        lir.classes
+            .iter_mut()
+            .flat_map(|class| &mut class.fields)
+            .find(|field| field.id == ok_field)
+            .expect("JSON ok field exists")
+            .source_name = "not_ok".to_string();
+
+        let isa = cranelift_native::builder()
+            .expect("host ISA")
+            .finish(dev_flags().expect("dev flags"))
+            .expect("ISA flags");
+        let builder = JITBuilder::with_isa(isa, default_libcall_names());
+        let mut module = JITModule::new(builder);
+        lower_lir_module_with(&mut module, &lir, LowerOptions::default())
+            .expect("Cranelift locates the guard field by LIR id");
+
+        // SAFETY: no finalized function address escapes this test.
+        unsafe { module.free_memory() };
     }
 }

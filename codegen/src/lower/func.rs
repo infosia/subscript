@@ -20,6 +20,10 @@ use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
 use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
+use crate::lir_types::{
+    array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
+    boundary_class_needs_scratch, boundary_class_requires_build, is_userdata_slot,
+};
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
 };
@@ -368,6 +372,7 @@ struct SuspendPlan {
 #[derive(Debug, Clone)]
 struct CoroutinePlan {
     parameter_slots: Vec<FrameSlot>,
+    local_slots: Vec<Option<FrameSlot>>,
     suspends: HashMap<l::BlockId, SuspendPlan>,
     stable_addresses: HashMap<l::ValueId, u32>,
     closure_environments: HashMap<l::ValueId, u32>,
@@ -662,91 +667,6 @@ fn shift_mask(ty: &Type) -> Result<i64, String> {
     })
 }
 
-fn lir_class_is_value(module: &l::Module, class: ClassId) -> bool {
-    module
-        .classes
-        .get(class.0)
-        .is_some_and(|definition| definition.is_value)
-}
-
-fn array_element_kind(module: &l::Module, ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::Bool
-        | Type::U8
-        | Type::U16
-        | Type::U32
-        | Type::U64
-        | Type::Object
-        | Type::Array(_)
-        | Type::Map(..)
-        | Type::Set(_) => 0,
-        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Enum(_) | Type::Date => 5,
-        Type::Class(class) if !lir_class_is_value(module, *class) => 0,
-        Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => 0,
-        Type::F32 => 1,
-        Type::F64 => 2,
-        Type::Str => 3,
-        Type::F16 => 4,
-        other => {
-            return Err(internal(format!(
-                "array element type {other:?} has no runtime kind"
-            )))
-        }
-    })
-}
-
-fn array_format_kind(ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::I32 | Type::Enum(_) => 0,
-        Type::U32 => 1,
-        Type::I64 => 2,
-        Type::U64 => 3,
-        Type::F32 => 4,
-        Type::F64 => 5,
-        Type::Bool => 6,
-        Type::Str => 7,
-        Type::I8 => 8,
-        Type::U8 => 9,
-        Type::I16 => 10,
-        Type::U16 => 11,
-        Type::F16 => 12,
-        other => {
-            return Err(internal(format!(
-                "array element {other:?} is not formattable"
-            )))
-        }
-    })
-}
-
-fn association_key_kind(module: &l::Module, ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::I8
-        | Type::U8
-        | Type::I16
-        | Type::U16
-        | Type::I32
-        | Type::U32
-        | Type::I64
-        | Type::U64
-        | Type::Bool
-        | Type::Enum(_)
-        | Type::Date => 0,
-        Type::F32 => 1,
-        Type::F64 => 2,
-        Type::Str => 3,
-        Type::Class(class) if !lir_class_is_value(module, *class) => 4,
-        other => {
-            return Err(internal(format!(
-                "Map/Set key type {other:?} has no runtime kind"
-            )))
-        }
-    })
-}
-
-fn is_userdata_slot(ty: &Type) -> bool {
-    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
-}
-
 fn lir_padding_ranges(
     module: &l::Module,
     layouts: &Layouts,
@@ -968,6 +888,20 @@ fn plan_coroutine(
         parameter_slots.push(FrameSlot { offset, ty });
         offset = checked_layout_add(offset, size.max(1), "coroutine parameter layout")?;
     }
+    let mut local_slots = Vec::with_capacity(function.locals.len());
+    for local in &function.locals {
+        if local.storage == l::LocalStorageClass::Frame {
+            let (size, align) = value_size_align(layouts, &local.ty)?;
+            offset = round_up_layout(offset, align.max(1), "coroutine local layout")?;
+            local_slots.push(Some(FrameSlot {
+                offset,
+                ty: local.ty.clone(),
+            }));
+            offset = checked_layout_add(offset, size.max(1), "coroutine local layout")?;
+        } else {
+            local_slots.push(None);
+        }
+    }
     let mut suspends = HashMap::new();
     let mut state = 1i64;
     for block in &function.blocks {
@@ -1074,6 +1008,7 @@ fn plan_coroutine(
     let size = round_up_layout(offset, 8, "final coroutine layout")?;
     Ok(CoroutinePlan {
         parameter_slots,
+        local_slots,
         suspends,
         stable_addresses,
         closure_environments,
@@ -1092,6 +1027,7 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     coroutine: Option<CoroutineKind>,
     values: Vec<Option<RV>>,
     locals: Vec<LocalSlot>,
+    frame_local_slots: Vec<Option<FrameSlot>>,
     blocks: Vec<Block>,
     unwind: Option<Block>,
     shadow: Option<Value>,
@@ -1652,7 +1588,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     return Err(internal("index trap received no index/length payload"))
                 }
             },
-            l::TrapKind::JsonResultValue => {
+            l::TrapKind::JsonResultValue(_) => {
                 let condition =
                     value.ok_or_else(|| internal("JSON result trap has no condition"))?;
                 self.guard(condition, TrapKind::JsonResultValue, &trap.pos)?;
@@ -1860,23 +1796,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         base: RV,
         traps: &[l::Trap],
     ) -> Result<(), String> {
-        if !traps
-            .iter()
-            .any(|trap| trap.kind == l::TrapKind::JsonResultValue)
-        {
+        let mut json_traps = traps.iter().filter_map(|trap| match trap.kind {
+            l::TrapKind::JsonResultValue(ok_field) => Some((trap, ok_field)),
+            _ => None,
+        });
+        let Some((first_trap, ok_field)) = json_traps.next() else {
             return Ok(());
-        }
+        };
         let l::FieldRef::Class(field) = field else {
             return Err(internal(
                 "JSON result trap is attached to a synthetic field",
             ));
         };
-        let (class, _, value_field) = self.field_definition(field)?;
-        if value_field.source_name != "value" {
-            return Err(internal(
-                "JSON result trap is attached to a non-value field",
-            ));
-        }
+        let (class, _, _) = self.field_definition(field)?;
         let definition = self
             .ml
             .lir
@@ -1887,8 +1819,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let ok_index = definition
             .fields
             .iter()
-            .position(|field| field.source_name == "ok" && field.ty == Type::Bool)
-            .ok_or_else(|| internal("JSON result is missing its boolean ok field"))?;
+            .position(|field| field.id == ok_field && field.ty == Type::Bool)
+            .ok_or_else(|| internal("JSON result guard field id is invalid"))?;
+        if json_traps.any(|(_, candidate)| candidate != ok_field) {
+            return Err(internal("JSON result traps disagree on the guard field id"));
+        }
         if definition.is_value {
             return Err(internal("JSON result unexpectedly has value-class layout"));
         }
@@ -1902,12 +1837,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let pointer = self.expect_scalar(base)?;
         let ok = self.load_data(&Type::Bool, pointer, ok_offset as i32)?;
         let ok = self.expect_scalar(ok)?;
-        for trap in traps
-            .iter()
-            .filter(|trap| trap.kind == l::TrapKind::JsonResultValue)
-        {
-            self.emit_trap(trap, TrapOperand::Condition(ok))?;
-        }
+        self.emit_trap(first_trap, TrapOperand::Condition(ok))?;
         Ok(())
     }
 
@@ -2166,7 +2096,22 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 if op == l::BinaryOp::Div {
                     self.builder.ins().fdiv(left, right)
                 } else {
-                    return Err(internal("floating remainder is not supported"));
+                    let (left, right) = if operand_ty == &Type::F32 {
+                        (
+                            self.builder.ins().fpromote(types::F64, left),
+                            self.builder.ins().fpromote(types::F64, right),
+                        )
+                    } else {
+                        (left, right)
+                    };
+                    let remainder = self
+                        .call_runtime(self.ml.rt.fmod, &[self.ctx, left, right], false)?
+                        .ok_or_else(|| internal("floating remainder has no runtime result"))?;
+                    if operand_ty == &Type::F32 {
+                        self.builder.ins().fdemote(types::F32, remainder)
+                    } else {
+                        remainder
+                    }
                 }
             }
             l::BinaryOp::Div | l::BinaryOp::Rem => {
@@ -5144,8 +5089,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let data = match &**element {
                     Type::Class(class)
                         if self.is_value_class(element)
-                            && self
-                                .boundary_class_requires_build(class.0, &mut HashSet::new())? =>
+                            && boundary_class_requires_build(self.ml.lir, *class)? =>
                     {
                         self.marshal_boundary_array(
                             class.0,
@@ -5200,7 +5144,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let class = self
                     .boundary_pointer_class(ty)
                     .ok_or_else(|| internal("boundary pointer class is missing"))?;
-                if self.boundary_class_needs_scratch(class, &mut HashSet::new())? {
+                if boundary_class_needs_scratch(self.ml.lir, ClassId(class))? {
                     let (pointer, writeback) =
                         self.marshal_boundary_pointer(class, source, scratch_mark, pos)?;
                     self.push_foreign_argument(signature, arguments, types::I64, pointer);
@@ -5223,124 +5167,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 ))),
             },
         }
-    }
-
-    fn boundary_class_needs_scratch(
-        &self,
-        class: usize,
-        visiting: &mut HashSet<usize>,
-    ) -> Result<bool, String> {
-        if !visiting.insert(class) {
-            return Ok(false);
-        }
-        let definition = self
-            .ml
-            .lir
-            .classes
-            .get(class)
-            .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
-        if !definition.is_boundary {
-            visiting.remove(&class);
-            return Ok(false);
-        }
-        for field in &definition.fields {
-            let needs = match &field.ty {
-                Type::Str | Type::Array(_) => true,
-                Type::Class(inner) if self.is_value_class(&field.ty) => {
-                    self.boundary_class_needs_scratch(inner.0, visiting)?
-                }
-                Type::Nullable(inner) => match &**inner {
-                    Type::Class(inner) if self.is_value_class(&Type::Class(*inner)) => {
-                        self.boundary_class_needs_scratch(inner.0, visiting)?
-                    }
-                    _ => false,
-                },
-                _ => false,
-            };
-            if needs {
-                visiting.remove(&class);
-                return Ok(true);
-            }
-        }
-        visiting.remove(&class);
-        Ok(false)
-    }
-
-    fn boundary_class_requires_build(
-        &self,
-        class: usize,
-        visiting: &mut HashSet<usize>,
-    ) -> Result<bool, String> {
-        if self.boundary_class_needs_scratch(class, &mut HashSet::new())? {
-            return Ok(true);
-        }
-        if !visiting.insert(class) {
-            return Ok(false);
-        }
-        let definition = self
-            .ml
-            .lir
-            .classes
-            .get(class)
-            .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
-        for field in &definition.fields {
-            let needs = match &field.ty {
-                Type::Nullable(inner) if self.is_value_class(inner) => true,
-                Type::Class(inner) if self.is_value_class(&field.ty) => {
-                    self.boundary_class_requires_build(inner.0, visiting)?
-                }
-                Type::Array(inner) => match &**inner {
-                    Type::Class(inner) if self.is_value_class(&Type::Class(*inner)) => {
-                        self.boundary_class_requires_build(inner.0, visiting)?
-                    }
-                    _ => false,
-                },
-                _ => false,
-            };
-            if needs {
-                visiting.remove(&class);
-                return Ok(true);
-            }
-        }
-        visiting.remove(&class);
-        Ok(false)
-    }
-
-    fn boundary_class_contains_pointer(
-        &self,
-        class: usize,
-        visiting: &mut HashSet<usize>,
-    ) -> Result<bool, String> {
-        if !visiting.insert(class) {
-            return Ok(false);
-        }
-        let definition = self
-            .ml
-            .lir
-            .classes
-            .get(class)
-            .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
-        for field in &definition.fields {
-            let contains = match &field.ty {
-                Type::Nullable(inner) if self.is_value_class(inner) => true,
-                Type::Class(inner) if self.is_value_class(&field.ty) => {
-                    self.boundary_class_contains_pointer(inner.0, visiting)?
-                }
-                Type::Array(inner) => match &**inner {
-                    Type::Class(inner) if self.is_value_class(&Type::Class(*inner)) => {
-                        self.boundary_class_contains_pointer(inner.0, visiting)?
-                    }
-                    _ => false,
-                },
-                _ => false,
-            };
-            if contains {
-                visiting.remove(&class);
-                return Ok(true);
-            }
-        }
-        visiting.remove(&class);
-        Ok(false)
     }
 
     fn stabilize_boundary_return_value(
@@ -5604,10 +5430,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     let data = match &**element {
                         Type::Class(element_class)
                             if self.is_value_class(element)
-                                && self.boundary_class_requires_build(
-                                    element_class.0,
-                                    &mut HashSet::new(),
-                                )? =>
+                                && boundary_class_requires_build(self.ml.lir, *element_class)? =>
                         {
                             self.marshal_boundary_array(
                                 element_class.0,
@@ -5678,7 +5501,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 Type::Class(inner) if self.is_value_class(&field.ty) => {
                     let source = self.address_offset(source, i64::from(language_offset));
                     let destination = self.address_offset(destination, i64::from(c_offset));
-                    if self.boundary_class_requires_build(inner.0, &mut HashSet::new())? {
+                    if boundary_class_requires_build(self.ml.lir, *inner)? {
                         self.populate_boundary_value(
                             inner.0,
                             source,
@@ -5815,7 +5638,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 Type::Array(_) | Type::Nullable(_) | Type::Func(_) => {}
                 Type::Class(inner) if self.is_value_class(&field.ty) => {
-                    if !self.boundary_class_requires_build(inner.0, &mut HashSet::new())? {
+                    if !boundary_class_requires_build(self.ml.lir, *inner)? {
                         let layout = self.ml.layouts.class(inner.0)?.clone();
                         let source = self.address_offset(writeback.scratch, i64::from(c_offset));
                         let destination =
@@ -6505,7 +6328,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.copy_bytes(destination, source, size, align);
                 if let Type::Class(class) = &self.function.return_type {
                     if self.is_value_class(&Type::Class(*class))
-                        && self.boundary_class_contains_pointer(class.0, &mut HashSet::new())?
+                        && boundary_class_contains_pointer(self.ml.lir, *class)?
                     {
                         self.stabilize_boundary_return_value(class.0, destination, pos)?;
                     }
@@ -7120,6 +6943,10 @@ fn initialize_storage<M: Module>(body: &mut Body<'_, '_, '_, '_, M>) -> Result<(
     let locals = body.function.locals.clone();
     let mut local_offsets = Vec::with_capacity(locals.len());
     for local in &locals {
+        if local.storage == l::LocalStorageClass::Frame {
+            local_offsets.push(None);
+            continue;
+        }
         let managed = match &local.ty {
             l::ValueType::Data(ty) => managed_words(&body.ml.layouts, ty)?,
             l::ValueType::Iterator(_) => 4,
@@ -7163,8 +6990,18 @@ fn initialize_storage<M: Module>(body: &mut Body<'_, '_, '_, '_, M>) -> Result<(
         body.call_runtime(body.ml.rt.shadow_push, &[body.ctx, shadow, count], false)?;
         body.shadow = Some(shadow);
     }
-    for (local, root) in locals.iter().zip(local_offsets) {
-        let address = if let Some(root) = root {
+    for (index, (local, root)) in locals.iter().zip(local_offsets).enumerate() {
+        let address = if local.storage == l::LocalStorageClass::Frame {
+            let frame = body
+                .frame
+                .ok_or_else(|| internal("frame-class local has no coroutine frame"))?;
+            let slot = body
+                .frame_local_slots
+                .get(index)
+                .and_then(Option::as_ref)
+                .ok_or_else(|| internal("frame-class local has no frame layout slot"))?;
+            body.address_offset(frame, i64::from(slot.offset))
+        } else if let Some(root) = root {
             let shadow = body
                 .shadow
                 .ok_or_else(|| internal("rooted local has no shadow"))?;
@@ -7412,6 +7249,7 @@ pub(crate) fn define_function<M: Module>(
             coroutine: None,
             values: vec![None; function.values.len()],
             locals: Vec::with_capacity(function.locals.len()),
+            frame_local_slots: vec![None; function.locals.len()],
             blocks,
             unwind: None,
             shadow: None,
@@ -7575,6 +7413,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 coroutine: None,
                 values: vec![None; function.values.len()],
                 locals: Vec::new(),
+                frame_local_slots: vec![None; function.locals.len()],
                 blocks: Vec::new(),
                 unwind: None,
                 shadow: None,
@@ -7705,6 +7544,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 coroutine: coroutine_kind(function),
                 values: vec![None; function.values.len()],
                 locals: Vec::with_capacity(function.locals.len()),
+                frame_local_slots: plan.local_slots.clone(),
                 blocks,
                 unwind: None,
                 shadow: None,

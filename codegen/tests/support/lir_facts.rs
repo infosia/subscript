@@ -64,7 +64,7 @@ fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings:
                     || count_type != Some(&l::ValueType::Data(subscript_compiler::Type::I32))
                 {
                     findings.push(format!(
-                        "{}: foreign array pointer/count snapshots do not form one evaluation-point pair",
+                        "{}: foreign array pointer/count snapshots do not form one call-time pair",
                         instruction.pos
                     ));
                     continue;
@@ -79,7 +79,7 @@ fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings:
                     .or_default() += 1;
             }
 
-            for instruction in &block.instructions {
+            for (call_index, instruction) in block.instructions.iter().enumerate() {
                 let l::InstructionKind::Call(target) = &instruction.kind else {
                     continue;
                 };
@@ -94,6 +94,7 @@ fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings:
                     continue;
                 };
                 let mut cursor = 0usize;
+                let mut array_operands = Vec::new();
                 for parameter in &declaration.parameters {
                     if let subscript_compiler::Type::Array(element) = &parameter.ty {
                         let expected_data = l::ValueType::Address(l::AddressType {
@@ -116,10 +117,35 @@ fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings:
                                 instruction.pos, parameter.source_name
                             ));
                         }
+                        array_operands.push((
+                            instruction.operands.get(cursor),
+                            instruction.operands.get(cursor + 1),
+                        ));
                         cursor += 2;
                     } else {
                         cursor += 1;
                     }
+                }
+                let snapshot_instruction_count = array_operands.len() * 2;
+                let trailing = call_index
+                    .checked_sub(snapshot_instruction_count)
+                    .and_then(|start| block.instructions.get(start..call_index));
+                let ordered = trailing.is_some_and(|trailing| {
+                    trailing.chunks_exact(2).zip(&array_operands).all(
+                        |(pair, (data_operand, count_operand))| {
+                            pair[0].kind == l::InstructionKind::ForeignArrayData
+                                && pair[1].kind == l::InstructionKind::Length
+                                && pair[0].operands == pair[1].operands
+                                && pair[0].result.map(l::Operand::Value).as_ref() == *data_operand
+                                && pair[1].result.map(l::Operand::Value).as_ref() == *count_operand
+                        },
+                    )
+                });
+                if !array_operands.is_empty() && !ordered {
+                    findings.push(format!(
+                        "{}: foreign array data/count operands are not read after all arguments and immediately before the call",
+                        instruction.pos
+                    ));
                 }
             }
         }
@@ -146,7 +172,7 @@ fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings:
             };
             let Some(argument) = args.get(index).or(parameter.default.as_ref()) else {
                 findings.push(format!(
-                    "{}: foreign array parameter `{}` has no argument evaluation point",
+                    "{}: foreign array parameter `{}` has no argument",
                     expr.pos, parameter.name
                 ));
                 continue;
@@ -160,7 +186,7 @@ fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings:
             match actual.get_mut(&key) {
                 Some(count) if *count != 0 => *count -= 1,
                 _ => findings.push(format!(
-                    "{}: foreign array argument carries no data/count snapshot at its evaluation point",
+                    "{}: foreign array argument carries no call-time data/count snapshot",
                     argument.pos
                 )),
             }
@@ -981,8 +1007,10 @@ fn collect_trap_expression(
     let mut nodes = Vec::new();
     walk_expr(expression, &mut |node| nodes.push(node));
     for node in nodes {
-        for site in node.trap_sites(hir) {
-            *expected.entry(hir_trap_key(&site)).or_default() += 1;
+        if !matches!(&node.kind, hir::ExprKind::Template(parts) if parts.is_empty()) {
+            for site in node.trap_sites(hir) {
+                *expected.entry(hir_trap_key(&site)).or_default() += 1;
+            }
         }
         match &node.kind {
             hir::ExprKind::DescriptorLit { class, fields } => {
@@ -1254,7 +1282,7 @@ fn lir_trap_key(trap: &l::Trap) -> TrapKey {
         l::TrapKind::DivisionByZero => "DivisionByZero".to_string(),
         l::TrapKind::IndexRead => "IndexRead".to_string(),
         l::TrapKind::IndexWrite => "IndexWrite".to_string(),
-        l::TrapKind::JsonResultValue => "JsonResultValue".to_string(),
+        l::TrapKind::JsonResultValue(_) => "JsonResultValue".to_string(),
         l::TrapKind::NullNarrowing => "NullNarrowing".to_string(),
         l::TrapKind::ClassMismatch(class) => format!("ClassMismatch({})", class.0),
         l::TrapKind::DevOnlyLifetime => "DevOnlyLifetime".to_string(),

@@ -2792,6 +2792,12 @@ pub unsafe extern "C" fn subscript_rt_json_parse_object_get(
 // same Rust implementation. The predicates are pure; parsing and
 // formatting entries carry a position for allocation/range traps.
 
+/// IEEE floating remainder used by both code-generation tiers.
+#[no_mangle]
+pub extern "C" fn subscript_rt_fmod(_ctx: *mut Context, left: f64, right: f64) -> f64 {
+    left % right
+}
+
 /// `Number.isNaN(value)`.
 ///
 /// # Safety
@@ -5395,6 +5401,18 @@ mod tests {
             subscript_rt_f16_to_f64(subscript_rt_f16_from_f64(-0.0)).to_bits(),
             (-0.0f64).to_bits()
         );
+    }
+
+    #[test]
+    fn ffi_fmod_preserves_ieee_remainder_edges() {
+        let ctx = std::ptr::null_mut();
+        assert_eq!(subscript_rt_fmod(ctx, 5.5, 2.0), 1.5);
+        assert_eq!(subscript_rt_fmod(ctx, -5.5, 2.0), -1.5);
+        assert_eq!(subscript_rt_fmod(ctx, 5.5, -2.0), 1.5);
+        assert!(subscript_rt_fmod(ctx, 5.5, 0.0).is_nan());
+        assert!(subscript_rt_fmod(ctx, f64::INFINITY, 2.0).is_nan());
+        assert_eq!(subscript_rt_fmod(ctx, 2.0, f64::INFINITY), 2.0);
+        assert!(subscript_rt_fmod(ctx, f64::NAN, 2.0).is_nan());
     }
 
     #[test]

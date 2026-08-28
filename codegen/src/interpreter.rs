@@ -221,11 +221,24 @@ struct Frame {
     function: l::FunctionId,
     block: l::BlockId,
     values: Vec<Option<Value>>,
-    locals: Vec<Slot>,
+    locals: Vec<InterpreterLocal>,
     /// A value supplied by the completed child operation.
     resume: Option<Value>,
     /// The exact successor parameter that receives `resume`.
     resume_target: Option<l::ValueId>,
+}
+
+struct InterpreterLocal {
+    storage: l::LocalStorageClass,
+    slot: Slot,
+}
+
+impl InterpreterLocal {
+    fn slot(&self) -> &Slot {
+        match self.storage {
+            l::LocalStorageClass::Activation | l::LocalStorageClass::Frame => &self.slot,
+        }
+    }
 }
 
 enum Flow {
@@ -378,14 +391,15 @@ impl<'m> Interpreter<'m> {
             ));
         }
         let mut values = vec![None; function.values.len()];
-        let locals: Vec<Slot> = function
+        let locals: Vec<InterpreterLocal> = function
             .locals
             .iter()
-            .map(|local| {
-                Rc::new(RefCell::new(match &local.ty {
+            .map(|local| InterpreterLocal {
+                storage: local.storage,
+                slot: Rc::new(RefCell::new(match &local.ty {
                     l::ValueType::Data(ty) => self.zero(ty),
                     l::ValueType::Address(_) | l::ValueType::Iterator(_) => Value::Void,
-                }))
+                })),
             })
             .collect();
         for (parameter, argument) in function.parameters.iter().zip(arguments) {
@@ -402,7 +416,7 @@ impl<'m> Interpreter<'m> {
                         format!("parameter storage local {} is missing", storage.0),
                     )
                 })?;
-                *slot.borrow_mut() = argument;
+                *slot.slot().borrow_mut() = argument;
             }
         }
         let frame = Frame {
@@ -833,6 +847,7 @@ impl<'m> Interpreter<'m> {
                             format!("local {} is missing", local.0),
                         )
                     })?
+                    .slot()
                     .borrow()
                     .clone(),
             ),
@@ -849,6 +864,7 @@ impl<'m> Interpreter<'m> {
                             format!("local {} is missing", local.0),
                         )
                     })?
+                    .slot()
                     .borrow_mut() = value.clone();
                 None
             }
@@ -863,6 +879,7 @@ impl<'m> Interpreter<'m> {
                                 format!("local {} is missing", local.0),
                             )
                         })?
+                        .slot()
                         .clone(),
                 ),
                 pointee: self.address_pointee(result_ty, instruction)?,
@@ -1408,8 +1425,8 @@ impl<'m> Interpreter<'m> {
                     let length = self.indexed_length(function, instruction, operands)?;
                     index < 0 || index >= length
                 }
-                (l::TrapKind::JsonResultValue, TrapPhase::Before) => {
-                    !self.json_result_ok(instruction, operands)?
+                (l::TrapKind::JsonResultValue(ok_field), TrapPhase::Before) => {
+                    !self.json_result_ok(instruction, operands, *ok_field)?
                 }
                 (l::TrapKind::NullNarrowing, TrapPhase::Before) => {
                     operands.first().is_some_and(|value| match value {
@@ -1463,7 +1480,7 @@ impl<'m> Interpreter<'m> {
                     | l::TrapKind::DivisionByZero
                     | l::TrapKind::IndexRead
                     | l::TrapKind::IndexWrite
-                    | l::TrapKind::JsonResultValue
+                    | l::TrapKind::JsonResultValue(_)
                     | l::TrapKind::NullNarrowing
                     | l::TrapKind::ClassMismatch(_)
                     | l::TrapKind::DevOnlyLifetime
@@ -1525,6 +1542,7 @@ impl<'m> Interpreter<'m> {
         &self,
         instruction: &l::Instruction,
         operands: &[Value],
+        ok_field: l::FieldId,
     ) -> Result<bool, InterpretError> {
         let l::InstructionKind::LoadField(l::FieldRef::Class(field)) = instruction.kind else {
             return Err(self.invalid(
@@ -1548,25 +1566,14 @@ impl<'m> Interpreter<'m> {
                     format!("JsonResult value field {} is missing", field.0),
                 )
             })?;
-        let value_field = definition
-            .fields
-            .iter()
-            .find(|candidate| candidate.id == field)
-            .expect("class search found the value field");
-        if value_field.source_name != "value" {
-            return Err(self.invalid(
-                Some(instruction.pos.clone()),
-                "JsonResultValue is attached to a non-value field",
-            ));
-        }
         let ok_field = definition
             .fields
             .iter()
-            .find(|candidate| candidate.source_name == "ok" && candidate.ty == Type::Bool)
+            .find(|candidate| candidate.id == ok_field && candidate.ty == Type::Bool)
             .ok_or_else(|| {
                 self.invalid(
                     Some(instruction.pos.clone()),
-                    "JsonResult class has no boolean ok field",
+                    "JsonResultValue names no boolean guard field in the loaded field's class",
                 )
             })?;
         let (offset, _) = self
@@ -1630,6 +1637,7 @@ impl<'m> Interpreter<'m> {
             l::TrapKind::IndexRead | l::TrapKind::IndexWrite => {
                 RuntimeTrapKind::IndexOutOfBounds.rule().to_string()
             }
+            l::TrapKind::JsonResultValue(_) => "JsonResultValue".to_string(),
             _ => format!("{:?}", trap.kind),
         };
         InterpretError::Trap {
@@ -4464,7 +4472,10 @@ impl<'m> Interpreter<'m> {
                     l::BinaryOp::Sub => a - b,
                     l::BinaryOp::Mul => a * b,
                     l::BinaryOp::Div => a / b,
-                    l::BinaryOp::Rem => a % b,
+                    l::BinaryOp::Rem => {
+                        ffi::subscript_rt_fmod(std::ptr::null_mut(), f64::from(a), f64::from(b))
+                            as f32
+                    }
                     _ => {
                         return Err(self.invalid(
                             Some(instruction.pos.clone()),
@@ -4481,7 +4492,7 @@ impl<'m> Interpreter<'m> {
                     l::BinaryOp::Sub => a - b,
                     l::BinaryOp::Mul => a * b,
                     l::BinaryOp::Div => a / b,
-                    l::BinaryOp::Rem => a % b,
+                    l::BinaryOp::Rem => ffi::subscript_rt_fmod(std::ptr::null_mut(), a, b),
                     _ => {
                         return Err(self.invalid(
                             Some(instruction.pos.clone()),
@@ -4580,6 +4591,44 @@ impl<'m> Interpreter<'m> {
         }
     }
 
+    fn saturating_float_integer_result(
+        &self,
+        ty: &Type,
+        value: f64,
+    ) -> Result<Value, InterpretError> {
+        let bits =
+            integer_bits(ty).ok_or_else(|| self.invalid(None, format!("{ty:?} is not integer")))?;
+        if value.is_nan() {
+            return Ok(if is_signed(ty) {
+                Value::I(0)
+            } else {
+                Value::U(0)
+            });
+        }
+        if is_signed(ty) {
+            let minimum = -(1_i128 << (bits - 1));
+            let maximum = (1_i128 << (bits - 1)) - 1;
+            let value = if value <= minimum as f64 {
+                minimum
+            } else if value >= maximum as f64 {
+                maximum
+            } else {
+                value.trunc() as i128
+            };
+            Ok(Value::I(value as i64))
+        } else {
+            let maximum = (1_u128 << bits) - 1;
+            let value = if value <= 0.0 {
+                0
+            } else if value >= maximum as f64 {
+                maximum
+            } else {
+                value.trunc() as u128
+            };
+            Ok(Value::U(value as u64))
+        }
+    }
+
     fn convert(
         &self,
         value: &Value,
@@ -4602,11 +4651,18 @@ impl<'m> Interpreter<'m> {
             }),
             Type::Bool => Value::Bool(value.as_bool()?),
             ty if integer_bits(ty).is_some() => {
-                let raw = match value {
-                    Value::F32(v) => *v as i128 as u64,
-                    Value::F64(v) => *v as i128 as u64,
-                    _ => value.as_u64()?,
+                let float = match (source_ty, value) {
+                    (Some(Type::F16), Value::U(value)) => {
+                        Some(ffi::subscript_rt_f16_to_f64(*value as u16))
+                    }
+                    (Some(Type::F32), Value::F32(value)) => Some(f64::from(*value)),
+                    (Some(Type::F64), Value::F64(value)) => Some(*value),
+                    _ => None,
                 };
+                if let Some(value) = float {
+                    return self.saturating_float_integer_result(ty, value);
+                }
+                let raw = value.as_u64()?;
                 self.integer_result(ty, raw)?
             }
             Type::Nullable(_) | Type::Object | Type::Class(_) => value.clone(),
@@ -5161,7 +5217,7 @@ fn runtime_trap_matches_lir(runtime: RuntimeTrapKind, lir: &l::TrapKind) -> bool
         | RuntimeTrapKind::CallbackUserdataFreed => *lir == l::TrapKind::DevOnlyLifetime,
         RuntimeTrapKind::DivisionByZero => *lir == l::TrapKind::DivisionByZero,
         RuntimeTrapKind::StaleCoroutine => *lir == l::TrapKind::DevReloadOnlyStaleCoroutine,
-        RuntimeTrapKind::JsonResultValue => *lir == l::TrapKind::JsonResultValue,
+        RuntimeTrapKind::JsonResultValue => matches!(lir, l::TrapKind::JsonResultValue(_)),
         RuntimeTrapKind::WireEnumUnknownValue => matches!(lir, l::TrapKind::WireEnumValue(_)),
         RuntimeTrapKind::EmptyPop
         | RuntimeTrapKind::StringSlice

@@ -33,6 +33,7 @@ pub mod interpreter;
 mod jit;
 mod layout;
 pub mod lir;
+mod lir_types;
 mod lower;
 mod native;
 mod reload;

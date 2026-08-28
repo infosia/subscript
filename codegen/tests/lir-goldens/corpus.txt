@@ -8658,6 +8658,422 @@ fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %8: Data(Str) = Template([Operand(0), Text(","), Operand(1)])(%9, %7) traps=[Trap { kind: Allocation, pos: Pos { file: "a157-await-loop-liveness.ts", line: 17, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a157-await-loop-liveness.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a157-await-loop-liveness.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a157-await-loop-liveness.ts", line: 17, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a157-await-loop-liveness.ts", line: 17, col: 9 } }] @ a157-await-loop-liveness.ts:17:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a157-await-loop-liveness.ts:17:3
     -> Return { value: None, pos: Pos { file: "a157-await-loop-liveness.ts", line: 10, col: 23 } }
+===== a164-frame-class-locals =====
+module initializer=None
+class c0 "Cell" value=true descriptor=false boundary=false align=None @ a164-frame-class-locals.ts:8:7
+  field d0 "value": I32 defaulted=false absence=false foreign=None @ a164-frame-class-locals.ts:9:3
+  method m0 "constructor" -> f0
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a164-frame-class-locals.ts:10:3
+  param %0 "this": Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) kind=Receiver storage=None @ a164-frame-class-locals.ts:10:3
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a164-frame-class-locals.ts:10:15
+  value %0: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=Some("this")
+  value %1: Data(I32) name=Some("value")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) @ a164-frame-class-locals.ts:10:34
+    StoreAddress(%2, %1) @ a164-frame-class-locals.ts:10:34
+    -> Return { value: None, pos: Pos { file: "a164-frame-class-locals.ts", line: 10, col: 3 } }
+fn f1 "generatorValues" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a164-frame-class-locals.ts:13:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 13, col: 11 } }]
+  local l0 "integers": Data(FixedArray(I32, 2)) mutable=false @ a164-frame-class-locals.ts:14:9
+  local l1 "cells": Data(FixedArray(Class(ClassId(0)), 2)) mutable=false @ a164-frame-class-locals.ts:15:9
+  value %0: Data(FixedArray(I32, 2)) name=None
+  value %1: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %4: Data(Class(ClassId(0))) name=None
+  value %5: Data(FixedArray(Class(ClassId(0)), 2)) name=None
+  value %6: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %8: Data(I32) name=None
+  value %9: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) name=None
+  value %10: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Bool) name=None
+  value %17: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %18: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %19: Data(I32) name=None
+  value %20: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) name=None
+  value %21: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %22: Data(Class(ClassId(0))) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(I32) name=None
+  value %25: Data(I32) name=None
+  value %26: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %27: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %28: Data(I32) name=None
+  value %29: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) name=None
+  value %30: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %31: Data(Class(ClassId(0))) name=None
+  value %32: Data(I32) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(FixedArray(I32, 2)) = ArrayLiteral(Integer(1):I32, Integer(2):I32) @ a164-frame-class-locals.ts:14:40
+    StoreLocal(LocalId(0))(%0) @ a164-frame-class-locals.ts:14:9
+    %1: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a164-frame-class-locals.ts:15:39
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%1, Integer(10):I32) traps=[Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 15, col: 39 } }] @ a164-frame-class-locals.ts:15:39
+    %2: Data(Class(ClassId(0))) = LoadAddress(%1) @ a164-frame-class-locals.ts:15:39
+    %3: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a164-frame-class-locals.ts:15:53
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%3, Integer(20):I32) traps=[Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 15, col: 53 } }] @ a164-frame-class-locals.ts:15:53
+    %4: Data(Class(ClassId(0))) = LoadAddress(%3) @ a164-frame-class-locals.ts:15:53
+    %5: Data(FixedArray(Class(ClassId(0)), 2)) = ArrayLiteral(%2, %4) @ a164-frame-class-locals.ts:15:38
+    StoreLocal(LocalId(1))(%5) @ a164-frame-class-locals.ts:15:9
+    %6: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a164-frame-class-locals.ts:16:9
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%6, Integer(0):I32) @ a164-frame-class-locals.ts:16:9
+    %8: Data(I32) = LoadAddress(%7) @ a164-frame-class-locals.ts:16:9
+    %9: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a164-frame-class-locals.ts:16:23
+    %10: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfIndex { checked: false }(%9, Integer(0):I32) @ a164-frame-class-locals.ts:16:23
+    %11: Data(Class(ClassId(0))) = LoadAddress(%10) @ a164-frame-class-locals.ts:16:23
+    %12: Data(I32) = LoadField(Class(FieldId(0)))(%11) @ a164-frame-class-locals.ts:16:32
+    %13: Data(I32) = Binary(Add)(%8, %12) @ a164-frame-class-locals.ts:16:9
+    -> Suspend { kind: Yield(Some(ValueId(13))), pos: Pos { file: "a164-frame-class-locals.ts", line: 16, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b2(%14: Data(I32)) Some("while.cond"):
+    %16: Data(Bool) = Binary(Lt)(%14, Integer(2):I32) @ a164-frame-class-locals.ts:18:10
+    -> ConditionalBranch { condition: Value(ValueId(16)), then_target: BlockTarget { block: BlockId(3), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(14))] } }
+  b3 Some("while.body"):
+    %17: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a164-frame-class-locals.ts:19:11
+    %18: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: true }(%17, %14) traps=[Trap { kind: IndexRead, pos: Pos { file: "a164-frame-class-locals.ts", line: 19, col: 11 } }] @ a164-frame-class-locals.ts:19:11
+    %19: Data(I32) = LoadAddress(%18) @ a164-frame-class-locals.ts:19:11
+    %20: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a164-frame-class-locals.ts:19:29
+    %21: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfIndex { checked: true }(%20, %14) traps=[Trap { kind: IndexRead, pos: Pos { file: "a164-frame-class-locals.ts", line: 19, col: 29 } }] @ a164-frame-class-locals.ts:19:29
+    %22: Data(Class(ClassId(0))) = LoadAddress(%21) @ a164-frame-class-locals.ts:19:29
+    %23: Data(I32) = LoadField(Class(FieldId(0)))(%22) @ a164-frame-class-locals.ts:19:42
+    %24: Data(I32) = Binary(Add)(%19, %23) @ a164-frame-class-locals.ts:19:11
+    -> Suspend { kind: Yield(Some(ValueId(24))), pos: Pos { file: "a164-frame-class-locals.ts", line: 19, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(14))], invalidates: [], traps: [] }
+  b4(%15: Data(I32)) Some("while.exit"):
+    %26: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a164-frame-class-locals.ts:22:9
+    %27: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%26, Integer(1):I32) @ a164-frame-class-locals.ts:22:9
+    %28: Data(I32) = LoadAddress(%27) @ a164-frame-class-locals.ts:22:9
+    %29: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a164-frame-class-locals.ts:22:23
+    %30: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfIndex { checked: false }(%29, Integer(1):I32) @ a164-frame-class-locals.ts:22:23
+    %31: Data(Class(ClassId(0))) = LoadAddress(%30) @ a164-frame-class-locals.ts:22:23
+    %32: Data(I32) = LoadField(Class(FieldId(0)))(%31) @ a164-frame-class-locals.ts:22:32
+    %33: Data(I32) = Binary(Add)(%28, %32) @ a164-frame-class-locals.ts:22:9
+    -> Suspend { kind: Yield(Some(ValueId(33))), pos: Pos { file: "a164-frame-class-locals.ts", line: 22, col: 3 }, successor: BlockId(6), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b5(%34: Data(I32)) Some("yield.resume"):
+    %25: Data(I32) = Binary(Add)(%34, Integer(1):I32) @ a164-frame-class-locals.ts:20:13
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(25))] })
+  b6 Some("yield.resume"):
+    -> Return { value: None, pos: Pos { file: "a164-frame-class-locals.ts", line: 13, col: 11 } }
+fn f2 "asyncValues" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a164-frame-class-locals.ts:25:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 25, col: 23 } }]
+  local l0 "integers": Data(FixedArray(I32, 2)) mutable=false @ a164-frame-class-locals.ts:26:9
+  local l1 "cells": Data(FixedArray(Class(ClassId(0)), 2)) mutable=false @ a164-frame-class-locals.ts:27:9
+  value %0: Data(FixedArray(I32, 2)) name=None
+  value %1: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %4: Data(Class(ClassId(0))) name=None
+  value %5: Data(FixedArray(Class(ClassId(0)), 2)) name=None
+  value %6: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %8: Data(I32) name=None
+  value %9: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) name=None
+  value %10: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Str) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Bool) name=None
+  value %18: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %19: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %20: Data(I32) name=None
+  value %21: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) name=None
+  value %22: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %23: Data(Class(ClassId(0))) name=None
+  value %24: Data(I32) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(Str) name=None
+  value %27: Data(I32) name=None
+  value %28: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) name=None
+  value %29: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %30: Data(I32) name=None
+  value %31: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) name=None
+  value %32: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) name=None
+  value %33: Data(Class(ClassId(0))) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(FixedArray(I32, 2)) = ArrayLiteral(Integer(3):I32, Integer(4):I32) @ a164-frame-class-locals.ts:26:40
+    StoreLocal(LocalId(0))(%0) @ a164-frame-class-locals.ts:26:9
+    %1: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a164-frame-class-locals.ts:27:39
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%1, Integer(30):I32) traps=[Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 27, col: 39 } }] @ a164-frame-class-locals.ts:27:39
+    %2: Data(Class(ClassId(0))) = LoadAddress(%1) @ a164-frame-class-locals.ts:27:39
+    %3: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AllocateClass(ClassId(0))() @ a164-frame-class-locals.ts:27:53
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Address(AddressType { pointee: Class(ClassId(0)), array_base: None }), Data(I32)], return_type: None })(%3, Integer(40):I32) traps=[Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 27, col: 53 } }] @ a164-frame-class-locals.ts:27:53
+    %4: Data(Class(ClassId(0))) = LoadAddress(%3) @ a164-frame-class-locals.ts:27:53
+    %5: Data(FixedArray(Class(ClassId(0)), 2)) = ArrayLiteral(%2, %4) @ a164-frame-class-locals.ts:27:38
+    StoreLocal(LocalId(1))(%5) @ a164-frame-class-locals.ts:27:9
+    -> Suspend { kind: Async, pos: Pos { file: "a164-frame-class-locals.ts", line: 28, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("async.resume"):
+    %6: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a164-frame-class-locals.ts:29:32
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%6, Integer(0):I32) @ a164-frame-class-locals.ts:29:32
+    %8: Data(I32) = LoadAddress(%7) @ a164-frame-class-locals.ts:29:32
+    %9: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a164-frame-class-locals.ts:29:46
+    %10: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfIndex { checked: false }(%9, Integer(0):I32) @ a164-frame-class-locals.ts:29:46
+    %11: Data(Class(ClassId(0))) = LoadAddress(%10) @ a164-frame-class-locals.ts:29:46
+    %12: Data(I32) = LoadField(Class(FieldId(0)))(%11) @ a164-frame-class-locals.ts:29:55
+    %13: Data(I32) = Binary(Add)(%8, %12) @ a164-frame-class-locals.ts:29:32
+    %14: Data(Str) = Template([Text("async-outside-first="), Operand(0)])(%13) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 29, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 29, col: 9 } }] @ a164-frame-class-locals.ts:29:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%14) @ a164-frame-class-locals.ts:29:3
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b2(%15: Data(I32)) Some("while.cond"):
+    %17: Data(Bool) = Binary(Lt)(%15, Integer(2):I32) @ a164-frame-class-locals.ts:31:10
+    -> ConditionalBranch { condition: Value(ValueId(17)), then_target: BlockTarget { block: BlockId(3), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(15))] } }
+  b3 Some("while.body"):
+    -> Suspend { kind: Async, pos: Pos { file: "a164-frame-class-locals.ts", line: 32, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(15))], invalidates: [], traps: [] }
+  b4(%16: Data(I32)) Some("while.exit"):
+    -> Suspend { kind: Async, pos: Pos { file: "a164-frame-class-locals.ts", line: 36, col: 3 }, successor: BlockId(6), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b5(%37: Data(I32)) Some("async.resume"):
+    %18: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a164-frame-class-locals.ts:33:25
+    %19: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: true }(%18, %37) traps=[Trap { kind: IndexRead, pos: Pos { file: "a164-frame-class-locals.ts", line: 33, col: 25 } }] @ a164-frame-class-locals.ts:33:25
+    %20: Data(I32) = LoadAddress(%19) @ a164-frame-class-locals.ts:33:25
+    %21: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a164-frame-class-locals.ts:33:43
+    %22: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfIndex { checked: true }(%21, %37) traps=[Trap { kind: IndexRead, pos: Pos { file: "a164-frame-class-locals.ts", line: 33, col: 43 } }] @ a164-frame-class-locals.ts:33:43
+    %23: Data(Class(ClassId(0))) = LoadAddress(%22) @ a164-frame-class-locals.ts:33:43
+    %24: Data(I32) = LoadField(Class(FieldId(0)))(%23) @ a164-frame-class-locals.ts:33:56
+    %25: Data(I32) = Binary(Add)(%20, %24) @ a164-frame-class-locals.ts:33:25
+    %26: Data(Str) = Template([Text("async-loop="), Operand(0)])(%25) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 33, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 33, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 33, col: 11 } }] @ a164-frame-class-locals.ts:33:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%26) @ a164-frame-class-locals.ts:33:5
+    %27: Data(I32) = Binary(Add)(%37, Integer(1):I32) @ a164-frame-class-locals.ts:34:13
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(27))] })
+  b6 Some("async.resume"):
+    %28: Address(AddressType { pointee: FixedArray(I32, 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a164-frame-class-locals.ts:37:31
+    %29: Address(AddressType { pointee: I32, array_base: None }) = AddressOfIndex { checked: false }(%28, Integer(1):I32) @ a164-frame-class-locals.ts:37:31
+    %30: Data(I32) = LoadAddress(%29) @ a164-frame-class-locals.ts:37:31
+    %31: Address(AddressType { pointee: FixedArray(Class(ClassId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a164-frame-class-locals.ts:37:45
+    %32: Address(AddressType { pointee: Class(ClassId(0)), array_base: None }) = AddressOfIndex { checked: false }(%31, Integer(1):I32) @ a164-frame-class-locals.ts:37:45
+    %33: Data(Class(ClassId(0))) = LoadAddress(%32) @ a164-frame-class-locals.ts:37:45
+    %34: Data(I32) = LoadField(Class(FieldId(0)))(%33) @ a164-frame-class-locals.ts:37:54
+    %35: Data(I32) = Binary(Add)(%30, %34) @ a164-frame-class-locals.ts:37:31
+    %36: Data(Str) = Template([Text("async-outside-last="), Operand(0)])(%35) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 37, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 37, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 37, col: 9 } }] @ a164-frame-class-locals.ts:37:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%36) @ a164-frame-class-locals.ts:37:3
+    -> Return { value: None, pos: Pos { file: "a164-frame-class-locals.ts", line: 25, col: 23 } }
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a164-frame-class-locals.ts:40:17
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(IterResult(I32)) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(IterResult(I32)) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(IterResult(I32)) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() traps=[Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 41, col: 37 } }] @ a164-frame-class-locals.ts:41:37
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a164-frame-class-locals.ts", line: 42, col: 22 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a164-frame-class-locals.ts", line: 42, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 42, col: 22 } }] @ a164-frame-class-locals.ts:42:22
+    %2: Data(I32) = LoadField(IterValue)(%1) @ a164-frame-class-locals.ts:42:39
+    %3: Data(Str) = Template([Text("generator="), Operand(0)])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 42, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 42, col: 9 } }] @ a164-frame-class-locals.ts:42:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a164-frame-class-locals.ts:42:3
+    %4: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a164-frame-class-locals.ts", line: 43, col: 22 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a164-frame-class-locals.ts", line: 43, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 43, col: 22 } }] @ a164-frame-class-locals.ts:43:22
+    %5: Data(I32) = LoadField(IterValue)(%4) @ a164-frame-class-locals.ts:43:39
+    %6: Data(Str) = Template([Text("generator="), Operand(0)])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 43, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 43, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 43, col: 9 } }] @ a164-frame-class-locals.ts:43:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a164-frame-class-locals.ts:43:3
+    %7: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a164-frame-class-locals.ts", line: 44, col: 22 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a164-frame-class-locals.ts", line: 44, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 44, col: 22 } }] @ a164-frame-class-locals.ts:44:22
+    %8: Data(I32) = LoadField(IterValue)(%7) @ a164-frame-class-locals.ts:44:39
+    %9: Data(Str) = Template([Text("generator="), Operand(0)])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 44, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 44, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 44, col: 9 } }] @ a164-frame-class-locals.ts:44:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a164-frame-class-locals.ts:44:3
+    %10: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 22 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 22 } }] @ a164-frame-class-locals.ts:45:22
+    %11: Data(I32) = LoadField(IterValue)(%10) @ a164-frame-class-locals.ts:45:39
+    %12: Data(Str) = Template([Text("generator="), Operand(0)])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 9 } }] @ a164-frame-class-locals.ts:45:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a164-frame-class-locals.ts:45:3
+    -> Return { value: None, pos: Pos { file: "a164-frame-class-locals.ts", line: 40, col: 17 } }
 ===== a20-coroutine-generator =====
 module initializer=None
 intrinsic Ambient.0 "Print"

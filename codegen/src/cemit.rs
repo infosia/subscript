@@ -15,6 +15,11 @@ use subscript_runtime::TrapKind;
 
 use crate::layout::Layouts;
 use crate::lir::verify_module;
+use crate::lir_types::{
+    array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
+    boundary_class_needs_scratch, boundary_class_requires_build, boundary_type_requires_build,
+    is_userdata_slot,
+};
 use crate::root_storage::{self, RootStoragePlan};
 
 /// An emitted C translation unit and its source-position metadata.
@@ -46,6 +51,7 @@ pub(crate) fn emit_lir_c(module: &l::Module, require_main: bool) -> Result<CProg
     })?;
     let program = Emitter::new(module)?.emit(require_main)?;
     verify_no_empty_aggregate(&program)?;
+    verify_no_label_before_declaration(&program)?;
     Ok(program)
 }
 
@@ -252,6 +258,131 @@ fn empty_aggregates(text: &'static str, source: &str) -> Vec<EmptyAggregate> {
             .cmp(&right.line)
             .then_with(|| left.keyword.cmp(right.keyword))
     });
+    found
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LabelBeforeDeclaration {
+    text: &'static str,
+    line: usize,
+    label: String,
+}
+
+fn verify_no_label_before_declaration(program: &CProgram) -> Result<(), String> {
+    let mut found = Vec::new();
+    for (text, source) in [
+        ("the program", &program.source),
+        (
+            "the allocation metadata header",
+            &program.allocation_metadata_header,
+        ),
+        (
+            "the allocation metadata source",
+            &program.allocation_metadata_source,
+        ),
+    ] {
+        found.extend(labels_before_declarations(text, source));
+    }
+    if found.is_empty() {
+        return Ok(());
+    }
+    let sites = found
+        .iter()
+        .map(|site| format!("  {} line {}: label `{}`", site.text, site.line, site.label))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Err(internal(format!(
+        "the emitted C has {} label(s) followed directly by a declaration; C11 6.8.1 requires a statement after a label (compiler.md §11e):\n{sites}",
+        found.len()
+    )))
+}
+
+fn label_end(line: &str) -> Option<(usize, String)> {
+    let indent = line.len() - line.trim_start().len();
+    let trimmed = &line[indent..];
+    if let Some(rest) = trimmed.strip_prefix("case ") {
+        let colon = rest.find(':')? + indent + "case ".len();
+        return Some((colon + 1, line[indent..colon].trim().to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("default") {
+        let whitespace = rest.len() - rest.trim_start().len();
+        if rest.as_bytes().get(whitespace) == Some(&b':') {
+            let colon = indent + "default".len() + whitespace;
+            return Some((colon + 1, "default".to_string()));
+        }
+    }
+    let name_len = trimmed
+        .bytes()
+        .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        .count();
+    if name_len == 0 || trimmed.as_bytes().get(name_len) != Some(&b':') {
+        return None;
+    }
+    Some((indent + name_len + 1, trimmed[..name_len].to_string()))
+}
+
+fn looks_like_declaration(statement: &str) -> bool {
+    let statement = statement.trim_start();
+    if statement.is_empty() || statement.starts_with([';', '{', '}']) {
+        return false;
+    }
+    let first_len = statement
+        .bytes()
+        .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        .count();
+    if first_len == 0 {
+        return false;
+    }
+    let first = &statement[..first_len];
+    if matches!(
+        first,
+        "break" | "continue" | "do" | "for" | "goto" | "if" | "return" | "switch" | "while"
+    ) {
+        return false;
+    }
+    let after_first = &statement[first_len..];
+    if !after_first
+        .as_bytes()
+        .first()
+        .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b'*')
+    {
+        return false;
+    }
+    let candidate = after_first
+        .trim_start()
+        .trim_start_matches('*')
+        .trim_start();
+    candidate
+        .as_bytes()
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+}
+
+fn labels_before_declarations(text: &'static str, source: &str) -> Vec<LabelBeforeDeclaration> {
+    let scan = without_comments_and_literals(source);
+    let lines = scan.lines().collect::<Vec<_>>();
+    let mut found = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Some((end, label)) = label_end(line) else {
+            continue;
+        };
+        let mut statement = line[end..].trim_start();
+        if statement.is_empty() {
+            statement = lines
+                .iter()
+                .skip(index + 1)
+                .map(|line| line.trim_start())
+                .find(|line| !line.is_empty())
+                .unwrap_or("");
+        }
+        if looks_like_declaration(statement) {
+            found.push(LabelBeforeDeclaration {
+                text,
+                line: index + 1,
+                label,
+            });
+        }
+    }
     found
 }
 
@@ -893,6 +1024,11 @@ impl<'m> Emitter<'m> {
             let ty = &function.values[parameter.value.0 as usize].ty;
             let _ = writeln!(out, "    {} p{};", self.value_ctype(ty)?, parameter.value.0);
         }
+        for local in &function.locals {
+            if local.storage == l::LocalStorageClass::Frame {
+                let _ = writeln!(out, "    {} l{};", self.value_ctype(&local.ty)?, local.id.0);
+            }
+        }
         for block in &function.blocks {
             let l::Terminator::Suspend {
                 successor,
@@ -1271,7 +1407,7 @@ impl<'m> Emitter<'m> {
         out.push_str("void subscript_kick_async_exports(subscript_rt_context* ctx) {\n");
         for root in &self.module.async_roots {
             let function = self.function(*root)?;
-            if function.source_name != "main" {
+            if Some(function.id) != self.module.entry {
                 let _ = writeln!(out, "    subscript_export_{}(ctx);", function.source_name);
                 out.push_str("    if (*(const uint32_t*)ctx != 0u) return;\n");
             }
@@ -2428,6 +2564,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let managed_locals = function
             .locals
             .iter()
+            .filter(|local| local.storage == l::LocalStorageClass::Activation)
             .map(|local| {
                 emitter
                     .value_contains_managed(&local.ty)
@@ -2445,7 +2582,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let rooted_locals = function
             .locals
             .iter()
-            .filter(|local| !promoted_locals.contains_key(&local.id))
+            .filter(|local| {
+                local.storage == l::LocalStorageClass::Activation
+                    && !promoted_locals.contains_key(&local.id)
+            })
             .map(|local| {
                 emitter
                     .value_contains_managed(&local.ty)
@@ -2547,6 +2687,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn local(&self, id: l::LocalId) -> String {
+        if self
+            .function
+            .locals
+            .get(id.0 as usize)
+            .is_some_and(|local| local.storage == l::LocalStorageClass::Frame)
+        {
+            return format!("frame->l{}", id.0);
+        }
         if let Some(value) = self.promoted_locals.get(&id) {
             return self.value(*value);
         }
@@ -2715,7 +2863,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
         }
         for local in &self.function.locals {
-            if self.rooted_locals.contains(&local.id) {
+            if local.storage == l::LocalStorageClass::Activation
+                && self.rooted_locals.contains(&local.id)
+            {
                 members.push(format!(
                     "        {} l{};\n",
                     self.emitter.value_ctype(&local.ty)?,
@@ -2766,7 +2916,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
         }
         for local in &self.function.locals {
-            if !self.rooted_locals.contains(&local.id)
+            if local.storage == l::LocalStorageClass::Activation
+                && !self.rooted_locals.contains(&local.id)
                 && !self.promoted_locals.contains_key(&local.id)
             {
                 let _ = writeln!(
@@ -2804,6 +2955,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
             }
             if let Some(storage) = parameter.storage {
+                if self.function.locals[storage.0 as usize].storage == l::LocalStorageClass::Frame {
+                    continue;
+                }
                 let storage = self.local(storage);
                 if storage != destination
                     && !self.entry_initializes_parameter_storage(parameter, storage.as_str())
@@ -2858,6 +3012,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let _ = writeln!(out, "    {} = {source};", self.value(parameter.value));
             }
             if let Some(storage) = parameter.storage {
+                if self.function.locals[storage.0 as usize].storage == l::LocalStorageClass::Frame {
+                    continue;
+                }
                 let storage = self.local(storage);
                 let value = self.value(parameter.value);
                 if storage != value {
@@ -2893,7 +3050,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             else {
                 continue;
             };
-            let _ = writeln!(out, "resume_b{}:", block.id.0);
+            let _ = writeln!(out, "resume_b{}:\n    ;", block.id.0);
             match kind {
                 l::SuspendKind::AsyncCall { .. } => {
                     self.emit_async_child_resume(out, block, state)?;
@@ -2933,7 +3090,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .filter(|block| block.id == block_id)
             .ok_or_else(|| internal(format!("block {} is missing", block_id.0)))?
             .clone();
-        let _ = writeln!(out, "b{}:\n    {{", block.id.0);
+        let _ = writeln!(out, "b{}:\n    ;\n    {{", block.id.0);
         let entry_clears = self.root_storage.clear_at_block_entry[block.id.0 as usize].clone();
         self.emit_root_clears(out, &entry_clears)?;
         for value in self.block_value_declarations[block.id.0 as usize].clone() {
@@ -3331,10 +3488,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn emit_unwind(&mut self, out: &mut String) -> Result<(), String> {
-        out.push_str("unwind:\n");
+        out.push_str("unwind:\n    ;\n");
         self.emit_pop(out);
         if self.coroutine {
-            out.push_str("    return 1;\ncoroutine_done:\n    return 1;\n");
+            out.push_str("    return 1;\ncoroutine_done:\n    ;\n    return 1;\n");
         } else if self.function.return_type == Type::Void {
             out.push_str("    return;\n");
         } else {
@@ -3358,10 +3515,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let next = self.fresh();
                 let _ = writeln!(
                     out,
-                    "    if ({condition}) goto {next}_then; else goto {next}_else;\n{next}_then:"
+                    "    if ({condition}) goto {next}_then; else goto {next}_else;\n{next}_then:\n    ;"
                 );
                 self.emit_edge(out, block.id, then_target)?;
-                let _ = writeln!(out, "{next}_else:");
+                let _ = writeln!(out, "{next}_else:\n    ;");
                 self.emit_edge(out, block.id, else_target)
             }
             l::Terminator::Switch {
@@ -3379,10 +3536,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 for arm in arms {
                     let constant = self.constant(&arm.value)?;
-                    let _ = writeln!(out, "    case {constant}:");
+                    let _ = writeln!(out, "    case {constant}: ;");
                     self.emit_edge(out, block.id, &arm.target)?;
                 }
-                out.push_str("    default:\n");
+                out.push_str("    default: ;\n");
                 self.emit_edge(out, block.id, default)?;
                 out.push_str("    }\n    }\n");
                 Ok(())
@@ -3407,11 +3564,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         (value.as_ref(), &self.function.return_type)
                     {
                         if self.emitter.is_value_class(*class)?
-                            && boundary_class_contains_pointer_member(
-                                self.emitter.module,
-                                *class,
-                                &mut HashSet::new(),
-                            )
+                            && boundary_class_contains_pointer(self.emitter.module, *class)?
                         {
                             let stable = self.fresh();
                             let _ = writeln!(
@@ -4034,6 +4187,21 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let _ = writeln!(out, "    {destination} = ({left}) {symbol} ({right});");
             return Ok(());
         }
+        if operator == l::BinaryOp::Rem && ty.is_float() {
+            let call = self.emitter.runtime_call(
+                "double",
+                "subscript_rt_fmod",
+                &["void*".into(), "double".into(), "double".into()],
+                &["ctx".into(), operands[0].clone(), operands[1].clone()],
+            );
+            let expression = if *ty == Type::F32 {
+                format!("(float)({call})")
+            } else {
+                call
+            };
+            let _ = writeln!(out, "    {destination} = {expression};");
+            return Ok(());
+        }
         if matches!(operator, l::BinaryOp::Div | l::BinaryOp::Rem) && ty.is_integer() {
             let trap = self.take_pending_trap(&instruction.traps, l::TrapKind::DivisionByZero)?;
             let pos = self.emitter.pos_id(&trap.pos);
@@ -4336,30 +4504,25 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     ) -> Result<(), String> {
         if let l::FieldRef::Class(field_id) = field {
             let (class_id, _, _) = self.emitter.field(field_id)?;
-            if instruction
-                .traps
-                .iter()
-                .any(|trap| trap.kind == l::TrapKind::JsonResultValue)
-            {
-                let ok_id = self
-                    .emitter
-                    .class(class_id)?
-                    .fields
-                    .iter()
-                    .find(|field| field.source_name == "ok" && field.ty == Type::Bool)
-                    .map(|field| field.id)
-                    .ok_or_else(|| internal("JsonResult class has no ok field"))?;
-                let condition = format!(
-                    "((({}*)({}))->d{})",
-                    self.emitter.class_name(class_id),
-                    operands[0],
-                    ok_id.0
-                );
-                for trap in &instruction.traps {
-                    if trap.kind == l::TrapKind::JsonResultValue {
-                        self.consume(trap);
-                        self.emit_guard(out, &condition, trap)?;
+            for trap in &instruction.traps {
+                if let l::TrapKind::JsonResultValue(ok_id) = trap.kind {
+                    let valid = self
+                        .emitter
+                        .class(class_id)?
+                        .fields
+                        .iter()
+                        .any(|field| field.id == ok_id && field.ty == Type::Bool);
+                    if !valid {
+                        return Err(internal("JsonResult guard field id is invalid"));
                     }
+                    let condition = format!(
+                        "((({}*)({}))->d{})",
+                        self.emitter.class_name(class_id),
+                        operands[0],
+                        ok_id.0
+                    );
+                    self.consume(trap);
+                    self.emit_guard(out, &condition, trap)?;
                 }
             }
             let expression = match &operand_types[0] {
@@ -4385,7 +4548,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         self.consume(trap);
                         self.emit_wire_validation(out, &expression, *alias, trap)?;
                     }
-                    l::TrapKind::JsonResultValue => {}
+                    l::TrapKind::JsonResultValue(_) => {}
                     other => return Err(internal(format!("field load trap {other:?} is invalid"))),
                 }
             }
@@ -4811,6 +4974,29 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         result: Option<String>,
     ) -> Result<(), String> {
         let destination = result.ok_or_else(|| internal("template has no result"))?;
+        if parts.is_empty() {
+            if !operands.is_empty() || !instruction.traps.is_empty() {
+                return Err(internal("empty template carries operands or traps"));
+            }
+            let pos = self.emitter.pos_id(&instruction.pos);
+            let empty = self.emitter.runtime_call(
+                "void*",
+                "subscript_rt_str_lit",
+                &[
+                    "void*".into(),
+                    "const unsigned char*".into(),
+                    "uint64_t".into(),
+                    "uint32_t".into(),
+                ],
+                &[
+                    "ctx".into(),
+                    format!("(const unsigned char*){}", c_string_literal(b"")),
+                    "0ull".into(),
+                    format!("{pos}u"),
+                ],
+            );
+            return self.assign(out, Some(destination), &empty);
+        }
         let mut trap_index = 0usize;
         let mut accumulated: Option<String> = None;
         for part in parts {
@@ -5431,9 +5617,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .foreign_symbols
                 .push(declaration.source_name.clone());
         }
-        let needs_scratch = declaration.parameters.iter().any(|parameter| {
-            boundary_type_requires_recursive_build(self.emitter.module, &parameter.ty)
-        });
+        let needs_scratch = declaration.parameters.iter().try_fold(
+            false,
+            |needed, parameter| -> Result<bool, String> {
+                Ok(needed || boundary_type_requires_build(self.emitter.module, &parameter.ty)?)
+            },
+        )?;
         let scratch_mark = if needs_scratch {
             let mark = self.fresh();
             let call = self.emitter.runtime_call(
@@ -5480,10 +5669,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let (data, count) = match element.as_ref() {
                     Type::Class(class)
                         if self.emitter.is_value_class(*class)?
-                            && boundary_class_requires_recursive_build(
-                                self.emitter.module,
-                                *class,
-                            ) =>
+                            && boundary_class_requires_build(self.emitter.module, *class)? =>
                     {
                         self.marshal_boundary_array(out, *class, data, count, boundary_position)?
                     }
@@ -5748,10 +5934,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let (data, count) = match element.as_ref() {
                         Type::Class(element_class)
                             if self.emitter.is_value_class(*element_class)?
-                                && boundary_class_requires_recursive_build(
+                                && boundary_class_requires_build(
                                     self.emitter.module,
                                     *element_class,
-                                ) =>
+                                )? =>
                         {
                             self.marshal_boundary_array(
                                 out,
@@ -5819,9 +6005,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         position: u32,
         force_rebuild: bool,
     ) -> Result<(String, Option<BoundaryPtrWriteback>), String> {
-        if !boundary_class_needs_scratch(self.emitter.module, class, &mut HashSet::new())
-            && !(force_rebuild
-                && boundary_class_requires_recursive_build(self.emitter.module, class))
+        if !boundary_class_needs_scratch(self.emitter.module, class)?
+            && !(force_rebuild && boundary_class_requires_build(self.emitter.module, class)?)
         {
             return Ok((
                 format!("(({}*)({pointer}))", self.emitter.class(class)?.source_name),
@@ -5945,11 +6130,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let _ = writeln!(out, "        {language} = {value};");
                 }
                 Type::Class(nested) if self.emitter.is_value_class(*nested)? => {
-                    if !boundary_class_needs_scratch(
-                        self.emitter.module,
-                        *nested,
-                        &mut HashSet::new(),
-                    ) {
+                    if !boundary_class_needs_scratch(self.emitter.module, *nested)? {
                         let _ = writeln!(
                             out,
                             "        memcpy(&{language}, &{header}, sizeof {language});"
@@ -7318,179 +7499,6 @@ fn runtime_header_declares(symbol: &str) -> bool {
     symbol.starts_with("subscript_rt_ctx_") || symbol.starts_with("subscript_rt_worker_")
 }
 
-fn is_userdata_slot(ty: &Type) -> bool {
-    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
-}
-
-fn boundary_type_needs_scratch(
-    module: &l::Module,
-    ty: &Type,
-    visiting: &mut HashSet<ClassId>,
-) -> bool {
-    match ty {
-        Type::Str | Type::Array(_) => true,
-        Type::Nullable(inner) => match inner.as_ref() {
-            Type::Class(class) => boundary_class_needs_scratch(module, *class, visiting),
-            other => boundary_type_needs_scratch(module, other, visiting),
-        },
-        Type::Class(class) => boundary_class_needs_scratch(module, *class, visiting),
-        _ => false,
-    }
-}
-
-fn boundary_type_requires_recursive_build(module: &l::Module, ty: &Type) -> bool {
-    match ty {
-        Type::Array(element) => matches!(element.as_ref(), Type::Class(class)
-            if lir_class_is_value(module, *class)
-                && boundary_class_requires_recursive_build(module, *class)),
-        Type::Nullable(inner) => match inner.as_ref() {
-            Type::Class(class) if lir_class_is_value(module, *class) => {
-                boundary_class_requires_recursive_build(module, *class)
-            }
-            other => boundary_type_requires_recursive_build(module, other),
-        },
-        Type::Class(class) if lir_class_is_value(module, *class) => {
-            boundary_class_requires_recursive_build(module, *class)
-        }
-        _ => false,
-    }
-}
-
-fn boundary_class_needs_scratch(
-    module: &l::Module,
-    class: ClassId,
-    visiting: &mut HashSet<ClassId>,
-) -> bool {
-    let Some(definition) = module.classes.get(class.0) else {
-        return false;
-    };
-    if !definition.is_value || !visiting.insert(class) {
-        return false;
-    }
-    let result = definition
-        .fields
-        .iter()
-        .any(|field| boundary_type_needs_scratch(module, &field.ty, visiting));
-    visiting.remove(&class);
-    result
-}
-
-fn boundary_class_requires_recursive_build(module: &l::Module, class: ClassId) -> bool {
-    boundary_class_needs_scratch(module, class, &mut HashSet::new())
-        || boundary_class_contains_pointer_member(module, class, &mut HashSet::new())
-}
-
-fn boundary_class_contains_pointer_member(
-    module: &l::Module,
-    class: ClassId,
-    visiting: &mut HashSet<ClassId>,
-) -> bool {
-    let Some(definition) = module.classes.get(class.0) else {
-        return false;
-    };
-    if !definition.is_value || !visiting.insert(class) {
-        return false;
-    }
-    let result = definition.fields.iter().any(|field| match &field.ty {
-        Type::Nullable(inner) => {
-            matches!(inner.as_ref(), Type::Class(inner) if lir_class_is_value(module, *inner))
-        }
-        Type::Class(inner) if lir_class_is_value(module, *inner) => {
-            boundary_class_contains_pointer_member(module, *inner, visiting)
-        }
-        Type::Array(element) => match element.as_ref() {
-            Type::Class(inner) if lir_class_is_value(module, *inner) => {
-                boundary_class_contains_pointer_member(module, *inner, visiting)
-            }
-            _ => false,
-        },
-        _ => false,
-    });
-    visiting.remove(&class);
-    result
-}
-
-fn lir_class_is_value(module: &l::Module, class: ClassId) -> bool {
-    module
-        .classes
-        .get(class.0)
-        .is_some_and(|definition| definition.is_value)
-}
-
-fn array_element_kind(module: &l::Module, ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::Bool
-        | Type::U8
-        | Type::U16
-        | Type::U32
-        | Type::U64
-        | Type::Object
-        | Type::Array(_)
-        | Type::Map(..)
-        | Type::Set(_) => 0,
-        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Enum(_) | Type::Date => 5,
-        Type::Class(class) if !lir_class_is_value(module, *class) => 0,
-        Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => 0,
-        Type::F32 => 1,
-        Type::F64 => 2,
-        Type::Str => 3,
-        Type::F16 => 4,
-        other => {
-            return Err(internal(format!(
-                "array element type {other:?} has no runtime kind"
-            )))
-        }
-    })
-}
-
-fn array_format_kind(ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::I32 | Type::Enum(_) => 0,
-        Type::U32 => 1,
-        Type::I64 => 2,
-        Type::U64 => 3,
-        Type::F32 => 4,
-        Type::F64 => 5,
-        Type::Bool => 6,
-        Type::Str => 7,
-        Type::I8 => 8,
-        Type::U8 => 9,
-        Type::I16 => 10,
-        Type::U16 => 11,
-        Type::F16 => 12,
-        other => {
-            return Err(internal(format!(
-                "array element {other:?} is not formattable"
-            )))
-        }
-    })
-}
-
-fn association_key_kind(module: &l::Module, ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::I8
-        | Type::U8
-        | Type::I16
-        | Type::U16
-        | Type::I32
-        | Type::U32
-        | Type::I64
-        | Type::U64
-        | Type::Bool
-        | Type::Enum(_)
-        | Type::Date => 0,
-        Type::F32 => 1,
-        Type::F64 => 2,
-        Type::Str => 3,
-        Type::Class(class) if !lir_class_is_value(module, *class) => 4,
-        other => {
-            return Err(internal(format!(
-                "Map/Set key type {other:?} has no runtime kind"
-            )))
-        }
-    })
-}
-
 fn array_symbol(name: &str, fixed: bool) -> Result<&'static str, String> {
     if fixed {
         return Ok(match name {
@@ -7911,7 +7919,7 @@ fn trap_runtime_kind(kind: &l::TrapKind) -> Result<TrapKind, String> {
         l::TrapKind::Unreachable => TrapKind::UnreachableReached,
         l::TrapKind::DivisionByZero => TrapKind::DivisionByZero,
         l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
-        l::TrapKind::JsonResultValue => TrapKind::JsonResultValue,
+        l::TrapKind::JsonResultValue(_) => TrapKind::JsonResultValue,
         l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
         l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
         l::TrapKind::DevReloadOnlyStaleCoroutine => TrapKind::StaleCoroutine,
@@ -8050,6 +8058,8 @@ const PREAMBLE: &str = concat!(
 #include <stddef.h>
 #include <string.h>
 
+extern double subscript_rt_fmod(void* ctx, double left, double right);
+
 typedef uint8_t (*SubAsyncResume)(void*, void*, void*);
 typedef struct { const unsigned char* data; uint64_t len; } SubStringAliasMember;
 typedef struct { uint64_t len; uint64_t cap; uint64_t elem_size; unsigned char* data; } SsArrayHeader;
@@ -8157,8 +8167,45 @@ mod empty_aggregate_tests {
 }
 
 #[cfg(test)]
+mod label_statement_tests {
+    use super::*;
+
+    #[test]
+    fn label_check_reads_the_emitted_text_and_names_the_site() {
+        let clean = CProgram {
+            source: "resume_b6:\n    ;\n    SubFn t0 = frame->b6_v14;\n".to_string(),
+            positions: Vec::new(),
+            allocation_metadata_header: String::new(),
+            allocation_metadata_source: String::new(),
+            foreign_symbols: Vec::new(),
+        };
+        verify_no_label_before_declaration(&clean).expect("an empty statement satisfies C11 6.8.1");
+
+        let perturbed = CProgram {
+            source: "resume_b6: SubFn t0 = frame->b6_v14;\n".to_string(),
+            ..clean
+        };
+        let error = verify_no_label_before_declaration(&perturbed)
+            .expect_err("a declaration is not a statement");
+        assert!(error.contains("1 label(s) followed directly"), "{error}");
+        assert!(
+            error.contains("the program line 1: label `resume_b6`"),
+            "{error}"
+        );
+        assert!(error.contains("C11 6.8.1"), "{error}");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lower_test_source(name: &str, source: &str) -> l::Module {
+        let hir =
+            subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(name, source)])
+                .expect("test source checks");
+        crate::lir::lower_module(&hir).expect("test source lowers")
+    }
 
     #[test]
     fn duplicate_lir_site_fails_with_function_and_site() {
@@ -8193,5 +8240,62 @@ mod tests {
             error.contains("LIR carries 2 site(s), transcriber consumed 1"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn c_json_guard_reads_the_lir_field_id() {
+        let mut module = lower_test_source(
+            "json-field-id.ts",
+            "export function main(): void {\n  const result: JsonResult<i32> = JSON.parse<i32>(\"1\");\n  print(`${result.value}`);\n}\n",
+        );
+        let ok_field = module
+            .functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .flat_map(|block| &block.instructions)
+            .flat_map(|instruction| &instruction.traps)
+            .find_map(|trap| match trap.kind {
+                l::TrapKind::JsonResultValue(field) => Some(field),
+                _ => None,
+            })
+            .expect("JSON value load names its ok field");
+        module
+            .classes
+            .iter_mut()
+            .flat_map(|class| &mut class.fields)
+            .find(|field| field.id == ok_field)
+            .expect("JSON ok field exists")
+            .source_name = "not_ok".to_string();
+
+        let program = emit_lir_c(&module, true).expect("C locates the guard field by LIR id");
+        assert!(
+            program.source.contains(&format!(")->d{}", ok_field.0)),
+            "the emitted guard does not read field {}",
+            ok_field.0
+        );
+    }
+
+    #[test]
+    fn c_async_runner_reads_the_lir_entry_id() {
+        let mut module = lower_test_source(
+            "entry-id.ts",
+            "export function main(): void {}\nexport async function auxiliary(): Promise<void> {}\n",
+        );
+        let entry = module.entry.expect("module entry");
+        module.functions[entry.0 as usize].source_name = "renamed_entry".to_string();
+        let root = *module.async_roots.first().expect("async root");
+        module.functions[root.0 as usize].source_name = "main".to_string();
+
+        let program = emit_lir_c(&module, true).expect("C emits renamed LIR functions");
+        let runner = program
+            .source
+            .split_once("void subscript_kick_async_exports(subscript_rt_context* ctx) {")
+            .expect("async runner definition")
+            .1;
+        assert!(
+            runner.starts_with("\n    subscript_export_main(ctx);"),
+            "the non-entry root was selected by source spelling:\n{runner}"
+        );
+        assert!(!runner.contains("subscript_export_renamed_entry(ctx);"));
     }
 }

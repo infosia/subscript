@@ -1,0 +1,8 @@
+empty=[] len=0
+positive=1.5
+negative-left=-1.5
+negative-right=1.5
+zero=NaN
+infinity-left=NaN
+infinity-right=2
+nan=NaN

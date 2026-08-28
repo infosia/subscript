@@ -386,6 +386,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_f16_to_f64",
             ffi::subscript_rt_f16_to_f64 as *const u8,
         ),
+        ("subscript_rt_fmod", ffi::subscript_rt_fmod as *const u8),
         (
             "subscript_rt_array_new",
             ffi::subscript_rt_array_new as *const u8,
