@@ -161,6 +161,44 @@ SWC parse (TS-subset front end, Rust)
   property invariant 3 calls the main argument for the language was
   never measured.)*
 
+  **The ship-tier ratio is scoped by host ISA.** *(Owner, 2026-08-28.)*
+  The 1.5× held one number over two instruction sets, and the same
+  emitted C does not cost the same on both. §10a records the cause,
+  measured on x86-64/Windows on 2026-07-23: out-of-line growable-array
+  access and copy-heavy value-class parameter passing are "both of which
+  clang optimizes on arm64 but not on x86". Fix A (§10a, inline
+  growable-array access) landed and moved `a22` from 17.2 ms to 14.0 ms.
+  **Fix B (value-class parameters by const-pointer) was investigated and
+  dropped as unsound**, and its sound restriction — leaf functions only —
+  disqualifies the one value-class-parameter function in `a22`. So the
+  x86-64 residual is a named and open codegen cost, not noise and not a
+  port defect (`specs/tracking/windows-portability.md`).
+
+  - **aarch64: 1.5×, unchanged.** Measured 1.34× on the reference
+    machine (`specs/tracking/s70-held-async-handle.md`). This is the
+    number that chose C emission over Cranelift AOT, and it does not
+    move.
+  - **x86-64: 2.5×.** Chosen from measurement the way §3's 25× dev-tier
+    execution ceiling was chosen from a measured 19.6×: above the
+    observation with room, so it fails when something gets worse. Six
+    `a22` ship-tier runs on `x86_64-pc-windows-msvc` measured 2.08×,
+    2.03×, 1.93×, 2.18×, 1.93×, and 1.92×.
+
+  This is a **ceiling against regression, not a target**. Raising a
+  pre-registered criterion to cover a known deficit would remove the
+  only mechanism that keeps that deficit visible, which is
+  `specs/tracking/gate-scope.md`'s finding with its sign reversed. The
+  ceiling therefore carries the reason it is not 1.5×, and closing the
+  gap is Fix B under a sound formulation — an interprocedural escape and
+  alias condition, not the leaf-only restriction — which is a codegen
+  change, not the backend change a 1.5× miss names.
+
+  **The 2.5× is provisional on noise.** The run that set it reported the
+  `a22` C baseline at 18.8% to 43.5% spread, over §9's ±20% limit. §9
+  reports that and does not gate it, and it also means one run cannot
+  pin a ceiling. A run on a quiet machine, per §9, replaces this number
+  with a measured one.
+
 - **P4 allocation gate**, and the gate becomes automatic. *(Owner,
   2026-08-28: "両方入れる".)* Two changes. `specs/tracking/gate-scope.md`
   holds the evidence and the cost.
@@ -1174,6 +1212,35 @@ Four constraints the `cl` path adds, all measured:
    platform: the runtime static library build in `codegen`, and the same
    build in the CLI. A report of a program run is not in scope here. It
    reports the run, not the toolchain.
+
+## 11d. No emitted type has an empty member list
+
+*(2026-08-28.)* C11 6.7.2.1 gives a structure or a union at least one
+member, and 6.7.2.2 gives an enumeration at least one enumerator. GCC and
+clang accept an empty one as an extension. MSVC rejects it (`C2016`), and
+an initializer on it then reports `C2078`. The emitted C must compile on
+every ship and dev target, so an emitted type with no member is a defect
+wherever it is produced.
+
+**This class has two recorded instances.** The first was
+`typedef struct Sub_N_EngWorld {}` for a zero-field opaque handle, closed
+by giving it `char subscript_opaque;`. The second was the shadow-root
+frame, whose declaration read a module fact and whose members read
+function facts. Both are recorded in
+`specs/tracking/windows-portability.md`.
+
+CLAUDE.md's two-round rule applies at a second instance: a fix that
+closes named sites does not converge. So the emitter carries a **total
+check over its own output**, not a rule at each producer.
+`emit_lir_c` scans the finished translation unit and fails with **every**
+empty `struct`, `union`, or `enum` body it finds, each with its line and
+its declared name. The check reads the emitted text, and the C standard
+supplies the rule, so it compares two facts derived apart (core principle
+9). A new producer of an empty type meets a build failure naming its
+site, and no future round needs to find the site by hand.
+
+The check is not a formatter and not a C parser. It skips comments and
+string and character literals, so a brace inside either is not a member.
 
 ## 12. P5 C-header binding vertical slice
 
