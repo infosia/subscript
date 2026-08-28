@@ -54,7 +54,7 @@ wrote a record for a run with an errored cell).
 `b5ea24e` (round 5) closes §68 consumers M1–M5 (float `%`, `JsonResult.ok` by name,
 the entry by name, a declaration after a label, duplicated walks) and
 M6, which the owner decided: the foreign-call array snapshot is the
-**call-time view** (`c3fd247`); `f2sync=2` becomes `3`.
+**call-time view** (`c3fd247`); the two interop pins `f2sync=2` and `f2=2` become `3`.
 
 Open, by earlier owner decision: §66–§67 M1, a class field and a
 method of one name (`tsc` rejects, this compiler accepts; recorded in
