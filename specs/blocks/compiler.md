@@ -4173,11 +4173,17 @@ consumer never escapes: it builds a descriptor and passes it to a
 foreign call.
 
 **What is decided.** Nothing new. §33.1's call-duration scratch stands.
-Whether a value holding a nullable boundary aggregate may escape is
-**open and unmeasured after the fix below**. `a125` escapes today with
-a plain-data inner aggregate and works. The same question for an inner
-aggregate holding managed fields is answered by measuring it, not by a
-rule written ahead of the measurement.
+
+**Escape is measured, and it works.** *(2026-08-28, after `26403be`.)*
+The question this section left open was whether a value holding a
+nullable boundary aggregate with managed fields may escape. A scratch
+probe returned `a159`'s outer value from a function and read every
+field back in the caller. It printed the same 23 lines `a159` prints
+in place. `a125` already escaped with a plain-data inner aggregate.
+
+So no rule is needed, and the withdrawal was not a deferral. The
+address keeps its base alive wherever the base is, which is what a
+total fix over addresses means.
 
 #### The defect itself
 
