@@ -321,7 +321,6 @@ Observable obligations only; internal design is the implementer's.
 | S011 | unions limited to `T \| null` | C7 | r12 |
 | S012 | `undefined` banned | C7 | r13 |
 | S013 | no `async` / event loop | C8 | r14 |
-| S015 | a nullable boundary aggregate may not escape its function | §33.4 | r158 |
 
   Constructs outside the decided surface (e.g. non-whitelisted
   `Array.prototype` / `string` members — collisions.md Q4/Q5) are
@@ -4132,74 +4131,68 @@ Goldens by the standard capture path.
 4. No existing golden moves; full gate, `tsc` gate, zero-warning
    sweep, and the generated-docs gates green.
 
-### 33.4 A nullable boundary aggregate may not escape its function
+### 33.4 The escape rule was written and withdrawn
 
-*(Owner, 2026-08-28: "禁止にしましょう".)*
+*(Owner, 2026-08-28: written as a rule, then withdrawn the same day on
+measurement.)*
 
-§33.1 gives a non-null struct-pointer field a **pointer to a
-recursively-built scratch struct, call-duration valid**. That storage
-serves the call it is built for. It does not serve a value that
-outlives the call, and no storage this language has does.
+**What the rule said.** A value whose type transitively holds a
+nullable boundary-aggregate field may not escape the activation that
+built it, rejected as S015. It was written after a round built two
+storage classes for the defect below and a fresh review rejected each
+one on an escaping shape.
 
-**Rule.** A value whose type transitively holds a nullable
-boundary-aggregate field may not escape the function activation that
-built it. The checker rejects the escape with **S015**, naming the
-field and the site.
+**Why it is withdrawn.** Escape is not the discriminator. Measured at
+`8b23e3c`, on the shape the consumer reports — an inner boundary
+aggregate holding a string and two arrays, built in a conditional
+expression, stored in the outer value's nullable field:
 
-An escape is a store into a location that outlives the activation:
+    returned from the function     selectors 3, 4, 5 read 0
+    built and used in one function selectors 3, 4, 5 read 0
 
-- a `return` of the value,
-- an assignment to a module-level binding,
-- a store into an array element,
-- a store into a reference-class field,
-- a capture by a lambda.
+The two are identical. The rule forbids the escaping half of a defect
+that fails the same way without escaping, so it fixes nothing.
 
-These are the sites S009 already enumerates for a capturing lambda,
-and this rule reads the same set. The check is **local to one
-function**: a value passed down to a script function is a copy, and
-the callee's own check covers what the callee does with it.
+**And it rejects a program that works.** `corpus/accept/a125` returns
+a value with a nullable boundary-aggregate field from three functions.
+Measured at the same pin, its value survives a 200-frame recursive
+call after the return:
 
-**Legal, and pinned.** `corpus/accept/a106` builds the descriptor,
-passes it to a script function, and that function passes it to a
-foreign call. The value never outlives the activation that built it.
-Passing down, calling foreign functions, and reading fields all stay
-legal. This rule removes nothing `a106` does.
+    no-clobber=1:12:34
+    clobber=407628
+    after-clobber=1:12:34
 
-#### Why not a storage class
+S015 rejected `a125` at four sites. The code is removed from the table
+and no diagnostic ships.
 
-Two were built and measured, and both are too short-lived:
+**Where the escape framing came from.** The round that raised it wrote
+its corpus entry with a direct return and an array return. Both
+candidate storage classes then failed on those forms, and the round
+reported that the language needed a storage-ownership rule. The
+consumer never escapes: it builds a descriptor and passes it to a
+foreign call.
 
-| Storage | Fails on |
-|---|---|
-| a root slot per borrowed source, held to function return | the value returned directly, and returned in an array |
-| the call-duration boundary scratch | a synchronous native callback that stores the descriptor past the outer call's scratch mark |
+**What is decided.** Nothing new. §33.1's call-duration scratch stands.
+Whether a value holding a nullable boundary aggregate may escape is
+**open and unmeasured after the fix below**. `a125` escapes today with
+a plain-data inner aggregate and works. The same question for an inner
+aggregate holding managed fields is answered by measuring it, not by a
+rule written ahead of the measurement.
 
-A third option — the payload as an ordinary Context allocation, rooted
-like an array — was not built. It collides with value-class copy
-semantics: copying the outer value copies the pointer, so two copies
-alias one payload, and a write through one is visible in the other.
-
-A persistent boundary storage class with its own ownership is the
-general answer, and core principle 8 makes it expensive: LIR must
-carry the ownership and the lifetime, and both tier consumers must
-read them. **No measured program needs it.** The rule above is what
-this project decides now, and evidence of a program that needs to
-escape reopens it.
-
-#### The separate defect this arc found
+#### The defect itself
 
 A value-class-to-nullable conversion takes the address of the source
-aggregate's storage. `codegen/src/root_storage.rs` types an
-`l::ValueType::Address(_)` as zero root slots, so no address keeps its
+aggregate's storage. `codegen/src/root_storage.rs` typed an
+`l::ValueType::Address(_)` as zero root slots, so no address kept its
 base alive. Before `74a091c` every managed value stayed a root for the
 whole activation and the address survived by accident. `74a091c` made
-the storage scope the live range (§68.2 rule 8), and the base now dies
-while an address into it is live.
+the storage scope the live range (§68.2 rule 8), and the base then died
+while an address into it was live.
 
-**That is a defect inside §68's form, not a case for this rule.** LIR
-carries address provenance. Root storage must read it, so that a base
-stays rooted while an address derived from it is live. The
-non-escaping shape must run after that fix.
+**This is a defect inside §68's form.** LIR carries address
+provenance, and root storage must read it: a base stays rooted while an
+address derived from it is live. One shared plan serves both tiers, so
+the fix has no per-transcriber site.
 
 ## 34. R11 — parameter-position handle-element pairs
 
