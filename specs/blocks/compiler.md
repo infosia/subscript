@@ -321,6 +321,7 @@ Observable obligations only; internal design is the implementer's.
 | S011 | unions limited to `T \| null` | C7 | r12 |
 | S012 | `undefined` banned | C7 | r13 |
 | S013 | no `async` / event loop | C8 | r14 |
+| S015 | a nullable boundary aggregate may not escape its function | §33.4 | r160 |
 
   Constructs outside the decided surface (e.g. non-whitelisted
   `Array.prototype` / `string` members — collisions.md Q4/Q5) are
@@ -4174,16 +4175,56 @@ foreign call.
 
 **What is decided.** Nothing new. §33.1's call-duration scratch stands.
 
-**Escape is measured, and it works.** *(2026-08-28, after `26403be`.)*
-The question this section left open was whether a value holding a
-nullable boundary aggregate with managed fields may escape. A scratch
-probe returned `a159`'s outer value from a function and read every
-field back in the caller. It printed the same 23 lines `a159` prints
-in place. `a125` already escaped with a plain-data inner aggregate.
+**Escape was measured wrongly, and the rule is reinstated.**
+*(2026-08-28, after the Fable phase review of the post-§70 arc,
+findings C1 and C2. This replaces a paragraph that read "Escape is
+measured, and it works".)*
 
-So no rule is needed, and the withdrawal was not a deferral. The
-address keeps its base alive wherever the base is, which is what a
-total fix over addresses means.
+The withdrawal above rested on two measurements: `a125` survives a
+200-frame recursive call after returning such a value, and a probe
+that returned `a159`'s outer value printed the right 23 lines. **Both
+are reads of a dead frame that happened to return the expected
+bytes.** The storage behind a value-class-to-nullable address is a C
+automatic in the emitting function's frame (`cemit.rs`, `(void*)&(operand)`;
+`lower/func.rs`, a stack slot). Nothing in the contract gives it a
+lifetime past that activation, and a measurement that reads a dead
+frame does not discriminate.
+
+The measurement that does discriminate, at `2a65724`: `setup()`
+stores a holder whose descriptor carries a conditional fragment
+temporary into a module global and returns; `main` reads it.
+
+    dev tier    program terminated abnormally (signal 11)
+    ship tier   global-before-clobber=0:0:0:0:8015:8016
+                expected <sum>:12:1:1:31:47
+
+The tiers disagree and neither is the program's meaning.
+
+**Rule, reinstated as S015.** A value whose type transitively holds a
+nullable boundary-aggregate field may not escape the activation that
+built it. The escape sites are S009's: a `return`, an assignment to a
+module-level binding, a store into an array element, a store into a
+reference-class field, a capture by a lambda. The check is local to
+one function; a value passed down is a copy, and the callee's own
+check covers what the callee does with it. The traversal is §33's
+reachable set; do not write a second one.
+
+**`a125` is in this class and passes by luck.** Its three
+`boundaryVia*` functions return a target whose `blend` names a
+temporary in the callee's frame. The entry's purpose is conditional-arm
+narrowing, which does not need the return: each function consumes the
+target where it builds it. The rewrite keeps every printed line, so
+`a125.expected` does not move. If a line must move, the round stops
+and reports it.
+
+The record of this section, in order: a rule written from an
+unverified diagnosis; withdrawn on a measurement that did not
+discriminate; reinstated on one that does. The middle step is the
+defect, and it is CLAUDE.md's rule that a claim about behaviour
+requires running the system in the shape that can fail.
+
+Corpus: `r160` (the `setup()`/`main` shape above; `tsc` accepts).
+`a125` rewritten. `a159` unchanged: it does not escape.
 
 #### The defect itself
 
@@ -8537,6 +8578,46 @@ The interface is not the subject. This section moves no part of it.
    **Measure, do not assert.** The record states the cost of the
    per-value environment storage. `a22` measured 1.34× with it, the
    same as without, so the cost does not reach the performance gate.
+
+8b. **A value whose address is taken stays rooted for the rest of
+   the activation.** *(Added 2026-08-28 after the Fable phase review
+   of the post-§70 arc, finding C1.)* `26403be` gave
+   `root_storage.rs` a fixed point that follows an address through
+   SSA edges, locals, and `StoreAddress` into owners it knows, and
+   keeps the base rooted while the address is reachable that way. It
+   has no arm for `StoreGlobal`, and a `Call` transfers the
+   dependency only into the call's result, so a callee that stores
+   the operand ends the chain. Measured at `2a65724`, identical bytes
+   on both tiers, expected `<sum>:<len>:1:1:31:47` on every line:
+
+       cond-in-setup=0:0:0:0:8015:8016
+       pushcond-in-function=0:0:0:0:8015:8016
+       fieldcond-after=0:0:0:0:8015:8016
+
+   One plan feeds both transcribers, so the differential gate cannot
+   see it. This is the second instance of the address-base class
+   (§33.4 records the first), and the two-round rule applies: the
+   form changes, and no arm is added.
+
+   **The rule.** If any instruction takes a value's address, that
+   value's root slot is held from the address-taking instruction to
+   the activation's end. The plan does not follow the address. It
+   does not need to know where the address goes, so there is no arm
+   to miss. The fixed point that followed addresses is deleted.
+
+   Cost: one slot per address-taken value, held to function exit. An
+   address is taken by a value-class-to-nullable conversion and by
+   nothing else a script can write, so the count is small and the
+   cost is bounded by the number of such conversions in a function.
+
+   With S015 (§33.4) rejecting every store of such a value into a
+   location that outlives the activation, the legal residue is the
+   value that lives and dies in one activation, and this rule makes
+   that residue sound without a chain.
+
+   Corpus: `a163` — the in-activation shapes the review measured
+   that S015 leaves legal, each read back through the foreign
+   checker. Red at `2a65724`.
 9. **An address is a value, and it carries an invalidation point.**
    Every LIR instruction that can move an array's storage names the
    arrays that it invalidates. The lowering re-computes an address
