@@ -133,3 +133,31 @@ will come from: `a22`, not the workload this round added.
 Twelve busy cores is heavier than a `cargo test` run. The release
 suite passed twice with the gate in it, at 257.80 s and 256.19 s.
 No change is made now.
+
+## The x86-64 ceiling depends on this measurement
+
+*(2026-08-28, after the Windows round at `85fafd0`.)* §3 now scopes the
+ship-tier ratio by host ISA and gives x86-64 a 2.5× ceiling. The
+contract calls that number **provisional**, because the run that set it
+reported the `a22` C baseline at 18.8% to 43.5% spread, over §9's ±20%.
+
+The measurement above says which subject that is, and why. `a22` runs
+about 4 ms and `collect` about 200 ms, so a scheduler delay is a large
+fraction of one `a22` sample and a small fraction of one `collect`
+sample.
+
+The Windows run is a second, independent instance of the same pattern:
+
+    forced load, arm64      a22      2.53x ship, over its 1.50x
+                            collect  5.82x ship, under its 7.50x
+    Windows host            a22      1.92x-2.18x, baseline over ±20%
+                            collect  5.29x ship, under its 7.50x
+
+Two hosts, two causes of load, and the same split: `a22` is the subject
+that moves and `collect` is the subject that holds. §3 reaches the same
+conclusion from the other direction — it gives `collect` one ratio for
+both instruction sets, because its cost does not split by ISA.
+
+**A quiet-machine re-pin of the 2.5× must read the `a22` C baseline
+spread first.** A run whose baseline misses §9 cannot pin a ceiling,
+whatever ratio it prints.
