@@ -159,7 +159,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        158,
+        160,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
@@ -199,7 +199,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
          a133–a134 R27 field-initializer entries, the a135 R28 binary32 bit-access entry, and the \
          a136 R29 class-index-signature entry, the a137 R30 handle-entry-parameter entry, and the \
          a138–a139 R31 using-declaration entries, the a140 R32 wire-entry-parameter entry, and the \
-         a141 R33 CStruct-alignment entry, the a142 R34 Context-storage-byte entry, the a143 R36 async-generic entry, the a144 R37 named-accessor entry, the a145 §66 emitted-identifier entry, the a146 §66 scoped-local entry, the a147–a148 §67 switch-body-scope entries, the a149 §67 suspension-state entry, the a150–a153 §68 entries, the a154–a155 §70 held-async-handle entries, the a156 value-class receiver-by-value entry, the a157 suspension-loop-liveness entry, the a159 address-base-liveness entry, and the a160 §67 module-initializer-order entry"
+         a141 R33 CStruct-alignment entry, the a142 R34 Context-storage-byte entry, the a143 R36 async-generic entry, the a144 R37 named-accessor entry, the a145 §66 emitted-identifier entry, the a146 §66 scoped-local entry, the a147–a148 §67 switch-body-scope entries, the a149 §67 suspension-state entry, the a150–a153 §68 entries, the a154–a155 §70 held-async-handle entries, the a156 value-class receiver-by-value entry, the a157 suspension-loop-liveness entry, the a159 address-base-liveness entry, the a160 §67 module-initializer-order entry, and the a161–a162 §70 counted-store/copy-site entries"
     );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);

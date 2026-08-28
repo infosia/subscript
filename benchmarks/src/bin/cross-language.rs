@@ -62,6 +62,12 @@ fn writes_the_record(measured: usize, total: usize) -> bool {
     measured != 0 && measured == total
 }
 
+fn workload_has_all_present_timings(outcomes: &[(String, Outcome)]) -> bool {
+    outcomes
+        .iter()
+        .all(|(_, outcome)| !matches!(outcome, Outcome::Error(_)))
+}
+
 /// One-line parameter/checksum description per workload, rendered into the
 /// report so the pinned sizes are recorded next to the numbers.
 fn workload_params(id: &str) -> &'static str {
@@ -402,7 +408,11 @@ fn run() -> Result<ExitCode, Fail> {
         args.warmup,
         args.timed,
     );
-    if writes_the_record(rows.len(), WORKLOADS.len()) {
+    let measured = rows
+        .iter()
+        .filter(|row| workload_has_all_present_timings(&row.outcomes))
+        .count();
+    if writes_the_record(measured, WORKLOADS.len()) {
         std::fs::write(root.join("results.json"), json.as_bytes())
             .map_err(|e| format!("write results.json: {e}"))?;
         std::fs::write(root.join("README.md"), readme.as_bytes())
@@ -414,7 +424,7 @@ fn run() -> Result<ExitCode, Fail> {
         );
     } else {
         let reason = args.only.as_deref().map_or_else(
-            || format!("measured {} of {} workloads", rows.len(), WORKLOADS.len()),
+            || format!("measured {measured} of {} workloads", WORKLOADS.len()),
             |id| format!("--only {id}"),
         );
         eprintln!("benchmarks: partial run ({reason}) — results.json and README.md not written");
@@ -1791,7 +1801,7 @@ fn jstr(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::writes_the_record;
+    use super::{workload_has_all_present_timings, writes_the_record, Outcome};
 
     #[test]
     fn writes_record_when_all_workloads_are_measured() {
@@ -1806,5 +1816,21 @@ mod tests {
     #[test]
     fn does_not_write_record_when_no_workloads_are_measured() {
         assert!(!writes_the_record(0, 0));
+    }
+
+    #[test]
+    fn does_not_write_record_when_one_subject_has_an_error() {
+        let outcomes = vec![
+            (
+                "C".to_string(),
+                Outcome::Unavailable("not installed".to_string()),
+            ),
+            (
+                "subscript-ship".to_string(),
+                Outcome::Error("compile failed".to_string()),
+            ),
+        ];
+        let measured = usize::from(workload_has_all_present_timings(&outcomes));
+        assert!(!writes_the_record(measured, 1));
     }
 }

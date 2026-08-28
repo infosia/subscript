@@ -402,11 +402,16 @@ impl<'a> Lowering<'a> {
                     .get(&global.name)
                     .copied()
                     .ok_or_else(|| builder.error(&global.pos, "global id is missing"))?;
-                builder.emit(
+                builder.emit_store_instruction(
                     l::InstructionKind::StoreGlobal(global_id),
                     vec![value],
-                    None,
-                    false,
+                    vec![StoredOperand {
+                        index: 0,
+                        ty: l::ValueType::Data(global.ty.clone()),
+                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Binding),
+                        pos: global.pos.clone(),
+                    }],
+                    (None, false),
                     Vec::new(),
                     global.pos,
                 )?;
@@ -1251,6 +1256,23 @@ fn is_place_expr(expr: &hir::Expr) -> bool {
     )
 }
 
+fn expr_produces_fresh_async_owner(expr: &hir::Expr) -> bool {
+    if !is_async_owner_type(&l::ValueType::Data(expr.ty.clone())) {
+        return false;
+    }
+    match &expr.kind {
+        hir::ExprKind::AsyncHandleCreate { .. }
+        | hir::ExprKind::AsyncHandleTransfer { .. }
+        | hir::ExprKind::Call { .. }
+        | hir::ExprKind::ArrayLit(_)
+        | hir::ExprKind::ArraySpreadLit(_) => true,
+        hir::ExprKind::Cond { then, els, .. } => {
+            expr_produces_fresh_async_owner(then) && expr_produces_fresh_async_owner(els)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone)]
 struct PreparedPlace {
     kind: PreparedPlaceKind,
@@ -1279,6 +1301,19 @@ enum PreparedPlaceKind {
 enum PreparedBase {
     Value(l::Operand),
     Place(Box<PreparedPlace>),
+}
+
+#[derive(Clone, Copy)]
+enum OwnerStoreAction {
+    Acquire(hir::AsyncCopySite),
+    Move,
+}
+
+struct StoredOperand {
+    index: usize,
+    ty: l::ValueType,
+    action: OwnerStoreAction,
+    pos: Pos,
 }
 
 fn collect_place_traps(place: &PreparedPlace, traps: &mut Vec<l::Trap>) {
@@ -1362,6 +1397,7 @@ struct FunctionBuilder<'a, 'm> {
     this_value: Option<l::Operand>,
     controls: Vec<Control>,
     array_values: Vec<l::ValueId>,
+    fresh_async_owners: HashSet<l::ValueId>,
     moved_async_owners: HashSet<l::ValueId>,
 }
 
@@ -1393,6 +1429,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             this_value: None,
             controls: Vec::new(),
             array_values: Vec::new(),
+            fresh_async_owners: HashSet::new(),
             moved_async_owners: HashSet::new(),
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
@@ -1589,11 +1626,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         mutable: bool,
         value: l::Operand,
         pos: Pos,
-        acquire_owner: bool,
+        copy_site: Option<hir::AsyncCopySite>,
     ) -> Result<(BindingId, Option<l::LocalId>), LowerError> {
-        if acquire_owner {
-            self.acquire_owner(&value, &ty, &pos)?;
-        }
         let storage = if self
             .address_taken
             .contains(&BindingSite::new(&source_name, &pos))
@@ -1603,14 +1637,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             None
         };
         if let Some(local) = storage {
-            self.emit(
+            self.emit_store_instruction(
                 l::InstructionKind::StoreLocal(local),
                 vec![value.clone()],
-                None,
-                false,
+                vec![StoredOperand {
+                    index: 0,
+                    ty: ty.clone(),
+                    action: copy_site.map_or(OwnerStoreAction::Move, OwnerStoreAction::Acquire),
+                    pos: pos.clone(),
+                }],
+                (None, false),
                 Vec::new(),
                 pos.clone(),
             )?;
+        } else if let Some(copy_site) = copy_site {
+            self.acquire_owner(copy_site, &value, &ty, &pos)?;
         }
         let id = BindingId(self.bindings.len());
         self.bindings.push(Binding {
@@ -1662,7 +1703,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             true,
             operand.clone(),
             pos.clone(),
-            false,
+            None,
         )?;
         self.parameters.push(l::Parameter {
             storage,
@@ -1707,6 +1748,42 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(result.map(l::Operand::Value))
     }
 
+    fn emit_store_instruction(
+        &mut self,
+        kind: l::InstructionKind,
+        operands: Vec<l::Operand>,
+        stored: Vec<StoredOperand>,
+        result: (Option<l::ValueType>, bool),
+        traps: Vec<l::Trap>,
+        pos: Pos,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        self.acquire_stored_operands(&operands, stored)?;
+        let (result_type, invalidates_arrays) = result;
+        self.emit(kind, operands, result_type, invalidates_arrays, traps, pos)
+    }
+
+    fn acquire_stored_operands(
+        &mut self,
+        operands: &[l::Operand],
+        stored: Vec<StoredOperand>,
+    ) -> Result<(), LowerError> {
+        for store in stored {
+            let value = operands.get(store.index).ok_or_else(|| {
+                self.error(
+                    &store.pos,
+                    format!("store operand {} is missing", store.index),
+                )
+            })?;
+            match store.action {
+                OwnerStoreAction::Acquire(site) => {
+                    self.acquire_owner(site, value, &store.ty, &store.pos)?;
+                }
+                OwnerStoreAction::Move => {}
+            }
+        }
+        Ok(())
+    }
+
     fn terminate(&mut self, terminator: l::Terminator, pos: &Pos) -> Result<(), LowerError> {
         let block = self
             .current
@@ -1717,6 +1794,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             return Err(self.error(pos, format!("block {} has two terminators", block.0)));
         }
         Ok(())
+    }
+
+    fn terminate_return(
+        &mut self,
+        value: Option<l::Operand>,
+        ty: l::ValueType,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        if let Some(value) = &value {
+            self.acquire_owner(hir::AsyncCopySite::Return, value, &ty, pos)?;
+        }
+        self.release_scopes_from(0, pos)?;
+        self.terminate(
+            l::Terminator::Return {
+                value,
+                pos: pos.clone(),
+            },
+            pos,
+        )
     }
 
     fn operand_type(&self, operand: &l::Operand, pos: &Pos) -> Result<l::ValueType, LowerError> {
@@ -1734,6 +1830,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let l::Operand::Value(value) = operand else {
             return false;
         };
+        if self.fresh_async_owners.contains(value) {
+            return true;
+        }
         self.blocks.iter().any(|block| {
             block.instructions.iter().any(|instruction| {
                 instruction.result == Some(*value)
@@ -1759,10 +1858,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     fn acquire_owner(
         &mut self,
+        site: hir::AsyncCopySite,
         value: &l::Operand,
         ty: &l::ValueType,
         pos: &Pos,
     ) -> Result<(), LowerError> {
+        match site {
+            hir::AsyncCopySite::Binding
+            | hir::AsyncCopySite::Assignment
+            | hir::AsyncCopySite::ArrayElement
+            | hir::AsyncCopySite::SpreadElement
+            | hir::AsyncCopySite::CallArgument
+            | hir::AsyncCopySite::Return
+            | hir::AsyncCopySite::ForOfBinding => {}
+            hir::AsyncCopySite::ConditionalResult | hir::AsyncCopySite::DiscardedResult => {
+                return Err(self.error(pos, "the copy site does not acquire an owner"));
+            }
+        }
         if self.operand_is_fresh_owner(value, ty) {
             if let l::Operand::Value(value) = value {
                 if self.moved_async_owners.insert(*value) {
@@ -1807,6 +1919,28 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         self.emit(kind, vec![value], None, false, Vec::new(), pos.clone())?;
         Ok(())
+    }
+
+    fn discard_owner(
+        &mut self,
+        site: hir::AsyncCopySite,
+        value: l::Operand,
+        ty: &l::ValueType,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        match site {
+            hir::AsyncCopySite::DiscardedResult => self.release_owner(value, ty, pos),
+            hir::AsyncCopySite::Binding
+            | hir::AsyncCopySite::Assignment
+            | hir::AsyncCopySite::ArrayElement
+            | hir::AsyncCopySite::SpreadElement
+            | hir::AsyncCopySite::CallArgument
+            | hir::AsyncCopySite::Return
+            | hir::AsyncCopySite::ForOfBinding
+            | hir::AsyncCopySite::ConditionalResult => {
+                Err(self.error(pos, "the copy site does not discard an owner"))
+            }
+        }
     }
 
     fn release_scopes_from(&mut self, depth: usize, pos: &Pos) -> Result<(), LowerError> {
@@ -1876,20 +2010,28 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             None
         };
-        self.acquire_owner(&value, &entry.ty, pos)?;
-        if let Some(old_owner) = old_owner {
-            self.release_owner(old_owner, &entry.ty, pos)?;
-        }
         if let Some(local) = entry.storage {
-            self.emit(
+            self.emit_store_instruction(
                 l::InstructionKind::StoreLocal(local),
                 vec![value],
-                None,
-                false,
+                vec![StoredOperand {
+                    index: 0,
+                    ty: entry.ty.clone(),
+                    action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Assignment),
+                    pos: pos.clone(),
+                }],
+                (None, false),
                 traps,
                 pos.clone(),
             )?;
+            if let Some(old_owner) = old_owner {
+                self.release_owner(old_owner, &entry.ty, pos)?;
+            }
         } else {
+            self.acquire_owner(hir::AsyncCopySite::Assignment, &value, &entry.ty, pos)?;
+            if let Some(old_owner) = old_owner {
+                self.release_owner(old_owner, &entry.ty, pos)?;
+            }
             self.bindings[binding.0].value = Some(value);
         }
         Ok(())
@@ -2020,11 +2162,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     *mutable,
                     value,
                     pos.clone(),
-                    true,
+                    Some(hir::AsyncCopySite::Binding),
                 )?;
             }
             hir::Stmt::Expr(expr) => {
-                self.lower_expr(expr)?;
+                let result = self.lower_expr(expr)?;
+                if expr_produces_fresh_async_owner(expr) {
+                    if let Some(value) = result {
+                        self.discard_owner(
+                            hir::AsyncCopySite::DiscardedResult,
+                            value,
+                            &l::ValueType::Data(expr.ty.clone()),
+                            &expr.pos,
+                        )?;
+                    }
+                }
             }
             hir::Stmt::Return { value, pos } => {
                 let value = value
@@ -2038,18 +2190,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         )
                     })
                     .transpose()?;
-                if let Some(value) = &value {
-                    let return_ty = l::ValueType::Data(self.function.ret.clone());
-                    self.acquire_owner(value, &return_ty, pos)?;
-                }
-                self.release_scopes_from(0, pos)?;
-                self.terminate(
-                    l::Terminator::Return {
-                        value,
-                        pos: pos.clone(),
-                    },
-                    pos,
-                )?;
+                self.terminate_return(value, l::ValueType::Data(self.function.ret.clone()), pos)?;
             }
             hir::Stmt::If {
                 cond,
@@ -2361,15 +2502,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 pos.clone(),
             )?
             .expect("iterator value");
+        self.scopes.push(HashMap::new());
         self.declare_binding(
             name.to_string(),
             l::ValueType::Data(ty.clone()),
             true,
             value,
             pos.clone(),
-            true,
+            Some(hir::AsyncCopySite::ForOfBinding),
         )?;
         self.lower_scoped(body)?;
+        if self.current.is_some() {
+            self.release_scopes_from(self.scopes.len() - 1, pos)?;
+        }
+        self.scopes.pop();
         if self.current.is_some() {
             let edge = self.block_target(step_block, Vec::new())?;
             self.terminate(l::Terminator::Branch(edge), pos)?;
@@ -2805,17 +2951,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                if matches!(element_type, Type::AsyncHandle(_)) {
-                    let owner_ty = l::ValueType::Data(element_type.clone());
-                    for (operand, element) in operands.iter().zip(elements) {
-                        self.acquire_owner(operand, &owner_ty, &element.pos)?;
-                    }
-                }
-                self.emit(
+                let stored = elements
+                    .iter()
+                    .enumerate()
+                    .map(|(index, element)| StoredOperand {
+                        index,
+                        ty: l::ValueType::Data(element_type.clone()),
+                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::ArrayElement),
+                        pos: element.pos.clone(),
+                    })
+                    .collect();
+                self.emit_store_instruction(
                     l::InstructionKind::ArrayLiteral,
                     operands,
-                    Some(l::ValueType::Data(expr.ty.clone())),
-                    false,
+                    stored,
+                    (Some(l::ValueType::Data(expr.ty.clone())), false),
                     convert_traps(&expr.trap_sites(self.lowering.hir)),
                     expr.pos.clone(),
                 )?
@@ -2845,11 +2995,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .iter()
                     .map(|element| element.spread.map(convert_spread))
                     .collect();
-                self.emit(
+                let stored = elements
+                    .iter()
+                    .enumerate()
+                    .map(|(index, element)| StoredOperand {
+                        index,
+                        ty: l::ValueType::Data(if element.spread.is_none() {
+                            (**element_type).clone()
+                        } else {
+                            element.expr.ty.clone()
+                        }),
+                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::SpreadElement),
+                        pos: element.expr.pos.clone(),
+                    })
+                    .collect();
+                self.emit_store_instruction(
                     l::InstructionKind::ArraySpreadLiteral(spreads),
                     operands,
-                    Some(l::ValueType::Data(expr.ty.clone())),
-                    false,
+                    stored,
+                    (Some(l::ValueType::Data(expr.ty.clone())), false),
                     convert_traps(&expr.trap_sites(self.lowering.hir)),
                     expr.pos.clone(),
                 )?
@@ -3019,6 +3183,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let then_value = self.require_expr(then)?;
         let then_value =
             self.coerce_operand(then_value, l::ValueType::Data(expr.ty.clone()), &then.pos)?;
+        let result_type = l::ValueType::Data(expr.ty.clone());
+        let then_is_fresh = self.operand_is_fresh_owner(&then_value, &result_type);
         let edge = self.block_target(merge, vec![then_value])?;
         self.terminate(l::Terminator::Branch(edge), &then.pos)?;
         self.restore_bindings(&branch_state);
@@ -3026,12 +3192,28 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let else_value = self.require_expr(els)?;
         let else_value =
             self.coerce_operand(else_value, l::ValueType::Data(expr.ty.clone()), &els.pos)?;
+        let else_is_fresh = self.operand_is_fresh_owner(&else_value, &result_type);
         let edge = self.block_target(merge, vec![else_value])?;
         self.terminate(l::Terminator::Branch(edge), &els.pos)?;
         self.enter_block(merge)?;
-        Ok(l::Operand::Value(
-            self.blocks[merge.0 as usize].parameters[0],
-        ))
+        let result = self.blocks[merge.0 as usize].parameters[0];
+        if is_async_owner_type(&result_type) && then_is_fresh && else_is_fresh {
+            let transfers_fresh_owner = match hir::AsyncCopySite::ConditionalResult {
+                hir::AsyncCopySite::ConditionalResult => true,
+                hir::AsyncCopySite::Binding
+                | hir::AsyncCopySite::Assignment
+                | hir::AsyncCopySite::ArrayElement
+                | hir::AsyncCopySite::SpreadElement
+                | hir::AsyncCopySite::CallArgument
+                | hir::AsyncCopySite::Return
+                | hir::AsyncCopySite::ForOfBinding
+                | hir::AsyncCopySite::DiscardedResult => false,
+            };
+            if transfers_fresh_owner {
+                self.fresh_async_owners.insert(result);
+            }
+        }
+        Ok(l::Operand::Value(result))
     }
 
     fn lower_assignment(
@@ -3155,31 +3337,110 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 })
                 .collect();
         }
-        let explicit = self.lower_call_arguments(
-            &params,
-            args,
-            receiver_for_defaults.as_ref(),
-            matches!(kind, l::CallTargetKind::Foreign(_)),
-        )?;
+        let foreign = matches!(kind, l::CallTargetKind::Foreign(_));
+        let explicit_offset = operands.len();
+        let explicit =
+            self.lower_call_arguments(&params, args, receiver_for_defaults.as_ref(), foreign)?;
         operands.extend(explicit);
         if matches!(kind, l::CallTargetKind::Method(_)) {
             if let Some(PreparedBase::Place(place)) = receiver_for_defaults {
                 operands[0] = self.materialize_address_inner(&place, &expr.pos, false)?;
             }
         }
+        let deleted_field_owners =
+            self.owners_destroyed_by_unsafe_delete(callee, args, &operands, explicit_offset)?;
         let target = l::CallTarget {
             kind,
             parameter_types,
             return_type: return_type.clone(),
         };
-        self.emit(
+        let stored = if foreign {
+            Vec::new()
+        } else {
+            params
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| StoredOperand {
+                    index: explicit_offset + index,
+                    ty: l::ValueType::Data(parameter.ty.clone()),
+                    action: OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument),
+                    pos: args
+                        .get(index)
+                        .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
+                })
+                .collect()
+        };
+        let result = self.emit_store_instruction(
             l::InstructionKind::Call(target),
             operands,
-            return_type,
-            true,
+            stored,
+            (return_type, true),
             convert_traps(&expr.trap_sites(self.lowering.hir)),
             expr.pos.clone(),
-        )
+        )?;
+        for (owner, ty, pos) in deleted_field_owners {
+            self.release_owner(owner, &ty, &pos)?;
+        }
+        Ok(result)
+    }
+
+    fn owners_destroyed_by_unsafe_delete(
+        &mut self,
+        callee: &hir::Callee,
+        args: &[hir::Expr],
+        operands: &[l::Operand],
+        explicit_offset: usize,
+    ) -> Result<Vec<(l::Operand, l::ValueType, Pos)>, LowerError> {
+        if !matches!(callee, hir::Callee::Ambient(hir::AmbientFn::UnsafeDelete)) {
+            return Ok(Vec::new());
+        }
+        let Some(argument) = args.first() else {
+            return Ok(Vec::new());
+        };
+        let Type::Class(class_id) = argument.ty else {
+            return Ok(Vec::new());
+        };
+        let class = self
+            .lowering
+            .hir
+            .classes
+            .get(class_id.0)
+            .ok_or_else(|| self.error(&argument.pos, "deleted class is missing"))?;
+        if class.is_value {
+            return Ok(Vec::new());
+        }
+        let fields = class
+            .fields
+            .iter()
+            .filter(|field| is_async_owner_type(&l::ValueType::Data(field.ty.clone())))
+            .map(|field| (field.name.clone(), field.ty.clone(), field.pos.clone()))
+            .collect::<Vec<_>>();
+        let base = operands
+            .get(explicit_offset)
+            .cloned()
+            .ok_or_else(|| self.error(&argument.pos, "deleted class operand is missing"))?;
+        let mut owners = Vec::with_capacity(fields.len());
+        for (name, field_type, pos) in fields {
+            let field = self
+                .lowering
+                .fields
+                .get(&(class_id.0, name))
+                .copied()
+                .ok_or_else(|| self.error(&pos, "deleted class field is missing"))?;
+            let ty = l::ValueType::Data(field_type);
+            let owner = self
+                .emit(
+                    l::InstructionKind::LoadField(l::FieldRef::Class(field)),
+                    vec![base.clone()],
+                    Some(ty.clone()),
+                    false,
+                    Vec::new(),
+                    pos.clone(),
+                )?
+                .ok_or_else(|| self.error(&pos, "deleted class field produced no owner"))?;
+            owners.push((owner, ty, pos));
+        }
+        Ok(owners)
     }
 
     fn declared_hir_call_signature(
@@ -3581,12 +3842,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } else {
                 self.coerce_operand(value, expected, &parameter.pos)?
             };
-            if !foreign {
-                let owner_pos = args
-                    .get(index)
-                    .map_or(&parameter.pos, |argument| &argument.pos);
-                self.acquire_owner(&value, &l::ValueType::Data(parameter.ty.clone()), owner_pos)?;
-            }
             substitutions.insert(parameter.name.clone(), value.clone());
             if foreign {
                 if let Type::Array(element) = &parameter.ty {
@@ -3746,15 +4001,28 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .into_iter()
                 .filter(|trap| trap.kind == l::TrapKind::Call)
                 .collect();
-            self.emit(
+            let stored = constructor
+                .params
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| StoredOperand {
+                    index: index + 1,
+                    ty: l::ValueType::Data(parameter.ty.clone()),
+                    action: OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument),
+                    pos: args
+                        .get(index)
+                        .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
+                })
+                .collect();
+            self.emit_store_instruction(
                 l::InstructionKind::Call(l::CallTarget {
                     kind: l::CallTargetKind::Method(record.method.expect("constructor method id")),
                     parameter_types,
                     return_type: None,
                 }),
                 operands,
-                None,
-                true,
+                stored,
+                (None, true),
                 call_traps,
                 expr.pos.clone(),
             )?;
@@ -3889,11 +4157,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 pos.clone(),
             )?
             .expect("field address");
-        self.emit(
+        self.emit_store_instruction(
             l::InstructionKind::StoreAddress,
             vec![address, value],
-            None,
-            false,
+            vec![StoredOperand {
+                index: 1,
+                ty: l::ValueType::Data(definition.ty.clone()),
+                action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Assignment),
+                pos: pos.clone(),
+            }],
+            (None, false),
             Vec::new(),
             pos.clone(),
         )?;
@@ -4048,6 +4321,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .iter()
                 .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
         );
+        let explicit_offset = operands.len();
         operands.extend(self.lower_call_arguments(&params, args, None, false)?);
         let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
         let target = l::CallTarget {
@@ -4055,6 +4329,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             parameter_types,
             return_type: return_type.clone(),
         };
+        let stored = params
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| StoredOperand {
+                index: explicit_offset + index,
+                ty: l::ValueType::Data(parameter.ty.clone()),
+                action: OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument),
+                pos: args
+                    .get(index)
+                    .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
+            })
+            .collect();
+        self.acquire_stored_operands(&operands, stored)?;
         let typed_operands = operands
             .into_iter()
             .map(|operand| self.terminator_value(operand, &expr.pos))
@@ -4157,6 +4444,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .iter()
                 .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
         );
+        let explicit_offset = operands.len();
         operands.extend(self.lower_call_arguments(&params, args, None, false)?);
         let Type::AsyncHandle(value) = &expr.ty else {
             return Err(self.error(&expr.pos, "async handle creation has a non-handle type"));
@@ -4167,11 +4455,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             parameter_types,
             return_type,
         };
-        self.emit(
+        let stored = params
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| StoredOperand {
+                index: explicit_offset + index,
+                ty: l::ValueType::Data(parameter.ty.clone()),
+                action: OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument),
+                pos: args
+                    .get(index)
+                    .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
+            })
+            .collect();
+        self.emit_store_instruction(
             l::InstructionKind::AsyncHandleCreate(target),
             operands,
-            Some(l::ValueType::Data(expr.ty.clone())),
-            false,
+            stored,
+            (Some(l::ValueType::Data(expr.ty.clone())), false),
             convert_traps(&expr.trap_sites(self.lowering.hir)),
             expr.pos.clone(),
         )?
@@ -4476,42 +4776,89 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         value: l::Operand,
         pos: &Pos,
     ) -> Result<(), LowerError> {
-        let value = self.coerce_operand(
-            value,
-            l::ValueType::Data(self.place_type(place).clone()),
-            pos,
-        )?;
+        let ty = l::ValueType::Data(self.place_type(place).clone());
+        let value = self.coerce_operand(value, ty.clone(), pos)?;
+        let counted = is_async_owner_type(&ty);
         match &place.kind {
             PreparedPlaceKind::Local(local, _) => {
-                self.emit(
+                let old_owner = counted.then(|| self.load_local(*local, pos)).transpose()?;
+                self.emit_store_instruction(
                     l::InstructionKind::StoreLocal(*local),
                     vec![value],
-                    None,
-                    false,
+                    vec![StoredOperand {
+                        index: 0,
+                        ty: ty.clone(),
+                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Assignment),
+                        pos: pos.clone(),
+                    }],
+                    (None, false),
                     place.traps.clone(),
                     pos.clone(),
                 )?;
+                if let Some(old_owner) = old_owner {
+                    self.release_owner(old_owner, &ty, pos)?;
+                }
             }
             PreparedPlaceKind::Global(global, _) => {
-                self.emit(
+                let old_owner = if counted {
+                    self.emit(
+                        l::InstructionKind::LoadGlobal(*global),
+                        Vec::new(),
+                        Some(ty.clone()),
+                        false,
+                        Vec::new(),
+                        pos.clone(),
+                    )?
+                } else {
+                    None
+                };
+                self.emit_store_instruction(
                     l::InstructionKind::StoreGlobal(*global),
                     vec![value],
-                    None,
-                    false,
+                    vec![StoredOperand {
+                        index: 0,
+                        ty: ty.clone(),
+                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Assignment),
+                        pos: pos.clone(),
+                    }],
+                    (None, false),
                     place.traps.clone(),
                     pos.clone(),
                 )?;
+                if let Some(old_owner) = old_owner {
+                    self.release_owner(old_owner, &ty, pos)?;
+                }
             }
             _ => {
                 let address = self.materialize_address(place, pos)?;
-                self.emit(
+                let old_owner = if counted {
+                    self.emit(
+                        l::InstructionKind::LoadAddress,
+                        vec![address.clone()],
+                        Some(ty.clone()),
+                        false,
+                        Vec::new(),
+                        pos.clone(),
+                    )?
+                } else {
+                    None
+                };
+                self.emit_store_instruction(
                     l::InstructionKind::StoreAddress,
                     vec![address, value],
-                    None,
-                    false,
+                    vec![StoredOperand {
+                        index: 1,
+                        ty: ty.clone(),
+                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Assignment),
+                        pos: pos.clone(),
+                    }],
+                    (None, false),
                     Vec::new(),
                     pos.clone(),
                 )?;
+                if let Some(old_owner) = old_owner {
+                    self.release_owner(old_owner, &ty, pos)?;
+                }
             }
         }
         Ok(())
@@ -5393,8 +5740,307 @@ fn append_normal_edge_argument(
 // algorithms can stay private to this module.
 fn verify_function(module: &l::Module, function: &l::Function, errors: &mut Vec<VerifyError>) {
     verify_structure_and_types(module, function, errors);
+    verify_counted_stores(function, errors);
     verify_dominance(function, errors);
     verify_address_invalidation(function, errors);
+}
+
+fn verify_counted_stores(function: &l::Function, errors: &mut Vec<VerifyError>) {
+    let use_counts = value_use_counts(function);
+    let (fresh_seeds, incoming) = fresh_owner_index(function);
+    let mut fresh_cache = vec![None; function.values.len()];
+    let mut visiting = HashSet::new();
+    let fresh = (0..function.values.len())
+        .map(|index| {
+            value_is_fresh_owner(
+                function,
+                l::ValueId(index as u32),
+                &use_counts,
+                &fresh_seeds,
+                &incoming,
+                &mut fresh_cache,
+                &mut visiting,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for block in &function.blocks {
+        let mut retains = HashMap::<l::ValueId, usize>::new();
+        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+            if matches!(
+                instruction.kind,
+                l::InstructionKind::AsyncHandleRetain | l::InstructionKind::AsyncHandleArrayRetain
+            ) {
+                if let Some(l::Operand::Value(value)) = instruction.operands.first() {
+                    *retains.entry(*value).or_default() += 1;
+                }
+            }
+            for (operand_index, operand) in counted_instruction_stores(function, instruction) {
+                verify_counted_store_operand(
+                    function,
+                    block.id,
+                    &format!("instruction {instruction_index}"),
+                    operand_index,
+                    operand,
+                    &use_counts,
+                    &fresh,
+                    &mut retains,
+                    errors,
+                );
+            }
+        }
+        for (operand_index, operand) in counted_terminator_stores(function, &block.terminator) {
+            verify_counted_store_operand(
+                function,
+                block.id,
+                "terminator",
+                operand_index,
+                &operand,
+                &use_counts,
+                &fresh,
+                &mut retains,
+                errors,
+            );
+        }
+    }
+}
+
+// Keeping the complete store-site context explicit makes every verifier
+// diagnostic identify the exact counted operand that violated the invariant.
+#[allow(clippy::too_many_arguments)]
+fn verify_counted_store_operand(
+    function: &l::Function,
+    block: l::BlockId,
+    site: &str,
+    operand_index: usize,
+    operand: &l::Operand,
+    use_counts: &[usize],
+    fresh: &[bool],
+    retains: &mut HashMap<l::ValueId, usize>,
+    errors: &mut Vec<VerifyError>,
+) {
+    let l::Operand::Value(value) = operand else {
+        errors.push(finding(
+            function,
+            format!(
+                "block {} {site} stores counted operand {operand_index} ({operand:?}) without an owner",
+                block.0
+            ),
+        ));
+        return;
+    };
+    let single_use_fresh = fresh.get(value.0 as usize).copied().unwrap_or(false)
+        && use_counts.get(value.0 as usize).copied() == Some(1);
+    if single_use_fresh {
+        return;
+    }
+    if let Some(available) = retains.get_mut(value) {
+        if *available != 0 {
+            *available -= 1;
+            return;
+        }
+    }
+    errors.push(finding(
+        function,
+        format!(
+            "block {} {site} stores counted operand {operand_index} (value {}) without a fresh single-use owner or a preceding retain",
+            block.0, value.0
+        ),
+    ));
+}
+
+fn counted_instruction_stores<'i>(
+    function: &l::Function,
+    instruction: &'i l::Instruction,
+) -> Vec<(usize, &'i l::Operand)> {
+    let start = match &instruction.kind {
+        l::InstructionKind::StoreLocal(_) | l::InstructionKind::StoreGlobal(_) => Some(0),
+        l::InstructionKind::StoreAddress => Some(1),
+        l::InstructionKind::ArrayLiteral | l::InstructionKind::ArraySpreadLiteral(_) => Some(0),
+        l::InstructionKind::Call(target) => match target.kind {
+            l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
+            l::CallTargetKind::Method(_)
+            | l::CallTargetKind::Indirect
+            | l::CallTargetKind::BuiltinMethod(_) => Some(1),
+            l::CallTargetKind::Foreign(_) => None,
+        },
+        l::InstructionKind::AsyncHandleCreate(target) => match target.kind {
+            l::CallTargetKind::Function(_) => Some(0),
+            l::CallTargetKind::Method(_) => Some(1),
+            _ => None,
+        },
+        _ => None,
+    };
+    start
+        .into_iter()
+        .flat_map(|start| instruction.operands.iter().enumerate().skip(start))
+        .filter(|(_, operand)| {
+            operand_type(function, operand)
+                .as_ref()
+                .is_some_and(is_async_owner_type)
+        })
+        .collect()
+}
+
+fn counted_terminator_stores(
+    function: &l::Function,
+    terminator: &l::Terminator,
+) -> Vec<(usize, l::Operand)> {
+    match terminator {
+        l::Terminator::Return {
+            value: Some(value), ..
+        } if operand_type(function, value)
+            .as_ref()
+            .is_some_and(is_async_owner_type) =>
+        {
+            vec![(0, value.clone())]
+        }
+        l::Terminator::Suspend {
+            kind: l::SuspendKind::AsyncCall { target, operands },
+            ..
+        } => {
+            let start = match target.kind {
+                l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
+                l::CallTargetKind::Method(_)
+                | l::CallTargetKind::Indirect
+                | l::CallTargetKind::BuiltinMethod(_) => Some(1),
+                l::CallTargetKind::Foreign(_) => None,
+            };
+            start
+                .into_iter()
+                .flat_map(|start| operands.iter().copied().enumerate().skip(start))
+                .filter(|(_, value)| value_type(function, *value).is_some_and(is_async_owner_type))
+                .map(|(index, value)| (index, l::Operand::Value(value)))
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn value_use_counts(function: &l::Function) -> Vec<usize> {
+    let mut counts = vec![0; function.values.len()];
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            for operand in &instruction.operands {
+                if let l::Operand::Value(value) = operand {
+                    if let Some(count) = counts.get_mut(value.0 as usize) {
+                        *count += 1;
+                    }
+                }
+            }
+        }
+        for value in terminator_values(&block.terminator) {
+            if let Some(count) = counts.get_mut(value.0 as usize) {
+                *count += 1;
+            }
+        }
+    }
+    counts
+}
+
+fn fresh_owner_index(function: &l::Function) -> (Vec<bool>, Vec<Vec<l::Operand>>) {
+    let mut seeds = vec![false; function.values.len()];
+    for parameter in &function.parameters {
+        if let Some(seed) = seeds.get_mut(parameter.value.0 as usize) {
+            *seed = true;
+        }
+    }
+    for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+        if matches!(
+            instruction.kind,
+            l::InstructionKind::AsyncHandleCreate(_)
+                | l::InstructionKind::Call(_)
+                | l::InstructionKind::ArrayLiteral
+                | l::InstructionKind::ArraySpreadLiteral(_)
+        ) {
+            if let Some(result) = instruction.result {
+                if let Some(seed) = seeds.get_mut(result.0 as usize) {
+                    *seed = true;
+                }
+            }
+        }
+    }
+
+    let mut incoming = vec![Vec::new(); function.values.len()];
+    let mut add_edge = |destination: l::BlockId, arguments: &[l::Operand]| {
+        let Some(block) = function.blocks.get(destination.0 as usize) else {
+            return;
+        };
+        for (parameter, argument) in block.parameters.iter().zip(arguments) {
+            if let Some(values) = incoming.get_mut(parameter.0 as usize) {
+                values.push(argument.clone());
+            }
+        }
+    };
+    for block in &function.blocks {
+        match &block.terminator {
+            l::Terminator::Branch(target) => add_edge(target.block, &target.arguments),
+            l::Terminator::ConditionalBranch {
+                then_target,
+                else_target,
+                ..
+            } => {
+                add_edge(then_target.block, &then_target.arguments);
+                add_edge(else_target.block, &else_target.arguments);
+            }
+            l::Terminator::Switch { arms, default, .. } => {
+                for arm in arms {
+                    add_edge(arm.target.block, &arm.target.arguments);
+                }
+                add_edge(default.block, &default.arguments);
+            }
+            l::Terminator::Suspend {
+                successor,
+                arguments,
+                ..
+            } => add_edge(*successor, arguments),
+            l::Terminator::Return { .. }
+            | l::Terminator::Trap(_)
+            | l::Terminator::Unreachable { .. } => {}
+        }
+    }
+    (seeds, incoming)
+}
+
+fn value_is_fresh_owner(
+    function: &l::Function,
+    value: l::ValueId,
+    use_counts: &[usize],
+    seeds: &[bool],
+    incoming_index: &[Vec<l::Operand>],
+    cache: &mut [Option<bool>],
+    visiting: &mut HashSet<l::ValueId>,
+) -> bool {
+    if let Some(cached) = cache.get(value.0 as usize).and_then(|cached| *cached) {
+        return cached;
+    }
+    if !value_type(function, value).is_some_and(is_async_owner_type) || !visiting.insert(value) {
+        return false;
+    }
+    let joined = incoming_index.get(value.0 as usize).is_some_and(|inputs| {
+        !inputs.is_empty()
+            && inputs.iter().all(|operand| {
+                let l::Operand::Value(incoming) = operand else {
+                    return false;
+                };
+                use_counts.get(incoming.0 as usize).copied() == Some(1)
+                    && value_is_fresh_owner(
+                        function,
+                        *incoming,
+                        use_counts,
+                        seeds,
+                        incoming_index,
+                        cache,
+                        visiting,
+                    )
+            })
+    });
+    let fresh = seeds.get(value.0 as usize).copied().unwrap_or(false) || joined;
+    visiting.remove(&value);
+    if let Some(slot) = cache.get_mut(value.0 as usize) {
+        *slot = Some(fresh);
+    }
+    fresh
 }
 
 fn finding(function: &l::Function, message: impl Into<String>) -> VerifyError {

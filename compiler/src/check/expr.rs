@@ -151,22 +151,54 @@ impl<'p> Checker<'p> {
             K::Local(name) => fx.local_async_origins(name),
             K::ArrayLit(elements) => elements
                 .iter()
-                .flat_map(|element| self.expr_async_origins(element, fx))
+                .flat_map(|element| {
+                    self.async_origins_at_copy_site(hir::AsyncCopySite::ArrayElement, element, fx)
+                })
                 .collect(),
             K::ArraySpreadLit(elements) => elements
                 .iter()
-                .flat_map(|element| self.expr_async_origins(&element.expr, fx))
+                .flat_map(|element| {
+                    self.async_origins_at_copy_site(
+                        hir::AsyncCopySite::SpreadElement,
+                        &element.expr,
+                        fx,
+                    )
+                })
                 .collect(),
             K::Index { obj, .. }
             | K::Field { obj, .. }
             | K::Cast(obj)
             | K::JsonResultValue(obj) => self.expr_async_origins(obj, fx),
             K::Cond { then, els, .. } => self
-                .expr_async_origins(then, fx)
+                .async_origins_at_copy_site(hir::AsyncCopySite::ConditionalResult, then, fx)
                 .into_iter()
-                .chain(self.expr_async_origins(els, fx))
+                .chain(self.async_origins_at_copy_site(
+                    hir::AsyncCopySite::ConditionalResult,
+                    els,
+                    fx,
+                ))
                 .collect(),
             _ => HashSet::new(),
+        }
+    }
+
+    /// Reads must-await origins through the shared closed copy-site set.
+    pub(crate) fn async_origins_at_copy_site(
+        &self,
+        site: hir::AsyncCopySite,
+        expr: &hir::Expr,
+        fx: &FnCtx,
+    ) -> HashSet<u32> {
+        match site {
+            hir::AsyncCopySite::Binding
+            | hir::AsyncCopySite::Assignment
+            | hir::AsyncCopySite::ArrayElement
+            | hir::AsyncCopySite::SpreadElement
+            | hir::AsyncCopySite::CallArgument
+            | hir::AsyncCopySite::Return
+            | hir::AsyncCopySite::ForOfBinding
+            | hir::AsyncCopySite::ConditionalResult
+            | hir::AsyncCopySite::DiscardedResult => self.expr_async_origins(expr, fx),
         }
     }
 
@@ -5418,9 +5450,18 @@ impl<'p> Checker<'p> {
             && (matches!(target_ty, Type::AsyncHandle(_))
                 || matches!(&target_ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_))))
         {
-            if let ExprKind::Local(name) = &target.kind {
-                let origins = self.expr_async_origins(&value, fx);
-                fx.set_local_async_origins(name, origins);
+            let origins =
+                self.async_origins_at_copy_site(hir::AsyncCopySite::Assignment, &value, fx);
+            match &target.kind {
+                ExprKind::Local(name) => fx.set_local_async_origins(name, origins),
+                ExprKind::Index { obj, .. } => {
+                    if let ExprKind::Local(name) = &obj.kind {
+                        let mut stored = fx.local_async_origins(name);
+                        stored.extend(origins);
+                        fx.set_local_async_origins(name, stored);
+                    }
+                }
+                _ => {}
             }
         }
         // C5 escape rule: capturing lambdas may not be stored.
@@ -6499,7 +6540,11 @@ impl<'p> Checker<'p> {
                     "the argument",
                 );
                 if matches!(param_ty, Type::AsyncHandle(_) | Type::Array(_)) {
-                    let origins = self.expr_async_origins(&checked, fx);
+                    let origins = self.async_origins_at_copy_site(
+                        hir::AsyncCopySite::CallArgument,
+                        &checked,
+                        fx,
+                    );
                     fx.handle_async_origins(&origins);
                 }
             }
@@ -6860,6 +6905,11 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     ret = Some(checked.ty.clone());
+                }
+                if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                    let origins =
+                        self.async_origins_at_copy_site(hir::AsyncCopySite::Return, &checked, fx);
+                    fx.handle_async_origins(&origins);
                 }
                 let value_pos = checked.pos.clone();
                 vec![hir::Stmt::Return {

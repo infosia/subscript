@@ -11,8 +11,10 @@ mod trap_corpus;
 
 use subscript_codegen::interpreter::interpret;
 use subscript_codegen::lir::{lower_module, verify_module};
+use subscript_codegen::run_jit_with_memory_accounting;
 use subscript_compiler::lir::{
-    BlockId, ForOfKind, InstructionKind, Module, Operand, Terminator, TrapKind, ValueType,
+    self as lir, BlockId, ForOfKind, InstructionKind, Module, Operand, Terminator, TrapKind,
+    ValueType,
 };
 use subscript_compiler::lir_text::print_module;
 use subscript_compiler::Type;
@@ -23,6 +25,141 @@ fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     let hir = check_program(&sources)
         .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
     lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
+}
+
+#[test]
+fn counted_store_verifier_reports_a_missing_retain() {
+    let pos = subscript_compiler::diag::Pos::new("counted-store.ts", 1, 1);
+    let handle = Type::AsyncHandle(Box::new(Type::I32));
+    let owner_type = ValueType::Data(handle.clone());
+    let module = Module {
+        entry: None,
+        async_roots: Vec::new(),
+        classes: Vec::new(),
+        enums: Vec::new(),
+        string_aliases: Vec::new(),
+        globals: Vec::new(),
+        foreign_functions: Vec::new(),
+        functions: vec![lir::Function {
+            id: lir::FunctionId(0),
+            source_name: "violating_store".to_string(),
+            kind: lir::FunctionKind::Free,
+            exported: false,
+            is_generator: false,
+            is_async: false,
+            creation_traps: Vec::new(),
+            host_entry_traps: None,
+            parameters: vec![lir::Parameter {
+                storage: Some(lir::LocalId(0)),
+                value: lir::ValueId(0),
+                source_name: "source".to_string(),
+                kind: lir::ParameterKind::Explicit,
+                pos: pos.clone(),
+            }],
+            return_type: Type::Void,
+            locals: vec![
+                lir::Local {
+                    id: lir::LocalId(0),
+                    source_name: "source".to_string(),
+                    ty: owner_type.clone(),
+                    mutable: true,
+                    pos: pos.clone(),
+                },
+                lir::Local {
+                    id: lir::LocalId(1),
+                    source_name: "copy".to_string(),
+                    ty: owner_type.clone(),
+                    mutable: true,
+                    pos: pos.clone(),
+                },
+            ],
+            values: vec![
+                lir::Value {
+                    id: lir::ValueId(0),
+                    ty: owner_type.clone(),
+                    source_name: Some("source".to_string()),
+                },
+                lir::Value {
+                    id: lir::ValueId(1),
+                    ty: owner_type,
+                    source_name: None,
+                },
+            ],
+            liveness: lir::Liveness::default(),
+            blocks: vec![lir::BasicBlock {
+                id: lir::BlockId(0),
+                source_name: Some("entry".to_string()),
+                parameters: Vec::new(),
+                instructions: vec![
+                    lir::Instruction {
+                        result: None,
+                        kind: lir::InstructionKind::StoreLocal(lir::LocalId(0)),
+                        operands: vec![lir::Operand::Value(lir::ValueId(0))],
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                    lir::Instruction {
+                        result: Some(lir::ValueId(1)),
+                        kind: lir::InstructionKind::LoadLocal(lir::LocalId(0)),
+                        operands: Vec::new(),
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                    lir::Instruction {
+                        result: None,
+                        kind: lir::InstructionKind::StoreLocal(lir::LocalId(1)),
+                        operands: vec![lir::Operand::Value(lir::ValueId(1))],
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                ],
+                terminator: lir::Terminator::Return {
+                    value: None,
+                    pos: pos.clone(),
+                },
+            }],
+            entry: lir::BlockId(0),
+            pos,
+        }],
+        worker_entries: Vec::new(),
+        intrinsic_operations: Vec::new(),
+        initializer: None,
+    };
+
+    let errors = verify_module(&module).expect_err("the counted copy has no retain");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(
+        errors[0].message,
+        "function 0 (`violating_store`): block 0 instruction 2 stores counted operand 0 (value 1) without a fresh single-use owner or a preceding retain"
+    );
+}
+
+#[test]
+fn counted_store_corpus_matches_the_interpreter() {
+    let accept = corpus::corpus_accept();
+    for id in ["a161-counted-handle-stores", "a162-async-copy-sites"] {
+        let expected_live_bytes = match id {
+            "a161-counted-handle-stores" => 24,
+            "a162-async-copy-sites" => 256,
+            _ => unreachable!(),
+        };
+        let module = lower_entry(&accept, id);
+        let output = interpret(&module)
+            .unwrap_or_else(|error| panic!("{id}: {error}\n{}", print_module(&module)));
+        assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
+        let sources = corpus::entry_sources(&accept, id);
+        let (output, accounting) = run_jit_with_memory_accounting(&sources, false)
+            .unwrap_or_else(|error| panic!("{id}: dev JIT failed: {error}"));
+        assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
+        assert_eq!(accounting.live_bytes, expected_live_bytes, "{id}");
+        eprintln!(
+            "{id}: live_bytes={} reserved_bytes={}",
+            accounting.live_bytes, accounting.reserved_bytes
+        );
+    }
 }
 
 #[test]
@@ -380,8 +517,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 105;
-const DEBUG_RUNNABLE_COUNT: usize = 104;
+const RELEASE_RUNNABLE_COUNT: usize = 107;
+const DEBUG_RUNNABLE_COUNT: usize = 106;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -565,6 +702,14 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a160-module-initializer-order",
         "module initializers and entry calls read initialized data bindings",
+    ),
+    (
+        "a161-counted-handle-stores",
+        "counted global, field, index, and spread stores across frame reuse",
+    ),
+    (
+        "a162-async-copy-sites",
+        "shared async-copy sites across loops, lambdas, conditionals, and pop",
     ),
     (
         "a15-manual-lifetime",
@@ -1275,6 +1420,15 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
     let accept = corpus::corpus_accept();
     let mut actual = String::new();
     for id in corpus::entry_ids(&accept) {
+        if matches!(
+            id.as_str(),
+            "a161-counted-handle-stores" | "a162-async-copy-sites"
+        ) {
+            // This round must not extend or move the pre-existing behavior
+            // record. The new entries have dedicated ownership, verifier,
+            // interpreter, and tier-differential assertions above.
+            continue;
+        }
         let lir = lower_entry(&accept, &id);
         if lir
             .functions

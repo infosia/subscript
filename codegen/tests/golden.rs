@@ -892,10 +892,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // Entry a157 pins suspension state across a loop and a later suspension.
     // Entry a159 pins a temporary base retained by a derived address.
     // Entry a160 pins module-initializer declaration order.
+    // Entries a161–a162 pin counted async stores and the shared copy sites.
     assert_eq!(
         golden_ids.len(),
-        159,
-        "expected exactly 159 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        161,
+        "expected exactly 161 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -936,7 +937,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          R36 async-generic golden, the a144 R37 named-accessor golden, the a145 §66 \
          emitted-identifier golden, the a146 §66 scoped-local golden, the a147–a148 §67 \
          switch-body-scope goldens, the a149 §67 suspension-state golden, the a150–a153 §68 \
-         goldens, the a154–a155 §70 held-async-handle goldens, the a156 value-class receiver-by-value golden, the a157 suspension-loop-liveness golden, the a159 address-base-liveness golden, and the a160 §67 module-initializer-order golden, found {}",
+         goldens, the a154–a155 §70 held-async-handle goldens, the a156 value-class receiver-by-value golden, the a157 suspension-loop-liveness golden, the a159 address-base-liveness golden, the a160 §67 module-initializer-order golden, and the a161–a162 §70 counted-store/copy-site goldens, found {}",
         golden_ids.len()
     );
 

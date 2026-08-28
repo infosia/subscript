@@ -225,8 +225,10 @@ struct Frame {
     block: l::BlockId,
     values: Vec<Option<Value>>,
     locals: Vec<Slot>,
-    /// A value supplied to the first successor parameter on resume.
+    /// A value supplied by the completed child operation.
     resume: Option<Value>,
+    /// The exact successor parameter that receives `resume`.
+    resume_target: Option<l::ValueId>,
 }
 
 enum Flow {
@@ -401,6 +403,7 @@ impl<'m> Interpreter<'m> {
             values,
             locals,
             resume: None,
+            resume_target: None,
         };
         if function.is_generator || function.is_async {
             for trap in &function.creation_traps {
@@ -568,14 +571,9 @@ impl<'m> Interpreter<'m> {
                     )
                 })?;
 
-            if !block.parameters.is_empty() {
-                if let Some(resume) = frame.resume.take() {
-                    self.set_value(
-                        &mut frame.values,
-                        block.parameters[0],
-                        resume,
-                        &function.pos,
-                    )?;
+            if let Some(resume) = frame.resume.take() {
+                if let Some(target) = frame.resume_target.take() {
+                    self.set_value(&mut frame.values, target, resume, &function.pos)?;
                 }
             }
             for instruction in &block.instructions {
@@ -703,6 +701,7 @@ impl<'m> Interpreter<'m> {
                         self.set_value(&mut frame.values, parameter, value, &function.pos)?;
                     }
                     frame.block = *successor;
+                    frame.resume_target = *resume_value;
                     let (yielded, async_call, async_handle) = pending;
                     return Ok(Flow::Suspended {
                         yielded,
@@ -1048,16 +1047,19 @@ impl<'m> Interpreter<'m> {
                 None
             }
             l::InstructionKind::AsyncHandleRelease => {
-                let Value::Coroutine(handle) = operands
+                let value = operands
                     .first()
-                    .ok_or_else(|| self.missing_operand(instruction, 0))?
-                else {
-                    return Err(self.invalid(
-                        Some(instruction.pos.clone()),
-                        "async release operand is not a handle",
-                    ));
-                };
-                self.release_coroutine(handle);
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?;
+                match value {
+                    Value::Coroutine(handle) => self.release_coroutine(handle),
+                    Value::Null => {}
+                    _ => {
+                        return Err(self.invalid(
+                            Some(instruction.pos.clone()),
+                            "async release operand is not a handle",
+                        ));
+                    }
+                }
                 None
             }
             l::InstructionKind::AsyncHandleArrayRetain => {

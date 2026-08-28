@@ -486,7 +486,8 @@ impl<'p> Checker<'p> {
                 },
             };
             let holds_capturing = self.is_capturing_value(&init, fx);
-            let async_origins = self.expr_async_origins(&init, fx);
+            let async_origins =
+                self.async_origins_at_copy_site(hir::AsyncCopySite::Binding, &init, fx);
             self.declare_local(
                 &name,
                 Local {
@@ -552,7 +553,11 @@ impl<'p> Checker<'p> {
                         );
                     }
                     if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
-                        let origins = self.expr_async_origins(&checked, fx);
+                        let origins = self.async_origins_at_copy_site(
+                            hir::AsyncCopySite::Return,
+                            &checked,
+                            fx,
+                        );
                         fx.handle_async_origins(&origins);
                     }
                     Some(checked)
@@ -779,6 +784,8 @@ impl<'p> Checker<'p> {
         assigned_roots_stmt(&f.body, &mut roots);
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
+        let binding_async_origins =
+            self.async_origins_at_copy_site(hir::AsyncCopySite::ForOfBinding, &subject, fx);
         fx.scopes.push(Default::default());
         self.declare_local(
             &name,
@@ -786,7 +793,7 @@ impl<'p> Checker<'p> {
                 ty: elem_ty.clone(),
                 mutable,
                 holds_capturing: false,
-                async_origins: HashSet::new(),
+                async_origins: binding_async_origins,
             },
             binding_pos.clone(),
             fx,

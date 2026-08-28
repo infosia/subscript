@@ -555,6 +555,29 @@ pub struct Expr {
     pub pos: Pos,
 }
 
+/// Closed set of sites that copy or consume a counted async owner (§70.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AsyncCopySite {
+    /// A local or global binding stores the value.
+    Binding,
+    /// An assignment stores the value.
+    Assignment,
+    /// An array literal stores one element.
+    ArrayElement,
+    /// An array spread literal stores one element or source array.
+    SpreadElement,
+    /// A call stores one argument in its parameter.
+    CallArgument,
+    /// A return stores the value in its caller-owned result.
+    Return,
+    /// A fused `for…of` binding stores the current element.
+    ForOfBinding,
+    /// A conditional stores one arm in its result.
+    ConditionalResult,
+    /// A statement consumes and discards a fresh result.
+    DiscardedResult,
+}
+
 /// One fault point carried by typed HIR.
 ///
 /// The variants describe the guard and its operand roles; a lowering
