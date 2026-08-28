@@ -3668,7 +3668,7 @@ intrinsic Worker.4 "Join"
 intrinsic Worker.5 "InboxWait"
 intrinsic Worker.6 "InboxPoll"
 intrinsic Worker.7 "OutboxPost"
-fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a147-switch-body-scope.ts:5:17
+fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a147-switch-body-scope.ts:6:17
   value %0: Data(Str) name=None
   value %1: Data(Str) name=None
   value %2: Data(Str) name=None
@@ -3676,22 +3676,22 @@ fn f0 "main" kind=Free exported=true generator=false async=false -> Void entry=b
   b0 Some("entry"):
     -> Switch { value: Constant(Constant { ty: I32, kind: Integer(2) }), arms: [SwitchArm { value: Constant { ty: I32, kind: Integer(0) }, target: BlockTarget { block: BlockId(2), arguments: [] } }, SwitchArm { value: Constant { ty: I32, kind: Integer(1) }, target: BlockTarget { block: BlockId(3), arguments: [] } }, SwitchArm { value: Constant { ty: I32, kind: Integer(2) }, target: BlockTarget { block: BlockId(4), arguments: [] } }], default: BlockTarget { block: BlockId(5), arguments: [] } }
   b1 Some("switch.exit"):
-    -> Return { value: None, pos: Pos { file: "a147-switch-body-scope.ts", line: 5, col: 17 } }
+    -> Return { value: None, pos: Pos { file: "a147-switch-body-scope.ts", line: 6, col: 17 } }
   b2 Some("switch.case.0"):
-    %0: Data(Str) = StringLiteral("case0")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 9, col: 32 } }] @ a147-switch-body-scope.ts:9:32
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a147-switch-body-scope.ts:10:7
+    %0: Data(Str) = StringLiteral("case0")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 10, col: 32 } }] @ a147-switch-body-scope.ts:10:32
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a147-switch-body-scope.ts:11:7
     -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
   b3 Some("switch.case.1"):
-    %1: Data(Str) = StringLiteral("case1")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 13, col: 31 } }] @ a147-switch-body-scope.ts:13:31
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a147-switch-body-scope.ts:14:7
+    %1: Data(Str) = StringLiteral("case1")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 14, col: 31 } }] @ a147-switch-body-scope.ts:14:31
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a147-switch-body-scope.ts:15:7
     -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
   b4 Some("switch.case.2"):
-    %2: Data(Str) = StringLiteral("case2")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 17, col: 39 } }] @ a147-switch-body-scope.ts:17:39
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a147-switch-body-scope.ts:18:7
+    %2: Data(Str) = StringLiteral("case2")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 18, col: 39 } }] @ a147-switch-body-scope.ts:18:39
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a147-switch-body-scope.ts:19:7
     -> Branch(BlockTarget { block: BlockId(5), arguments: [] })
   b5 Some("switch.case.3"):
-    %3: Data(Str) = StringLiteral("default")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 20, col: 35 } }] @ a147-switch-body-scope.ts:20:35
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a147-switch-body-scope.ts:21:7
+    %3: Data(Str) = StringLiteral("default")() traps=[Trap { kind: Allocation, pos: Pos { file: "a147-switch-body-scope.ts", line: 21, col: 35 } }] @ a147-switch-body-scope.ts:21:35
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a147-switch-body-scope.ts:22:7
     -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
 ===== a148-switch-using-scope =====
 module initializer=None
